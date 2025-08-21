@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.8",
         {
+            {"show_data_lake_catalogs_in_system_tables", true, true, "New setting"},
             {"optimize_rewrite_regexp_functions", false, true, "A new setting"},
             {"max_joined_block_size_bytes", 0, 4 * 1024 * 1024, "New setting"},
             {"azure_max_single_part_upload_size", 100 * 1024 * 1024, 32 * 1024 * 1024, "Align with S3"},
@@ -53,15 +54,42 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_request_timeout_ms", 30000, 30000, "New setting"},
             {"azure_connect_timeout_ms", 1000, 1000, "New setting"},
             {"azure_sdk_use_native_client", false, true, "New setting"},
+            {"analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested", false, true, "New setting."},
             {"distributed_cache_connect_backoff_min_ms", 0, 0, "New setting"},
             {"distributed_cache_connect_backoff_max_ms", 50, 50, "New setting"},
             {"distributed_cache_read_request_max_tries", 20, 10, "Changed setting value"},
             {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
-            {"vector_search_with_rescoring", true, true, "New setting."},
+            {"output_format_parquet_enum_as_byte_array", false, true, "Enable writing Enum as byte array in Parquet by default"},
+            {"json_type_escape_dots_in_keys", false, false, "Add new setting that allows to escape dots in JSON keys during JSON type parsing"},
+            {"parallel_replicas_support_projection", false, true, "New setting. Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive."},
+            {"input_format_json_infer_array_of_dynamic_from_array_of_different_types", false, true, "Infer Array(Dynamic) for JSON arrays with different values types by default"},
+            {"enable_add_distinct_to_in_subqueries", false, false, "New setting to reduce the size of temporary tables transferred for distributed IN subqueries."},
+            {"enable_vector_similarity_index", false, true, "Vector similarity indexes are GA."},
+            {"allow_experimental_vector_similarity_index", false, true, "Vector similarity indexes are GA."},
+            {"vector_search_with_rescoring", true, false, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
+            {"apply_patch_parts_join_cache_buckets", 8, 8, "New setting"},
+            {"query_condition_cache_selectivity_threshold", 1.0, 1.0, "New setting."},
+            {"delta_lake_throw_on_engine_predicate_error", false, false, "New setting"},
+            {"delta_lake_enable_engine_predicate", true, true, "New setting"},
+            {"backup_restore_s3_retry_initial_backoff_ms", 25, 25, "New setting"},
+            {"backup_restore_s3_retry_max_backoff_ms", 5000, 5000, "New setting"},
+            {"backup_restore_s3_retry_jitter_factor", 0.0, 0.1, "New setting"},
+            {"vector_search_index_fetch_multiplier", 1.0, 1.0, "Alias for setting 'vector_search_postfilter_multiplier'"},
+            {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
+            {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
+            {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
+            {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
+            {"per_part_index_stats", false, false, "New setting."},
+            {"allow_experimental_iceberg_compaction", 0, 0, "New setting "},
+            {"delta_lake_snapshot_version", -1, -1, "New setting"},
+            {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
+            {"iceberg_metadata_compression_method", "", "", "New setting"},
+            {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
+            {"output_format_parquet_date_as_uint16", false, false, "Added a compatibility setting for a minor compatibility-breaking change introduced back in 24.12."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -110,6 +138,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
+            {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
@@ -142,12 +171,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"update_parallel_mode", "auto", "auto", "A new setting"},
             {"lightweight_delete_mode", "alter_update", "alter_update", "A new setting"},
             {"alter_update_mode", "heavy", "heavy", "A new setting"},
-            {"apply_patch_parts", false, true, "A new setting"},
+            {"apply_patch_parts", true, true, "A new setting"},
             {"allow_experimental_lightweight_update", false, false, "A new setting"},
             {"allow_experimental_delta_kernel_rs", false, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
             {"vector_search_filter_strategy", "auto", "auto", "New setting"},
-            {"vector_search_postfilter_multiplier", 1, 1, "New setting"},
+            {"vector_search_postfilter_multiplier", 1.0, 1.0, "New setting"},
             {"compile_expressions", false, true, "We believe that the LLVM infrastructure behind the JIT compiler is stable enough to enable this setting by default."},
             {"input_format_parquet_bloom_filter_push_down", false, true, "When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and bloom filter in the Parquet metadata."},
             {"input_format_parquet_allow_geoparquet_parser", false, true, "A new setting to use geo columns in parquet file"},
@@ -282,6 +311,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"http_response_headers", "", "", "New setting."},
             {"output_format_parquet_datetime_as_uint32", true, false, "Write DateTime as DateTime64(3) instead of UInt32 (these are the two Parquet types closest to DateTime)."},
+            {"output_format_parquet_date_as_uint16", true, false, "Write Date as Date32 instead of plain UInt16 (these are the two Parquet types closest to Date)."},
             {"skip_redundant_aliases_in_udf", false, false, "When enabled, this allows you to use the same user defined function several times for several materialized columns in the same table."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
@@ -803,7 +833,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
-            {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"}
+            {"search_orphaned_parts_disks", "any", "any", "New setting"},
+            {"shared_merge_tree_virtual_parts_discovery_batch", 1, 1, "New setting"},
+            {"shared_merge_tree_update_replica_flags_delay_ms", 30000, 30000, "New setting"},
+            {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"},
+            {"allow_part_offset_column_in_projections", false, true, "Now projections can use _part_offset column."},
+            {"max_uncompressed_bytes_in_patches", 0, 30ULL * 1024 * 1024 * 1024, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {
@@ -833,6 +868,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"remove_unused_patch_parts", true, true, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, false, "New setting"},
             /// Release closed. Please use 25.6
+            {"allow_part_offset_column_in_projections", false, false, "New setting, it protects from creating projections with parent part offset column until it is stabilized."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.4",
         {

@@ -870,7 +870,7 @@ struct ConvertImplGenericToString
             for (size_t row = 0; row < size; ++row)
             {
                 serialization->serializeText(col_from, row, write_buffer, format_settings);
-                write_helper.rowWritten();
+                write_helper.finishRow();
             }
 
             write_helper.finalize();
@@ -1132,7 +1132,7 @@ struct ConvertThroughParsing
 
     static bool isAllRead(ReadBuffer & in)
     {
-        /// In case of FixedString, skip zero bytes at end.
+        /// In case of FixedString, skip zero padding at the end.
         if constexpr (std::is_same_v<FromDataType, DataTypeFixedString>)
             while (!in.eof() && *in.position() == 0)
                 ++in.position();
@@ -1263,7 +1263,7 @@ struct ConvertThroughParsing
         for (size_t i = 0; i < size; ++i)
         {
             size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
-            size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset - 1 : fixed_string_size;
+            size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset : fixed_string_size;
 
             ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
 
@@ -1848,17 +1848,17 @@ struct ConvertImpl
                 size_t size = vec_from.size();
 
                 if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
+                    data_to.resize(size * strlen("YYYY-MM-DD"));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDate32>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
+                    data_to.resize(size * strlen("YYYY-MM-DD"));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
-                    data_to.resize(size * (strlen("hhh:mm:ss") + 1));
+                    data_to.resize(size * strlen("hhh:mm:ss"));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>)
-                    data_to.resize(size * (strlen("hhh:mm:ss.") + col_from->getScale() + 1));
+                    data_to.resize(size * (strlen("hhh:mm:ss.") + col_from->getScale()));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss") + 1));
+                    data_to.resize(size * strlen("YYYY-MM-DD hh:mm:ss"));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale() + 1));
+                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale()));
                 else
                     data_to.resize(size * 3);   /// Arbitrary
 
@@ -1907,7 +1907,6 @@ struct ConvertImpl
                             is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
                         null_map->getData()[i] |= !is_ok;
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -1940,7 +1939,6 @@ struct ConvertImpl
                         {
                             FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -1971,7 +1969,7 @@ struct ConvertImpl
                 ColumnString::Offsets & offsets_to = col_to->getOffsets();
                 size_t size = col_from->size();
                 size_t n = col_from->getN();
-                data_to.resize(size * (n + 1)); /// + 1 - zero terminator
+                data_to.resize(size * n);
                 offsets_to.resize(size);
 
                 size_t offset_from = 0;
@@ -1987,8 +1985,6 @@ struct ConvertImpl
                         memcpy(&data_to[offset_to], &data_from[offset_from], bytes_to_copy);
                         offset_to += bytes_to_copy;
                     }
-                    data_to[offset_to] = 0;
-                    ++offset_to;
                     offsets_to[i] = offset_to;
                     offset_from += n;
                 }
@@ -2023,7 +2019,7 @@ struct ConvertImpl
                 ColumnString::Offsets & offsets_to = col_to->getOffsets();
                 size_t size = vec_from.size();
 
-                data_to.resize(size * 3);
+                data_to.resize(size * 3); /// A guess (arbitrary).
                 offsets_to.resize(size);
 
                 WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
@@ -2035,7 +2031,6 @@ struct ConvertImpl
                         bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, nullptr);
                         /// We don't use timezones in this branch
                         null_map->getData()[i] |= !is_ok;
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -2044,7 +2039,6 @@ struct ConvertImpl
                     for (size_t i = 0; i < size; ++i)
                     {
                         FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, nullptr);
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -5117,7 +5111,6 @@ private:
             encodeDataType(new_type, new_value_buf);
             new_type->getDefaultSerialization()->serializeBinary(*new_column, 0, new_value_buf, format_settings);
             new_value_buf.finalize();
-            new_values.getChars().push_back(0);
             new_values.getOffsets().push_back(new_values.getChars().size());
         }
         else
@@ -5270,7 +5263,7 @@ private:
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
-                    write_helper.rowWritten();
+                    write_helper.finishRow();
                 }
                 write_helper.finalize();
 

@@ -226,7 +226,7 @@ namespace
         static void appendToResultColumn(const StringRef & res_ref, ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
         {
             size_t res_offset = res_data.size();
-            res_data.resize(res_offset + res_ref.size + 1);
+            res_data.resize(res_offset + res_ref.size);
 
             if constexpr (padded)
                 memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], res_ref.data, res_ref.size);
@@ -234,9 +234,6 @@ namespace
                 memcpy(&res_data[res_offset], res_ref.data, res_ref.size);
 
             res_offset += res_ref.size;
-            res_data[res_offset] = 0;
-            ++res_offset;
-
             res_offsets.emplace_back(res_offset);
         }
 

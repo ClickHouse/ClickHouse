@@ -26,6 +26,7 @@ public:
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -48,9 +49,16 @@ public:
         std::optional<SearchSymbols> custom_trim_characters;
         if (arguments.size() == 2 && input_rows_count > 0)
         {
-            const ColumnConst * col_trim_characters_const = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
-            const String & trim_characters_string = col_trim_characters_const->getDataAt(0).toString();
-            custom_trim_characters = std::make_optional<SearchSymbols>(trim_characters_string);
+            if (const ColumnString * col_trim_characters = checkAndGetColumn<ColumnString>(arguments[1].column.get()))
+            {
+                const String & trim_characters_string = col_trim_characters->getDataAt(0).toString();
+                custom_trim_characters = std::make_optional<SearchSymbols>(trim_characters_string);
+            }
+            else if (const ColumnConst * col_trim_characters_const = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
+            {
+                const String & trim_characters_string = col_trim_characters_const->getDataAt(0).toString();
+                custom_trim_characters = std::make_optional<SearchSymbols>(trim_characters_string);
+            }
         }
 
         ColumnPtr col_input_full;
@@ -102,12 +110,11 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            execute(reinterpret_cast<const UInt8 *>(&input_data[prev_offset]), input_offsets[i] - prev_offset - 1, custom_trim_characters, start, length);
+            execute(reinterpret_cast<const UInt8 *>(&input_data[prev_offset]), input_offsets[i] - prev_offset, custom_trim_characters, start, length);
 
-            res_data.resize(res_data.size() + length + 1);
+            res_data.resize(res_data.size() + length);
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
-            res_offset += length + 1;
-            res_data[res_offset - 1] = '\0';
+            res_offset += length;
 
             res_offsets[i] = res_offset;
             prev_offset = input_offsets[i];
@@ -135,10 +142,9 @@ public:
         {
             execute(reinterpret_cast<const UInt8 *>(&input_data[prev_offset]), n, custom_trim_characters, start, length);
 
-            res_data.resize(res_data.size() + length + 1);
+            res_data.resize(res_data.size() + length);
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
-            res_offset += length + 1;
-            res_data[res_offset - 1] = '\0';
+            res_offset += length;
 
             res_offsets[i] = res_offset;
             prev_offset += n;
