@@ -17,7 +17,7 @@ CREATE TABLE test
 )
 ENGINE = MergeTree
 ORDER BY ()
-SETTINGS index_granularity_bytes = 10485760, index_granularity = 8192;
+SETTINGS index_granularity_bytes = 10485760, index_granularity = 8192, allow_part_offset_column_in_projections = 1;
 
 INSERT INTO test VALUES (1, 1);
 
