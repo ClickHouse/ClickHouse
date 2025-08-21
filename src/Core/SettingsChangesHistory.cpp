@@ -88,7 +88,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
-            {"query_plan_direct_read_from_text_index", false, false, "New setting"},
+            {"query_plan_direct_read_from_text_index", false, true, "New setting"},
             {"output_format_parquet_date_as_uint16", false, false, "Added a compatibility setting for a minor compatibility-breaking change introduced back in 24.12."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
