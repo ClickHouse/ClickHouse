@@ -220,9 +220,10 @@ private:
         const auto map_it = columns_to_index_info.find(column.result_name);
         chassert(map_it != columns_to_index_info.end());
 
-        String name = fmt::format("'{}'_String", map_it->second.name);
+        String name = std::format("'{}'_String", map_it->second.name);
 
-        { /// Check if the associated index column already exist
+        {
+            /// Check if the associated index column already exist
 
             /// This uses backward iterators because the index column node (if exists already) should be inserted by a previous call of this
             /// same function.  Which uses actions_dag.addColumn (push_back).
@@ -325,15 +326,15 @@ private:
     }
 
     /// Attempt to add a new node with the replacement function.
-    /// This adds also extra input columns if needed.
+    /// This also adds extra input columns if needed.
     /// Returns the number of columns (inputs) replaced with an index name in the new function.
     int tryReplaceFunctionNodeInplace(ActionsDAG::Node & original_function_node)
     {
         chassert(isOptimizableFunction(original_function_node));
         const ContextPtr context = FullTextMatchingFunctionDAGReplacer::extractFunctionContext(original_function_node);
 
-        // TODO: This should go to the virtual function
-        const String replacement_function_name = fmt::format("_{}_index", original_function_node.function->getName());
+        /// TODO: This should go to the virtual function
+        const String replacement_function_name = std::format("_{}_index", original_function_node.function->getName());
 
         /// At the moment I assume that the substitution function receives the same arguments than the original, but:
         /// 1. Substituting the indexed column with the index name (string column)
@@ -347,14 +348,14 @@ private:
             if (isColumnNodeWithTextIndex(child))
             {
                 new_children.push_back(&tryGetOrCreateIndexColumn(*child));
-                ++replaced; // count the replacements
+                ++replaced; /// count the replacements
                 continue;
             }
             new_children.push_back(child);
         }
 
-        /// When there was not replacement it means that none of the columns has a index associated in columns_to_index_info.
-        /// In that case we don't perform any substitution
+        /// If there was not replacement, it means that none of the columns has a index associated in columns_to_index_info.
+        /// In that case we don't perform any substitution.
         if (replaced > 0)
         {
             /// The part_index_node and part_offset_node could be already inserted by some previous optimization or because the user query
