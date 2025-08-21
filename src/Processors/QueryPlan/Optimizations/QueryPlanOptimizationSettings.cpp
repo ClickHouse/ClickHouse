@@ -54,6 +54,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
+    extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool make_distributed_plan;
@@ -64,7 +65,6 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool distributed_aggregation_memory_efficient;
-    extern const SettingsBool query_plan_direct_read_from_text_index;
 }
 
 namespace ServerSetting
