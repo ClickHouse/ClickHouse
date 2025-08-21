@@ -99,7 +99,7 @@ public:
             return nullptr;
         SharedLockGuard lock(mutex);
         auto configuration_ptr = configuration.lock();
-        if (configuration_ptr->format != "Parquet")
+        if (Poco::toLower(configuration_ptr->format) != "parquet")
             return nullptr;
 
         return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->underlying_format_read_schema_id);
@@ -107,10 +107,10 @@ public:
 
     ColumnMapperPtr getColumnMapperForCurrentSchema() const override
     {
-        auto configuration_ptr = configuration.lock();
-        if (configuration_ptr->format != "Parquet")
-            return nullptr;
         SharedLockGuard lock(mutex);
+        auto configuration_ptr = configuration.lock();
+        if (Poco::toLower(configuration_ptr->format) != "parquet")
+            return nullptr;
         return persistent_components.schema_processor->getColumnMapperById(relevant_snapshot_schema_id);
     }
 
