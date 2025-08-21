@@ -388,6 +388,7 @@ DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 enum class DatabaseDataLakeCatalogType : uint8_t
 {
+    NONE,
     ICEBERG_REST,
     UNITY,
     GLUE,
@@ -430,4 +431,12 @@ enum class S3UriStyle : uint8_t
 
 DECLARE_SETTING_ENUM(S3UriStyle)
 
+enum class SearchOrphanedPartsDisks : uint8_t
+{
+    NONE,
+    LOCAL,
+    ANY
+};
+
+DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 }

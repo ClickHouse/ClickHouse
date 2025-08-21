@@ -354,14 +354,6 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.set_ignore_case(true);
     rx.set_indent_multiline(false);
 
-    /// Set modify callback to replace tab characters with spaces when pasting
-    /// This improves user experience when pasting SQL queries with tabs
-    auto modify_callback = [](std::string & line, int & /* cursor_position */)
-    {
-        std::replace(line.begin(), line.end(), '\t', ' ');
-    };
-    rx.set_modify_callback(modify_callback);
-
     if (highlighter)
         rx.set_highlighter_callback(highlighter);
 
