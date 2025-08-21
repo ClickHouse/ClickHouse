@@ -1,3 +1,4 @@
+set enable_analyzer=1;
 drop table if exists tab;
 
 create table tab (id Int32) engine = MergeTree order by id;
