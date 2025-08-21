@@ -360,6 +360,8 @@
     M(SharedMergeTreeThreadsScheduled, "Number of queued or active threads in the thread pools in internals of SharedMergeTree") \
     M(SharedMergeTreeFetch, "Number of fetches in progress") \
     M(SharedMergeTreeAssignedCurrentParts, "Number of parts locked by merge or mutation") \
+    M(SharedMergeTreeOutdatedPartsInKeeper, "How many outdated part records stored in keeper") \
+    M(SharedMergeTreeCondemnedPartsInKeeper, "How many condemned part records stored in keeper") \
     M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
     M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
