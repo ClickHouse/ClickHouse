@@ -13,7 +13,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-    extern const int ILLEGAL_COLUMN;
 }
 
 JSONAsRowInputFormat::JSONAsRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_) :
