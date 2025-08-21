@@ -757,7 +757,7 @@ void logExceptionBeforeStart(
     ContextPtr context,
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
-    UInt64 elapsed_millliseconds)
+    UInt64 elapsed_milliseconds)
 {
     auto query_end_time = std::chrono::system_clock::now();
 
@@ -777,7 +777,7 @@ void logExceptionBeforeStart(
     elem.event_time_microseconds = timeInMicroseconds(query_end_time);
     elem.query_start_time = client_info.initial_query_start_time;
     elem.query_start_time_microseconds = client_info.initial_query_start_time_microseconds;
-    elem.query_duration_ms = elapsed_millliseconds;
+    elem.query_duration_ms = elapsed_milliseconds;
 
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;

@@ -1447,7 +1447,7 @@ namespace ErrorCodes
     Allow Nullable types as primary keys.
     )", 0) \
     DECLARE(Bool, allow_part_offset_column_in_projections, true, R"(
-    Allow ussage of '_part_offfset' column in projections select query.
+    Allow usage of '_part_offset' column in projections select query.
     )", 0) \
     DECLARE(Bool, remove_empty_parts, true, R"(
     Remove empty parts after they were pruned by TTL, mutation, or collapsing
