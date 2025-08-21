@@ -364,7 +364,7 @@ struct HashMethodSerialized
             null_maps.resize(keys_size, nullptr);
             for (size_t i = 0; i < keys_size; ++i)
             {
-                if (const auto * nullable_column = dynamic_cast<const ColumnNullable *>(key_columns[i]))
+                if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(key_columns[i]))
                 {
                     null_maps[i] = nullable_column->getNullMapData().data();
                     key_columns[i] = nullable_column->getNestedColumnPtr().get();

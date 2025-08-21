@@ -6317,6 +6317,12 @@ void Context::setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback
 }
 
 
+bool Context::hasClusterFunctionReadTaskCallback() const
+{
+    return next_task_callback.has_value();
+}
+
+
 MergeTreeReadTaskCallback Context::getMergeTreeReadTaskCallback() const
 {
     if (!merge_tree_read_task_callback.has_value())
@@ -6486,12 +6492,18 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
 
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
 {
-    callOnce(shared->readers_initialized, [&] {
-        const auto & config = getConfigRef();
-        shared->asynchronous_remote_fs_reader = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER, config);
-        shared->asynchronous_local_fs_reader = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER, config);
-        shared->synchronous_local_fs_reader = createThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER, config);
-    });
+    callOnce(
+        shared->readers_initialized,
+        [&]
+        {
+            const auto & server_settings = getServerSettings();
+            shared->asynchronous_remote_fs_reader
+                = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER, server_settings);
+            shared->asynchronous_local_fs_reader
+                = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER, server_settings);
+            shared->synchronous_local_fs_reader
+                = createThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER, server_settings);
+        });
 
     switch (type)
     {

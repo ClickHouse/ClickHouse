@@ -1,8 +1,10 @@
 #pragma once
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Processors/ISimpleTransform.h>
 
 namespace DB
 {
+
 using ObjectInfo = RelativePathWithMetadata;
 using ObjectInfoPtr = std::shared_ptr<RelativePathWithMetadata>;
 class ExpressionActions;
@@ -39,5 +41,4 @@ private:
     const NamesAndTypesList hive_partition_columns;
     const std::shared_ptr<ExpressionActions> filter_actions;
 };
-
 }

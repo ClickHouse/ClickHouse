@@ -1514,6 +1514,7 @@ public:
 
     ClusterFunctionReadTaskCallback getClusterFunctionReadTaskCallback() const;
     void setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback && callback);
+    bool hasClusterFunctionReadTaskCallback() const;
 
     MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
     void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
