@@ -43,7 +43,6 @@
 #include <llvm/IR/IRBuilder.h>
 #endif
 
-#include <cmath>
 
 namespace DB
 {
@@ -876,29 +875,6 @@ namespace
 
 #endif
 
-template <typename IntType, bool try_skip_elements>
-void replicateImpl(
-    const IntType * __restrict data,
-    size_t size,
-    [[maybe_unused]] size_t window,
-    IntType * __restrict result_data,
-    const IColumn::Offsets & offsets)
-{
-    auto it = result_data; // NOLINT
-    for (size_t i = 0; i < size; ++i)
-    {
-        const auto span_end = result_data + offsets[i]; // NOLINT
-        for (; it != span_end; ++it)
-            *it = data[i];
-
-        if constexpr (try_skip_elements)
-        {
-            if (i + window - 1 < size && offsets[i] == offsets[i + window - 1])
-                i += window - 1;
-        }
-    }
-}
-
 template <typename T>
 ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 {
@@ -919,14 +895,13 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     }
 #endif
 
-    /// This formula provides the optimum for a very simplified and probably wrong model for the number of additional checks (offsets[i] == offsets[i + window - 1])
-    /// The threshold of 16 is chosen experimentally, based on the case when all offsets are 0 and we spend no time doing actual copying (i.e. the overhead
-    /// from these additional checks is pronounced the most).
-    const size_t window = static_cast<size_t>(sqrt(1 + size / res->size()));
-    if (window > 16)
-        replicateImpl<T, /*try_skip_elements=*/true>(getData().data(), size, window, res->getData().data(), offsets);
-    else
-        replicateImpl<T, /*try_skip_elements=*/false>(getData().data(), size, window, res->getData().data(), offsets);
+    auto it = res->getData().begin(); // NOLINT
+    for (size_t i = 0; i < size; ++i)
+    {
+        const auto span_end = res->getData().begin() + offsets[i]; // NOLINT
+        for (; it != span_end; ++it)
+            *it = data[i];
+    }
 
     return res;
 }

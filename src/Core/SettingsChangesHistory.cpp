@@ -132,7 +132,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
             /// RELEASE CLOSED
-            {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.5",
         {
