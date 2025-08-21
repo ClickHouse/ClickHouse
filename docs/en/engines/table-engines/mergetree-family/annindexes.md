@@ -65,9 +65,6 @@ returns
    └────┴─────────┘
 ```
 
-Further example datasets that use approximate vector search:
-- [LAION-400M](../../../getting-started/example-datasets/laion-400m-dataset)
-
 ## Approximate vector search {#approximate-nearest-neighbor-search}
 
 ClickHouse provides a special "vector similarity" index to perform approximate vector search.
@@ -546,6 +543,10 @@ returns
 3. │  8 │ [0,2.2] │
    └────┴─────────┘
 ```
+
+Further example datasets that use approximate vector search:
+- [LAION-400M](../../../getting-started/example-datasets/laion-400m-dataset)
+- [dbpedia](../../../getting-started/example-datasets/dbpedia-dataset)
 
 ## References {#references}
 
