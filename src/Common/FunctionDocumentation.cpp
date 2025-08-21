@@ -224,6 +224,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::StringSearch, "String Search"},
         {Category::StringSplitting, "String Splitting"},
         {Category::String, "String"},
+        {Category::TimeSeriesAnalysis, "Time Series Analysis"},
         {Category::TimeSeries, "Time Series"},
         {Category::TimeWindow, "Time Window"},
         {Category::Tuple, "Tuple"},
