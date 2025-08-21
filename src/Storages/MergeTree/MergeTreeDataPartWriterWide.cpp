@@ -894,7 +894,7 @@ void MergeTreeDataPartWriterWide::initColumnsSubstreamsIfNeeded(const Block & bl
         columns_substreams.addColumn(name_and_type.name);
         serialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path));
+            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)));
             return &buf;
         };
 
