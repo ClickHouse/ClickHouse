@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 SET type_json_skip_duplicated_paths=1;
 
 DROP TABLE IF EXISTS t0;
