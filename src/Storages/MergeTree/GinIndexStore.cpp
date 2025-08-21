@@ -747,13 +747,7 @@ void GinIndexStoreDeserializer::readSegments()
         std::vector<GinIndexSegment> segments(num_segments);
         metadata_file_stream->readStrict(reinterpret_cast<char *>(segments.data()), num_segments * sizeof(GinIndexSegment));
         for (UInt32 i = 0; i < num_segments; ++i)
-        {
-            auto seg_dict = std::make_shared<GinSegmentDictionary>();
-            seg_dict->postings_start_offset = segments[i].postings_start_offset;
-            seg_dict->dict_start_offset = segments[i].dict_start_offset;
-            seg_dict->bloom_filter_start_offset = segments[i].bloom_filter_start_offset;
-            store->segment_dictionaries[segments[i].segment_id] = seg_dict;
-        }
+            store->segment_dictionaries[segments[i].segment_id] = std::make_shared<GinSegmentDictionary>(segments[i]);
     }
 
     LOG_TRACE(
@@ -868,25 +862,23 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
     assert(postings_file_stream != nullptr);
 
     GinSegmentedPostingsListContainer container;
-    for (auto const & seg_dict : store->segment_dictionaries)
+    for (auto const & [segment_id, segment_dictionary] : store->segment_dictionaries)
     {
-        auto segment_id = seg_dict.first;
-
         FST::FiniteStateTransducer::Output fst_output;
         {
-            std::lock_guard guard(seg_dict.second->fst_mutex);
+            std::lock_guard guard(segment_dictionary->fst_mutex);
 
-            if (seg_dict.second->fst == nullptr)
+            if (segment_dictionary->fst == nullptr)
             {
                 /// Segment dictionary is not loaded, first check the term in bloom filter
-                if (seg_dict.second->bloom_filter && !seg_dict.second->bloom_filter->contains(term))
+                if (segment_dictionary->bloom_filter && !segment_dictionary->bloom_filter->contains(term))
                     continue;
 
                 /// Term might be in segment dictionary
-                readSegmentFST(segment_id, seg_dict.second);
+                readSegmentFST(segment_id, segment_dictionary);
             }
 
-            fst_output = seg_dict.second->fst->getOutput(term);
+            fst_output = segment_dictionary->fst->getOutput(term);
             if (!fst_output.found)
                 continue;
         }
@@ -900,7 +892,7 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
             store->storage->getPartDirectory());
 
         // Set postings file pointer for reading postings list
-        postings_file_stream->seek(seg_dict.second->postings_start_offset + fst_output.offset, SEEK_SET);
+        postings_file_stream->seek(segment_dictionary->postings_start_offset + fst_output.offset, SEEK_SET);
 
         // Read posting list
         auto postings_list = GinIndexPostingsBuilder::deserialize(*postings_file_stream);
@@ -913,7 +905,7 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
             store->getName(),
             segment_id,
             store->storage->getPartDirectory(),
-            ReadableSize(postings_file_stream->count() - seg_dict.second->postings_start_offset));
+            ReadableSize(postings_file_stream->count() - segment_dictionary->postings_start_offset));
     }
     return container;
 }

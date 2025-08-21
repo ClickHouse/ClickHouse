@@ -173,14 +173,20 @@ private:
 
 struct GinSegmentDictionary
 {
+    explicit GinSegmentDictionary(const GinIndexSegment gin_index_segment)
+        : bloom_filter_start_offset(gin_index_segment.bloom_filter_start_offset),
+        postings_start_offset(gin_index_segment.postings_start_offset),
+        dict_start_offset(gin_index_segment.dict_start_offset)
+    {}
+
     /// .gin_bflt file offset of this segment's bloom filter
-    UInt64 bloom_filter_start_offset;
+    const UInt64 bloom_filter_start_offset;
 
     /// .gin_post file offset of this segment's postings lists
-    UInt64 postings_start_offset;
+    const UInt64 postings_start_offset;
 
     /// .gin_dict file offset of this segment's dictionaries
-    UInt64 dict_start_offset;
+    const UInt64 dict_start_offset;
 
     /// (Minimized) Finite State Transducer, which can be viewed as a map of <term, offset>, where offset is the
     /// offset to the term's posting list in postings list file

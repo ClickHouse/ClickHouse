@@ -173,13 +173,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
             std::vector<DB::GinIndexSegment> segments(number_of_segments);
             segment_metadata_read_buffer->readStrict(reinterpret_cast<char *>(segments.data()), number_of_segments * sizeof(DB::GinIndexSegment));
             for (UInt32 i = 0; i < number_of_segments; ++i)
-            {
-                auto seg_dict = std::make_shared<DB::GinSegmentDictionary>();
-                seg_dict->postings_start_offset = segments[i].postings_start_offset;
-                seg_dict->dict_start_offset = segments[i].dict_start_offset;
-                seg_dict->bloom_filter_start_offset = segments[i].bloom_filter_start_offset;
-                segment_dictionaries[segments[i].segment_id] = seg_dict;
-            }
+                segment_dictionaries[segments[i].segment_id] = std::make_shared<DB::GinSegmentDictionary>(segments[i]);
         }
 
         /// Read segment dictionaries
