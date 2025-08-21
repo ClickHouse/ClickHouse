@@ -7,6 +7,7 @@
 #include <Poco/Dynamic/Var.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Core/Range.h>
 #include <Columns/IColumn.h>
 #include <IO/CompressionMethod.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -82,12 +83,35 @@ private:
     Int32 initial_version = 0;
 };
 
+class DataFileStatistics
+{
+public:
+    explicit DataFileStatistics(Poco::JSON::Array::Ptr schema_);
+
+    void update(const Chunk & chunk);
+
+    std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
+    std::vector<std::pair<size_t, Field>> getLowerBounds() const;
+    std::vector<std::pair<size_t, Field>> getUpperBounds() const;
+
+    const std::vector<Int64> & getFieldIds() const { return field_ids; }
+private:
+    static Range uniteRanges(const Range & left, const Range & right);
+
+    std::vector<Int64> field_ids;
+    std::vector<Int64> column_sizes;
+    std::vector<Range> ranges;
+};
+
+
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
     const std::vector<DataTypePtr> & partition_types,
     const std::vector<String> & data_file_names,
+    const std::optional<DataFileStatistics> & data_file_statistics,
+    SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
     const String & format,
     Poco::JSON::Object::Ptr partition_spec,
@@ -131,6 +155,10 @@ public:
         Int32 num_deleted_rows,
         std::optional<Int64> user_defined_snapshot_id = std::nullopt,
         std::optional<Int64> user_defined_timestamp = std::nullopt);
+
+    void generateAddColumnMetadata(const String & column_name, DataTypePtr type);
+    void generateDropColumnMetadata(const String & column_name);
+    void generateModifyColumnMetadata(const String & column_name, DataTypePtr type);
 
 private:
     Poco::JSON::Object::Ptr metadata_object;
@@ -196,8 +224,10 @@ private:
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> write_buffers;
     std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> writers;
     std::unordered_map<ChunkPartitioner::PartitionKey, String, ChunkPartitioner::PartitionKeyHasher> data_filenames;
+    std::unordered_map<ChunkPartitioner::PartitionKey, DataFileStatistics, ChunkPartitioner::PartitionKeyHasher> statistics;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
+    Poco::JSON::Object::Ptr current_schema;
     ContextPtr context;
     StorageObjectStorageConfigurationPtr configuration;
     std::optional<FormatSettings> format_settings;
