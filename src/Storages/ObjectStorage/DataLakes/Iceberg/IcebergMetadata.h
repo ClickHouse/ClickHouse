@@ -44,11 +44,7 @@ public:
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationWeakPtr configuration_,
         const ContextPtr & context_,
-        Int32 metadata_version_,
-        Int32 format_version_,
-        const Poco::JSON::Object::Ptr & metadata_object,
-        IcebergMetadataFilesCachePtr cache_ptr,
-        CompressionMethod metadata_compression_method_);
+        IcebergMetadataFilesCachePtr cache_ptr);
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override;
@@ -88,8 +84,8 @@ public:
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
-    std::optional<size_t> totalRows(ContextPtr Local_context) const override;
-    std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
+    std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr Local_context) const override;
+    std::optional<size_t> updateConfigurationAndGetTotalBytes(ContextPtr Local_context) const override;
 
     ColumnMapperPtr getColumnMapper() const override
     {
@@ -106,7 +102,7 @@ public:
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override;
 
-    CompressionMethod getCompressionMethod() const { return metadata_compression_method; }
+    CompressionMethod getCompressionMethod() const { return persistent_components.metadata_compression_method; }
 
     bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
     bool supportsDelete() const override { return true; }
@@ -130,10 +126,10 @@ protected:
 private:
     const ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationWeakPtr configuration;
+    LoggerPtr log;
+
 
     DB::Iceberg::PersistentTableComponents persistent_components;
-
-    LoggerPtr log;
 
 
     std::tuple<Int64, Int32> getVersion() const;
@@ -142,16 +138,17 @@ private:
 
     Iceberg::IcebergTableStateSnapshot relevant_table_state_snapshot TSA_GUARDED_BY(mutex);
     Iceberg::IcebergDataSnapshotPtr relevant_data_snapshot TSA_GUARDED_BY(mutex);
-    const CompressionMethod metadata_compression_method;
+
+    Iceberg::PersistentTableComponents initializePersistentTableComponents(Poco::JSON::Object::Ptr metadata_object);
 
     Iceberg::IcebergDataSnapshotPtr
     getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context);
     Iceberg::IcebergDataSnapshotPtr
     getIcebergDataSnapshotFromObject(Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context);
     std::pair<Iceberg::IcebergDataSnapshotPtr, Int32>
-    getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
+    getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object);
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::IcebergTableStateSnapshot>
-    getState(const ContextPtr & local_context, Int32 metadata_version, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
+    getState(const ContextPtr & local_context, String metadata_path, Int32 metadata_version);
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const TSA_REQUIRES_SHARED(mutex);
     void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) const TSA_REQUIRES(mutex);
 };

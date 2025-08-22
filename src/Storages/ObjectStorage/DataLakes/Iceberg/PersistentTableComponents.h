@@ -3,8 +3,9 @@
 
 #if USE_AVRO
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <IO/CompressionMethod.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
 namespace DB::Iceberg
 {
@@ -14,6 +15,7 @@ struct PersistentTableComponents
     IcebergMetadataFilesCachePtr metadata_cache;
     const Int32 format_version;
     const String table_location;
+    const CompressionMethod metadata_compression_method;
 };
 
 }

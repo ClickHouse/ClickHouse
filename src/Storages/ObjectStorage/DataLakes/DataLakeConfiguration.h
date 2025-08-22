@@ -166,13 +166,13 @@ public:
     std::optional<size_t> totalRows(ContextPtr local_context) override
     {
         assertInitialized();
-        return current_metadata->totalRows(local_context);
+        return current_metadata->updateConfigurationAndGetTotalRows(local_context);
     }
 
     std::optional<size_t> totalBytes(ContextPtr local_context) override
     {
         assertInitialized();
-        return current_metadata->totalBytes(local_context);
+        return current_metadata->updateConfigurationAndGetTotalBytes(local_context);
     }
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override
