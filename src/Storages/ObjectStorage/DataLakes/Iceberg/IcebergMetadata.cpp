@@ -469,8 +469,8 @@ void IcebergMetadata::mutate(
 void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
 {
     for (const auto & command : commands)
-        if (command.type != MutationCommand::DELETE)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE mutations");
+        if (command.type != MutationCommand::DELETE && command.type != MutationCommand::UPDATE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE and UPDATE mutations");
 }
 
 void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
