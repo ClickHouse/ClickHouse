@@ -28,7 +28,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
@@ -46,45 +45,53 @@ public:
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionHasTokenIndex>(context_); }
 
     String getName() const override { return name; }
-    bool isVariadic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 4; }
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeNumber<UInt8>>(); }
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        FunctionArgumentDescriptors args{
+            {"index_name", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
+            {"token", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
+            {"_part_index", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64), nullptr, "UInt64"},
+            {"_part_offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt64), nullptr, "UInt64"}
+        };
+        validateFunctionArguments(*this, arguments, args);
+
+        return std::make_shared<DataTypeNumber<UInt8>>();
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (arguments.size() != getNumberOfArguments())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} expects at least 2 arguments", getName());
-
         auto col_res = ColumnVector<UInt8>::create(input_rows_count, UInt8());
 
-        /// This is a not totally save method to ensure that this works.
+        /// This is a not totally safe method to ensure that this works.
         /// Apparently when input_rows_count == 0 the indexes are not constructed yet.
         /// This seems to happen when calling interpreter_with_analyzer->GetQueryPlan();
         if (input_rows_count == 0)
             return col_res;
 
         /// Read inputs
-        const ColumnWithTypeAndName & index_argument = arguments[0];
+        const ColumnWithTypeAndName & index_name_argument = arguments[0];
         const ColumnWithTypeAndName & token_argument = arguments[1];
         const ColumnWithTypeAndName & part_index_argument = arguments[2];
         const ColumnWithTypeAndName & part_offset_argument = arguments[3];
 
-        chassert(index_argument.column->size() == input_rows_count);
+        chassert(index_name_argument.column->size() == input_rows_count);
         chassert(token_argument.column->size() == input_rows_count);
         chassert(part_index_argument.column->size() == input_rows_count);
         chassert(part_offset_argument.column->size() == input_rows_count);
 
         /// Parse inputs
-        const String index_name = checkAndGetColumnConstStringOrFixedString(index_argument.column.get())->getValue<String>();
+        const String index_name = checkAndGetColumnConstStringOrFixedString(index_name_argument.column.get())->getValue<String>();
         const String token = checkAndGetColumnConstStringOrFixedString(token_argument.column.get())->getValue<String>();
-        const ColumnVector<UInt64> * col_part_index_vector = extractColumnAndCheck<UInt64>(arguments, 2);
-        const ColumnVector<UInt64> * col_part_offset_vector = extractColumnAndCheck<UInt64>(arguments, 3);
+        const ColumnVector<UInt64> * col_part_index_vector = checkAndGetColumn<ColumnVector<UInt64>>(arguments[2].column.get());
+        const ColumnVector<UInt64> * col_part_offset_vector = checkAndGetColumn<ColumnVector<UInt64>>(arguments[3].column.get());
 
         /// Now search the part
         const size_t part_idx = col_part_index_vector->getElement(0);
-        chassert(part_idx == col_part_index_vector->getElement(input_rows_count - 1)); // We assume to work on one part at the time
+        chassert(part_idx == col_part_index_vector->getElement(input_rows_count - 1)); /// We assume to work on one part at the time
 
         /// Remember that the index_info_shared_lock is a shared mutex hold from here up to function end
         auto [index_context_info, index_info_shared_lock] = context->getIndexInfo();
@@ -174,7 +181,7 @@ public:
             context->getVectorSimilarityIndexCache().get(),
             MergeTreeReaderSettings::create(context, SelectQueryInfo()));
 
-        for (const auto &[index_mark, subranges] : ranges_map)
+        for (const auto & [index_mark, subranges] : ranges_map)
         {
             MergeTreeIndexGranulePtr granule = nullptr;
             reader.read(index_mark, granule);
@@ -192,6 +199,8 @@ public:
 
         return col_res;
     }
+
+private:
     /// Helper function to extract the index and conditions safely.
     /// This performs all the checks and searches locally, so external code shouldn't check for them.
     static std::pair<const MergeTreeIndexPtr, const MergeTreeIndexConditionGin *> extractIndexAndCondition(
@@ -205,40 +214,22 @@ public:
             }
         );
 
-        if (it == skip_indexes->useful_indices.end()) [[unlikely]]
+        if (it == skip_indexes->useful_indices.end())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Index named: {} does not exist.", index_name);
 
         const MergeTreeIndexPtr index_helper = it->index;
-        if (index_helper == nullptr) [[unlikely]]
+        if (index_helper == nullptr)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Index named: {} is registered as null.", index_name);
 
-        if (it->index->index.type != "text") [[unlikely]]
+        if (it->index->index.type != "text")
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Index named: {} is not a text index.", index_name);
 
         const MergeTreeIndexConditionGin * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(it->condition.get());
-        if (gin_filter_condition == nullptr) [[unlikely]]
+        if (gin_filter_condition == nullptr)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Condition for text index {} is incorrect.", index_name);
 
         return {index_helper, gin_filter_condition};
     }
-
-    template <typename T>
-    const ColumnVector<T> * extractColumnAndCheck(const ColumnsWithTypeAndName & arguments, size_t pos) const
-    {
-        const ColumnVector<T> * col_index_vector = checkAndGetColumn<ColumnVector<T>>(arguments[pos].column.get());
-
-        if (!col_index_vector) [[unlikely]]
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be {}.",
-                arguments[pos].type->getName(),
-                pos + 1,
-                getName(),
-                col_index_vector->getFamilyName());
-
-        return col_index_vector;
-    }
-
 
     static void postingArrayToOutput(
         const std::vector<UInt32> matching_rows,
