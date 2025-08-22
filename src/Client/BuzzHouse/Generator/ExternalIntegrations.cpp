@@ -1628,7 +1628,7 @@ bool DolorIntegration::performDatabaseIntegration(RandomGenerator &, SQLDatabase
             chassert(0);
     }
     buf += fmt::format(
-        "{{\"database_name\":\"{}\",\"storage\":\"{}\",\"lake\":\"{}\",\"catalog\":\"{}\"}}",
+        R"({{"database_name":"{}","storage":"{}","lake":"{}","catalog":"{}"}})",
         d.getSparkCatalogName(),
         d.storage == LakeStorage::S3 ? "s3" : (d.storage == LakeStorage::Azure ? "azure" : "local"),
         d.format == LakeFormat::DeltaLake ? "deltalake" : "iceberg",
@@ -1702,7 +1702,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
 }
 
 extern void
-collectColumnPaths(const String cname, SQLType * tp, const uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths);
+collectColumnPaths(String cname, SQLType * tp, uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths);
 
 bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
 {
@@ -1719,7 +1719,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, 
 
     chassert(t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine());
     buf += fmt::format(
-        "{{\"database_name\":\"{}\",\"table_name\":\"{}\",\"storage\":\"{}\",\"lake\":\"{}\",\"format\":\"{}\",\"columns\":[",
+        R"({{"database_name":"{}","table_name":"{}","storage":"{}","lake":"{}","format":"{}","columns":[)",
         t.getSparkCatalogName(),
         t.getTableName(false),
         t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"),
@@ -1728,7 +1728,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, 
     for (const auto & entry : entries)
     {
         buf += fmt::format(
-            "{}{{\"name\":\"{}\",\"type\":\"{}\"}}",
+            R"({}{{"name":"{}","type":"{}"}})",
             first ? "" : ",",
             entry.getBottomName(),
             entry.getBottomType()->ToSparkTypeName(false));
