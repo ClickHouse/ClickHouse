@@ -348,8 +348,6 @@ using GinSegmentedPostingsListContainer = std::unordered_map<UInt32, GinIndexPos
 using GinPostingsCache = std::unordered_map<String, GinSegmentedPostingsListContainer>;
 using GinPostingsCachePtr = std::shared_ptr<GinPostingsCache>;
 
-class GinFilter;
-
 /// Gin index store reader which helps to read segments, dictionaries and postings list
 class GinIndexStoreDeserializer : private boost::noncopyable
 {
@@ -404,7 +402,7 @@ struct PostingsCacheForStore
     /// Which store to retrieve postings lists
     GinIndexStorePtr store;
 
-    /// map of <query, postings lists>
+    /// Map of <query, postings lists>
     mutable std::unordered_map<String, GinPostingsCachePtr> cache;
 
     /// Get postings lists for query string IF cached, return nullptr if not found

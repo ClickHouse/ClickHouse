@@ -9,9 +9,9 @@
 #include <Disks/DiskLocal.h>
 #include <Interpreters/GinFilter.h>
 #include <Storages/MergeTree/GinIndexStore.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
-#include <Storages/MergeTree/MarkRange.h>
 #include <city.h>
 
 namespace DB
@@ -188,7 +188,7 @@ bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const Gin
 
 }
 
-bool GinFilter::contains(const GinQueryString & gin_query_string, PostingsCacheForStore & cache_store, GinSearchMode search_mode) const
+bool GinFilter::contains(const GinQueryString & gin_query_string, const PostingsCacheForStore & cache_store, GinSearchMode search_mode) const
 {
     if (gin_query_string.getTerms().empty())
         return true;
@@ -204,11 +204,6 @@ bool GinFilter::contains(const GinQueryString & gin_query_string, PostingsCacheF
     }
 }
 
-
-size_t GinFilter::memoryUsageBytes() const
-{
-    return rowid_ranges.capacity() * sizeof(rowid_ranges[0]);
-}
 
 std::vector<uint32_t> GinFilter::getIndices(
     const GinQueryString * gin_query_string,
@@ -229,7 +224,7 @@ std::vector<uint32_t> GinFilter::getIndices(
 
     std::vector<UInt32> indices;
 
-    for (const GinSegmentWithRowIdRange &rowid_range : rowid_ranges)
+    for (const GinSegmentWithRowIdRange & rowid_range : rowid_ranges)
     {
         if (rowid_range.range_end < full_start)
             continue;
@@ -244,13 +239,13 @@ std::vector<uint32_t> GinFilter::getIndices(
         GinIndexPostingsList range_matches;
         range_matches.addRange(start, end);
 
-        for (const auto & term_postings : *postings_cache)
+        for (const auto & token_posting_list : * postings_cache)
         {
             /// Check if it is in the same segment by searching for segment_id
-            const GinSegmentedPostingsListContainer & container = term_postings.second;
-            auto container_it = container.find(rowid_range.segment_id);
+            const GinSegmentedPostingsListContainer & postings_list = token_posting_list.second;
+            auto container_it = postings_list.find(rowid_range.segment_id);
 
-            if (container_it == container.cend()
+            if (container_it == postings_list.end()
                 || container_it->second->maximum() < start
                 || container_it->second->minimum() > end)
             {
@@ -270,6 +265,11 @@ std::vector<uint32_t> GinFilter::getIndices(
         }
     }
     return indices;
+}
+
+size_t GinFilter::memoryUsageBytes() const
+{
+    return rowid_ranges.capacity() * sizeof(rowid_ranges[0]);
 }
 
 }

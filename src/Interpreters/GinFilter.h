@@ -108,7 +108,7 @@ public:
 
     /// Check if the filter (built from query string) contains any rows in given filter by using
     /// given postings list cache
-    bool contains(const GinQueryString & gin_query_string, PostingsCacheForStore & cache_store, GinSearchMode mode = GinSearchMode::All) const;
+    bool contains(const GinQueryString & gin_query_string, const PostingsCacheForStore & cache_store, GinSearchMode mode = GinSearchMode::All) const;
 
     /// Get a vector of indices given a filter.
     /// The function uses the input ranges to limit the desired indices.
