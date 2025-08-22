@@ -1,4 +1,3 @@
-#include <memory>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Common/FieldVisitorToString.h>
@@ -474,20 +473,18 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
 
 bool RPNBuilderFunctionTreeNode::isReplacedFullTextSearchFunction() const
 {
-    if (dag_node && dag_node->function_base)
-    {
-        const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
-        if (adaptor == nullptr)
-            return false;
+    if (!dag_node || !dag_node->function_base)
+        return false;
 
-        const auto function = std::dynamic_pointer_cast<FullTextSearchFunctionMixin>(adaptor->getFunction());
-        if (function == nullptr)
-            return false;
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
+    if (adaptor == nullptr)
+        return false;
 
-        return (function->is_replaceable == FullTextSearchFunctionMixin::IsReplaceable::IsReplacement);
-    }
+    const auto full_text_search_function_mixin = std::dynamic_pointer_cast<FullTextSearchFunctionMixin>(adaptor->getFunction());
+    if (full_text_search_function_mixin == nullptr)
+        return false;
 
-    return false;
+    return full_text_search_function_mixin->is_replaceable == FullTextSearchFunctionMixin::IsReplaceable::IsReplacement;
 }
 
 }
