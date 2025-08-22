@@ -969,7 +969,7 @@ static void indexImpl(const PaddedPODArray<UInt32> & indexes, std::span<const ch
 {
     size_t size = indexes.size();
     for (size_t i = 0; i < size; ++i)
-        memcpy(to.data() + i * value_size, data.data() + indexes[i] * S, S);
+        memcpy(to.data() + i * value_size, data.data() + indexes[i] * value_size, value_size);
 }
 
 void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
