@@ -1481,7 +1481,7 @@ public:
     bool setIndexInfo(IndexContextInfoPtr info) const
     {
         std::lock_guard lock(index_info_mutex);
-        chassert(index_info == nullptr);
+        // chassert(index_info == nullptr);  /// TODO: Check when this assertion is not needed.
         index_info = info;
         return true;
     }

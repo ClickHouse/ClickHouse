@@ -1083,6 +1083,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             return !part.data_part || part.ranges.empty();
         });
 
+    /// TODO: Condition this somehow only when using some index optimized function.
     context->setIndexInfo(std::make_shared<IndexContextInfo>(
             IndexContextInfo{
                 .skip_indexes = skip_indexes,
