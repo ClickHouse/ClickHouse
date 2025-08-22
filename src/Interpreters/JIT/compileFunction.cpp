@@ -79,9 +79,15 @@ llvm::StructType * buildColumnDataLLVMStruct(llvm::IRBuilderBase & b)
 llvm::StructType * buildStringRefType(llvm::IRBuilderBase &b)
 {
     auto * data_ptr_type = b.getInt8Ty()->getPointerTo();
-    auto * offset_ptr_type = b.getInt64Ty()->getPointerTo();
+    auto * offset_ptr_type = b.getInt8Ty()->getPointerTo();
     auto * index_type = b.getIntNTy(sizeof(size_t) * 8);
     return llvm::StructType::get(data_ptr_type, offset_ptr_type, index_type);
+}
+
+llvm::StructType * buildFixedStringType(llvm::IRBuilderBase &b)
+{
+    auto * data_ptr_type = b.getInt8Ty()->getPointerTo();
+    return llvm::StructType::get(data_ptr_type, b.getIntNTy(sizeof(size_t) * 8));
 }
 
 static void compileFunction(llvm::Module & module, const IFunctionBase & function)
@@ -638,6 +644,30 @@ static void compileSortDescription(llvm::Module & module,
             return value;
         };
 
+        auto load_column_fixed_string_value = [&](llvm::Value * column_arg, llvm::Value * index_arg, bool is_nullable)
+        {
+            auto * fixed_string_type = buildFixedStringType(b);
+
+            auto * nullable_uninitialized = llvm::Constant::getNullValue(toNullableType(b, fixed_string_type));
+
+            auto * column = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_64(column_data_type, column_arg, i));
+            auto * column_data = b.CreateExtractValue(column, {0});
+            auto * column_null_data = is_nullable ? b.CreateExtractValue(column, {1}) : nullptr;
+
+            llvm::Value * value = llvm::UndefValue::get(fixed_string_type);
+            value = b.CreateInsertValue(value, column_data, {0});
+            value = b.CreateInsertValue(value, index_arg, {1});
+
+            if (column_null_data)
+            {
+                auto * is_null_value_pointer = b.CreateInBoundsGEP(b.getInt8Ty(), column_null_data, index_arg);
+                auto * is_null = b.CreateICmpNE(b.CreateLoad(b.getInt8Ty(), is_null_value_pointer), b.getInt8(0));
+                auto * nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_uninitialized, value, {0}), is_null, {1});
+                value = nullable_value;
+            }
+            return value;
+        };
+
         auto load_column_native_value = [&](llvm::Value * column_arg, llvm::Value * index_arg, bool is_nullable)
         {
             auto * column_native_type = toNativeType(b, nested_column_type);
@@ -669,6 +699,11 @@ static void compileSortDescription(llvm::Module & module,
         {
             lhs_value = load_column_string_value(columns_lhs_arg, lhs_index_arg, column_type->isNullable());
             rhs_value = load_column_string_value(columns_rhs_arg, rhs_index_arg, column_type->isNullable());
+        }
+        else if (WhichDataType(nested_column_type).isFixedString())
+        {
+            lhs_value = load_column_fixed_string_value(columns_lhs_arg, lhs_index_arg, column_type->isNullable());
+            rhs_value = load_column_fixed_string_value(columns_rhs_arg, rhs_index_arg, column_type->isNullable());
         }
         else if (canBeNativeType(column_type))
         {
