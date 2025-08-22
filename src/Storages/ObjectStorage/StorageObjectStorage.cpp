@@ -366,6 +366,14 @@ void StorageObjectStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    LOG_DEBUG(
+        log,
+        "Reading from object storage with configuration: {}, columns: {}, max_block_size: {}, num_streams: {}, stacktrace: {}",
+        configuration->getTypeName(),
+        column_names,
+        max_block_size,
+        num_streams,
+        StackTrace().toString());
     /// We did configuration->update() in constructor,
     /// so in case of table function there is no need to do the same here again.
     if (update_configuration_on_read_write)

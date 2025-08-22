@@ -189,6 +189,13 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 
     storage->updateExternalDynamicMetadataIfExists(context);
 
+    LOG_DEBUG(
+        &Poco::Logger::get("IdentifierResolver"),
+        "Resolved table identifier: {}, Storage: {}, Stacktrace: {}",
+        table_identifier.getFullName(),
+        storage->getStorageID().getNameForLogs(),
+        StackTrace().toString());
+
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);

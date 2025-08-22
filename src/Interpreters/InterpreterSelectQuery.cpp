@@ -572,6 +572,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         got_storage_from_query = true;
     }
 
+    LOG_DEBUG(
+        &Poco::Logger::get("InterpreterSelectQuery stacktrace check"),
+        "Storage: {}, Stacktrace: {}",
+        storage ? storage->getStorageID().getNameForLogs() : "unknown",
+        StackTrace().toString());
+
     if (storage)
     {
         if (storage->updateExternalDynamicMetadataIfExists(context))

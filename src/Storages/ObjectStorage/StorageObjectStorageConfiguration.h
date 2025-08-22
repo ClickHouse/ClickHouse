@@ -228,6 +228,8 @@ public:
         return false;
     }
 
+    StorageMetadataPtr getInMemoryMetadataPtr() const {  }
+
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
