@@ -4,8 +4,8 @@
 #include <AggregateFunctions/SingleValueData.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
+
 
 namespace DB
 {
