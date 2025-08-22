@@ -32,7 +32,7 @@ namespace DB
 class DataTypeTime final : public DataTypeNumberBase<Int32>
 {
 public:
-    explicit DataTypeTime(const String & time_zone_name = "");
+    explicit DataTypeTime() = default;
 
     bool hasExplicitTimeZone() const { return false; }
     const DateLUTImpl & getTimeZone() const;

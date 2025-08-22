@@ -1218,7 +1218,7 @@ struct ConvertThroughParsing
             }
             else if constexpr (to_time64)
             {
-                ToDataType check_bounds_in_ctor(scale, String{});
+                ToDataType check_bounds_in_ctor(scale);
             }
             else
             {
@@ -2795,17 +2795,13 @@ public:
         }
 
         // toString(DateTime or DateTime64, [timezone: String])
-        if ((std::is_same_v<Name, NameToString> && !arguments.empty() && (isDateTime64(arguments[0].type) || isDateTime(arguments[0].type) || isTime64(arguments[0].type) || isTime(arguments[0].type)))
+        if ((std::is_same_v<Name, NameToString> && !arguments.empty() && (isDateTime64(arguments[0].type) || isDateTime(arguments[0].type)))
             // toUnixTimestamp(value[, timezone : String])
             || std::is_same_v<Name, NameToUnixTimestamp>
             // toDate(value[, timezone : String])
             || std::is_same_v<ToDataType, DataTypeDate> // TODO: shall we allow timestamp argument for toDate? DateTime knows nothing about timezones and this argument is ignored below.
             // toDate32(value[, timezone : String])
             || std::is_same_v<ToDataType, DataTypeDate32>
-            // toTime(value[, timezone : String])
-            || std::is_same_v<ToDataType, DataTypeTime>
-            // toTime64(value, scale : Integer[, timezone: String])
-            || std::is_same_v<ToDataType, DataTypeTime64>
             // toDateTime(value[, timezone: String])
             || std::is_same_v<ToDataType, DataTypeDateTime>
             // toDateTime64(value, scale : Integer[, timezone: String])
@@ -3207,17 +3203,26 @@ public:
 
         if (isDateTime64<Name, ToDataType>(arguments) || isTime64<Name, ToDataType>(arguments))
         {
-            validateFunctionArguments(*this, arguments,
-                FunctionArgumentDescriptors{{"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}},
-                // optional
-                FunctionArgumentDescriptors{
-                    {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"},
-                    {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or FixedString"},
-                });
+            const auto required = FunctionArgumentDescriptors{
+                {"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+            };
+            const auto precision_opt = FunctionArgumentDescriptors{
+                {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"}
+            };
+            const auto precision_with_timezone_opt = FunctionArgumentDescriptors{
+                {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"},
+                {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or FixedString"}
+            };
+
+            if (isTime64<Name, ToDataType>(arguments))
+                validateFunctionArguments(*this, arguments, required, precision_opt);
+            else
+                validateFunctionArguments(*this, arguments, required, precision_with_timezone_opt);
 
             UInt64 scale = (to_datetime64 || to_time64) ? DataTypeDateTime64::default_scale : 0;
             if (arguments.size() > 1)
                 scale = extractToDecimalScale(arguments[1]);
+
             const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
 
             if (isTime64<Name, ToDataType>(arguments))

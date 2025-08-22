@@ -136,7 +136,7 @@ static DataTypePtr createTime(const ASTPtr & arguments)
 
     /// If scale is defined, the data type is Time when scale = 0 otherwise the data type is Time64
     if (scale && scale.value() != 0)
-        return std::make_shared<DataTypeTime64>(scale.value(), "");
+        return std::make_shared<DataTypeTime64>(scale.value());
 
     return std::make_shared<DataTypeTime>();
 }
@@ -158,7 +158,7 @@ static DataTypePtr createTime64(const ASTPtr & arguments)
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Specifying timezone for Time64 type is not allowed");
 
-    return std::make_shared<DataTypeTime64>(scale, "");
+    return std::make_shared<DataTypeTime64>(scale);
 }
 
 void registerDataTypeTime(DataTypeFactory & factory)

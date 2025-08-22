@@ -14,14 +14,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-DataTypeTime::DataTypeTime(const String & time_zone_name)
-{
-    if (!time_zone_name.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Specifying timezone for Time type is not allowed");
-}
-
 String DataTypeTime::doGetName() const
 {
     return "Time";
