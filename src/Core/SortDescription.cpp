@@ -141,7 +141,8 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
     for (const auto & type : sort_description_types)
     {
         auto nested_type = removeNullable(type);
-        if (!type->createColumn()->isComparatorCompilable() || (!canBeNativeType(*type) && (!WhichDataType(nested_type).isString())))
+        if (!type->createColumn()->isComparatorCompilable() ||
+            (!canBeNativeType(*type) && !WhichDataType(nested_type).isString() && !WhichDataType(nested_type).isFixedString()))
             return;
     }
 
