@@ -80,7 +80,7 @@ public:
     Catalog()
         : client_hostname("localhost")
         , server_hostname("localhost")
-        , path("")
+        , path()
         , region()
         , port(0)
     {
