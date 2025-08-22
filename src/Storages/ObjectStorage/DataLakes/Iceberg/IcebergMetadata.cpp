@@ -753,6 +753,27 @@ SinkToStoragePtr IcebergMetadata::write(
             "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
     }
 }
+
+ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_info) const
+{
+    IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
+    if (!iceberg_object_info)
+        return nullptr;
+    auto configuration_ptr = configuration.lock();
+    if (Poco::toLower(configuration_ptr->format) != "parquet")
+        return nullptr;
+
+    return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->underlying_format_read_schema_id);
+}
+
+ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema() const
+{
+    auto configuration_ptr = configuration.lock();
+    if (Poco::toLower(configuration_ptr->format) != "parquet")
+        return nullptr;
+    SharedLockGuard lock(mutex);
+    return persistent_components.schema_processor->getColumnMapperById(relevant_snapshot_schema_id);
+}
 }
 
 #endif

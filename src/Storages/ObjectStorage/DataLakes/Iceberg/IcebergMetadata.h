@@ -92,28 +92,9 @@ public:
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
-    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override
-    {
-        IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
-        if (!iceberg_object_info)
-            return nullptr;
-        SharedLockGuard lock(mutex);
-        auto configuration_ptr = configuration.lock();
-        if (Poco::toLower(configuration_ptr->format) != "parquet")
-            return nullptr;
+    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
-        return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->underlying_format_read_schema_id);
-    }
-
-    ColumnMapperPtr getColumnMapperForCurrentSchema() const override
-    {
-        SharedLockGuard lock(mutex);
-        auto configuration_ptr = configuration.lock();
-        if (Poco::toLower(configuration_ptr->format) != "parquet")
-            return nullptr;
-        return persistent_components.schema_processor->getColumnMapperById(relevant_snapshot_schema_id);
-    }
-
+    ColumnMapperPtr getColumnMapperForCurrentSchema() const override;
     SinkToStoragePtr write(
         SharedHeader sample_block,
         const StorageID & table_id,
@@ -159,9 +140,6 @@ private:
     Iceberg::IcebergDataSnapshotPtr relevant_snapshot TSA_GUARDED_BY(mutex);
     Int64 relevant_snapshot_id TSA_GUARDED_BY(mutex) {-1};
     CompressionMethod metadata_compression_method;
-
-
-    ColumnMapperPtr column_mapper;
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
