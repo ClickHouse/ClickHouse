@@ -2886,34 +2886,32 @@ void ReadFromMergeTree::describeProjections(JSONBuilder::JSONMap & map) const
 }
 
 
-void ReadFromMergeTree::registerColumnsChanges(
-    const std::vector<std::string> & removed_columns,
-    const std::vector<std::string> & new_columns)
+void ReadFromMergeTree::registerColumnsChanges(const Names & removed_columns, const Names & added_columns)
 {
-    size_t changes_counter = 0;
+    size_t changes = 0;
 
     /// Remove the columns. As defensive strategy I ensure that the columns exist
-    for (const std::string & removed_column : removed_columns)
+    for (const auto & removed_column : removed_columns)
     {
         const auto it = std::ranges::find(all_column_names, removed_column);
         chassert(it != all_column_names.end());
 
         all_column_names.erase(it);
-        ++changes_counter;
+        ++changes;
     }
 
     /// Now insert the new columns. Unlike the previous ones, these bay exist, in that case I do nothing.
-    for (const std::string & new_column : new_columns)
+    for (const auto & added_column : added_columns)
     {
-        const auto it = std::ranges::find(all_column_names, new_column);
+        const auto it = std::ranges::find(all_column_names, added_column);
         if (it != all_column_names.end())
             continue;
 
-        all_column_names.emplace(it, new_column);
-        ++changes_counter;
+        all_column_names.emplace(it, added_column);
+        ++changes;
     }
 
-    if (output_header != nullptr && changes_counter > 0)
+    if (output_header != nullptr && changes > 0)
     {
         output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
             storage_snapshot->getSampleBlockForColumns(all_column_names),
