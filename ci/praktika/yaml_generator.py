@@ -278,7 +278,7 @@ class PullRequestPushYamlGen:
             job_name = job.name
             job_addons = []
 
-            job_addons.append(AltinityWorkflowTemplates.JOB_SETUP_STEPS)
+            job_addons.append(AltinityWorkflowTemplates.JOB_SETUP_STEPS.format(JOB_NAME_GH = job_name))
             if job_name == Settings.CI_CONFIG_JOB_NAME:
                 job_addons.append(AltinityWorkflowTemplates.ADDITIONAL_CI_CONFIG_STEPS)
 
