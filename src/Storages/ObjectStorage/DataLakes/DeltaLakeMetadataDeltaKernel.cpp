@@ -114,38 +114,35 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// Read schema is different from table schema in case:
     /// 1. we have partition columns (they are not stored in the actual data)
     /// 2. columnMapping.mode = 'name' or 'id'.
-    /// So we add partition columns to read schema and put it together into format_header.
-    /// Partition values will be added to result data right after data is read.
+
     DB::NameToNameMap physical_names_map;
-    DB::NameSet read_columns;
+    DB::NamesAndTypesList read_schema;
     {
         std::lock_guard lock(table_snapshot_mutex);
         physical_names_map = table_snapshot->getPhysicalNamesMap();
-        read_columns = table_snapshot->getReadSchema().getNameSet();
+        read_schema = table_snapshot->getReadSchema();
     }
 
     Block format_header;
+    info.requested_columns.clear();
     for (auto && column_with_type_and_name : info.format_header)
     {
         auto physical_name = DeltaLake::getPhysicalName(column_with_type_and_name.name, physical_names_map);
-        if (!read_columns.contains(physical_name))
+        auto name_and_type = read_schema.tryGetByName(physical_name);
+        if (!name_and_type.has_value())
         {
             LOG_TEST(log, "Filtering out non-readable column: {}", column_with_type_and_name.name);
             continue;
         }
-        column_with_type_and_name.name = physical_name;
-        format_header.insert(std::move(column_with_type_and_name));
+        ColumnWithTypeAndName result_column(name_and_type->type->createColumn(), name_and_type->type, name_and_type->name);
+        format_header.insert(std::move(result_column));
+        info.requested_columns.push_back(name_and_type.value());
     }
     info.format_header = std::move(format_header);
 
-    /// Update requested columns to reference actual physical column names.
-    if (!physical_names_map.empty())
-    {
-        for (auto & [column_name, _] : info.requested_columns)
-            column_name = DeltaLake::getPhysicalName(column_name, physical_names_map);
-    }
-
-    LOG_TEST(log, "Format header: {}", info.format_header.dumpNames());
+    LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
+    LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());
+    LOG_TEST(log, "Requested columns: {}", info.requested_columns.toString());
     return info;
 }
 
