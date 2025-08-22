@@ -475,7 +475,6 @@ void ColumnObject::insert(const Field & x)
                 WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
                 getDynamicSerialization()->serializeBinary(value_field, value_buf, getFormatSettings());
             }
-            shared_data_values_chars.push_back(0);
             shared_data_values->getOffsets().push_back(shared_data_values_chars.size());
         }
     }
@@ -770,7 +769,6 @@ void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_dat
         WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
         getDynamicSerialization()->serializeBinary(column, n, value_buf, getFormatSettings());
     }
-    shared_data_values_chars.push_back(0);
     shared_data_values->getOffsets().push_back(shared_data_values_chars.size());
 }
 

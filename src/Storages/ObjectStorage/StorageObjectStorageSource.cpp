@@ -502,8 +502,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
         /// Instead, we use special ConstChunkGenerator that will generate chunks
         /// with max_block_size rows until total number of rows is reached.
+
+        auto names_and_types = read_from_format_info.columns_description.getAllPhysical();
+        ColumnsWithTypeAndName columns;
+        for (const auto & [name, type] : names_and_types)
+            columns.emplace_back(type->createColumn(), type, name);
         builder.init(Pipe(std::make_shared<ConstChunkGenerator>(
-                              std::make_shared<const Block>(read_from_format_info.format_header), *num_rows_from_cache, max_block_size)));
+                              std::make_shared<const Block>(columns), *num_rows_from_cache, max_block_size)));
     }
     else
     {
@@ -552,12 +557,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        if (object_info->hasPositionDeleteTransformer())
-        {
-            builder.addSimpleTransform(
-                [file_iterator, object_info, object_storage, &context_, &format_settings](const SharedHeader & header)
-                { return object_info->getPositionDeleteTransformer(object_storage, header, format_settings, context_); });
-        }
+        configuration->addDeleteTransformers(object_info, builder, format_settings, context_);
 
         std::optional<ActionsDAG> transformer;
         if (object_info->data_lake_metadata && object_info->data_lake_metadata->transform)

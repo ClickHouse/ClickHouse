@@ -89,7 +89,7 @@ private:
 
             // convert to std::string and get the c_str to have the delimiting \0 at the end.
             auto h3index_str = std::string(reinterpret_cast<const char *>(h3index.data), h3index.size);
-            res_data[row_num] = stringToH3(h3index_str.c_str());
+            res_data[row_num] = stringToH3(h3index_str.data());
 
             if (res_data[row_num] == 0)
             {

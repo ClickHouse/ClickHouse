@@ -186,6 +186,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.infer_array_of_dynamic_from_array_of_different_values = settings[Setting::input_format_json_infer_array_of_dynamic_from_array_of_different_types];
     format_settings.json.write_map_as_array_of_tuples = settings[Setting::output_format_json_map_as_array_of_tuples];
     format_settings.json.read_map_as_array_of_tuples = settings[Setting::input_format_json_map_as_array_of_tuples];
+    format_settings.json.json_type_escape_dots_in_keys = settings[Setting::json_type_escape_dots_in_keys];
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];

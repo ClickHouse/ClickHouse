@@ -11,6 +11,8 @@
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -139,13 +141,11 @@ public:
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
-    virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const;
-
-    virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & /*object_info*/,
-        const SharedHeader & /*header*/,
-        const std::optional<FormatSettings> & /*format_settings*/,
-        ContextPtr /*context_*/) const;
+    virtual void addDeleteTransformers(
+        ObjectInfoPtr object_info,
+        QueryPipelineBuilder & builder,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr local_context) const;
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,
@@ -208,6 +208,9 @@ public:
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
         const std::optional<FormatSettings> & /*format_settings*/) {}
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) {}
+
+    virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) {}
+    virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {

@@ -111,9 +111,10 @@ static struct InitFiu
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
     REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
     REGULAR(output_format_sleep_on_progress) \
+    REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
-    ONCE(smt_commit_exception_before_op)
-
+    ONCE(smt_commit_exception_before_op) \
+    REGULAR(refresh_task_delay_update_coordination_state_running)
 
 namespace FailPoints
 {
