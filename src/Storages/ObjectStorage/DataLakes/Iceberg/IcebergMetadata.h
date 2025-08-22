@@ -136,11 +136,12 @@ private:
 
     mutable SharedMutex mutex;
 
-    Int32 last_metadata_version TSA_GUARDED_BY(mutex);
 
-    Int32 relevant_snapshot_schema_id TSA_GUARDED_BY(mutex);
-    Iceberg::IcebergDataSnapshotPtr relevant_snapshot TSA_GUARDED_BY(mutex);
-    Int64 relevant_snapshot_id TSA_GUARDED_BY(mutex) {-1};
+    // Int32 last_metadata_version TSA_GUARDED_BY(mutex);
+    // Int32 relevant_snapshot_schema_id TSA_GUARDED_BY(mutex);
+    // Int64 relevant_snapshot_id TSA_GUARDED_BY(mutex) {-1};
+    Iceberg::IcebergTableStateSnapshot relevant_table_state_snapshot TSA_GUARDED_BY(mutex);
+    Iceberg::IcebergDataSnapshotPtr relevant_data_snapshot TSA_GUARDED_BY(mutex);
     CompressionMethod metadata_compression_method;
 
 
