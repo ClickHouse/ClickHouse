@@ -227,15 +227,14 @@ void deserializeIndexesAndCollectPathsImpl(ColumnString & paths_column, ReadBuff
         readBinaryLittleEndian(index, istr);
 
         const String & path = paths[index];
-        offset += path.size() + 1; /// +1 for 0 byte at the end.
+        offset += path.size();
         offsets.push_back(offset);
 
         /// Reallocate data if needed.
         if (unlikely(offset > data.size()))
             data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
 
-        memcpy(&data[offset - path.size() - 1], path.data(), path.size());
-        data[offset - 1] = 0;
+        memcpy(&data[offset - path.size()], path.data(), path.size());
     }
 
     data.resize_exact(offset);
