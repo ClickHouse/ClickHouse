@@ -346,8 +346,6 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
     }
     if (timestamp_changed)
     {
-        Int64 closest_timestamp = 0;
-        Int64 query_timestamp = local_context->getSettingsRef()[Setting::iceberg_timestamp_ms];
         if (!metadata_object->has(f_snapshot_log))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -355,6 +353,8 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
                 configuration_ptr->getPathForRead().path);
         std::optional<Int64> current_snapshot_id = std::nullopt;
         {
+            Int64 closest_timestamp = 0;
+            Int64 query_timestamp = local_context->getSettingsRef()[Setting::iceberg_timestamp_ms];
             auto snapshot_log = metadata_object->get(f_snapshot_log).extract<Poco::JSON::Array::Ptr>();
             for (size_t i = 0; i < snapshot_log->size(); ++i)
             {
