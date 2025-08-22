@@ -43,8 +43,6 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn **, size_t, Arena *) const override
     {
-        if (!place)
-            return;
         ++data(place).count;
     }
 
@@ -54,8 +52,6 @@ public:
         size_t length,
         Arena * /*arena*/) const override
     {
-        if (!place)
-            return;
         data(place).count += length;
     }
 
@@ -67,8 +63,6 @@ public:
         Arena *,
         ssize_t if_argument_pos) const override
     {
-        if (!place)
-            return;
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
@@ -89,8 +83,6 @@ public:
         Arena *,
         ssize_t if_argument_pos) const override
     {
-        if (!place)
-            return;
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
@@ -118,37 +110,27 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        if (!place)
-            return;
         data(place).count += data(rhs).count;
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        if (!place)
-            return;
         writeVarUInt(data(place).count, buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        if (!place)
-            return;
         readVarUInt(data(place).count, buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        if (!place)
-            return;
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
     /// Reset the state to specified value. This function is not the part of common interface.
     static void set(AggregateDataPtr __restrict place, UInt64 new_count)
     {
-        if (!place)
-            return;
         data(place).count = new_count;
     }
 
@@ -164,7 +146,6 @@ public:
     llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override;
 
 #endif
-
 };
 
 }
