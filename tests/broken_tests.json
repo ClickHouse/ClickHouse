@@ -64,34 +64,28 @@
         "reason": "INVESTIGATE - Memory limit exceeded",
         "message": "DB::Exception: (total) memory limit exceeded:"
     },
-    "test_database_hms/test.py::test_list_tables": {
+    "02241_filesystem_cache_on_write_operations": {
         "reason": "INVESTIGATE - Unstable?"
     },
-    "test_database_hms/test.py::test_many_namespaces": {
-        "reason": "INVESTIGATE - Unstable?"
-    },
-    "test_database_hms/test.py::test_hide_sensitive_info": {
-        "reason": "INVESTIGATE - Unstable?"
-    },
-    "test_database_hms/test.py::test_tables_with_same_location": {
-        "reason": "INVESTIGATE - Unstable?"
-    },
-    "test_database_hms/test.py::test_select": {
-        "reason": "INVESTIGATE - Unstable?"
+    "01903_correct_block_size_prediction_with_default": {
+        "reason": "INVESTIGATE - Timeout. Unstable?"
     },
     "test_storage_rabbitmq/test.py::test_rabbitmq_sharding_between_queues_publish": {
         "reason": "INVESTIGATE - Unstable?"
     },
     "test_backup_restore_on_cluster/test_different_versions.py::test_different_versions": {
-        "reason": "INVESTIGATE - NETLINK_ERROR ?",
+        "reason": "INVESTIGATE - NETLINK_ERROR",
         "message": "NETLINK_ERROR"
     },
     "test_backup_restore_on_cluster/test_cancel_backup.py::test_shutdown_cancels_backup": {
-        "reason": "INVESTIGATE - NETLINK_ERROR ?",
+        "reason": "INVESTIGATE - NETLINK_ERROR",
         "message": "NETLINK_ERROR"
     },
     "test_backup_restore_on_cluster/test_cancel_backup.py::test_cancel_backup_with_settings": {
-        "reason": "INVESTIGATE - NETLINK_ERROR ?",
+        "reason": "INVESTIGATE - NETLINK_ERROR",
         "message": "NETLINK_ERROR"
+    },
+    "test_overcommit_tracker/test.py::test_user_overcommit": {
+        "reason": "INVESTIGATE - Unstable?"
     }
 }
