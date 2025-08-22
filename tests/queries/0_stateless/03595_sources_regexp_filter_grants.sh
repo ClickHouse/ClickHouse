@@ -48,6 +48,7 @@ ${CLICKHOUSE_CLIENT} --query "REVOKE READ ON URL('foo.*') FROM $user1";
 
 echo '--invalid regexp--'
 (( $(${CLICKHOUSE_CLIENT} --user $user1 --query "GRANT READ ON URL('(\w+) \1') TO $user1;" 2>&1 | grep -c "Syntax error") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+(( $(${CLICKHOUSE_CLIENT} --user $user1 --query "GRANT READ ON URL('(?Pempty_name)') TO $user1;" 2>&1 | grep -c "Syntax error") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
 
 ${CLICKHOUSE_CLIENT} <<EOF

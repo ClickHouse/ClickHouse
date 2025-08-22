@@ -28,7 +28,9 @@ namespace
             if (!parseIdentifierOrStringLiteral(pos, expected, parameter_regexp))
                 return false;
 
-            if (const re2::RE2 re(parameter_regexp); !re.ok())
+            re2::RE2::Options options;
+            options.set_log_errors(false);
+            if (const re2::RE2 re(parameter_regexp, options); !re.ok())
             {
                 expected.add(pos, "valid regexp");
                 return false;
