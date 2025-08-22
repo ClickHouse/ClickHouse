@@ -29,6 +29,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Config Workflow"
 
       - name: Note report location to summary
         env:
@@ -78,6 +82,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Dockers Build (amd)"
 
       - name: Prepare env script
         run: |
@@ -119,6 +127,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Dockers Build (arm)"
 
       - name: Prepare env script
         run: |
@@ -160,6 +172,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (fuzzers)"
 
       - name: Prepare env script
         run: |
@@ -201,6 +217,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "libFuzzer tests"
 
       - name: Prepare env script
         run: |
