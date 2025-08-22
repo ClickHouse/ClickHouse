@@ -34,125 +34,22 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
-template <typename T>
-concept FunctionIndexConcept = requires(T t)
+class FunctionHasTokenIndex : public IFunction, public FullTextSearchFunctionMixin
 {
-    { T::name } -> std::convertible_to<std::string_view>;
-    typename T::ResultType;
-
-} && std::is_arithmetic_v<typename T::ResultType>;
-
-
-template <FunctionIndexConcept Impl>
-class FunctionSearchTextIndex : public IFunction, public FullTextSearchFunctionMixin
-{
-    /// Helper function to extract the index and conditions safely.
-    /// This performs all the checks and searches locally, so external code shouldn't check for them.
-    static std::pair<const MergeTreeIndexPtr, const MergeTreeIndexConditionGin *> extractIndexAndCondition(
-        const std::shared_ptr<const UsefulSkipIndexes> skip_indexes, String index_name)
-    {
-        auto it = std::ranges::find_if(
-            skip_indexes->useful_indices,
-            [index_name](const UsefulSkipIndexes::DataSkippingIndexAndCondition & index_and_condition)
-            {
-                return (index_and_condition.index->index.name == index_name);
-            }
-        );
-
-        if (it == skip_indexes->useful_indices.end()) [[unlikely]]
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Index named: {} does not exist.", index_name);
-
-        const MergeTreeIndexPtr index_helper = it->index;
-        if (index_helper == nullptr) [[unlikely]]
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index named: {} is registered as null.", index_name);
-
-        if (it->index->index.type != "text") [[unlikely]]
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Index named: {} is not a text index.", index_name);
-
-        const MergeTreeIndexConditionGin * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(it->condition.get());
-        if (gin_filter_condition == nullptr) [[unlikely]]
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Condition for text index {} is incorrect.", index_name);
-
-        return {index_helper, gin_filter_condition};
-    }
-
-    template <typename T>
-    const ColumnVector<T> * extractColumnAndCheck(const ColumnsWithTypeAndName & arguments, size_t pos) const
-    {
-        const ColumnVector<T> * col_index_vector = checkAndGetColumn<ColumnVector<T>>(arguments[pos].column.get());
-
-        if (!col_index_vector) [[unlikely]]
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be {}.",
-                arguments[pos].type->getName(),
-                pos + 1,
-                getName(),
-                col_index_vector->getFamilyName());
-
-        return col_index_vector;
-    }
-
-
-    static void postingArrayToOutput(
-        const std::vector<UInt32> matching_rows,
-        const ColumnVector<UInt64> * col_part_offset_vector,
-        PaddedPODArray<typename Impl::ResultType> & result)
-    {
-        chassert(!matching_rows.empty());
-        const PaddedPODArray<UInt64> & offsets = col_part_offset_vector->getData();
-
-        /// We selected the ranges below to end in an offset position. So the first match (if any) cannot be after offsets.end()
-        const UInt64 * it = std::lower_bound(offsets.begin(), offsets.end(), matching_rows.front() - 1);
-        chassert(it != offsets.end());
-
-        const UInt64 * const end_it = std::upper_bound(it, offsets.end(), matching_rows.back());
-        const UInt64 last_offset = (end_it == offsets.end()) ? offsets.back() + 1 : *end_it;
-
-        for (UInt32 row : matching_rows)
-        {
-            const size_t match_offset = row - 1;
-
-            if (match_offset >= last_offset)
-                return;
-
-            while (*it < match_offset)
-                std::advance(it, 1);
-
-            /// Entry not in requested offsets (there is a hole in offsets)
-            if (*it > match_offset)
-                continue;
-
-            chassert(it != end_it);
-
-            const size_t idx = std::distance(offsets.begin(), it);
-            chassert(result[idx] == 0);
-            result[idx] = 1;
-        }
-    }
-
-
 public:
-    static constexpr auto name = Impl::name;
-    using ResultType = typename Impl::ResultType;
+    static constexpr auto name = "_hasToken_index";
 
-    explicit FunctionSearchTextIndex(ContextPtr context_)
+    explicit FunctionHasTokenIndex(ContextPtr context_)
         : FullTextSearchFunctionMixin(FullTextSearchFunctionMixin::IsReplaceable::IsReplacement, context_)
     {}
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionSearchTextIndex<Impl>>(context_); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionHasTokenIndex>(context_); }
 
     String getName() const override { return name; }
-
     bool isVariadic() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     size_t getNumberOfArguments() const override { return 4; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeNumber<ResultType>>(); }
-
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeNumber<UInt8>>(); }
     bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -160,7 +57,7 @@ public:
         if (arguments.size() != getNumberOfArguments())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} expects at least 2 arguments", getName());
 
-        auto col_res = ColumnVector<ResultType>::create(input_rows_count, ResultType());
+        auto col_res = ColumnVector<UInt8>::create(input_rows_count, UInt8());
 
         /// This is a not totally save method to ensure that this works.
         /// Apparently when input_rows_count == 0 the indexes are not constructed yet.
@@ -295,17 +192,90 @@ public:
 
         return col_res;
     }
+    /// Helper function to extract the index and conditions safely.
+    /// This performs all the checks and searches locally, so external code shouldn't check for them.
+    static std::pair<const MergeTreeIndexPtr, const MergeTreeIndexConditionGin *> extractIndexAndCondition(
+        const std::shared_ptr<const UsefulSkipIndexes> skip_indexes, String index_name)
+    {
+        auto it = std::ranges::find_if(
+            skip_indexes->useful_indices,
+            [index_name](const UsefulSkipIndexes::DataSkippingIndexAndCondition & index_and_condition)
+            {
+                return (index_and_condition.index->index.name == index_name);
+            }
+        );
+
+        if (it == skip_indexes->useful_indices.end()) [[unlikely]]
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Index named: {} does not exist.", index_name);
+
+        const MergeTreeIndexPtr index_helper = it->index;
+        if (index_helper == nullptr) [[unlikely]]
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index named: {} is registered as null.", index_name);
+
+        if (it->index->index.type != "text") [[unlikely]]
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Index named: {} is not a text index.", index_name);
+
+        const MergeTreeIndexConditionGin * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(it->condition.get());
+        if (gin_filter_condition == nullptr) [[unlikely]]
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Condition for text index {} is incorrect.", index_name);
+
+        return {index_helper, gin_filter_condition};
+    }
+
+    template <typename T>
+    const ColumnVector<T> * extractColumnAndCheck(const ColumnsWithTypeAndName & arguments, size_t pos) const
+    {
+        const ColumnVector<T> * col_index_vector = checkAndGetColumn<ColumnVector<T>>(arguments[pos].column.get());
+
+        if (!col_index_vector) [[unlikely]]
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be {}.",
+                arguments[pos].type->getName(),
+                pos + 1,
+                getName(),
+                col_index_vector->getFamilyName());
+
+        return col_index_vector;
+    }
+
+
+    static void postingArrayToOutput(
+        const std::vector<UInt32> matching_rows,
+        const ColumnVector<UInt64> * col_part_offset_vector,
+        PaddedPODArray<UInt8> & result)
+    {
+        chassert(!matching_rows.empty());
+        const PaddedPODArray<UInt64> & offsets = col_part_offset_vector->getData();
+
+        /// We selected the ranges below to end in an offset position. So the first match (if any) cannot be after offsets.end()
+        const UInt64 * it = std::lower_bound(offsets.begin(), offsets.end(), matching_rows.front() - 1);
+        chassert(it != offsets.end());
+
+        const UInt64 * const end_it = std::upper_bound(it, offsets.end(), matching_rows.back());
+        const UInt64 last_offset = (end_it == offsets.end()) ? offsets.back() + 1 : *end_it;
+
+        for (UInt32 row : matching_rows)
+        {
+            const size_t match_offset = row - 1;
+
+            if (match_offset >= last_offset)
+                return;
+
+            while (*it < match_offset)
+                std::advance(it, 1);
+
+            /// Entry not in requested offsets (there is a hole in offsets)
+            if (*it > match_offset)
+                continue;
+
+            chassert(it != end_it);
+
+            const size_t idx = std::distance(offsets.begin(), it);
+            chassert(result[idx] == 0);
+            result[idx] = 1;
+        }
+    }
 };
-
-
-struct HasTokenIndexImpl
-{
-    static constexpr auto name = "_hasToken_index";
-    using ResultType = UInt8;
-
-};
-
-
-using FunctionHasTokenIndex = FunctionSearchTextIndex<HasTokenIndexImpl>;
 
 }
