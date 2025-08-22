@@ -156,7 +156,9 @@ std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getMetadataPaths
             paths.push_back("buckets/" + toString(i));
         return paths;
     }
-    return {"failed", "processed", "processing", "persistent_processing"};
+    /// We do not return "processed" node here,
+    /// because we do not want it to be created in advance.
+    return {"failed", "processing", "persistent_processing"};
 }
 
 bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
@@ -392,6 +394,17 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             processing_id_version = set_response->stat.version;
             return {true, FileStatus::State::None};
         }
+
+        /// Requests:
+        /// 1. check failed node does not exist
+        /// 2. check processing node does not exist
+        /// 3. create processing id node if not exists
+        /// 4. set processing id
+        /// 5. if has bucket, check bucket version
+        /// 6. check processed node version did not change
+
+        auto failed_idx = zkutil::getFailedOpIndex(code, responses);
+        LOG_DEBUG(log, "Code: {}, failed idx: {}, failed path: {}", code, failed_idx, requests[failed_idx]->getPath());
 
         if (has_request_failed(failed_path_doesnt_exist_idx))
             return {false, FileStatus::State::Failed};
