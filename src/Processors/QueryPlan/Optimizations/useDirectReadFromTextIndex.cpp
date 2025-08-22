@@ -83,7 +83,7 @@ std::unordered_map<String, IndexInfo> getIndexInfosForColumns(const ReadFromMerg
 ///
 /// For a query like
 ///     SELECT count() FROM table WHERE hasToken(text_col, 'token')
-/// if 1) text_col has an associated text index called text_col_idx, and 2) hasToken is an optimizable function (according to
+/// if 1) text_col has an associated text index called text_col_idx, and 2) hasToken is an replaceable function (according to
 /// isReplaceableFunction), then this class replaces some nodes in the ActionsDAG (and references to them) to generate an
 /// equivalent query
 ///     SELECT count() FROM table where _hasToken_index('text_col_idx', 'token', _part_index, _part_offset)
@@ -239,7 +239,7 @@ private:
         const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get());
         chassert(adaptor);
         const auto function = std::dynamic_pointer_cast<FullTextSearchFunctionMixin>(adaptor->getFunction());
-        if (function == nullptr || function->info != FullTextSearchFunctionMixin::Info::Optimizable)
+        if (function == nullptr || function->is_replaceable != FullTextSearchFunctionMixin::IsReplaceable::Yes)
             return false;
 
         chassert(function->getContext() != nullptr);

@@ -472,7 +472,7 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
     return RPNBuilderTreeNode(dag_node->children[index], tree_context);
 }
 
-bool RPNBuilderFunctionTreeNode::isOptimizedIndexFunction() const
+bool RPNBuilderFunctionTreeNode::isReplacedFullTextSearchFunction() const
 {
     if (dag_node && dag_node->function_base)
     {
@@ -484,7 +484,7 @@ bool RPNBuilderFunctionTreeNode::isOptimizedIndexFunction() const
         if (function == nullptr)
             return false;
 
-        return (function->info == FullTextSearchFunctionMixin::Info::Optimized);
+        return (function->is_replaceable == FullTextSearchFunctionMixin::IsReplaceable::IsReplacement);
     }
 
     return false;

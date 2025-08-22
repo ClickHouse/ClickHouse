@@ -22,7 +22,7 @@ using FunctionHasToken = FunctionsStringSearch<
     HasTokenImpl<NameHasToken, Volnitsky, false>,
     ExecutionErrorPolicy::Throw,
     HaystackNeedleOrderIsConfigurable::No,
-    FullTextSearchFunctionMixin::Info::Optimizable>;
+    FullTextSearchFunctionMixin::IsReplaceable::Yes>;
 
 using FunctionHasTokenOrNull
     = FunctionsStringSearch<HasTokenImpl<NameHasTokenOrNull, Volnitsky, false>, ExecutionErrorPolicy::Null>;

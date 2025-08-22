@@ -8,19 +8,19 @@ namespace DB
 class FullTextSearchFunctionMixin
 {
 public:
-    enum class Info
+    enum class IsReplaceable
     {
-        None,
-        Optimizable,
-        Optimized
+        No,
+        Yes,
+        IsReplacement
     };
 
-    const Info info;
+    const IsReplaceable is_replaceable;
 
     ContextPtr getContext() const { return context; }
 
-    FullTextSearchFunctionMixin(Info info_, ContextPtr context_)
-        : info(info_)
+    FullTextSearchFunctionMixin(IsReplaceable is_replaceable_, ContextPtr context_)
+        : is_replaceable(is_replaceable_)
         , context(context_)
     {}
 

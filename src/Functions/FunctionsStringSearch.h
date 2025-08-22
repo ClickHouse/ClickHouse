@@ -87,7 +87,7 @@ enum class HaystackNeedleOrderIsConfigurable : uint8_t
 template <typename Impl,
     ExecutionErrorPolicy execution_error_policy = ExecutionErrorPolicy::Throw,
     HaystackNeedleOrderIsConfigurable haystack_needle_order_is_configurable = HaystackNeedleOrderIsConfigurable::No,
-    FullTextSearchFunctionMixin::Info info_val = FullTextSearchFunctionMixin::Info::None>
+    FullTextSearchFunctionMixin::IsReplaceable replaceable = FullTextSearchFunctionMixin::IsReplaceable::No>
 class FunctionsStringSearch : public IFunction, public FullTextSearchFunctionMixin
 {
 private:
@@ -105,7 +105,7 @@ public:
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionsStringSearch>(context_); }
 
     explicit FunctionsStringSearch(ContextPtr context_)
-        : FullTextSearchFunctionMixin(info_val, context_)
+        : FullTextSearchFunctionMixin(replaceable, context_)
     {
         if constexpr (haystack_needle_order_is_configurable == HaystackNeedleOrderIsConfigurable::Yes)
         {

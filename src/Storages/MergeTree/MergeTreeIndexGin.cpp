@@ -355,7 +355,7 @@ bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node
     {
         const RPNBuilderFunctionTreeNode function = node.toFunctionNode();
 
-        if (function.isOptimizedIndexFunction())
+        if (function.isReplacedFullTextSearchFunction())
             return traverseASTEqualsIndex(function, out);
 
         const std::string function_name = function.getFunctionName();

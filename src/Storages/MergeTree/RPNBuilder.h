@@ -162,7 +162,8 @@ public:
     /// Get function argument at index
     RPNBuilderTreeNode getArgumentAt(size_t index) const;
 
-    bool isOptimizedIndexFunction() const;
+    /// Special stuff for full-text search
+    bool isReplacedFullTextSearchFunction() const;
 };
 
 /** RPN Builder build stack of reverse polish notation elements (RPNElements) required for index analysis.

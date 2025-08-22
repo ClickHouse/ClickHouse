@@ -139,7 +139,7 @@ public:
     using ResultType = typename Impl::ResultType;
 
     explicit FunctionSearchTextIndex(ContextPtr context_)
-        : FullTextSearchFunctionMixin(FullTextSearchFunctionMixin::Info::Optimized, context_)
+        : FullTextSearchFunctionMixin(FullTextSearchFunctionMixin::IsReplaceable::IsReplacement, context_)
     {}
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionSearchTextIndex<Impl>>(context_); }
