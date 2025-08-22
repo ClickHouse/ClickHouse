@@ -542,12 +542,10 @@ void compactIcebergTable(
         backupOldFiles(object_storage_, old_files);
         remove_backups_task = context_->getBufferFlushSchedulePool().createTask("IcebergCompaction", [object_storage_, old_files]
         {
-            std::cerr << "clearBackups\n";
             clearBackups(object_storage_, old_files);
         });
 
         auto remote_backups = context_->getSettingsRef()[Setting::iceberg_remove_backups].totalMilliseconds();
-        std::cerr << "remote_backups " << remote_backups << '\n';
         remove_backups_task->activate();
         remove_backups_task->scheduleAfter(remote_backups);
     }
