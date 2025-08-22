@@ -85,8 +85,8 @@ public:
         /// Parse inputs
         const String index_name = checkAndGetColumnConstStringOrFixedString(index_name_argument.column.get())->getValue<String>();
         const String token = checkAndGetColumnConstStringOrFixedString(token_argument.column.get())->getValue<String>();
-        const ColumnVector<UInt64> * col_part_index_vector = checkAndGetColumn<ColumnVector<UInt64>>(arguments[2].column.get());
-        const ColumnVector<UInt64> * col_part_offset_vector = checkAndGetColumn<ColumnVector<UInt64>>(arguments[3].column.get());
+        const ColumnVector<UInt64> * col_part_index_vector = checkAndGetColumn<ColumnVector<UInt64>>(part_index_argument.column.get());
+        const ColumnVector<UInt64> * col_part_offset_vector = checkAndGetColumn<ColumnVector<UInt64>>(part_offset_argument.column.get());
 
         /// Now search the part
         const size_t part_idx = col_part_index_vector->getElement(0);
