@@ -203,7 +203,7 @@ std::optional<DeleteFileWriteResultWithStats> writeDataFiles(
             write_buffers[partition_key]->finalize();
             result[partition_key].total_bytes = static_cast<Int32>(write_buffers[partition_key]->count());
         }
-        return {result, statistics};
+        return DeleteFileWriteResultWithStats{result, statistics};
     }
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg supports only delete mutations");
 }
