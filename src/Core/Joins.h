@@ -34,6 +34,7 @@ constexpr bool isFull(JoinKind kind)         { return kind == JoinKind::Full; }
 constexpr bool isCrossOrComma(JoinKind kind) { return kind == JoinKind::Comma || kind == JoinKind::Cross; }
 constexpr bool isRightOrFull(JoinKind kind)  { return kind == JoinKind::Right || kind == JoinKind::Full; }
 constexpr bool isLeftOrFull(JoinKind kind)   { return kind == JoinKind::Left  || kind == JoinKind::Full; }
+constexpr bool isLeftOrRightOrFull(JoinKind kind) { return kind == JoinKind::Left || kind == JoinKind::Right || kind == JoinKind::Full; }
 constexpr bool isInnerOrRight(JoinKind kind) { return kind == JoinKind::Inner || kind == JoinKind::Right; }
 constexpr bool isInnerOrLeft(JoinKind kind)  { return kind == JoinKind::Inner || kind == JoinKind::Left; }
 constexpr bool isPaste(JoinKind kind)        { return kind == JoinKind::Paste; }
