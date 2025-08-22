@@ -211,14 +211,16 @@ def write_delta_from_file(spark, path, result_path, mode="overwrite"):
     ).option("delta.columnMapping.mode", "name").save(result_path)
 
 
-def write_delta_from_df(spark, df, result_path, mode="overwrite", partition_by=None):
+def write_delta_from_df(
+    spark, df, result_path, mode="overwrite", partition_by=None, column_mapping="name"
+):
     if partition_by is None:
         df.write.mode(mode).option("compression", "none").option(
-            "delta.columnMapping.mode", "name"
+            "delta.columnMapping.mode", column_mapping
         ).format("delta").save(result_path)
     else:
         df.write.mode(mode).option("compression", "none").format("delta").option(
-            "delta.columnMapping.mode", "name"
+            "delta.columnMapping.mode", column_mapping
         ).partitionBy("a").save(result_path)
 
 
@@ -3378,7 +3380,8 @@ deltaLake(
     )
 
 
-def test_struct(started_cluster):
+@pytest.mark.parametrize("column_mapping", ["", "name"])
+def test_subcolumns(started_cluster, column_mapping):
     node = started_cluster.instances["node1"]
     table_name = randomize_table_name("test_struct")
     spark = started_cluster.spark_session
@@ -3437,6 +3440,13 @@ deltaLake(
     assert (
         "2025-06-04\t('100022','2025-06-04 18:40:56.000000','2025-06-09 21:19:00.364000')\t100022"
         == node.query(f"SELECT * FROM {delta_function} ORDER BY all").strip()
+    )
+
+    assert (
+        "col_x2D1\tNullable(Date32)\t\t\t\t\t\n"
+        "col_x2D2\tTuple(\\n    col_x2D3 Nullable(String),\\n    col_x2D4 Nullable(DateTime64(6)),\\n    col_x2D5 Nullable(DateTime64(6)))\t\t\t\t\t\n"
+        "col_x2D6\tNullable(Int64)"
+        == node.query(f"describe table {delta_function}").strip()
     )
 
     node.query(

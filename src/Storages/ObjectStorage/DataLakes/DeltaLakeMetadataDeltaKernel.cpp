@@ -109,36 +109,72 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     const ContextPtr & context,
     bool supports_subset_of_columns)
 {
-    auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns);
+    /// The below code is similar to what can be found in `prepareReadingFromFormat.cpp`,
+    /// but is adjusted for delta-lake.
+    ReadFromFormatInfo info;
 
     /// Read schema is different from table schema in case:
     /// 1. we have partition columns (they are not stored in the actual data)
     /// 2. columnMapping.mode = 'name' or 'id'.
-
     DB::NameToNameMap physical_names_map;
     DB::NamesAndTypesList read_schema;
+    DB::NamesAndTypesList table_schema;
     {
         std::lock_guard lock(table_snapshot_mutex);
         physical_names_map = table_snapshot->getPhysicalNamesMap();
         read_schema = table_snapshot->getReadSchema();
+        table_schema = table_snapshot->getTableSchema();
     }
 
-    Block format_header;
-    info.requested_columns.clear();
-    for (auto && column_with_type_and_name : info.format_header)
+    Names non_virtual_requested_columns;
+    for (const auto & column_name : requested_columns)
     {
-        auto physical_name = DeltaLake::getPhysicalName(column_with_type_and_name.name, physical_names_map);
-        auto name_and_type = read_schema.tryGetByName(physical_name);
-        if (!name_and_type.has_value())
-        {
-            LOG_TEST(log, "Filtering out non-readable column: {}", column_with_type_and_name.name);
-            continue;
-        }
-        ColumnWithTypeAndName result_column(name_and_type->type->createColumn(), name_and_type->type, name_and_type->name);
-        format_header.insert(std::move(result_column));
-        info.requested_columns.push_back(name_and_type.value());
+        if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
+            info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
+        else
+            non_virtual_requested_columns.push_back(column_name);
     }
-    info.format_header = std::move(format_header);
+
+    /// Create header for Source that will contain all requested columns including virtual at the end
+    /// (because they will be added to the chunk after reading regular columns).
+    info.source_header = storage_snapshot->getSampleBlockForColumns(non_virtual_requested_columns);
+    for (const auto & column : info.requested_virtual_columns)
+        info.source_header.insert({column.type->createColumn(), column.type, column.name});
+
+    /// Set format_header with columns that should be read from data.
+    /// However, we include partition columns in requested_columns,
+    /// because we will insert partition columns into chunk right after it is read from data file,
+    /// so we want it to be verified that chunk contains all the requested columns.
+    for (const auto & column_name : non_virtual_requested_columns)
+    {
+        auto physical_name = DeltaLake::getPhysicalName(column_name, physical_names_map);
+        auto name_and_type = read_schema.tryGetByName(physical_name);
+
+        LOG_TEST(
+            log, "Name: {}, physical name: {}, contained in read schema: {}",
+            column_name, physical_name, name_and_type.has_value());
+
+        if (name_and_type.has_value())
+        {
+            info.requested_columns.push_back(name_and_type.value());
+            ColumnWithTypeAndName result_column(name_and_type->type->createColumn(), name_and_type->type, name_and_type->name);
+            info.format_header.insert(std::move(result_column));
+        }
+        else if (name_and_type = table_schema.tryGetByName(column_name);
+                 name_and_type.has_value())
+        {
+            info.requested_columns.emplace_back(physical_name, name_and_type->type);
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found column in schema: {}", column_name);
+    }
+
+    /// If only virtual columns were requested, just read the smallest column.
+    if (supports_subset_of_columns && non_virtual_requested_columns.empty())
+        non_virtual_requested_columns.push_back(ExpressionActions::getSmallestColumn(table_schema).name);
+
+    info.columns_description = storage_snapshot->getDescriptionForColumns(non_virtual_requested_columns);
+    info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());

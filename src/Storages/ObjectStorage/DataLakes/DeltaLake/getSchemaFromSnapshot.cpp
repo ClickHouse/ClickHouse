@@ -88,7 +88,7 @@ public:
     const DB::Names & getPartitionColumns() const { return partition_columns; }
 
 private:
-    DB::NamesAndTypesList getNamesAndTypesFromList(size_t list_idx, bool with_physical_names);
+    DB::NamesAndTypesList getNamesAndTypesFromList(size_t list_idx);
 
     struct Field
     {
@@ -377,27 +377,22 @@ private:
 SchemaVisitorData::SchemaResult SchemaVisitorData::getSchemaResult()
 {
     SchemaResult result;
-    result.names_and_types = getNamesAndTypesFromList(0, /* with_physical_names */false);
-    //result.physical_schema = getNamesAndTypesFromList(0, /* with_physical_names */true);
+    result.names_and_types = getNamesAndTypesFromList(0);
     chassert(result.names_and_types.size() == type_lists[0]->size());
 
-    //std::list<DB::NameAndTypePair> names_and_types;
-    //SchemaResult result;
     for (size_t i = 0; i < type_lists[0]->size(); ++i)
     {
         const auto & field = (*type_lists[0])[i];
-        //names_and_types.emplace_back(field.name, types[i]);
         if (!field.physical_name.empty())
         {
             [[maybe_unused]] bool inserted = result.physical_names_map.emplace(field.name, field.physical_name).second;
             chassert(inserted);
         }
     }
-    //result.names_and_types = DB::NamesAndTypesList(names_and_types.begin(), names_and_types.end());
     return result;
 }
 
-DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(size_t list_idx, bool with_physical_names)
+DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(size_t list_idx)
 {
     DB::NamesAndTypesList names_and_types;
     for (const auto & field : *type_lists[list_idx])
@@ -439,12 +434,12 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(size_t list_id
             DB::WhichDataType which(field.type);
             if (which.isTuple())
             {
-                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, with_physical_names);
+                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id);
                 type = std::make_shared<DB::DataTypeTuple>(child_names_and_types.getTypes(), child_names_and_types.getNames());
             }
             else if (which.isArray())
             {
-                auto child_types = getNamesAndTypesFromList(field.child_list_id, with_physical_names);
+                auto child_types = getNamesAndTypesFromList(field.child_list_id);
                 if (child_types.size() != 1)
                 {
                     throw DB::Exception(
@@ -457,7 +452,7 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(size_t list_id
             }
             else if (which.isMap())
             {
-                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id, with_physical_names);
+                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id);
                 auto child_types = child_names_and_types.getTypes();
                 if (child_types.size() != 2)
                 {
@@ -476,10 +471,7 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(size_t list_id
             }
         }
         chassert(type);
-        if (with_physical_names && !field.physical_name.empty())
-            names_and_types.emplace_back(field.physical_name, type);
-        else
-            names_and_types.emplace_back(field.name, type);
+        names_and_types.emplace_back(field.name, type);
     }
     return names_and_types;
 }
