@@ -1,19 +1,17 @@
 #pragma once
 
-#include <Processors/Formats/Impl/Parquet/ReadCommon.h>
-#include <Processors/Formats/Impl/Parquet/Decoding.h>
-#include <Processors/Formats/Impl/Parquet/Prefetcher.h>
-
-#include <queue>
-#include <deque>
-#include <mutex>
-#include <optional>
 #include <Columns/IColumn.h>
 #include <Core/BlockMissingValues.h>
-#include <DataTypes/IDataType.h>
-#include <Processors/Chunk.h>
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Processors/Chunk.h>
+#include <Processors/Formats/Impl/Parquet/Decoding.h>
+#include <Processors/Formats/Impl/Parquet/Prefetcher.h>
+#include <Processors/Formats/Impl/Parquet/ReadCommon.h>
+#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+#include <Storages/MergeTree/KeyCondition.h>
+
+#include <deque>
+#include <optional>
 
 namespace DB
 {
@@ -95,7 +93,7 @@ namespace DB::Parquet
 ///  * Prefetcher is responsible for coalescing nearby short reads into bigger reads.
 ///    It needs to know an approximate set of all needed ranges in advance, which we can produce
 ///    from parquet file metadata.
-///  * FormatParserSharedResources is shared can be shared across multiple parquet file readers belonging
+///  * FormatParserSharedResources can be shared across multiple parquet file readers belonging
 ///    to the same query, e.g. when doing `SELECT * FROM url('.../part_{0..999}.parquet')`.
 ///    Splits the memory and thread count budgets among the readers. Important because we want to
 ///    use much more memory per reader when reading one file than when reading 100 files in parallel.
@@ -123,8 +121,8 @@ struct Reader
     ///  +-----+-----+----------+
     ///  |  0  |  0  |  true    |  (fake root element for convenience)
     ///  |  1  |  1  |  true    |  (outermost Array)
-    ///  |  2  |  2  |  false   |
-    ///  |  3  |  2  |  false   |
+    ///  |  2  |  1  |  false   |
+    ///  |  3  |  1  |  false   |
     ///  |  4  |  2  |  true    |
     ///  |  5  |  3  |  true    |
     ///  |  6  |  3  |  false   |  (innermost Nullable)
@@ -145,6 +143,7 @@ struct Reader
         UInt8 def = 0; // equal to index in `levels`
         UInt8 rep = 0;
         /// If true, it's an Array level. If false, it's a Nullable level.
+        /// Also true for the root level - the whole table can be seen as an array of rows.
         bool is_array = false;
     };
 
@@ -454,6 +453,9 @@ struct Reader
     std::vector<PrimitiveColumnInfo> primitive_columns;
     size_t total_primitive_columns_in_file = 0;
     std::vector<OutputColumnInfo> output_columns;
+    /// Maps idx_in_output_block to index in output_columns. I.e.:
+    /// sample_block_to_output_columns_idx[output_columns[i].idx_in_output_block] = i
+    std::vector<size_t> sample_block_to_output_columns_idx;
 
     /// sample_block with maybe some columns added at the end.
     /// The added columns are used as inputs to prewhere expression, then discarded.
@@ -514,7 +516,10 @@ private:
         bool findAnyHash(const std::vector<uint64_t> & hashes) override;
     };
 
-    void getHyperrectangleForRowGroup(const std::vector</*idx_in_output_block*/ std::optional<size_t>> & key_condition_columns, const parq::RowGroup * meta, Hyperrectangle & hyperrectangle) const;
+    void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle) const;
+    void adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;
+    void prepareBloomFilterCondition();
+    void initializePrefetches();
     double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
     void decodeDictionaryPageImpl(const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);

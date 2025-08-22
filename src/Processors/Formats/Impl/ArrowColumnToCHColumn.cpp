@@ -546,7 +546,7 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
         }
     }
 
-    return {std::move(column), std::move(type), column_name};
+    return {std::move(column), type, column_name};
 }
 
 template <typename T>

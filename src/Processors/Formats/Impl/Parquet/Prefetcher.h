@@ -1,9 +1,9 @@
 #pragma once
 
+#include <Common/PODArray.h>
 #include <Processors/Formats/Impl/Parquet/ReadCommon.h>
 
 #include <span>
-#include <Common/PODArray.h>
 
 namespace DB
 {

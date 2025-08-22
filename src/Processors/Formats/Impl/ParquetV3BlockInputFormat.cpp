@@ -3,10 +3,10 @@
 #if USE_PARQUET
 
 #include <Common/ThreadPool.h>
-#include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/SharedThreadPools.h>
+#include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 
 namespace DB
 {

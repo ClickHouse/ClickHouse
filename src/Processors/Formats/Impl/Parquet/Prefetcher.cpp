@@ -1,10 +1,12 @@
 #include <Processors/Formats/Impl/Parquet/Prefetcher.h>
 
+#include <Formats/FormatParserSharedResources.h>
+#include <IO/copyData.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <IO/WriteBufferFromVector.h>
-#include <IO/copyData.h>
-#include <Formats/FormatParserSharedResources.h>
+
+#include <shared_mutex>
 
 namespace DB::ErrorCodes
 {

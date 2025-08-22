@@ -1,11 +1,10 @@
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 
-#include <functional>
-#include <arrow/util/bit_stream_utils.h>
-
 #include <base/arithmeticOverflow.h>
+#include <Columns/ColumnString.h>
 #include <Common/FloatUtils.h>
-#include <IO/VarInt.h>
+
+#include <arrow/util/bit_stream_utils.h>
 
 namespace DB::ErrorCodes
 {
@@ -116,13 +115,13 @@ struct BitPackedRLEDecoder : public PageDecoder
         }
     }
 
-    template <bool SKIP>
+    template <bool skip>
     void skipOrDecode(size_t num_values, T * out)
     {
         if (bit_width == 0)
         {
             /// bit_width == 0 can be used for dictionary indices if the dictionary has only one value.
-            if constexpr (!SKIP)
+            if constexpr (!skip)
                 memset(out, 0, num_values * sizeof(T));
             return;
         }
@@ -145,7 +144,7 @@ struct BitPackedRLEDecoder : public PageDecoder
 
             if (run_is_rle)
             {
-                if constexpr (!SKIP)
+                if constexpr (!skip)
                 {
                     const T v = val; // without this std::fill reloads it from memory on each iteration
                     std::fill(out, out + n, v);
@@ -154,7 +153,7 @@ struct BitPackedRLEDecoder : public PageDecoder
             }
             else
             {
-                if constexpr (!SKIP)
+                if constexpr (!skip)
                 {
                     for (size_t i = 0; i < n; ++i)
                     {
@@ -307,9 +306,8 @@ struct PlainStringDecoder : public PageDecoder
             offsets.clear();
             offsets.reserve(num_values);
             /// We have extra 4 bytes *before* each string, but StringConverter expects
-            /// separator_bytes *after* each string (for compatibility with ColumnString, which has
-            /// extra '\0' byte after each string). So we offset the `data` start pointer to skip the
-            /// first 4 bytes.
+            /// separator_bytes *after* each string (for a historical reason).
+            /// So we offset the `data` start pointer to skip the first 4 bytes.
             const char * chars_start = data + 4;
             size_t offset = 0;
             for (size_t i = 0; i < num_values; ++i)
@@ -626,16 +624,16 @@ struct DeltaByteArrayDecoder : public PageDecoder
             chassert(col_str->size() == num_values);
 
             if (!direct)
-                string_converter->convertColumn(std::span(reinterpret_cast<char *>(col_str->getChars().data()), col_str->getChars().size()), col_str->getOffsets().data(), /*separator_bytes*/ 1, num_values, col);
+                string_converter->convertColumn(std::span(reinterpret_cast<char *>(col_str->getChars().data()), col_str->getChars().size()), col_str->getOffsets().data(), /*separator_bytes*/ 0, num_values, col);
         }
     }
 
-    template <bool SKIP, bool FIXED_SIZE>
+    template <bool skip, bool is_fixed_size>
     void decodeImpl(size_t num_values, ColumnString * out_str, char * out_fixed_size)
     {
         if (num_values > prefixes.size() - idx)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Too few values in page");
-        size_t fixed_size = FIXED_SIZE ? fixed_size_converter->input_size : 0;
+        size_t fixed_size = is_fixed_size ? fixed_size_converter->input_size : 0;
 
         for (size_t i = 0; i < num_values; ++i)
         {
@@ -647,18 +645,18 @@ struct DeltaByteArrayDecoder : public PageDecoder
             data += suffixes[idx];
             ++idx;
 
-            if constexpr (FIXED_SIZE)
+            if constexpr (is_fixed_size)
             {
                 if (current_value.size() != fixed_size)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected fixed string size in DELTA_BYTE_ARRAY");
 
-                if constexpr (!SKIP)
+                if constexpr (!skip)
                 {
                     memcpy(out_fixed_size, current_value.data(), fixed_size);
                     out_fixed_size += fixed_size;
                 }
             }
-            else if constexpr (!SKIP)
+            else if constexpr (!skip)
             {
                 out_str->insertData(current_value.data(), current_value.size());
             }
@@ -966,12 +964,12 @@ void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & i
         throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect dictionary page size: {} != {} * {}", data.size(), count, value_size);
 }
 
-template<size_t S>
+template<size_t value_size>
 static void indexImpl(const PaddedPODArray<UInt32> & indexes, std::span<const char> data, std::span<char> to)
 {
     size_t size = indexes.size();
     for (size_t i = 0; i < size; ++i)
-        memcpy(to.data() + i * S, data.data() + indexes[i] * S, S);
+        memcpy(to.data() + i * value_size, data.data() + indexes[i] * S, S);
 }
 
 void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
@@ -1205,9 +1203,24 @@ void TrivialStringConverter::convertColumn(std::span<const char> chars, const UI
     auto & col_str = assert_cast<ColumnString &>(col);
     col_str.reserve(col_str.size() + num_values);
     chassert(chars.size() >= offsets[num_values - 1]);
-    col_str.getChars().reserve(col_str.getChars().size() + (offsets[num_values - 1] - offsets[-1]) - separator_bytes * num_values + num_values);
-    for (size_t i = 0; i < num_values; ++i)
-        col_str.insertData(chars.data() + offsets[i - 1], offsets[i] - offsets[i - 1] - separator_bytes);
+    if (separator_bytes == 0)
+    {
+        /// Can memcpy all strings in bulk.
+        col_str.getChars().insert(chars.data() + offsets[-1], chars.data() + offsets[num_values - 1]);
+
+        auto & out_offsets = col_str.getOffsets();
+        UInt64 diff = out_offsets.back() - offsets[-1]; // (wrapping overflow is ok)
+        size_t prev_count = out_offsets.size();
+        out_offsets.resize(prev_count + num_values);
+        for (size_t i = 0; i < num_values; ++i)
+            out_offsets[prev_count + i] = offsets[i] + diff; // (wrapping overflow is ok)
+    }
+    else
+    {
+        col_str.getChars().reserve(col_str.getChars().size() + (offsets[num_values - 1] - offsets[-1]) - separator_bytes * num_values);
+        for (size_t i = 0; i < num_values; ++i)
+            col_str.insertData(chars.data() + offsets[i - 1], offsets[i] - offsets[i - 1] - separator_bytes);
+    }
 }
 
 void TrivialStringConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
@@ -1370,11 +1383,11 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
         const Int64 nanos = unalignedLoad<Int64>(data.data() + i * 12);
         const Int64 julian_day = Int64(unalignedLoad<Int32>(data.data() + i * 12 + 8));
 
-        const Int64 DAY_NANOS = 86400'000'000'000;
+        const Int64 day_nanos = 86400'000'000'000;
         /// (Allow negative values just in case. Maybe someone uses them to correct for the fact
         ///  that julian days start at noon while unix days start at midnight.)
-        if (nanos < -DAY_NANOS || nanos > DAY_NANOS)
-            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "INT96 timestamp out of range: time of day component {} is outside [0, {}]", nanos, DAY_NANOS);
+        if (nanos < -day_nanos || nanos > day_nanos)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "INT96 timestamp out of range: time of day component {} is outside [0, {}]", nanos, day_nanos);
 
         /// Parquet says it uses julian day number, but it seems to be off by half a day.
         /// For normal julian day number:
@@ -1390,7 +1403,7 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
         bool overflow = false;
         Int64 x;
         overflow |= common::subOverflow(julian_day, 2440588l, x); // unix day number
-        overflow |= common::mulOverflow(x, DAY_NANOS, x); // unix nanoseconds
+        overflow |= common::mulOverflow(x, day_nanos, x); // unix nanoseconds
         overflow |= common::addOverflow(x, nanos, x);
 
         if (overflow)

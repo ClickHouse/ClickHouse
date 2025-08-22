@@ -43,7 +43,7 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
 
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var result = parser.parse(*geo_json_str);
-    Poco::JSON::Object::Ptr obj = result.extract<Poco::JSON::Object::Ptr>();
+    const Poco::JSON::Object::Ptr & obj = result.extract<Poco::JSON::Object::Ptr>();
 
     if (!obj->has("columns"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect geo json metadata: missing \"columns\"");

@@ -982,7 +982,7 @@ KeyCondition::KeyCondition(
 }
 
 KeyCondition::KeyCondition(
-    this_is_private, ColumnIndices key_columns_, size_t num_key_columns_, bool single_point_,
+    ThisIsPrivate, ColumnIndices key_columns_, size_t num_key_columns_, bool single_point_,
     bool date_time_overflow_behavior_ignore_, bool relaxed_)
     : has_filter(true)
     , key_columns(std::move(key_columns_))
@@ -4054,7 +4054,7 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
                 continue;
 
             ColumnIndices one_key_column = {{*key_column_names[i], i}};
-            auto condition = std::make_shared<KeyCondition>(this_is_private(), std::move(one_key_column), num_key_columns, single_point, date_time_overflow_behavior_ignore, relaxed);
+            auto condition = std::make_shared<KeyCondition>(ThisIsPrivate(), std::move(one_key_column), num_key_columns, single_point, date_time_overflow_behavior_ignore, relaxed);
             add_rpn_ranges(*condition, *this, ranges);
             out_column_conditions.emplace_back(i, std::move(condition));
         }

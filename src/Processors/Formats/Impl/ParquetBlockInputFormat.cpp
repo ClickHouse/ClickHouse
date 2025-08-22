@@ -648,7 +648,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         return;
 
     metadata = parquet::ReadMetaData(arrow_file);
-    const bool prefetch_group = io_pool != nullptr && !format_settings.parquet.use_native_reader_with_filter_push_down;
+    const bool prefetch_group = io_pool != nullptr;
 
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(parquet::arrow::FromParquetSchema(metadata->schema(), &schema));

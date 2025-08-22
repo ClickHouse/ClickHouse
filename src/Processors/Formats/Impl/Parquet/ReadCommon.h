@@ -1,9 +1,6 @@
 #pragma once
 
-#include <condition_variable>
-#include <shared_mutex>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Formats/FormatSettings.h>
 
 namespace DB

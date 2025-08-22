@@ -1,12 +1,8 @@
 #pragma once
 
-#include <Processors/Formats/Impl/Parquet/ReadCommon.h>
-
-#include <IO/VarInt.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
+#include <Processors/Formats/Impl/Parquet/ReadCommon.h>
+#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 
 namespace DB::ErrorCodes
 {
@@ -104,10 +100,6 @@ struct FixedSizeConverter
     virtual ~FixedSizeConverter() = default;
 };
 
-/// TODO [parquet]: If we remove the 0 byte from ColumnString (https://github.com/ClickHouse/ClickHouse/pull/85063),
-///                 see what can be optimized here. E.g. for DELTA_LENGTH_BYTE_ARRAY memcpy the whole
-///                 buffer rather than one string at a time.
-///                 Same in encoder (maybe use DELTA_LENGTH_BYTE_ARRAY by default).
 struct StringConverter
 {
     /// If true, the output is ColumnString, and no special conversion is needed.
@@ -115,6 +107,7 @@ struct StringConverter
 
     /// i-th string is range [offsets[i-1], offsets[i]-separator_bytes) in `chars`.
     /// `offsets[-1]` must be valid and is not necessarily 0.
+    /// Does no range checks, the caller must ensure that `offsets` are valid and `chars` are long enough.
     virtual void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn &) const = 0;
     virtual void convertField(std::span<const char> /*data*/, bool /*is_max*/, Field &) const
     {

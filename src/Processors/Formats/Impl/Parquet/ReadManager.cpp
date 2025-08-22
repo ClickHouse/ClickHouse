@@ -1,9 +1,11 @@
 #include <Processors/Formats/Impl/Parquet/ReadManager.h>
 
-#include <Common/ProfileEvents.h>
 #include <Common/BitHelpers.h>
-#include <Formats/FormatParserSharedResources.h>
+#include <Common/ProfileEvents.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
+
+#include <shared_mutex>
 
 namespace DB::ErrorCodes
 {
@@ -565,12 +567,12 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
                 n += 1;
                 ++i;
             }
-            funcs.push_back([this, batch_ = std::move(batch)]
+            funcs.push_back([this, _batch = std::move(batch)]
             {
                 std::shared_lock shutdown_lock(*shutdown, std::try_to_lock);
                 if (!shutdown_lock.owns_lock())
                     return;
-                runBatchOfTasks(batch_);
+                runBatchOfTasks(_batch);
             });
         }
         stage.batches_in_progress.fetch_add(funcs.size(), std::memory_order_relaxed);

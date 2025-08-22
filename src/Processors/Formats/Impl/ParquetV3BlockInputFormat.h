@@ -2,10 +2,10 @@
 #include "config.h"
 #if USE_PARQUET
 
-#include <Processors/Formats/IInputFormat.h>
-#include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/ReadManager.h>
+#include <Processors/Formats/ISchemaReader.h>
 
 namespace DB
 {

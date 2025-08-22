@@ -51,7 +51,7 @@ struct ActionsDAGWithInversionPushDown
 class KeyCondition
 {
 private:
-    struct this_is_private {};
+    struct ThisIsPrivate {};
 
 public:
     /// Construct key condition from ActionsDAG nodes
@@ -288,7 +288,7 @@ public:
 
     /// Private constructor.
     KeyCondition(
-        this_is_private,
+        ThisIsPrivate,
         ColumnIndices key_columns_,
         size_t num_key_columns_,
         bool single_point_,

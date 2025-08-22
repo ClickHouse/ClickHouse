@@ -1,7 +1,9 @@
-#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <IO/WriteBuffer.h>
+#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+
 #include <thrift/protocol/TCompactProtocol.h>
 #include <thrift/transport/TBufferTransports.h>
+
 #include <sstream>
 
 namespace DB::Parquet

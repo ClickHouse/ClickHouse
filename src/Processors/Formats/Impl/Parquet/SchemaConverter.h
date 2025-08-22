@@ -53,6 +53,15 @@ private:
 
     std::optional<size_t> processSubtree(String name, bool requested, DataTypePtr type_hint, SchemaContext);
 
+    /// These functions are used by processSubtree for different kinds of SchemaElement.
+    /// Return true if the schema element was recognized as the corresponding kind,
+    /// even if no output column needs to be produced.
+    bool processSubtreePrimitive(const String & name, bool requested, DataTypePtr type_hint, SchemaContext schema_context, const parq::SchemaElement & element, std::optional<size_t> & output_idx);
+    bool processSubtreeMap(const String & name, bool requested, DataTypePtr type_hint, SchemaContext schema_context, const parq::SchemaElement & element, std::optional<size_t> & output_idx);
+    bool processSubtreeArrayOuter(const String & name, bool requested, DataTypePtr type_hint, SchemaContext schema_context, const parq::SchemaElement & element, std::optional<size_t> & output_idx);
+    bool processSubtreeArrayInner(const String & name, bool requested, DataTypePtr type_hint, SchemaContext schema_context, const parq::SchemaElement & element, std::optional<size_t> & output_idx);
+    void processSubtreeTuple(const String & name, bool requested, DataTypePtr type_hint, SchemaContext schema_context, const parq::SchemaElement & element, std::optional<size_t> & output_idx);
+
     void processPrimitiveColumn(
         const parq::SchemaElement & element, DataTypePtr type_hint,
         PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,

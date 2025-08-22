@@ -1,21 +1,19 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 
-#include <fmt/ranges.h>
-
-#include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Processors/Formats/Impl/Parquet/Decoding.h>
+
+#include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
 {
@@ -31,7 +29,11 @@ namespace DB::ErrorCodes
 namespace DB::Parquet
 {
 
-SchemaConverter::SchemaConverter(const parq::FileMetaData & file_metadata_, const ReadOptions & options_, const Block * sample_block_) : file_metadata(file_metadata_), options(options_), sample_block(sample_block_), levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
+SchemaConverter::SchemaConverter(
+    const parq::FileMetaData & file_metadata_, const ReadOptions & options_,
+    const Block * sample_block_)
+    : file_metadata(file_metadata_), options(options_), sample_block(sample_block_)
+    , levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
 {
     if (options.format.parquet.allow_geoparquet_parser)
     {
@@ -125,15 +127,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
     const parq::SchemaElement & element = file_metadata.schema.at(schema_idx);
     schema_idx += 1;
 
-    /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
-    /// If it's set but has value 0, logically it would make sense to interpret it as empty tuple/struct.
-    /// But in practice some writers are sloppy about it and set this field to 0 (rather than unset)
-    /// for primitive columns. E.g.
-    /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
-    bool is_primitive = !element.__isset.num_children || (element.num_children == 0 && element.__isset.type);
-
     std::optional<size_t> idx_in_output_block;
-    size_t output_idx = UINT64_MAX; // index in output_columns
     size_t wrap_in_arrays = 0;
 
     if (schema_context == SchemaContext::None)
@@ -144,7 +138,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
 
         if (sample_block)
         {
-            /// Doing this lookup on each schema element to support reading individual tulple elements.
+            /// Doing this lookup on each schema element to support reading individual tuple elements.
             /// E.g.:
             ///   insert into function file('t.parquet') select [(10,20,30)] as x;
             ///   select * from file('t.parquet', Parquet, '`x.2` Array(UInt8)'); -- outputs [20]
@@ -207,413 +201,43 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         levels.push_back(level);
     }
 
+    std::optional<size_t> output_idx; // index in output_columns
+
     /// https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
-    ///
-    /// Primitive column:
-    ///   (required|optional) leaf `name`
-    /// Array:
-    ///   required group `name` (List):
-    ///     repeated group "list":
-    ///       <recurse> "element"
-    /// Array (old style):
-    ///   repeated <recurse> `name`
-    /// Map:
-    ///   required group `name` (MAP or MAP_KEY_VALUE):
-    ///     repeated group "key_value" (maybe MAP_KEY_VALUE):
-    ///       reqiured <recurse> "key"
-    ///       <recurse> "value"
-    /// Tuple:
-    ///   (required|optional) group `name`:
-    ///     <recurse> `name1`
-    ///     <recurse> `name2`
-    ///     ...
 
-    auto check_map = [&]
+    if (!processSubtreePrimitive(name, requested, type_hint, schema_context, element, output_idx) &&
+        !processSubtreeMap(name, requested, type_hint, schema_context, element, output_idx) &&
+        !processSubtreeArrayOuter(name, requested, type_hint, schema_context, element, output_idx) &&
+        !processSubtreeArrayInner(name, requested, type_hint, schema_context, element, output_idx))
     {
-        if (element.converted_type != parq::ConvertedType::MAP && element.converted_type != parq::ConvertedType::MAP_KEY_VALUE && !element.logicalType.__isset.MAP)
-            return false;
-        /// If an element is declared as MAP, but doesn't have the expected structure of children
-        /// and grandchildren, we fall back to interpreting it as a tuple, as if there were no MAP
-        /// annotation on it. Or if Tuple type was requested.
-        if (schema_context != SchemaContext::None && schema_context != SchemaContext::ListElement)
-            return false;
-        if (typeid_cast<const DataTypeTuple *>(type_hint.get()))
-            return false;
-        if (element.num_children != 1)
-            return false;
-        const parq::SchemaElement & child = file_metadata.schema.at(schema_idx);
-        if (child.repetition_type != parq::FieldRepetitionType::REPEATED || child.num_children != 2)
-            return false;
-        return true;
-    };
-
-    auto check_list = [&]
-    {
-        if (element.converted_type != parq::ConvertedType::LIST && !element.logicalType.__isset.LIST)
-            return false;
-        if (schema_context != SchemaContext::None && schema_context != SchemaContext::ListElement)
-            return false;
-        if (element.num_children != 1)
-            return false;
-        const parq::SchemaElement & child = file_metadata.schema.at(schema_idx);
-        if (child.repetition_type != parq::FieldRepetitionType::REPEATED || child.num_children != 1)
-            return false;
-        return true;
-    };
-
-    if (is_primitive)
-    {
-        /// Primitive column.
-        primitive_column_idx += 1;
-        if (!requested)
-            return std::nullopt;
-        if (!element.__isset.type)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet metadata is missing physical type for column {}", element.name);
-
-        DataTypePtr primitive_type_hint = type_hint;
-        bool output_nullable = false;
-        bool output_nullable_if_not_json = false;
-        if (primitive_type_hint)
-        {
-            if (primitive_type_hint->lowCardinality())
-            {
-                primitive_type_hint = assert_cast<const DataTypeLowCardinality &>(*primitive_type_hint).getDictionaryType();
-            }
-            if (primitive_type_hint->isNullable())
-            {
-                output_nullable = true;
-                primitive_type_hint = assert_cast<const DataTypeNullable &>(*primitive_type_hint).getNestedType();
-            }
-        }
-        /// Force map key to be non-nullable because clickhouse Map doesn't support nullable map key.
-        else if (!options.schema_inference_force_not_nullable && schema_context != SchemaContext::MapKey)
-        {
-            if (levels.back().is_array == false)
-            {
-                /// This schema element is OPTIONAL or inside an OPTIONAL tuple.
-                output_nullable = true;
-            }
-            else if (options.schema_inference_force_nullable)
-            {
-                if (options.format.schema_inference_make_json_columns_nullable)
-                    output_nullable = true;
-                else
-                    /// Historically, the setting schema_inference_make_columns_nullable wasn't applied
-                    /// to JSON columns (presumably because Nullable(Object) used to not be allowed).
-                    /// Keep this behavior for compatibility.
-                    output_nullable_if_not_json = true;
-            }
-        }
-
-        auto geo_it = geo_columns.find(name);
-        auto geo_metadata = geo_it == geo_columns.end() ? std::nullopt : std::optional(geo_it->second);
-
-        DataTypePtr inferred_type;
-        DataTypePtr raw_decoded_type;
-        PageDecoderInfo decoder;
-        try
-        {
-            processPrimitiveColumn(element, primitive_type_hint, decoder, raw_decoded_type, inferred_type, geo_metadata);
-        }
-        catch (Exception & e)
-        {
-            if (options.format.parquet.skip_columns_with_unsupported_types_in_schema_inference &&
-                (e.code() == ErrorCodes::INCORRECT_DATA || e.code() == ErrorCodes::NOT_IMPLEMENTED))
-            {
-                return std::nullopt;
-            }
-            else
-            {
-                e.addMessage("column '" + name + "'");
-                throw;
-            }
-        }
-
-        /// GeoParquet types like Point or Polygon can't be inside Nullable.
-        if (typeid_cast<const DataTypeArray *>(inferred_type.get()) || typeid_cast<const DataTypeTuple *>(inferred_type.get()))
-        {
-            output_nullable = false;
-            output_nullable_if_not_json = false;
-        }
-
-        size_t primitive_idx = primitive_columns.size();
-        PrimitiveColumnInfo & primitive = primitive_columns.emplace_back();
-        primitive.column_idx = primitive_column_idx - 1;
-        primitive.schema_idx = schema_idx - 1;
-        primitive.name = name;
-        primitive.levels = levels;
-        primitive.output_nullable = output_nullable || (output_nullable_if_not_json && !typeid_cast<const DataTypeObject *>(inferred_type.get()));
-        primitive.decoder = std::move(decoder);
-        primitive.raw_decoded_type = raw_decoded_type;
-        for (const auto & level : levels)
-            if (level.is_array)
-                primitive.max_array_def = level.def;
-
-        output_idx = output_columns.size();
-        OutputColumnInfo & output = output_columns.emplace_back();
-        output.name = name;
-        output.primitive_start = primitive_idx;
-        output.primitive_end = primitive_idx + 1;
-        output.is_primitive = true;
-
-        if (!primitive.raw_decoded_type)
-            primitive.raw_decoded_type = inferred_type;
-
-        primitive.intermediate_type = primitive.raw_decoded_type;
-        if (primitive.output_nullable)
-        {
-            primitive.intermediate_type = std::make_shared<DataTypeNullable>(primitive.intermediate_type);
-            inferred_type = std::make_shared<DataTypeNullable>(inferred_type);
-        }
-
-        primitive.final_type = type_hint ? type_hint : inferred_type;
-        primitive.needs_cast = !primitive.final_type->equals(*primitive.intermediate_type);
-
-        output.type = primitive.final_type;
-    }
-    else if (check_map())
-    {
-        /// Map, aka Array(Tuple(2)).
-        DataTypePtr array_type_hint;
-        bool no_map = false; // return plain Array(Tuple) instead of Map
-        if (type_hint)
-        {
-            if (const DataTypeMap * map_type = typeid_cast<const DataTypeMap *>(type_hint.get()))
-            {
-                array_type_hint = map_type->getNestedType();
-            }
-            else if (typeid_cast<const DataTypeArray *>(type_hint.get()))
-            {
-                array_type_hint = type_hint;
-                no_map = true;
-            }
-            else
-            {
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Map, requested type is {}", name, type_hint->getName());
-            }
-        }
-        /// (MapTupleAsPlainTuple is needed to skip a level in the column name: it changes
-        /// `my_map.key_value.key` to `my_map.key`.
-        auto array_idx = processSubtree(name, requested, array_type_hint, no_map ? SchemaContext::MapTupleAsPlainTuple : SchemaContext::MapTuple);
-
-        if (!requested || !array_idx.has_value())
-            return std::nullopt;
-
-        /// Support explicitly requesting Array(Tuple) type for map columns. Useful e.g. if the map
-        /// key type is something that's not allowed as Map key in clickhouse.
-        if (no_map)
-        {
-            output_idx = array_idx.value();
-        }
-        else
-        {
-            output_idx = output_columns.size();
-            OutputColumnInfo & output = output_columns.emplace_back();
-            const OutputColumnInfo & array = output_columns.at(array_idx.value());
-
-            output.name = name;
-            output.primitive_start = array.primitive_start;
-            output.primitive_end = array.primitive_end;
-            output.type = std::make_shared<DataTypeMap>(array.type);
-            output.nested_columns = {array_idx.value()};
-        }
-    }
-    else if (check_list())
-    {
-        /// Array (outer schema element).
-        auto array_idx = processSubtree(name, requested, type_hint, SchemaContext::ListTuple);
-
-        if (!requested || !array_idx.has_value())
-            return std::nullopt;
-
-        output_idx = array_idx.value();
-    }
-    else if (schema_context == SchemaContext::ListTuple)
-    {
-        /// Array (middle schema element).
-        chassert(element.repetition_type == parq::FieldRepetitionType::REPEATED &&
-                 element.num_children == 1); // caller checked this
-        /// (type_hint is already unwrapped to be element type, because of REPEATED)
-        auto element_idx = processSubtree(name, requested, type_hint, SchemaContext::ListElement);
-
-        if (!requested || !element_idx.has_value())
-            return std::nullopt;
-
-        output_idx = element_idx.value();
-    }
-    else
-    {
-        /// Tuple. (Possibly a Map key_value tuple.)
-        const DataTypeTuple * tuple_type_hint = typeid_cast<const DataTypeTuple *>(type_hint.get());
-        if (type_hint && !tuple_type_hint)
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple, requested type is {}", name, type_hint->getName());
-
-        /// 3 modes:
-        ///  * If type_hint has element names, we match elements from parquet to elements from type
-        ///    hint tuple by name. If some elements are not in type hint, we skip them.
-        ///    If elements are in different order, we reorder them to match type_hint.
-        ///  * If type_hint has no names, we match elements sequentially and preserve order.
-        ///  * If there's no type_hint, we preserve order, produce tuple with names.
-        ///    Only in this mode, we allow skipping unsupported elements if
-        ///    skip_columns_with_unsupported_types_in_schema_inference is true.
-        ///    In other modes, we skip the whole tuple if any element is unsupported.
-
-        bool lookup_by_name = false;
-        std::vector<size_t> elements;
-        if (type_hint)
-        {
-            if (tuple_type_hint->hasExplicitNames() && !tuple_type_hint->getElements().empty() &&
-                schema_context != SchemaContext::MapTuple)
-            {
-                /// Allow reading a subset of tuple elements, matched by name, possibly reordered.
-                lookup_by_name = true;
-                elements.resize(tuple_type_hint->getElements().size(), UINT64_MAX);
-            }
-            else
-            {
-                if (tuple_type_hint->getElements().size() != size_t(element.num_children))
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple with {} elements, requested type is Tuple with {} elements", name, element.num_children, tuple_type_hint->getElements().size());
-            }
-        }
-        if (!lookup_by_name && requested)
-            elements.resize(size_t(element.num_children), UINT64_MAX);
-
-        Strings names;
-        DataTypes types;
-        if (!type_hint && requested)
-        {
-            names.resize(elements.size());
-            types.resize(elements.size());
-        }
-
-        size_t primitive_start = primitive_columns.size();
-        size_t output_start = output_columns.size();
-        size_t skipped_unsupported_columns = 0;
-        std::vector<String> element_names_in_file;
-        for (size_t i = 0; i < size_t(element.num_children); ++i)
-        {
-            const String & element_name = file_metadata.schema.at(schema_idx).name;
-            element_names_in_file.push_back(element_name);
-            std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
-            if (lookup_by_name)
-            {
-                idx_in_output_tuple = tuple_type_hint->tryGetPositionByName(element_name, options.format.parquet.case_insensitive_column_matching);
-
-                if (idx_in_output_tuple.has_value() && elements.at(idx_in_output_tuple.value()) != UINT64_MAX)
-                    throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Parquet tuple {} has multiple elements with name `{}`", name, element_name);
-            }
-
-            DataTypePtr element_type_hint;
-            if (type_hint && idx_in_output_tuple.has_value())
-                element_type_hint = tuple_type_hint->getElement(idx_in_output_tuple.value());
-
-            bool element_requested = requested && idx_in_output_tuple.has_value();
-
-            SchemaContext child_context = SchemaContext::None;
-            if (schema_context == SchemaContext::MapTuple && idx_in_output_tuple == 0)
-                child_context = SchemaContext::MapKey;
-
-            auto element_idx = processSubtree(name, element_requested, element_type_hint, child_context);
-
-            if (element_requested)
-            {
-                if (!element_idx.has_value())
-                {
-                    if (type_hint || schema_context == SchemaContext::MapTuple)
-                    {
-                        /// If one of the elements is skipped, skip the whole tuple.
-                        /// Remove previous elements.
-                        primitive_columns.resize(primitive_start);
-                        output_columns.resize(output_start);
-                        return std::nullopt;
-                    }
-                    else
-                    {
-                        skipped_unsupported_columns += 1;
-                        elements.pop_back();
-                        names.pop_back();
-                        types.pop_back();
-                        continue;
-                    }
-                }
-
-                elements.at(idx_in_output_tuple.value()) = element_idx.value();
-
-                const auto & type = output_columns.at(element_idx.value()).type;
-                if (type_hint)
-                {
-                    chassert(type->equals(*element_type_hint));
-                }
-                else
-                {
-                    names.at(idx_in_output_tuple.value()) = element_name;
-                    types.at(idx_in_output_tuple.value()) = type;
-                }
-            }
-        }
-
-        if (!requested)
-            return std::nullopt;
-
-        /// Map tuple in parquet has elements: {"key" , "value" },
-        /// but DataTypeMap requires:          {"keys", "values"}.
-        if (schema_context == SchemaContext::MapTuple)
-            names = {"keys", "values"};
-
-        DataTypePtr output_type;
-        if (type_hint)
-        {
-            chassert(elements.size() == tuple_type_hint->getElements().size());
-            for (size_t i = 0; i < elements.size(); ++i)
-            {
-                if (elements[i] != UINT64_MAX)
-                    continue;
-                if (!options.format.parquet.allow_missing_columns)
-                    throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Requested tuple element {} of column {} was not found in parquet schema ({})", tuple_type_hint->getNameByPosition(i + 1), name, element_names_in_file);
-
-                elements[i] = output_columns.size();
-                OutputColumnInfo & missing_output = output_columns.emplace_back();
-                missing_output.name = name + "." + (tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1));
-                missing_output.type = tuple_type_hint->getElement(i);
-                missing_output.is_missing_column = true;
-            }
-            output_type = type_hint;
-        }
-        else
-        {
-            output_type = std::make_shared<DataTypeTuple>(types, names);
-        }
-
-        output_idx = output_columns.size();
-        OutputColumnInfo & output = output_columns.emplace_back();
-        output.name = name;
-        output.primitive_start = primitive_start;
-        output.primitive_end = primitive_columns.size();
-        output.type = std::move(output_type);
-        output.nested_columns = elements;
+        processSubtreeTuple(name, requested, type_hint, schema_context, element, output_idx);
     }
 
+    if (!output_idx.has_value())
+        return std::nullopt;
     if (!requested)
         return std::nullopt; // we just needed to recurse to children, not interested in output_idx
 
-    chassert(output_idx != UINT64_MAX);
+    auto make_array = [&](UInt8 rep)
+    {
+        size_t array_idx = output_columns.size();
+        OutputColumnInfo & array = output_columns.emplace_back();
+        const OutputColumnInfo & array_element = output_columns.at(*output_idx);
+        array.name = name;
+        array.primitive_start = array_element.primitive_start;
+        array.primitive_end = primitive_columns.size();
+        array.type = std::make_shared<DataTypeArray>(array_element.type);
+        array.nested_columns = {*output_idx};
+        array.rep = rep;
+        output_idx = array_idx;
+    };
 
     if (element.repetition_type == parq::FieldRepetitionType::REPEATED)
     {
         /// Array of some kind. Can be a child of List or Map, or a standalone repeated field.
         /// We dispatch all 3 cases to this one code path to minimize probability of bugs.
-        size_t array_idx = output_columns.size();
-        OutputColumnInfo & array = output_columns.emplace_back();
-        const OutputColumnInfo & array_element = output_columns.at(output_idx);
-        array.name = name;
-        array.primitive_start = array_element.primitive_start;
-        array.primitive_end = primitive_columns.size();
-        array.type = std::make_shared<DataTypeArray>(array_element.type);
-        array.nested_columns = {output_idx};
         chassert(levels.size() == prev_levels_size + 1);
-        array.rep = levels.back().rep;
-
-        output_idx = array_idx;
+        make_array(levels.back().rep);
     }
 
     if (idx_in_output_block.has_value())
@@ -621,23 +245,412 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         /// If the requested column is inside some arrays of tuples (requested using `arr.elem`
         /// syntax), add intermediate OutputColumnInfo-s to create those arrays.
         for (size_t i = 0; i < wrap_in_arrays; ++i)
-        {
-            size_t array_idx = output_columns.size();
-            OutputColumnInfo & array = output_columns.emplace_back();
-            const OutputColumnInfo & array_element = output_columns.at(output_idx);
-            array.name = name;
-            array.primitive_start = array_element.primitive_start;
-            array.primitive_end = primitive_columns.size();
-            array.type = std::make_shared<DataTypeArray>(array_element.type);
-            array.nested_columns = {output_idx};
-            array.rep = levels[prev_levels_size - 1].rep - i;
+            make_array(levels[prev_levels_size - 1].rep - i);
 
-            output_idx = array_idx;
-        }
-        output_columns[output_idx].idx_in_output_block = idx_in_output_block;
+        output_columns[*output_idx].idx_in_output_block = idx_in_output_block;
     }
 
     return output_idx;
+}
+
+bool SchemaConverter::processSubtreePrimitive(const String & name, bool requested, DataTypePtr type_hint, SchemaContext schema_context, const parq::SchemaElement & element, std::optional<size_t> & output_idx)
+{
+    /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
+    /// If it's set but has value 0, logically it would make sense to interpret it as empty tuple/struct.
+    /// But in practice some writers are sloppy about it and set this field to 0 (rather than unset)
+    /// for primitive columns. E.g.
+    /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
+    bool is_primitive = !element.__isset.num_children || (element.num_children == 0 && element.__isset.type);
+    if (!is_primitive)
+        return false;
+
+    primitive_column_idx += 1;
+    if (!requested)
+        return true;
+    if (!element.__isset.type)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet metadata is missing physical type for column {}", element.name);
+
+    DataTypePtr primitive_type_hint = type_hint;
+    bool output_nullable = false;
+    bool output_nullable_if_not_json = false;
+    if (primitive_type_hint)
+    {
+        if (primitive_type_hint->lowCardinality())
+        {
+            primitive_type_hint = assert_cast<const DataTypeLowCardinality &>(*primitive_type_hint).getDictionaryType();
+        }
+        if (primitive_type_hint->isNullable())
+        {
+            output_nullable = true;
+            primitive_type_hint = assert_cast<const DataTypeNullable &>(*primitive_type_hint).getNestedType();
+        }
+    }
+    /// Force map key to be non-nullable because clickhouse Map doesn't support nullable map key.
+    else if (!options.schema_inference_force_not_nullable && schema_context != SchemaContext::MapKey)
+    {
+        if (levels.back().is_array == false)
+        {
+            /// This schema element is OPTIONAL or inside an OPTIONAL tuple.
+            output_nullable = true;
+        }
+        else if (options.schema_inference_force_nullable)
+        {
+            if (options.format.schema_inference_make_json_columns_nullable)
+                output_nullable = true;
+            else
+                /// Historically, the setting schema_inference_make_columns_nullable wasn't applied
+                /// to JSON columns (presumably because Nullable(Object) used to not be allowed).
+                /// Keep this behavior for compatibility.
+                output_nullable_if_not_json = true;
+        }
+    }
+
+    auto geo_it = geo_columns.find(name);
+    auto geo_metadata = geo_it == geo_columns.end() ? std::nullopt : std::optional(geo_it->second);
+
+    DataTypePtr inferred_type;
+    DataTypePtr raw_decoded_type;
+    PageDecoderInfo decoder;
+    try
+    {
+        processPrimitiveColumn(element, primitive_type_hint, decoder, raw_decoded_type, inferred_type, geo_metadata);
+    }
+    catch (Exception & e)
+    {
+        if (options.format.parquet.skip_columns_with_unsupported_types_in_schema_inference &&
+            (e.code() == ErrorCodes::INCORRECT_DATA || e.code() == ErrorCodes::NOT_IMPLEMENTED))
+        {
+            return true;
+        }
+        else
+        {
+            e.addMessage("column '" + name + "'");
+            throw;
+        }
+    }
+
+    /// GeoParquet types like Point or Polygon can't be inside Nullable.
+    if (typeid_cast<const DataTypeArray *>(inferred_type.get()) || typeid_cast<const DataTypeTuple *>(inferred_type.get()))
+    {
+        output_nullable = false;
+        output_nullable_if_not_json = false;
+    }
+
+    size_t primitive_idx = primitive_columns.size();
+    PrimitiveColumnInfo & primitive = primitive_columns.emplace_back();
+    primitive.column_idx = primitive_column_idx - 1;
+    primitive.schema_idx = schema_idx - 1;
+    primitive.name = name;
+    primitive.levels = levels;
+    primitive.output_nullable = output_nullable || (output_nullable_if_not_json && !typeid_cast<const DataTypeObject *>(inferred_type.get()));
+    primitive.decoder = std::move(decoder);
+    primitive.raw_decoded_type = raw_decoded_type;
+    for (const auto & level : levels)
+        if (level.is_array)
+            primitive.max_array_def = level.def;
+
+    output_idx = output_columns.size();
+    OutputColumnInfo & output = output_columns.emplace_back();
+    output.name = name;
+    output.primitive_start = primitive_idx;
+    output.primitive_end = primitive_idx + 1;
+    output.is_primitive = true;
+
+    if (!primitive.raw_decoded_type)
+        primitive.raw_decoded_type = inferred_type;
+
+    primitive.intermediate_type = primitive.raw_decoded_type;
+    if (primitive.output_nullable)
+    {
+        primitive.intermediate_type = std::make_shared<DataTypeNullable>(primitive.intermediate_type);
+        inferred_type = std::make_shared<DataTypeNullable>(inferred_type);
+    }
+
+    primitive.final_type = type_hint ? type_hint : inferred_type;
+    primitive.needs_cast = !primitive.final_type->equals(*primitive.intermediate_type);
+
+    output.type = primitive.final_type;
+
+    return true;
+}
+
+bool SchemaConverter::processSubtreeMap(const String & name, bool requested, DataTypePtr type_hint, SchemaContext schema_context, const parq::SchemaElement & element, std::optional<size_t> & output_idx)
+{
+    /// Map, aka Array(Tuple(2)).
+    ///   required group `name` (MAP or MAP_KEY_VALUE):
+    ///     repeated group "key_value" (maybe MAP_KEY_VALUE):
+    ///       reqiured <recurse> "key"
+    ///       <recurse> "value"
+
+    if (element.converted_type != parq::ConvertedType::MAP && element.converted_type != parq::ConvertedType::MAP_KEY_VALUE && !element.logicalType.__isset.MAP)
+        return false;
+    /// If an element is declared as MAP, but doesn't have the expected structure of children
+    /// and grandchildren, we fall back to interpreting it as array of tuples, as if there were
+    /// no MAP annotation on it. Also fall back if Tuple type was requested
+    /// (presumably `Tuple(Array(Tuple(key, value))` - a literal interpretation of the schema tree)
+    /// (not to be confused with the case when `Array(Tuple(key, value))` was requested).
+    if (schema_context != SchemaContext::None && schema_context != SchemaContext::ListElement)
+        return false;
+    if (typeid_cast<const DataTypeTuple *>(type_hint.get()))
+        return false;
+    if (element.num_children != 1)
+        return false;
+    const parq::SchemaElement & child = file_metadata.schema.at(schema_idx);
+    if (child.repetition_type != parq::FieldRepetitionType::REPEATED || child.num_children != 2)
+        return false;
+
+    DataTypePtr array_type_hint;
+    bool no_map = false; // return plain Array(Tuple) instead of Map
+    if (type_hint)
+    {
+        if (const DataTypeMap * map_type = typeid_cast<const DataTypeMap *>(type_hint.get()))
+        {
+            array_type_hint = map_type->getNestedType();
+        }
+        else if (typeid_cast<const DataTypeArray *>(type_hint.get()))
+        {
+            array_type_hint = type_hint;
+            no_map = true;
+        }
+        else
+        {
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Map, requested type is {}", name, type_hint->getName());
+        }
+    }
+    /// (MapTupleAsPlainTuple is needed to skip a level in the column name: it changes
+    /// `my_map.key_value.key` to `my_map.key`.
+    auto array_idx = processSubtree(name, requested, array_type_hint, no_map ? SchemaContext::MapTupleAsPlainTuple : SchemaContext::MapTuple);
+
+    if (!requested || !array_idx.has_value())
+        return true;
+
+    /// Support explicitly requesting Array(Tuple) type for map columns. Useful e.g. if the map
+    /// key type is something that's not allowed as Map key in clickhouse.
+    if (no_map)
+    {
+        output_idx = array_idx.value();
+    }
+    else
+    {
+        output_idx = output_columns.size();
+        OutputColumnInfo & output = output_columns.emplace_back();
+        const OutputColumnInfo & array = output_columns.at(array_idx.value());
+
+        output.name = name;
+        output.primitive_start = array.primitive_start;
+        output.primitive_end = array.primitive_end;
+        output.type = std::make_shared<DataTypeMap>(array.type);
+        output.nested_columns = {array_idx.value()};
+    }
+
+    return true;
+}
+
+bool SchemaConverter::processSubtreeArrayOuter(const String & name, bool requested, DataTypePtr type_hint, SchemaContext schema_context, const parq::SchemaElement & element, std::optional<size_t> & output_idx)
+{
+    /// Array:
+    ///   required group `name` (List):
+    ///     repeated group "list":
+    ///       <recurse> "element"
+    ///
+    /// I.e. it's a double-wrapped burrito. To unwrap it into one Array, we have to coordinate
+    /// across two levels of recursion: processSubtreeArrayOuter for the outer wrapper,
+    /// processSubtreeArrayInner for the inner wrapper.
+
+    if (element.converted_type != parq::ConvertedType::LIST && !element.logicalType.__isset.LIST)
+        return false;
+    if (schema_context != SchemaContext::None && schema_context != SchemaContext::ListElement)
+        return false;
+    if (element.num_children != 1)
+        return false;
+    const parq::SchemaElement & child = file_metadata.schema.at(schema_idx);
+    if (child.repetition_type != parq::FieldRepetitionType::REPEATED || child.num_children != 1)
+        return false;
+
+    auto array_idx = processSubtree(name, requested, type_hint, SchemaContext::ListTuple);
+
+    if (!requested || !array_idx.has_value())
+        return true;
+
+    output_idx = array_idx.value();
+
+    return true;
+}
+
+bool SchemaConverter::processSubtreeArrayInner(const String & name, bool requested, DataTypePtr type_hint, SchemaContext schema_context, const parq::SchemaElement & element, std::optional<size_t> & output_idx)
+{
+    if (schema_context != SchemaContext::ListTuple)
+        return false;
+
+    /// Array (middle schema element).
+    chassert(element.repetition_type == parq::FieldRepetitionType::REPEATED &&
+                element.num_children == 1); // caller checked this
+    /// (type_hint is already unwrapped to be element type, because of REPEATED)
+    auto element_idx = processSubtree(name, requested, type_hint, SchemaContext::ListElement);
+
+    if (!requested || !element_idx.has_value())
+        return true;
+
+    output_idx = element_idx.value();
+
+    return true;
+}
+
+void SchemaConverter::processSubtreeTuple(const String & name, bool requested, DataTypePtr type_hint, SchemaContext schema_context, const parq::SchemaElement & element, std::optional<size_t> & output_idx)
+{
+    /// Tuple (possibly a Map key_value tuple):
+    ///   (required|optional) group `name`:
+    ///     <recurse> `name1`
+    ///     <recurse> `name2`
+    ///     ...
+
+    const DataTypeTuple * tuple_type_hint = typeid_cast<const DataTypeTuple *>(type_hint.get());
+    if (type_hint && !tuple_type_hint)
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple, requested type is {}", name, type_hint->getName());
+
+    /// 3 modes:
+    ///  * If type_hint has element names, we match elements from parquet to elements from type
+    ///    hint tuple by name. If some elements are not in type hint, we skip them.
+    ///    If elements are in different order, we reorder them to match type_hint.
+    ///  * If type_hint has no names, we match elements sequentially and preserve order.
+    ///  * If there's no type_hint, we preserve order, produce tuple with names.
+    ///    Only in this mode, we allow skipping unsupported elements if
+    ///    skip_columns_with_unsupported_types_in_schema_inference is true.
+    ///    In other modes, we skip the whole tuple if any element is unsupported.
+
+    bool lookup_by_name = false;
+    std::vector<size_t> elements;
+    if (type_hint)
+    {
+        if (tuple_type_hint->hasExplicitNames() && !tuple_type_hint->getElements().empty() &&
+            schema_context != SchemaContext::MapTuple)
+        {
+            /// Allow reading a subset of tuple elements, matched by name, possibly reordered.
+            lookup_by_name = true;
+            elements.resize(tuple_type_hint->getElements().size(), UINT64_MAX);
+        }
+        else
+        {
+            if (tuple_type_hint->getElements().size() != size_t(element.num_children))
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple with {} elements, requested type is Tuple with {} elements", name, element.num_children, tuple_type_hint->getElements().size());
+        }
+    }
+    if (!lookup_by_name && requested)
+        elements.resize(size_t(element.num_children), UINT64_MAX);
+
+    Strings names;
+    DataTypes types;
+    if (!type_hint && requested)
+    {
+        names.resize(elements.size());
+        types.resize(elements.size());
+    }
+
+    size_t primitive_start = primitive_columns.size();
+    size_t output_start = output_columns.size();
+    size_t skipped_unsupported_columns = 0;
+    std::vector<String> element_names_in_file;
+    for (size_t i = 0; i < size_t(element.num_children); ++i)
+    {
+        const String & element_name = file_metadata.schema.at(schema_idx).name;
+        element_names_in_file.push_back(element_name);
+        std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
+        if (lookup_by_name)
+        {
+            idx_in_output_tuple = tuple_type_hint->tryGetPositionByName(element_name, options.format.parquet.case_insensitive_column_matching);
+
+            if (idx_in_output_tuple.has_value() && elements.at(idx_in_output_tuple.value()) != UINT64_MAX)
+                throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Parquet tuple {} has multiple elements with name `{}`", name, element_name);
+        }
+
+        DataTypePtr element_type_hint;
+        if (type_hint && idx_in_output_tuple.has_value())
+            element_type_hint = tuple_type_hint->getElement(idx_in_output_tuple.value());
+
+        bool element_requested = requested && idx_in_output_tuple.has_value();
+
+        SchemaContext child_context = SchemaContext::None;
+        if (schema_context == SchemaContext::MapTuple && idx_in_output_tuple == 0)
+            child_context = SchemaContext::MapKey;
+
+        auto element_idx = processSubtree(name, element_requested, element_type_hint, child_context);
+
+        if (element_requested)
+        {
+            if (!element_idx.has_value())
+            {
+                if (type_hint || schema_context == SchemaContext::MapTuple)
+                {
+                    /// If one of the elements is skipped, skip the whole tuple.
+                    /// Remove previous elements.
+                    primitive_columns.resize(primitive_start);
+                    output_columns.resize(output_start);
+                    return;
+                }
+                else
+                {
+                    skipped_unsupported_columns += 1;
+                    elements.pop_back();
+                    names.pop_back();
+                    types.pop_back();
+                    continue;
+                }
+            }
+
+            elements.at(idx_in_output_tuple.value()) = element_idx.value();
+
+            const auto & type = output_columns.at(element_idx.value()).type;
+            if (type_hint)
+            {
+                chassert(type->equals(*element_type_hint));
+            }
+            else
+            {
+                names.at(idx_in_output_tuple.value()) = element_name;
+                types.at(idx_in_output_tuple.value()) = type;
+            }
+        }
+    }
+
+    if (!requested)
+        return;
+
+    /// Map tuple in parquet has elements: {"key" , "value" },
+    /// but DataTypeMap requires:          {"keys", "values"}.
+    if (schema_context == SchemaContext::MapTuple)
+        names = {"keys", "values"};
+
+    DataTypePtr output_type;
+    if (type_hint)
+    {
+        chassert(elements.size() == tuple_type_hint->getElements().size());
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            if (elements[i] != UINT64_MAX)
+                continue;
+            if (!options.format.parquet.allow_missing_columns)
+                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Requested tuple element {} of column {} was not found in parquet schema ({})", tuple_type_hint->getNameByPosition(i + 1), name, element_names_in_file);
+
+            elements[i] = output_columns.size();
+            OutputColumnInfo & missing_output = output_columns.emplace_back();
+            missing_output.name = name + "." + (tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1));
+            missing_output.type = tuple_type_hint->getElement(i);
+            missing_output.is_missing_column = true;
+        }
+        output_type = type_hint;
+    }
+    else
+    {
+        output_type = std::make_shared<DataTypeTuple>(types, names);
+    }
+
+    output_idx = output_columns.size();
+    OutputColumnInfo & output = output_columns.emplace_back();
+    output.name = name;
+    output.primitive_start = primitive_start;
+    output.primitive_end = primitive_columns.size();
+    output.type = std::move(output_type);
+    output.nested_columns = elements;
 }
 
 void SchemaConverter::processPrimitiveColumn(
