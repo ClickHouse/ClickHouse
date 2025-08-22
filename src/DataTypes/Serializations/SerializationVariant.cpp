@@ -18,8 +18,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
-#include <Columns/IColumn.h>
-#include <bitset>
+#include "Columns/IColumn.h"
 
 namespace DB
 {
@@ -379,7 +378,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
     const auto & offsets = col.getOffsets();
     std::vector<std::pair<size_t, size_t>> variant_offsets_and_limits(variants.size(), {0, 0});
     size_t end = offset + limit;
-    std::bitset<ColumnVariant::MAX_NESTED_COLUMNS> non_empty_variants_in_range;
+    size_t num_non_empty_variants_in_range = 0;
     ColumnVariant::Discriminator last_non_empty_variant_discr = 0;
     for (size_t i = offset; i < end; ++i)
     {
@@ -391,7 +390,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
                 variant_offsets_and_limits[global_discr].first = offsets[i];
             /// Update limit for this discriminator.
             ++variant_offsets_and_limits[global_discr].second;
-            non_empty_variants_in_range.set(global_discr);
+            ++num_non_empty_variants_in_range;
             last_non_empty_variant_discr = global_discr;
         }
     }
@@ -404,13 +403,13 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
     }
     /// In compact mode check if we have the same discriminator for all rows in this granule.
     /// First, check if all values in granule are NULLs.
-    else if (non_empty_variants_in_range.none())
+    else if (num_non_empty_variants_in_range == 0)
     {
         writeBinaryLittleEndian(UInt8(CompactDiscriminatorsGranuleFormat::COMPACT), *discriminators_stream);
         writeBinaryLittleEndian(ColumnVariant::NULL_DISCRIMINATOR, *discriminators_stream);
     }
     /// Then, check if there is only 1 variant and no NULLs in this granule.
-    else if (non_empty_variants_in_range.count() == 1 && variant_offsets_and_limits[last_non_empty_variant_discr].second == limit)
+    else if (num_non_empty_variants_in_range == 1 && variant_offsets_and_limits[last_non_empty_variant_discr].second == limit)
     {
         writeBinaryLittleEndian(UInt8(CompactDiscriminatorsGranuleFormat::COMPACT), *discriminators_stream);
         writeBinaryLittleEndian(last_non_empty_variant_discr, *discriminators_stream);
@@ -745,9 +744,6 @@ void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkS
     state.remaining_rows_in_granule = granule_size;
     UInt8 granule_format;
     readBinaryLittleEndian(granule_format, *stream);
-    if (granule_format != CompactDiscriminatorsGranuleFormat::COMPACT && granule_format != CompactDiscriminatorsGranuleFormat::PLAIN)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected format of compact discriminators granule: {}", UInt32(granule_format));
-
     state.granule_format = static_cast<CompactDiscriminatorsGranuleFormat>(granule_format);
     if (granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
         readBinaryLittleEndian(state.compact_discr, *stream);

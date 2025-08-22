@@ -1,4 +1,4 @@
-#include <Core/ExternalResultDescription.h>
+#include "ExternalResultDescription.h"
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>

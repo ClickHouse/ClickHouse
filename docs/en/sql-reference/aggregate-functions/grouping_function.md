@@ -111,6 +111,7 @@ GROUP BY
 2 rows in set. Elapsed: 0.277 sec. 
 ```
 
+
 ```sql
 SELECT
     distro, 
@@ -130,6 +131,7 @@ GROUP BY
 
 2 rows in set. Elapsed: 0.352 sec. 
 ```
+
 
 ```sql
 SELECT

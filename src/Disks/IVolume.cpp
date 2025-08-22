@@ -1,4 +1,4 @@
-#include <Disks/IVolume.h>
+#include "IVolume.h"
 
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>

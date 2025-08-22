@@ -10,18 +10,10 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Storages/System/StorageSystemFunctions.h>
-#include <Common/ErrorCodes.h>
-#include <Common/Exception.h>
-#include <Common/Logger.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_FUNCTION;
-}
 
 enum class FunctionOrigin : int8_t
 {
@@ -148,18 +140,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & user_defined_sql_functions_names = user_defined_sql_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : user_defined_sql_functions_names)
     {
-        String create_query;
-        try
-        {
-            create_query = user_defined_sql_functions_factory.get(function_name)->formatWithSecretsOneLine();
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() == ErrorCodes::UNKNOWN_FUNCTION)
-                tryLogCurrentException(getLogger("system.functions"), fmt::format("Function {} does not exist", function_name), LogsLevel::debug);
-            else
-                throw;
-        }
+        auto create_query = user_defined_sql_functions_factory.get(function_name)->formatWithSecretsOneLine();
         fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
     }
 

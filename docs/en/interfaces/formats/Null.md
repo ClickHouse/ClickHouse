@@ -22,9 +22,9 @@ and when using the command-line client, data is transmitted to the client.
 The `Null` format can be useful for performance testing.
 :::
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-### Reading data {#reading-data}
+### Reading Data {#reading-data}
 
 Consider a table `football` with the following data:
 
@@ -64,4 +64,4 @@ The query will process the data, but will not output anything.
 0 rows in set. Elapsed: 0.154 sec.
 ```
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}

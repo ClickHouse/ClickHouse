@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-ordinary-database, no-fasttest, no-azure-blob-storage, no-encrypted-storage
+# Tags: no-random-settings, no-ordinary-database, no-fasttest, no-azure-blob-storage
 # no-fasttest: The test is slow (too many small blocks)
 # no-azure-blob-storage: The test uploads many parts to Azure (5k+), and it runs in parallel with other tests.
 #     As a result, they may interfere, and some queries won't be able to finish in 30 seconds timeout leading to a test failure.
@@ -54,6 +54,8 @@ function insert_data
     fi
 }
 
+export -f insert_data
+
 ID="02435_insert_init_${CLICKHOUSE_DATABASE}_$RANDOM"
 insert_data 0
 $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
@@ -62,21 +64,17 @@ function thread_insert
 {
     # supress "Killed" messages from bash
     i=2
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         export ID="$TEST_MARK$RANDOM-$RANDOM-$i"
         export NUM="$i"
-        insert_data 2>&1| grep -Fav "Killed" | grep -Fav "SESSION_IS_LOCKED" | grep -Fav "SESSION_NOT_FOUND"
+        bash -c insert_data 2>&1| grep -Fav "Killed" | grep -Fav "SESSION_IS_LOCKED" | grep -Fav "SESSION_NOT_FOUND"
         i=$((i + 1))
     done
 }
 
 function thread_select
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         $CLICKHOUSE_CLIENT --implicit_transaction=1 -q "with (select count() from dedup_test) as c select throwIf(c % 1000000 != 0, 'Expected 1000000 * N rows, got ' || toString(c)) format Null"
         sleep 0.$RANDOM;
     done
@@ -84,9 +82,7 @@ function thread_select
 
 function thread_cancel
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do
         SIGNAL="INT"
         if (( RANDOM % 2 )); then
             SIGNAL="KILL"
@@ -97,11 +93,15 @@ function thread_cancel
     done
 }
 
+export -f thread_insert;
+export -f thread_select;
+export -f thread_cancel;
+
 TIMEOUT=20
 
-thread_insert &
-thread_select &
-thread_cancel 2> /dev/null &
+timeout $TIMEOUT bash -c thread_insert &
+timeout $TIMEOUT bash -c thread_select &
+timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
 
 wait
 
