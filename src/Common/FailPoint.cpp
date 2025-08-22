@@ -113,7 +113,8 @@ static struct InitFiu
     REGULAR(output_format_sleep_on_progress) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
-    ONCE(smt_commit_exception_before_op)
+    ONCE(smt_commit_exception_before_op) \
+    ONCE(backup_add_empty_memory_table)
 
 namespace FailPoints
 {
