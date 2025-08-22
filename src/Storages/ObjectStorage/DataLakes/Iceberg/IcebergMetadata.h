@@ -91,7 +91,11 @@ public:
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
-    ColumnMapperPtr getColumnMapper() const override { return column_mapper; }
+    ColumnMapperPtr getColumnMapper() const override
+    {
+        SharedLockGuard lock(mutex);
+        return persistent_components.schema_processor->getColumnMapperById(relevant_table_state_snapshot.schema_id);
+    }
 
     SinkToStoragePtr write(
         SharedHeader sample_block,
@@ -136,22 +140,20 @@ private:
 
     mutable SharedMutex mutex;
 
-
-    // Int32 last_metadata_version TSA_GUARDED_BY(mutex);
-    // Int32 relevant_snapshot_schema_id TSA_GUARDED_BY(mutex);
-    // Int64 relevant_snapshot_id TSA_GUARDED_BY(mutex) {-1};
     Iceberg::IcebergTableStateSnapshot relevant_table_state_snapshot TSA_GUARDED_BY(mutex);
     Iceberg::IcebergDataSnapshotPtr relevant_data_snapshot TSA_GUARDED_BY(mutex);
-    CompressionMethod metadata_compression_method;
+    const CompressionMethod metadata_compression_method;
 
-
-    ColumnMapperPtr column_mapper;
-
-    void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
-    void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
-    void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) const TSA_REQUIRES(mutex);
+    Iceberg::IcebergDataSnapshotPtr
+    getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context);
+    Iceberg::IcebergDataSnapshotPtr
+    getIcebergDataSnapshotFromObject(Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context);
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Int32>
+    getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::IcebergTableStateSnapshot>
+    getState(const ContextPtr & local_context, Int32 metadata_version, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const TSA_REQUIRES_SHARED(mutex);
-    void initializeSchemasFromManifestList(ContextPtr local_context, ManifestFileCacheKeys manifest_list_ptr) const TSA_REQUIRES(mutex);
+    void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) const TSA_REQUIRES(mutex);
 };
 }
 

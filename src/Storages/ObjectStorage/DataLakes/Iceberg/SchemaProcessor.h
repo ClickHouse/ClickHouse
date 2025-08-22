@@ -7,6 +7,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <base/defines.h>
 
@@ -95,6 +96,9 @@ public:
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
     std::optional<Int32> tryGetSchemaIdForSnapshot(Int64 snapshot_id) const;
+
+    ColumnMapperPtr getColumnMapperById(Int32 id) const;
+
 
 private:
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);

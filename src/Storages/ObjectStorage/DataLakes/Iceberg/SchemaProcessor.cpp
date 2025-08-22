@@ -549,4 +549,19 @@ std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::J
     return result;
 }
 
+ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object)
+{
+    auto column_mapper = std::make_shared<ColumnMapper>();
+    std::unordered_map<String, Int64> column_name_to_parquet_field_id
+        = IcebergSchemaProcessor::traverseSchema(schema_object->getArray(Iceberg::f_fields));
+    column_mapper->setStorageColumnEncoding(std::move(column_name_to_parquet_field_id));
+    return column_mapper;
+}
+ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
+{
+    auto schema = getIcebergTableSchemaById(id);
+    if (!schema)
+        return nullptr;
+    return createColumnMapper(schema);
+}
 }
