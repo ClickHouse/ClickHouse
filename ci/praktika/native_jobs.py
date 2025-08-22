@@ -464,6 +464,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             res = False
             traceback.print_exc()
             info = traceback.format_exc()
+
         results.append(
             Result(
                 name="Cache Lookup",
@@ -473,6 +474,14 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 info=info,
             )
         )
+
+    print(f"Write config to GH's job output")
+    with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+        print(
+            f"DATA={workflow_config.to_json()}",
+            file=f,
+        )
+    print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
     workflow_config.dump()
 
     if results[-1].is_ok() and workflow.enable_report:
