@@ -36,16 +36,17 @@ try:
     import asyncio
     import ssl
 
-    import cassandra.cluster
-    import nats
     import psycopg2
+    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
     import pymongo
     import pymysql
+    import nats
+    # Not an easy dep
+    import cassandra.cluster
     from cassandra.policies import RoundRobinPolicy
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
-    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
