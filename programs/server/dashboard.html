@@ -319,6 +319,7 @@
         }
 
         .title {
+            position: absolute;
             left: 50%;
             top: 0.25em;
             transform: translate(-50%, 0);
@@ -326,6 +327,7 @@
             font-weight: bold;
             color: var(--title-color);
             z-index: 10;
+            display: block;
         }
 
         .chart-buttons {
@@ -718,7 +720,7 @@ function insertChart(i) {
     chart.className = 'chart';
 
     let chart_title = document.createElement('div');
-    let title_text = document.createTextNode('');
+    let title_text = document.createTextNode(q.title || `Chart ${i + 1}`);
     chart_title.appendChild(title_text);
     chart_title.className = 'title';
     chart.appendChild(chart_title);
@@ -760,7 +762,7 @@ function insertChart(i) {
         query_error.style.display = 'none';
         q.title = query_editor_title.value;
         q.query = query_editor_textarea.value;
-        title_text.data = '';
+        title_text.data = q.title || `Chart ${getCurrentIndex() + 1}`;
         findParamsInQuery(q.query, params);
         buildParams();
         refreshCustomized(true);
@@ -936,7 +938,7 @@ function insertChart(i) {
 }
 
 document.getElementById('add').addEventListener('click', e => {
-    queries.push({ title: '', query: '' });
+    queries.push({ title: `New Chart ${queries.length + 1}`, query: '' });
 
     const {chart, textarea} = insertChart(plots.length);
     chart.scrollIntoView();
@@ -1171,7 +1173,13 @@ async function draw(idx, chart, url_params, query) {
         plots[idx] = null;
     }
 
-    let {reply, error} = await doFetch(query, url_params);
+    let error_div = chart.querySelector('.query-error');
+    let title_div = chart.querySelector('.title');
+
+    title_div.style.display = 'block';
+
+    try {
+        let {reply, error} = await doFetch(query, url_params);
     if (!error) {
         if (reply.rows == 0) {
             error = "Query returned empty result.";
@@ -1244,8 +1252,6 @@ async function draw(idx, chart, url_params, query) {
         }
     }
 
-    let error_div = chart.querySelector('.query-error');
-    let title_div = chart.querySelector('.title');
     if (error) {
         error_div.firstChild.data = error;
         title_div.style.display = 'block';
@@ -1346,9 +1352,16 @@ async function draw(idx, chart, url_params, query) {
     sync.sub(plots[idx]);
 
     /// Set title
-    const title = queries[idx] && queries[idx].title ? queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] ) : '';
+    const title = queries[idx] && queries[idx].title ? queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] ) : `Chart ${idx + 1}`;
     chart.querySelector('.title').firstChild.data = title;
+    chart.querySelector('.title').style.display = 'block';
     return true;
+} catch (e) {
+    error_div.firstChild.data = e.message;
+    title_div.style.display = 'block';
+    error_div.style.display = 'block';
+    return false;
+}
 }
 
 function showError(message) {
