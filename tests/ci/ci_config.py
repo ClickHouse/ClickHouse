@@ -388,6 +388,7 @@ class CI:
         JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
             num_batches=8,
+            timeout=10800,
         ),
         JobNames.INTEGRATION_TEST_TSAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
@@ -398,6 +399,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=8,
             runner_type=Runners.FUNC_TESTER_AARCH64,
+            timeout=10800,
         ),
         JobNames.INTEGRATION_TEST: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],

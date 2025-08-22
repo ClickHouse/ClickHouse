@@ -154,7 +154,10 @@ class FTResultsProcessor:
                     broken_message = None
                     if test[0] in known_broken_tests.keys():
                         if known_broken_tests[test[0]].get("message"):
-                            if known_broken_tests[test[0]]["message"] in test[3]:
+                            if (
+                                known_broken_tests[test[0]]["message"]
+                                in test_results_[-1].info
+                            ):
                                 broken_message = f"\nMarked as broken, matched message: '{known_broken_tests[test[0]]['message']}'"
                         else:
                             broken_message = f"\nMarked as broken, no message specified"
