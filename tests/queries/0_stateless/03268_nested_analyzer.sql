@@ -1,3 +1,4 @@
+set enable_analyzer=1;
 -- {echoOn }
 
 SELECT nested(['a', 'b'], [1, 2], [3, 4]);
