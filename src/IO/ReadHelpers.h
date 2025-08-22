@@ -734,7 +734,7 @@ inline bool tryReadUUIDText(UUID & uuid, ReadBuffer & buf)
 template <typename ReturnType = void>
 inline ReturnType readIPv4TextImpl(IPv4 & ip, ReadBuffer & buf)
 {
-    if (parseIPv4(buf.position(), [&buf](){ return buf.eof(); }, reinterpret_cast<unsigned char *>(&ip.toUnderType())))
+    if (parseIPv4(buf.position(), [&buf]{ return buf.eof(); }, reinterpret_cast<unsigned char *>(&ip.toUnderType())))
         return ReturnType(true);
 
     if constexpr (std::is_same_v<ReturnType, void>)
