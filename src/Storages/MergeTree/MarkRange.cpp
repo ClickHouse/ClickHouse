@@ -127,7 +127,7 @@ void MarkRanges::deserialize(ReadBuffer & in)
 void MarkRanges::attachOrMergeLastRange(const MarkRange &range)
 {
     /// check if we can merge with a previous range
-    if (this->size() > 0 && this->back().end == range.begin)
+    if (!this->empty() && this->back().end == range.begin)
     {
         chassert(this->back().end <= range.begin);
         this->back().end = range.end;
