@@ -528,6 +528,9 @@ Possible values:
     DECLARE(Bool, type_json_skip_duplicated_paths, false, R"(
 When enabled, during parsing JSON object into JSON type duplicated paths will be ignored and only the first one will be inserted instead of an exception
 )", 0) \
+    DECLARE(Bool, json_type_escape_dots_in_keys, false, R"(
+When enabled, dots in JSON keys will be escaped during parsing.
+)", 0) \
     DECLARE(UInt64, input_format_json_max_depth, 1000, R"(
 Maximum depth of a field in JSON. This is not a strict limit, it does not have to be applied precisely.
 )", 0) \
@@ -1108,7 +1111,7 @@ Write DateTime values as raw unix timestamp (read back as UInt32), instead of co
     DECLARE(Bool, output_format_parquet_date_as_uint16, false, R"(
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit parquet DATE type (read back as Date32).
 )", 0) \
-    DECLARE(Bool, output_format_parquet_enum_as_byte_array, false, R"(
+    DECLARE(Bool, output_format_parquet_enum_as_byte_array, true, R"(
 Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(

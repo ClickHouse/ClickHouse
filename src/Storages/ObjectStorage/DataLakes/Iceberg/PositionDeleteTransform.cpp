@@ -18,21 +18,41 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
-namespace DB
-{
-
-namespace Setting
+namespace DB::Setting
 {
 extern const SettingsNonZeroUInt64 max_block_size;
 }
-
-namespace ErrorCodes
+namespace DB::ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 }
 
+namespace DB::Iceberg
+{
+
+Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
+{
+    Poco::JSON::Array::Ptr pos_delete_schema = new Poco::JSON::Array;
+    Poco::JSON::Object::Ptr field_pos = new Poco::JSON::Object;
+    field_pos->set(Iceberg::f_id, IcebergPositionDeleteTransform::positions_column_field_id);
+    field_pos->set(Iceberg::f_name, IcebergPositionDeleteTransform::positions_column_name);
+    field_pos->set(Iceberg::f_required, true);
+    field_pos->set(Iceberg::f_type, "long");
+
+    Poco::JSON::Object::Ptr field_filename = new Poco::JSON::Object;
+    field_filename->set(Iceberg::f_id, IcebergPositionDeleteTransform::data_file_path_column_field_id);
+    field_pos->set(Iceberg::f_name, IcebergPositionDeleteTransform::data_file_path_column_name);
+    field_pos->set(Iceberg::f_required, true);
+    field_pos->set(Iceberg::f_type, "string");
+
+    pos_delete_schema->add(field_filename);
+    pos_delete_schema->add(field_pos);
+    return pos_delete_schema;
+}
 
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {
@@ -43,7 +63,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
         std::make_shared<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
         std::make_shared<ASTLiteral>(Field(iceberg_data_path)));
 
-    for (const auto & position_deletes_object : relevant_position_deletes_objects)
+    for (const auto & position_deletes_object : iceberg_object_info->position_deletes_objects)
     {
         /// Skip position deletes that do not match the data file path.
         if (position_deletes_object.reference_data_file_path.has_value()
