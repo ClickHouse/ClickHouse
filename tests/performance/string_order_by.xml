@@ -1,0 +1,10 @@
+<test>
+    <create_query>CREATE TABLE str_sort (a String, b UInt64) ENGINE = MEMEORY</create_query>
+    <fill_query>
+        INSERT INTO str_sort SELECT ('number key ' || toString(number % 400)) AS a, number % 20 AS b FROM numbers(1e7)
+    </fill_query>
+
+    <query>SELECT a, b FROM str_sort ORDER BY a, b FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS str_sort</drop_query>
+</test>
