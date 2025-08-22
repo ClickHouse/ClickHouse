@@ -346,6 +346,7 @@ void AzureObjectStorage::copyObject( /// NOLINT
     ProfileEvents::increment(ProfileEvents::AzureCopyObject);
     if (client_ptr->IsClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
+    LOG_TRACE(log, "AzureObjectStorage::copyObject of size {}", object_metadata.size_bytes);
 
     if (object_metadata.size_bytes < settings_ptr->max_single_part_copy_size)
     {
