@@ -41,5 +41,10 @@ create table ref_table (id UInt32, b Int32, c UInt32) Engine=MergeTree order by 
 insert into ref_table values (1, 2, 3);
 select * from alias_table order by id;
 
+select '-- Truncate alias table --';
+truncate table alias_table;
+select * from ref_table order by id;
+select * from alias_table order by id;
+
 drop table alias_table;
 drop table ref_table;

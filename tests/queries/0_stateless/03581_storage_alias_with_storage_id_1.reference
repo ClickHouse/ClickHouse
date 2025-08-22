@@ -38,3 +38,4 @@
 -- Drops reference table --
 -- Re-create reference table with same name --
 1	2	3
+-- Truncate alias table --

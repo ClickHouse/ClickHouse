@@ -129,6 +129,11 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     String interpreter_name;
 
+    auto mark_cannot_get_ref_table_for_alias_storage = [&context]()
+    {
+        context->setSetting("return_ref_table_for_alias_storage", Field(false));
+    };
+
     if (query->as<ASTSelectQuery>())
     {
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -162,8 +167,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterCreateQuery";
     }
-    else if (query->as<ASTDropQuery>())
+    else if (auto * drop_query = query->as<ASTDropQuery>())
     {
+        if (drop_query->kind != ASTDropQuery::Truncate)
+            mark_cannot_get_ref_table_for_alias_storage();
         interpreter_name = "InterpreterDropQuery";
     }
     else if (query->as<ASTUndropQuery>())
@@ -217,10 +224,12 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTExistsDatabaseQuery>() || query->as<ASTExistsTableQuery>() || query->as<ASTExistsViewQuery>() || query->as<ASTExistsDictionaryQuery>())
     {
+        mark_cannot_get_ref_table_for_alias_storage();
         interpreter_name = "InterpreterExistsQuery";
     }
     else if (query->as<ASTShowCreateTableQuery>() || query->as<ASTShowCreateViewQuery>() || query->as<ASTShowCreateDatabaseQuery>() || query->as<ASTShowCreateDictionaryQuery>())
     {
+        mark_cannot_get_ref_table_for_alias_storage();
         interpreter_name = "InterpreterShowCreateQuery";
     }
     else if (query->as<ASTDescribeQuery>())

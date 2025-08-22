@@ -50,4 +50,4 @@ select * from alias_table order by id;
 
 ## Details of Implementation {#details-of-implementation}
 
-The storage is replaced with the storage of the referenced table after getting the table from the in-memory database catalog. For example: in the table-resolving phase of the planner (when `enable_analyzer=1`) or in the constructor of an interpreter (when `enable_analyzer=0`).
+Operations on `Alias` storage will be directed to its reference table.

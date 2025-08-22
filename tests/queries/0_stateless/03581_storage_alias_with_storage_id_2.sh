@@ -46,5 +46,10 @@ $CLICKHOUSE_CLIENT --query "create table ref_table (id UInt32, b Int32, c UInt32
 $CLICKHOUSE_CLIENT --query "insert into ref_table values (1, 2, 3)"
 $CLICKHOUSE_CLIENT --query "select * from alias_table order by id"
 
+$CLICKHOUSE_CLIENT --query "select '-- Truncate alias table --'"
+$CLICKHOUSE_CLIENT --query "truncate table alias_table"
+$CLICKHOUSE_CLIENT --query "select * from ref_table order by id"
+$CLICKHOUSE_CLIENT --query "select * from alias_table order by id"
+
 $CLICKHOUSE_CLIENT --query "drop table alias_table"
 $CLICKHOUSE_CLIENT --query "drop table ref_table"

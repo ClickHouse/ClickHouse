@@ -39,7 +39,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
@@ -177,10 +176,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         query.table_id = current_context->resolveStorageID(local_table_id);
     }
 
-    auto table = DatabaseCatalog::instance().getTable(query.table_id, current_context);
-    if (auto * alias_storage = dynamic_cast<StorageAlias *>(table.get()))
-        table = alias_storage->getReferenceTable(current_context);
-    return table;
+    return DatabaseCatalog::instance().getTable(query.table_id, current_context);
 }
 
 Block InterpreterInsertQuery::getSampleBlock(

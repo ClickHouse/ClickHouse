@@ -185,9 +185,14 @@ public:
     StoragePtr tryGetTable(const StorageID & table_id, ContextPtr context) const;
     DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
     DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable getTableImpl(const StorageID & table_id,
-                                  ContextPtr context,
-                                  std::optional<Exception> * exception = nullptr) const;
+    DatabaseAndTable getTableAndCheckAlias(
+        const StorageID & table_id,
+        ContextPtr context,
+        std::optional<Exception> * exception = nullptr) const;
+    DatabaseAndTable getTableImpl(
+        const StorageID & table_id,
+        ContextPtr context,
+        std::optional<Exception> * exception = nullptr) const;
 
     /// Returns true if a passed table_id refers to one of the predefined tables' names.
     /// All tables in the "system" database with System* table engine are predefined.

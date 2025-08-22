@@ -40,3 +40,4 @@ Code: 60
 Code: 60
 -- Re-create reference table with same name --
 1	2	3
+-- Truncate alias table --

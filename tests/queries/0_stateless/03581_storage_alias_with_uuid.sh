@@ -39,6 +39,11 @@ $CLICKHOUSE_CLIENT --query "alter table alias_table add column col Int32 Default
 $CLICKHOUSE_CLIENT --query "select * from ref_table order by id"
 $CLICKHOUSE_CLIENT --query "select * from alias_table order by id"
 
+$CLICKHOUSE_CLIENT --query "select '-- Truncate alias table --'"
+$CLICKHOUSE_CLIENT --query "truncate table alias_table"
+$CLICKHOUSE_CLIENT --query "select * from alias_table order by id"
+$CLICKHOUSE_CLIENT --query "select * from ref_table order by id"
+
 $CLICKHOUSE_CLIENT --query "select '-- Drops reference table --'"
 $CLICKHOUSE_CLIENT --query "drop table ref_table"
 $CLICKHOUSE_CLIENT --query "select * from alias_table order by id" 2>&1 | grep -o -F "Code: 60" | uniq
