@@ -113,7 +113,6 @@ struct FunctionDocumentation
         StringSearch,
         StringSplitting,
         String,
-        TimeSeriesAnalysis,
         TimeSeries,
         TimeWindow,
         Tuple,
