@@ -300,7 +300,9 @@ parser.add_argument(
     "--with-hms", action="store_true", help="With Hive catalog for Spark"
 )
 parser.add_argument(
-    "--with-unity", type=pathlib.Path, help="With Unity catalog for Spark, path to Unity dir"
+    "--with-unity",
+    type=pathlib.Path,
+    help="With Unity catalog for Spark, path to Unity dir",
 )
 
 args = parser.parse_args()
@@ -456,23 +458,10 @@ if args.with_postgresql:
 # Handler for HTTP server
 def datalakehandler(path, data, headers):
     if path == "/sparkdatabase":
-        spark_handler.create_lake_database(
-            cluster,
-            data["database_name"],
-            data["storage"],
-            data["format"],
-            data["catalog"],
-        )
+        spark_handler.create_lake_database(cluster, data)
         return True
     if path == "/sparktable":
-        spark_handler.create_lake_table(
-            cluster,
-            data["database_name"],
-            data["table_name"],
-            data["storage"],
-            data["format"],
-            data["columns"],
-        )
+        spark_handler.create_lake_table(cluster, data)
         return True
     return False
 

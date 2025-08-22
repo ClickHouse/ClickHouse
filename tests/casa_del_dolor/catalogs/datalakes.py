@@ -14,7 +14,7 @@ from pyiceberg.catalog import load_catalog
 from pyiceberg.catalog.rest import RestCatalog
 from .laketables import (
     TableStorage,
-    TableFormat,
+    LakeFormat,
     LakeCatalogs,
     LakeTableGenerator,
 )
@@ -69,7 +69,7 @@ def get_spark(
     cluster,
     catalog_name: str,
     storage: TableStorage,
-    format: TableFormat,
+    lake: LakeFormat,
     catalog: LakeCatalogs,
 ):
     true_false_lambda = lambda: random.choice(["false", "true"])
@@ -138,12 +138,12 @@ def get_spark(
         "org.projectnessie:nessie-spark-runtime-3.4_2.12:0.76.0",
     ]
 
-    if format == TableFormat.Iceberg:
+    if lake == LakeFormat.Iceberg:
         catalog_extension = (
             "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
         )
         catalog_format = "org.apache.iceberg.spark.SparkCatalog"
-    elif format == TableFormat.DeltaLake:
+    elif lake == LakeFormat.DeltaLake:
         catalog_extension = "io.delta.sql.DeltaSparkSessionExtension"
         catalog_format = (
             "io.unitycatalog.spark.UCSingleCatalog"
@@ -151,7 +151,7 @@ def get_spark(
             else "org.apache.spark.sql.delta.catalog.DeltaCatalog"
         )
     else:
-        raise Exception("Unknown format")
+        raise Exception("Unknown lake format")
 
     os.environ["PYSPARK_SUBMIT_ARGS"] = f"--packages {",".join(all_jars)} pyspark-shell"
 
@@ -165,19 +165,19 @@ def get_spark(
     # CATALOG CONFIGURATIONS
     # ============================================================
     if catalog == LakeCatalogs.Glue:
-        if format == TableFormat.Iceberg:
+        if lake == LakeFormat.Iceberg:
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.catalog-impl",
                 "org.apache.iceberg.aws.glue.GlueCatalog",
             )
-        elif format == TableFormat.DeltaLake:
+        elif lake == LakeFormat.DeltaLake:
             builder.config(
                 "spark.hadoop.hive.metastore.client.factory.class",
                 "com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory",
             )
     elif catalog == LakeCatalogs.Hive:
         # Enable Hive support
-        if format == TableFormat.Iceberg:
+        if lake == LakeFormat.Iceberg:
             builder.config(f"spark.sql.catalog.{catalog_name}.type", "hive")
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.uri", "thrift://0.0.0.0:9083"
@@ -187,7 +187,7 @@ def get_spark(
         builder.config("spark.sql.hive.metastore.jars", "builtin")
         builder.enableHiveSupport()
     elif catalog == LakeCatalogs.REST or (
-        catalog == LakeCatalogs.Unity and format == TableFormat.Iceberg
+        catalog == LakeCatalogs.Unity and lake == LakeFormat.Iceberg
     ):
         builder.config(
             f"spark.sql.catalog.{catalog_name}.catalog-impl",
@@ -217,7 +217,7 @@ def get_spark(
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.s3.path-style-access", "true"
             )
-    elif catalog == LakeCatalogs.Unity and format == TableFormat.DeltaLake:
+    elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
         builder.config(f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8080")
         builder.config(f"spark.sql.catalog.{catalog_name}.token", "")
         builder.config("spark.sql.defaultCatalog", f"{catalog_name}")
@@ -228,14 +228,14 @@ def get_spark(
         )
         # builder.config(f"spark.sql.catalog.{catalog_name}.uri", "uri")
         # builder.config(f"spark.sql.catalog.{catalog_name}.ref", "ref")
-    elif format == TableFormat.Iceberg:
+    elif lake == LakeFormat.Iceberg:
         # Something as default for iceberg, nothing needed for delta
         builder.config(f"spark.sql.catalog.{catalog_name}.type", "hadoop")
 
     # ============================================================
     # STORAGE CONFIGURATIONS
     # ============================================================
-    if catalog == LakeCatalogs.Unity and format == TableFormat.Iceberg:
+    if catalog == LakeCatalogs.Unity and lake == LakeFormat.Iceberg:
         # It has to point to unity
         builder.config("spark.sql.warehouse.dir", "unity")
         builder.config(f"spark.sql.catalog.{catalog_name}.warehouse", "unity")
@@ -358,15 +358,15 @@ class DolorCatalog:
         cluster,
         _catalog_name: str,
         _storage_type: TableStorage,
-        _format_type: TableFormat,
+        _lake_type: LakeFormat,
         _catalog_type: LakeCatalogs,
     ):
         self.catalog_name = _catalog_name
         self.storage_type = _storage_type
-        self.format_type = _format_type
+        self.lake_type = _lake_type
         self.catalog_type = _catalog_type
         self.session = get_spark(
-            cluster, _catalog_name, _storage_type, _format_type, _catalog_type
+            cluster, _catalog_name, _storage_type, _lake_type, _catalog_type
         )
 
 
@@ -457,21 +457,16 @@ class SparkHandler:
         self.logger.info(f"Running query: {next_sql}")
         session.sql(next_sql)
 
-    def create_lake_database(
-        self,
-        cluster,
-        catalog_name: str,
-        storage_type: str,
-        format: str,
-        catalog: str,
-    ):
-        next_storage = TableStorage.storage_from_str(storage_type)
-        next_format = TableFormat.format_from_str(format)
+    def create_lake_database(self, cluster, data):
+        catalog = data["catalog"]
+        catalog_name = data["database_name"]
+        next_storage = TableStorage.storage_from_str(data["storage"])
+        next_lake = LakeFormat.lakeformat_from_str(data["lake"])
         next_catalog = LakeCatalogs.catalog_from_str(catalog)
 
         # Load catalog if needed
         if next_catalog == LakeCatalogs.REST:
-            if format == TableFormat.Iceberg:
+            if next_lake == LakeFormat.Iceberg:
                 next_warehouse = ""
                 kwargs = {"py-io-impl": "pyiceberg.io.pyarrow.PyArrowFileIO"}
                 if next_storage == TableStorage.S3:
@@ -507,7 +502,7 @@ class SparkHandler:
                 raise Exception("REST catalog not avaiable outside Iceberg")
         elif next_catalog == LakeCatalogs.Glue:
             if next_storage == TableStorage.S3:
-                if format == TableFormat.Iceberg:
+                if next_lake == LakeFormat.Iceberg:
                     glue_catalog = load_catalog(
                         catalog,
                         **{
@@ -528,7 +523,7 @@ class SparkHandler:
                 raise Exception("Glue catalog not available outside AWS at the moment")
         elif next_catalog == LakeCatalogs.Hive:
             if next_storage == TableStorage.S3:
-                if format == TableFormat.Iceberg:
+                if next_lake == LakeFormat.Iceberg:
                     hive_catalog = load_catalog(
                         catalog,
                         **{
@@ -550,36 +545,29 @@ class SparkHandler:
             raise Exception("No Nessie yet")
 
         self.catalogs[catalog_name] = DolorCatalog(
-            cluster, catalog_name, next_storage, next_format, next_catalog
+            cluster, catalog_name, next_storage, next_lake, next_catalog
         )
         self.create_database(self.catalogs[catalog_name].session, catalog_name)
 
-    def create_lake_table(
-        self,
-        cluster,
-        catalog_name: str,
-        table_name: str,
-        storage_type: str,
-        format: str,
-        columns: list[dict[str, str]],
-    ):
+    def create_lake_table(self, cluster, data):
+        catalog_name = data["database_name"]
         one_time = catalog_name[0] != "d"
         next_session = None
-        next_storage = TableStorage.storage_from_str(storage_type)
-        next_format = TableFormat.format_from_str(format)
+        next_storage = TableStorage.storage_from_str(data["storage"])
+        next_lake = LakeFormat.lakeformat_from_str(data["lake"])
         next_generator = LakeTableGenerator.get_next_generator(
-            cluster.minio_bucket, next_format
+            cluster.minio_bucket, next_lake
         )
 
         if one_time:
             next_session = get_spark(
-                cluster, catalog_name, next_storage, next_format, LakeCatalogs.NoCatalog
+                cluster, catalog_name, next_storage, next_lake, LakeCatalogs.NoCatalog
             )
             self.create_database(next_session, catalog_name)
         else:
             next_session = cluster.catalogs[catalog_name].session
         next_sql = next_generator.generate_create_table_ddl(
-            catalog_name, table_name, columns
+            catalog_name, data["table_name"], data["columns"], data["format"]
         )
         self.logger.info(f"Running query: {next_sql}")
         next_session.sql(next_sql)

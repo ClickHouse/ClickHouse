@@ -210,6 +210,11 @@ void SQLBase::setTablePath(RandomGenerator & rg)
 
         file_format = rg.pickRandomly(formats);
     }
+    else if (isAnyDeltaLakeEngine() && rg.nextMediumNumber() < 91)
+    {
+        /// What Delta Lake supports
+        file_format = INOUT_Parquet;
+    }
     else if (isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine())
     {
         /// Set other parameters

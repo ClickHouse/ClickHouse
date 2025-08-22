@@ -24,18 +24,45 @@ class TableStorage(Enum):
         return TableStorage.Unkown
 
 
-class TableFormat(Enum):
+class FileFormat(Enum):
+    Any = 0
+    Parquet = 1
+    ORC = 2
+    Avro = 3
+
+    @staticmethod
+    def file_from_str(f: str):
+        if f.lower() == "parquet":
+            return FileFormat.Parquet
+        if f.lower() == "orc":
+            return FileFormat.ORC
+        if f.lower() == "avro":
+            return FileFormat.Avro
+        return FileFormat.Any
+
+    @staticmethod
+    def file_to_str(f):
+        if f == FileFormat.Parquet:
+            return "parquet"
+        if f == FileFormat.ORC:
+            return "orc"
+        if f == FileFormat.Avro:
+            return "avro"
+        return "Any"
+
+
+class LakeFormat(Enum):
     Unkown = 0
     Iceberg = 1
     DeltaLake = 2
 
     @staticmethod
-    def format_from_str(loc: str):
+    def lakeformat_from_str(loc: str):
         if loc.lower() == "iceberg":
-            return TableFormat.Iceberg
+            return LakeFormat.Iceberg
         if loc.lower() == "deltalake":
-            return TableFormat.DeltaLake
-        return TableFormat.Unkown
+            return LakeFormat.DeltaLake
+        return LakeFormat.Unkown
 
 
 class LakeCatalogs(Enum):
@@ -65,13 +92,14 @@ class LakeTableGenerator:
     def __init__(self, _bucket: str):
         self.bucket = _bucket
         self.type_mapper = ClickHouseSparkTypeMapper()
+        self.write_format = FileFormat.Parquet
         pass
 
     @staticmethod
-    def get_next_generator(bucket: str, format: TableFormat):
+    def get_next_generator(bucket: str, lake: LakeFormat):
         return (
             IcebergTableGenerator(bucket)
-            if format == TableFormat.Iceberg
+            if lake == LakeFormat.Iceberg
             else DeltaLakePropertiesGenerator(bucket)
         )
 
@@ -85,8 +113,16 @@ class LakeTableGenerator:
     def get_format(self) -> str:
         pass
 
+    @abstractmethod
+    def set_basic_properties(self) -> dict[str, str]:
+        pass
+
     def generate_create_table_ddl(
-        self, catalog_name: str, table_name: str, columns: list[dict[str, str]]
+        self,
+        catalog_name: str,
+        table_name: str,
+        columns: list[dict[str, str]],
+        format: str,
     ) -> str:
         """
         Generate a complete CREATE TABLE DDL statement with random properties
@@ -94,6 +130,8 @@ class LakeTableGenerator:
         Args:
             table_name: Name of the table
         """
+        self.write_format = FileFormat.file_from_str(format)
+
         ddl = f"CREATE TABLE IF NOT EXISTS {catalog_name}.test.{table_name} ("
         columns_list = []
         columns_str = []
@@ -120,16 +158,17 @@ class LakeTableGenerator:
             random.shuffle(random_subset)
             ddl += f"PARTITIONED BY ({",".join(random_subset)})"
 
+        properties = self.set_basic_properties()
         # Add table properties
         if random.randint(1, 2) == 1:
-            properties = self.generate_table_properties(columns)
-            if properties:
-                ddl += " TBLPROPERTIES ("
-                prop_lines = []
-                for key, value in properties.items():
-                    prop_lines.append(f"'{key}' = '{value}'")
-                ddl += ",".join(prop_lines)
-                ddl += ")"
+            properties.update(self.generate_table_properties(columns))
+        if len(properties) > 0:
+            ddl += " TBLPROPERTIES ("
+            prop_lines = []
+            for key, value in properties.items():
+                prop_lines.append(f"'{key}' = '{value}'")
+            ddl += ",".join(prop_lines)
+            ddl += ")"
         return ddl + ";"
 
     def generate_alter_table_statements(
@@ -156,6 +195,15 @@ class IcebergTableGenerator(LakeTableGenerator):
 
     def get_format(self) -> str:
         return "iceberg"
+
+    def set_basic_properties(self) -> dict[str, str]:
+        properties = {}
+        out_format = FileFormat.file_to_str(self.write_format)
+        if out_format == "any":
+            out_format = random.choice(["parquet", "orc", "avro"])
+            self.write_format = FileFormat.file_from_str(out_format)
+        properties["write.format.default"] = out_format
+        return properties
 
     def generate_table_properties(
         self, columns: list[dict[str, str]], include_all: bool = False
@@ -215,12 +263,8 @@ class IcebergTableGenerator(LakeTableGenerator):
         format_version = random.choice(["1", "2"])
         properties["format-version"] = format_version
 
-        # Write format
-        write_format = random.choice(["parquet", "orc", "avro"])
-        properties["write.format.default"] = write_format
-
         # Parquet specific properties
-        if write_format == "parquet":
+        if self.write_format == FileFormat.Parquet:
             properties["write.parquet.compression-codec"] = random.choice(
                 ["snappy", "gzip", "zstd", "lz4", "brotli", "uncompressed"]
             )
@@ -236,7 +280,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             )
 
         # ORC specific properties
-        elif write_format == "orc":
+        elif self.write_format == FileFormat.ORC:
             properties["write.orc.compression-codec"] = random.choice(
                 ["snappy", "zlib", "lzo", "zstd", "none"]
             )
@@ -251,7 +295,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             )
 
         # AVRO specific properties
-        elif write_format == "avro":
+        elif self.write_format == FileFormat.Avro:
             properties["write.avro.compression-codec"] = random.choice(
                 ["snappy", "deflate", "bzip2", "xz", "zstandard", "uncompressed"]
             )
