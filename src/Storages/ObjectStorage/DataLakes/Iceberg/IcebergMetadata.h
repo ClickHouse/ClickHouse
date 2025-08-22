@@ -144,6 +144,7 @@ private:
 
 
     ColumnMapperPtr column_mapper;
+    BackgroundSchedulePoolTaskHolder remove_backups_task;
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);

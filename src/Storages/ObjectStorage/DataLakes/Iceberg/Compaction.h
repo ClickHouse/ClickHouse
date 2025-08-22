@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include "Core/BackgroundSchedulePoolTaskHolder.h"
 
 
 namespace DB::Iceberg
@@ -19,7 +20,8 @@ void compactIcebergTable(
     const std::optional<DB::FormatSettings> & format_settings_,
     DB::SharedHeader sample_block_,
     DB::ContextPtr context_,
-    DB::CompressionMethod compression_method_);
+    DB::CompressionMethod compression_method_,
+    DB::BackgroundSchedulePoolTaskHolder & remove_backups_task);
 
 #endif
 }

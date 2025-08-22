@@ -2703,6 +2703,72 @@ def test_optimize(started_cluster, storage_type):
     assert len(df) == 90
 
 
+def test_optimize_backups(started_cluster):
+    storage_type = "local"
+    instance = started_cluster.instances["node1"]
+    instance.query("SET iceberg_remove_backups=1")
+    spark = started_cluster.spark_session
+    TABLE_NAME = "test_position_deletes_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'=
+        'merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10, 100)")
+
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 90
+
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100, 110)")
+    initial_files = default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 90
+
+    instance.query(f"OPTIMIZE TABLE {TABLE_NAME};", settings={"allow_experimental_iceberg_compaction" : 1, "iceberg_remove_backups":5})
+
+    compacted_files_with_backups = default_download_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    assert len(compacted_files_with_backups) > len(initial_files)
+
+    time.sleep(6)
+
+    compacted_files = default_download_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    assert len(compacted_files_with_backups) == len(initial_files) + len(compacted_files)
+    assert len(compacted_files) < len(initial_files)
+
+
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_writes_drop_table(started_cluster, format_version, storage_type):

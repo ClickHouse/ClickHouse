@@ -25,6 +25,11 @@
 
 #if USE_AVRO
 
+namespace DB::Setting
+{
+extern const SettingsSeconds iceberg_remove_backups;
+}
+
 namespace DB::Iceberg
 {
 
@@ -461,11 +466,23 @@ std::vector<String> getOldFiles(
     return metadata_files;
 }
 
-void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & old_files)
+void backupOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & old_files)
 {
     for (const auto & metadata_file : old_files)
     {
-        object_storage->removeObjectIfExists(StoredObject(metadata_file));
+        auto object_from = StoredObject(metadata_file);
+        auto object_to = StoredObject(metadata_file + ".bak");
+        object_storage->copyObject(object_from, object_to, {}, {});
+        object_storage->removeObjectIfExists(object_from);
+    }
+}
+
+void clearBackups(ObjectStoragePtr object_storage, const std::vector<String> & old_files)
+{
+    for (const auto & metadata_file : old_files)
+    {
+        auto object_back = StoredObject(metadata_file + ".bak");
+        object_storage->removeObjectIfExists(object_back);
     }
 }
 
@@ -477,7 +494,8 @@ void compactIcebergTable(
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
     ContextPtr context_,
-    CompressionMethod compression_method_)
+    CompressionMethod compression_method_,
+    DB::BackgroundSchedulePoolTaskHolder & remove_backups_task)
 {
     auto plan
         = getPlan(std::move(snapshots_info), persistent_table_components, object_storage_, configuration_, context_, compression_method_);
@@ -486,7 +504,17 @@ void compactIcebergTable(
         auto old_files = getOldFiles(object_storage_, configuration_);
         writeDataFiles(plan, sample_block_, object_storage_, format_settings_, context_, configuration_);
         writeMetadataFiles(plan, object_storage_, configuration_, context_, sample_block_);
-        clearOldFiles(object_storage_, old_files);
+        backupOldFiles(object_storage_, old_files);
+        remove_backups_task = context_->getBufferFlushSchedulePool().createTask("IcebergCompaction", [object_storage_, old_files]
+        {
+            std::cerr << "clearBackups\n";
+            clearBackups(object_storage_, old_files);
+        });
+
+        auto remote_backups = context_->getSettingsRef()[Setting::iceberg_remove_backups].totalMilliseconds();
+        std::cerr << "remote_backups " << remote_backups << '\n';
+        remove_backups_task->activate();
+        remove_backups_task->scheduleAfter(remote_backups);
     }
 }
 

@@ -223,6 +223,8 @@ namespace CurrentMetrics
     extern const Metric UncompressedCacheCells;
     extern const Metric IndexUncompressedCacheBytes;
     extern const Metric IndexUncompressedCacheCells;
+    extern const Metric BackgroundIcebergSchedulePoolTask;
+    extern const Metric BackgroundIcebergSchedulePoolSize;
 }
 
 
@@ -339,6 +341,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_pool_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
+    extern const ServerSettingsUInt64 background_iceberg_schedule_pool_size;
 }
 
 namespace ErrorCodes
@@ -515,6 +518,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable BackgroundSchedulePoolPtr distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     OnceFlag message_broker_schedule_pool_initialized;
     mutable BackgroundSchedulePoolPtr message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
+    OnceFlag iceberg_schedule_pool_initialized;
+    mutable BackgroundSchedulePoolPtr iceberg_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
 
     mutable OnceFlag readers_initialized;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
@@ -3938,6 +3943,19 @@ ThreadPool & Context::getBuildVectorSimilarityIndexThreadPool() const
                 pool_size);
         });
     return *shared->build_vector_similarity_index_threadpool;
+}
+
+BackgroundSchedulePool & Context::getIcebergSchedulePool() const
+{
+    callOnce(shared->iceberg_schedule_pool_initialized, [&] {
+        shared->iceberg_schedule_pool = BackgroundSchedulePool::create(
+            shared->server_settings[ServerSetting::background_iceberg_schedule_pool_size],
+            CurrentMetrics::BackgroundIcebergSchedulePoolTask,
+            CurrentMetrics::BackgroundIcebergSchedulePoolSize,
+            "BgIcePool");
+    });
+
+    return *shared->iceberg_schedule_pool;
 }
 
 BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const

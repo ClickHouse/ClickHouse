@@ -343,7 +343,8 @@ bool IcebergMetadata::optimize(const StorageMetadataPtr & metadata_snapshot, Con
             format_settings,
             sample_block,
             context,
-            metadata_compression_method);
+            metadata_compression_method,
+            remove_backups_task);
         return true;
     }
     else
