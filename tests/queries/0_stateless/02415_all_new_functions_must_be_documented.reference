@@ -103,7 +103,6 @@ finalizeAggregation
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 flattenTuple
-format
 formatReadableQuantity
 formatReadableSize
 formatReadableTimeDelta
@@ -274,7 +273,6 @@ readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
 readWKTRing
-regexpQuoteMeta
 regionHierarchy
 regionIn
 regionToArea
@@ -305,10 +303,6 @@ reinterpretAsUInt32
 reinterpretAsUInt64
 reinterpretAsUInt8
 reinterpretAsUUID
-replaceAll
-replaceOne
-replaceRegexpAll
-replaceRegexpOne
 replicate
 revision
 rowNumberInAllBlocks
@@ -463,8 +457,6 @@ transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
 transform
-translate
-translateUTF8
 tumble
 tumbleEnd
 tumbleStart
