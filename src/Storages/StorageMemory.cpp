@@ -41,6 +41,7 @@
 #include <Common/FailPoint.h>
 #include <Common/FileChecker.h>
 
+
 namespace DB
 {
 namespace Setting
@@ -63,12 +64,12 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int BACKUP_ENTRY_NOT_FOUND;
-    }
+}
 
-    namespace FailPoints
-    {
+namespace FailPoints
+{
     extern const char backup_add_empty_memory_table[];
-    }
+}
 
 class MemorySink : public SinkToStorage
 {
