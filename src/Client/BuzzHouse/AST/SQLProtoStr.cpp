@@ -3083,13 +3083,17 @@ CONV_FN(TableDefItem, tdef)
     }
 }
 
-CONV_FN(TableDef, ct)
+CONV_FN(TableDef, tdef)
 {
-    ColumnDefToString(ret, ct.col_def());
-    for (int i = 0; i < ct.other_defs_size(); i++)
+    if (tdef.table_defs_size() > 0)
     {
-        ret += ", ";
-        TableDefItemToString(ret, ct.other_defs(i));
+        ret += "(";
+        for (int i = 0; i < tdef.table_defs_size(); i++)
+        {
+            ret += ", ";
+            TableDefItemToString(ret, tdef.table_defs(i));
+        }
+        ret += ")";
     }
 }
 
@@ -3381,9 +3385,7 @@ CONV_FN(CreateTable, create_table)
     ret += " ";
     if (create_table.has_table_def())
     {
-        ret += "(";
         TableDefToString(ret, create_table.table_def());
-        ret += ")";
     }
     else if (create_table.has_table_as())
     {

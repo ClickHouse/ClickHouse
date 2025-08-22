@@ -2095,25 +2095,32 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
 
             if (add_idx && nopt < (add_idx + 1))
             {
-                addTableIndex(rg, next, false, colsdef->add_other_defs()->mutable_idx_def());
+                addTableIndex(rg, next, false, colsdef->add_table_defs()->mutable_idx_def());
                 added_idxs++;
             }
             else if (add_proj && nopt < (add_idx + add_proj + 1))
             {
-                addTableProjection(rg, next, false, colsdef->add_other_defs()->mutable_proj_def());
+                addTableProjection(rg, next, false, colsdef->add_table_defs()->mutable_proj_def());
                 added_projs++;
             }
             else if (add_const && nopt < (add_idx + add_proj + add_const + 1))
             {
-                addTableConstraint(rg, next, false, colsdef->add_other_defs()->mutable_const_def());
+                addTableConstraint(rg, next, false, colsdef->add_table_defs()->mutable_const_def());
                 added_consts++;
             }
             else if (add_col && nopt < (add_idx + add_proj + add_const + add_col + 1))
             {
                 const bool add_pkey = !added_pkey && rg.nextMediumNumber() < 4;
-                ColumnDef * cd = i == 0 ? colsdef->mutable_col_def() : colsdef->add_other_defs()->mutable_col_def();
 
-                addTableColumn(rg, next, next.col_counter++, false, false, add_pkey, ColumnSpecial::NONE, cd);
+                addTableColumn(
+                    rg,
+                    next,
+                    next.col_counter++,
+                    false,
+                    false,
+                    add_pkey,
+                    ColumnSpecial::NONE,
+                    colsdef->add_table_defs()->mutable_col_def());
                 added_pkey |= add_pkey;
                 added_cols++;
             }
@@ -2122,7 +2129,6 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                 const uint32_t cname = next.col_counter++;
                 const bool add_pkey = !added_pkey && rg.nextMediumNumber() < 4;
                 const bool add_version_col = add_version && nopt < (add_idx + add_proj + add_const + add_col + add_version + 1);
-                ColumnDef * cd = i == 0 ? colsdef->mutable_col_def() : colsdef->add_other_defs()->mutable_col_def();
 
                 addTableColumn(
                     rg,
@@ -2132,7 +2138,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                     false,
                     add_pkey,
                     add_version_col ? ColumnSpecial::VERSION : (add_sign ? ColumnSpecial::SIGN : ColumnSpecial::IS_DELETED),
-                    cd);
+                    colsdef->add_table_defs()->mutable_col_def());
                 added_pkey |= add_pkey;
                 te->add_params()->mutable_cols()->mutable_col()->set_column("c" + std::to_string(cname));
                 if (add_version_col)
@@ -2208,6 +2214,11 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     if (next.cluster.has_value())
     {
         ct->mutable_cluster()->set_cluster(next.cluster.value());
+    }
+    if (next.isAnyIcebergEngine() && next.integration == IntegrationCall::Dolor && ct->has_table_def())
+    {
+        /// For Iceberg tables created from Spark, don't give table schema
+        ct->clear_table_def();
     }
     if (next.hasDatabasePeer())
     {

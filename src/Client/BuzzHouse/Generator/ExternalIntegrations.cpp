@@ -138,11 +138,11 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
     {
         const TableDef & def = newt.table_def();
 
-        for (int i = 0; i < def.other_defs_size() + 1; i++)
+        for (int i = 0; i < def.table_defs_size(); i++)
         {
-            if (i == 0 || def.other_defs(i - 1).has_col_def())
+            if (def.table_defs(i).has_col_def())
             {
-                ColumnDef & cdef = const_cast<ColumnDef &>(i == 0 ? def.col_def() : def.other_defs(i - 1).col_def());
+                ColumnDef & cdef = const_cast<ColumnDef &>(def.table_defs(i).col_def());
                 TopTypeName & ttn = const_cast<TopTypeName &>(cdef.type().type());
 
                 if (cdef.has_codecs() && rg.nextBool())
@@ -1701,8 +1701,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
     }
 }
 
-extern void
-collectColumnPaths(String cname, SQLType * tp, uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths);
+extern void collectColumnPaths(String cname, SQLType * tp, uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths);
 
 bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
 {
@@ -1728,10 +1727,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, 
     for (const auto & entry : entries)
     {
         buf += fmt::format(
-            R"({}{{"name":"{}","type":"{}"}})",
-            first ? "" : ",",
-            entry.getBottomName(),
-            entry.getBottomType()->ToSparkTypeName(false));
+            R"({}{{"name":"{}","type":"{}"}})", first ? "" : ",", entry.getBottomName(), entry.getBottomType()->ToSparkTypeName(false));
         first = false;
     }
     buf += "]}";

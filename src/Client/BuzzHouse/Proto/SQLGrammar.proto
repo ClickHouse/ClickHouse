@@ -3170,8 +3170,7 @@ message TableDefItem {
 }
 
 message TableDef {
-    required ColumnDef col_def = 1;
-    repeated TableDefItem other_defs = 2;
+    repeated TableDefItem table_defs = 1;
 }
 
 enum AscDesc {
