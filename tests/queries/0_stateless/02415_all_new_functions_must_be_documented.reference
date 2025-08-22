@@ -118,7 +118,6 @@ filesystemUnreserved
 finalizeAggregation
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
-format
 formatReadableQuantity
 formatReadableSize
 formatReadableTimeDelta
@@ -161,8 +160,6 @@ ilike
 in
 inIgnoreSet
 indexHint
-initcap
-initcapUTF8
 initialQueryID
 initializeAggregation
 intExp10
@@ -172,14 +169,8 @@ isDecimalOverflow
 isIPAddressInRange
 isIPv4String
 isIPv6String
-isValidUTF8
 joinGet
 joinGetOrNull
-left
-leftPad
-leftPadUTF8
-leftUTF8
-lengthUTF8
 lgamma
 like
 log
@@ -188,7 +179,6 @@ log1p
 log2
 lowCardinalityIndices
 lowCardinalityKeys
-lower
 map
 mapAdd
 mapFromArrays
@@ -309,7 +299,6 @@ readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
 readWKTRing
-regexpQuoteMeta
 regionHierarchy
 regionIn
 regionToArea
@@ -340,18 +329,8 @@ reinterpretAsUInt32
 reinterpretAsUInt64
 reinterpretAsUInt8
 reinterpretAsUUID
-repeat
-replaceAll
-replaceOne
-replaceRegexpAll
-replaceRegexpOne
 replicate
-reverseUTF8
 revision
-right
-rightPad
-rightPadUTF8
-rightUTF8
 rowNumberInAllBlocks
 rowNumberInBlock
 runningAccumulate
@@ -510,8 +489,6 @@ transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
 transform
-translate
-translateUTF8
 tumble
 tumbleEnd
 tumbleStart

@@ -36,16 +36,17 @@ try:
     import asyncio
     import ssl
 
-    import cassandra.cluster
-    import nats
     import psycopg2
+    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
     import pymongo
     import pymysql
+    import nats
+    # Not an easy dep
+    import cassandra.cluster
     from cassandra.policies import RoundRobinPolicy
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
-    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
@@ -3187,7 +3188,7 @@ class ClickHouseCluster:
                 )
                 for i in range(1, 3):
                     if os.path.exists(self.zookeeper_instance_dir_prefix + f"{i}"):
-                        shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}")
+                        shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}", ignore_errors=True)
                 for dir in self.zookeeper_dirs_to_create:
                     os.makedirs(dir)
                 run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
@@ -3205,11 +3206,11 @@ class ClickHouseCluster:
                 if self.use_keeper:
                     for i in range(1, 4):
                         if os.path.exists(self.keeper_instance_dir_prefix + f"{i}"):
-                            shutil.rmtree(self.keeper_instance_dir_prefix + f"{i}")
+                            shutil.rmtree(self.keeper_instance_dir_prefix + f"{i}", ignore_errors=True)
                 else:
                     for i in range(1, 3):
                         if os.path.exists(self.zookeeper_instance_dir_prefix + f"{i}"):
-                            shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}")
+                            shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}", ignore_errors=True)
 
                 for dir in self.zookeeper_dirs_to_create:
                     os.makedirs(dir)
@@ -3317,8 +3318,8 @@ class ClickHouseCluster:
             if self.with_mysql57 and self.base_mysql57_cmd:
                 logging.debug("Setup MySQL")
                 if os.path.exists(self.mysql57_dir):
-                    shutil.rmtree(self.mysql57_dir)
-                os.makedirs(self.mysql57_logs_dir)
+                    shutil.rmtree(self.mysql57_dir, ignore_errors=True)
+                os.makedirs(self.mysql57_logs_dir, exist_ok=True)
                 os.chmod(self.mysql57_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql57_cmd + common_opts)
                 self.up_called = True
@@ -3327,8 +3328,8 @@ class ClickHouseCluster:
             if self.with_mysql8 and self.base_mysql8_cmd:
                 logging.debug("Setup MySQL 8")
                 if os.path.exists(self.mysql8_dir):
-                    shutil.rmtree(self.mysql8_dir)
-                os.makedirs(self.mysql8_logs_dir)
+                    shutil.rmtree(self.mysql8_dir, ignore_errors=True)
+                os.makedirs(self.mysql8_logs_dir, exist_ok=True)
                 os.chmod(self.mysql8_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql8_cmd + common_opts)
                 self.wait_mysql8_to_start()
@@ -3336,7 +3337,7 @@ class ClickHouseCluster:
             if self.with_mysql_cluster and self.base_mysql_cluster_cmd:
                 logging.debug("Setup MySQL")
                 if os.path.exists(self.mysql_cluster_dir):
-                    shutil.rmtree(self.mysql_cluster_dir)
+                    shutil.rmtree(self.mysql_cluster_dir, ignore_errors=True)
                 os.makedirs(self.mysql_cluster_logs_dir, exist_ok=True)
                 os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
@@ -3347,8 +3348,8 @@ class ClickHouseCluster:
             if self.with_postgres and self.base_postgres_cmd:
                 logging.debug("Setup Postgres")
                 if os.path.exists(self.postgres_dir):
-                    shutil.rmtree(self.postgres_dir)
-                os.makedirs(self.postgres_logs_dir)
+                    shutil.rmtree(self.postgres_dir, ignore_errors=True)
+                os.makedirs(self.postgres_logs_dir, exist_ok=True)
                 os.chmod(self.postgres_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
