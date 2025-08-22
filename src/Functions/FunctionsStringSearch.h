@@ -11,11 +11,11 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsStringSearchBase.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <IO/WriteHelpers.h>
-#include <Functions/FunctionsStringSearchBase.h>
 
 
 namespace DB
@@ -83,7 +83,6 @@ enum class HaystackNeedleOrderIsConfigurable : uint8_t
     No,     /// function arguments are always: (haystack, needle[, position])
     Yes     /// depending on a setting, the function arguments are (haystack, needle[, position]) or (needle, haystack[, position])
 };
-
 
 template <typename Impl,
     ExecutionErrorPolicy execution_error_policy = ExecutionErrorPolicy::Throw,

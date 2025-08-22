@@ -2027,7 +2027,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         sum_rows += part.getRowsCount();
     }
 
-
     if (add_index_stat_row_for_pk_expand)
     {
         result.index_stats.emplace_back(ReadFromMergeTree::IndexStat{

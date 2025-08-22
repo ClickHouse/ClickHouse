@@ -1,6 +1,5 @@
 #pragma once
 
-#include <variant>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 
