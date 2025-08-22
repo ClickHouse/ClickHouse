@@ -644,19 +644,6 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             random.choice(["true", "false"])
         ).lower()
 
-        if properties["delta.autoOptimize.autoCompact"] == "true":
-            # Auto compact file size
-            properties["delta.autoOptimize.maxFileSize"] = str(
-                random.choice(
-                    [
-                        134217728,  # 128MB
-                        268435456,  # 256MB
-                        536870912,  # 512MB
-                        1073741824,  # 1GB
-                    ]
-                )
-            )
-
         # Optimize write
         properties["spark.databricks.delta.autoCompact.enabled"] = str(
             random.choice(["true", "false"])

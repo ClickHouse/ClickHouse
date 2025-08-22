@@ -2388,22 +2388,22 @@ enum InOutFormat {
     INOUT_Npy = 29;
     INOUT_ORC = 30;
     INOUT_Parquet = 31;
-    INOUT_Protobuf = 32;
-    INOUT_ProtobufList = 33;
-    INOUT_ProtobufSingle = 34;
-    INOUT_RawBLOB = 35;
-    INOUT_RowBinary = 36;
-    INOUT_RowBinaryWithNames = 37;
-    INOUT_RowBinaryWithNamesAndTypes = 38;
-    INOUT_TabSeparated = 39;
-    INOUT_TabSeparatedRaw = 40;
-    INOUT_TabSeparatedRawWithNames = 41;
-    INOUT_TabSeparatedRawWithNamesAndTypes = 42;
-    INOUT_TabSeparatedWithNames = 43;
-    INOUT_TabSeparatedWithNamesAndTypes = 44;
-    INOUT_Template = 45;
-    INOUT_TSKV = 46;
-    INOUT_Values = 47;
+    //INOUT_Protobuf = 32;
+    //INOUT_ProtobufList = 33;
+    //INOUT_ProtobufSingle = 34;
+    INOUT_RawBLOB = 32;
+    INOUT_RowBinary = 33;
+    INOUT_RowBinaryWithNames = 34;
+    INOUT_RowBinaryWithNamesAndTypes = 35;
+    INOUT_TabSeparated = 36;
+    INOUT_TabSeparatedRaw = 37;
+    INOUT_TabSeparatedRawWithNames = 38;
+    INOUT_TabSeparatedRawWithNamesAndTypes = 39;
+    INOUT_TabSeparatedWithNames = 40;
+    INOUT_TabSeparatedWithNamesAndTypes = 41;
+    INOUT_Template = 42;
+    INOUT_TSKV = 43;
+    INOUT_Values = 44;
 }
 
 message UsingExpr {
@@ -3089,9 +3089,9 @@ enum CompressionCodec {
     COMP_Gorilla = 11;
     COMP_FPC = 12;
     COMP_T64 = 13;
-    COMP_SZ3 = 14;
-    COMP_AES_128_GCM_SIV = 15;
-    COMP_AES_256_GCM_SIV = 16;
+    //COMP_SZ3 = 14;
+    COMP_AES_128_GCM_SIV = 14;
+    COMP_AES_256_GCM_SIV = 15;
 }
 
 message IndexParam {
@@ -3904,6 +3904,9 @@ enum FailPoint {
     plain_object_storage_copy_fail_on_file_move = 57;
     plain_object_storage_copy_temp_source_file_fail_on_file_move = 58;
     plain_object_storage_copy_temp_target_file_fail_on_file_move = 59;
+    slowdown_parallel_replicas_local_plan_read = 60;
+    iceberg_writes_cleanup = 61;
+    smt_commit_exception_before_op = 62;
     //keeper_leader_sets_invalid_digest = 60; The server aborts legitimately, can't be used
 }
 
