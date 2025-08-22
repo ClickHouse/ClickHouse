@@ -284,8 +284,8 @@ public:
 
     virtual void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & /* memories */, const UInt8 * /* is_null */) const;
 
-    /// Calculate all the sizes of serialized data in column, then added to `sizes`.
-    /// If `is_null` is not nullptr, also take null bit into account.
+    /// Calculate all the sizes of serialized data (as in the methods above) in the column and add to `sizes`.
+    /// If `is_null` is not nullptr, also take null byte into account.
     /// This is currently used to facilitate the allocation of memory for an entire continuous row
     /// in a single step. For more details, refer to the HashMethodSerialized implementation.
     virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const;

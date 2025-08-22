@@ -61,6 +61,12 @@ public:
     /// Returns true if this entity is readonly.
     virtual bool isReadOnly(const UUID &) const { return isReadOnly(); }
 
+    /// Returns true if this storage is ephemeral.
+    virtual bool isEphemeral() const { return false; }
+
+    /// Returns true if this entity is ephemeral.
+    virtual bool isEphemeral(const UUID &) const { return isEphemeral(); }
+
     /// Returns true if this storage is replicated.
     virtual bool isReplicated() const { return false; }
     virtual String getReplicationID() const { return ""; }

@@ -122,10 +122,10 @@ public:
                 DateTime64 time = 0;
 
                 size_t string_size = offsets_src[i] - src_offset;
-                if (string_size != ULID_LENGTH + 1)
+                if (string_size != ULID_LENGTH)
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN,
-                        "Illegal column {} of argument of function {}, ULID must be {} characters long",
+                        "Illegal value {} of argument of function {}, ULID must be {} characters long",
                         arguments[0].name, getName(), ULID_LENGTH
                     );
 

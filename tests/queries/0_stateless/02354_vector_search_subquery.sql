@@ -1,6 +1,5 @@
 -- Tags: no-fasttest, no-ordinary-database
 
-SET enable_vector_similarity_index = 1;
 SET enable_analyzer = 1; -- analyzer vs. non-analyzer produce slightly different EXPLAIN
 
 -- Reference vector for vector search is computed by a subquery (issue #69085)

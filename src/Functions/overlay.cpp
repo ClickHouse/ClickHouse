@@ -98,7 +98,7 @@ public:
         if (col_input_const)
         {
             StringRef input = col_input_const->getDataAt(0);
-            res_data.reserve((input.size + 1) * input_rows_count);
+            res_data.reserve(input.size * input_rows_count);
         }
         else
         {
@@ -277,7 +277,7 @@ private:
 
             if constexpr (!is_utf8)
             {
-                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
+                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -303,7 +303,7 @@ private:
                 const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
 
-                size_t new_res_size = res_data.size() + prefix_bytes + replace.size + suffix_bytes + 1; /// +1 for zero terminator
+                size_t new_res_size = res_data.size() + prefix_bytes + replace.size + suffix_bytes;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -321,10 +321,6 @@ private:
                     res_offset += suffix_bytes;
                 }
             }
-
-            /// add zero terminator
-            res_data[res_offset] = 0;
-            ++res_offset;
 
             res_offsets[i] = res_offset;
         }
@@ -370,7 +366,7 @@ private:
         for (size_t i = 0; i < rows; ++i)
         {
             size_t input_offset = input_offsets[i - 1];
-            size_t input_bytes = input_offsets[i] - input_offsets[i - 1] - 1;
+            size_t input_bytes = input_offsets[i] - input_offsets[i - 1];
             size_t input_size = getSliceSize(&input_data[input_offset], input_bytes);
 
             if constexpr (offset_is_const)
@@ -394,7 +390,7 @@ private:
 
             if constexpr (!is_utf8)
             {
-                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
+                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -422,7 +418,7 @@ private:
                 const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
 
-                size_t new_res_size = res_data.size() + prefix_bytes + replace.size + suffix_bytes + 1; /// +1 for zero terminator
+                size_t new_res_size = res_data.size() + prefix_bytes + replace.size + suffix_bytes;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -440,10 +436,6 @@ private:
                     res_offset += suffix_bytes;
                 }
             }
-
-            /// add zero terminator
-            res_data[res_offset] = 0;
-            ++res_offset;
 
             res_offsets[i] = res_offset;
         }
@@ -490,7 +482,7 @@ private:
         for (size_t i = 0; i < rows; ++i)
         {
             size_t replace_offset = replace_offsets[i - 1];
-            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1] - 1;
+            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1];
             size_t replace_size = getSliceSize(&replace_data[replace_offset], replace_bytes);
 
             if constexpr (!offset_is_const)
@@ -514,7 +506,7 @@ private:
 
             if constexpr (!is_utf8)
             {
-                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
+                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -538,7 +530,7 @@ private:
                 size_t prefix_bytes = prefix_end > input_end ? input.size : prefix_end - input_begin;
                 const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
-                size_t new_res_size = res_data.size() + prefix_bytes + replace_bytes + suffix_bytes + 1; /// +1 for zero terminator
+                size_t new_res_size = res_data.size() + prefix_bytes + replace_bytes + suffix_bytes;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -556,10 +548,6 @@ private:
                     res_offset += suffix_bytes;
                 }
             }
-
-            /// add zero terminator
-            res_data[res_offset] = 0;
-            ++res_offset;
 
             res_offsets[i] = res_offset;
         }
@@ -611,11 +599,11 @@ private:
         for (size_t i = 0; i < rows; ++i)
         {
             size_t input_offset = input_offsets[i - 1];
-            size_t input_bytes = input_offsets[i] - input_offsets[i - 1] - 1;
+            size_t input_bytes = input_offsets[i] - input_offsets[i - 1];
             size_t input_size = getSliceSize(&input_data[input_offset], input_bytes);
 
             size_t replace_offset = replace_offsets[i - 1];
-            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1] - 1;
+            size_t replace_bytes = replace_offsets[i] - replace_offsets[i - 1];
             size_t replace_size = getSliceSize(&replace_data[replace_offset], replace_bytes);
 
             if constexpr (offset_is_const)
@@ -643,7 +631,7 @@ private:
 
             if constexpr (!is_utf8)
             {
-                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size + 1; /// +1 for zero terminator
+                size_t new_res_size = res_data.size() + prefix_size + replace_size + suffix_size;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -670,7 +658,7 @@ private:
                 size_t prefix_bytes = prefix_end > input_end ? input_bytes : prefix_end - input_begin;
                 const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
-                size_t new_res_size = res_data.size() + prefix_bytes + replace_bytes + suffix_bytes + 1; /// +1 for zero terminator
+                size_t new_res_size = res_data.size() + prefix_bytes + replace_bytes + suffix_bytes;
                 res_data.resize(new_res_size);
 
                 /// copy prefix before replaced region
@@ -688,10 +676,6 @@ private:
                     res_offset += suffix_bytes;
                 }
             }
-
-            /// add zero terminator
-            res_data[res_offset] = 0;
-            ++res_offset;
 
             res_offsets[i] = res_offset;
         }
