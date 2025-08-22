@@ -199,13 +199,13 @@ static std::pair<Int32, String> getMetadataFileAndVersion(const std::string & pa
     String version_str;
     /// v<V>.metadata.json
     if (file_name.starts_with('v'))
-        version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
+        return std::make_pair(-1, path);
     /// <V>-<random-uuid>.metadata.json
     else
         version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
 
     if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
-        return std::make_pair(0, path);
+        return std::make_pair(-1, path);
         // throw Exception(
         //     ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
 
