@@ -1,31 +1,24 @@
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsStringSearch.h>
 #include <Functions/IFunction.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Functions/FunctionFactory.h>
-
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/FunctionsStringSearch.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/ActionsDAG.h>
-#include <__format/format_functions.h>
 #include <base/defines.h>
-#include <algorithm>
-#include <memory>
 
+#include <algorithm>
 #include <cstdio>
+#include <memory>
 
 namespace DB::QueryPlanOptimizations
 {
