@@ -507,11 +507,13 @@ namespace
 
 void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    bool skip_empty_entry = true;
-    fiu_do_on(FailPoints::backup_add_empty_memory_table, { skip_empty_entry = false; });
-
-    if (totalBytes(backup_entries_collector.getContext()) == 0 && skip_empty_entry)
-        return;
+    if (totalBytes(backup_entries_collector.getContext()) == 0)
+    {
+        bool skip_empty_entry = true;
+        fiu_do_on(FailPoints::backup_add_empty_memory_table, { skip_empty_entry = false; });
+        if (skip_empty_entry)
+            return;
+    }
 
     auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
     const auto & read_settings = backup_entries_collector.getReadSettings();
@@ -556,6 +558,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         if (!backup->fileExists(index_file_path))
             throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_file_path);
 
+        auto file_size = backup->getFileSize(index_file_path);
         std::unique_ptr<ReadBufferFromFileBase> in = nullptr;
         try
         {
@@ -563,11 +566,11 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         }
         catch (const DB::Exception & e)
         {
-            if (e.code() == ErrorCodes::BACKUP_ENTRY_NOT_FOUND && backup->getFileSize(index_file_path) == 0)
+            if (e.code() == ErrorCodes::BACKUP_ENTRY_NOT_FOUND && file_size == 0)
             {
                 LOG_ERROR(
                     getLogger("StorageMemory"),
-                    "File '{}' with expected size 0 is listed in backup metadata but is not found in the backup, skipping",
+                    "File '{}' with size 0 is listed in backup metadata but is not found in the backup, skipping",
                     index_file_path);
                 return;
             }
