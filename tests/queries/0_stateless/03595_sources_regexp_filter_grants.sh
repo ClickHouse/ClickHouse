@@ -28,7 +28,9 @@ ${CLICKHOUSE_CLIENT} --query "REVOKE READ ON URL FROM $user1";
 echo '--multiple grants--'
 ${CLICKHOUSE_CLIENT} --query "GRANT READ ON URL('http://localhost:912.*') TO $user1";
 ${CLICKHOUSE_CLIENT} --query "GRANT READ ON URL('http://localhost:812.*') TO $user1";
+${CLICKHOUSE_CLIENT} --query "GRANT READ ON S3('http://localhost:11111/.*') TO $user1";
 ${CLICKHOUSE_CLIENT} --user $user1 --query "SELECT * FROM url('http://localhost:8123/', LineAsString) FORMAT Null;";
+${CLICKHOUSE_CLIENT} --user $user1 --query "SELECT * FROM s3('http://localhost:11111/test/a.tsv', 'TSV') FORMAT Null;";
 echo 'OK'
 
 echo '--wrong grant--'
@@ -43,6 +45,9 @@ ${CLICKHOUSE_CLIENT} --query "GRANT CREATE TEMPORARY TABLE ON *.* TO $user1;";
 ${CLICKHOUSE_CLIENT} --user $user1 --query "SELECT * FROM url('http://localhost:8123/', LineAsString) FORMAT Null;";
 ${CLICKHOUSE_CLIENT} --query "REVOKE READ ON URL('foo.*') FROM $user1";
 (( $(${CLICKHOUSE_CLIENT} --user $user1 --query "SELECT * FROM url('http://localhost:8123/', LineAsString) FORMAT Null;" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+
+echo '--invalid regexp--'
+(( $(${CLICKHOUSE_CLIENT} --user $user1 --query "GRANT READ ON URL('(\w+) \1') TO $user1;" 2>&1 | grep -c "Syntax error") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
 
 ${CLICKHOUSE_CLIENT} <<EOF

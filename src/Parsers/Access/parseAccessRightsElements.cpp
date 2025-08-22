@@ -1,6 +1,7 @@
 #include <Parsers/Access/parseAccessRightsElements.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/re2.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -26,6 +27,12 @@ namespace
 
             if (!parseIdentifierOrStringLiteral(pos, expected, parameter_regexp))
                 return false;
+
+            if (const re2::RE2 re(parameter_regexp); !re.ok())
+            {
+                expected.add(pos, "valid regexp");
+                return false;
+            }
 
             if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
                 return false;

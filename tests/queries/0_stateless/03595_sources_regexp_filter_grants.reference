@@ -8,3 +8,5 @@ OK
 OK
 --partial revokes--
 OK
+--invalid regexp--
+OK
