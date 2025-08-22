@@ -56,7 +56,7 @@ struct DeleteFileWriteResult
 
 using DeleteFileWriteResultByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkPartitioner::PartitionKeyHasher>;
 
-DeleteFileWriteResultByPartitionKey writeDataFiles(
+std::optional<DeleteFileWriteResultByPartitionKey> writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
     StorageMetadataPtr metadata,
@@ -96,8 +96,10 @@ DeleteFileWriteResultByPartitionKey writeDataFiles(
             ColumnWithTypeAndName(std::make_shared<DataTypeString>(), IcebergPositionDeleteTransform::data_file_path_column_name));
 
         Block block;
+        bool has_any_rows = false;
         while (executor.pull(block))
         {
+            has_any_rows = true;
             Chunk chunk(block.getColumns(), block.rows());
             auto partition_result = chunk_partitioner.partitionChunk(chunk);
 
@@ -170,6 +172,9 @@ DeleteFileWriteResultByPartitionKey writeDataFiles(
                 writers[partition_key]->write(delete_file_block);
             }
         }
+
+        if (!has_any_rows)
+            return std::nullopt;
 
         for (const auto & [partition_key, _] : result)
         {
@@ -396,8 +401,11 @@ void mutate(
     auto chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
     auto delete_file = writeDataFiles(commands, context, storage_metadata, storage_id, object_storage, configuration, filename_generator, format_settings, chunk_partitioner);
 
-    while (!writeMetadataFiles(delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner))
+    if (delete_file)
     {
+        while (!writeMetadataFiles(*delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner))
+        {
+        }
     }
 }
 
