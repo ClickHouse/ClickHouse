@@ -471,8 +471,6 @@ using FunctionMapPartialReverseSort = FunctionMapToArrayAdapter<FunctionArrayPar
 
 REGISTER_FUNCTION(MapMiscellaneous)
 {
-    constexpr auto category_map = FunctionDocumentation::Category::Map;
-
     /// mapConcat documentation
     FunctionDocumentation::Description description_mapConcat = R"(
 Concatenates multiple maps based on the equality of their keys.

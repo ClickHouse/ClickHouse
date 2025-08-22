@@ -307,12 +307,6 @@ log2
 lowCardinalityIndices
 lowCardinalityKeys
 lower
-map
-mapAdd
-mapFromArrays
-mapPopulateSeries
-mapSubtract
-mapUpdate
 match
 materialize
 minSampleSizeContinuous

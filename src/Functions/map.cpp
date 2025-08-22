@@ -419,7 +419,7 @@ Creates a value of type `Map(key, value)` from key-value pairs.
     FunctionDocumentation::Category category_map = FunctionDocumentation::Category::Map;
     FunctionDocumentation documentation_map = {description_map, syntax_map, arguments_map, returned_value_map, examples_map, introduced_in_map, category_map};
     factory.registerFunction<FunctionMap>(documentation_map);
-    
+
     /// mapFromArrays function documentation
     FunctionDocumentation::Description description_mapFromArrays = R"(
 Creates a map from an array or map of keys and an array or map of values.
@@ -440,7 +440,7 @@ The function is a convenient alternative to syntax `CAST([...], 'Map(key_type, v
     FunctionDocumentation documentation_mapFromArrays = {description_mapFromArrays, syntax_mapFromArrays, arguments_mapFromArrays, returned_value_mapFromArrays, examples_mapFromArrays, introduced_in_mapFromArrays, category_mapFromArrays};
     factory.registerFunction<FunctionMapFromArrays>(documentation_mapFromArrays);
     factory.registerAlias("MAP_FROM_ARRAYS", "mapFromArrays");
-    
+
     /// mapUpdate function documentation
     FunctionDocumentation::Description description_mapUpdate = R"(
 For two maps, returns the first map with values updated on the values for the corresponding keys in the second map.

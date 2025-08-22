@@ -467,7 +467,7 @@ Collect all the keys and sum corresponding values.
     FunctionDocumentation::Category category_mapAdd = FunctionDocumentation::Category::Map;
     FunctionDocumentation documentation_mapAdd = {description_mapAdd, syntax_mapAdd, arguments_mapAdd, returned_value_mapAdd, examples_mapAdd, introduced_in_mapAdd, category_mapAdd};
     factory.registerFunction<FunctionMapOp<OpTypes::ADD>>(documentation_mapAdd);
-    
+
     /// mapSubtract function documentation
     FunctionDocumentation::Description description_mapSubtract = R"(
 Collect all the keys and subtract corresponding values.
