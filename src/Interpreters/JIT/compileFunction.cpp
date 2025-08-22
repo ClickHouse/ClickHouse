@@ -4,6 +4,7 @@
 
 #    include <AggregateFunctions/IAggregateFunction.h>
 #    include <Columns/ColumnNullable.h>
+#    include <Columns/ColumnString.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/Native.h>
 #    include <Interpreters/JIT/CHJIT.h>
@@ -60,6 +61,11 @@ ColumnData getColumnData(const IColumn * column, size_t skip_rows)
     }
     /// skip null key data for one nullable key optimization
     result.data = column->getDataAt(skip_rows).data;
+    if (WhichDataType(column->getDataType()).isString())
+    {
+        const auto * string_column = assert_cast<const ColumnString *>(column);
+        result.offset_data = reinterpret_cast<const char *>(&string_column->getOffsets()[skip_rows]);
+    }
 
     return result;
 }
@@ -659,7 +665,7 @@ static void compileSortDescription(llvm::Module & module,
 
         llvm::Value * lhs_value = nullptr;
         llvm::Value * rhs_value = nullptr;
-        if (nested_column_type->getName() == "String")
+        if (WhichDataType(nested_column_type).isString())
         {
             lhs_value = load_column_string_value(columns_lhs_arg, lhs_index_arg, column_type->isNullable());
             rhs_value = load_column_string_value(columns_rhs_arg, rhs_index_arg, column_type->isNullable());
