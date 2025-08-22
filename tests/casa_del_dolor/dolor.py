@@ -481,9 +481,6 @@ client = generator.run_generator(servers[0], logger, args)
 
 
 def dolor_cleanup():
-    spark_handler.close_sessions()
-    if catalog_server.is_alive():
-        catalog_server.stop()
     if client.process.poll() is None:
         client.process.kill()
         client.process.wait()
@@ -491,6 +488,9 @@ def dolor_cleanup():
         cluster.shutdown(kill=True, ignore_fatal=True)
     except:
         pass
+    spark_handler.close_sessions()
+    if catalog_server.is_alive():
+        catalog_server.stop()
     if modified_server_settings:
         try:
             os.unlink(server_settings)

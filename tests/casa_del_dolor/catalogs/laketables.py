@@ -646,7 +646,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         if properties["delta.autoOptimize.autoCompact"] == "true":
             # Auto compact file size
-            properties["delta.autoCompimize.maxFileSize"] = str(
+            properties["delta.autoOptimize.maxFileSize"] = str(
                 random.choice(
                     [
                         134217728,  # 128MB
@@ -658,7 +658,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             )
 
         # Optimize write
-        properties["delta.optimizeWrite.enabled"] = str(
+        properties["spark.databricks.delta.autoCompact.enabled"] = str(
             random.choice(["true", "false"])
         ).lower()
 
@@ -722,18 +722,13 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         properties = {}
 
         # Target file size
-        properties["delta.targetFileSize"] = random.choice(
+        properties["spark.databricks.delta.optimize.maxFileSize"] = random.choice(
             ["64mb", "128mb", "256mb", "512mb", "1gb"]
         )
 
         # Parquet compression
         properties["spark.sql.parquet.compression.codec"] = random.choice(
             ["snappy", "gzip", "lzo", "brotli", "lz4", "zstd", "uncompressed"]
-        )
-
-        # Max records per file
-        properties["delta.maxRecordsPerFile"] = str(
-            random.choice([1000000, 5000000, 10000000, 50000000])
         )
 
         # Parquet file size

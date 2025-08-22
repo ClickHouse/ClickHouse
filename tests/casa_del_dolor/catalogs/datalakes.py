@@ -422,6 +422,7 @@ class SparkHandler:
 
         self.spark_log_dir = Path(cluster.instances_dir_name) / "spark"
         self.spark_log_config = Path(cluster.instances_dir_name) / "log4j2.properties"
+        self.spark_query_logger = self.spark_log_dir / "query.log"
         spark_log = f"""
 # ----- log4j2.properties -----
 status = error
@@ -551,10 +552,15 @@ logger.jetty.level = warn
                 f"stderr:\n{proc.stderr}"
             )
 
+    def run_query(self, session, query: str):
+        self.logger.info(f"Running query: {query}")
+        with open(self.spark_query_logger, "a") as f:
+            f.write(query + "\n")
+        session.sql(query)
+
     def create_database(self, session, catalog_name: str):
         next_sql = f"CREATE DATABASE IF NOT EXISTS {catalog_name}.test;"
-        self.logger.info(f"Running query: {next_sql}")
-        session.sql(next_sql)
+        self.run_query(session, next_sql)
 
     def create_lake_database(self, cluster, data):
         catalog = data["catalog"]
@@ -679,8 +685,7 @@ logger.jetty.level = warn
         next_sql = next_generator.generate_create_table_ddl(
             catalog_name, data["table_name"], data["columns"], data["format"]
         )
-        self.logger.info(f"Running query: {next_sql}")
-        next_session.sql(next_sql)
+        self.run_query(next_session, next_sql)
 
         if one_time:
             next_session.stop()
