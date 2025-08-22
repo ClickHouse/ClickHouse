@@ -71,6 +71,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"vector_search_with_rescoring", true, false, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
+            {"s3_uri_style", "auto", "auto", "New setting."},
             {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
             {"apply_patch_parts_join_cache_buckets", 8, 8, "New setting"},
             {"delta_lake_throw_on_engine_predicate_error", false, false, "New setting"},
