@@ -4841,6 +4841,9 @@ If true, mutations (UPDATEs and DELETEs) which are not materialized in data part
     DECLARE(Bool, apply_patch_parts, true, R"(
 If true, patch parts (that represent lightweight updates) are applied on SELECTs.
 )", 0) \
+    DECLARE(NonZeroUInt64, apply_patch_parts_join_cache_buckets, 8, R"(
+The number of buckets in the temporary cache for applying patch parts in Join mode.
+)", 0) \
     DECLARE(AlterUpdateMode, alter_update_mode, AlterUpdateMode::HEAVY, R"(
 A mode for `ALTER` queries that have the `UPDATE` commands.
 
@@ -5004,9 +5007,6 @@ Possible values:
 
 - 0 - Disabled
 - 1 - Enabled
-)", 0) \
-    DECLARE(Double, query_condition_cache_selectivity_threshold, 1.0, R"(
-Only insert filter results into the [query condition cache](/operations/query-condition-cache) if their selectivity is smaller than this threshold (this helps to keep cache pollution low).
 )", 0) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
@@ -6587,6 +6587,9 @@ Build local plan for local replica
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
 )", BETA) \
+    DECLARE(Bool, parallel_replicas_support_projection, true, R"(
+Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive.
+)", BETA) \
     DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
 The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
 )", BETA) \
@@ -6675,31 +6678,28 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
     DECLARE(Bool, enforce_strict_identifier_format, false, R"(
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_vector_similarity_index, false, R"(
-Enable vector similarity index.
-)", BETA, enable_vector_similarity_index) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
-)", BETA) \
+)", 0) \
     DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
-)", BETA) \
+)", 0) \
     DECLARE(Bool, vector_search_with_rescoring, false, R"(
 If ClickHouse performs rescoring for queries that use the vector similarity index.
 Without rescoring, the vector similarity index returns the rows containing the best matches directly.
 With rescoring, the rows are extrapolated to granule level and all rows in the granule are checked again.
 In most situations, rescoring helps only marginally with accuracy but it deteriorates performance of vector search queries significantly.
 Note: A query run without rescoring and with parallel replicas enabled may fall back to rescoring.
-)", BETA) \
+)", 0) \
     DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(
 If a vector search query has a WHERE clause, this setting determines if it is evaluated first (pre-filtering) OR if the vector similarity index is checked first (post-filtering). Possible values:
 - 'auto' - Postfiltering (the exact semantics may change in future).
 - 'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
 - 'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
-)", BETA) \
+)", 0) \
     DECLARE_WITH_ALIAS(Float, vector_search_index_fetch_multiplier, 1.0, R"(
 Multiply the number of fetched nearest neighbors from the vector similarity index by this number. Only applied for post-filtering with other predicates or if setting 'vector_search_with_rescoring = 1'.
-)", BETA, vector_search_postfilter_multiplier) \
+)", 0, vector_search_postfilter_multiplier) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
 )", 0) \
@@ -6785,11 +6785,6 @@ When the query prioritization mechanism is employed (see setting `priority`), lo
 )", BETA) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
-    DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, R"(
-Allow memory-efficient aggregation (see `distributed_aggregation_memory_efficient`) to produce buckets out of order.
-It may improve performance when aggregation bucket sizes are skewed by letting a replica to send buckets with higher id-s to the initiator while it is still processing some heavy buckets with lower id-s.
-The downside is potentially higher memory usage.
-)", 0) \
     DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0) \
     DECLARE(UInt64, min_outstreams_per_resize_after_split, 24, R"(
 Specifies the minimum number of output streams of a `Resize` or `StrictResize` processor after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur.
@@ -7005,6 +7000,15 @@ Possible values:
     DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
 Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
+Experimental table engine for integration with YTsaurus.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_ytsaurus_table_function, false, R"(
+Experimental table engine for integration with YTsaurus.
+)", EXPERIMENTAL) \
+DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
+    Experimental dictionary source for integration with YTsaurus.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
 )", EXPERIMENTAL) \
@@ -7038,6 +7042,8 @@ Experimental timeSeries* aggregate functions for Prometheus-like timeseries resa
     MAKE_OBSOLETE(M, Bool, allow_experimental_refreshable_materialized_view, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_bfloat16_type, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_inverted_index, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_vector_similarity_index, true) \
+    MAKE_OBSOLETE(M, Bool, enable_vector_similarity_index, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \

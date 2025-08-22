@@ -12,7 +12,6 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
-#include <Common/logger_useful.h>
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -52,7 +51,6 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsString storage_oauth_server_uri;
     extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
 }
-
 
 template <typename T>
 concept StorageConfiguration = std::derived_from<T, StorageObjectStorageConfiguration>;
@@ -144,6 +142,19 @@ public:
         current_metadata->checkMutationIsPossible(commands);
     }
 
+    void checkAlterIsPossible(const AlterCommands & commands) override
+    {
+        assertInitialized();
+        current_metadata->checkAlterIsPossible(commands);
+    }
+
+    void alter(const AlterCommands & params, ContextPtr context) override
+    {
+        assertInitialized();
+        current_metadata->alter(params, context);
+
+    }
+
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
     {
         assertInitialized();
@@ -174,24 +185,6 @@ public:
     {
         assertInitialized();
         return current_metadata->getSchemaTransformer(local_context, object_info);
-    }
-
-    bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override
-    {
-        if (!current_metadata)
-            return false;
-        return current_metadata->hasPositionDeleteTransformer(object_info);
-    }
-
-    std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & object_info,
-        const SharedHeader & header,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context_) const override
-    {
-        if (!current_metadata)
-            return {};
-        return current_metadata->getPositionDeleteTransformer(object_info, header, format_settings, context_);
     }
 
     bool hasExternalDynamicMetadata() override
@@ -252,6 +245,24 @@ public:
         return current_metadata->getColumnMapper();
     }
 
+    SinkToStoragePtr write(
+        SharedHeader sample_block,
+        const StorageID & table_id,
+        ObjectStoragePtr object_storage,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog) override
+    {
+        return current_metadata->write(
+            sample_block,
+            table_id,
+            object_storage,
+            shared_from_this(),
+            format_settings.has_value() ? *format_settings : FormatSettings{},
+            context,
+            catalog);
+    }
+
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] bool is_attach) const override
     {
 #if USE_AWS_S3 && USE_AVRO
@@ -294,6 +305,11 @@ public:
     {
         assertInitialized();
         return current_metadata->optimize(metadata_snapshot, context, format_settings);
+    }
+
+    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override
+    {
+        current_metadata->addDeleteTransformers(object_info, builder, format_settings, local_context);
     }
 
 private:

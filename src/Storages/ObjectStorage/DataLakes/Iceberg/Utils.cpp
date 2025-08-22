@@ -345,8 +345,10 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::UInt32:
         case TypeIndex::Int32:
             return "int";
+        case TypeIndex::UInt64:
         case TypeIndex::Int64:
             return "long";
         case TypeIndex::Float32:
@@ -354,9 +356,10 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
         case TypeIndex::Float64:
             return "double";
         case TypeIndex::Date32:
+            return "date";
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
-            return "date";
+            return "timestamp";
         case TypeIndex::Time:
             return "time";
         case TypeIndex::String:
