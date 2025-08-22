@@ -32,11 +32,20 @@
     "03403_read_in_order_streams_memory_usage": {
         "reason": "INVESTIGATE - Unstable?"
     },
+    "02483_elapsed_time": {
+        "reason": "INVESTIGATE - Unstable?"
+    },
+    "02967_parallel_replicas_join_algo_and_analyzer_2": {
+        "reason": "INVESTIGATE - Timeout. Unstable?"
+    },
     "03008_deduplication_mv_generates_several_blocks_replicated": {
         "reason": "INVESTIGATE - Timeout. Unstable?"
     },
+    "00111_shard_external_sort_distributed": {
+        "reason": "INVESTIGATE - Timeout in ClickHouse query"
+    },
     "02479_race_condition_between_insert_and_droppin_mv": {
-        "reason": "INVESTIGATE - Internal timeouts on TSAN build"
+        "reason": "INVESTIGATE - Timeout in ClickHouse query"
     },
     "01037_polygon_dicts_correctness_fast": {
         "reason": "INVESTIGATE - Timeout in ClickHouse query"
@@ -57,6 +66,9 @@
         "reason": "INVESTIGATE - Unstable?"
     },
     "test_database_hms/test.py::test_select": {
+        "reason": "INVESTIGATE - Unstable?"
+    },
+    "test_storage_rabbitmq/test.py::test_rabbitmq_sharding_between_queues_publish": {
         "reason": "INVESTIGATE - Unstable?"
     },
     "test_merge_tree_azure_blob_storage/test.py::test_table_manipulations": {

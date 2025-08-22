@@ -150,20 +150,21 @@ class FTResultsProcessor:
                     )
                 )
 
-                broken_message = None
-                if test[0] in known_broken_tests.keys():
-                    if known_broken_tests[test[0]].get("message"):
-                        if known_broken_tests[test[0]]["message"] in test[3]:
-                            broken_message = f"\nMarked as broken, matched message: '{known_broken_tests[test[0]]['message']}'"
-                    else:
-                        broken_message = f"\nMarked as broken, no message specified"
+                if test[1] == "FAIL":
+                    broken_message = None
+                    if test[0] in known_broken_tests.keys():
+                        if known_broken_tests[test[0]].get("message"):
+                            if known_broken_tests[test[0]]["message"] in test[3]:
+                                broken_message = f"\nMarked as broken, matched message: '{known_broken_tests[test[0]]['message']}'"
+                        else:
+                            broken_message = f"\nMarked as broken, no message specified"
 
-                if broken_message:
-                    broken += 1
-                    failed -= 1
-                    test_results_[-1].set_status(Result.StatusExtended.BROKEN)
-                    test_results_[-1].set_label(Result.Label.BROKEN)
-                    test_results_[-1].info += broken_message
+                    if broken_message:
+                        broken += 1
+                        failed -= 1
+                        test_results_[-1].set_status(Result.StatusExtended.BROKEN)
+                        test_results_[-1].set_label(Result.Label.BROKEN)
+                        test_results_[-1].info += broken_message
 
             except Exception as e:
                 print(f"ERROR: Failed to parse test results: [{test}]")
