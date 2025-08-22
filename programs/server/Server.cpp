@@ -74,6 +74,7 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/Cache/registerQueryResultCaches.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
@@ -1061,6 +1062,7 @@ try
     registerFormats();
     registerRemoteFileMetadatas();
     registerSchedulerNodes();
+    registerQueryResultCaches();
 
     QueryPlanStepRegistry::registerPlanSteps();
 
@@ -1844,15 +1846,13 @@ try
     global_context->setQueryConditionCache(query_condition_cache_policy, query_condition_cache_size, query_condition_cache_size_ratio);
 
     size_t query_result_cache_max_size_in_bytes = config().getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE);
-    size_t query_result_cache_max_entries = config().getUInt64("query_cache.max_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES);
-    size_t query_result_cache_max_entry_size_in_bytes = config().getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
-    size_t query_result_cache_max_entry_size_in_rows = config().getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
-    if (query_result_cache_max_size_in_bytes > max_cache_size)
+    auto query_result_cache_type = config().getString("query_cache.type", DEFAULT_QUERY_RESULT_CACHE_TYPE);
+    if (query_result_cache_type == DEFAULT_QUERY_RESULT_CACHE_TYPE && query_result_cache_max_size_in_bytes > max_cache_size)
     {
         query_result_cache_max_size_in_bytes = max_cache_size;
         LOG_INFO(log, "Lowered query result cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_result_cache_max_size_in_bytes));
     }
-    global_context->setQueryResultCache(query_result_cache_max_size_in_bytes, query_result_cache_max_entries, query_result_cache_max_entry_size_in_bytes, query_result_cache_max_entry_size_in_rows);
+    global_context->setQueryResultCache(max_cache_size, config());
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];
