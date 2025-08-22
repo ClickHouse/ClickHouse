@@ -95,53 +95,30 @@ class LakeTableGenerator:
             table_name: Name of the table
         """
         ddl = f"CREATE TABLE IF NOT EXISTS {catalog_name}.test.{table_name} ("
+        columns_list = []
         columns_str = []
         for val in columns:
             # Convert columns
             spark_type, nullable = self.type_mapper.clickhouse_to_spark(
-                False, val["type"]
+                val["type"], False
             )
             columns_str.append(
                 f"{val["name"]} {spark_type}{"" if nullable else " NOT NULL"}"
             )
+            columns_list.append(val["name"])
         ddl += ",".join(columns_str)
         ddl += ")"
 
         # Add USING clause
         ddl += f" USING {self.get_format()}"
 
-        # Add partitioning for Iceberg
-        # if include_partitioning and 'timestamp' in str(selected_columns):
-        #    partition_options = [
-        #        "PARTITIONED BY (days(timestamp))",
-        #        "PARTITIONED BY (months(timestamp))",
-        #        "PARTITIONED BY (years(timestamp), months(timestamp))",
-        #        "PARTITIONED BY (date, category)",
-        #        "PARTITIONED BY (truncate(category, 5))",
-        #        "PARTITIONED BY (bucket(16, id))"
-        #    ]
-        #    ddl.append(random.choice(partition_options))
-        # elif include_partitioning and 'date' in str(selected_columns):
-        #    ddl.append("PARTITIONED BY (date)")
-        # Add partitioning (Delta uses PARTITIONED BY differently than Iceberg)
-        # if include_partitioning:
-        #    if 'date' in str(selected_columns) and 'category' in str(selected_columns):
-        #        ddl.append("PARTITIONED BY (date, category)")
-        #    elif 'date' in str(selected_columns):
-        #        ddl.append("PARTITIONED BY (date)")
-        #    elif 'category' in str(selected_columns):
-        #        ddl.append("PARTITIONED BY (category)")
-
-        # Build location string
-        # location_str = "LOCATION '"
-        # if storage == TableStorage.Local:
-        #    location_str += "file:///var/lib/clickhouse/user_files/lakehouse/default/"
-        # elif storage == TableStorage.S3:
-        #    location_str += f"s3a://{self.bucket}"
-        # else:
-        #    location_str += "wasbs://cont@devstoreaccount1/"
-        # location_str += f"/{table_name}'"
-        # ddl += location_str
+        # Add Partition by
+        if random.randint(1, 3) == 1:
+            random_subset = random.sample(
+                columns_str, k=random.randint(1, len(columns_str))
+            )
+            random.shuffle(random_subset)
+            ddl += f"PARTITIONED BY ({",".join(random_subset)})"
 
         # Add table properties
         if random.randint(1, 2) == 1:

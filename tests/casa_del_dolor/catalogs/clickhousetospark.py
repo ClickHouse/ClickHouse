@@ -43,7 +43,7 @@ class ClickHouseSparkTypeMapper:
         }
 
     def clickhouse_to_spark(
-        self, inside_nullable: bool, ch_type: str
+        self, ch_type: str, inside_nullable: bool
     ) -> tuple[str, bool]:
         """
         Convert ClickHouse type to Spark SQL type string.
@@ -61,16 +61,13 @@ class ClickHouseSparkTypeMapper:
         if nullable_match:
             inner_type = nullable_match.group(1)
             # In Spark SQL, nullable is handled at column level, not type level
-            return self.clickhouse_to_spark(True, inner_type)
+            return self.clickhouse_to_spark(inner_type, True)
 
         # Handle Array types
         array_match = re.match(r"Array\((.*)\)", ch_type)
         if array_match:
             element_type = array_match.group(1)
-            spark_element_type = self.clickhouse_to_spark(False, element_type)
-            if spark_element_type:
-                return (f"ARRAY<{spark_element_type}>", False)
-            return ("STRING", False)
+            return (f"ARRAY<{self.clickhouse_to_spark(element_type, False)[0]}>", False)
 
         # Handle Nested (similar to Array of Structs)
         nested_match = re.match(r"Nested\((.*)\)", ch_type)
@@ -81,7 +78,7 @@ class ClickHouseSparkTypeMapper:
             if fields:
                 struct_fields = ", ".join(
                     [
-                        f"{name}: {self.clickhouse_to_spark(False, ch_type)}"
+                        f"{name}: {self.clickhouse_to_spark(ch_type, False)[0]}"
                         for name, ch_type in fields.items()
                     ]
                 )
@@ -103,17 +100,17 @@ class ClickHouseSparkTypeMapper:
                     parts = elem.rsplit(" ", 1)
                     if len(parts) == 2:
                         name, elem_type = parts
-                        spark_elem_type = self.clickhouse_to_spark(False, elem_type)
-                        if spark_elem_type:
-                            spark_elements.append(f"{name}: {spark_elem_type}")
+                        spark_elements.append(
+                            f"{name}: {self.clickhouse_to_spark(elem_type, False)[0]}"
+                        )
                     else:
-                        spark_elem_type = self.clickhouse_to_spark(False, elem)
-                        if spark_elem_type:
-                            spark_elements.append(f"_{i}: {spark_elem_type}")
+                        spark_elements.append(
+                            f"_{i}: {self.clickhouse_to_spark(elem, False)[0]}"
+                        )
                 else:
-                    spark_elem_type = self.clickhouse_to_spark(False, elem)
-                    if spark_elem_type:
-                        spark_elements.append(f"_{i}: {spark_elem_type}")
+                    spark_elements.append(
+                        f"_{i}: {self.clickhouse_to_spark(elem, False)[0]}"
+                    )
             if spark_elements:
                 return (f'STRUCT<{", ".join(spark_elements)}>', False)
             return ("STRING", False)
@@ -123,11 +120,10 @@ class ClickHouseSparkTypeMapper:
         if map_match:
             key_type = map_match.group(1)
             value_type = map_match.group(2)
-            spark_key_type = self.clickhouse_to_spark(False, key_type)
-            spark_value_type = self.clickhouse_to_spark(False, value_type)
-            if spark_key_type and spark_value_type:
-                return (f"MAP<{spark_key_type}, {spark_value_type}>", False)
-            return ("STRING", False)
+            return (
+                f"MAP<{self.clickhouse_to_spark(key_type, False)[0]}, {self.clickhouse_to_spark(value_type, False)[0]}>",
+                False,
+            )
 
         # Handle Decimal types
         decimal_match = re.match(r"Decimal(?:\d+)?\((\d+)(?:,\s*(\d+))?\)", ch_type)
@@ -170,8 +166,9 @@ class ClickHouseSparkTypeMapper:
         # Handle LowCardinality wrapper
         low_cardinality_match = re.match(r"LowCardinality\((.*)\)", ch_type)
         if low_cardinality_match:
-            inner_type = low_cardinality_match.group(1)
-            return self.clickhouse_to_spark(inside_nullable, inner_type)
+            return self.clickhouse_to_spark(
+                low_cardinality_match.group(1), inside_nullable
+            )
 
         # Handle AggregateFunction
         agg_func_match = re.match(r"AggregateFunction\((.*?),\s*(.*)\)", ch_type)

@@ -128,9 +128,10 @@ def get_spark(
         "org.apache.iceberg:iceberg-aws:1.9.2",
         "org.apache.iceberg:iceberg-azure-bundle:1.9.2",
         "io.delta:delta-spark_2.12:3.3.2",
+        "io.unitycatalog:unitycatalog-spark_2.12:0.2.0",
+        "com.microsoft.azure:azure-storage:8.6.6",
+        "org.apache.hadoop:hadoop-azure:3.3.6",
     ]
-    if format == TableFormat.DeltaLake and catalog == LakeCatalogs.Unity:
-        all_jars.append("io.unitycatalog:unitycatalog-spark_2.12:0.2.0")
 
     nessie_jars = [
         "org.projectnessie.nessie-integrations:nessie-spark-extensions-3.4_2.12:0.76.0",
@@ -234,7 +235,11 @@ def get_spark(
     # ============================================================
     # STORAGE CONFIGURATIONS
     # ============================================================
-    if storage == TableStorage.S3:
+    if catalog == LakeCatalogs.Unity and format == TableFormat.Iceberg:
+        # It has to point to unity
+        builder.config("spark.sql.warehouse.dir", "unity")
+        builder.config(f"spark.sql.catalog.{catalog_name}.warehouse", "unity")
+    elif storage == TableStorage.S3:
         # S3A filesystem implementation
         builder.config(
             "spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem"
@@ -282,21 +287,15 @@ def get_spark(
             f"s3a://{cluster.minio_bucket}/{catalog_name}",
         )
     elif storage == TableStorage.Azure:
-        builder.config(
-            f"spark.hadoop.fs.azure.account.key.{azure_account_name}.blob.core.windows.net",
-            azure_account_key,
-        )
         # For Azurite local emulation
         builder.config(
             f"spark.hadoop.fs.azure.storage.emulator.account.name", azure_account_name
         )
         builder.config(
-            f"spark.hadoop.fs.azure.account.key.{azure_account_name}.dfs.core.windows.net",
-            azure_account_key,
+            f"spark.hadoop.fs.azure.account.key.{azure_account_name}", azure_account_key
         )
-        # Override endpoints for Azurite
         builder.config(
-            f"spark.hadoop.fs.azure.account.blob.endpoint.{azure_account_name}.blob.core.windows.net",
+            f"spark.hadoop.fs.azure.account.blob.endpoint.{azure_account_name}",
             f"http://azurite1:{cluster.azurite_port}/{azure_account_name}",
         )
         # WASB implementation, ABFS is not compatible with Azurite?
@@ -304,9 +303,6 @@ def get_spark(
             "spark.hadoop.fs.wasb.impl",
             "org.apache.hadoop.fs.azure.NativeAzureFileSystem",
         )
-        if format == TableFormat.DeltaLake:
-            # Enable Delta Lake for Azure
-            builder.config("spark.databricks.delta.storage.azure.enabled", "true")
 
         builder.config(
             "spark.sql.warehouse.dir",
