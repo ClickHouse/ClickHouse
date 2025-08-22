@@ -49,7 +49,6 @@ namespace FailPoints
     extern const char database_replicated_delay_entry_execution[];
 }
 
-static constexpr const char * FORCE_AUTO_RECOVERY_DIGEST = "42";
 
 DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_)
     : DDLWorker(
