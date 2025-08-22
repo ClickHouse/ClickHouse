@@ -14,6 +14,32 @@
 namespace DB
 {
 
+inline void readTimeText(
+    time_t & x,
+    ReadBuffer & istr,
+    const FormatSettings & /*settings*/,
+    const DateLUTImpl & time_zone,
+    const DateLUTImpl & /*utc_time_zone*/)
+{
+    readTimeTextImpl<>(x, istr, time_zone);
+
+    x = std::max<time_t>(0, x);
+}
+
+inline bool tryReadTimeText(
+    time_t & x,
+    ReadBuffer & istr,
+    const FormatSettings & /*settings*/,
+    const DateLUTImpl & time_zone,
+    const DateLUTImpl & /*utc_time_zone*/)
+{
+    bool res;
+    res = tryReadTimeText(x, istr, time_zone);
+
+    x = std::max<time_t>(0, x);
+    return res;
+}
+
 SerializationTime::SerializationTime(const DataTypeTime & /*time_type*/)
 {
 }
