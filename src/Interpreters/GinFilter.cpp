@@ -205,24 +205,24 @@ bool GinFilter::contains(const GinQueryString & gin_query_string, const Postings
 }
 
 
-std::vector<uint32_t> GinFilter::getIndices(
-    const GinQueryString * gin_query_string,
+std::vector<uint32_t> GinFilter::getMatchingRows(
+    const GinQueryString & gin_query_string,
     const PostingsCacheForStore * cache_store,
     const MarkRanges & ranges) const
 {
     chassert(!ranges.empty());
 
-    if (gin_query_string->getTerms().empty())
+    if (gin_query_string.getTerms().empty())
         return {};
 
     const UInt32 full_start = ranges.front().begin + 1;
     const UInt32 full_end = ranges.back().end + 1;
 
-    const GinPostingsCachePtr postings_cache = cache_store->getCachedPostings(*gin_query_string);
+    const GinPostingsCachePtr postings_cache = cache_store->getCachedPostings(gin_query_string);
     if (postings_cache == nullptr || postings_cache->empty())
         return {};
 
-    std::vector<UInt32> indices;
+    std::vector<UInt32> row_numbers;
 
     for (const GinSegmentWithRowIdRange & rowid_range : rowid_ranges)
     {
@@ -259,12 +259,12 @@ std::vector<uint32_t> GinFilter::getIndices(
         const size_t cardinality = range_matches.cardinality();
         if (cardinality > 0)
         {
-            const size_t last_size = indices.size();
-            indices.resize(last_size + cardinality);
-            range_matches.toUint32Array(&indices[last_size]);
+            const size_t last_size = row_numbers.size();
+            row_numbers.resize(last_size + cardinality);
+            range_matches.toUint32Array(&row_numbers[last_size]);
         }
     }
-    return indices;
+    return row_numbers;
 }
 
 size_t GinFilter::memoryUsageBytes() const

@@ -40,7 +40,6 @@ concept FunctionIndexConcept = requires(T t)
 {
     { T::name } -> std::convertible_to<std::string_view>;
     typename T::ResultType;
-    //{ t.executeImplIndex() } -> std::same_as<typename T::ResultType>;
 
 } && std::is_arithmetic_v<typename T::ResultType>;
 
@@ -104,7 +103,7 @@ class FunctionSearchTextIndex : public IFunction, public FullTextSearchFunctionM
         chassert(!matching_rows.empty());
         const PaddedPODArray<UInt64> & offsets = col_part_offset_vector->getData();
 
-        // We selected the ranges below to end in an offset position. So the first match (if any) cannot be after offsets.end()
+        /// We selected the ranges below to end in an offset position. So the first match (if any) cannot be after offsets.end()
         const UInt64 * it = std::lower_bound(offsets.begin(), offsets.end(), matching_rows.front() - 1);
         chassert(it != offsets.end());
 
@@ -121,7 +120,7 @@ class FunctionSearchTextIndex : public IFunction, public FullTextSearchFunctionM
             while (*it < match_offset)
                 std::advance(it, 1);
 
-            // Entry not in requested offsets (there is a hole in offsets)
+            /// Entry not in requested offsets (there is a hole in offsets)
             if (*it > match_offset)
                 continue;
 
@@ -158,7 +157,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        // Early exits
         if (arguments.size() != getNumberOfArguments())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} expects at least 2 arguments", getName());
 
@@ -170,7 +168,7 @@ public:
         if (input_rows_count == 0)
             return col_res;
 
-        // Read inputs
+        /// Read inputs
         const ColumnWithTypeAndName & index_argument = arguments[0];
         const ColumnWithTypeAndName & token_argument = arguments[1];
         const ColumnWithTypeAndName & part_index_argument = arguments[2];
@@ -181,13 +179,13 @@ public:
         chassert(part_index_argument.column->size() == input_rows_count);
         chassert(part_offset_argument.column->size() == input_rows_count);
 
-        // parse inputs
+        /// Parse inputs
         const String index_name = checkAndGetColumnConstStringOrFixedString(index_argument.column.get())->getValue<String>();
         const String token = checkAndGetColumnConstStringOrFixedString(token_argument.column.get())->getValue<String>();
         const ColumnVector<UInt64> * col_part_index_vector = extractColumnAndCheck<UInt64>(arguments, 2);
         const ColumnVector<UInt64> * col_part_offset_vector = extractColumnAndCheck<UInt64>(arguments, 3);
 
-        // Now search the part
+        /// Now search the part
         const size_t part_idx = col_part_index_vector->getElement(0);
         chassert(part_idx == col_part_index_vector->getElement(input_rows_count - 1)); // We assume to work on one part at the time
 
@@ -198,7 +196,7 @@ public:
         const std::shared_ptr<const PostingsCacheForStore> cache_in_store = part_info.postings_cache_for_store_part.at(index_name);
         chassert(cache_in_store);
 
-        // Find index and condition iterator
+        /// Find index and condition iterator
         const auto [index_helper, gin_filter_condition] = extractIndexAndCondition(index_context_info->skip_indexes, index_name);
 
         const size_t index_granularity = index_helper->index.granularity;
@@ -212,10 +210,10 @@ public:
         const size_t first_mark = part->index_granularity->getMarkRangeForRowOffset(first_row).begin;
         const size_t last_mark = part->index_granularity->getMarkRangeForRowOffset(last_row).begin;
 
-        // std::println("\nCalled HasTokenIndex({}, {}, [{}: {} {}], [{} -> {}]) diff: {} input_rows: {}",
-        //     index_name, token, part_idx, first_mark, last_mark, first_row, last_row, last_row - first_row, input_rows_count);
+        /// std::println("\nCalled HasTokenIndex({}, {}, [{}: {} {}], [{} -> {}]) diff: {} input_rows: {}",
+        ///     index_name, token, part_idx, first_mark, last_mark, first_row, last_row, last_row - first_row, input_rows_count);
 
-        // Check that we have the right boundary marks
+        /// Check that we have the right boundary marks
         chassert(first_row >= part->index_granularity->getMarkStartingRow(first_mark));
         chassert(last_row < part->index_granularity->getMarkStartingRow(last_mark) + part->index_granularity->getMarkRows(last_mark));
 
@@ -289,7 +287,7 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "GinFilter index condition got a granule with the wrong type.");
 
             const std::vector<UInt32> matching_rows
-                = granule_gin->gin_filter.getIndices(gin_query_string.get(), cache_in_store.get(), subranges);
+                = granule_gin->gin_filter.getMatchingRows(*gin_query_string, cache_in_store.get(), subranges);
 
             if (!matching_rows.empty())
                 postingArrayToOutput(matching_rows, col_part_offset_vector, col_res->getData());

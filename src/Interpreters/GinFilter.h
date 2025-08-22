@@ -110,9 +110,9 @@ public:
     /// given postings list cache
     bool contains(const GinQueryString & gin_query_string, const PostingsCacheForStore & cache_store, GinSearchMode mode = GinSearchMode::All) const;
 
-    /// Get a vector of indices given a filter.
-    /// The function uses the input ranges to limit the desired indices.
-    std::vector<UInt32> getIndices(const GinQueryString * gin_query_string, const PostingsCacheForStore * cache_store, const MarkRanges & ranges) const;
+    /// Get row numbers whose content match a given query string.
+    /// 'ranges' limit the desired indices.
+    std::vector<UInt32> getMatchingRows(const GinQueryString & gin_query_string, const PostingsCacheForStore * cache_store, const MarkRanges & ranges) const;
 
     const GinSegmentWithRowIdRangeVector & getFilter() const { return rowid_ranges; }
     GinSegmentWithRowIdRangeVector & getFilter() { return rowid_ranges; }
