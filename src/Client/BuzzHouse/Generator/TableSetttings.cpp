@@ -352,10 +352,6 @@ static std::unordered_map<String, CHSetting> ipTreeLayoutSettings = {{"ACCESS_TO
 
 static std::unordered_map<String, CHSetting> dataLakeSettings
     = {{"allow_dynamic_metadata_for_data_lakes", CHSetting(trueOrFalse, {}, false)},
-       {"allow_experimental_delta_kernel_rs", CHSetting(trueOrFalse, {}, false)},
-       {"delta_lake_enable_engine_predicate", CHSetting(trueOrFalse, {}, false)},
-       {"delta_lake_enable_expression_visitor_logging", CHSetting(trueOrFalse, {}, false)},
-       {"delta_lake_throw_on_engine_predicate_error", CHSetting(trueOrFalse, {}, false)},
        {"iceberg_format_version", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "1" : "2"; }, {}, false)},
        {"iceberg_metadata_compression_method",
         CHSetting([](RandomGenerator & rg) { return "'" + rg.pickRandomly(compressionMethods) + "'"; }, {}, false)},

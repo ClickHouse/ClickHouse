@@ -74,7 +74,7 @@ class BuzzHouseGenerator(Generator):
         # Add external integrations credentials
         if args.with_minio:
             buzz_config["minio"] = {
-                "database": "/" + cluster.minio_bucket,
+                "database": cluster.minio_bucket,
                 "server_hostname": cluster.minio_host,
                 "port": cluster.minio_port,
                 "user": "minio",
@@ -162,7 +162,7 @@ class BuzzHouseGenerator(Generator):
             if args.with_unity:
                 buzz_config["dolor"]["unity"] = {
                     "server_hostname": "localhost",
-                    "port": 8080,
+                    "port": 8081,
                     "path": "/api/2.1/unity-catalog"
                 }
 

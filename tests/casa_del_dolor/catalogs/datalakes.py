@@ -67,6 +67,7 @@ def sample_from_dict(d: dict[str, Parameter], sample: int) -> dict[str, Paramete
 
 def get_spark(
     cluster,
+    logfile: str,
     catalog_name: str,
     storage: TableStorage,
     lake: LakeFormat,
@@ -160,6 +161,12 @@ def get_spark(
     builder = SparkSession.builder
     builder.config("spark.sql.extensions", catalog_extension)
     builder.config(f"spark.sql.catalog.{catalog_name}", catalog_format)
+    builder.config(
+        "spark.driver.extraJavaOptions", f"-Dlog4j.configurationFile=file:{logfile}"
+    )
+    builder.config(
+        "spark.executor.extraJavaOptions", f"-Dlog4j.configurationFile=file:{logfile}"
+    )
 
     # ============================================================
     # CATALOG CONFIGURATIONS
@@ -184,7 +191,7 @@ def get_spark(
             )
         # Hive metastore version
         builder.config("spark.sql.hive.metastore.version", "3.1.3")
-        builder.config("spark.sql.hive.metastore.jars", "builtin")
+        builder.config("spark.sql.hive.metastore.jars", "maven")
         builder.enableHiveSupport()
     elif catalog == LakeCatalogs.REST or (
         catalog == LakeCatalogs.Unity and lake == LakeFormat.Iceberg
@@ -195,7 +202,7 @@ def get_spark(
         )
         builder.config(
             f"spark.sql.catalog.{catalog_name}.uri",
-            f"http://localhost:{"8080/api/2.1/unity-catalog/iceberg" if catalog == LakeCatalogs.Unity else "8182"}",
+            f"http://localhost:{"8081/api/2.1/unity-catalog/iceberg" if catalog == LakeCatalogs.Unity else "8182"}",
         )
         builder.config(
             f"spark.sql.catalog.{catalog_name}.cache-enabled",
@@ -218,7 +225,7 @@ def get_spark(
                 f"spark.sql.catalog.{catalog_name}.s3.path-style-access", "true"
             )
     elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
-        builder.config(f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8080")
+        builder.config(f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8081")
         builder.config(f"spark.sql.catalog.{catalog_name}.token", "")
         builder.config("spark.sql.defaultCatalog", f"{catalog_name}")
     elif catalog == LakeCatalogs.Nessie:
@@ -239,6 +246,22 @@ def get_spark(
         # It has to point to unity
         builder.config("spark.sql.warehouse.dir", "unity")
         builder.config(f"spark.sql.catalog.{catalog_name}.warehouse", "unity")
+
+        if storage == TableStorage.S3:
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.warehouse",
+                f"s3a://{cluster.minio_bucket}/{catalog_name}",
+            )
+        elif storage == TableStorage.Azure:
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.warehouse",
+                f"wasb://{azure_container}@{azure_account_name}/{catalog_name}",
+            )
+        elif storage == TableStorage.Local:
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.warehouse",
+                f"file://{get_local_base_path(catalog_name)}",
+            )
     elif storage == TableStorage.S3:
         # S3A filesystem implementation
         builder.config(
@@ -356,6 +379,7 @@ class DolorCatalog:
     def __init__(
         self,
         cluster,
+        spark_log_config: str,
         _catalog_name: str,
         _storage_type: TableStorage,
         _lake_type: LakeFormat,
@@ -366,7 +390,12 @@ class DolorCatalog:
         self.lake_type = _lake_type
         self.catalog_type = _catalog_type
         self.session = get_spark(
-            cluster, _catalog_name, _storage_type, _lake_type, _catalog_type
+            cluster,
+            spark_log_config,
+            _catalog_name,
+            _storage_type,
+            _lake_type,
+            _catalog_type,
         )
 
 
@@ -390,6 +419,49 @@ class SparkHandler:
         if args.with_unity is not None:
             self.uc_server_dir = args.with_unity
             self.uc_server_run_dir = Path(cluster.instances_dir_name) / "ucserver"
+
+        self.spark_log_dir = Path(cluster.instances_dir_name) / "spark"
+        self.spark_log_config = Path(cluster.instances_dir_name) / "log4j2.properties"
+        spark_log = f"""
+# ----- log4j2.properties -----
+status = error
+name = SparkLog
+
+# Where to store logs (change as needed; use an absolute path on clusters)
+property.log.dir = {self.spark_log_dir}
+property.app.name = ${{sys:spark.app.name:-spark-app}}
+
+appender.console.type = Console
+appender.console.name = console
+appender.console.target = SYSTEM_ERR
+appender.console.layout.type = PatternLayout
+appender.console.layout.pattern = %d{{yy/MM/dd HH:mm:ss}} %p %c{{1}}: %m%n
+
+appender.file.type = RollingFile
+appender.file.name = file
+appender.file.fileName = ${{log.dir}}/${{app.name}}-driver.log
+appender.file.filePattern = ${{log.dir}}/${{app.name}}-driver-%d{{yyyy-MM-dd}}-%i.log.gz
+appender.file.layout.type = PatternLayout
+appender.file.layout.pattern = %d{{ISO8601}} %-5p %c{{1}}:%L - %m%n
+appender.file.policies.type = Policies
+appender.file.policies.time.type = TimeBasedTriggeringPolicy
+appender.file.policies.time.interval = 1
+appender.file.policies.time.modulate = true
+appender.file.policies.size.type = SizeBasedTriggeringPolicy
+appender.file.policies.size.size = 100MB
+appender.file.strategy.type = DefaultRolloverStrategy
+appender.file.strategy.max = 30
+
+rootLogger.level = info
+rootLogger.appenderRefs = console, file
+rootLogger.appenderRef.file.ref = file
+
+# Quiet some noisy libs if you like:
+logger.jetty.name = org.eclipse.jetty
+logger.jetty.level = warn
+"""
+        with open(self.spark_log_config, "w") as f:
+            f.write(spark_log)
 
     def create_minio_bucket(self, cluster, bucket_name: str):
         minio_client = Minio(
@@ -416,7 +488,7 @@ class SparkHandler:
 
             env = os.environ.copy()
             env["UC_HOST"] = "localhost"
-            env["UC_PORT"] = "8080"
+            env["UC_PORT"] = "8081"
             env["UC_DIR"] = str(self.uc_server_dir)
             uc_server_bin = self.uc_server_dir / "bin" / "start-uc-server"
             os.makedirs(self.uc_server_run_dir, exist_ok=True)
@@ -450,6 +522,33 @@ class SparkHandler:
                 )
             self.logger.info(
                 f"UC server is accepting connections on http://{env["UC_HOST"]}:{env["UC_PORT"]}"
+            )
+
+    def create_uc_namespace(self, catalog_name: str):
+        if self.uc_server_dir is None:
+            raise RuntimeError(
+                "with_unity argument with path to unity server dir is required"
+            )
+        uc_server_bin = self.uc_server_dir / "bin" / "uc"
+        cmd = [
+            str(uc_server_bin),
+            "schema",
+            "create",
+            "--catalog",
+            "unity",
+            "--name",
+            catalog_name,
+        ]
+        self.logger.info(f"Creating unity namespace {catalog_name}")
+        proc = subprocess.Popen(
+            cmd, cwd=str(self.uc_server_run_dir), env=os.environ.copy(), text=True
+        )
+        if proc.returncode != 0:
+            self.logger.error(
+                f"UC CLI failed (exit {proc.returncode}).\n"
+                f"Command: {' '.join(cmd)}\n"
+                f"stdout:\n{proc.stdout}\n"
+                f"stderr:\n{proc.stderr}"
             )
 
     def create_database(self, session, catalog_name: str):
@@ -541,11 +640,17 @@ class SparkHandler:
                 raise Exception("Hive catalog not available outside AWS at the moment")
         elif next_catalog == LakeCatalogs.Unity:
             self.start_uc_server()
+            self.create_uc_namespace(catalog_name)
         elif next_catalog == LakeCatalogs.Nessie:
             raise Exception("No Nessie yet")
 
         self.catalogs[catalog_name] = DolorCatalog(
-            cluster, catalog_name, next_storage, next_lake, next_catalog
+            cluster,
+            str(self.spark_log_config),
+            catalog_name,
+            next_storage,
+            next_lake,
+            next_catalog,
         )
         self.create_database(self.catalogs[catalog_name].session, catalog_name)
 
@@ -561,7 +666,12 @@ class SparkHandler:
 
         if one_time:
             next_session = get_spark(
-                cluster, catalog_name, next_storage, next_lake, LakeCatalogs.NoCatalog
+                cluster,
+                str(self.spark_log_config),
+                catalog_name,
+                next_storage,
+                next_lake,
+                LakeCatalogs.NoCatalog,
             )
             self.create_database(next_session, catalog_name)
         else:
@@ -577,7 +687,7 @@ class SparkHandler:
 
     def close_sessions(self):
         for _, val in self.catalogs.items():
-            val.session.close()
+            val.session.stop()
         if self.uc_server is not None and self.uc_server.poll() is None:
             self.uc_server.kill()
             self.uc_server.wait()

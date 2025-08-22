@@ -1543,7 +1543,7 @@ bool MinIOIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
     {
         table_path.erase(0, 1);
     }
-    return sendRequest(fmt::format("{}/{}", sc.database, table_path));
+    return sendRequest(fmt::format("/{}/{}", sc.database, table_path));
 }
 
 void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te)

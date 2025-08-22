@@ -115,7 +115,7 @@ class LakeTableGenerator:
 
     @abstractmethod
     def set_basic_properties(self) -> dict[str, str]:
-        pass
+        return {}
 
     def generate_create_table_ddl(
         self,
@@ -153,10 +153,10 @@ class LakeTableGenerator:
         # Add Partition by
         if random.randint(1, 3) == 1:
             random_subset = random.sample(
-                columns_str, k=random.randint(1, len(columns_str))
+                columns_list, k=random.randint(1, len(columns_list))
             )
             random.shuffle(random_subset)
-            ddl += f"PARTITIONED BY ({",".join(random_subset)})"
+            ddl += f" PARTITIONED BY ({",".join(random_subset)})"
 
         properties = self.set_basic_properties()
         # Add table properties
@@ -545,6 +545,9 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
     def get_format(self) -> str:
         return "delta"
+
+    def set_basic_properties(self) -> dict[str, str]:
+        return {}
 
     def generate_table_properties(
         self, columns: list[dict[str, str]], include_all: bool = False
