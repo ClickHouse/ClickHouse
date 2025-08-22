@@ -199,6 +199,10 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         return storage;
     }
 
+    bool can_use_distributed_iterator =
+        client_info.collaborate_with_initiator &&
+        context->hasClusterFunctionReadTaskCallback();
+
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
         getObjectStorage(context, !is_insert_query),
@@ -212,7 +216,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         /* catalog*/ nullptr,
         /* if_not_exists*/ false,
         /* is_datalake_query*/ false,
-        /* distributed_processing */ client_info.collaborate_with_initiator,
+        /* distributed_processing */ can_use_distributed_iterator,
         /* partition_by */ partition_by,
         /* is_table_function */true);
 
