@@ -75,7 +75,7 @@ static Block getPositionDeleteFileSampleBlock()
     return Block(delete_file_columns_desc);
 }
 
-DeleteFileWriteResultWithStats writeDataFiles(
+std::optional<DeleteFileWriteResultWithStats> writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
     StorageMetadataPtr metadata,
@@ -107,8 +107,10 @@ DeleteFileWriteResultWithStats writeDataFiles(
         auto header = interpreter->getUpdatedHeader();
 
         Block block;
+        bool has_any_rows = false;
         while (executor.pull(block))
         {
+            has_any_rows = true;
             Chunk chunk(block.getColumns(), block.rows());
             auto partition_result = chunk_partitioner.partitionChunk(chunk);
 
@@ -191,6 +193,9 @@ DeleteFileWriteResultWithStats writeDataFiles(
             }
         }
 
+        if (!has_any_rows)
+            return std::nullopt;
+
         for (const auto & [partition_key, _] : result)
         {
             writers[partition_key]->flush();
@@ -198,7 +203,7 @@ DeleteFileWriteResultWithStats writeDataFiles(
             write_buffers[partition_key]->finalize();
             result[partition_key].total_bytes = static_cast<Int32>(write_buffers[partition_key]->count());
         }
-        return {result, statistics};
+        return DeleteFileWriteResultWithStats{result, statistics};
     }
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg supports only delete mutations");
 }
@@ -418,8 +423,11 @@ void mutate(
     auto chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
     auto delete_file = writeDataFiles(commands, context, storage_metadata, storage_id, object_storage, configuration, filename_generator, format_settings, chunk_partitioner);
 
-    while (!writeMetadataFiles(delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner))
+    if (delete_file)
     {
+        while (!writeMetadataFiles(*delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner))
+        {
+        }
     }
 }
 

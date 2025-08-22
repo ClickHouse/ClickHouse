@@ -128,6 +128,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(metadata_sequence_number, sequence-number);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_path);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_format);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, content);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, equality_ids);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, partition);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, value_counts);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, column_sizes);
