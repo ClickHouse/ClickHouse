@@ -806,29 +806,6 @@ std::tuple<Int64, Int32> IcebergMetadata::getVersion() const
     return std::make_tuple(relevant_table_state_snapshot.metadata_version, relevant_table_state_snapshot.schema_id);
 }
 
-SinkToStoragePtr IcebergMetadata::write(
-    SharedHeader sample_block,
-    const StorageID & table_id,
-    ObjectStoragePtr /*object_storage*/,
-    StorageObjectStorageConfigurationPtr /*configuration*/,
-    const std::optional<FormatSettings> & format_settings,
-    ContextPtr context,
-    std::shared_ptr<DataLake::ICatalog> catalog)
-{
-    if (context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg])
-    {
-        return std::make_shared<IcebergStorageSink>(
-            object_storage, configuration.lock(), format_settings, sample_block, context, catalog, table_id);
-    }
-    else
-    {
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Insert into iceberg is experimental. "
-            "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
-    }
-}
-
 void IcebergMetadata::addDeleteTransformers(
     ObjectInfoPtr object_info,
     QueryPipelineBuilder & builder,
@@ -942,6 +919,29 @@ void IcebergMetadata::addDeleteTransformers(
             return std::make_shared<FilterTransform>(header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true);
         };
         builder.addSimpleTransform(simple_transform_adder);
+    }
+}
+
+SinkToStoragePtr IcebergMetadata::write(
+    SharedHeader sample_block,
+    const StorageID & table_id,
+    ObjectStoragePtr /*object_storage*/,
+    StorageObjectStorageConfigurationPtr /*configuration*/,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr context,
+    std::shared_ptr<DataLake::ICatalog> catalog)
+{
+    if (context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg])
+    {
+        return std::make_shared<IcebergStorageSink>(
+            object_storage, configuration.lock(), format_settings, sample_block, context, catalog, table_id);
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Insert into iceberg is experimental. "
+            "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
     }
 }
 }
