@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 
 namespace DB
 {
 
-class FunctionsStringSearchBase : public IFunction
+class FullTextSearchFunctionMixin
 {
 public:
     enum class Info
@@ -20,7 +19,7 @@ public:
 
     ContextPtr getContext() const { return context; }
 
-    FunctionsStringSearchBase(Info info_, ContextPtr context_)
+    FullTextSearchFunctionMixin(Info info_, ContextPtr context_)
         : info(info_)
         , context(context_)
     {}

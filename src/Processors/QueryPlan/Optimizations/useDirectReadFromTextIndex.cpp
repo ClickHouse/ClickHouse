@@ -174,7 +174,7 @@ private:
         chassert(original_function_node.type == ActionsDAG::ActionType::FUNCTION);
         const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(original_function_node.function_base.get());
         chassert(adaptor);
-        const auto function = std::dynamic_pointer_cast<FunctionsStringSearchBase>(adaptor->getFunction());
+        const auto function = std::dynamic_pointer_cast<FullTextSearchFunctionMixin>(adaptor->getFunction());
         chassert(function != nullptr);
         ContextPtr context = function->getContext();
         chassert(context != nullptr);
@@ -238,8 +238,8 @@ private:
 
         const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get());
         chassert(adaptor);
-        const auto function = std::dynamic_pointer_cast<FunctionsStringSearchBase>(adaptor->getFunction());
-        if (function == nullptr || function->info != FunctionsStringSearchBase::Info::Optimizable)
+        const auto function = std::dynamic_pointer_cast<FullTextSearchFunctionMixin>(adaptor->getFunction());
+        if (function == nullptr || function->info != FullTextSearchFunctionMixin::Info::Optimizable)
             return false;
 
         chassert(function->getContext() != nullptr);

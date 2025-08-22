@@ -8,7 +8,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsStringSearchBase.h>
+#include <Functions/FullTextSearchFunctionMixin.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
@@ -46,7 +46,7 @@ concept FunctionIndexConcept = requires(T t)
 
 
 template <FunctionIndexConcept Impl>
-class FunctionSearchTextIndex : public FunctionsStringSearchBase
+class FunctionSearchTextIndex : public IFunction, public FullTextSearchFunctionMixin
 {
     /// Helper function to extract the index and conditions safely.
     /// This performs all the checks and searches locally, so external code shouldn't check for them.
@@ -139,7 +139,7 @@ public:
     using ResultType = typename Impl::ResultType;
 
     explicit FunctionSearchTextIndex(ContextPtr context_)
-        : FunctionsStringSearchBase(FunctionsStringSearchBase::Info::Optimized, context_)
+        : FullTextSearchFunctionMixin(FullTextSearchFunctionMixin::Info::Optimized, context_)
     {}
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionSearchTextIndex<Impl>>(context_); }

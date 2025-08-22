@@ -1,3 +1,4 @@
+#include <Functions/FullTextSearchFunctionMixin.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringSearch.h>
 #include <Functions/HasTokenImpl.h>
@@ -21,7 +22,7 @@ using FunctionHasToken = FunctionsStringSearch<
     HasTokenImpl<NameHasToken, Volnitsky, false>,
     ExecutionErrorPolicy::Throw,
     HaystackNeedleOrderIsConfigurable::No,
-    FunctionsStringSearchBase::Info::Optimizable>;
+    FullTextSearchFunctionMixin::Info::Optimizable>;
 
 using FunctionHasTokenOrNull
     = FunctionsStringSearch<HasTokenImpl<NameHasTokenOrNull, Volnitsky, false>, ExecutionErrorPolicy::Null>;

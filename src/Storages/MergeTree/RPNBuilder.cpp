@@ -21,7 +21,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsMiscellaneous.h>
-#include <Functions/FunctionsStringSearchBase.h>
+#include <Functions/FullTextSearchFunctionMixin.h>
 
 #include <Interpreters/Context.h>
 
@@ -480,11 +480,11 @@ bool RPNBuilderFunctionTreeNode::isOptimizedIndexFunction() const
         if (adaptor == nullptr)
             return false;
 
-        const auto function = std::dynamic_pointer_cast<FunctionsStringSearchBase>(adaptor->getFunction());
+        const auto function = std::dynamic_pointer_cast<FullTextSearchFunctionMixin>(adaptor->getFunction());
         if (function == nullptr)
             return false;
 
-        return (function->info == FunctionsStringSearchBase::Info::Optimized);
+        return (function->info == FullTextSearchFunctionMixin::Info::Optimized);
     }
 
     return false;

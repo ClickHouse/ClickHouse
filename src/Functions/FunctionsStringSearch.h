@@ -11,7 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsStringSearchBase.h>
+#include <Functions/FullTextSearchFunctionMixin.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
@@ -87,8 +87,8 @@ enum class HaystackNeedleOrderIsConfigurable : uint8_t
 template <typename Impl,
     ExecutionErrorPolicy execution_error_policy = ExecutionErrorPolicy::Throw,
     HaystackNeedleOrderIsConfigurable haystack_needle_order_is_configurable = HaystackNeedleOrderIsConfigurable::No,
-    FunctionsStringSearchBase::Info info_val = FunctionsStringSearchBase::Info::None>
-class FunctionsStringSearch : public FunctionsStringSearchBase
+    FullTextSearchFunctionMixin::Info info_val = FullTextSearchFunctionMixin::Info::None>
+class FunctionsStringSearch : public IFunction, public FullTextSearchFunctionMixin
 {
 private:
     enum class ArgumentOrder : uint8_t
@@ -105,7 +105,7 @@ public:
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionsStringSearch>(context_); }
 
     explicit FunctionsStringSearch(ContextPtr context_)
-        : FunctionsStringSearchBase(info_val, context_)
+        : FullTextSearchFunctionMixin(info_val, context_)
     {
         if constexpr (haystack_needle_order_is_configurable == HaystackNeedleOrderIsConfigurable::Yes)
         {
