@@ -24,7 +24,6 @@
 #include <base/defines.h>
 #include <algorithm>
 #include <memory>
-#include <format>
 
 #include <cstdio>
 
@@ -165,25 +164,6 @@ public:
         return removed_inputs;
     }
 
-    void printDag() const
-    {
-        for (int i = 0; const ActionsDAG::Node & node : actions_dag.getNodes())
-        {
-            std::println("\nNode {}: {}", i++, node.result_name);
-            printHierarchicalActions(& node, 0);
-        }
-        for (int i = 0; const ActionsDAG::Node *input : actions_dag.getInputs())
-        {
-            std::println("\nInput {}: {}", i++, input->result_name);
-            printHierarchicalActions(input, 0);
-        }
-        for (int i = 0; const ActionsDAG::Node *output : actions_dag.getOutputs())
-        {
-            std::println("\nOutput {}: {}", i++, output->result_name);
-            printHierarchicalActions(output, 0);
-        }
-    }
-
 private:
     ActionsDAG & actions_dag;
     const std::map<String, IndexInfo> & columns_to_index_info;
@@ -220,7 +200,7 @@ private:
         const auto map_it = columns_to_index_info.find(column.result_name);
         chassert(map_it != columns_to_index_info.end());
 
-        String name = std::format("'{}'_String", map_it->second.name);
+        String name = fmt::format("'{}'_String", map_it->second.name);
 
         {
             /// Check if the associated index column already exist
@@ -274,41 +254,6 @@ private:
         return true;
     }
 
-    static void printHierarchicalActions(const ActionsDAG::Node * node, int indent)
-    {
-        if (indent == 0)
-            std::println("=== Node: {} ===", node->result_name);
-        else
-            for (int i = 0; i < 3 * indent; ++i)
-                std::print(" ");
-
-        std::print("{} ", static_cast<const void*>(node));
-
-        if (node->function_base)
-            std::print("BaseFunc: {} -> ", node->function_base->getName());
-
-        if (node->function)
-            std::print("ExecutableFunc: {} -> ", node->function->getName());
-
-        std::print(" result {} (compiled: {}) (type: {}) (node type {})",
-            node->result_name,
-            node->is_function_compiled,
-            node->result_type->getName(),
-            static_cast<int>(node->type)
-        );
-
-        if (node->column)
-            std::print(" column {} (id: {})",
-                node->column->getName(),
-                static_cast<int>(node->column->getDataType())
-            );
-
-        std::println("");
-
-        for (const ActionsDAG::Node * subnode : node->children)
-            printHierarchicalActions(subnode, indent + 1);
-    }
-
     bool isColumnNodeWithTextIndex(const ActionsDAG::Node * node) const
     {
         return (node->type == ActionsDAG::ActionType::INPUT
@@ -334,7 +279,7 @@ private:
         const ContextPtr context = FullTextMatchingFunctionDAGReplacer::extractFunctionContext(original_function_node);
 
         /// TODO: This should go to the virtual function
-        const String replacement_function_name = std::format("_{}_index", original_function_node.function->getName());
+        const String replacement_function_name = fmt::format("_{}_index", original_function_node.function->getName());
 
         /// At the moment I assume that the substitution function receives the same arguments than the original, but:
         /// 1. Substituting the indexed column with the index name (string column)
@@ -445,8 +390,6 @@ size_t tryDirectReadFromTextIndex(QueryPlan::Node * parent_node, QueryPlan::Node
     FullTextMatchingFunctionDAGReplacer replacer(filter_step->getExpression(), columns_to_index_info);
 
     const std::vector<String> removed_inputs = replacer.replace();
-
-    /// replacer.printDag();
 
     read_from_mergetree_step->registerColumnsChanges(removed_inputs, {"_part_index", "_part_offset"});
 
