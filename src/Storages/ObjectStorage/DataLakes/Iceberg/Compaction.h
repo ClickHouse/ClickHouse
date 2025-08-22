@@ -5,7 +5,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include "Core/BackgroundSchedulePoolTaskHolder.h"
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 
 
 namespace DB::Iceberg
