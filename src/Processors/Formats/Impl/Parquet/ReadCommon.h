@@ -69,7 +69,7 @@ struct FilterInfoExt
 /// columns).
 ///
 /// Here's a slightly simplified dependency graph:
-/// https://github.com/user-attachments/assets/57213f9c-1588-406c-980e-ff0a9ab56e95
+/// https://github.com/ClickHouse/ClickHouse/pull/82789#discussion_r2292203372
 /// (if you need to edit this diagram, load this into excalidraw:
 ///  https://pastila.nl/?cafebabe/5f32c6546f4797c537707535c515f2c3#Fp02Ps7p2hRahC0B5cK+TQ== )
 ///
