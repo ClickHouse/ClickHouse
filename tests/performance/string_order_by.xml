@@ -1,10 +1,12 @@
 <test>
-    <create_query>CREATE TABLE str_sort (a String, b UInt64) ENGINE = MEMEORY</create_query>
+    <create_query>CREATE TABLE str_sort (a String, b UInt64, c FixedString(5), d String ) ENGINE = Memory</create_query>
     <fill_query>
-        INSERT INTO str_sort SELECT ('number key ' || toString(number % 400)) AS a, number % 20 AS b FROM numbers(1e7)
+        INSERT INTO str_sort SELECT ('number key ' || toString(number % 400)) AS a, number % 20 AS b, ('ABCD' || toString(rand()%10)) as c, toString(rand() % 100000) as d FROM numbers(1e7)
     </fill_query>
 
     <query>SELECT a, b FROM str_sort ORDER BY a, b FORMAT Null</query>
+    <query>SELECT b, c FROM str_sort ORDER BY b, c FORMAT Null</query>
+    <query>SELECT a, d FROM str_sort ORDER BY c, d FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS str_sort</drop_query>
 </test>
