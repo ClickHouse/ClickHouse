@@ -23,7 +23,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -40,14 +39,49 @@ FunctionSearchImpl<SearchTraits>::FunctionSearchImpl(ContextPtr context)
 }
 
 template <class SearchTraits>
-void FunctionSearchImpl<SearchTraits>::setGinFilterParameters(const GinFilterParameters & params)
+void FunctionSearchImpl<SearchTraits>::trySetGinFilterParameters(const GinFilter::Parameters & params)
 {
     /// Index parameters can be set multiple times.
     /// This happens exactly in a case that same searchAny/searchAll query is used again.
     /// This is fine because the parameters would be same.
-    if (parameters.has_value() && params != parameters.value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function '{}': Different index parameters are set.", getName());
-    parameters = params;
+    if (token_extractor != nullptr)
+        return;
+
+    if (params.tokenizer == DefaultTokenExtractor::getExternalName())
+        token_extractor = std::make_unique<DefaultTokenExtractor>();
+    else if (params.tokenizer == NgramTokenExtractor::getExternalName())
+    {
+        auto ngrams = params.ngram_size.value_or(DEFAULT_NGRAM_SIZE);
+        if (ngrams < 2 || ngrams > 8)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngrams argument of function '{}' should be between 2 and 8, got: {}", name, ngrams);
+        token_extractor = std::make_unique<NgramTokenExtractor>(ngrams);
+    }
+    else if (params.tokenizer == SplitTokenExtractor::getExternalName())
+    {
+        const auto & separators = params.separators.value_or(std::vector<String>{" "});
+        token_extractor = std::make_unique<SplitTokenExtractor>(separators);
+    }
+    else if (params.tokenizer == NoOpTokenExtractor::getExternalName())
+        token_extractor = std::make_unique<NoOpTokenExtractor>();
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports only tokenizers 'default', 'ngram', 'split', and 'no_op'", name);
+}
+
+template <class SearchTraits>
+void FunctionSearchImpl<SearchTraits>::trySetSearchTokens(const std::vector<String> & tokens)
+{
+    static constexpr size_t supported_number_of_needles = 64;
+
+    if (needles.has_value())
+        return;
+
+    needles = FunctionSearchNeedles();
+    for (UInt64 pos = 0; const auto & token : tokens)
+        if (auto [_, inserted] = needles->emplace(token, pos); inserted)
+            ++pos;
+
+    if (needles->size() > supported_number_of_needles)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports a max of {} needles", name, supported_number_of_needles);
 }
 
 template <class SearchTraits>
@@ -71,25 +105,22 @@ namespace
 {
 constexpr size_t arg_input = 0;
 constexpr size_t arg_needles = 1;
-constexpr size_t supported_number_of_needles = 64;
-
-/// Map needle into a position (for bitmap operations).
-using Needles = absl::flat_hash_map<String, UInt64>;
 
 template <typename StringColumnType>
 void executeSearchAny(
-    std::unique_ptr<ITokenExtractor> token_extractor,
+    const ITokenExtractor* token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
-    const Needles & needles,
+    const FunctionSearchNeedles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
+    std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         const auto value = col_input.getDataAt(i);
         col_result[i] = false;
 
-        const auto & tokens = token_extractor->getTokens(value.data, value.size);
+        tokens = token_extractor->getTokensView(value.data, value.size);
         for (const auto & token : tokens)
         {
             if (needles.contains(token))
@@ -103,10 +134,10 @@ void executeSearchAny(
 
 template <typename StringColumnType>
 void executeSearchAll(
-    std::unique_ptr<ITokenExtractor> token_extractor,
+    const ITokenExtractor* token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
-    const Needles & needles,
+    const FunctionSearchNeedles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
     const size_t ns = needles.size();
@@ -114,13 +145,14 @@ void executeSearchAll(
     const UInt64 expected_mask = ((1ULL << (ns - 1)) + ((1ULL << (ns - 1)) - 1));
 
     UInt64 mask;
+    std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         const auto value = col_input.getDataAt(i);
         col_result[i] = false;
 
         mask = 0;
-        const auto & tokens = token_extractor->getTokens(value.data, value.size);
+        tokens = token_extractor->getTokensView(value.data, value.size);
         for (const auto & token : tokens)
         {
             if (auto it = needles.find(token); it != needles.end())
@@ -137,10 +169,10 @@ void executeSearchAll(
 
 template <class SearchTraits, typename StringColumnType>
 void execute(
-    std::unique_ptr<ITokenExtractor> token_extractor,
+    const ITokenExtractor* token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
-    const Needles & needles,
+    const FunctionSearchNeedles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
     col_result.resize(input_rows_count);
@@ -148,10 +180,10 @@ void execute(
     switch (SearchTraits::search_mode)
     {
         case GinSearchMode::Any:
-            executeSearchAny(std::move(token_extractor), col_input, input_rows_count, needles, col_result);
+            executeSearchAny(token_extractor, col_input, input_rows_count, needles, col_result);
             break;
         case GinSearchMode::All:
-            executeSearchAll(std::move(token_extractor), col_input, input_rows_count, needles, col_result);
+            executeSearchAll(token_extractor, col_input, input_rows_count, needles, col_result);
             break;
     }
 }
@@ -164,10 +196,10 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     if (input_rows_count == 0)
         return ColumnVector<UInt8>::create();
 
-    if (!parameters.has_value())
+    if (token_extractor == nullptr || !needles.has_value())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Function '{}' should be used with the index column, but got column '{}'",
+            "Function '{}' must be used with the index column, but got column '{}'",
             getName(),
             arguments[arg_input].name);
 
@@ -175,52 +207,17 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     auto col_needles = arguments[arg_needles].column;
     auto col_result = ColumnVector<UInt8>::create();
 
-    std::unique_ptr<ITokenExtractor> token_extractor;
-    if (parameters->tokenizer == DefaultTokenExtractor::getExternalName())
-        token_extractor = std::make_unique<DefaultTokenExtractor>();
-    else if (parameters->tokenizer == NgramTokenExtractor::getExternalName())
-    {
-        auto ngrams = parameters->ngram_size.value_or(DEFAULT_NGRAM_SIZE);
-        if (ngrams < 2 || ngrams > 8)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Ngrams argument of function '{}' should be between 2 and 8, got: {}", name, ngrams);
-        token_extractor = std::make_unique<NgramTokenExtractor>(ngrams);
-    }
-    else if (parameters->tokenizer == SplitTokenExtractor::getExternalName())
-    {
-        const auto & separators = parameters->separators.value_or(std::vector<String>{" "});
-        token_extractor = std::make_unique<SplitTokenExtractor>(separators);
-    }
-    else if (parameters->tokenizer == NoOpTokenExtractor::getExternalName())
-        token_extractor = std::make_unique<NoOpTokenExtractor>();
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports only tokenizers 'default', 'ngram', 'split', and 'no_op'", name);
-
-    Needles needles;
-    if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
-    {
-        /// TODO(ahmadov): initialize needles once for the given parameters. They are constant.
-        for (UInt64 pos = 0; const auto & needle_field : col_needles_const->getValue<Array>())
-        {
-            const auto & needle = needle_field.safeGet<String>();
-            if (auto [_, inserted] = needles.emplace(needle, pos); inserted)
-                ++pos;
-        }
-    }
-    else
+    if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()); !col_needles_const)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Needles argument of function '{}' should be Array(String), got: {}",
+            "Needles argument of function '{}' must be Array(String), got: {}",
             name,
             col_needles->getFamilyName());
 
-    if (needles.size() > supported_number_of_needles)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' supports a max of {} needles", name, supported_number_of_needles);
-
     if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-        execute<SearchTraits>(std::move(token_extractor), *column_string, input_rows_count, needles, col_result->getData());
+        execute<SearchTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
     else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-        execute<SearchTraits>(std::move(token_extractor), *column_fixed_string, input_rows_count, needles, col_result->getData());
+        execute<SearchTraits>(token_extractor.get(), *column_fixed_string, input_rows_count, needles.value(), col_result->getData());
 
     return col_result;
 }

@@ -41,14 +41,14 @@ def cluster():
 
 
 def azure_query(
-    node, query, expect_error=False, try_num=10, settings={}, query_on_retry=None
+    node, query, expect_error=False, try_num=10, settings={}, query_on_retry=None, user=None
 ):
     for i in range(try_num):
         try:
             if expect_error:
-                return node.query_and_get_error(query, settings=settings)
+                return node.query_and_get_error(query, settings=settings, user=user)
             else:
-                return node.query(query, settings=settings)
+                return node.query(query, settings=settings, user=user)
         except Exception as ex:
             retriable_errors = [
                 "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response",
@@ -645,6 +645,51 @@ def test_simple_write_named_collection_1_table_function(cluster):
         node,
         "DROP TABLE drop_table",
     )
+
+
+def test_named_collection_hive_partitioning_partition_columns_in_data_file(cluster):
+    node = cluster.instances["node"]
+    port = cluster.env_variables["AZURITE_PORT"]
+    azure_query(
+        node,
+        f"""INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2,
+        storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',
+        container='cont',
+        blob_path='test_hive_partitioning_partition_columns_in_data_file',
+        format=Parquet,
+        partition_strategy = 'hive',
+        partition_columns_in_data_file = 1)
+        PARTITION BY (year, country)
+        SELECT 1 as key, 2020 as year, 'USA' as country"""
+    )
+
+    azure_query(
+        node,
+        f"""INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2,
+        storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',
+        container='cont',
+        blob_path='test_hive_partitioning_partition_columns_not_in_data_file',
+        format=Parquet,
+        partition_strategy = 'hive',
+        partition_columns_in_data_file = 0) PARTITION BY (year, country)
+        SELECT 1 as key, 2020 as year, 'USA' as country""",
+    )
+
+    assert azure_query(node,
+        f"""SELECT num_columns FROM azureBlobStorage(
+        azure_conf2,
+        storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',
+        container='cont',
+        blob_path='test_hive_partitioning_partition_columns_in_data_file/**.parquet',
+        format=ParquetMetadata)""") == "3\n"
+
+    assert azure_query(node,
+        f"""SELECT num_columns FROM azureBlobStorage(
+        azure_conf2,
+        storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',
+        container='cont',
+        blob_path='test_hive_partitioning_partition_columns_not_in_data_file/**.parquet',
+        format=ParquetMetadata)""") == "1\n"
 
 
 def test_simple_write_named_collection_2_table_function(cluster):

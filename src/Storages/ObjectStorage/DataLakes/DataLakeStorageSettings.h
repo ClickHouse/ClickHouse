@@ -46,7 +46,7 @@ class SettingsChanges;
 // clang-format off
 
 #define DATA_LAKE_STORAGE_RELATED_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(Bool, allow_dynamic_metadata_for_data_lakes, false, R"(
+    DECLARE(Bool, allow_dynamic_metadata_for_data_lakes, true, R"(
 If enabled, indicates that metadata is taken from iceberg specification that is pulled from cloud before each query.
 )", 0) \
     DECLARE(String, iceberg_metadata_file_path, "", R"(
@@ -75,7 +75,7 @@ Metadata format version.
     DECLARE(String, storage_aws_access_key_id, "", "Key for AWS connection for Glue catalog", 0)           \
     DECLARE(String, storage_aws_secret_access_key, "", "Key for AWS connection for Glue Catalog'", 0)           \
     DECLARE(String, storage_region, "", "Region for Glue catalog", 0)           \
-    DECLARE(String, storage_storage_endpoint, "", "Object storage endpoint", 0) \
+    DECLARE(String, object_storage_endpoint, "", "Object storage endpoint", 0) \
     DECLARE(String, storage_catalog_url, "", "Catalog url", 0) \
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \

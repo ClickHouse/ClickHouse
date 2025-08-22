@@ -203,5 +203,12 @@ void StorageObjectStorageConfiguration::assertInitialized() const
     }
 }
 
+void StorageObjectStorageConfiguration::addDeleteTransformers(
+    ObjectInfoPtr,
+    QueryPipelineBuilder &,
+    const std::optional<FormatSettings> &,
+    ContextPtr) const
+{
+}
 
 }

@@ -103,7 +103,7 @@ struct FunctionDocumentation
         Map,
         Mathematical,
         NLP,
-        Nullable,
+        Null,
         NumericIndexedVector,
         Other,
         RandomNumber,

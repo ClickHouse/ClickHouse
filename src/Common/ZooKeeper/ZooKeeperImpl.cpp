@@ -56,6 +56,7 @@ namespace ProfileEvents
     extern const Event ZooKeeperCheck;
     extern const Event ZooKeeperSync;
     extern const Event ZooKeeperClose;
+    extern const Event ZooKeeperGetACL;
     extern const Event ZooKeeperWaitMicroseconds;
     extern const Event ZooKeeperBytesSent;
     extern const Event ZooKeeperBytesReceived;
@@ -90,6 +91,7 @@ namespace Metrics::ResponseTime
     Histogram::Metric & sync = mf.withLabels({"sync"});
     Histogram::Metric & reconfig = mf.withLabels({"reconfig"});
     Histogram::Metric & multi = mf.withLabels({"multi"});
+    Histogram::Metric & get_acl = mf.withLabels({"get_acl"});
 
     template <typename Response>
     void instrument(std::function<void(const Response &)> & callback, Histogram::Metric & histogram)
@@ -455,7 +457,7 @@ ZooKeeper::ZooKeeper(
         receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
         initFeatureFlags();
-        keeper_feature_flags.logFlags(log);
+        keeper_feature_flags.logFlags(log, DB::LogsLevel::debug);
 
         ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
     }
@@ -630,7 +632,6 @@ void ZooKeeper::connect(
 
     LOG_INFO(log, "Connected to ZooKeeper at {} with session_id {}{}", socket.peerAddress().toString(), session_id, fail_reasons.str());
 }
-
 
 void ZooKeeper::sendHandshake()
 {
@@ -1012,34 +1013,57 @@ void ZooKeeper::receiveEvent()
             if (!request_info.request || request_info.request->add_root_path)
                 response->removeRootPath(args.chroot);
         }
-        /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
-        /// The watch shouldn't be set if the node does not exist and it will never exist like sequential ephemeral nodes.
-        /// By using getData() instead of exists(), a watch won't be set if the node doesn't exist.
-        if (request_info.watch)
+
+        /// Just helper for watch callbacks update. The main logic is below.
+        const auto update_watch_callbacks = [this](const Coordination::ZooKeeperRequestPtr & req, const Coordination::ResponsePtr & resp, const Coordination::WatchCallbackPtr & watch)
         {
             bool add_watch = false;
             /// 3 indicates the ZooKeeperExistsRequest.
             // For exists, we set the watch on both node exist and nonexist case.
             // For other case like getData, we only set the watch when node exists.
-            if (request_info.request->getOpNum() == OpNum::Exists)
-                add_watch = (response->error == Error::ZOK || response->error == Error::ZNONODE);
+            if (req->getOpNum() == OpNum::Exists)
+                add_watch = (resp->error == Error::ZOK || resp->error == Error::ZNONODE);
             else
-                add_watch = response->error == Error::ZOK;
+                add_watch = resp->error == Error::ZOK;
 
             if (add_watch)
             {
 
                 /// The key of wathces should exclude the args.chroot
-                String req_path = request_info.request->getPath();
+                String req_path = req->getPath();
                 removeRootPath(req_path, args.chroot);
                 std::lock_guard lock(watches_mutex);
                 auto & callbacks = watches[req_path];
-                if (request_info.watch && *request_info.watch)
+                if (watch && *watch)
                 {
-                    if (callbacks.insert(request_info.watch).second)
+                    if (callbacks.insert(watch).second)
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
                 }
             }
+        };
+
+        /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
+        /// The watch shouldn't be set if the node does not exist and it will never exist like sequential ephemeral nodes.
+        /// By using getData() instead of exists(), a watch won't be set if the node doesn't exist.
+        if (request_info.request && request_info.request->getOpNum() == OpNum::MultiRead)
+        {
+            const auto * multi_read_request = dynamic_cast<const Coordination::ZooKeeperMultiRequest *>(request_info.request.get());
+            const auto * multi_read_response = dynamic_cast<const Coordination::ZooKeeperMultiReadResponse *>(response.get());
+            chassert(multi_read_request != nullptr);
+            chassert(multi_read_response != nullptr);
+
+            for (const auto [subrequest, subresponse] : std::views::zip(multi_read_request->requests, multi_read_response->responses))
+            {
+                if (subrequest->watch_callback)
+                {
+                    chassert(isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES));
+                    update_watch_callbacks(subrequest, subresponse, subrequest->watch_callback);
+                }
+            }
+        }
+        else if (request_info.watch)
+        {
+            update_watch_callbacks(request_info.request, response, request_info.watch);
         }
 
         if (!use_compression)
@@ -1649,6 +1673,21 @@ void ZooKeeper::multi(
     multi(std::span(requests), std::move(callback));
 }
 
+void ZooKeeper::getACL(const String & path, GetACLCallback callback)
+{
+    ZooKeeperGetACLRequest request;
+    request.path = path;
+
+    Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::get_acl);
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperGetACLRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const GetACLResponse &>(response)); };
+
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperGetACL);
+}
+
 void ZooKeeper::multi(
     std::span<const RequestPtr> requests,
     MultiCallback callback)
@@ -1682,8 +1721,15 @@ void ZooKeeper::multi(
 
     ZooKeeperMultiRequest request(requests, default_acls);
 
-    if (request.getOpNum() == OpNum::MultiRead && !isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
+    if (request.getOpNum() == OpNum::MultiRead)
+    {
+        if (!isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "MultiRead request type cannot be used because it's not supported by the server");
+
+        for (const auto & subrequest : request.requests)
+            if (subrequest->watch_callback && !isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES))
+                throw Exception::fromMessage(Error::ZBADARGUMENTS, "Watches in multi query are not supported by the server");
+    }
 
     Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::multi);
 
