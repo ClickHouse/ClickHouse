@@ -2388,22 +2388,22 @@ enum InOutFormat {
     INOUT_Npy = 29;
     INOUT_ORC = 30;
     INOUT_Parquet = 31;
-    //INOUT_Protobuf = 32;
-    //INOUT_ProtobufList = 33;
-    //INOUT_ProtobufSingle = 34;
-    INOUT_RawBLOB = 32;
-    INOUT_RowBinary = 33;
-    INOUT_RowBinaryWithNames = 34;
-    INOUT_RowBinaryWithNamesAndTypes = 35;
-    INOUT_TabSeparated = 36;
-    INOUT_TabSeparatedRaw = 37;
-    INOUT_TabSeparatedRawWithNames = 38;
-    INOUT_TabSeparatedRawWithNamesAndTypes = 39;
-    INOUT_TabSeparatedWithNames = 40;
-    INOUT_TabSeparatedWithNamesAndTypes = 41;
-    INOUT_Template = 42;
-    INOUT_TSKV = 43;
-    INOUT_Values = 44;
+    INOUT_Protobuf = 32;
+    INOUT_ProtobufList = 33;
+    INOUT_ProtobufSingle = 34;
+    INOUT_RawBLOB = 35;
+    INOUT_RowBinary = 36;
+    INOUT_RowBinaryWithNames = 37;
+    INOUT_RowBinaryWithNamesAndTypes = 38;
+    INOUT_TabSeparated = 39;
+    INOUT_TabSeparatedRaw = 40;
+    INOUT_TabSeparatedRawWithNames = 41;
+    INOUT_TabSeparatedRawWithNamesAndTypes = 42;
+    INOUT_TabSeparatedWithNames = 43;
+    INOUT_TabSeparatedWithNamesAndTypes = 44;
+    INOUT_Template = 45;
+    INOUT_TSKV = 46;
+    INOUT_Values = 47;
 }
 
 message UsingExpr {
