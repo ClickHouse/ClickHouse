@@ -6605,6 +6605,15 @@ The timeout in milliseconds for connecting to a remote replica during query exec
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
+)", BETA, allow_database_iceberg) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_unity_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
+)", BETA, allow_database_unity_catalog) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_glue_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
+)", BETA, allow_database_glue_catalog) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_analyzer, true, R"(
 Allow new query analyzer.
 )", IMPORTANT, enable_analyzer) \
@@ -6939,15 +6948,6 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
     /** Experimental feature for moving data between shards. */ \
     DECLARE(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_database_unity_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_database_glue_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
