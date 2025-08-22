@@ -10,8 +10,9 @@ runs:
   steps:
     - name: Docker IPv6 configuration
       shell: bash
+      if: ${{ contains(inputs.test_name, 'Stateless') }}
       env:
-        ipv6_subnet: ${{ contains(inputs.test_name, 'Integration') && '2001:db8:1::/64' || '2001:3984:3989::/64' }}
+        ipv6_subnet: 2001:3984:3989::/64
       run: |
         # make sure docker uses proper IPv6 config
         sudo touch /etc/docker/daemon.json

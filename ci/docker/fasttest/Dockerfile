@@ -1,4 +1,4 @@
-# docker build -t clickhouse/fasttest .
+# docker build -t altinityinfra/fasttest .
 FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
@@ -71,7 +71,7 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY --from=clickhouse/cctools:425d6927d1efbd790bdb /opt/gdb /opt/gdb
+COPY --from=altinityinfra/cctools:be2e8df7c90d7a48e6ef /opt/gdb /opt/gdb
 # Give suid to gdb to grant it attach permissions
 RUN chmod u+s /opt/gdb/bin/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"

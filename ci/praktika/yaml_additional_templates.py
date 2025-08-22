@@ -14,6 +14,10 @@ class AltinityWorkflowTemplates:
     JOB_SETUP_STEPS = """
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "{JOB_NAME_GH}"
 """
     # Additional pre steps for config workflow job
     ADDITIONAL_CI_CONFIG_STEPS = r"""

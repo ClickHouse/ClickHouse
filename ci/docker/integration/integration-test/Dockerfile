@@ -1,4 +1,4 @@
-# docker build -t clickhouse/integration-test .
+# docker build -t altinityinfra/integration-test .
 FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
