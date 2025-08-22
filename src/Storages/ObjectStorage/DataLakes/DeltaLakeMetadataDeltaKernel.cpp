@@ -69,7 +69,8 @@ DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
 bool DeltaLakeMetadataDeltaKernel::operator ==(const IDataLakeMetadata & metadata) const
 {
     const auto & delta_lake_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel &>(metadata);
-    std::lock_guard lock(table_snapshot_mutex);
+    std::lock_guard lk1(table_snapshot_mutex);
+    std::lock_guard lk2(delta_lake_metadata.table_snapshot_mutex);
     return table_snapshot->getVersion() == delta_lake_metadata.table_snapshot->getVersion();
 }
 

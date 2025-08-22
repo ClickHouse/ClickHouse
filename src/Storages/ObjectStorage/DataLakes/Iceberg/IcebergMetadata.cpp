@@ -5,15 +5,23 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <Columns/ColumnSet.h>
+#include <DataTypes/DataTypeSet.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <Formats/ReadSchemaUtils.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/tuple.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
-
 
 #include <Databases/DataLake/Common.h>
 #include <Core/Settings.h>
@@ -33,23 +41,24 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/CompressedReadBufferWrapper.h>
 
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/StorageID.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
@@ -84,6 +93,10 @@ extern const int SUPPORT_IS_DISABLED;
 
 namespace Setting
 {
+extern const SettingsNonZeroUInt64 max_block_size;
+extern const SettingsUInt64 max_bytes_in_set;
+extern const SettingsUInt64 max_rows_in_set;
+extern const SettingsOverflowMode set_overflow_mode;
 extern const SettingsInt64 iceberg_timestamp_ms;
 extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsBool use_iceberg_metadata_files_cache;
@@ -394,7 +407,9 @@ std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(Conte
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     if (!iceberg_object_info)
         return nullptr;
+    /// if we need schema evolution or have equality deletes files, we need to read all the columns.
     return (iceberg_object_info->underlying_format_read_schema_id != relevant_snapshot_schema_id)
+            || (!iceberg_object_info->equality_deletes_objects.empty())
         ? persistent_components.schema_processor->getClickhouseTableSchemaById(iceberg_object_info->underlying_format_read_schema_id)
         : nullptr;
 }
@@ -419,6 +434,14 @@ void IcebergMetadata::mutate(
     std::shared_ptr<DataLake::ICatalog> catalog,
     const std::optional<FormatSettings> & format_settings)
 {
+    if (!context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg].value)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Iceberg mutations is experimental. "
+            "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
+    }
+
     auto configuration_ptr = configuration.lock();
 
     DB::Iceberg::mutate(commands, context, metadata_snapshot, storage_id, object_storage, configuration_ptr, format_settings, catalog);
@@ -429,6 +452,31 @@ void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
     for (const auto & command : commands)
         if (command.type != MutationCommand::DELETE)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE mutations");
+}
+
+void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::DROP_COLUMN
+            && command.type != AlterCommand::Type::MODIFY_COLUMN)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by Iceberg storage", command.type);
+    }
+}
+
+void IcebergMetadata::alter(const AlterCommands & params, ContextPtr context)
+{
+    if (!context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg].value)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Alter iceberg is experimental. "
+            "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
+    }
+
+    auto configuration_ptr = configuration.lock();
+
+    Iceberg::alter(params, context, object_storage, configuration_ptr);
 }
 
 void IcebergMetadata::createInitial(
@@ -729,6 +777,122 @@ std::tuple<Int64, Int32> IcebergMetadata::getVersion() const
 {
     SharedLockGuard lock(mutex);
     return std::make_tuple(relevant_snapshot_id, relevant_snapshot_schema_id);
+}
+
+void IcebergMetadata::addDeleteTransformers(
+    ObjectInfoPtr object_info,
+    QueryPipelineBuilder & builder,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr local_context) const
+{
+    auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
+    if (!iceberg_object_info)
+        return;
+
+    if (!iceberg_object_info->position_deletes_objects.empty())
+    {
+        builder.addSimpleTransform(
+            [&](const SharedHeader & header)
+            { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, local_context); });
+    }
+    const auto & delete_files = iceberg_object_info->equality_deletes_objects;
+    LOG_DEBUG(log, "Constructing filter transform for equality delete, there are {} delete files", delete_files.size());
+    for (const ManifestFileEntry & delete_file : delete_files)
+    {
+        auto simple_transform_adder = [&](const SharedHeader & header)
+        {
+            /// get header of delete file
+            Block delete_file_header;
+            ObjectInfo delete_file_object(delete_file.file_path);
+            {
+                auto schema_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log);
+                auto schema_reader = FormatFactory::instance().getSchemaReader(delete_file.file_format, *schema_read_buffer, local_context);
+                auto columns_with_names = schema_reader->readSchema();
+                ColumnsWithTypeAndName initial_header_data;
+                for (const auto & elem : columns_with_names)
+                {
+                    initial_header_data.push_back(ColumnWithTypeAndName(elem.type, elem.name));
+                }
+                delete_file_header = Block(initial_header_data);
+            }
+            /// with equality ids, we can know which columns should be deleted, here we calculate the indexes.
+            const std::vector<Int32> & equality_ids = *(delete_file.equality_ids);
+            Block block_for_set;
+            std::vector<size_t> equality_indexes_delete_file;
+            for (Int32 col_id : equality_ids)
+            {
+                NameAndTypePair name_and_type
+                    = persistent_components.schema_processor->getFieldCharacteristics(delete_file.schema_id, col_id);
+                block_for_set.insert(ColumnWithTypeAndName(name_and_type.type, name_and_type.name));
+                equality_indexes_delete_file.push_back(delete_file_header.getPositionByName(name_and_type.name));
+            }
+            /// Then we read the content of the delete file.
+            auto mutable_columns_for_set = block_for_set.cloneEmptyColumns();
+            std::unique_ptr<ReadBuffer> data_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log);
+            CompressionMethod compression_method = chooseCompressionMethod(delete_file.file_path, "auto");
+            auto delete_format = FormatFactory::instance().getInput(
+                delete_file.file_format,
+                *data_read_buffer,
+                delete_file_header,
+                local_context,
+                local_context->getSettingsRef()[DB::Setting::max_block_size],
+                format_settings,
+                nullptr,
+                nullptr,
+                true,
+                compression_method);
+            /// only get the delete columns and construct a set by 'block_for_set'
+            while (true)
+            {
+                Chunk delete_chunk = delete_format->read();
+                if (!delete_chunk)
+                    break;
+                size_t rows = delete_chunk.getNumRows();
+                Columns delete_columns = delete_chunk.detachColumns();
+                for (size_t i = 0; i < equality_indexes_delete_file.size(); i++)
+                {
+                    mutable_columns_for_set[i]->insertRangeFrom(*delete_columns[equality_indexes_delete_file[i]], 0, rows);
+                }
+            }
+            block_for_set.setColumns(std::move(mutable_columns_for_set));
+            /// we are constructing a 'not in' expression
+            const auto & settings = local_context->getSettingsRef();
+            SizeLimits size_limits_for_set
+                = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
+            FutureSetPtr future_set = std::make_shared<FutureSetFromTuple>(
+                CityHash_v1_0_2::uint128(), nullptr, block_for_set.getColumnsWithTypeAndName(), true, size_limits_for_set);
+            ColumnPtr set_col = ColumnSet::create(1, future_set);
+            ActionsDAG dag(header->getColumnsWithTypeAndName());
+            /// Construct right argument of 'not in' expression, it is the column set.
+            const ActionsDAG::Node * in_rhs_arg = &dag.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
+            /// Construct left argument of 'not in' expression
+            std::vector<const ActionsDAG::Node *> left_columns;
+            std::unordered_map<std::string_view, const ActionsDAG::Node *> outputs;
+            for (const auto & output : dag.getOutputs())
+                outputs.emplace(output->result_name, output);
+            /// select columns to use in 'notIn' function
+            for (Int32 col_id : equality_ids)
+            {
+                NameAndTypePair name_and_type = persistent_components.schema_processor->getFieldCharacteristics(
+                    iceberg_object_info->underlying_format_read_schema_id, col_id);
+                auto it = outputs.find(name_and_type.name);
+                if (it == outputs.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find column {} in dag outputs", name_and_type.name);
+                left_columns.push_back(it->second);
+            }
+            FunctionOverloadResolverPtr func_tuple_builder
+                = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
+            const ActionsDAG::Node * in_lhs_arg
+                = left_columns.size() == 1 ? left_columns.front() : &dag.addFunction(func_tuple_builder, std::move(left_columns), {});
+            /// we got the NOT IN function
+            auto func_not_in = FunctionFactory::instance().get("notIn", nullptr);
+            const auto & not_in_node = dag.addFunction(func_not_in, {in_lhs_arg, in_rhs_arg}, "notInResult");
+            dag.getOutputs().push_back(&not_in_node);
+            LOG_DEBUG(log, "Use expression {} in equality deletes", dag.dumpDAG());
+            return std::make_shared<FilterTransform>(header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true);
+        };
+        builder.addSimpleTransform(simple_transform_adder);
+    }
 }
 
 SinkToStoragePtr IcebergMetadata::write(

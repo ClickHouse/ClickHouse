@@ -77,7 +77,7 @@ public:
 private:
     const LoggerPtr log;
     const DeltaLake::KernelHelperPtr kernel_helper;
-    const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot;
+    const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot TSA_GUARDED_BY(table_snapshot_mutex);
     mutable std::mutex table_snapshot_mutex;
 };
 
