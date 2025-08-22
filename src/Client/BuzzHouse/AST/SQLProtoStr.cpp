@@ -3090,7 +3090,10 @@ CONV_FN(TableDef, tdef)
         ret += "(";
         for (int i = 0; i < tdef.table_defs_size(); i++)
         {
-            ret += ", ";
+            if (i != 0)
+            {
+                ret += ", ";
+            }
             TableDefItemToString(ret, tdef.table_defs(i));
         }
         ret += ")";
