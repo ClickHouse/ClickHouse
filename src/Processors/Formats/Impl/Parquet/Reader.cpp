@@ -626,9 +626,8 @@ void Reader::preparePrewhere()
         prewhere_steps.back().idx_in_output_block = sample_block->getPositionByName(prewhere_info->prewhere_column_name);
 
     /// Look up expression inputs in extended_sample_block.
-    for (size_t step_idx = 0; step_idx < prewhere_steps.size(); ++step_idx)
+    for (PrewhereStep & step : prewhere_steps)
     {
-        auto & step = prewhere_steps[step_idx];
         for (const auto & col : step.actions.getRequiredColumnsWithTypes())
         {
             size_t idx_in_output_block = extended_sample_block.getPositionByName(col.name, /* case_insensitive= */ false);
@@ -643,7 +642,7 @@ void Reader::preparePrewhere()
                 primitive_columns[primitive_idx].only_for_prewhere = only_for_prewhere;
             }
 
-            prewhere_steps[step_idx].input_column_idxs.push_back(output_idx);
+            step.input_column_idxs.push_back(output_idx);
         }
     }
 }

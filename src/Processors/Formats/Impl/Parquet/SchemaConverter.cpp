@@ -429,7 +429,7 @@ bool SchemaConverter::processSubtreeMap(const String & name, bool requested, Dat
     /// key type is something that's not allowed as Map key in clickhouse.
     if (no_map)
     {
-        output_idx = array_idx.value();
+        output_idx = array_idx;
     }
     else
     {
@@ -473,7 +473,7 @@ bool SchemaConverter::processSubtreeArrayOuter(const String & name, bool request
     if (!requested || !array_idx.has_value())
         return true;
 
-    output_idx = array_idx.value();
+    output_idx = array_idx;
 
     return true;
 }
@@ -492,7 +492,7 @@ bool SchemaConverter::processSubtreeArrayInner(const String & name, bool request
     if (!requested || !element_idx.has_value())
         return true;
 
-    output_idx = element_idx.value();
+    output_idx = element_idx;
 
     return true;
 }
