@@ -31,6 +31,7 @@ private:
     void visitIdentifier(ASTPtr & ast);
     void visitQueryParameter(ASTPtr & ast);
     void visitChildren(ASTPtr & ast);
+    void visitSetQuery(ASTPtr & ast);
 };
 
 }
