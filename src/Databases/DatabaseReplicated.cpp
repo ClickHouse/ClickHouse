@@ -1730,15 +1730,15 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(const String & table_name, con
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", table_name, query);
 
     create.setDatabase(getDatabaseName());
-    create.setTable(unescapeForFileName(table_name));
+    create.setTable(table_name);
     create.attach = create.is_materialized_view_with_inner_table();
 
     return ast;
 }
-ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query) const
+ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & table_name, const String & query) const
 {
-    String description = fmt::format("in ZooKeeper {}/metadata/{}", zookeeper_path, node_name);
-    return parseQueryFromMetadata(node_name, query, description);
+    String description = fmt::format("in ZooKeeper {}/metadata/{}", zookeeper_path, escapeForFileName(table_name));
+    return parseQueryFromMetadata(table_name, query, description);
 }
 ASTPtr DatabaseReplicated::parseQueryFromMetadataOnDisk(const String & table_name) const
 {

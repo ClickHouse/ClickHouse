@@ -99,7 +99,7 @@ static Block getNonVirtualColumns(const Block & block)
     return Block(columns);
 }
 
-WriteDataFilesResult writeDataFiles(
+std::optional<WriteDataFilesResult> writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
     StorageMetadataPtr metadata,
@@ -140,8 +140,10 @@ WriteDataFilesResult writeDataFiles(
         auto header = interpreter->getUpdatedHeader();
 
         Block block;
+        bool has_any_rows = false;
         while (executor.pull(block))
         {
+            has_any_rows = true;
             Chunk chunk(block.getColumns(), block.rows());
             auto partition_result = chunk_partitioner.partitionChunk(chunk);
 
@@ -223,6 +225,9 @@ WriteDataFilesResult writeDataFiles(
                 writers[partition_key]->write(delete_file_block);
             }
         }
+
+        if (!has_any_rows)
+            return std::nullopt;
 
         for (const auto & [partition_key, _] : result)
         {
