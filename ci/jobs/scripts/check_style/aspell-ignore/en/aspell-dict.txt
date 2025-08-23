@@ -3123,6 +3123,7 @@ throwIf
 throwif
 timeDiff
 timeSeries
+timeSeriesChangesToGrid
 timeSeriesData
 timeSeriesDeltaToGrid
 timeSeriesDerivToGrid
@@ -3137,6 +3138,7 @@ timeSeriesPredictLinearToGrid
 timeSeriesRange
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
+timeSeriesResetsToGrid
 timeSeriesTags
 timeSlot
 timeSlots
