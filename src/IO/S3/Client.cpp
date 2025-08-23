@@ -813,7 +813,7 @@ void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws:
     {
         if (next_time_to_retry_after_retryable_error.compare_exchange_weak(stored_next_time, next_time_ms))
         {
-            LOG_TRACE(log, "Updated next retry time to {} ms forward", sleep_ms);
+            LOG_TRACE(log, "Updated next retry time to {} ms forward after retryable error with code {} ('{}')", sleep_ms, error.GetResponseCode(), error.GetMessage());
             break;
         }
     }
@@ -1115,7 +1115,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     if (client_configuration.s3_slow_all_threads_after_retryable_error)
     {
         auto configuration = client_configuration.retry_strategy;
-        configuration.max_retries = 0;
+        configuration.max_retries = 1;
         client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(configuration);
     }
     else
