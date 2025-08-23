@@ -53,6 +53,9 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_)
     }
 
     /// Distribute memory budget among stages.
+    /// The distribution is static to make sure no stage gets starved if others eat all the memory.
+    /// E.g. if the budget was shared among all stages, maybe PrewhereData could run far ahead and
+    /// eat all memory, and MainData would have to execute in one thread to minimize memory usage.
     double sum = 0;
     stages[size_t(ReadStage::MainData)].memory_target_fraction *= 10;
     if (reader.format_filter_info->prewhere_info)

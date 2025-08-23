@@ -293,12 +293,15 @@ void Reader::prefilterAndInitRowGroups()
     }
     chassert(std::all_of(sample_block_to_output_columns_idx.begin(), sample_block_to_output_columns_idx.end(), [](size_t x) { return x != UINT64_MAX; }));
 
-    for (size_t idx_in_output_block : format_filter_info->key_condition->getUsedColumns())
+    if (format_filter_info->key_condition)
     {
-        size_t output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
-        const OutputColumnInfo & output_info = output_columns[output_idx];
-        if (output_info.is_primitive)
-            primitive_columns[output_info.primitive_start].used_by_key_condition = idx_in_output_block;
+        for (size_t idx_in_output_block : format_filter_info->key_condition->getUsedColumns())
+        {
+            size_t output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
+            const OutputColumnInfo & output_info = output_columns[output_idx];
+            if (output_info.is_primitive)
+                primitive_columns[output_info.primitive_start].used_by_key_condition = idx_in_output_block;
+        }
     }
 
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
