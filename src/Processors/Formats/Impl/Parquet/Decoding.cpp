@@ -1402,7 +1402,7 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
         /// (tests/queries/0_stateless/02998_native_parquet_reader.sh).
         bool overflow = false;
         Int64 x;
-        overflow |= common::subOverflow(julian_day, 2440588LL, x); // unix day number
+        overflow |= common::subOverflow(julian_day, static_cast<Int64>(2440588l), x); // unix day number
         overflow |= common::mulOverflow(x, day_nanos, x); // unix nanoseconds
         overflow |= common::addOverflow(x, nanos, x);
 
