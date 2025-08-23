@@ -275,6 +275,13 @@ void ExecutorTasks::downscale(size_t slot_id)
         /// Wake up at least one thread to avoid deadlocks (all other threads maybe idle)
         tryWakeUpAnyOtherThreadWithTasks(*context, lock);
     }
+
+    // Finish pipeline if downscaled thread was the last non-idle thread executed the last task of the whole pipeline
+    if (task_queue.empty() && fast_task_queue.empty() && async_task_queue.empty() && threads_queue.size() == total_slots)
+    {
+        lock.unlock();
+        finish();
+    }
 }
 
 void ExecutorTasks::processAsyncTasks()
