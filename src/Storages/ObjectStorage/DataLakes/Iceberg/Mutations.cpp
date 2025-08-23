@@ -373,7 +373,7 @@ WriteMetadataResult writeMetadataFiles(
         storage_manifest_list_name = result_generation_metadata.storage_metadata_path;
 
     }
-    Strings manifest_entries_in_storage;
+    auto manifest_entries_in_storage = std::make_shared<Strings>();
     Strings manifest_entries;
     Int32 manifest_lengths = 0;
 
@@ -384,7 +384,7 @@ WriteMetadataResult writeMetadataFiles(
             for (const auto & [_, data_file] : delete_filenames.delete_file)
                 object_storage->removeObjectIfExists(StoredObject(data_file.path.path_in_storage));
 
-            for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
+            for (const auto & manifest_filename_in_storage : *manifest_entries_in_storage)
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
@@ -401,7 +401,7 @@ WriteMetadataResult writeMetadataFiles(
         for (const auto & [partition_key, delete_filename] : delete_filenames.delete_file)
         {
             auto [manifest_entry_name, storage_manifest_entry_name] = filename_generator.generateManifestEntryName();
-            manifest_entries_in_storage.push_back(storage_manifest_entry_name);
+            manifest_entries_in_storage->push_back(storage_manifest_entry_name);
             manifest_entries.push_back(manifest_entry_name);
 
             auto buffer_manifest_entry = object_storage->writeObject(
@@ -569,11 +569,13 @@ void mutate(
             if (mutation_files->data_file)
             {
                 auto result_data_files_metadata = writeMetadataFiles(*mutation_files->data_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::DATA, sample_block);
-                if (result_data_files_metadata.success)
-                    break;
-                else
+                if (!result_data_files_metadata.success)
+                {
                     result_delete_files_metadata.cleanup();
+                    continue;
+                }
             }
+            break;
         }
     }
 }
