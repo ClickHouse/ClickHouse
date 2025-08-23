@@ -961,7 +961,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
 
     size_t rows_per_subgroup = num_rows;
     if (options.format.parquet.max_block_size > 0)
-        rows_per_subgroup = std::min(rows_per_subgroup, options.format.parquet.max_block_size);
+        rows_per_subgroup = std::min(rows_per_subgroup, size_t(options.format.parquet.max_block_size));
 
     if (options.format.parquet.prefer_block_bytes > 0)
     {
