@@ -60,6 +60,32 @@
     "03357_join_pk_sharding": {
         "reason": "INVESTIGATE - Timeout. Unstable?"
     },
+    "03002_part_log_rmt_fetch_merge_error": {
+        "reason": "INVESTIGATE - Unstable?"
+    },
+    "01630_simple_aggregate_all_functions_in_summing_merge_tree": {
+        "reason": "INVESTIGATE - Unstable?"
+    },
+    "02841_parallel_replicas_summary": {
+        "reason": "INVESTIGATE - ClickHouse timeout",
+        "message": "Timeout exceeded (180 s) while flushing system log"
+    },
+    "01810_max_part_removal_threads_long": {
+        "reason": "INVESTIGATE - ClickHouse timeout",
+        "message": "Timeout exceeded (180 s) while flushing system log"
+    },
+    "03148_async_queries_in_query_log_errors": {
+        "reason": "INVESTIGATE - ClickHouse timeout",
+        "message": "Timeout exceeded (180 s) while flushing system log"
+    },
+    "03514_grace_hash_join_logical_error": {
+        "reason": "INVESTIGATE - timeout",
+        "message": "Timeout! Killing process group"
+    },
+    "01651_lc_insert_tiny_log_2": {
+        "reason": "INVESTIGATE - timeout",
+        "message": "Timeout! Killing process group"
+    },
     "00167_read_bytes_from_fs": {
         "reason": "INVESTIGATE - Memory limit exceeded",
         "message": "DB::Exception: (total) memory limit exceeded:"
@@ -69,6 +95,35 @@
     },
     "01903_correct_block_size_prediction_with_default": {
         "reason": "INVESTIGATE - Timeout. Unstable?"
+    },
+    "02345_filesystem_local": {
+        "reason": "INVESTIGATE - Occasional statvfs error",
+        "message": "Could not calculate available disk space (statvfs)"
+    },
+    "00157_cache_dictionary": {
+        "reason": "INVESTIGATE - Timeout in ClickHouse query"
+    },
+    "01655_plan_optimizations_optimize_read_in_window_order_long": {
+        "reason": "INVESTIGATE - Timeout. Unstable?",
+        "message": "Timeout! Killing process group"
+    },
+    "02760_dictionaries_memory": {
+        "reason": "INVESTIGATE - Timeout. Unstable?",
+        "message": "Timeout! Killing process group"
+    },
+    "02435_rollback_cancelled_queries": {
+        "reason": "INVESTIGATE - Unstable?",
+        "message": "There is no current transaction. (INVALID_TRANSACTION)"
+    },
+    "02963_remote_read_small_buffer_size_bug": {
+        "reason": "INVESTIGATE - Timeout. Unstable?"
+    },
+    "02473_optimize_old_parts": {
+        "reason": "INVESTIGATE - Unstable?"
+    },
+    "test_grpc_protocol/test.py::test_ipv6_select_one": {
+        "reason": "INVESTIGATE - Internal test timeout",
+        "message": "FutureTimeoutError"
     },
     "test_storage_rabbitmq/test.py::test_rabbitmq_sharding_between_queues_publish": {
         "reason": "INVESTIGATE - Unstable?"
