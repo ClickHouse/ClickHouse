@@ -88,6 +88,9 @@ public:
     // Path provided by the user in the query
     virtual Path getRawPath() const = 0;
 
+    /// Raw URI, specified by a user. Used in permission check.
+    virtual const String & getRawURI() const = 0;
+
     const Path & getPathForRead() const;
     // Path used for writing, it should not be globbed and might contain a partition key
     Path getPathForWrite(const std::string & partition_id = "") const;
@@ -141,13 +144,11 @@ public:
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
-    virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const;
-
-    virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & /*object_info*/,
-        const SharedHeader & /*header*/,
-        const std::optional<FormatSettings> & /*format_settings*/,
-        ContextPtr /*context_*/) const;
+    virtual void addDeleteTransformers(
+        ObjectInfoPtr object_info,
+        QueryPipelineBuilder & builder,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr local_context) const;
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,
