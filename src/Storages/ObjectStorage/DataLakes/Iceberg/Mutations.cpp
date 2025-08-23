@@ -301,7 +301,13 @@ std::optional<WriteDataFilesResult> writeDataFiles(
         return WriteDataFilesResult{DeleteFileWriteResultWithStats{result, statistics}, DeleteFileWriteResultWithStats{update_data_result, update_data_statistics}};
 }
 
-bool writeMetadataFiles(
+struct WriteMetadataResult
+{
+    bool success;
+    std::function<void()> cleanup;  
+};
+
+WriteMetadataResult writeMetadataFiles(
     DeleteFileWriteResultWithStats & delete_filenames,
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
@@ -371,7 +377,7 @@ bool writeMetadataFiles(
     Strings manifest_entries;
     Int32 manifest_lengths = 0;
 
-    auto cleanup = [&]()
+    auto cleanup = [object_storage, delete_filenames, manifest_entries_in_storage, storage_manifest_list_name, storage_metadata_name]()
     {
         try
         {
@@ -472,7 +478,7 @@ bool writeMetadataFiles(
             if (object_storage->exists(StoredObject(storage_metadata_name)))
             {
                 cleanup();
-                return false;
+                return {false, cleanup};
             }
 
             Iceberg::writeMessageToFile(json_representation, storage_metadata_name, object_storage, context, cleanup);
@@ -492,7 +498,7 @@ bool writeMetadataFiles(
                 {
                     cleanup();
                     object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
-                    return false;
+                    return {false, cleanup};
                 }
             }
         }
@@ -502,7 +508,7 @@ bool writeMetadataFiles(
         cleanup();
         throw;
     }
-    return true;
+    return {true, cleanup};
 }
 
 void mutate(
@@ -551,11 +557,25 @@ void mutate(
 
     const auto sample_block = std::make_shared<const Block>(storage_metadata->getSampleBlock());
     auto chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
-    auto delete_file = writeDataFiles(commands, context, storage_metadata, storage_id, object_storage, configuration, filename_generator, format_settings, chunk_partitioner, current_schema);
+    auto mutation_files = writeDataFiles(commands, context, storage_metadata, storage_id, object_storage, configuration, filename_generator, format_settings, chunk_partitioner, current_schema);
 
-    writeMetadataFiles(delete_file.delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::POSITION_DELETE, std::make_shared<const Block>(getPositionDeleteFileSampleBlock()));
-    if (delete_file.data_file)
-        writeMetadataFiles(*delete_file.data_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::DATA, sample_block);
+    if (mutation_files)
+    {
+        while (true)
+        {
+            auto result_delete_files_metadata = writeMetadataFiles(mutation_files->delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::POSITION_DELETE, std::make_shared<const Block>(getPositionDeleteFileSampleBlock()));
+            if (!result_delete_files_metadata.success)
+                continue;
+            if (mutation_files->data_file)
+            {
+                auto result_data_files_metadata = writeMetadataFiles(*mutation_files->data_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::DATA, sample_block);
+                if (result_data_files_metadata.success)
+                    break;
+                else
+                    result_delete_files_metadata.cleanup();
+            }
+        }
+    }
 }
 
 void alter(
