@@ -12,6 +12,8 @@
 #include <Parsers/ParserWithElement.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTShuffle.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTWithElement.h>
 
 
@@ -50,6 +52,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_window(Keyword::WINDOW);
     ParserKeyword s_qualify(Keyword::QUALIFY);
     ParserKeyword s_order_by(Keyword::ORDER_BY);
+    ParserKeyword s_shuffle(Keyword::SHUFFLE);
     ParserKeyword s_limit(Keyword::LIMIT);
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_by(Keyword::BY);
@@ -91,6 +94,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr window_list;
     ASTPtr qualify_expression;
     ASTPtr order_expression_list;
+    ASTPtr shuffle_expression;
     ASTPtr interpolate_expression_list;
     ASTPtr limit_by_length;
     ASTPtr limit_by_offset;
@@ -396,6 +400,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
+    /// SHUFFLE
+    if (s_shuffle.ignore(pos, expected))
+    {
+        select_query->has_shuffle = true;
+        shuffle_expression = std::make_shared<ASTShuffle>();
+    }
+
     /// This is needed for TOP expression, because it can also use WITH TIES.
     bool limit_with_ties_occurred = false;
 
@@ -606,6 +617,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::WINDOW, std::move(window_list));
     select_query->setExpression(ASTSelectQuery::Expression::QUALIFY, std::move(qualify_expression));
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression_list));
+    select_query->setExpression(ASTSelectQuery::Expression::SHUFFLE, std::move(shuffle_expression));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, std::move(limit_by_offset));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, std::move(limit_by_length));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, std::move(limit_by_expression_list));

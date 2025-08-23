@@ -187,6 +187,7 @@ struct SelectQueryInfo
     /// Cached value of ExpressionAnalysisResult
     bool has_window = false;
     bool has_order_by = false;
+    bool has_shuffle = false;
     bool need_aggregate = false;
 
     /// Actions for row level security filter. Applied separately before prewhere.
