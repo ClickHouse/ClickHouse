@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 
 # Test the segment fault issue when reading ORC files
 # Fixes issue #85292
