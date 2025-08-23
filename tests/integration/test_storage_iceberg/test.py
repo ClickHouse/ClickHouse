@@ -2961,13 +2961,14 @@ def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
-def test_writes_mutate_update(started_cluster, storage_type):
+@pytest.mark.parametrize("partition_type", ["", "identity(x)", "icebergBucket(3, x)"])
+def test_writes_mutate_update(started_cluster, storage_type, partition_type):
     format_version = 2
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String, y Int32)", format_version)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String, y Int32)", format_version, partition_type)
 
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
 

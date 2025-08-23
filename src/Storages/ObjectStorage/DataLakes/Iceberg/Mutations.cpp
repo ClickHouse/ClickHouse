@@ -124,12 +124,16 @@ WriteDataFilesResult writeDataFiles(
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> update_data_write_buffers;
     std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> update_data_writers;
 
+    if (commands[0].type == MutationCommand::UPDATE || commands[0].type == MutationCommand::DELETE)
     {
         MutationsInterpreter::Settings settings(true);
         settings.return_all_columns = true;
         settings.return_mutated_rows = true;
 
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, commands, context, settings);
+        auto delete_commands = commands;
+        delete_commands[0].type = MutationCommand::DELETE;
+
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, delete_commands, context, settings);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
@@ -138,7 +142,6 @@ WriteDataFilesResult writeDataFiles(
         Block block;
         while (executor.pull(block))
         {
-            auto data_block = getNonVirtualColumns(block);
             Chunk chunk(block.getColumns(), block.rows());
             auto partition_result = chunk_partitioner.partitionChunk(chunk);
 
@@ -158,11 +161,7 @@ WriteDataFilesResult writeDataFiles(
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
                 if (!statistics.contains(partition_key))
-                {
                     statistics.emplace(partition_key, DataFileStatistics(IcebergPositionDeleteTransform::getSchemaFields()));
-                    if (commands[0].type == MutationCommand::UPDATE)
-                        update_data_statistics.emplace(partition_key, DataFileStatistics(data_schema->getArray(Iceberg::f_fields)));
-                }
 
                 if (!writers.contains(partition_key))
                 {
@@ -188,24 +187,6 @@ WriteDataFilesResult writeDataFiles(
 
                     write_buffers[partition_key] = std::move(write_buffer);
                     writers[partition_key] = std::move(output_format);
-
-                    if (commands[0].type == MutationCommand::UPDATE)
-                    {
-                        auto data_file_info = generator.generateDataFileName();
-                        update_data_result[partition_key].path = data_file_info;
-                        auto data_write_buffer = object_storage->writeObject(
-                            StoredObject(data_file_info.path_in_storage),
-                            WriteMode::Rewrite,
-                            std::nullopt,
-                            DBMS_DEFAULT_BUFFER_SIZE,
-                            context->getWriteSettings());
-
-                        auto data_output_format = FormatFactory::instance().getOutputFormat(
-                            configuration->format, *data_write_buffer, data_block, context, format_settings, nullptr);
-
-                        update_data_write_buffers[partition_key] = std::move(data_write_buffer);
-                        update_data_writers[partition_key] = std::move(data_output_format);
-                    }
                 }
 
                 col_data_filename.column = partition_chunk.getColumns()[col_data_filename_index];
@@ -240,12 +221,6 @@ WriteDataFilesResult writeDataFiles(
                 Block delete_file_block({col_data_filename, col_position});
                 result[partition_key].total_rows += delete_file_block.rows();
                 writers[partition_key]->write(delete_file_block);
-
-                if (commands[0].type == MutationCommand::UPDATE)
-                {
-                    update_data_result[partition_key].total_rows += data_block.rows();
-                    update_data_writers[partition_key]->write(data_block);
-                }
             }
         }
 
@@ -255,20 +230,70 @@ WriteDataFilesResult writeDataFiles(
             writers[partition_key]->finalize();
             write_buffers[partition_key]->finalize();
             result[partition_key].total_bytes = static_cast<Int32>(write_buffers[partition_key]->count());
+        }
+    }
 
-            if (commands[0].type == MutationCommand::UPDATE)
+    if (commands[0].type == MutationCommand::UPDATE)
+    {
+        MutationsInterpreter::Settings settings(true);
+        settings.return_all_columns = true;
+        settings.return_mutated_rows = true;
+
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, commands, context, settings);
+        auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+        PullingPipelineExecutor executor(pipeline);
+
+        auto header = interpreter->getUpdatedHeader();
+
+        Block block;
+        while (executor.pull(block))
+        {
+            auto data_block = getNonVirtualColumns(block);
+            Chunk chunk(data_block.getColumns(), data_block.rows());
+            auto partition_result = chunk_partitioner.partitionChunk(chunk);
+
+            for (const auto & [partition_key, partition_chunk] : partition_result)
             {
-                update_data_writers[partition_key]->flush();
-                update_data_writers[partition_key]->finalize();
-                update_data_write_buffers[partition_key]->finalize();
-                update_data_result[partition_key].total_bytes = static_cast<Int32>(update_data_write_buffers[partition_key]->count());
+                if (!update_data_statistics.contains(partition_key))
+                    update_data_statistics.emplace(partition_key, DataFileStatistics(data_schema->getArray(Iceberg::f_fields)));
+
+                if (!update_data_writers.contains(partition_key))
+                {
+                    auto data_file_info = generator.generateDataFileName();
+                    update_data_result[partition_key].path = data_file_info;
+                    auto data_write_buffer = object_storage->writeObject(
+                        StoredObject(data_file_info.path_in_storage),
+                        WriteMode::Rewrite,
+                        std::nullopt,
+                        DBMS_DEFAULT_BUFFER_SIZE,
+                        context->getWriteSettings());
+
+                    auto data_output_format = FormatFactory::instance().getOutputFormat(
+                        configuration->format, *data_write_buffer, data_block, context, format_settings, nullptr);
+
+                    update_data_write_buffers[partition_key] = std::move(data_write_buffer);
+                    update_data_writers[partition_key] = std::move(data_output_format);
+                }
+
+                update_data_result[partition_key].total_rows += data_block.rows();
+                update_data_writers[partition_key]->write(data_block);
+                update_data_statistics.at(partition_key).update(chunk);
             }
         }
-        if (commands[0].type == MutationCommand::DELETE)
-            return WriteDataFilesResult{DeleteFileWriteResultWithStats{result, statistics}, std::nullopt};
-        else
-            return WriteDataFilesResult{DeleteFileWriteResultWithStats{result, statistics}, DeleteFileWriteResultWithStats{update_data_result, update_data_statistics}};
+
+        for (const auto & [partition_key, _] : update_data_result)
+        {
+            update_data_writers[partition_key]->flush();
+            update_data_writers[partition_key]->finalize();
+            update_data_write_buffers[partition_key]->finalize();
+            update_data_result[partition_key].total_bytes = static_cast<Int32>(update_data_write_buffers[partition_key]->count());
+        }
     }
+
+    if (commands[0].type == MutationCommand::DELETE)
+        return WriteDataFilesResult{DeleteFileWriteResultWithStats{result, statistics}, std::nullopt};
+    else
+        return WriteDataFilesResult{DeleteFileWriteResultWithStats{result, statistics}, DeleteFileWriteResultWithStats{update_data_result, update_data_statistics}};
 }
 
 bool writeMetadataFiles(
