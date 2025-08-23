@@ -336,13 +336,10 @@ public:
 
             res_offset += extract(
                 reinterpret_cast<const char *>(&src_chars[src_offset]),
-                next_src_offset - src_offset - 1,
+                next_src_offset - src_offset,
                 reinterpret_cast<char *>(&res_chars[res_offset]));
 
-            res_chars[res_offset] = 0;
-            ++res_offset;
             res_offsets[i] = res_offset;
-
             src_offset = next_src_offset;
         }
 

@@ -56,6 +56,9 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_not_comparable_types_in_order_by", 1);
     context->setSetting("allow_experimental_database_unity_catalog", 1);
     context->setSetting("allow_experimental_database_glue_catalog", 1);
+    context->setSetting("allow_database_unity_catalog", 1);
+    context->setSetting("allow_database_glue_catalog", 1);
+    context->setSetting("allow_database_iceberg", 1);
     context->setSetting("allow_experimental_delta_kernel_rs", 1);
     context->setSetting("allow_experimental_ytsaurus_table_function", 1);
     context->setSetting("allow_experimental_ytsaurus_table_engine", 1);

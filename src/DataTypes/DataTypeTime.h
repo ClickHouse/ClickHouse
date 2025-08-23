@@ -32,7 +32,7 @@ namespace DB
 class DataTypeTime final : public DataTypeNumberBase<Int32>, public TimezoneMixin
 {
 public:
-    explicit DataTypeTime(const String & time_zone_name = "");
+    explicit DataTypeTime(std::string_view time_zone_name = "");
     explicit DataTypeTime(const TimezoneMixin & time_zone);
 
     static constexpr auto family_name = "Time";
