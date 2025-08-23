@@ -7021,6 +7021,18 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
 Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
 )", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
     \
+    DECLARE(String, promql_database, "", R"(
+Specifies the database name used by the 'promql' dialect. Empty string means the current database.
+)", EXPERIMENTAL) \
+    \
+    DECLARE(String, promql_table, "", R"(
+Specifies the name of a TimeSeries table used by the 'promql' dialect.
+)", EXPERIMENTAL) \
+    \
+    DECLARE(FloatAuto, evaluation_time, Field("auto"), R"(
+Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
+)", EXPERIMENTAL) \
+    \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \

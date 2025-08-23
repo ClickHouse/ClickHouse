@@ -62,6 +62,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
@@ -2268,6 +2269,25 @@ void Context::addQueryAccessInfo(
 {
     addQueryAccessInfo(backQuoteIfNeed(table_id.getDatabaseName()), table_id.getFullTableName(), column_names);
 }
+
+ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector()
+{
+    {
+        SharedLockGuard lock(mutex);
+        if (time_series_tags_collector)
+            return *time_series_tags_collector;
+    }
+    std::lock_guard lock(mutex);
+    if (!time_series_tags_collector)
+        time_series_tags_collector = std::make_shared<ContextTimeSeriesTagsCollector>();
+    return *time_series_tags_collector;
+}
+
+const ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector() const
+{
+    return const_cast<Context *>(this)->getTimeSeriesTagsCollector();
+}
+
 
 void Context::addQueryAccessInfo(
     const String & quoted_database_name,
