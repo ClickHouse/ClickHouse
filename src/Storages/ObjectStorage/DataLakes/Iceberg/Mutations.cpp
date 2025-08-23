@@ -304,7 +304,7 @@ std::optional<WriteDataFilesResult> writeDataFiles(
 struct WriteMetadataResult
 {
     bool success;
-    std::function<void()> cleanup;  
+    std::function<void()> cleanup;
 };
 
 WriteMetadataResult writeMetadataFiles(
