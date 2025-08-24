@@ -473,11 +473,19 @@ private:
             }
         }
 
-        if (auto chunk = get_ready_out_of_order_bucket(); chunk.hasRows())
+        /// We want to prevent the following situation:
+        /// 1. all inputs are finished and we tried to push all buckets (i.e., current_bucket_num == NUM_BUCKETS)
+        /// 2. the next in order out of order bucket (and there are still some more) is empty, so we wont't push it
+        /// 3. if in that case we won't loop and make another `get_ready_out_of_order_bucket()`,
+        ///    but proceed straight to `return NeedData`, we'll get `Pipeline stuck`, because, again, all inputs are finished
+        while (auto chunk = get_ready_out_of_order_bucket())
         {
-            chunk.getChunkInfos().template get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
-            output.push(std::move(chunk));
-            return Status::PortFull;
+            if (chunk.hasRows())
+            {
+                chunk.getChunkInfos().template get<AggregatedChunkInfo>()->out_of_order_buckets = out_of_order_buckets;
+                output.push(std::move(chunk));
+                return Status::PortFull;
+            }
         }
 
         if (!out_of_order_buckets.empty())
