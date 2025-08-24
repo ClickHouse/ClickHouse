@@ -545,6 +545,7 @@
 "arrayEnumerateDenseRanked"
 "arrayEnumerateUniq"
 "arrayEnumerateUniqRanked"
+"arrayExcept"
 "arrayExists"
 "arrayFill"
 "arrayFilter"
