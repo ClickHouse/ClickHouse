@@ -579,6 +579,7 @@ protected:
     /// TODO: get a better name for this.
     using IndexContextInfoPtr = std::shared_ptr<const IndexContextInfo>;
     mutable std::shared_mutex index_info_mutex;
+    mutable bool needs_index_info;
     mutable IndexContextInfoPtr index_info;
 
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
@@ -1478,22 +1479,38 @@ public:
     std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> getStorageSnapshotCache() const;
 
      /// Information needed in pure index functions (without real column access).
+    void setNeedsIndexInfo() const
+    {
+        std::lock_guard lock(index_info_mutex);
+        chassert(index_info == nullptr);
+        needs_index_info = true;
+    }
+
+    bool needsIndexInfo() const
+    {
+        std::shared_lock slock(index_info_mutex);
+        return needs_index_info;
+    }
+
+    bool updateIndexInfo(IndexContextInfoPtr info) const
+    {
+        std::lock_guard lock(index_info_mutex);
+        chassert(needs_index_info);
+        index_info = info;
+        return true;
+    }
+
     std::pair<IndexContextInfoPtr, std::shared_lock<std::shared_mutex>> getIndexInfo() const
     {
         std::shared_lock slock(index_info_mutex);
+        /// This function may be used ONLY when needs_index_info is set.
+        chassert(needs_index_info);
         if (index_info)
             return {index_info, std::move(slock)};
 
         return {nullptr, std::shared_lock<std::shared_mutex>{}};
     }
 
-    bool setIndexInfo(IndexContextInfoPtr info) const
-    {
-        std::lock_guard lock(index_info_mutex);
-        // chassert(index_info == nullptr);  /// TODO: Check when this assertion is not needed.
-        index_info = info;
-        return true;
-    }
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
