@@ -6,9 +6,21 @@
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/JoinUtils.h>
+#include "Common/Stopwatch.h"
 
 #include <algorithm>
 #include <type_traits>
+
+namespace ProfileEvents
+{
+extern const Event JoinPrepare;
+extern const Event JoinMainLoop;
+extern const Event JoinCutBlock;
+extern const Event JoinBuildOutput;
+extern const Event JoinApplyingFilter;
+extern const Event JoinFilterBySelector;
+extern const Event JoinReplicateBlock;
+}
 
 namespace DB
 {
@@ -85,6 +97,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     }
 
 
+    Stopwatch watch1;
     /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
       * For FULL/RIGHT JOIN, the saved blocks contain keys;
       *  but they will not be used at this stage of joining (and will be in `AdderNonJoined`), and they need to be skipped.
@@ -108,8 +121,12 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
     else
         added_columns.reserve(join_features.need_replication);
+    ProfileEvents::increment(ProfileEvents::JoinPrepare, watch1.elapsedMicroseconds());
 
+    Stopwatch watch2;
     switchJoinRightColumns(maps_, added_columns, block.getSelector(), join.data->type, *join.used_flags);
+    ProfileEvents::increment(ProfileEvents::JoinMainLoop, watch2.elapsedMicroseconds());
+
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
 
