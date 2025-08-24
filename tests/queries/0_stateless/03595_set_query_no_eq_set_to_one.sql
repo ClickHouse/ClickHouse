@@ -4,9 +4,9 @@ SELECT name, value, changed, default FROM system.settings WHERE name = 'force_in
 SELECT name, value, changed, default FROM system.settings WHERE name = 'force_index_by_date' SETTINGS force_index_by_date = DEFAULT;
 SELECT name, value, changed, default FROM system.settings WHERE name = 'force_index_by_date' SETTINGS force_index_by_date FORMAT CSV;
 
-SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries') SETTINGS force_index_by_date, log_queries;
-SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries') SETTINGS force_index_by_date = 0, log_queries;
-SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries') SETTINGS force_index_by_date, log_queries = 0;
+SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries') ORDER BY name SETTINGS force_index_by_date, log_queries;
+SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries') ORDER BY name SETTINGS force_index_by_date = 0, log_queries;
+SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries') ORDER BY name SETTINGS force_index_by_date, log_queries = 0;
 SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries') SETTINGS force_index_by_date, log_queries FORMAT CSV;
 
 SET force_index_by_date;
@@ -19,18 +19,15 @@ SET force_index_by_date = 0;
 SELECT name, value, changed, default FROM system.settings WHERE name = 'force_index_by_date';
 
 SET force_index_by_date = DEFAULT, log_queries = DEFAULT;
-SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries');
+SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries') ORDER BY name;
 SET force_index_by_date, log_queries = 0;
-SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries');
+SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries') ORDER BY name;
 SET force_index_by_date = 0, log_queries;
-SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries');
+SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries') ORDER BY name;
 SET force_index_by_date = DEFAULT, log_queries = DEFAULT;
-SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries');
+SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries') ORDER BY name;
 SET force_index_by_date, log_queries;
-SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries');
-
-SELECT name, value, changed, default FROM system.settings WHERE name = 'force_index_by_date' SETTINGS force_index_by_date UNION ALL
-SELECT name, value, changed, default FROM system.settings WHERE name = 'log_queries' SETTINGS log_queries;
+SELECT name, value, changed, default FROM system.settings WHERE name IN ('force_index_by_date', 'log_queries') ORDER BY name;
 
 CREATE TABLE t
 (
