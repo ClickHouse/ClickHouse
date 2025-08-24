@@ -118,16 +118,15 @@ public:
     /// Example: hasToken(text_col, 'token') -> hasToken('text_col_idx', 'token', _part_index, _part_offset)
     ///
     /// In detail:
-    /// 0. Insert a new node with the replacement function, including extra column nodes.
+    /// 0. Insert a new temporal node with the replacement function, including extra column nodes.
     /// 1. Remove the `text_col` column input + node if it is no longer referenced after substitution.
-    /// 2. Update all references to the old function node.
-    /// 3. Remove the old function node.
+    /// 2. Replace inplace the old function node with the new one (memcpy to keep the memory address)
+    /// 3. Pop the temporal node.
     /// 4. Update the output references if needed.
     ///
-    /// TODO: A much simpler alternative would be to substitute the node inplace (update it's internal information).
-    /// Such approach avoids the latter redirection step. However, ActionDAG::addFunctionImpl is too complex for that ...
-    /// We could modify ::addFunctionImpl, but at the moment I prefer not to touch any code in ActionDAG.
-    Names replace()
+    /// The function returns a pair with <number of replacements, wector with removed column names>
+    /// Not all replacements end with a column removal, so the number of replacements >= column names size
+    std::pair<size_t, Names> replace()
     {
         const Names original_input_node_names = actions_dag.getRequiredColumnsNames();
 
@@ -143,7 +142,7 @@ public:
             replaced += tryReplaceFunctionNodeInplace(node);
         }
         if (replaced == 0)
-            return {};
+            return {0, {}};
 
         actions_dag.removeUnusedActions();
 
@@ -153,7 +152,7 @@ public:
 
         chassert(removed_input_node_names.size() <= replaced);
 
-        return removed_input_node_names;
+        return {replaced, removed_input_node_names};
     }
 
 private:
@@ -387,7 +386,10 @@ size_t tryDirectReadFromTextIndex(QueryPlan::Node * parent_node, QueryPlan::Node
 
     /// Now try to modify the ActionsDAG.
     FullTextMatchingFunctionDAGReplacer replacer(filter_step->getExpression(), columns_to_index_info);
-    const Names removed_input_node_names = replacer.replace();
+    const auto [total_replaced_functions, removed_input_node_names] = replacer.replace();
+
+    if (total_replaced_functions == 0)
+        return no_layers_updated;
 
     read_from_mergetree_step->registerColumnsChanges(removed_input_node_names, {"_part_index", "_part_offset"});
 
