@@ -157,7 +157,7 @@ if __name__ == "__main__":
     ):
         # Comment doesn't exist yet, create a new one
         GH.post_updateable_comment(
-            comment_tags_bodies={"llm_generated__description_changelog": f"{comment_body}"}
+            comment_tags_and_bodies={"llm_generated__description_changelog": f"{comment_body}"}
             only_update=False
         )
 
