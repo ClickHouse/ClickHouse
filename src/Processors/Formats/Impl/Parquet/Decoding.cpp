@@ -333,9 +333,9 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
 {
     std::shared_ptr<FixedSizeConverter> converter;
 
-    size_t values_per_block = 0;
-    size_t miniblocks_per_block = 0;
-    size_t total_values_remaining = 0;
+    UInt64 values_per_block = 0;
+    UInt64 miniblocks_per_block = 0;
+    UInt64 total_values_remaining = 0;
     /// Do all arithmetic as unsigned to silently wrap on overflow (as DELTA_BINARY_PACKED wants).
     /// (Note: signed and unsigned integer addition are exactly the same operation, the only
     ///  difference is whether overflow is UB or not.)
@@ -511,7 +511,7 @@ struct DeltaLengthByteArrayDecoder : public PageDecoder
         /// Decode all lengths in advance because otherwise there's no way to tell where chars start.
         DeltaBinaryPackedDecoder lengths_decoder(data_, nullptr);
         offsets.resize(lengths_decoder.total_values_remaining);
-        size_t last_offset = 0;
+        UInt64 last_offset = 0;
         lengths_decoder.decodeImpl<UInt64>(
             lengths_decoder.total_values_remaining, reinterpret_cast<char *>(offsets.data()),
             [&](UInt64 len)
@@ -1402,7 +1402,7 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
         /// (tests/queries/0_stateless/02998_native_parquet_reader.sh).
         bool overflow = false;
         Int64 x;
-        overflow |= common::subOverflow(julian_day, 2440588l, x); // unix day number
+        overflow |= common::subOverflow(julian_day, static_cast<Int64>(2440588l), x); // unix day number
         overflow |= common::mulOverflow(x, day_nanos, x); // unix nanoseconds
         overflow |= common::addOverflow(x, nanos, x);
 
