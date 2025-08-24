@@ -10,6 +10,8 @@
 
 #include "config.h"
 
+#include <span>
+
 class SipHash;
 class Collator;
 
@@ -689,6 +691,11 @@ public:
 
     /// If valuesHaveFixedSize, returns size of value, otherwise throw an exception.
     [[nodiscard]] virtual size_t sizeOfValueIfFixed() const;
+
+    /// Appends n elements with unspecified values and returns a span pointing to their memory range.
+    /// Can be used to decompress or deserialize data directly into the column.
+    /// Supported only for simple column types like ColumnVector and ColumnFixedString.
+    [[nodiscard]] virtual std::span<char> insertRawUninitialized(size_t count);
 
     /// Column is ColumnVector of numbers or ColumnConst of it. Note that Nullable columns are not numeric.
     [[nodiscard]] virtual bool isNumeric() const { return false; }
