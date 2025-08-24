@@ -1131,6 +1131,8 @@ The server successfully detected this situation and will download merged part fr
     M(AsyncLoggingErrorFileLogDroppedMessages, "How many messages have been dropped from error file log due to the async log queue being full", ValueType::Number) \
     M(AsyncLoggingSyslogDroppedMessages, "How many messages have been dropped from the syslog due to the async log queue being full", ValueType::Number) \
     M(AsyncLoggingTextLogDroppedMessages, "How many messages have been dropped from text_log due to the async log queue being full", ValueType::Number) \
+    \
+    M(PostgreSQLClientConnectionsCreated, "Total number of PostgreSQL client connections created", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

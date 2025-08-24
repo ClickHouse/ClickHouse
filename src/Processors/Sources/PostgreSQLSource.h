@@ -59,7 +59,8 @@ private:
 
 protected:
     String query_str;
-    /// tx and stream must be destroyed before connection_holder.
+    /// conn_lease, tx, and stream must be destroyed before connection_holder, in that order.
+    std::optional<postgres::Connection::Lease> conn_lease;
     std::shared_ptr<T> tx;
     std::unique_ptr<pqxx::stream_from> stream;
 };

@@ -574,7 +574,19 @@ Number of asynchronous inserts that are waiting for flush.
 
 ### PostgreSQLConnection {#postgresqlconnection}
 
-Number of client connections using PostgreSQL protocol
+Number of incoming connections using PostgreSQL protocol
+
+### PostgreSQLClientConnections {#postgresqlclientconnections}
+
+Number of outgoing PostgreSQL client connections
+
+### PostgreSQLClientConnectionsIdle {#postgresqlclientconnectionsidle}
+
+Number of outgoing PostgreSQL client connections with no active queries
+
+### PostgreSQLClientConnectionsInUse {#postgresqlclientconnectionsinuse}
+
+Number of outgoing PostgreSQL client connections with active queries
 
 ### Query {#query}
 

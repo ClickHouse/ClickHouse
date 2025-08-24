@@ -892,6 +892,45 @@ def test_postgres_datetime(started_cluster):
     assert result == "2025-01-02 03:04:05.678900\n"
 
 
+def test_postgres_outgoing_metrics(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    table_name = "test_many"
+    table = f"""postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', '{table_name}', 'postgres', '{pg_pass}')"""
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    cursor.execute(f"CREATE TABLE {table_name} (a integer)")
+
+    # Run a query to make sure at least one postgres connection is created
+    node1.query(f"INSERT INTO TABLE FUNCTION {table} SELECT 123")
+    assert (node1.query(f"SELECT a FROM {table}")).rstrip() == "123"
+
+    postgres_connection_events = int(
+        node1.query(
+            "SELECT value FROM system.events WHERE event='PostgreSQLClientConnectionsCreated'"
+        )
+    )
+
+    postgres_current_connections = int(
+        node1.query(
+            "SELECT value FROM system.metrics WHERE metric='PostgreSQLClientConnections'"
+        )
+    )
+
+    postgres_idle_connections = int(
+        node1.query(
+            "SELECT value FROM system.metrics WHERE metric='PostgreSQLClientConnectionsIdle'"
+        )
+    )
+
+    postgres_active_connections = int(
+        node1.query(
+            "SELECT value FROM system.metrics WHERE metric='PostgreSQLClientConnectionsInUse'"
+        )
+    )
+
+    assert postgres_connection_events > 0
+    assert postgres_active_connections == 0
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

@@ -108,7 +108,8 @@ bool DatabasePostgreSQL::empty() const
     std::lock_guard lock(mutex);
 
     auto connection_holder = pool->get();
-    auto tables_list = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+    postgres::Connection::Lease conn_lease = connection_holder->getLease();
+    auto tables_list = fetchPostgreSQLTablesList(conn_lease.getRef(), configuration.schema);
 
     for (const auto & table_name : tables_list)
         if (!detached_or_dropped.contains(table_name))
@@ -128,7 +129,8 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
     try
     {
         auto connection_holder = pool->get();
-        auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+        postgres::Connection::Lease conn_lease = connection_holder->getLease();
+        auto table_names = fetchPostgreSQLTablesList(conn_lease.getRef(), configuration.schema);
 
         for (const auto & table_name : table_names)
             if (!detached_or_dropped.contains(table_name))
@@ -152,7 +154,8 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
     }
 
     auto connection_holder = pool->get();
-    pqxx::nontransaction tx(connection_holder->get());
+    postgres::Connection::Lease conn_lease = connection_holder->getLease();
+    pqxx::nontransaction tx(conn_lease.getRef());
 
     try
     {
@@ -210,7 +213,8 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
             return StoragePtr{};
 
         auto connection_holder = pool->get();
-        auto columns_info = fetchPostgreSQLTableStructure(connection_holder->get(), table_name, configuration.schema).physical_columns;
+        postgres::Connection::Lease conn_lease = connection_holder->getLease();
+        auto columns_info = fetchPostgreSQLTableStructure(conn_lease.getRef(), table_name, configuration.schema).physical_columns;
 
         if (!columns_info)
             return StoragePtr{};
@@ -367,7 +371,8 @@ void DatabasePostgreSQL::removeOutdatedTables()
     try
     {
         auto connection_holder = pool->get();
-        actual_tables = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+        postgres::Connection::Lease conn_lease = connection_holder->getLease();
+        actual_tables = fetchPostgreSQLTablesList(conn_lease.getRef(), configuration.schema);
     }
     catch (...)
     {
