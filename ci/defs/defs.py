@@ -63,7 +63,7 @@ SECRETS = [
     ),
     Secret.Config(
         name="ANTHROPIC_API_KEY",
-        type=Secret.Type.AWS_SSM_SECRET,
+        type=Secret.Type.GH_SECRET,
     )
 ]
 

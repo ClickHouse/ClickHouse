@@ -221,6 +221,17 @@ class GH:
         return Shell.get_output(cmd, verbose=True)
 
     @classmethod
+    def get_pr_diff(cls, label, pr=None, repo=None):
+        if not repo:
+            repo = _Envrionment.get().REPOSITORY
+        if not pr:
+            pr = _Envrionment.get().PR_NUMBER
+
+        cmd = f'gh pr diff {pr} --repo {repo}'
+        return Shell.get_output(cmd, verbose=True)
+
+
+    @classmethod
     def post_commit_status(cls, name, status, description, url):
         """
         Sets GH commit status
