@@ -50,6 +50,7 @@ namespace DB::Iceberg
 
 static constexpr const char * block_datafile_path = "_path";
 static constexpr const char * block_row_number = "_row_number";
+static constexpr auto MAX_TRANSACTION_RETRIES = 100;
 
 struct DeleteFileWriteResult
 {
@@ -263,7 +264,8 @@ std::optional<WriteDataFilesResult> writeDataFiles(
                 if (!update_data_statistics.contains(partition_key))
                     update_data_statistics.emplace(partition_key, DataFileStatistics(data_schema->getArray(Iceberg::f_fields)));
 
-                if (auto it = update_data_writers.find(partition_key); it != update_data_writers.end())
+                auto it = update_data_writers.find(partition_key);
+                if (it == update_data_writers.end())
                 {
                     auto data_file_info = generator.generateDataFileName();
                     update_data_result[partition_key].path = data_file_info;
@@ -278,11 +280,11 @@ std::optional<WriteDataFilesResult> writeDataFiles(
                         configuration->format, *data_write_buffer, data_block, context, format_settings, nullptr);
 
                     update_data_write_buffers[partition_key] = std::move(data_write_buffer);
-                    it->second = std::move(data_output_format);
+                    it = update_data_writers.emplace(partition_key, std::move(data_output_format)).first;
                 }
 
                 update_data_result[partition_key].total_rows += data_block.rows();
-                update_data_writers[partition_key]->write(data_block);
+                it->second->write(data_block);
                 update_data_statistics.at(partition_key).update(chunk);
             }
         }
@@ -562,7 +564,7 @@ void mutate(
 
     if (mutation_files)
     {
-        int max_retries = DBMS_DEFAULT_MAX_RETRIES;
+        int max_retries = MAX_TRANSACTION_RETRIES;
         while (--max_retries > 0)
         {
             auto result_delete_files_metadata = writeMetadataFiles(mutation_files->delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::POSITION_DELETE, std::make_shared<const Block>(getPositionDeleteFileSampleBlock()));
