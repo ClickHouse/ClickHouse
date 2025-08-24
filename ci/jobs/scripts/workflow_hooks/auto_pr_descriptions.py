@@ -95,7 +95,9 @@ def get_human_description_changelog(pr_body: str) -> Tuple[str, str]:
     if changelog_entry_header is not None:
         changelog_entry_end = documentation_entry_header if documentation_entry_header is not None else len(lines)
 
-        entry_lines.append(lines[i])
+        entry_lines = []
+        for i in range(changelog_entry_header + 1, changelog_entry_end):
+            entry_lines.append(lines[i])
 
         changelog_entry = "".join(entry_lines).strip()
 
@@ -103,7 +105,7 @@ def get_human_description_changelog(pr_body: str) -> Tuple[str, str]:
     
 def generate_description(pr_diff: str, human_description: str, model: str) -> str:
     try:
-        base_prompt = "Use the pr-description-generator agent to generate a PR description for this PR with the following diff: \n\n {pr_diff}"
+        base_prompt = f"Use the pr-description-generator agent to generate a PR description for this PR with the following diff: \n\n {pr_diff}"
         prompt = ""
         if not human_description:
             prompt = base_prompt
@@ -157,7 +159,7 @@ if __name__ == "__main__":
     ):
         # Comment doesn't exist yet, create a new one
         GH.post_updateable_comment(
-            comment_tags_and_bodies={"llm_generated__description_changelog": f"{comment_body}"}
+            comment_tags_and_bodies={"llm_generated_description_changelog": f"{comment_body}"},
             only_update=False
         )
 
