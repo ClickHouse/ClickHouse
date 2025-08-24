@@ -107,7 +107,7 @@ def generate_description(pr_diff: str, human_description: str, model: str) -> st
         prompt = ""
         if not human_description:
             prompt = base_prompt
-        else
+        else:
             prompt = base_prompt += "\n\n and the following user-provided description:\n\n {human_description}"
             
         command = f"claude --allowedTools Bash --model '{model}' -p '{prompt}'"
@@ -124,7 +124,7 @@ def generate_changelog_entry(pr_diff: str, human_changelog_entry: str, model:str
         prompt = ""
         if not human_changelog_entry:
             prompt = base_prompt
-        else
+        else:
            prompt = base_prompt += f"\n\n and the following user-provided changelog entry:\n\n {human_changelog_entry}" 
         command = f"claude --allowedTools Bash --model '{model}' -p '{prompt}'"
         Shell.check(command)
