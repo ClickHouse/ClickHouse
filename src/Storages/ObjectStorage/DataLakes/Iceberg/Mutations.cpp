@@ -30,6 +30,7 @@ namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
+extern const int LIMIT_EXCEEDED;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -262,7 +263,7 @@ std::optional<WriteDataFilesResult> writeDataFiles(
                 if (!update_data_statistics.contains(partition_key))
                     update_data_statistics.emplace(partition_key, DataFileStatistics(data_schema->getArray(Iceberg::f_fields)));
 
-                if (!update_data_writers.contains(partition_key))
+                if (auto it = update_data_writers.find(partition_key); it != update_data_writers.end())
                 {
                     auto data_file_info = generator.generateDataFileName();
                     update_data_result[partition_key].path = data_file_info;
@@ -277,7 +278,7 @@ std::optional<WriteDataFilesResult> writeDataFiles(
                         configuration->format, *data_write_buffer, data_block, context, format_settings, nullptr);
 
                     update_data_write_buffers[partition_key] = std::move(data_write_buffer);
-                    update_data_writers[partition_key] = std::move(data_output_format);
+                    it->second = std::move(data_output_format);
                 }
 
                 update_data_result[partition_key].total_rows += data_block.rows();
@@ -367,7 +368,7 @@ WriteMetadataResult writeMetadataFiles(
                 total_bytes,
                 /* num_partitions */1,
                 /* added_delete_files */0,
-                0);
+                /*num_deleted_rows*/0);
         new_snapshot = result_generation_metadata.snapshot;
         manifest_list_name = result_generation_metadata.metadata_path;
         storage_manifest_list_name = result_generation_metadata.storage_metadata_path;
@@ -561,7 +562,8 @@ void mutate(
 
     if (mutation_files)
     {
-        while (true)
+        int max_retries = DBMS_DEFAULT_MAX_RETRIES;
+        while (--max_retries > 0)
         {
             auto result_delete_files_metadata = writeMetadataFiles(mutation_files->delete_file, object_storage, configuration, context, filename_generator, catalog, storage_id, metadata, partititon_spec, partition_spec_id, chunk_partitioner, Iceberg::FileContentType::POSITION_DELETE, std::make_shared<const Block>(getPositionDeleteFileSampleBlock()));
             if (!result_delete_files_metadata.success)
@@ -577,6 +579,9 @@ void mutate(
             }
             break;
         }
+
+        if (max_retries == 0)
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to create iceberg snapshot");
     }
 }
 
