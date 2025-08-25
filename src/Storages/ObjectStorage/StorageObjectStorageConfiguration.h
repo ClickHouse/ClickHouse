@@ -88,6 +88,9 @@ public:
     // Path provided by the user in the query
     virtual Path getRawPath() const = 0;
 
+    /// Raw URI, specified by a user. Used in permission check.
+    virtual const String & getRawURI() const = 0;
+
     const Path & getPathForRead() const;
     // Path used for writing, it should not be globbed and might contain a partition key
     Path getPathForWrite(const std::string & partition_id = "") const;
@@ -152,6 +155,7 @@ public:
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
+        bool supports_tuple_elements,
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams & hive_parameters);
 

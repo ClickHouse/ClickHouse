@@ -569,6 +569,8 @@ LGPL
 LIMITs
 LINEITEM
 LLDB
+LLM
+LLMs
 LLVM's
 LOCALTIME
 LOCALTIMESTAMP
@@ -1148,6 +1150,7 @@ ThreadsActive
 ThreadsInOvercommitTracker
 TimeSeries
 TimescaleDB's
+TimestampType
 Timeunit
 TinyLog
 Tkachenko
@@ -1252,13 +1255,13 @@ XORs
 Xeon
 YAML
 YAMLRegExpTree
+YTsaurus
 YYYY
 YYYYMMDD
 YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
-YTsaurus
 ZCurve
 ZSTDQAT
 Zabbix
@@ -2682,6 +2685,8 @@ profiler
 projectio
 proleptic
 prometheus
+prometheusQuery
+prometheusQueryRange
 proportionsZTest
 proto
 protobuf
@@ -3137,6 +3142,7 @@ timeSeriesPredictLinearToGrid
 timeSeriesRange
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
+timeSeriesSelector
 timeSeriesTags
 timeSlot
 timeSlots
