@@ -33,6 +33,10 @@ jobs:
           mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
+          export ANTHROPIC_API_KEY=$(cat<<'EOF'
+          ${{ secrets.ANTHROPIC_API_KEY }}
+          EOF
+          )
           cat > ./ci/tmp/workflow_config_nightlyjepsen.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -71,6 +75,10 @@ jobs:
           mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
+          export ANTHROPIC_API_KEY=$(cat<<'EOF'
+          ${{ secrets.ANTHROPIC_API_KEY }}
+          EOF
+          )
           cat > ./ci/tmp/workflow_config_nightlyjepsen.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -109,6 +117,10 @@ jobs:
           mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
+          export ANTHROPIC_API_KEY=$(cat<<'EOF'
+          ${{ secrets.ANTHROPIC_API_KEY }}
+          EOF
+          )
           cat > ./ci/tmp/workflow_config_nightlyjepsen.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -147,6 +159,10 @@ jobs:
           mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
+          export ANTHROPIC_API_KEY=$(cat<<'EOF'
+          ${{ secrets.ANTHROPIC_API_KEY }}
+          EOF
+          )
           cat > ./ci/tmp/workflow_config_nightlyjepsen.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -185,6 +201,10 @@ jobs:
           mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
+          export ANTHROPIC_API_KEY=$(cat<<'EOF'
+          ${{ secrets.ANTHROPIC_API_KEY }}
+          EOF
+          )
           cat > ./ci/tmp/workflow_config_nightlyjepsen.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
@@ -223,6 +243,10 @@ jobs:
           mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
+          export ANTHROPIC_API_KEY=$(cat<<'EOF'
+          ${{ secrets.ANTHROPIC_API_KEY }}
+          EOF
+          )
           cat > ./ci/tmp/workflow_config_nightlyjepsen.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
