@@ -299,19 +299,12 @@ public:
 REGISTER_FUNCTION(TimeSeriesRange)
 {
     FunctionDocumentation::Description description = R"(
-Generates a range of timestamps.
+Generates a range of timestamps [start_timestamp, start_timestamp + step, start_timestamp + 2 * step, ..., end_timestamp].
 
-- If function `timeSeriesRange()` is called with `start_timestamp` equal to `end_timestamp`
-then it returns a 1-element array containing that timestamp: `[start_timestamp]`
-- Function `timeSeriesRange()` is similar to function [range](../functions/array-functions.md#range).
+If `start_timestamp` is equal to `end_timestamp`, the function returns a 1-element array containing `[start_timestamp]`.
 
-For example, if the type of timestamps is `DateTime64(3)` and `start_timestamp < end_timestamp` then
-`timeSeriesRange(start_timestamp, end_timestamp, step)` returns the same result as the following expression:
-
-```sql
-range(start_timestamp::Int64, end_timestamp::Int64 + 1, step::Int64)::Array(DateTime64(3))
-```
-        )";
+Function `timeSeriesRange()` is similar to function [range](../functions/array-functions.md#range).
+)";
     FunctionDocumentation::Syntax syntax = "timeSeriesRange(start_timestamp, end_timestamp, step)";
     FunctionDocumentation::Arguments arguments = {{"start_timestamp", "Start of the range.", {"DateTime64", "DateTime", "UInt32"}},
                                                   {"end_timestamp", "End of the range.", {"DateTime64", "DateTime", "UInt32"}},
@@ -343,12 +336,11 @@ REGISTER_FUNCTION(TimeSeriesFromGrid)
 Converts an array of values `[x1, x2, x3, ...]` to an array of tuples
 `[(start_timestamp, x1), (start_timestamp + step, x2), (start_timestamp + 2 * step, x3), ...]`.
 
-If some of the values `[x1, x2, x3, ...]` are `NULL` then the function won't copy such null values to the result array
-but will still increase the current timestamp, i.e. for example for `[value1, NULL, x2]` the function will return
-`[(start_timestamp, x1), (start_timestamp + 2 * step, x2)]`.
+The current timestamp is increased by `step` until it becomes greater than `end_timestamp`
+If the number of the values doesn't match the number of the timestamps, the function throws an exception.
 
-The current timestamp is increased by step until it becomes greater than end_timestamp, each timestamp will be combined with a value
-from a specified array of values. If number of the values doesn't match number of the timestamps the function will throw an exception.
+NULL values in `[x1, x2, x3, ...]` are skipped but the current timestamp is still incremented.
+For example, for `[value1, NULL, x2]` the function returns `[(start_timestamp, x1), (start_timestamp + 2 * step, x2)]`.
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesFromGrid(start_timestamp, end_timestamp, step, values)";
     FunctionDocumentation::Arguments arguments = {
