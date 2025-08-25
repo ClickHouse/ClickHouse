@@ -142,10 +142,10 @@ struct GinIndexSegment
 
 /// This class encapsulates an instance of `BloomFilter` class.
 /// The main responsibility is handling the serialization.
-class GinSegmentDictionaryBloomFilter
+class GinDictionaryBloomFilter
 {
 public:
-    GinSegmentDictionaryBloomFilter(UInt64 unique_count_, size_t bits_per_rows_, size_t num_hashes_);
+    GinDictionaryBloomFilter(UInt64 unique_count_, size_t bits_per_rows_, size_t num_hashes_);
 
     /// Adds token to bloom filter
     void add(std::string_view token);
@@ -157,7 +157,7 @@ public:
     UInt64 serialize(WriteBuffer & write_buffer);
     /// Deserialize from ReadBuffer
 
-    static std::unique_ptr<GinSegmentDictionaryBloomFilter> deserialize(ReadBuffer & read_buffer);
+    static std::unique_ptr<GinDictionaryBloomFilter> deserialize(ReadBuffer & read_buffer);
 
 private:
     /// Estimated number of entries
@@ -171,7 +171,7 @@ private:
     BloomFilter bloom_filter;
 };
 
-struct GinSegmentDictionary
+struct GinDictionary
 {
     /// .gin_bflt file offset of this segment's bloom filter
     UInt64 bloom_filter_start_offset;
@@ -188,10 +188,10 @@ struct GinSegmentDictionary
     std::mutex fst_mutex;
 
     /// Bloom filter created from the segment's dictionary
-    std::unique_ptr<GinSegmentDictionaryBloomFilter> bloom_filter;
+    std::unique_ptr<GinDictionaryBloomFilter> bloom_filter;
 };
 
-using GinSegmentDictionaryPtr = std::shared_ptr<GinSegmentDictionary>;
+using GinDictionaryPtr = std::shared_ptr<GinDictionary>;
 
 /// Gin index store which has gin index meta data for the corresponding column data part
 class GinIndexStore
@@ -316,7 +316,7 @@ private:
     UInt32 next_available_segment_id = 0;
 
     /// Dictionaries indexed by segment ID
-    using GinSegmentDictionaries = std::unordered_map<UInt32, GinSegmentDictionaryPtr>;
+    using GinSegmentDictionaries = std::unordered_map<UInt32, GinDictionaryPtr>;
 
     /// Term's dictionaries which are loaded from .gin_dict files
     GinSegmentDictionaries segment_dictionaries;
@@ -365,7 +365,7 @@ public:
     void prepareSegmentForReading(UInt32 segment_id);
 
     /// Read FST for given segment dictionary from .gin_dict files
-    void readSegmentFST(UInt32 segment_id, GinSegmentDictionaryPtr segment_dictionary);
+    void readSegmentFST(UInt32 segment_id, GinDictionaryPtr segment_dictionary);
 
     /// Read postings lists for the term
     GinSegmentedPostingsListContainer readSegmentedPostingsLists(const String & term);

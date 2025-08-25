@@ -166,15 +166,15 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
         }
 
         /// Read segment metadata
-        using GinSegmentDictionaries = std::unordered_map<UInt32, DB::GinSegmentDictionaryPtr>;
-        GinSegmentDictionaries segment_dictionaries(number_of_segments);
+        using GinDictionaries = std::unordered_map<UInt32, DB::GinDictionaryPtr>;
+        GinDictionaries segment_dictionaries(number_of_segments);
         if (version == DB::GinIndexStore::Format::v1)
         {
             std::vector<DB::GinIndexSegment> segments(number_of_segments);
             segment_metadata_read_buffer->readStrict(reinterpret_cast<char *>(segments.data()), number_of_segments * sizeof(DB::GinIndexSegment));
             for (UInt32 i = 0; i < number_of_segments; ++i)
             {
-                auto seg_dict = std::make_shared<DB::GinSegmentDictionary>();
+                auto seg_dict = std::make_shared<DB::GinDictionary>();
                 seg_dict->postings_start_offset = segments[i].postings_start_offset;
                 seg_dict->dict_start_offset = segments[i].dict_start_offset;
                 seg_dict->bloom_filter_start_offset = segments[i].bloom_filter_start_offset;
@@ -206,7 +206,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
 
                     /// Read bloom filter
                     bloom_filter_read_buffer->seek(segment_dict->bloom_filter_start_offset, SEEK_SET);
-                    segment_dict->bloom_filter = DB::GinSegmentDictionaryBloomFilter::deserialize(*bloom_filter_read_buffer);
+                    segment_dict->bloom_filter = DB::GinDictionaryBloomFilter::deserialize(*bloom_filter_read_buffer);
 
                     fmt::println(
                         "[Segment {}]: bloom filter size = {}",
