@@ -1,6 +1,6 @@
-#include <Parsers/Kusto/Utilities.h>
+#include "Utilities.h"
 
-#include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
+#include "KustoFunctions/IParserKQLFunction.h"
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>

@@ -1,4 +1,4 @@
-#include <Dictionaries/LibraryDictionarySource.h>
+#include "LibraryDictionarySource.h"
 
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
