@@ -79,12 +79,10 @@ void MergeTreeIndexGranuleGin::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     has_elems = true;
 }
 
-
 size_t MergeTreeIndexGranuleGin::memoryUsageBytes() const
 {
     return gin_filter.memoryUsageBytes();
 }
-
 
 MergeTreeIndexAggregatorGin::MergeTreeIndexAggregatorGin(
     GinIndexStorePtr store_,
