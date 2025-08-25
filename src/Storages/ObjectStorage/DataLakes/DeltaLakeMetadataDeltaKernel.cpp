@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeNullable.h>
 #include "config.h"
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
@@ -8,6 +9,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
 #include <Common/logger_useful.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -107,12 +109,32 @@ void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_
     format_settings.parquet.allow_missing_columns = true;
 }
 
+static void checkTypesAndNestedTypesEqual(DataTypePtr type1, DataTypePtr type2, const std::string & column_name)
+{
+    if ((type1->isNullable() && !type2->isNullable())
+        || (type2->isNullable() && !type1->isNullable()))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Types mismatch in nullability for column `{}`: {} and {}",
+            column_name, type1->getTypeId(), type2->getTypeId());
+    }
+    auto nested_type1 = type1->isNullable() ? assert_cast<const DataTypeNullable *>(type1.get())->getNestedType() : type1;
+    auto nested_type2 = type2->isNullable() ? assert_cast<const DataTypeNullable *>(type2.get())->getNestedType() : type2;
+
+    if (nested_type1->getTypeId() != nested_type2->getTypeId())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Types mismatch for column `{}`: {} and {}",
+            column_name, nested_type1->getTypeId(), nested_type2->getTypeId());
+    }
+}
+
 ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
     bool supports_subset_of_columns,
-    bool supports_tuple_elements)
+    bool /*supports_tuple_elements*/)
 {
     /// The below code is similar to what can be found in `prepareReadingFromFormat.cpp`,
     /// but is adjusted for delta-lake.
@@ -159,8 +181,14 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             log, "Name: {}, physical name: {}, contained in read schema: {}",
             column_name, physical_name, name_and_type.has_value());
 
+        auto expected_type = info.source_header.getByName(column_name).type;
         if (name_and_type.has_value())
         {
+            /// Convert for compatibility, because it used to work this way.
+            if (name_and_type->type->isNullable() && !expected_type->isNullable())
+                name_and_type->type = assert_cast<const DataTypeNullable *>(name_and_type->type.get())->getNestedType();
+
+            checkTypesAndNestedTypesEqual(name_and_type->type, expected_type, column_name);
             info.requested_columns.push_back(name_and_type.value());
             ColumnWithTypeAndName result_column(name_and_type->type->createColumn(), name_and_type->type, name_and_type->name);
             info.format_header.insert(std::move(result_column));
@@ -168,6 +196,11 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
         else if (name_and_type = table_schema.tryGetByName(column_name);
                  name_and_type.has_value())
         {
+            /// Convert for compatibility, because it used to work this way.
+            if (name_and_type->type->isNullable() && !expected_type->isNullable())
+                name_and_type->type = assert_cast<const DataTypeNullable *>(name_and_type->type.get())->getNestedType();
+
+            checkTypesAndNestedTypesEqual(name_and_type->type, expected_type, column_name);
             info.requested_columns.emplace_back(physical_name, name_and_type->type);
         }
         else
