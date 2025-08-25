@@ -82,7 +82,7 @@ SECRETS = [
 DOCKERS = [
     Docker.Config(
         name="clickhouse/claude",
-        path="./ci/docker/claude",
+        path="./ci/docker/docs-builder",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[]
     ),    
