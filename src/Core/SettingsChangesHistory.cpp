@@ -848,6 +848,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
+            {"object_serialization_version", "v2", "v2", "Add a setting to control JSON serialization versions"},
+            {"object_shared_data_serialization_version", "map", "map", "Add a setting to control JSON serialization versions"},
+            {"object_shared_data_serialization_version_for_zero_level_parts", "map", "map", "Add a setting to control JSON serialization versions  for zero level parts"},
+            {"object_shared_data_buckets_for_compact_part", 8, 8, "Add a setting to control number of buckets for shared data in JSON serialization in compact parts"},
+            {"object_shared_data_buckets_for_wide_part", 32, 32, "Add a setting to control number of buckets for shared data in JSON serialization in wide parts"},
+            {"dynamic_serialization_version", "v2", "v2", "Add a setting to control Dynamic serialization versions"},
             {"search_orphaned_parts_disks", "any", "any", "New setting"},
             {"shared_merge_tree_virtual_parts_discovery_batch", 1, 1, "New setting"},
             {"shared_merge_tree_update_replica_flags_delay_ms", 30000, 30000, "New setting"},
