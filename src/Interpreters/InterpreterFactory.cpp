@@ -179,10 +179,12 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTRenameQuery>())
     {
+        mark_cannot_get_ref_table_for_alias_storage();
         interpreter_name = "InterpreterRenameQuery";
     }
     else if (query->as<ASTShowTablesQuery>())
     {
+        mark_cannot_get_ref_table_for_alias_storage();
         interpreter_name = "InterpreterShowTablesQuery";
     }
     else if (query->as<ASTShowColumnsQuery>())
