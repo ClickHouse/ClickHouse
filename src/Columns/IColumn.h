@@ -11,6 +11,8 @@
 #include <IO/WriteBufferFromString.h>
 #include "config.h"
 
+#include <span>
+
 class SipHash;
 class Collator;
 
@@ -296,8 +298,8 @@ public:
 
     virtual void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & /* memories */, const UInt8 * /* is_null */) const;
 
-    /// Calculate all the sizes of serialized data in column, then added to `sizes`.
-    /// If `is_null` is not nullptr, also take null bit into account.
+    /// Calculate all the sizes of serialized data (as in the methods above) in the column and add to `sizes`.
+    /// If `is_null` is not nullptr, also take null byte into account.
     /// This is currently used to facilitate the allocation of memory for an entire continuous row
     /// in a single step. For more details, refer to the HashMethodSerialized implementation.
     virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const;
@@ -701,6 +703,11 @@ public:
 
     /// If valuesHaveFixedSize, returns size of value, otherwise throw an exception.
     [[nodiscard]] virtual size_t sizeOfValueIfFixed() const;
+
+    /// Appends n elements with unspecified values and returns a span pointing to their memory range.
+    /// Can be used to decompress or deserialize data directly into the column.
+    /// Supported only for simple column types like ColumnVector and ColumnFixedString.
+    [[nodiscard]] virtual std::span<char> insertRawUninitialized(size_t count);
 
     /// Column is ColumnVector of numbers or ColumnConst of it. Note that Nullable columns are not numeric.
     [[nodiscard]] virtual bool isNumeric() const { return false; }

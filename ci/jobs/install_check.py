@@ -225,14 +225,9 @@ def main():
         test_results.extend(test_install_tgz(deb_image))
         test_results.extend(test_install_tgz(rpm_image))
 
-    description = "Packages installed successfully"
-    if Result.StatusExtended.FAIL in (result.status for result in test_results):
-        description = "Failed to install packages: " + ", ".join(
-            result.name for result in test_results
-        )
-
     Result.create_from(
-        results=test_results, stopwatch=stopwatch, info=description
+        results=test_results,
+        stopwatch=stopwatch,
     ).complete_job()
 
 

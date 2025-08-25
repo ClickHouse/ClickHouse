@@ -45,11 +45,11 @@ private:
     using ComparatorCollationEqual = ComparatorEqualImpl<ComparatorCollationBase>;
 
 public:
+    using Base = COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
+
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
-    using Base = COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
-
     static Ptr create(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
     {
         return ColumnArray::create(nested_column->assumeMutable(), offsets_column->assumeMutable());

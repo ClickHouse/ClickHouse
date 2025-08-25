@@ -15,6 +15,7 @@
 #include <IO/Operators.h>
 
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/IDataType.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -53,6 +54,15 @@ ConstantNode::ConstantNode(Field value_)
 
 String ConstantNode::getValueStringRepresentation() const
 {
+    // Special handling for Bool literals that are stored as UInt64 internally
+    // Check if this is a Bool constant based on the data type
+    if (isBool(getResultType()) && isInt64OrUInt64FieldType(getValue().getType()))
+    {
+        // This is a Bool literal stored as UInt64 - generate proper column name
+        UInt64 bool_value = getValue().safeGet<UInt64>();
+        return bool_value ? "true" : "false";
+    }
+
     return applyVisitor(FieldVisitorToString(), getValue());
 }
 

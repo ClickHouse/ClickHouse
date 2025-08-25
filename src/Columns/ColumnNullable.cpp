@@ -7,7 +7,6 @@
 #include <Common/WeakHash.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/MaskOperations.h>
@@ -175,26 +174,27 @@ void ColumnNullable::insertData(const char * pos, size_t length)
 StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     const auto & arr = getNullMapData();
-    static constexpr auto s = sizeof(arr[0]);
 
-    auto * pos = arena.allocContinue(s, begin);
-    memcpy(pos, &arr[n], s);
+    /// First serialize the NULL map byte.
+    auto * pos = arena.allocContinue(1, begin);
+    *pos = arr[n];
 
+    /// If the value is NULL, that's it.
     if (arr[n])
-        return StringRef(pos, s);
+        return StringRef(pos, 1);
 
+    /// Now serialize the nested value. Note that it also uses allocContinue so that the memory range remains contiguous.
     auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin);
 
     /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
-    return StringRef(nested_ref.data - s, nested_ref.size + s);
+    return StringRef(nested_ref.data - 1, nested_ref.size + 1);
 }
 
 char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory) const
 {
     const auto & arr = getNullMapData();
-    static constexpr auto s = sizeof(arr[0]);
 
-    memcpy(memory, &arr[n], s);
+    *memory = arr[n];
     ++memory;
 
     if (arr[n])
