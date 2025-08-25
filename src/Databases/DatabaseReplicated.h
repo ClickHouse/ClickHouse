@@ -145,7 +145,7 @@ private:
                                                                size_t max_retries, UInt32 & max_log_ptr) const;
 
     ASTPtr parseQueryFromMetadata(const String & table_name, const String & query, const String & description) const;
-    ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query) const;
+    ASTPtr parseQueryFromMetadataInZooKeeper(const String & table_name, const String & query) const;
     ASTPtr parseQueryFromMetadataOnDisk(const String & table_name) const;
     String readMetadataFile(const String & table_name) const;
 

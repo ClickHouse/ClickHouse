@@ -54,7 +54,7 @@ struct FunctionDetectProgrammingLanguageImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * str = data.data() + offsets[i - 1];
-            const size_t str_len = offsets[i] - offsets[i - 1] - 1;
+            const size_t str_len = offsets[i] - offsets[i - 1];
 
             std::unordered_map<String, Float64> data_freq;
             StringRef prev_command;
@@ -97,12 +97,10 @@ struct FunctionDetectProgrammingLanguageImpl
             if (res.empty())
                 res = "Undefined";
 
-            res_data.resize(res_offset + res.size() + 1);
+            res_data.resize(res_offset + res.size());
             memcpy(&res_data[res_offset], res.data(), res.size());
 
-            res_data[res_offset + res.size()] = 0;
-            res_offset += res.size() + 1;
-
+            res_offset += res.size();
             res_offsets[i] = res_offset;
         }
     }

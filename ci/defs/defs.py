@@ -164,7 +164,7 @@ DOCKERS = [
         name="clickhouse/integration-tests-runner",
         path="./ci/docker/integration/runner",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
         name="clickhouse/integration-test-with-unity-catalog",

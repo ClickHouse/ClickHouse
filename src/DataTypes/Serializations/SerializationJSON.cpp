@@ -23,8 +23,9 @@ SerializationJSON<Parser>::SerializationJSON(
     std::unordered_map<String, SerializationPtr> typed_paths_serializations_,
     const std::unordered_set<String> & paths_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
+    const DataTypePtr & dynamic_type_,
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
-    : SerializationObject(std::move(typed_paths_serializations_), paths_to_skip_, path_regexps_to_skip_)
+    : SerializationObject(std::move(typed_paths_serializations_), paths_to_skip_, path_regexps_to_skip_, dynamic_type_)
     , json_extract_tree(std::move(json_extract_tree_))
 {
 }
@@ -97,6 +98,14 @@ struct Prefix
     std::vector<std::pair<std::string_view, bool>> elements;
     bool root_is_first_flag = true;
 };
+
+void writeJSONKey(std::string_view key, WriteBuffer & ostr, const FormatSettings & settings)
+{
+    if (settings.json.json_type_escape_dots_in_keys)
+        writeJSONString(unescapeDotInJSONKey(String(key)), ostr, settings);
+    else
+        writeJSONString(key, ostr, settings);
+}
 
 }
 
@@ -202,12 +211,12 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
                 if (pretty)
                 {
                     writeChar(settings.json.pretty_print_indent, (indent + i + 1) * settings.json.pretty_print_indent_multiplier, ostr);
-                    writeJSONString(path_elements.elements[i], ostr, settings);
+                    writeJSONKey(path_elements.elements[i], ostr, settings);
                     writeCString(" : {\n", ostr);
                 }
                 else
                 {
-                    writeJSONString(path_elements.elements[i], ostr, settings);
+                    writeJSONKey(path_elements.elements[i], ostr, settings);
                     writeCString(":{", ostr);
                 }
 
@@ -232,12 +241,12 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
         if (pretty)
         {
             writeChar(settings.json.pretty_print_indent, (indent + current_prefix.size() + 1) * settings.json.pretty_print_indent_multiplier, ostr);
-            writeJSONString(path_elements.elements.back(), ostr, settings);
+            writeJSONKey(path_elements.elements.back(), ostr, settings);
             writeCString(" : ", ostr);
         }
         else
         {
-            writeJSONString(path_elements.elements.back(), ostr, settings);
+            writeJSONKey(path_elements.elements.back(), ostr, settings);
             writeCString(":", ostr);
         }
 
@@ -299,6 +308,8 @@ void SerializationJSON<Parser>::deserializeObject(IColumn & column, std::string_
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON object here: {}", object);
 
     String error;
+    JSONExtractInsertSettings insert_settings;
+    insert_settings.escape_dots_in_json_keys = settings.json.json_type_escape_dots_in_keys;
     if (!json_extract_tree->insertResultToColumn(column, document, insert_settings, settings, error))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert data into JSON column: {}", error);
 }

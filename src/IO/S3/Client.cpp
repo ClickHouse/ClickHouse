@@ -222,7 +222,6 @@ Client::Client(
     , max_redirects(max_redirects_)
     , sse_kms_config(std::move(sse_kms_config_))
     , log(getLogger("S3Client"))
-    , limited_log(std::make_shared<LogSeriesLimiter>(log, 1, 100))
 {
     auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(accessEndpointProvider().get());
     endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
@@ -825,7 +824,7 @@ void Client::slowDownAfterRetryableError() const
         if (current_time_ms >= next_time_ms)
         {
             if (next_time_ms != 0)
-                LOG_TEST(limited_log, "Retry time has passed; proceeding without delay");
+                LOG_TEST(log, "Retry time has passed; proceeding without delay");
             break;
         }
         UInt64 sleep_ms = next_time_ms - current_time_ms;

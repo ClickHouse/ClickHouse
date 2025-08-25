@@ -27,6 +27,13 @@ void mutate(
     const std::optional<FormatSettings> & format_settings,
     std::shared_ptr<DataLake::ICatalog> catalog);
 
+void alter(
+    const AlterCommands & params,
+    ContextPtr context,
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration
+);
+
 }
 
 #endif

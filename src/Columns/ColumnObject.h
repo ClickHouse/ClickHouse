@@ -230,6 +230,13 @@ public:
         return {assert_cast<ColumnString *>(&column_tuple.getColumn(0)), assert_cast<ColumnString *>(&column_tuple.getColumn(1))};
     }
 
+    static std::tuple<ColumnString *, ColumnString *, Offsets *> getSharedDataPathsValuesAndOffsets(IColumn & shared_data_column)
+    {
+        auto & column_array = assert_cast<ColumnArray &>(shared_data_column);
+        auto & column_tuple = assert_cast<ColumnTuple &>(column_array.getData());
+        return {assert_cast<ColumnString *>(&column_tuple.getColumn(0)), assert_cast<ColumnString *>(&column_tuple.getColumn(1)), &column_array.getOffsets()};
+    }
+
     std::pair<const ColumnString *, const ColumnString *> getSharedDataPathsAndValues() const
     {
         const auto & column_array = assert_cast<const ColumnArray &>(*shared_data);
@@ -237,9 +244,17 @@ public:
         return {assert_cast<const ColumnString *>(&column_tuple.getColumn(0)), assert_cast<const ColumnString *>(&column_tuple.getColumn(1))};
     }
 
+    static std::tuple<const ColumnString *, const ColumnString *, const Offsets *> getSharedDataPathsValuesAndOffsets(const IColumn & shared_data_column)
+    {
+        const auto & column_array = assert_cast<const ColumnArray &>(shared_data_column);
+        const auto & column_tuple = assert_cast<const ColumnTuple &>(column_array.getData());
+        return {assert_cast<const ColumnString *>(&column_tuple.getColumn(0)), assert_cast<const ColumnString *>(&column_tuple.getColumn(1)), &column_array.getOffsets()};
+    }
+
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
     size_t getGlobalMaxDynamicPaths() const { return global_max_dynamic_paths; }
+    DataTypePtr getDynamicType() const { return std::make_shared<DataTypeDynamic>(max_dynamic_types); }
 
     /// Try to add new dynamic path. Returns pointer to the new dynamic
     /// path column or nullptr if limit on dynamic paths is reached.
@@ -255,7 +270,7 @@ public:
     void setGlobalMaxDynamicPaths(size_t global_max_dynamic_paths_);
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 
-    static void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const IColumn & column, size_t n);
+    static void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const ColumnDynamic & column, size_t n);
     static void deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column);
 
     /// Paths in shared data are sorted in each row. Use this method to find the lower bound for specific path in the row.

@@ -105,6 +105,7 @@ protected:
     String http_method; /// For insert can choose Put instead of default Post.
     ASTPtr partition_by;
     bool distributed_processing;
+    bool supports_prewhere = false;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
 
@@ -127,6 +128,12 @@ protected:
         size_t max_block_size) const;
 
     virtual bool supportsSubsetOfColumns(const ContextPtr & context) const;
+
+    /// Things required for PREWHERE.
+    bool supportsPrewhere() const override;
+    bool canMoveConditionsToPrewhere() const override;
+    std::optional<NameSet> supportedPrewhereColumns() const override;
+    ColumnSizeByName getColumnSizes() const override;
 
     bool prefersLargeBlocks() const override;
 

@@ -24,11 +24,6 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 
-#include <Common/FileChecker.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedReadBufferFromFile.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
 #include <Backups/BackupEntryFromMemory.h>
@@ -36,9 +31,16 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntriesLazyBatch.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/copyData.h>
+#include <Common/FailPoint.h>
+#include <Common/FileChecker.h>
+
 
 namespace DB
 {
@@ -61,6 +63,12 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
+    extern const int BACKUP_ENTRY_NOT_FOUND;
+}
+
+namespace FailPoints
+{
+    extern const char backup_add_empty_memory_table[];
 }
 
 class MemorySink : public SinkToStorage
@@ -500,7 +508,12 @@ namespace
 void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     if (totalBytes(backup_entries_collector.getContext()) == 0)
-        return;
+    {
+        bool skip_empty_entry = true;
+        fiu_do_on(FailPoints::backup_add_empty_memory_table, { skip_empty_entry = false; });
+        if (skip_empty_entry)
+            return;
+    }
 
     auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
     const auto & read_settings = backup_entries_collector.getReadSettings();
@@ -545,7 +558,25 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         if (!backup->fileExists(index_file_path))
             throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_file_path);
 
-        auto in = backup->readFile(index_file_path);
+        auto file_size = backup->getFileSize(index_file_path);
+        std::unique_ptr<ReadBufferFromFileBase> in = nullptr;
+        try
+        {
+            in = backup->readFile(index_file_path);
+        }
+        catch (const DB::Exception & e)
+        {
+            if (e.code() == ErrorCodes::BACKUP_ENTRY_NOT_FOUND && file_size == 0)
+            {
+                LOG_ERROR(
+                    getLogger("StorageMemory"),
+                    "File '{}' with size 0 is listed in backup metadata but is not found in the backup, skipping",
+                    index_file_path);
+                return;
+            }
+            else
+                throw;
+        }
         CompressedReadBuffer compressed_in{*in};
         index.read(compressed_in);
     }

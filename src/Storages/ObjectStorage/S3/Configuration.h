@@ -75,6 +75,7 @@ public:
     const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
 
     Path getRawPath() const override { return url.key; }
+    const String & getRawURI() const override { return url.uri_str; }
 
     const Paths & getPaths() const override { return keys; }
     void setPaths(const Paths & paths) override { keys = paths; }

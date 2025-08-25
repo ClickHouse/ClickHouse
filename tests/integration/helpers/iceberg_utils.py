@@ -188,15 +188,14 @@ def get_creation_expression(
     compression_method=None,
     format="Parquet",
     table_function=False,
-    allow_dynamic_metadata_for_data_lakes=False,
+    allow_dynamic_metadata_for_data_lakes=True,
     use_version_hint=False,
     run_on_cluster=False,
     explicit_metadata_path="",
     **kwargs,
 ):
     settings_array = []
-    if allow_dynamic_metadata_for_data_lakes:
-        settings_array.append("allow_dynamic_metadata_for_data_lakes = 1")
+    settings_array.append(f"allow_dynamic_metadata_for_data_lakes = {1 if allow_dynamic_metadata_for_data_lakes else 0}")
 
     if explicit_metadata_path:
         settings_array.append(f"iceberg_metadata_file_path = '{explicit_metadata_path}'")
@@ -326,9 +325,15 @@ def create_iceberg_table(
     format="Parquet",
     **kwargs,
 ):
-    node.query(
-        get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, **kwargs)
-    )
+    if 'output_format_parquet_use_custom_encoder' in kwargs:
+        node.query(
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, **kwargs),
+            settings={"output_format_parquet_use_custom_encoder" : 0, "output_format_parquet_parallel_encoding" : 0}
+        )
+    else:
+        node.query(
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, **kwargs),
+        )
 
 
 def drop_iceberg_table(

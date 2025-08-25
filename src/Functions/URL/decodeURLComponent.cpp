@@ -35,8 +35,6 @@ static size_t encodeURL(const char * __restrict src, size_t src_size, char * __r
             dst_pos += 2;
         }
     }
-    *dst_pos = 0;
-    ++dst_pos;
     return dst_pos - dst;
 }
 
@@ -149,9 +147,7 @@ struct CodeURLComponentImpl
 
             if constexpr (code_strategy == encode)
             {
-                /// Skip encoding of zero terminated character
-                size_t src_encode_size = src_size - 1;
-                dst_size = encodeURL(src_data, src_encode_size, reinterpret_cast<char *>(res_data.data() + res_offset), space_as_plus);
+                dst_size = encodeURL(src_data, src_size, reinterpret_cast<char *>(res_data.data() + res_offset), space_as_plus);
             }
             else
             {
