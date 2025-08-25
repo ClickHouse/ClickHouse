@@ -60,9 +60,9 @@ struct GinSegmentWithRowIdRange
 
 using GinSegmentsWithRowIdRange = std::vector<GinSegmentWithRowIdRange>;
 
-/// GinFilter provides underlying functionalities for building text index and also
-/// it does filtering the unmatched rows according to its query string.
-/// It also builds and uses skipping index which stores (segment_id, rowid_start, rowid_end) triples.
+/// GinFilter provides two types of functionality:
+/// 1) it builds a text index, and
+/// 2) it filters the unmatched rows according to its query string.
 class GinFilter
 {
 public:
@@ -90,15 +90,13 @@ public:
 
     GinFilter() = default;
 
-    /// Add term (located at 'data' with length 'len') and its row ID to the postings list builder
-    /// for building text index for the given store.
+    /// Add term and its row ID to the postings list builder for building the text index for the given store.
     void add(const String & term, UInt32 row_id, GinIndexStorePtr & store) const;
 
-    /// Accumulate (segment_id, rowid_start, rowid_end) for building skipping index
+    /// Accumulate (segment_id, rowid_start, rowid_end) for building the text index.
     void addRowIdRangeToGinFilter(UInt32 segment_id, UInt32 rowid_start, UInt32 rowid_end);
 
-    /// Check if the filter (built from query string) contains any rows in given filter by using
-    /// given postings list cache
+    /// Check if the filter (built from query string) contains any rows in given filter by using given postings list cache.
     bool contains(const GinQueryString & query_string, GinPostingsListsCacheForStore & postings_lists_cache_for_store, GinSearchMode mode = GinSearchMode::All) const;
 
     const GinSegmentsWithRowIdRange & getSegmentsWithRowIdRange() const { return segments_with_rowid_range; }

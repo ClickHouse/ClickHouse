@@ -62,7 +62,7 @@ void GinFilter::add(const String & term, UInt32 row_id, GinIndexStorePtr & store
 void GinFilter::addRowIdRangeToGinFilter(UInt32 segment_id, UInt32 rowid_start, UInt32 rowid_end)
 {
     /// Check that segment ids are monotonic increasing
-    assert(segments_with_rowid_range.empty() || segments_with_rowid_range.back().segment_id <= segment_id);
+    chassert(segments_with_rowid_range.empty() || segments_with_rowid_range.back().segment_id <= segment_id);
 
     if (!segments_with_rowid_range.empty())
     {
@@ -111,8 +111,9 @@ bool matchAllInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 
         auto container_it = container.find(segment_id);
         if (container_it == container.end())
             return false;
-        auto min_in_container = container_it->second->minimum();
-        auto max_in_container = container_it->second->maximum();
+
+        UInt32 min_in_container = container_it->second->minimum();
+        UInt32 max_in_container = container_it->second->maximum();
 
         if (range_rowid_start > max_in_container || min_in_container > range_rowid_end)
             return false;
