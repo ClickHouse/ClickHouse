@@ -410,8 +410,6 @@ runningAccumulate
 runningConcurrency
 runningDifference
 runningDifferenceStartingWithFirstValue
-seriesDecomposeSTL
-seriesOutliersDetectTukey
 serverUUID
 shardCount
 shardNum
