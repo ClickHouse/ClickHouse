@@ -1,3 +1,4 @@
+#include "base/types.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -55,6 +56,12 @@ DataLakeMetadataPtr PaimonMetadata::create(
         configuration_ptr->getRawPath().path);
     PaimonTableClientPtr table_client_ptr = std::make_shared<PaimonTableClient>(object_storage, configuration, local_context);
     auto schema_json = table_client_ptr->getTableSchemaJSON(table_client_ptr->getLastTableSchemaInfo());
+    Int32 version = -1;
+    Paimon::getValueFromJSON(version, schema_json, "version");
+    if (version != 3)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Paimon table schema version {} is unsupported.", version);
+    }
     return std::make_unique<PaimonMetadata>(object_storage, configuration_ptr, local_context, schema_json, table_client_ptr);
 }
 
@@ -63,7 +70,7 @@ bool PaimonMetadata::updateState()
     std::lock_guard lock(mutex);
     /// update schema
     const auto schema_meta_info = table_client_ptr->getLastTableSchemaInfo();
-    if (!table_schema.has_value() || schema_meta_info.first != table_schema->version)
+    if (!table_schema.has_value() || schema_meta_info.first != table_schema->id)
     {
         last_metadata_object = table_client_ptr->getTableSchemaJSON(schema_meta_info);
     }
@@ -86,7 +93,7 @@ bool PaimonMetadata::updateState()
     }
     /// init snapshot, now only support latest snapshot
     auto snapshot_meta_info = table_client_ptr->getLastTableSnapshotInfo();
-    if (snapshot.has_value() && snapshot_meta_info.first == snapshot->version)
+    if (snapshot.has_value() && snapshot_meta_info.first == snapshot->id)
     {
         return false;
     }

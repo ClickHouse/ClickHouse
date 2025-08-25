@@ -9,10 +9,10 @@ PaimonTableSchema::PaimonTableSchema(const Poco::JSON::Object::Ptr & json_object
 }
 void PaimonTableSchema::update(const Poco::JSON::Object::Ptr & json_object)
 {
-    Int32 tmp_version = -1;
-    Paimon::getValueFromJSON(tmp_version, json_object, "version");
+    Int32 tmp_id = -1;
+    Paimon::getValueFromJSON(tmp_id, json_object, "id");
     /// same schema
-    if (tmp_version >= 0 && tmp_version == version)
+    if (tmp_id >= 0 && tmp_id == id)
     {
         return;
     }
