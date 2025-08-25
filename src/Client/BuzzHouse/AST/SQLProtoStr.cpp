@@ -3087,7 +3087,7 @@ CONV_FN(TableDef, tdef)
 {
     if (tdef.table_defs_size() > 0)
     {
-        ret += "(";
+        ret += " (";
         for (int i = 0; i < tdef.table_defs_size(); i++)
         {
             if (i != 0)
@@ -3331,6 +3331,7 @@ CONV_FN(TableEngine, te)
 
 CONV_FN(CreateTableAs, create_table)
 {
+    ret += " ";
     if (create_table.clone())
     {
         ret += "CLONE ";
@@ -3385,7 +3386,6 @@ CONV_FN(CreateTable, create_table)
     {
         ClusterToString(ret, true, create_table.cluster());
     }
-    ret += " ";
     if (create_table.has_table_def())
     {
         TableDefToString(ret, create_table.table_def());
