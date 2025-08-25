@@ -357,7 +357,7 @@ An embedding vector is a list of floating point numbers. Embedding vectors gener
 
 Storage required for vector column in the table (uncompressed) :
 
-```
+```text
     Number of vectors * dimension * size of column data type
 
     e.g https://clickhouse.com/docs/getting-started/example-datasets/dbpedia-dataset
@@ -370,7 +370,7 @@ The vector similarity index in ClickHouse is completely loaded in memory to exec
 
 The minimum memory required for a vector index can be estimated using this formula :
 
-```
+```text
     Memory for vectors in the index (mv) = Number of vectors * dimension * size of quantized data type
     Memory for in-memory graph (mg) = Number of vectors * M * 2 * 4
         where M is the HNSW parameter "hnsw_max_connections_per_layer"
