@@ -4,6 +4,7 @@ import sys
 from praktika.info import Info
 from praktika.utils import Shell
 from ci.praktika.gh import GH
+from ci.praktika import Secret
 from praktika import Secret
 from typing import Tuple
 from pathlib import Path
@@ -30,16 +31,11 @@ def ensure_claude_API_key(info: Info) -> bool:
         api_key = Secret.Config(
             "ANTHROPIC_API_KEY", type=Secret.Type.GH_SECRET
         ).get_value()
-        if not api_key:
-            print("Error: ANTHROPIC_API_KEY secret not configured")
-            return False
-
-        print("ANTHROPIC_API_KEY secret found")
         os.environ["ANTHROPIC_API_KEY"] = api_key
         print("ANTHROPIC_API_KEY secret found and set as environment variable")
         return True
     except Exception as e:
-        print(f"Error: Could not access ANTHROPIC_API_KEY secret: {e}")
+        print(f"Could not find ANTHROPIC_API_KEY secret: {e}")
         return False
 
 def ensure_claude_code_cli() -> bool:
