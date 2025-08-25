@@ -35,7 +35,7 @@ This function decrypts an AES-encrypted binary string using the following modes:
     FunctionDocumentation::Syntax syntax = "decrypt(mode, ciphertext, key[, iv, aad])";
     FunctionDocumentation::Arguments arguments = {
         {"mode", "Decryption mode.", {"String"}},
-        {"ciphertext", "Encrypted text that needs to be decrypted.", {"String"}},
+        {"ciphertext", "Encrypted text that should be decrypted.", {"String"}},
         {"key", "Decryption key.", {"String"}},
         {"iv", "Initialization vector. Required for `-gcm` modes, optional for others.", {"String"}},
         {"aad", "Additional authenticated data. Won't decrypt if this value is incorrect. Works only in `-gcm` modes, for others throws an exception.", {"String"}}
