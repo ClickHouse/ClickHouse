@@ -62,6 +62,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
@@ -2268,6 +2269,25 @@ void Context::addQueryAccessInfo(
 {
     addQueryAccessInfo(backQuoteIfNeed(table_id.getDatabaseName()), table_id.getFullTableName(), column_names);
 }
+
+ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector()
+{
+    {
+        SharedLockGuard lock(mutex);
+        if (time_series_tags_collector)
+            return *time_series_tags_collector;
+    }
+    std::lock_guard lock(mutex);
+    if (!time_series_tags_collector)
+        time_series_tags_collector = std::make_shared<ContextTimeSeriesTagsCollector>();
+    return *time_series_tags_collector;
+}
+
+const ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector() const
+{
+    return const_cast<Context *>(this)->getTimeSeriesTagsCollector();
+}
+
 
 void Context::addQueryAccessInfo(
     const String & quoted_database_name,
@@ -6315,6 +6335,12 @@ void Context::setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback
 }
 
 
+bool Context::hasClusterFunctionReadTaskCallback() const
+{
+    return next_task_callback.has_value();
+}
+
+
 MergeTreeReadTaskCallback Context::getMergeTreeReadTaskCallback() const
 {
     if (!merge_tree_read_task_callback.has_value())
@@ -6484,12 +6510,18 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
 
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
 {
-    callOnce(shared->readers_initialized, [&] {
-        const auto & config = getConfigRef();
-        shared->asynchronous_remote_fs_reader = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER, config);
-        shared->asynchronous_local_fs_reader = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER, config);
-        shared->synchronous_local_fs_reader = createThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER, config);
-    });
+    callOnce(
+        shared->readers_initialized,
+        [&]
+        {
+            const auto & server_settings = getServerSettings();
+            shared->asynchronous_remote_fs_reader
+                = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER, server_settings);
+            shared->asynchronous_local_fs_reader
+                = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER, server_settings);
+            shared->synchronous_local_fs_reader
+                = createThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER, server_settings);
+        });
 
     switch (type)
     {

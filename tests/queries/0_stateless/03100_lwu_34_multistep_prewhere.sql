@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS t_lwu_multistep;
 
 SET enable_multiple_prewhere_read_steps = 1;
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 SET move_all_conditions_to_prewhere = 1;
 
 CREATE TABLE t_lwu_multistep(a UInt64, b UInt64, c UInt64, d UInt64, e UInt64)
