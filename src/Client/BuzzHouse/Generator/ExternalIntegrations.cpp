@@ -1,10 +1,6 @@
 #include <cinttypes>
 #include <cstring>
 #include <ctime>
-#include <netdb.h>
-#include <unistd.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
 
 #include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
 #include <Client/BuzzHouse/Generator/RandomSettings.h>
@@ -1392,86 +1388,13 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
 bool MinIOIntegration::sendRequest(const String & resource)
 {
     struct tm ttm;
-    ssize_t nbytes = 0;
-    int sock = -1;
-    int error = 0;
     char buffer[1024];
-    char found_ip[1024];
     const std::time_t time = std::time({});
     DB::WriteBufferFromOwnString sign_cmd;
     DB::WriteBufferFromOwnString sign_out;
     DB::WriteBufferFromOwnString sign_err;
-    DB::WriteBufferFromOwnString http_request;
-    struct addrinfo hints = {};
-    struct addrinfo * result = nullptr;
 
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
-
-    if (!std::sprintf(buffer, "%" PRIu32 "", sc.port))
-    {
-        LOG_ERROR(fc.log, "Buffer size was to small to fit result");
-        return false;
-    }
-    if ((error = getaddrinfo(sc.client_hostname.c_str(), buffer, &hints, &result)) != 0)
-    {
-        if (error == EAI_SYSTEM)
-        {
-            strerror_r(errno, buffer, sizeof(buffer));
-            LOG_ERROR(fc.log, "getaddrinfo error: {}", buffer);
-        }
-        else
-        {
-            LOG_ERROR(fc.log, "getaddrinfo error: {}", gai_strerror(error));
-        }
-        return false;
-    }
-
-    /// Loop through results
-    for (const struct addrinfo * p = result; p; p = p->ai_next)
-    {
-        if ((sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
-        {
-            strerror_r(errno, buffer, sizeof(buffer));
-            LOG_ERROR(fc.log, "Could not connect: {}", buffer);
-            return false;
-        }
-        if (connect(sock, p->ai_addr, p->ai_addrlen) == 0)
-        {
-            if ((error = getnameinfo(p->ai_addr, p->ai_addrlen, found_ip, sizeof(found_ip), nullptr, 0, NI_NUMERICHOST)) != 0)
-            {
-                if (error == EAI_SYSTEM)
-                {
-                    strerror_r(errno, buffer, sizeof(buffer));
-                    LOG_ERROR(fc.log, "getnameinfo error: {}", buffer);
-                }
-                else
-                {
-                    LOG_ERROR(fc.log, "getnameinfo error: {}", gai_strerror(error));
-                }
-                close(sock);
-                return false;
-            }
-            break;
-        }
-        close(sock);
-        sock = -1;
-    }
-    if (sock == -1)
-    {
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Could not connect: {}", buffer);
-        freeaddrinfo(result);
-        return false;
-    }
-    freeaddrinfo(result);
-    SCOPE_EXIT({
-        if (sock > -1)
-        {
-            close(sock);
-        }
-    });
+    /// Set authentication
     if (!gmtime_r(&time, &ttm))
     {
         strerror_r(errno, buffer, sizeof(buffer));
@@ -1497,31 +1420,43 @@ bool MinIOIntegration::sendRequest(const String & resource)
         return false;
     }
 
-    http_request << "PUT " << resource << " HTTP/1.1\n"
-                 << "Host: " << found_ip << ":" << std::to_string(sc.port) << "\n"
-                 << "Accept: */*\n"
-                 << "Date: " << buffer << "\n"
-                 << "Content-Type: application/octet-stream\n"
-                 << "Authorization: AWS " << sc.user << ":" << sign_out.str() << "Content-Length: 0\n\n\n";
+    /// Build URI
+    Poco::URI uri;
+    uri.setScheme("http");
+    uri.setHost(sc.client_hostname);
+    uri.setPort(sc.port);
+    uri.setPath(resource);
 
-    if (send(sock, http_request.str().c_str(), http_request.str().length(), 0) != static_cast<int>(http_request.str().length()))
+    /// Build PUT request
+    Poco::Net::HTTPClientSession session = Poco::Net::HTTPClientSession(uri.getHost(), uri.getPort());
+    Poco::Net::HTTPRequest req(Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
+    req.set("Accept", "*/*");
+    req.set("Authorization", fmt::format("AWS {}:{}", sc.user, sign_out.str()));
+    req.setContentType("application/octet-stream");
+    req.setContentLength(0);
+
+    try
     {
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Error sending request \"{}\": {}", http_request.str(), buffer);
+        /// Send body
+        const auto & u = session.sendRequest(req);
+        UNUSED(u);
+
+        /// Receive response
+        Poco::Net::HTTPResponse hres;
+        const auto & v = session.receiveResponse(hres);
+        UNUSED(v);
+        if (hres.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
+        {
+            return true;
+        }
+        LOG_ERROR(fc.log, "Request \"{}\" did not return 200", resource);
         return false;
     }
-    if ((nbytes = read(sock, buffer, sizeof(buffer))) < 0)
+    catch (const std::exception & e)
     {
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Error reading request \"{}\" result: {}", http_request.str(), buffer);
+        LOG_ERROR(fc.log, "Request \"{}\" was not successful: \"{}\"", resource, e.what());
         return false;
     }
-    if (nbytes < 13 || std::memcmp(buffer + 9, "200", 3) != 0)
-    {
-        LOG_ERROR(fc.log, "Request \"{}\" was not successful", http_request.str());
-        return false;
-    }
-    return true;
 }
 
 void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te)
@@ -1597,10 +1532,16 @@ bool DolorIntegration::httpPut(const String & path, const String & body)
         Poco::Net::HTTPResponse res;
         const auto & u = session.receiveResponse(res);
         UNUSED(u);
-        return res.getStatus() == Poco::Net::HTTPResponse::HTTP_OK;
+        if (res.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
+        {
+            return true;
+        }
+        LOG_ERROR(fc.log, "Request \"{}\" did not return 200", path);
+        return false;
     }
-    catch (...)
+    catch (const std::exception & e)
     {
+        LOG_ERROR(fc.log, "Request \"{}\" was not successful: \"{}\"", path, e.what());
         return false;
     }
 }

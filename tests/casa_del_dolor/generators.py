@@ -76,6 +76,7 @@ class BuzzHouseGenerator(Generator):
             buzz_config["minio"] = {
                 "database": cluster.minio_bucket,
                 "server_hostname": cluster.minio_host,
+                "client_hostname": cluster.minio_ip,
                 "port": cluster.minio_port,
                 "user": "minio",
                 "password": minio_secret_key,
@@ -86,6 +87,7 @@ class BuzzHouseGenerator(Generator):
                 "query_log_file": "/tmp/postgresql.sql",
                 "database": "test",
                 "server_hostname": cluster.postgres_ip,
+                "client_hostname": cluster.postgres_ip,
                 "port": cluster.postgres_port,
                 "user": "postgres",
                 "password": pg_pass,
@@ -95,6 +97,7 @@ class BuzzHouseGenerator(Generator):
                 "query_log_file": "/tmp/mysql.sql",
                 "database": "test",
                 "server_hostname": cluster.mysql8_ip,
+                "client_hostname": cluster.mysql8_ip,
                 "port": cluster.mysql8_port,
                 "user": "root",
                 "password": mysql_pass,
@@ -107,15 +110,15 @@ class BuzzHouseGenerator(Generator):
             buzz_config["mongodb"] = {
                 "query_log_file": "/tmp/mongodb.doc",
                 "database": "test",
-                "server_hostname": "localhost",
-                "port": 27017,
+                "server_hostname": cluster.mongo_host,
+                "port": cluster.mongo_port,
                 "user": "root",
                 "password": urllib.parse.quote_plus(mongo_pass),
             }
         if args.with_redis:
             buzz_config["redis"] = {
                 "server_hostname": cluster.redis_host,
-                "port": 6379,
+                "port": cluster.redis_port,
                 "user": "",
                 "password": "clickhouse",
             }
@@ -140,6 +143,7 @@ class BuzzHouseGenerator(Generator):
         if args.with_spark or args.with_glue or args.with_hms or args.with_rest or args.with_unity:
             buzz_config["dolor"] = {
                 "server_hostname": catalog_server.host,
+                "client_hostname": catalog_server.host,
                 "port": catalog_server.port,
             }
             if args.with_glue:
