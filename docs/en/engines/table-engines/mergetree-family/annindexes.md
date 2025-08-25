@@ -351,6 +351,45 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 A query run without rescoring (`vector_search_with_rescoring = 0`) and with parallel replicas enabled may fall back to rescoring.
 :::
 
+**Estimating Storage & Memory for Vectors**
+
+An embedding vector is a list of floating point numbers. Embedding vectors generated from language models typically have 100s and even 1000s of dimensions. Thus, a single vector value can need few KBs of space in disk and memory. We recommend users to plan ahead and estimate the storage and memory required for the vector column in the table and for the vector similarity index in ClickHouse.
+
+Storage required for vector column in the table (uncompressed) :
+
+```
+    Number of vectors * dimension * size of column data type
+
+    e.g https://clickhouse.com/docs/getting-started/example-datasets/dbpedia-dataset
+
+        1 million * 1536 * 4 (for Float32)  = 6 GB
+
+```
+
+The vector similarity index in ClickHouse is completely loaded in memory to execute vector search in latency of milliseconds. Similarly, the vector index is also constructed fully in memory and then saved to disk.
+
+The minimum memory required for a vector index can be estimated using this formula :
+
+```
+    Memory for vectors in the index (mv) = Number of vectors * dimension * size of quantized data type
+    Memory for in-memory graph (mg) = Number of vectors * M * 2 * 4
+        where M is the HNSW parameter "hnsw_max_connections_per_layer"
+
+    Minimum memory : mv + mg
+
+    e.g https://clickhouse.com/docs/getting-started/example-datasets/dbpedia-dataset
+
+        Memory for vectors in the index (mv) = 1 million * 1536 * 2 (for BFloat16) = 3072 MB
+        Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
+        Minimum memory = 3072 + 512 = 3584 MB
+```
+
+In addition, memory is required by the index for internal data structures, pre-allocated buffers and other caches.
+
+We recommend users to run the above memory formula and accordingly provision servers and test the performance of vector index build and vector similarity search on their datasets.
+
+The vector similarity index is persisted to disk like other skip indexes in ClickHouse. Disk storage for the vector index can be calculated using the same above formula for calculating memory for the index.
+
 ### Performance tuning {#performance-tuning}
 
 **Tuning compression**
