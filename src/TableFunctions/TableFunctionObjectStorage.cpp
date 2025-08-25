@@ -176,9 +176,6 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         /* comment */ String{},
         /* format_settings */ std::nullopt,
         /* mode */ LoadingStrictnessLevel::CREATE,
-        /* catalog*/ nullptr,
-        /* if_not_exists*/ false,
-        /* is_datalake_query*/ false,
         /* distributed_processing */ client_info.collaborate_with_initiator,
         /* partition_by */ nullptr,
         /* is_table_function */true);
