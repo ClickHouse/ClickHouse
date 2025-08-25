@@ -93,7 +93,13 @@ public:
         chassert(part_idx == col_part_index_vector->getElement(input_rows_count - 1)); /// We assume to work on one part at the time
 
         /// Remember that the index_info_shared_lock is a shared mutex hold from here up to function end
+        chassert(context != nullptr);
+        chassert(context->needsIndexInfo());
         auto [index_context_info, index_info_shared_lock] = context->getIndexInfo();
+
+        /// I expect that this should never happen, but it does
+        if (!index_context_info->part_info_vector[part_idx].has_value())
+            return col_res;
 
         const IndexContextInfo::PartInfo & part_info = index_context_info->part_info_vector[part_idx].value();
         const std::shared_ptr<const PostingsCacheForStore> cache_in_store = part_info.postings_cache_for_store_part.at(index_name);

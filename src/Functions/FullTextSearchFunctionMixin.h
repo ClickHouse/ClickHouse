@@ -29,7 +29,10 @@ public:
         /// payload. Otherwise we could be caching information we don't need.
         /// We don't like to pay for what we don't use ;)
         if (is_replaceable == IsReplaceable::IsReplacement && !context->needsIndexInfo())
+        {
+            chassert(context != nullptr);
             context->setNeedsIndexInfo();
+        }
     }
 
 protected:
