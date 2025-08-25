@@ -307,6 +307,16 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
 
+            /// The order is important, hive partition columns must be added before virtual columns
+            /// because they are part of the schema
+            if (!read_from_format_info.hive_partition_columns_to_read_from_file_path.empty())
+            {
+                HivePartitioningUtils::addPartitionColumnsToChunk(
+                    chunk,
+                    read_from_format_info.hive_partition_columns_to_read_from_file_path,
+                    path);
+            }
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
@@ -318,14 +328,6 @@ Chunk StorageObjectStorageSource::generate()
                  .data_lake_snapshot_version = file_iterator->getSnapshotVersion()},
                 read_context);
 
-            // The order is important, it must be added after virtual columns..
-            if (!read_from_format_info.hive_partition_columns_to_read_from_file_path.empty())
-            {
-                HivePartitioningUtils::addPartitionColumnsToChunk(
-                    chunk,
-                    read_from_format_info.hive_partition_columns_to_read_from_file_path,
-                    path);
-            }
 #if USE_PARQUET && USE_AWS_S3
             if (chunk_size && chunk.hasColumns())
             {
@@ -557,12 +559,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        if (object_info->hasPositionDeleteTransformer())
-        {
-            builder.addSimpleTransform(
-                [file_iterator, object_info, object_storage, &context_, &format_settings](const SharedHeader & header)
-                { return object_info->getPositionDeleteTransformer(object_storage, header, format_settings, context_); });
-        }
+        configuration->addDeleteTransformers(object_info, builder, format_settings, context_);
 
         std::optional<ActionsDAG> transformer;
         if (object_info->data_lake_metadata && object_info->data_lake_metadata->transform)
