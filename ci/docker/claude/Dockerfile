@@ -11,7 +11,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install claude-code
-RUN curl -fsSL https://claude.ai/claude-code/install.sh | bash
+RUN npm install -g @anthropic-ai/claude-code
 
 ARG CACHE_INVALIDATOR=0
 
