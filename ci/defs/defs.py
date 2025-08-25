@@ -164,7 +164,7 @@ DOCKERS = [
         name="clickhouse/integration-tests-runner",
         path="./ci/docker/integration/runner",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
         name="clickhouse/integration-test-with-unity-catalog",
@@ -205,6 +205,12 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/mysql-js-client",
         path="./ci/docker/integration/mysql_js_client",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/arrowflight-server-test",
+        path="./ci/docker/integration/arrowflight",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
@@ -265,6 +271,12 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/sqlancer-test",
         path="./ci/docker/sqlancer-test",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/mysql_dotnet_client",
+        path="./ci/docker/integration/mysql_dotnet_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),

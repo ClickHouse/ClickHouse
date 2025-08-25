@@ -20,10 +20,10 @@
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/ZooKeeperConnectionLog.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/TransposedMetricLog.h>
-#include <Interpreters/LatencyLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
@@ -139,7 +139,6 @@ namespace
 {
 
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
-constexpr size_t DEFAULT_LATENCY_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
@@ -287,7 +286,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
                                                                        TSystemLog::shouldNotifyFlushOnCrash());
 
     if constexpr (std::is_same_v<TSystemLog, TraceLog>)
-        log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", false);
+        log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", true);
 
     log_settings.queue_settings.turn_off_logger = TSystemLog::shouldTurnOffLogger();
 
@@ -392,13 +391,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
         transposed_metric_log->startCollect("TMetricLog", collect_interval_milliseconds);
-    }
-
-    if (latency_log)
-    {
-        size_t collect_interval_milliseconds = config.getUInt64("latency_log.collect_interval_milliseconds",
-                                                                DEFAULT_LATENCY_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        latency_log->startCollect("LatencyLog", collect_interval_milliseconds);
     }
 
     if (error_log)
