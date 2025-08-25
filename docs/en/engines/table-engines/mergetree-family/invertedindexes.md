@@ -80,15 +80,13 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
 
 Optional parameter `segment_digestion_threshold_bytes` determines the byte size of index segments.
 
-- `segment_digestion_threshold_bytes = 0`: Unlimited size, a single segment is created for each index granule.
+- `segment_digestion_threshold_bytes = 0`: Unlimited size, a single segment is created per part.
 - `segment_digestion_threshold_bytes = B`: A new segment is created every `B` bytes of text input.
 
-Default value: `0`.
+Default value: `10 * 1024 * 1024 * 1024` (10 GiB).
 
-We do not recommend changing `segment_digestion_threshold_bytes`.
-The default value will work well in virtually all situations.
-The presence of more than one segment causes redundant data storage and slower full-text search queries.
-The only reason to provide a non-zero value (e.g. `256MB`) for `segment_digestion_threshold_bytes` is if you get out-of-memory exceptions during index creation.
+We recommend changing `segment_digestion_threshold_bytes` to a lower value only if you regularly experience OOMs during index creation, in particular during merges.
+In general, the smaller segments are, the more data is stored redundantly and the slower full-text search becomes.
 
 Optional parameter `bloom_filter_false_positive_rate` determines the false-positive rate of the bloom filter.
 

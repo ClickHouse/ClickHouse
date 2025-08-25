@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <base/unit.h>
 
 #include <roaring.hh>
 #include <mutex>
@@ -44,6 +45,7 @@
 
 namespace DB
 {
+static constexpr UInt64 DEFAULT_SEGMENT_DIGESTION_THRESHOLD_BYTES = 10_GiB;
 static constexpr UInt64 UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES = 0;
 
 /// An in-memory posting list is a 32-bit Roaring Bitmap
