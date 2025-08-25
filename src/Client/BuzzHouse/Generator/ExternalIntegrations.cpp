@@ -1401,7 +1401,7 @@ bool MinIOIntegration::sendRequest(const String & resource)
         LOG_ERROR(fc.log, "Could not convert time: {}", buffer);
         return false;
     }
-    if (!std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S %z", &ttm))
+    if (!std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S GMT", &ttm))
     {
         LOG_ERROR(fc.log, "Buffer size was to small to fit result");
         return false;
@@ -1430,8 +1430,11 @@ bool MinIOIntegration::sendRequest(const String & resource)
     /// Build PUT request
     Poco::Net::HTTPClientSession session = Poco::Net::HTTPClientSession(uri.getHost(), uri.getPort());
     Poco::Net::HTTPRequest req(Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
+    req.set("Date", buffer);
     req.set("Accept", "*/*");
+    req.set("Host", uri.getHost() + (uri.getPort() ? ":" + std::to_string(uri.getPort()) : ""));
     req.set("Authorization", fmt::format("AWS {}:{}", sc.user, sign_out.str()));
+    req.set("Connection", "close");
     req.setContentType("application/octet-stream");
     req.setContentLength(0);
 
@@ -1449,7 +1452,9 @@ bool MinIOIntegration::sendRequest(const String & resource)
         {
             return true;
         }
-        LOG_ERROR(fc.log, "Request \"{}\" did not return 200", resource);
+        LOG_ERROR(fc.log, "Request \"{}\" did not return 200: status: {} reason: \"{}\"", resource, hres.getStatus(), hres.getReason());
+        LOG_TRACE(fc.log, "StringToSign: \"PUT\\n\\napplication/octet-stream\\n{}\\n{}\"", buffer, resource);
+        LOG_TRACE(fc.log, "Authorization: AWS {}:{}", sc.user, sign_out.str());
         return false;
     }
     catch (const std::exception & e)
@@ -1470,15 +1475,9 @@ void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore *
     br->mutable_params()->add_out_params()->set_svalue(filename);
 }
 
-bool MinIOIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
+bool MinIOIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
 {
-    String table_path = t.getTablePath(rg, fc, true);
-
-    if (!table_path.empty() && table_path[0] == '/')
-    {
-        table_path.erase(0, 1);
-    }
-    return sendRequest(fmt::format("/{}/{}", sc.database, table_path));
+    return true;
 }
 
 void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te)
@@ -1536,7 +1535,7 @@ bool DolorIntegration::httpPut(const String & path, const String & body)
         {
             return true;
         }
-        LOG_ERROR(fc.log, "Request \"{}\" did not return 200", path);
+        LOG_ERROR(fc.log, "Request \"{}\" did not return 200: status: {} reason: \"{}\"", path, res.getStatus(), res.getReason());
         return false;
     }
     catch (const std::exception & e)

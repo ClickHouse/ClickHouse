@@ -56,7 +56,9 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
 
             # Default response
             self.send_response(200 if response_ok else 400)
-            self.wfile.write("".encode("utf-8"))
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "OK" if response_ok else "Bad"}).encode("utf-8"))
         except json.JSONDecodeError as e:
             # Handle JSON parsing error
             self.logger.error(str(e))

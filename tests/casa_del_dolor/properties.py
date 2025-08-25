@@ -610,13 +610,11 @@ def add_single_disk(
             secret_access_key_xml.text = minio_secret_key
         elif object_storage_type == "azure":
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
-            endpoint_xml.text = (
-                f"http://azurite1:{cluster.azurite_port}/devstoreaccount1/data{i}"
-            )
+            endpoint_xml.text = f"http://{cluster.azurite_host}:{cluster.azurite_port}/{cluster.azurite_account}/data{i}"
             account_name_xml = ET.SubElement(next_disk, "account_name")
-            account_name_xml.text = "devstoreaccount1"
+            account_name_xml.text = cluster.azurite_account
             account_key_xml = ET.SubElement(next_disk, "account_key")
-            account_key_xml.text = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+            account_key_xml.text = cluster.azurite_key
         elif object_storage_type == "web":
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
             endpoint_xml.text = (
@@ -1001,15 +999,13 @@ def modify_server_settings(
         if args.with_azurite:
             azure_xml = ET.SubElement(named_collections_xml, "azure")
             account_name_xml = ET.SubElement(azure_xml, "account_name")
-            account_name_xml.text = "devstoreaccount1"
+            account_name_xml.text = cluster.azurite_account
             account_key_xml = ET.SubElement(azure_xml, "account_key")
-            account_key_xml.text = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+            account_key_xml.text = cluster.azurite_key
             container_xml = ET.SubElement(azure_xml, "container")
-            container_xml.text = "cont"
+            container_xml.text = cluster.azure_container_name
             storage_account_url_xml = ET.SubElement(azure_xml, "storage_account_url")
-            storage_account_url_xml.text = (
-                f"http://azurite1:{cluster.azurite_port}/devstoreaccount1"
-            )
+            storage_account_url_xml.text = f"http://{cluster.azurite_host}:{cluster.azurite_port}/{cluster.azurite_account}"
         ET.SubElement(named_collections_xml, "local")
 
     if "timezone" not in possible_properties:

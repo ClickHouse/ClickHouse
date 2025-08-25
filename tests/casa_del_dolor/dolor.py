@@ -350,7 +350,9 @@ with open(current_server, "r+") as f:
 
 logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
 keeper_configs: list[str] = modify_keeper_settings(args, is_private_binary)
-cluster = ClickHouseCluster(__file__, custom_keeper_configs=keeper_configs)
+cluster = ClickHouseCluster(
+    __file__, custom_keeper_configs=keeper_configs, azurite_default_port=10000
+)
 
 # Set environment variables such as locales and timezones
 test_env_variables = set_environment_variables(logger, args, "cluster")
@@ -433,7 +435,6 @@ if args.with_minio:
     os.environ["AWS_CONFIG_FILE"] = credentials_file.name
     os.environ["AWS_SHARED_CREDENTIALS_FILE"] = credentials_file.name
 if args.with_azurite:
-    cluster.azure_container_name = "cont"
     cluster.blob_service_client = cluster.blob_service_client
     cluster.container_client = cluster.blob_service_client.create_container(
         cluster.azure_container_name

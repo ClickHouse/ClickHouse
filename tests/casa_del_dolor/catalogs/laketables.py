@@ -732,7 +732,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         )
 
         # Compatibility
-        if 'delta.enableDeletionVectors' not in properties:
+        if "delta.enableDeletionVectors" not in properties:
             properties["delta.compatibility.symlinkFormatManifest.enabled"] = str(
                 random.choice(["true", "false"])
             ).lower()
@@ -787,7 +787,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         properties["delta.appendOnly"] = str(random.choice(["true", "false"])).lower()
 
         # Enable deletion vectors (Delta 3.0+)
-        if 'delta.compatibility.symlinkFormatManifest.enabled' not in properties:
+        if "delta.compatibility.symlinkFormatManifest.enabled" not in properties:
             properties["delta.enableDeletionVectors"] = str(
                 random.choice(["true", "false"])
             ).lower()

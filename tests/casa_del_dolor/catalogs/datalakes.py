@@ -46,11 +46,6 @@ from integration.helpers.config_cluster import minio_access_key, minio_secret_ke
 │ In-Memory       │ ✅ YES         │ Create temporary catalog in session     │
 └─────────────────┴────────────────┴─────────────────────────────────────────┘
 """
-azure_account_name: str = "devstoreaccount1"
-azure_account_key: str = (
-    "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
-)
-azure_container: str = "cont"
 
 
 def get_local_base_path(catalog_name: str) -> str:
@@ -255,7 +250,7 @@ def get_spark(
         elif storage == TableStorage.Azure:
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.warehouse",
-                f"wasb://{azure_container}@{azure_account_name}/{catalog_name}",
+                f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}",
             )
         elif storage == TableStorage.Local:
             builder.config(
@@ -311,14 +306,12 @@ def get_spark(
     elif storage == TableStorage.Azure:
         # For Azurite local emulation
         builder.config(
-            f"spark.hadoop.fs.azure.storage.emulator.account.name", azure_account_name
+            f"spark.hadoop.fs.azure.storage.emulator.account.name",
+            cluster.azurite_account,
         )
         builder.config(
-            f"spark.hadoop.fs.azure.account.key.{azure_account_name}", azure_account_key
-        )
-        builder.config(
-            f"spark.hadoop.fs.azure.account.blob.endpoint.{azure_account_name}",
-            f"http://azurite1:{cluster.azurite_port}/{azure_account_name}",
+            f"spark.hadoop.fs.azure.account.key.{cluster.azurite_account}.blob.core.windows.net",
+            cluster.azurite_key,
         )
         # WASB implementation, ABFS is not compatible with Azurite?
         builder.config(
@@ -328,11 +321,11 @@ def get_spark(
 
         builder.config(
             "spark.sql.warehouse.dir",
-            f"wasb://{azure_container}@{azure_account_name}/{catalog_name}",
+            f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}",
         )
         builder.config(
             f"spark.sql.catalog.{catalog_name}.warehouse",
-            f"wasb://{azure_container}@{azure_account_name}/{catalog_name}",
+            f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}",
         )
     elif storage == TableStorage.Local:
         os.makedirs(get_local_base_path(catalog_name), exist_ok=True)
@@ -587,12 +580,12 @@ logger.jetty.level = warn
                 elif next_storage == TableStorage.Azure:
                     kwargs.update(
                         {
-                            "wasb.account-name": azure_account_name,
-                            "wasb.account-key": azure_account_key,
-                            "azure.blob-endpoint": f"http://azurite1:{cluster.azurite_port}/{azure_account_name}",
+                            "wasb.account-name": cluster.azurite_account,
+                            "wasb.account-key": cluster.azurite_key,
+                            "azure.blob-endpoint": f"http://{cluster.azurite_ip}:{cluster.azurite_port}/{cluster.azurite_account}",
                         }
                     )
-                    next_warehouse = f"wasb://{azure_container}@{azure_account_name}"
+                    next_warehouse = f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}"
                 elif next_storage == TableStorage.Local:
                     next_warehouse = f"file://{get_local_base_path(catalog_name)}"
                 rest_catalog = RestCatalog(

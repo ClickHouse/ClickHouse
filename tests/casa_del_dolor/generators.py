@@ -133,9 +133,9 @@ class BuzzHouseGenerator(Generator):
                 "database": cluster.env_variables[
                     "AZURITE_CONNECTION_STRING"
                 ],  # it's hacking a little
-                "container": "cont",
-                "user": "devstoreaccount1",
-                "password": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
+                "container": cluster.azure_container_name,
+                "user": cluster.azurite_account,
+                "password": cluster.azurite_key,
                 "named_collection": "azure",
             }
         if args.add_keeper_map_prefix:
