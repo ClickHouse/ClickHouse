@@ -277,7 +277,7 @@ def get_spark(
         builder.config("spark.hadoop.fs.s3a.endpoint.region", "us-east-1")
         builder.config(
             "spark.hadoop.fs.s3a.aws.credentials.provider",
-            "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
+            "com.amazonaws.auth.EnvironmentVariableCredentialsProvider",
         )
         if catalog == LakeCatalogs.Glue:
             builder.config(

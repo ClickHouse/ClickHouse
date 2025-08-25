@@ -194,7 +194,7 @@ class LakeTableGenerator:
                 f"{val["name"]} {str_type}{"" if nullable else " NOT NULL"}"
             )
             columns_list.append(val["name"])
-            columns_spark[val["name"]] = spark_type
+            columns_spark[val["name"]] = SparkColumn(val["name"], spark_type, nullable)
         ddl += ",".join(columns_str)
         ddl += ")"
 
@@ -259,24 +259,13 @@ class LakeTableGenerator:
         return float(lo) + (float(hi) - float(lo)) * random.random()
 
     def _rand_string(self):
-        alphabet = (
-            string.ascii_letters + string.digits + " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
-        )
-        return "".join(random.choice(alphabet) for _ in range(self._max_str_len))
+        n = random.randint(self._min_str_len, self._max_str_len)
+        alphabet = string.ascii_letters + string.digits + " _-"
+        return "".join(random.choice(alphabet) for _ in range(n))
 
     def _rand_binary(self):
-        any_chars = (
-            "\t\n\r"  # allowed control chars
-            + string.ascii_letters
-            + string.digits
-            + " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"  # punctuation
-            + "\u0020\ud7ff\ue000-\ufffd"  # other valid Unicode ranges
-        )
-        valid_chars = []
-        valid_chars.extend(c for c in any_chars if ord(c) < 0xD800)
-        valid_chars.extend(chr(c) for c in range(0xE000, 0xFFFD + 1))
-        # Generate the random string
-        return "".join(random.choice(valid_chars) for _ in range(self._max_str_len))
+        n = random.randint(self._min_str_len, self._max_str_len)
+        return bytes(random.getrandbits(8) for _ in range(n))
 
     def _rand_date(self):
         start = date(1900, 1, 1).toordinal()

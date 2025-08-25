@@ -35,33 +35,33 @@ class ClickHouseSparkTypeMapper:
             # "UInt16": "INT",  # or 'INTEGER'
             # "UInt32": "BIGINT",  # or 'LONG'
             # "UInt64": "BIGINT",  # May overflow - consider DECIMAL(20,0)
-            "Int8": ("TINYINT", ByteType),  # or 'BYTE'
-            "Int16": ("SMALLINT", ShortType),  # or 'SHORT'
-            "Int32": ("INT", IntegerType),  # or 'INTEGER'
-            "Int64": ("BIGINT", LongType),  # or 'LONG'
-            "Float32": ("FLOAT", FloatType),  # or 'REAL'
-            "Float64": ("DOUBLE", DoubleType),  # or 'DOUBLE PRECISION'
+            "Int8": ("TINYINT", ByteType()),  # or 'BYTE'
+            "Int16": ("SMALLINT", ShortType()),  # or 'SHORT'
+            "Int32": ("INT", IntegerType()),  # or 'INTEGER'
+            "Int64": ("BIGINT", LongType()),  # or 'LONG'
+            "Float32": ("FLOAT", FloatType()),  # or 'REAL'
+            "Float64": ("DOUBLE", DoubleType()),  # or 'DOUBLE PRECISION'
             # String types
-            "String": ("STRING", StringType),
-            "FixedString": ("STRING", StringType),
+            "String": ("STRING", StringType()),
+            "FixedString": ("STRING", StringType()),
             # Date and Time types
-            "Date": ("DATE", DateType),
-            "Date32": ("DATE", DateType),
-            "Time": ("STRING", StringType),
-            "Time64": ("STRING", StringType),
-            "DateTime": ("TIMESTAMP", TimestampType),
-            "DateTime64": ("TIMESTAMP", TimestampType),
+            "Date": ("DATE", DateType()),
+            "Date32": ("DATE", DateType()),
+            "Time": ("STRING", StringType()),
+            "Time64": ("STRING", StringType()),
+            "DateTime": ("TIMESTAMP", TimestampType()),
+            "DateTime64": ("TIMESTAMP", TimestampType()),
             # Boolean
-            "Bool": ("BOOLEAN", BooleanType),
-            "Boolean": ("BOOLEAN", BooleanType),
+            "Bool": ("BOOLEAN", BooleanType()),
+            "Boolean": ("BOOLEAN", BooleanType()),
             # UUID
-            "UUID": ("STRING", StringType),
+            "UUID": ("STRING", StringType()),
             # IP addresses
-            "IPv4": ("STRING", StringType),
-            "IPv6": ("STRING", StringType),
+            "IPv4": ("STRING", StringType()),
+            "IPv6": ("STRING", StringType()),
             # JSON and Dynamic
-            "JSON": ("STRING", StringType),
-            "Dynamic": ("STRING", StringType),
+            "JSON": ("STRING", StringType()),
+            "Dynamic": ("STRING", StringType()),
         }
 
     def clickhouse_to_spark(
@@ -120,7 +120,7 @@ class ClickHouseSparkTypeMapper:
                     False,
                     ArrayType(StructType(struct_fields), containsNull=True),
                 )
-            return ("STRING", False, StringType)
+            return ("STRING", False, StringType())
 
         # Handle Tuple types (map to Struct)
         if ch_type.startswith("Tuple("):
@@ -140,19 +140,19 @@ class ClickHouseSparkTypeMapper:
                         elem_type, False
                     )
                     spark_elements.append(f"{name}: {next_parsed}")
-                    struct_fields.append(spark_type)
+                    struct_fields.append(StructField(name, spark_type, True))
                 else:
                     next_parsed, _, spark_type = self.clickhouse_to_spark(elem, False)
                     spark_elements.append(f"_{i}: {next_parsed}")
-                    struct_fields.append(spark_type)
+                    struct_fields.append(StructField(f"_{i}", spark_type, True))
 
             if spark_elements:
                 return (
                     f'STRUCT<{", ".join(spark_elements)}>',
                     False,
-                    StructType(struct_fields, containsNull=True),
+                    StructType(struct_fields),
                 )
-            return ("STRING", False, StringType)
+            return ("STRING", False, StringType())
 
         # Handle Map types
         if ch_type.startswith("Map("):
@@ -170,7 +170,7 @@ class ClickHouseSparkTypeMapper:
                     False,
                     MapType(spark_key, spark_val, valueContainsNull=True),
                 )
-            return ("STRING", False, StringType)
+            return ("STRING", False, StringType())
 
         # Handle Decimal types
         decimal_match = re.match(r"Decimal(?:\d+)?\((\d+)(?:,\s*(\d+))?\)", ch_type)
@@ -190,7 +190,7 @@ class ClickHouseSparkTypeMapper:
             return (
                 f"VARCHAR({length})",
                 inside_nullable,
-                StringType,
+                StringType(),
             )
 
         # Handle Enum and String types
@@ -199,12 +199,12 @@ class ClickHouseSparkTypeMapper:
             return (
                 "STRING" if is_text else "BINARY",
                 inside_nullable,
-                StringType if is_text else BinaryType,
+                StringType() if is_text else BinaryType(),
             )
 
         # Handle DateTime and Time
         if ch_type.startswith("DateTime"):
-            return ("TIMESTAMP", inside_nullable, TimestampType)
+            return ("TIMESTAMP", inside_nullable, TimestampType())
 
         # Handle LowCardinality wrapper
         if ch_type.startswith("LowCardinality("):
@@ -213,7 +213,7 @@ class ClickHouseSparkTypeMapper:
 
         # Handle AggregateFunction
         if ch_type.startswith("AggregateFunction("):
-            return ("BINARY", inside_nullable, BinaryType)
+            return ("BINARY", inside_nullable, BinaryType())
 
         # Basic type lookup
         str_type, spark_type = self.clickhouse_to_spark_map.get(ch_type, "STRING")
