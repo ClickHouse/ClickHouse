@@ -86,7 +86,7 @@ bool PaimonMetadata::updateState()
     }
     /// init snapshot, now only support latest snapshot
     auto snapshot_meta_info = table_client_ptr->getLastTableSnapshotInfo();
-    if (snapshot.has_value() && snapshot_meta_info.first != snapshot->version)
+    if (snapshot.has_value() && snapshot_meta_info.first == snapshot->version)
     {
         return false;
     }

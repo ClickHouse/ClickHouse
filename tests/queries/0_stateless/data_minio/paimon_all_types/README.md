@@ -432,7 +432,7 @@ public class DataGenerator {
             BatchWriteBuilder writeBuilder = table.newBatchWriteBuilder();
             TableWriteImpl writer = (TableWriteImpl) writeBuilder.newWrite()
                     .withIOManager(new IOManagerImpl(rootPath));
-            for (int i = 0; i < 100; i++) {
+            for (int i = 0; i < 10; i++) {
                 InternalRow row = createRow(i, table.rowType());
                 writer.write(row);
             }
