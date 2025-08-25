@@ -897,6 +897,14 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 
     bool top_level = context_value;
 
+    auto field_to_bool = [](const Field & f) -> bool
+    {
+        if (f.getType() == Field::Types::String)
+            return stringToBool(f.safeGet<String>());
+        else
+            return f.safeGet<bool>();
+    };
+
     std::vector<ASTPtr> nodes_to_process{ ast };
     while (!nodes_to_process.empty())
     {
@@ -907,13 +915,13 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
         {
             if (auto * value = set_query->changes.tryGet("allow_experimental_analyzer"))
             {
-                if (top_level != value->safeGet<bool>())
+                if (top_level != field_to_bool(*value))
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'allow_experimental_analyzer' is changed in the subquery. Top level value: {}", top_level);
             }
 
             if (auto * value = set_query->changes.tryGet("enable_analyzer"))
             {
-                if (top_level != value->safeGet<bool>())
+                if (top_level != field_to_bool(*value))
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'enable_analyzer' is changed in the subquery. Top level value: {}", top_level);
             }
         }
