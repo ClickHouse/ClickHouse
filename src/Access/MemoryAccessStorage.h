@@ -35,6 +35,8 @@ public:
 
     bool isBackupAllowed() const override { return backup_allowed; }
 
+    bool isEphemeral() const override { return true; }
+
 private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;

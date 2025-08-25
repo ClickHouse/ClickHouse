@@ -1,7 +1,14 @@
 #include <Core/BlockMissingValues.h>
 
+#include <Common/PODArray.h>
+
 namespace DB
 {
+
+void BlockMissingValues::init(size_t num_columns)
+{
+    rows_mask_by_column_id.resize(num_columns);
+}
 
 void BlockMissingValues::setBit(size_t column_idx, size_t row_idx)
 {
@@ -15,6 +22,14 @@ void BlockMissingValues::setBits(size_t column_idx, size_t rows)
     auto & mask = rows_mask_by_column_id[column_idx];
     mask.set(0, std::min(mask.size(), rows), true);
     mask.resize(rows, true);
+}
+
+void BlockMissingValues::setBitsFromNullMap(size_t column_idx, const PaddedPODArray<UInt8> & null_map)
+{
+    RowsBitMask & mask = rows_mask_by_column_id[column_idx];
+    mask.resize(null_map.size());
+    for (size_t i = 0; i < null_map.size(); ++i)
+        mask.set(i, bool(null_map[i]));
 }
 
 const BlockMissingValues::RowsBitMask & BlockMissingValues::getDefaultsBitmask(size_t column_idx) const
@@ -42,12 +57,9 @@ bool BlockMissingValues::empty() const
     });
 }
 
-size_t BlockMissingValues::size() const
+size_t BlockMissingValues::getNumColumns() const
 {
-    size_t res = 0;
-    for (const auto & mask : rows_mask_by_column_id)
-        res += !mask.empty();
-    return res;
+    return rows_mask_by_column_id.size();
 }
 
 }

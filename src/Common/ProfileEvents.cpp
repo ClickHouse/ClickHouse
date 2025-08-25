@@ -186,6 +186,7 @@
     M(PatchesAppliedInAllReadTasks, "Total number of applied patch parts among all read tasks", ValueType::Number) \
     M(PatchesMergeAppliedInAllReadTasks, "Total number of applied patch parts with Merge mode among all read tasks", ValueType::Number) \
     M(PatchesJoinAppliedInAllReadTasks, "Total number of applied patch parts with Join mode among all read tasks", ValueType::Number) \
+    M(PatchesReadUncompressedBytes, "Total number of uncompressed bytes read from patch parts", ValueType::Number) \
     M(ApplyPatchesMicroseconds, "Total time spent applying patch parts to blocks", ValueType::Number) \
     M(ReadPatchesMicroseconds, "Total time spent reading patch parts", ValueType::Number) \
     M(BuildPatchesMergeMicroseconds, "Total time spent building indexes for applying patch parts with Merge mode", ValueType::Number) \
@@ -1102,8 +1103,11 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetFetchWaitTimeMicroseconds, "Time of waiting fetching parquet data", ValueType::Microseconds) \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \
+    M(ParquetDecodingTasks, "Tasks issued by parquet reader", ValueType::Number) \
+    M(ParquetDecodingTaskBatches, "Task groups sent to a thread pool by parquet reader", ValueType::Number) \
     M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
     M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
+    \
     M(QueryPreempted, "How many times tasks are paused and waiting due to 'priority' setting", ValueType::Number) \
     M(IndexBinarySearchAlgorithm, "Number of times the binary search algorithm is used over the index marks", ValueType::Number) \
     M(IndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the index marks", ValueType::Number) \
