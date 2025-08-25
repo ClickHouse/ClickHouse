@@ -17,6 +17,7 @@ from .laketables import (
     LakeFormat,
     LakeCatalogs,
     LakeTableGenerator,
+    SparkTable,
 )
 from integration.helpers.config_cluster import minio_access_key, minio_secret_key
 
@@ -389,6 +390,7 @@ class DolorCatalog:
             _lake_type,
             _catalog_type,
         )
+        self.spark_tables: dict[str, SparkTable] = {}
 
 
 def wait_for_port(host, port, timeout=90):
@@ -663,7 +665,7 @@ logger.jetty.level = warn
         )
 
         if one_time:
-            next_session = get_spark(
+            self.catalogs[catalog_name] = DolorCatalog(
                 cluster,
                 str(self.spark_log_config),
                 catalog_name,
@@ -671,13 +673,19 @@ logger.jetty.level = warn
                 next_lake,
                 LakeCatalogs.NoCatalog,
             )
-            self.create_database(next_session, catalog_name)
-        else:
-            next_session = cluster.catalogs[catalog_name].session
-        next_sql = next_generator.generate_create_table_ddl(
+            self.create_database(self.catalogs[catalog_name].session, catalog_name)
+        next_session = self.catalogs[catalog_name].session
+        next_sql, next_table = next_generator.generate_create_table_ddl(
             catalog_name, data["table_name"], data["columns"], data["format"]
         )
         self.run_query(next_session, next_sql)
+        self.catalogs[catalog_name].spark_tables[data["table_name"]] = next_table
+
+        if random.randint(1, 2) == 1:
+            self.logger.info(
+                f"Inserting data into {data["table_name"]} in catalog: {catalog_name}"
+            )
+            next_generator.insert_random_data(next_session, next_table, 10)
 
         if one_time:
             next_session.stop()

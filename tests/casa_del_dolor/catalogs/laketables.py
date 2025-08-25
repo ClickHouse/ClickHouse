@@ -3,6 +3,30 @@
 import random
 from abc import abstractmethod
 from enum import Enum
+from decimal import Decimal, getcontext
+from datetime import datetime, timedelta, date
+import math
+import string
+from pyspark.sql import Row, SparkSession
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    BooleanType,
+    ByteType,
+    ShortType,
+    IntegerType,
+    LongType,
+    FloatType,
+    DoubleType,
+    DecimalType,
+    StringType,
+    BinaryType,
+    DateType,
+    TimestampType,
+    ArrayType,
+    MapType,
+    DataType,
+)
 
 from .clickhousetospark import ClickHouseSparkTypeMapper
 
@@ -88,12 +112,37 @@ class LakeCatalogs(Enum):
         return LakeCatalogs.NoCatalog
 
 
+class SparkColumn:
+    def __init__(
+        self,
+        _column_name: str,
+        _spark_type: DataType,
+        _nullable: bool,
+    ):
+        self.column_name = _column_name
+        self.spark_type = _spark_type
+        self.nullable = _nullable
+
+
+class SparkTable:
+    def __init__(
+        self,
+        _table_name: str,
+        _columns: dict[str, SparkColumn],
+    ):
+        self.table_name = _table_name
+        self.columns = _columns
+
+
 class LakeTableGenerator:
     def __init__(self, _bucket: str):
         self.bucket = _bucket
         self.type_mapper = ClickHouseSparkTypeMapper()
         self.write_format = FileFormat.Parquet
-        pass
+        self._min_nested = 0
+        self._max_nested = 100
+        self._min_str_len = 0
+        self._max_str_len = 100
 
     @staticmethod
     def get_next_generator(bucket: str, lake: LakeFormat):
@@ -123,7 +172,7 @@ class LakeTableGenerator:
         table_name: str,
         columns: list[dict[str, str]],
         format: str,
-    ) -> str:
+    ) -> tuple[str, SparkTable]:
         """
         Generate a complete CREATE TABLE DDL statement with random properties
 
@@ -135,15 +184,17 @@ class LakeTableGenerator:
         ddl = f"CREATE TABLE IF NOT EXISTS {catalog_name}.test.{table_name} ("
         columns_list = []
         columns_str = []
+        columns_spark = {}
         for val in columns:
             # Convert columns
-            spark_type, nullable = self.type_mapper.clickhouse_to_spark(
+            str_type, nullable, spark_type = self.type_mapper.clickhouse_to_spark(
                 val["type"], False
             )
             columns_str.append(
-                f"{val["name"]} {spark_type}{"" if nullable else " NOT NULL"}"
+                f"{val["name"]} {str_type}{"" if nullable else " NOT NULL"}"
             )
             columns_list.append(val["name"])
+            columns_spark[val["name"]] = spark_type
         ddl += ",".join(columns_str)
         ddl += ")"
 
@@ -169,7 +220,7 @@ class LakeTableGenerator:
                 prop_lines.append(f"'{key}' = '{value}'")
             ddl += ",".join(prop_lines)
             ddl += ")"
-        return ddl + ";"
+        return (ddl + ";", SparkTable(table_name, columns_spark))
 
     def generate_alter_table_statements(
         self, table_name: str, columns: list[dict[str, str]]
@@ -186,6 +237,157 @@ class LakeTableGenerator:
             key = random.choice(list(properties.keys()))
             return f"ALTER TABLE {table_name} UNSET TBLPROPERTIES ('{key}');"
         return ""
+
+    # ============================================================
+    # Random data
+    # ============================================================
+    def _rand_bool(self):
+        return random.choice([True, False])
+
+    def _rand_int(self, lo, hi):
+        return random.randint(lo, hi)
+
+    def _rand_float(self, lo, hi):
+        r = random.random()
+        if r <= 0.01:
+            return float("nan")
+        if r <= 0.02:
+            return math.inf if random.random() < 0.5 else -math.inf
+        if r <= 0.03:
+            return float(0.0) if random.random() < 0.5 else float(-0.0)
+        # otherwise finite, keep ranges reasonable to avoid overflow when casting to FloatType
+        return float(lo) + (float(hi) - float(lo)) * random.random()
+
+    def _rand_string(self):
+        alphabet = (
+            string.ascii_letters + string.digits + " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+        )
+        return "".join(random.choice(alphabet) for _ in range(self._max_str_len))
+
+    def _rand_binary(self):
+        any_chars = (
+            "\t\n\r"  # allowed control chars
+            + string.ascii_letters
+            + string.digits
+            + " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"  # punctuation
+            + "\u0020\ud7ff\ue000-\ufffd"  # other valid Unicode ranges
+        )
+        valid_chars = []
+        valid_chars.extend(c for c in any_chars if ord(c) < 0xD800)
+        valid_chars.extend(chr(c) for c in range(0xE000, 0xFFFD + 1))
+        # Generate the random string
+        return "".join(random.choice(valid_chars) for _ in range(self._max_str_len))
+
+    def _rand_date(self):
+        start = date(1900, 1, 1).toordinal()
+        end = date(2300, 12, 31).toordinal()
+        return date.fromordinal(self._rand_int(start, end))
+
+    def _rand_timestamp(self):
+        start = datetime(1900, 1, 1)
+        end = datetime(2300, 12, 31)
+        delta = end - start
+        secs = self._rand_int(0, int(delta.total_seconds()))
+        micros = self._rand_int(0, 999999)
+        return start + timedelta(seconds=secs, microseconds=micros)
+
+    def _rand_decimal(self, precision, scale):
+        # Set context a bit higher to avoid rounding surprises
+        getcontext().prec = max(precision, 38)
+        int_digits = precision - scale
+        # Largest integer part allowed (e.g., p=5,s=2 -> int_digits=3 -> up to 999)
+        max_int = 10**int_digits - 1
+        int_part = self._rand_int(0, max(0, max_int))
+        frac_part = self._rand_int(0, 10**scale - 1) if scale > 0 else 0
+        sign = -1 if random.random() < 0.5 else 1
+        if scale > 0:
+            s = f"{sign*int_part}.{frac_part:0{scale}d}"
+        else:
+            s = f"{sign*int_part}"
+        return Decimal(s)
+
+    def _random_value_for_type(self, dtype: DataType):
+        """Return a random Python value that conforms to the given Spark DataType."""
+        if isinstance(dtype, BooleanType):
+            return self._rand_bool()
+        if isinstance(dtype, ByteType):
+            return self._rand_int(-128, 127)
+        if isinstance(dtype, ShortType):
+            return self._rand_int(-32768, 32767)
+        if isinstance(dtype, IntegerType):
+            return self._rand_int(-2_147_483_648, 2_147_483_647)
+        if isinstance(dtype, LongType):
+            return self._rand_int(-9_223_372_036_854_775_808, 9_223_372_036_854_775_807)
+        if isinstance(dtype, FloatType):
+            return float(self._rand_float(-1e5, 1e5))
+        if isinstance(dtype, DoubleType):
+            return float(self._rand_float(-1e9, 1e9))
+        if isinstance(dtype, DecimalType):
+            return self._rand_decimal(dtype.precision, dtype.scale)
+        if isinstance(dtype, StringType):
+            return self._rand_string()
+        if isinstance(dtype, BinaryType):
+            return self._rand_binary()
+        if isinstance(dtype, DateType):
+            return self._rand_date()
+        if isinstance(dtype, TimestampType):
+            return self._rand_timestamp()
+        if isinstance(dtype, ArrayType):
+            # arrays of variable length
+            n = self._rand_int(self._min_nested, self._max_nested)
+            return [self._random_value_for_type(dtype.elementType) for _ in range(n)]
+        if isinstance(dtype, MapType):
+            i = 0
+            n = self._rand_int(self._min_nested, self._max_nested)
+            result = {}
+            # Map keys must be hashable and non-null; regenerate if None
+            while i < n:
+                k = self._random_value_for_type(dtype.keyType)
+                v = self._random_value_for_type(dtype.valueType)
+                result[k] = v
+                i += 1
+            return result
+        return self._rand_string()
+
+    def _maybe_null(self, value_fn, null_rate: float):
+        return None if random.random() < null_rate else value_fn()
+
+    def insert_random_data(
+        self,
+        spark: SparkSession,
+        table: SparkTable,
+        n_rows: int,
+        null_rate: float = 0.05,
+    ):
+        """
+        Build a DataFrame of random rows for the given schema (types as strings are fine).
+        - null_rate: probability any value is None (ignored for map keys)
+        """
+        # Set limits
+        self._min_nested = random.randint(0, 100)
+        self._max_nested = max(self._min_nested, random.randint(0, 100))
+        self._min_str_len = random.randint(0, 100)
+        self._max_str_len = max(self._min_str_len, random.randint(0, 100))
+
+        struct = StructType(
+            [
+                StructField(name, val.spark_type, True)
+                for name, val in table.columns.items()
+            ]
+        )
+        rows = []
+        for _ in range(n_rows):
+            rec = {}
+            for field in struct.fields:
+                rec[field.name] = (
+                    None
+                    if random.random() < null_rate
+                    else self._random_value_for_type(field.dataType)
+                )
+            rows.append(Row(**rec))
+        # Use explicit schema so types match exactly
+        df = spark.createDataFrame(rows, schema=struct)
+        df.write.insertInto(table.table_name, overwrite=False)
 
 
 class IcebergTableGenerator(LakeTableGenerator):
