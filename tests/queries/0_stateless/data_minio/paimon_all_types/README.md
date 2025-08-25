@@ -241,7 +241,7 @@ public class DataGenerator {
                     break;
                 case "f_string":
                 case "f_string_nn":
-                    row.setField(i, BinaryString.fromString("String" + id));
+                    row.setField(i, BinaryString.fromString("中文String" + id));
                     break;
                 case "f_binary":
                 case "f_varbinary":
