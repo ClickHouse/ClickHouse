@@ -92,7 +92,7 @@ private:
 };
 
 /// Build a postings list for a term
-class GinIndexPostingsBuilder
+class GinPostingsListBuilder
 {
 public:
     /// Check whether a row_id is already added
@@ -119,7 +119,7 @@ private:
     roaring::Roaring rowids;
 };
 
-using GinIndexPostingsBuilderPtr = std::shared_ptr<GinIndexPostingsBuilder>;
+using GinPostingsListBuilderPtr = std::shared_ptr<GinPostingsListBuilder>;
 
 /// Gin index segment descriptor, which contains:
 struct GinIndexSegment
@@ -234,7 +234,7 @@ public:
     };
 
     /// Container for all term's Gin Index Postings List Builder
-    using GinIndexPostingsBuilderContainer = absl::flat_hash_map<String, GinIndexPostingsBuilderPtr>;
+    using GinPostingsListBuilderContainer = absl::flat_hash_map<String, GinPostingsListBuilderPtr>;
 
     GinIndexStore(const String & name_, DataPartStoragePtr storage_);
     GinIndexStore(
@@ -260,10 +260,10 @@ public:
     Format getVersion();
 
     /// Get current postings list builder
-    const GinIndexPostingsBuilderContainer & getPostingsListBuilder() const { return current_postings; }
+    const GinPostingsListBuilderContainer & getPostingsListBuilder() const { return current_postings_list_builder_container; }
 
     /// Set postings list builder for given term
-    void setPostingsBuilder(const String & term, GinIndexPostingsBuilderPtr builder) { current_postings[term] = builder; }
+    void setPostingsListBuilder(const String & term, GinPostingsListBuilderPtr builder) { current_postings_list_builder_container[term] = builder; }
 
     /// Check if we need to write segment to Gin index files
     bool needToWriteCurrentSegment() const;
@@ -322,7 +322,7 @@ private:
     GinSegmentDictionaries segment_dictionaries;
 
     /// Container for building postings lists during index construction
-    GinIndexPostingsBuilderContainer current_postings;
+    GinPostingsListBuilderContainer current_postings_list_builder_container;
 
     /// For the segmentation of Gin indexes
     GinIndexSegment current_segment;

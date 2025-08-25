@@ -50,10 +50,10 @@ void GinFilter::add(const String & term, UInt32 row_id, GinIndexStorePtr & store
     }
     else
     {
-        auto builder = std::make_shared<GinIndexPostingsBuilder>();
-        builder->add(row_id);
+        auto postings_list_builder = std::make_shared<GinPostingsListBuilder>();
+        postings_list_builder->add(row_id);
 
-        store->setPostingsBuilder(term, builder);
+        store->setPostingsListBuilder(term, postings_list_builder);
     }
 }
 

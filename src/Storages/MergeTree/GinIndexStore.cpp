@@ -257,17 +257,17 @@ GinIndexPostingsListPtr GinIndexPostingListRoaringZstdSerialization::deserialize
     }
 }
 
-bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
+bool GinPostingsListBuilder::contains(UInt32 row_id) const
 {
     return rowids.contains(row_id);
 }
 
-void GinIndexPostingsBuilder::add(UInt32 row_id)
+void GinPostingsListBuilder::add(UInt32 row_id)
 {
     rowids.add(row_id);
 }
 
-UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
+UInt64 GinPostingsListBuilder::serialize(WriteBuffer & buffer)
 {
     rowids.runOptimize();
 
@@ -288,7 +288,7 @@ UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
     return written_bytes;
 }
 
-GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer)
+GinIndexPostingsListPtr GinPostingsListBuilder::deserialize(ReadBuffer & buffer)
 {
     UInt8 serialization = 0;
     readBinary(serialization, buffer);
@@ -591,13 +591,13 @@ namespace
 {
 /// Initialize bloom filter from tokens from the term dictionary
 GinSegmentDictionaryBloomFilter initializeBloomFilter(
-        const GinIndexStore::GinIndexPostingsBuilderContainer & postings,
+        const GinIndexStore::GinPostingsListBuilderContainer & postings_list_builder_container,
         double bloom_filter_false_positive_rate)
 {
-    auto number_of_unique_terms = postings.size(); /// postings is a dictionary
+    auto number_of_unique_terms = postings_list_builder_container.size(); /// postings_list_builder_container is a dictionary
     const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
     GinSegmentDictionaryBloomFilter bloom_filter(number_of_unique_terms, bits_per_rows, num_hashes);
-    for (const auto & [token, _] : postings)
+    for (const auto & [token, _] : postings_list_builder_container)
         bloom_filter.add(token);
     return bloom_filter;
 }
@@ -615,15 +615,15 @@ void GinIndexStore::writeSegment()
     /// Write segment
     metadata_file_stream->write(reinterpret_cast<char *>(&current_segment), sizeof(GinIndexSegment));
 
-    using TokenPostingsBuilderPair = std::pair<std::string_view, GinIndexPostingsBuilderPtr>;
+    using TokenPostingsBuilderPair = std::pair<std::string_view, GinPostingsListBuilderPtr>;
     using TokenPostingsBuilderPairs = std::vector<TokenPostingsBuilderPair>;
 
     TokenPostingsBuilderPairs token_postings_list_pairs;
-    token_postings_list_pairs.reserve(current_postings.size());
-    for (const auto & [token, postings_list] : current_postings)
+    token_postings_list_pairs.reserve(current_postings_list_builder_container.size());
+    for (const auto & [token, postings_list] : current_postings_list_builder_container)
         token_postings_list_pairs.push_back({token, postings_list});
 
-    GinSegmentDictionaryBloomFilter bloom_filter = initializeBloomFilter(current_postings, bloom_filter_false_positive_rate);
+    GinSegmentDictionaryBloomFilter bloom_filter = initializeBloomFilter(current_postings_list_builder_container, bloom_filter_false_positive_rate);
 
     /// Sort token-postings list pairs since all tokens have to be added in FST in sorted order
     std::sort(token_postings_list_pairs.begin(), token_postings_list_pairs.end(),
@@ -633,7 +633,7 @@ void GinIndexStore::writeSegment()
                     });
 
     /// Write postings
-    std::vector<UInt64> posting_list_byte_sizes(current_postings.size(), 0);
+    std::vector<UInt64> posting_list_byte_sizes(current_postings_list_builder_container.size(), 0);
 
     for (size_t i = 0; const auto & [token, postings_list] : token_postings_list_pairs)
     {
@@ -903,7 +903,7 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
         postings_file_stream->seek(seg_dict.second->postings_start_offset + fst_output.offset, SEEK_SET);
 
         // Read posting list
-        auto postings_list = GinIndexPostingsBuilder::deserialize(*postings_file_stream);
+        auto postings_list = GinPostingsListBuilder::deserialize(*postings_file_stream);
         container[segment_id] = postings_list;
 
         LOG_TRACE(
