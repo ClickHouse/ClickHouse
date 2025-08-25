@@ -24,11 +24,8 @@ public:
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleHammingDistance>(context_); }
 
     String getName() const override { return name; }
-
     size_t getNumberOfArguments() const override { return 2; }
-
     bool useDefaultImplementationForConstants() const override { return true; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -144,8 +141,7 @@ REGISTER_FUNCTION(TupleHammingDistance)
 Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between two tuples of the same size.
 
 :::note
-The result type is calculated the same way it is for [Arithmetic functions](../../sql-reference/functions/arithmetic-functions.md), based on the number of elements in the input tuples.
-:::
+The result type is determined the same way it is for [Arithmetic functions](../../sql-reference/functions/arithmetic-functions.md), based on the number of elements in the input tuples.
 
 ```sql
 SELECT
@@ -161,16 +157,17 @@ SELECT
 │ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
 └───────┴────────┴────────┴────────┴────────┘
 ```
+:::
 )";
     FunctionDocumentation::Syntax syntax = "tupleHammingDistance(t1, t2)";
     FunctionDocumentation::Arguments arguments = {
-        {"t1", "First tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
-        {"t2", "Second tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
+        {"t1", "First tuple.", {"Tuple(*)"}},
+        {"t2", "Second tuple.", {"Tuple(*)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the Hamming distance.", {"UInt8/16/32/64"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT tupleHammingDistance((1, 2, 3), (3, 2, 1))", "2"},
-        {"With MinHash", "SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) FROM (SELECT 'ClickHouse is a column-oriented database management system for online analytical processing of queries.' AS string)", "2"}
+        {"With MinHash to detect semi-duplicate strings", "SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) FROM (SELECT 'ClickHouse is a column-oriented database management system for online analytical processing of queries.' AS string)", "2"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;

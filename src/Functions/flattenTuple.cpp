@@ -34,7 +34,7 @@ public:
         const auto * type_tuple = checkAndGetDataType<DataTypeTuple>(type.get());
         if (!type_tuple || !type_tuple->hasExplicitNames())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Argument for function '{}' must be Named Tuple. Got '{}'",
+                "Tuple argument for function '{}' must be named. Got '{}'",
                 getName(), type->getName());
 
         auto [paths, types] = flattenTuple(type);
@@ -63,30 +63,27 @@ public:
 REGISTER_FUNCTION(FlattenTuple)
 {
     FunctionDocumentation::Description description = R"(
-Returns a flattened `output` tuple from a nested and named `input` tuple.
-Elements of the `output` tuple are the paths from the original `input` tuple.
-
-For instance: `Tuple(a Int, Tuple(b Int, c Int)) -> Tuple(a Int, b Int, c Int)`.
-
-`flattenTuple` can be used to select all paths from type `Object` as separate columns.
+Flattens a named and nested tuple.
+The elements of the returned tuple are the paths of the input tuple.
 )";
     FunctionDocumentation::Syntax syntax = "flattenTuple(input)";
     FunctionDocumentation::Arguments arguments = {
-        {"input", "Nested named tuple to flatten.", {"Tuple(n1 T1[, n2 T2, ... ])"}}
+        {"input", "Named and nested tuple to flatten.", {"Tuple(n1 T1[, n2 T2, ... ])"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an output tuple whose elements are paths from the original input.", {"Tuple(T)"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
-CREATE TABLE t_flatten_tuple(t Tuple(t1 Nested(a UInt32, s String), b UInt32, t2 Tuple(k String, v UInt32))) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_flatten_tuple VALUES (([(1, 'a'), (2, 'b')], 3, ('c', 4)));
-SELECT flattenTuple(t) FROM t_flatten_tuple;
+CREATE TABLE tab(t Tuple(a UInt32, b Tuple(c String, d UInt32))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO tab VALUES ((3, ('c', 4)));
+
+SELECT flattenTuple(t) FROM tab;
         )",
         R"(
-┌─flattenTuple(t)─────────────────┐
-│ ([1, 2], ['a', 'b'], 3, 'c', 4) │
-└─────────────────────────────────┘
+┌─flattenTuple(t)┐
+│ (3, 'c', 4)    │
+└────────────────┘
         )"
     }
     };

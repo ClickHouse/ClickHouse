@@ -163,14 +163,15 @@ REGISTER_FUNCTION(TupleElement)
     FunctionDocumentation::Description description = R"(
 Extracts an element from a tuple by index or name.
 
-For indexed access, provide a 1-based numeric index.
-For named tuples, provide the element name as a string.
-An optional third argument specifies a default value to return instead of throwing an exception when the index is out of bounds or the named element doesn't exist.
-The index/name and default value arguments must be constants.
+For access by index, an 1-based numeric index is expected.
+For access by name, the element name can be provided as a string (works only for named tuples).
+
+An optional third argument specifies a default value which is returned instead of throwing an exception when the accessed element does not exist.
+All arguments must be constants.
 
 This function has zero runtime cost and implements the operators `x.index` and `x.name`.
 )";
-    FunctionDocumentation::Syntax syntax = "tupleElement(tuple, index[, default_value]) | tupleElement(tuple, name[, default_value])";
+    FunctionDocumentation::Syntax syntax = "tupleElement(tuple, index|name[, default_value])";
     FunctionDocumentation::Arguments arguments = {
         {"tuple", "A tuple or array of tuples.", {"Tuple(T)", "Array(Tuple(T))"}},
         {"index", "Column index, starting from 1.", {"const UInt8/16/32/64"}},
@@ -187,9 +188,9 @@ This function has zero runtime cost and implements the operators `x.index` and `
     {
         "Named tuple with table",
          R"(
-CREATE TABLE example (data Tuple(name String, age UInt32)) ENGINE = Memory;
+CREATE TABLE example (values Tuple(name String, age UInt32)) ENGINE = Memory;
 INSERT INTO example VALUES (('Alice', 30));
-SELECT tupleElement(data, 'name') FROM example;
+SELECT tupleElement(values, 'name') FROM example;
          )",
          "Alice"
     },
