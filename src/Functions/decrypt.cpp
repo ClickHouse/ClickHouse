@@ -23,7 +23,7 @@ struct DecryptImpl
 REGISTER_FUNCTION(Decrypt)
 {
     FunctionDocumentation::Description description = R"(
-This function decrypts AES-encrypted binary string using the following modes:
+This function decrypts an AES-encrypted binary string using the following modes:
 
 - aes-128-ecb, aes-192-ecb, aes-256-ecb
 - aes-128-cbc, aes-192-cbc, aes-256-cbc
