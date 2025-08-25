@@ -54,9 +54,9 @@ void MergeTreeIndexGranuleGin::serializeBinary(WriteBuffer & ostr) const
     const auto & size_type = std::make_shared<DataTypeUInt32>();
     auto size_serialization = size_type->getDefaultSerialization();
 
-    size_t filter_size = gin_filter.getFilter().size();
+    size_t filter_size = gin_filter.getSegmentsWithRowIdRange().size();
     size_serialization->serializeBinary(filter_size, ostr, {});
-    ostr.write(reinterpret_cast<const char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentsWithRowIdRange::value_type));
+    ostr.write(reinterpret_cast<const char *>(gin_filter.getSegmentsWithRowIdRange().data()), filter_size * sizeof(GinSegmentsWithRowIdRange::value_type));
 }
 
 void MergeTreeIndexGranuleGin::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
@@ -71,10 +71,10 @@ void MergeTreeIndexGranuleGin::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     size_serialization->deserializeBinary(field_rows, istr, {});
 
     size_t filter_size = field_rows.safeGet<size_t>();
-    gin_filter.getFilter().resize(filter_size);
+    gin_filter.getSegmentsWithRowIdRange().resize(filter_size);
 
     if (filter_size != 0)
-        istr.readStrict(reinterpret_cast<char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentsWithRowIdRange::value_type));
+        istr.readStrict(reinterpret_cast<char *>(gin_filter.getSegmentsWithRowIdRange().data()), filter_size * sizeof(GinSegmentsWithRowIdRange::value_type));
 
     has_elems = true;
 }
@@ -128,7 +128,7 @@ void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size
             granule->gin_filter.add(String(token), start_row_id + i, store);
         store->incrementCurrentSizeBy(value.size());
     }
-    granule->gin_filter.addRowRangeToGinFilter(store->getCurrentSegmentID(), start_row_id, static_cast<UInt32>(start_row_id + rows_read - 1));
+    granule->gin_filter.addRowIdRangeToGinFilter(store->getCurrentSegmentID(), start_row_id, static_cast<UInt32>(start_row_id + rows_read - 1));
 
     if (store->needToWriteCurrentSegment())
         store->writeSegment();

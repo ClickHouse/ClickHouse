@@ -18,18 +18,6 @@ enum class GinSearchMode : uint8_t
     All
 };
 
-struct GinSegmentWithRowIdRange
-{
-    /// Segment ID of the row ID range
-    UInt32 segment_id;
-
-    /// First and last row ID in the range (both are inclusive)
-    UInt32 range_rowid_start;
-    UInt32 range_rowid_end;
-};
-
-using GinSegmentsWithRowIdRange = std::vector<GinSegmentWithRowIdRange>;
-
 class GinQueryString
 {
 public:
@@ -59,6 +47,18 @@ private:
     /// Tokenized terms from query string
     std::vector<String> terms;
 };
+
+struct GinSegmentWithRowIdRange
+{
+    /// Segment ID of the row ID range
+    UInt32 segment_id;
+
+    /// First and last row ID in the range (both are inclusive)
+    UInt32 range_rowid_start;
+    UInt32 range_rowid_end;
+};
+
+using GinSegmentsWithRowIdRange = std::vector<GinSegmentWithRowIdRange>;
 
 /// GinFilter provides underlying functionalities for building text index and also
 /// it does filtering the unmatched rows according to its query string.
@@ -95,20 +95,20 @@ public:
     void add(const String & term, UInt32 row_id, GinIndexStorePtr & store) const;
 
     /// Accumulate (segment_id, rowid_start, rowid_end) for building skipping index
-    void addRowRangeToGinFilter(UInt32 segment_id, UInt32 rowid_start, UInt32 rowid_end);
+    void addRowIdRangeToGinFilter(UInt32 segment_id, UInt32 rowid_start, UInt32 rowid_end);
 
     /// Check if the filter (built from query string) contains any rows in given filter by using
     /// given postings list cache
     bool contains(const GinQueryString & query_string, GinPostingsListsCacheForStore & postings_lists_cache_for_store, GinSearchMode mode = GinSearchMode::All) const;
 
-    const GinSegmentsWithRowIdRange & getFilter() const { return rowid_ranges; }
-    GinSegmentsWithRowIdRange & getFilter() { return rowid_ranges; }
+    const GinSegmentsWithRowIdRange & getSegmentsWithRowIdRange() const { return segments_with_rowid_range; }
+    GinSegmentsWithRowIdRange & getSegmentsWithRowIdRange() { return segments_with_rowid_range; }
 
     size_t memoryUsageBytes() const;
 
 private:
     /// Row ID ranges which are (segment_id, rowid_start, rowid_end)
-    GinSegmentsWithRowIdRange rowid_ranges;
+    GinSegmentsWithRowIdRange segments_with_rowid_range;
 };
 
 }

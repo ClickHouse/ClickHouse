@@ -59,15 +59,15 @@ void GinFilter::add(const String & term, UInt32 row_id, GinIndexStorePtr & store
 
 /// This method assumes segmentIDs are in increasing order, which is true since rows are
 /// digested sequentially and segments are created sequentially too.
-void GinFilter::addRowRangeToGinFilter(UInt32 segment_id, UInt32 rowid_start, UInt32 rowid_end)
+void GinFilter::addRowIdRangeToGinFilter(UInt32 segment_id, UInt32 rowid_start, UInt32 rowid_end)
 {
-    /// check segment ids are monotonic increasing
-    assert(rowid_ranges.empty() || rowid_ranges.back().segment_id <= segment_id);
+    /// Check that segment ids are monotonic increasing
+    assert(segments_with_rowid_range.empty() || segments_with_rowid_range.back().segment_id <= segment_id);
 
-    if (!rowid_ranges.empty())
+    if (!segments_with_rowid_range.empty())
     {
         /// Try to merge the row_id range with the last one in the container
-        GinSegmentWithRowIdRange & last_rowid_range = rowid_ranges.back();
+        GinSegmentWithRowIdRange & last_rowid_range = segments_with_rowid_range.back();
 
         if (last_rowid_range.segment_id == segment_id &&
             last_rowid_range.range_rowid_end + 1 == rowid_start)
@@ -76,7 +76,7 @@ void GinFilter::addRowRangeToGinFilter(UInt32 segment_id, UInt32 rowid_start, UI
             return;
         }
     }
-    rowid_ranges.push_back({segment_id, rowid_start, rowid_end});
+    segments_with_rowid_range.push_back({segment_id, rowid_start, rowid_end});
 }
 
 namespace
@@ -145,7 +145,7 @@ bool matchAnyInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 
 
 
 template <GinSearchMode search_mode>
-bool matchInRange(const GinSegmentsWithRowIdRange & rowid_ranges, const GinPostingsListsCache & postings_lists_cache)
+bool matchInRange(const GinSegmentsWithRowIdRange & segments_with_rowid_range, const GinPostingsListsCache & postings_lists_cache)
 {
     if (hasEmptyPostingsList(postings_lists_cache))
         switch (search_mode)
@@ -161,17 +161,17 @@ bool matchInRange(const GinSegmentsWithRowIdRange & rowid_ranges, const GinPosti
         }
 
     /// Check for each row ID ranges
-    for (const auto & rowid_range : rowid_ranges)
+    for (const auto & segment_with_rowid_range : segments_with_rowid_range)
     {
         switch (search_mode)
         {
             case GinSearchMode::Any: {
-                if (matchAnyInRange(postings_lists_cache, rowid_range.segment_id, rowid_range.range_rowid_start, rowid_range.range_rowid_end))
+                if (matchAnyInRange(postings_lists_cache, segment_with_rowid_range.segment_id, segment_with_rowid_range.range_rowid_start, segment_with_rowid_range.range_rowid_end))
                     return true;
                 break;
             }
             case GinSearchMode::All: {
-                if (matchAllInRange(postings_lists_cache, rowid_range.segment_id, rowid_range.range_rowid_start, rowid_range.range_rowid_end))
+                if (matchAllInRange(postings_lists_cache, segment_with_rowid_range.segment_id, segment_with_rowid_range.range_rowid_start, segment_with_rowid_range.range_rowid_end))
                     return true;
                 break;
             }
@@ -198,16 +198,16 @@ bool GinFilter::contains(const GinQueryString & query_string, GinPostingsListsCa
     switch (search_mode)
     {
         case GinSearchMode::Any:
-            return matchInRange<GinSearchMode::Any>(rowid_ranges, *postings_lists_cache);
+            return matchInRange<GinSearchMode::Any>(segments_with_rowid_range, *postings_lists_cache);
         case GinSearchMode::All:
-            return matchInRange<GinSearchMode::All>(rowid_ranges, *postings_lists_cache);
+            return matchInRange<GinSearchMode::All>(segments_with_rowid_range, *postings_lists_cache);
     }
 }
 
 
 size_t GinFilter::memoryUsageBytes() const
 {
-    return rowid_ranges.capacity() * sizeof(rowid_ranges[0]);
+    return segments_with_rowid_range.capacity() * sizeof(segments_with_rowid_range[0]);
 }
 
 }
