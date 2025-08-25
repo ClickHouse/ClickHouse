@@ -36,7 +36,7 @@ namespace BuzzHouse
 {
 
 const constexpr uint64_t allow_bool = (UINT64_C(1) << 0), allow_unsigned_int = (UINT64_C(1) << 1), allow_int8 = (UINT64_C(1) << 2),
-                         allow_int64 = (UINT64_C(1) << 3), allow_int128 = (UINT64_C(1) << 4), allow_floating_points = (UINT64_C(1) << 5),
+                         allow_int64 = (UINT64_C(1) << 3), allow_int128 = (UINT64_C(1) << 4), allow_float32 = (UINT64_C(1) << 5),
                          allow_dates = (UINT64_C(1) << 6), allow_date32 = (UINT64_C(1) << 7), allow_datetimes = (UINT64_C(1) << 8),
                          allow_datetime64 = (UINT64_C(1) << 9), allow_strings = (UINT64_C(1) << 10), allow_decimals = (UINT64_C(1) << 11),
                          allow_uuid = (UINT64_C(1) << 12), allow_enum = (UINT64_C(1) << 13), allow_dynamic = (UINT64_C(1) << 14),
@@ -46,7 +46,7 @@ const constexpr uint64_t allow_bool = (UINT64_C(1) << 0), allow_unsigned_int = (
                          allow_ipv4 = (UINT64_C(1) << 23), allow_ipv6 = (UINT64_C(1) << 24), allow_geo = (UINT64_C(1) << 25),
                          set_any_datetime_precision = (UINT64_C(1) << 26), set_no_decimal_limit = (UINT64_C(1) << 27),
                          allow_fixed_strings = (UINT64_C(1) << 28), allow_time = (UINT64_C(1) << 29), allow_time64 = (UINT64_C(1) << 30),
-                         allow_int16 = (UINT64_C(1) << 31);
+                         allow_int16 = (UINT64_C(1) << 31), allow_float64 = (UINT64_C(1) << 32), allow_bfloat16 = (UINT64_C(1) << 33);
 
 const constexpr uint64_t allow_replacing_mergetree = (UINT64_C(1) << 0), allow_coalescing_mergetree = (UINT64_C(1) << 1),
                          allow_summing_mergetree = (UINT64_C(1) << 2), allow_aggregating_mergetree = (UINT64_C(1) << 3),
