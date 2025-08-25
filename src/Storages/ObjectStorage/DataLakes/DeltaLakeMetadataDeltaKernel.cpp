@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 [[maybe_unused]] static void tracingCallback(struct ffi::Event event)
