@@ -34,7 +34,7 @@ Encrypts plaintext into ciphertext using AES in one of the following modes:
     FunctionDocumentation::Syntax syntax = "encrypt(mode, plaintext, key[, iv, aad])";
     FunctionDocumentation::Arguments arguments = {
         {"mode", "Encryption mode.", {"String"}},
-        {"plaintext", "Text that need to be encrypted.", {"String"}},
+        {"plaintext", "Text that should be encrypted.", {"String"}},
         {"key", "Encryption key.", {"String"}},
         {"iv", "Initialization vector. Required for `-gcm` modes, optional for others.", {"String"}},
         {"aad", "Additional authenticated data. It isn't encrypted, but it affects decryption. Works only in `-gcm` modes, for others it throws an exception.", {"String"}}
