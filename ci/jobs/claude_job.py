@@ -1,5 +1,5 @@
 from ci.praktika.result import Result
-from ci.praktika.utils import Utils
+from ci.praktika.utils import Utils, Shell
 
 def generate_description_changelog_entry():
     res, out, err = Shell.get_res_stdout_stderr(
