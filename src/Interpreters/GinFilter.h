@@ -34,7 +34,7 @@ public:
     /// Add term which are tokens generated from the query string
     bool addTerm(std::string_view term)
     {
-        if (term.length() > FST::MAX_TERM_LENGTH) [[unlikely]]
+        if (term.length() > FST::MAX_TERM_LENGTH)
             return false;
 
         terms.push_back(String(term));

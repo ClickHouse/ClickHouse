@@ -191,8 +191,8 @@ bool GinFilter::contains(const GinQueryString & query_string, GinPostingsListsCa
     GinPostingsListsCachePtr postings_lists_cache = postings_lists_cache_for_store.getPostingsLists(query_string.getQueryString());
     if (postings_lists_cache == nullptr)
     {
-        GinIndexStoreDeserializer reader(postings_lists_cache_for_store.store);
-        postings_lists_cache = reader.createPostingsCacheFromTerms(query_string.getTerms());
+        GinIndexStoreDeserializer deserializer(postings_lists_cache_for_store.store);
+        postings_lists_cache = deserializer.createPostingsListsCacheFromTerms(query_string.getTerms());
         postings_lists_cache_for_store.cache[query_string.getQueryString()] = postings_lists_cache;
     }
 

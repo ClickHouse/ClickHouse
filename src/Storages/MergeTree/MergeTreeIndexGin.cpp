@@ -118,7 +118,7 @@ void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size
     const auto & index_column_name = index_columns[0];
     const auto & index_column = block.getByName(index_column_name);
 
-    UInt32 start_row_id = store->getNextRowIDRange(rows_read);
+    UInt32 start_row_id = store->getNextRowIdRange(rows_read);
 
     size_t current_position = *pos;
     for (size_t i = 0; i < rows_read; ++i)
@@ -128,7 +128,7 @@ void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size
             granule->gin_filter.add(String(token), start_row_id + i, store);
         store->incrementCurrentSizeBy(value.size());
     }
-    granule->gin_filter.addRowIdRangeToGinFilter(store->getCurrentSegmentID(), start_row_id, static_cast<UInt32>(start_row_id + rows_read - 1));
+    granule->gin_filter.addRowIdRangeToGinFilter(store->getCurrentSegmentId(), start_row_id, static_cast<UInt32>(start_row_id + rows_read - 1));
 
     if (store->needToWriteCurrentSegment())
         store->writeSegment();

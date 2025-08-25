@@ -81,7 +81,7 @@ UInt64 GinIndexPostingListDeltaPforSerialization::serialize(WriteBuffer & buffer
     return written_bytes;
 }
 
-GinIndexPostingsListPtr GinIndexPostingListDeltaPforSerialization::deserialize(ReadBuffer & buffer)
+GinPostingsListPtr GinIndexPostingListDeltaPforSerialization::deserialize(ReadBuffer & buffer)
 {
     size_t num_deltas = 0;
     size_t compressed_size = 0;
@@ -103,7 +103,7 @@ GinIndexPostingsListPtr GinIndexPostingListDeltaPforSerialization::deserialize(R
 
     decodeDeltaScalar(deltas);
 
-    GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
+    GinPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
     postings_list->addMany(deltas.size(), deltas.data());
     return postings_list;
 }
@@ -205,7 +205,7 @@ UInt64 GinIndexPostingListRoaringZstdSerialization::serialize(WriteBuffer & buff
     }
 }
 
-GinIndexPostingsListPtr GinIndexPostingListRoaringZstdSerialization::deserialize(ReadBuffer & buffer)
+GinPostingsListPtr GinIndexPostingListRoaringZstdSerialization::deserialize(ReadBuffer & buffer)
 {
     /**
      * Header value maps into following states:
@@ -223,7 +223,7 @@ GinIndexPostingsListPtr GinIndexPostingListRoaringZstdSerialization::deserialize
         for (size_t i = 0; i < num_entries; ++i)
             readVarUInt(values[i], buffer);
 
-        GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
+        GinPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
         postings_list->addMany(values.size(), values.data());
         return postings_list;
     }
@@ -288,7 +288,7 @@ UInt64 GinPostingsListBuilder::serialize(WriteBuffer & buffer)
     return written_bytes;
 }
 
-GinIndexPostingsListPtr GinPostingsListBuilder::deserialize(ReadBuffer & buffer)
+GinPostingsListPtr GinPostingsListBuilder::deserialize(ReadBuffer & buffer)
 {
     UInt8 serialization = 0;
     readBinary(serialization, buffer);
@@ -393,7 +393,7 @@ bool GinIndexStore::exists() const
     return storage->existsFile(segment_id_file_name);
 }
 
-UInt32 GinIndexStore::getNextSegmentIDRange(size_t n)
+UInt32 GinIndexStore::getNextSegmentIdRange(size_t n)
 {
     std::lock_guard guard(mutex);
 
@@ -405,16 +405,16 @@ UInt32 GinIndexStore::getNextSegmentIDRange(size_t n)
     return segment_id;
 }
 
-UInt32 GinIndexStore::getNextRowIDRange(size_t numIDs)
+UInt32 GinIndexStore::getNextRowIdRange(size_t n)
 {
     UInt32 result = current_segment.next_row_id;
-    current_segment.next_row_id += numIDs;
+    current_segment.next_row_id += n;
     return result;
 }
 
-UInt32 GinIndexStore::getNextSegmentID()
+UInt32 GinIndexStore::getNextSegmentId()
 {
-    return getNextSegmentIDRange(1);
+    return getNextSegmentIdRange(1);
 }
 
 namespace
@@ -473,12 +473,12 @@ bool GinIndexStore::needToWriteCurrentSegment() const
 {
     /// segment_digestion_threshold_bytes != 0 means GinIndexStore splits the index data into separate segments.
     /// In case it's equal to 0 (zero), segment size is unlimited. Therefore, there will be a single segment.
-    return (segment_digestion_threshold_bytes != UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES) && (current_size > segment_digestion_threshold_bytes);
+    return (segment_digestion_threshold_bytes != UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES) && (current_size_bytes > segment_digestion_threshold_bytes);
 }
 
 void GinIndexStore::finalize()
 {
-    if (!current_postings.empty())
+    if (!current_postings_list_builder_container.empty())
     {
         writeSegment();
         writeSegmentId();
@@ -513,8 +513,8 @@ void GinIndexStore::cancel() noexcept
 }
 
 GinIndexStore::Statistics::Statistics(const GinIndexStore & store)
-    : num_terms(store.current_postings.size())
-    , current_size(store.current_size)
+    : num_terms(store.current_postings_list_builder_container.size())
+    , current_size_bytes(store.current_size_bytes)
     , metadata_file_size(store.metadata_file_stream ? store.metadata_file_stream->count() : 0)
     , bloom_filter_file_size(store.bloom_filter_file_stream ? store.bloom_filter_file_stream->count() : 0)
     , dictionary_file_size(store.dict_file_stream ? store.dict_file_stream->count() : 0)
@@ -527,7 +527,7 @@ String GinIndexStore::Statistics::toString() const
     return fmt::format(
         "number of terms = {}, terms size = {}, metadata size = {}, bloom filter size = {}, dictionary size = {}, posting lists size = {}",
         num_terms,
-        ReadableSize(current_size),
+        ReadableSize(current_size_bytes),
         ReadableSize(metadata_file_size),
         ReadableSize(bloom_filter_file_size),
         ReadableSize(dictionary_file_size),
@@ -703,9 +703,9 @@ void GinIndexStore::writeSegment()
         storage->getPartDirectory(),
         statistics.toString());
 
-    current_size = 0;
-    current_postings.clear();
-    current_segment.segment_id = getNextSegmentID();
+    current_size_bytes = 0;
+    current_postings_list_builder_container.clear();
+    current_segment.segment_id = getNextSegmentId();
 
     metadata_file_stream->sync();
     bloom_filter_file_stream->sync();
@@ -918,7 +918,7 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
     return container;
 }
 
-GinPostingsListsCachePtr GinIndexStoreDeserializer::createPostingsCacheFromTerms(const std::vector<String> & terms)
+GinPostingsListsCachePtr GinIndexStoreDeserializer::createPostingsListsCacheFromTerms(const std::vector<String> & terms)
 {
     auto postings_lists_cache = std::make_shared<GinPostingsListsCache>();
     for (const auto & term : terms)
