@@ -17,13 +17,21 @@
 #include <Parsers/ParserDatabaseOrNone.h>
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
+
 #include "config.h"
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -82,6 +90,9 @@ namespace
                 {
                     type = check_type;
 
+                    if (check_type == AuthenticationType::NO_AUTHENTICATION)
+                        return true;
+
                     if (check_type == AuthenticationType::LDAP)
                         expect_ldap_server_name = true;
                     else if (check_type == AuthenticationType::KERBEROS)
@@ -92,6 +103,8 @@ namespace
                         expect_public_ssh_key = true;
                     else if (check_type == AuthenticationType::HTTP)
                         expect_http_auth_server = true;
+                    else if (check_type == AuthenticationType::JWT)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "CREATE USER is not supported for JWT");
                     else if (check_type != AuthenticationType::NO_PASSWORD)
                         expect_password = true;
 

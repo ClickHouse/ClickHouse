@@ -16,22 +16,31 @@
 namespace DB
 {
 
-GinFilterParameters::GinFilterParameters(
+GinFilter::Parameters::Parameters(
     String tokenizer_,
+    UInt64 segment_digestion_threshold_bytes_,
+    double bloom_filter_false_positive_rate_,
     std::optional<UInt64> ngram_size_,
     std::optional<std::vector<String>> separators_)
     : tokenizer(std::move(tokenizer_))
+    , segment_digestion_threshold_bytes(segment_digestion_threshold_bytes_)
+    , bloom_filter_false_positive_rate(bloom_filter_false_positive_rate_)
     , ngram_size(ngram_size_)
     , separators(separators_)
 {
 }
 
-void GinFilter::add(const char * data, size_t len, UInt32 rowID, GinIndexStorePtr & store) const
+GinQueryString::GinQueryString(std::string_view query_string_, const std::vector<String> & search_terms_)
+    : query_string(query_string_)
+    , terms(search_terms_)
 {
-    if (len > FST::MAX_TERM_LENGTH)
+}
+
+void GinFilter::add(const String & term, UInt32 rowID, GinIndexStorePtr & store) const
+{
+    if (term.length() > FST::MAX_TERM_LENGTH)
         return;
 
-    String term(data, len);
     auto it = store->getPostingsListBuilder().find(term);
 
     if (it != store->getPostingsListBuilder().end())
@@ -50,30 +59,28 @@ void GinFilter::add(const char * data, size_t len, UInt32 rowID, GinIndexStorePt
 
 /// This method assumes segmentIDs are in increasing order, which is true since rows are
 /// digested sequentially and segments are created sequentially too.
-void GinFilter::addRowRangeToGinFilter(UInt32 segmentID, UInt32 rowIDStart, UInt32 rowIDEnd)
+void GinFilter::addRowRangeToGinFilter(UInt32 segment_id, UInt32 rowid_start, UInt32 rowid_end)
 {
     /// check segment ids are monotonic increasing
-    assert(rowid_ranges.empty() || rowid_ranges.back().segment_id <= segmentID);
+    assert(rowid_ranges.empty() || rowid_ranges.back().segment_id <= segment_id);
 
     if (!rowid_ranges.empty())
     {
         /// Try to merge the rowID range with the last one in the container
         GinSegmentWithRowIdRange & last_rowid_range = rowid_ranges.back();
 
-        if (last_rowid_range.segment_id == segmentID &&
-            last_rowid_range.range_end+1 == rowIDStart)
+        if (last_rowid_range.segment_id == segment_id &&
+            last_rowid_range.range_end + 1 == rowid_start)
         {
-            last_rowid_range.range_end = rowIDEnd;
+            last_rowid_range.range_end = rowid_end;
             return;
         }
     }
-    rowid_ranges.push_back({segmentID, rowIDStart, rowIDEnd});
+    rowid_ranges.push_back({segment_id, rowid_start, rowid_end});
 }
 
 void GinFilter::clear()
 {
-    query_string.clear();
-    terms.clear();
     rowid_ranges.clear();
 }
 
@@ -160,6 +167,7 @@ bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const Gin
 
     /// Check for each row ID ranges
     for (const auto & rowid_range : rowid_ranges)
+    {
         switch (search_mode)
         {
             case GinSearchMode::Any: {
@@ -173,22 +181,23 @@ bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const Gin
                 break;
             }
         }
+    }
     return false;
 }
 
 }
 
-bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache_store, GinSearchMode search_mode) const
+bool GinFilter::contains(const GinQueryString & gin_query_string, PostingsCacheForStore & cache_store, GinSearchMode search_mode) const
 {
-    if (filter.getTerms().empty())
+    if (gin_query_string.getTerms().empty())
         return true;
 
-    GinPostingsCachePtr postings_cache = cache_store.getPostings(filter.getQueryString());
+    GinPostingsCachePtr postings_cache = cache_store.getPostings(gin_query_string.getQueryString());
     if (postings_cache == nullptr)
     {
         GinIndexStoreDeserializer reader(cache_store.store);
-        postings_cache = reader.createPostingsCacheFromTerms(filter.getTerms());
-        cache_store.cache[filter.getQueryString()] = postings_cache;
+        postings_cache = reader.createPostingsCacheFromTerms(gin_query_string.getTerms());
+        cache_store.cache[gin_query_string.getQueryString()] = postings_cache;
     }
 
     switch (search_mode)
@@ -198,6 +207,12 @@ bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache
         case GinSearchMode::All:
             return matchInRange<GinSearchMode::All>(rowid_ranges, *postings_cache);
     }
+}
+
+
+size_t GinFilter::memoryUsageBytes() const
+{
+    return rowid_ranges.capacity() * sizeof(rowid_ranges[0]);
 }
 
 }

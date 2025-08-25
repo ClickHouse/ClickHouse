@@ -303,6 +303,7 @@ public:
                     .size_in_file = initial_file_size + write_buffer.count() - current_position});
         }
 
+        chassert(!last_index_written || *last_index_written >= record.header.index || *last_index_written == record.header.index - 1);
         last_index_written = record.header.index;
 
         return true;
@@ -712,8 +713,8 @@ void PrefetchedCacheEntry::resolve(LogEntryPtr log_entry_)
 }
 
 LogEntryStorage::LogEntryStorage(const LogFileSettings & log_settings, KeeperContextPtr keeper_context_)
-    : latest_logs_cache(log_settings.latest_logs_cache_size_threshold)
-    , commit_logs_cache(log_settings.commit_logs_cache_size_threshold)
+    : latest_logs_cache(log_settings.latest_logs_cache_size_threshold, log_settings.latest_logs_cache_entry_count_threshold)
+    , commit_logs_cache(log_settings.commit_logs_cache_size_threshold, log_settings.commit_logs_cache_entry_count_threshold)
     , prefetch_queue(std::numeric_limits<uint64_t>::max())
     , keeper_context(std::move(keeper_context_))
     , log(getLogger("Changelog"))
@@ -808,7 +809,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
         return;
 
     /// we don't start prefetch if there is no limit on latest logs cache
-    if (latest_logs_cache.size_threshold == 0)
+    if (latest_logs_cache.hasUnlimitedSpace())
         return;
 
     /// commit logs is not empty and it's not next log
@@ -832,6 +833,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
     prefetch_from = current_index;
 
     size_t total_size = 0;
+    size_t total_entries = 0;
     std::vector<FileReadInfo> file_infos;
     FileReadInfo * current_file_info = nullptr;
     size_t next_position = 0;
@@ -854,7 +856,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
             current_file_info = &file_infos.emplace_back(changelog_description, position, /* count */ 1);
             next_position = position + size_in_file;
         }
-        else if (total_size + entry_size > commit_logs_cache.size_threshold)
+        else if (total_size + entry_size > commit_logs_cache.size_threshold || total_entries + 1 > commit_logs_cache.count_threshold)
             break;
         else if (changelog_description == current_file_info->file_description && position == next_position)
         {
@@ -868,6 +870,7 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
         }
 
         total_size += entry_size;
+        ++total_entries;
         commit_logs_cache.addEntry(current_index, entry_size, std::make_shared<PrefetchedCacheEntry>());
     }
 
@@ -883,8 +886,9 @@ void LogEntryStorage::startCommitLogsPrefetch(uint64_t last_committed_index) con
     }
 }
 
-LogEntryStorage::InMemoryCache::InMemoryCache(size_t size_threshold_)
+LogEntryStorage::InMemoryCache::InMemoryCache(size_t size_threshold_, size_t count_threshold_)
     : size_threshold(size_threshold_)
+    , count_threshold(count_threshold_)
 {}
 
 void LogEntryStorage::InMemoryCache::updateStatsWithNewEntry(uint64_t index, size_t size)
@@ -1030,6 +1034,11 @@ void LogEntryStorage::InMemoryCache::clear()
     cache_size = 0;
 }
 
+bool LogEntryStorage::InMemoryCache::hasUnlimitedSpace() const
+{
+    return size_threshold == 0 && count_threshold == 0;
+}
+
 bool LogEntryStorage::InMemoryCache::empty() const
 {
     return cache.empty();
@@ -1042,7 +1051,16 @@ size_t LogEntryStorage::InMemoryCache::numberOfEntries() const
 
 bool LogEntryStorage::InMemoryCache::hasSpaceAvailable(size_t log_entry_size) const
 {
-    return size_threshold == 0 || empty() || cache_size + log_entry_size < size_threshold;
+    if (hasUnlimitedSpace() || empty())
+        return true;
+
+    if (size_threshold != 0 && cache_size + log_entry_size > size_threshold)
+        return false;
+
+    if (count_threshold != 0 && numberOfEntries() + 1 > count_threshold)
+        return false;
+
+    return true;
 }
 
 void LogEntryStorage::addEntry(uint64_t index, const LogEntryPtr & log_entry)
@@ -1388,7 +1406,10 @@ uint64_t LogEntryStorage::termAt(uint64_t index) const
 void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocation>> && indices_with_log_locations)
 {
     /// if we have unlimited space in latest logs cache we don't need log location
-    if (latest_logs_cache.size_threshold == 0)
+    if (latest_logs_cache.hasUnlimitedSpace())
+        return;
+
+    if (indices_with_log_locations.empty())
         return;
 
     std::lock_guard lock(logs_location_mutex);
@@ -1401,7 +1422,7 @@ void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocatio
 void LogEntryStorage::refreshCache()
 {
     /// if we have unlimited space in latest logs cache we don't need log location
-    if (latest_logs_cache.size_threshold == 0)
+    if (latest_logs_cache.hasUnlimitedSpace())
         return;
 
     std::vector<IndexWithLogLocation> new_unapplied_indices_with_log_locations;
@@ -1423,8 +1444,17 @@ void LogEntryStorage::refreshCache()
         return;
 
     std::lock_guard lock(commit_logs_cache_mutex);
+    const auto latest_log_cache_over_size_threshold = [&]
+    {
+        return latest_logs_cache.size_threshold != 0 && latest_logs_cache.cache_size > latest_logs_cache.size_threshold;
+    };
+
+    const auto latest_log_cache_over_count_threshold = [&]
+    {
+        return latest_logs_cache.count_threshold != 0 && latest_logs_cache.numberOfEntries() > latest_logs_cache.count_threshold;
+    };
     while (latest_logs_cache.numberOfEntries() > 1 && latest_logs_cache.min_index_in_cache <= max_index_with_location
-           && latest_logs_cache.cache_size > latest_logs_cache.size_threshold)
+           && (latest_log_cache_over_size_threshold() || latest_log_cache_over_count_threshold()))
     {
         auto node = latest_logs_cache.popOldestEntry();
         auto log_entry_size = logEntrySize(getLogEntry(node.mapped()));
@@ -2240,6 +2270,9 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 {
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before writing records");
+
+    /// wait for all appends to finish before changing active changelog file
+    flush();
 
     {
         std::lock_guard lock(writer_mutex);

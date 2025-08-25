@@ -33,6 +33,9 @@ public:
     {
         if (mutate_task)
             mutate_task->cancel();
+
+        if (new_part)
+            new_part->removeIfNeeded();
     }
 
 private:
