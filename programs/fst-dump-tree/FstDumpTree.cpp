@@ -93,7 +93,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
         fmt::println("Reading FST index files from '{}'", input_path);
 
         std::unique_ptr<DB::ReadBufferFromFile> segment_id_read_buffer;
-        std::unique_ptr<DB::ReadBufferFromFile> segment_metadata_read_buffer;
+        std::unique_ptr<DB::ReadBufferFromFile> segment_descriptor_read_buffer;
         std::unique_ptr<DB::ReadBufferFromFile> dictionary_read_buffer;
         std::unique_ptr<DB::ReadBufferFromFile> postings_read_buffer;
         std::unique_ptr<DB::ReadBufferFromFile> bloom_filter_read_buffer;
@@ -106,11 +106,11 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                     printAndExit("Segment id file are already initialized at '{}', trying to initialized again at '{}'", segment_id_read_buffer->getFileName(), path_as_string);
                 segment_id_read_buffer = std::make_unique<DB::ReadBufferFromFile>(dir_entry.path().string());
             }
-            if (path_as_string.ends_with(DB::GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE))
+            if (path_as_string.ends_with(DB::GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE))
             {
-                if (segment_metadata_read_buffer != nullptr)
-                    printAndExit("Segment metadata file are already initialized at '{}', trying to initialized again at '{}'", segment_metadata_read_buffer->getFileName(), path_as_string);
-                segment_metadata_read_buffer = std::make_unique<DB::ReadBufferFromFile>(dir_entry.path().string());
+                if (segment_descriptor_read_buffer != nullptr)
+                    printAndExit("Segment descriptor file are already initialized at '{}', trying to initialized again at '{}'", segment_descriptor_read_buffer->getFileName(), path_as_string);
+                segment_descriptor_read_buffer = std::make_unique<DB::ReadBufferFromFile>(dir_entry.path().string());
             }
             if (path_as_string.ends_with(DB::GinIndexStore::GIN_DICTIONARY_FILE_TYPE))
             {
@@ -134,7 +134,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
         if (segment_id_read_buffer == nullptr)
             printAndExit("Cannot find segment id file.");
         if (segment_id_read_buffer == nullptr)
-            printAndExit("Cannot find segment metadata file.");
+            printAndExit("Cannot find segment descriptor file.");
         if (dictionary_read_buffer == nullptr)
             printAndExit("Cannot find segment dictionary file.");
         if (postings_read_buffer == nullptr)
@@ -165,13 +165,13 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
             fmt::println("Segment version = {} and number of segments = {}", version, number_of_segments);
         }
 
-        /// Read segment metadata
+        /// Read segment descriptors
         using GinDictionaries = std::unordered_map<UInt32, DB::GinDictionaryPtr>;
         GinDictionaries segment_dictionaries(number_of_segments);
         if (version == DB::GinIndexStore::Format::v1)
         {
             std::vector<DB::GinSegmentDescriptor> segment_descriptors(number_of_segments);
-            segment_metadata_read_buffer->readStrict(reinterpret_cast<char *>(segment_descriptors.data()), number_of_segments * sizeof(DB::GinSegmentDescriptor));
+            segment_descriptor_read_buffer->readStrict(reinterpret_cast<char *>(segment_descriptors.data()), number_of_segments * sizeof(DB::GinSegmentDescriptor));
             for (UInt32 i = 0; i < number_of_segments; ++i)
             {
                 auto seg_dict = std::make_shared<DB::GinDictionary>();

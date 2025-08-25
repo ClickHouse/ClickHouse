@@ -484,8 +484,8 @@ void GinIndexStore::finalize()
         writeSegmentId();
     }
 
-    if (metadata_file_stream)
-        metadata_file_stream->finalize();
+    if (segment_descriptor_file_stream)
+        segment_descriptor_file_stream->finalize();
 
     if (bloom_filter_file_stream)
         bloom_filter_file_stream->finalize();
@@ -499,8 +499,8 @@ void GinIndexStore::finalize()
 
 void GinIndexStore::cancel() noexcept
 {
-    if (metadata_file_stream)
-        metadata_file_stream->cancel();
+    if (segment_descriptor_file_stream)
+        segment_descriptor_file_stream->cancel();
 
     if (bloom_filter_file_stream)
         bloom_filter_file_stream->cancel();
@@ -515,7 +515,7 @@ void GinIndexStore::cancel() noexcept
 GinIndexStore::Statistics::Statistics(const GinIndexStore & store)
     : num_terms(store.current_postings_list_builder_container.size())
     , current_size_bytes(store.current_size_bytes)
-    , metadata_file_size(store.metadata_file_stream ? store.metadata_file_stream->count() : 0)
+    , segment_descriptor_file_size(store.segment_descriptor_file_stream ? store.segment_descriptor_file_stream->count() : 0)
     , bloom_filter_file_size(store.bloom_filter_file_stream ? store.bloom_filter_file_stream->count() : 0)
     , dictionary_file_size(store.dict_file_stream ? store.dict_file_stream->count() : 0)
     , posting_lists_file_size(store.postings_file_stream ? store.postings_file_stream->count() : 0)
@@ -525,10 +525,10 @@ GinIndexStore::Statistics::Statistics(const GinIndexStore & store)
 String GinIndexStore::Statistics::toString() const
 {
     return fmt::format(
-        "number of terms = {}, terms size = {}, metadata size = {}, bloom filter size = {}, dictionary size = {}, posting lists size = {}",
+        "number of terms = {}, terms size = {}, segment descriptor size = {}, bloom filter size = {}, dictionary size = {}, posting lists size = {}",
         num_terms,
         ReadableSize(current_size_bytes),
-        ReadableSize(metadata_file_size),
+        ReadableSize(segment_descriptor_file_size),
         ReadableSize(bloom_filter_file_size),
         ReadableSize(dictionary_file_size),
         ReadableSize(posting_lists_file_size));
@@ -563,12 +563,12 @@ void GinIndexStore::initSegmentId()
 
 void GinIndexStore::initFileStreams()
 {
-    String metadata_file_name = getName() + GIN_SEGMENT_METADATA_FILE_TYPE;
+    String segment_descriptor_file_name = getName() + GIN_SEGMENT_DESCRIPTOR_FILE_TYPE;
     String bloom_filter_file_name = getName() + GIN_BLOOM_FILTER_FILE_TYPE;
     String dict_file_name = getName() + GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = getName() + GIN_POSTINGS_FILE_TYPE;
 
-    metadata_file_stream = data_part_storage_builder->writeFile(metadata_file_name, 4096, WriteMode::Append, {});
+    segment_descriptor_file_stream = data_part_storage_builder->writeFile(segment_descriptor_file_name, 4096, WriteMode::Append, {});
     bloom_filter_file_stream = data_part_storage_builder->writeFile(bloom_filter_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     dict_file_stream = data_part_storage_builder->writeFile(dict_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     postings_file_stream = data_part_storage_builder->writeFile(postings_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
@@ -605,7 +605,7 @@ GinDictionaryBloomFilter initializeBloomFilter(
 
 void GinIndexStore::writeSegment()
 {
-    if (metadata_file_stream == nullptr)
+    if (segment_descriptor_file_stream == nullptr)
         initFileStreams();
 
     LOG_TRACE(
@@ -613,7 +613,7 @@ void GinIndexStore::writeSegment()
     Statistics before_write_segment_stats = getStatistics();
 
     /// Write segment descriptor
-    metadata_file_stream->write(reinterpret_cast<char *>(&current_segment), sizeof(GinSegmentDescriptor));
+    segment_descriptor_file_stream->write(reinterpret_cast<char *>(&current_segment), sizeof(GinSegmentDescriptor));
 
     using TokenPostingsBuilderPair = std::pair<std::string_view, GinPostingsListBuilderPtr>;
     using TokenPostingsBuilderPairs = std::vector<TokenPostingsBuilderPair>;
@@ -707,7 +707,7 @@ void GinIndexStore::writeSegment()
     current_postings_list_builder_container.clear();
     current_segment.segment_id = getNextSegmentId();
 
-    metadata_file_stream->sync();
+    segment_descriptor_file_stream->sync();
     bloom_filter_file_stream->sync();
     dict_file_stream->sync();
     postings_file_stream->sync();
@@ -721,12 +721,12 @@ GinIndexStoreDeserializer::GinIndexStoreDeserializer(const GinIndexStorePtr & st
 
 void GinIndexStoreDeserializer::initFileStreams()
 {
-    String metadata_file_name = store->getName() + GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE;
+    String segment_descriptors_file_name = store->getName() + GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE;
     String bloom_filter_file_name = store->getName() + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE;
     String dict_file_name = store->getName() + GinIndexStore::GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = store->getName() + GinIndexStore::GIN_POSTINGS_FILE_TYPE;
 
-    metadata_file_stream = store->storage->readFile(metadata_file_name, {}, std::nullopt, std::nullopt);
+    segment_descriptor_file_stream = store->storage->readFile(segment_descriptors_file_name, {}, std::nullopt, std::nullopt);
     bloom_filter_file_stream = store->storage->readFile(bloom_filter_file_name, {}, std::nullopt, std::nullopt);
     dict_file_stream = store->storage->readFile(dict_file_name, {}, std::nullopt, std::nullopt);
     postings_file_stream = store->storage->readFile(postings_file_name, {}, std::nullopt, std::nullopt);
@@ -738,14 +738,14 @@ void GinIndexStoreDeserializer::readSegments()
     if (num_segments == 0)
         return;
 
-    chassert(metadata_file_stream != nullptr);
+    chassert(segment_descriptor_file_stream != nullptr);
 
     LOG_TRACE(logger, "Start reading text index '{}' segments of part '{}'", store->getName(), store->storage->getPartDirectory());
 
     if (store->getVersion() == GinIndexStore::Format::v1)
     {
         std::vector<GinSegmentDescriptor> segment_descriptors(num_segments);
-        metadata_file_stream->readStrict(reinterpret_cast<char *>(segment_descriptors.data()), num_segments * sizeof(GinSegmentDescriptor));
+        segment_descriptor_file_stream->readStrict(reinterpret_cast<char *>(segment_descriptors.data()), num_segments * sizeof(GinSegmentDescriptor));
         for (UInt32 i = 0; i < num_segments; ++i)
         {
             auto dictionary = std::make_shared<GinDictionary>();
@@ -988,7 +988,7 @@ void GinIndexStoreFactory::remove(const String & part_path)
 bool isGinFile(const String & file_name)
 {
     return file_name.ends_with(GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE)
-        || file_name.ends_with(GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE)
+        || file_name.ends_with(GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE)
         || file_name.ends_with(GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE)
         || file_name.ends_with(GinIndexStore::GIN_DICTIONARY_FILE_TYPE)
         || file_name.ends_with(GinIndexStore::GIN_POSTINGS_FILE_TYPE);

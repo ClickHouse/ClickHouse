@@ -198,7 +198,7 @@ class GinIndexStore
 {
 public:
     static constexpr auto GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
-    static constexpr auto GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
+    static constexpr auto GIN_SEGMENT_DESCRIPTOR_FILE_TYPE = ".gin_seg";
     static constexpr auto GIN_BLOOM_FILTER_FILE_TYPE = ".gin_bflt";
     static constexpr auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
     static constexpr auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
@@ -217,7 +217,7 @@ public:
 
         Statistics operator-(const Statistics & other)
         {
-            metadata_file_size -= other.metadata_file_size;
+            segment_descriptor_file_size -= other.segment_descriptor_file_size;
             bloom_filter_file_size -= other.bloom_filter_file_size;
             dictionary_file_size -= other.dictionary_file_size;
             posting_lists_file_size -= other.posting_lists_file_size;
@@ -227,7 +227,7 @@ public:
     private:
         size_t num_terms;
         size_t current_size_bytes;
-        size_t metadata_file_size;
+        size_t segment_descriptor_file_size;
         size_t bloom_filter_file_size;
         size_t dictionary_file_size;
         size_t posting_lists_file_size;
@@ -329,7 +329,7 @@ private:
     UInt64 current_size_bytes = 0;
 
     /// File streams for segment, bloom filter, dictionaries and postings lists
-    std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;
+    std::unique_ptr<WriteBufferFromFileBase> segment_descriptor_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> bloom_filter_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> dict_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> postings_file_stream;
@@ -381,7 +381,7 @@ private:
     GinIndexStorePtr store;
 
     /// File streams for reading Gin Index
-    std::unique_ptr<ReadBufferFromFileBase> metadata_file_stream;
+    std::unique_ptr<ReadBufferFromFileBase> segment_descriptor_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> bloom_filter_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> dict_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> postings_file_stream;
