@@ -23,7 +23,7 @@ REGISTER_FUNCTION(AESEncryptMysql)
     FunctionDocumentation::Description description = R"(
 Encrypts text the same way as MySQL's `AES_ENCRYPT` function does.
 The resulting ciphertext can be decrypted with MySQL's `AES_DECRYPT` function.
-Produces the same ciphertext as the `encrypt` function for equal inputs.
+Produces the same ciphertext as the `encrypt` function for the same inputs.
 When `key` or `iv` are longer than they should normally be, `aes_encrypt_mysql` will stick to what MySQL's `aes_encrypt` does which is to 'fold' `key` and ignore the excess bits of `iv`.
 
 The supported encryption modes are:
