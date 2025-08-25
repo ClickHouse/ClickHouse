@@ -55,16 +55,9 @@ class JobConfigs:
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        command="python3 ./ci/jobs/check_style.py",
-        run_in_docker="clickhouse/style-test",
-        enable_commit_status=True,
-    )
-    claude_job = Job.Config(
-        name=JobNames.CLAUDE,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/claude_job.py",
-        run_in_docker="clickhouse/docs-builder",
-        requires=[JobNames.STYLE_CHECK],
+        run_in_docker="clickhouse/claude",
+        enable_commit_status=True,
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
