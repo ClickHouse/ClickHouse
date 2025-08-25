@@ -866,6 +866,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {"'sampling_key'", "'read_tasks'", "'custom_key_range'", "'custom_key_sampling'", "'auto'"},
          false)},
+    {"parallel_replicas_support_projection", trueOrFalseSetting},
     {"partial_result_on_first_cancel", trueOrFalseSettingNoOracle},
     {"parsedatetime_e_requires_space_padding", trueOrFalseSettingNoOracle},
     {"parsedatetime_parse_without_leading_zeros", trueOrFalseSettingNoOracle},
