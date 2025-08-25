@@ -90,8 +90,8 @@ bool hasEmptyPostingsList(const GinPostingsListsCache & postings_lists_cache)
 
     for (const auto & term_postings : postings_lists_cache)
     {
-        const GinSegmentedPostingsListContainer & container = term_postings.second;
-        if (container.empty())
+        const GinSegmentPostingsLists & segment_postings_lists = term_postings.second;
+        if (segment_postings_lists.empty())
             return true;
     }
     return false;
@@ -107,9 +107,9 @@ bool matchAllInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 
     for (const auto & term_postings : postings_lists_cache)
     {
         /// Check if it is in the same segment by searching for segment_id
-        const GinSegmentedPostingsListContainer & container = term_postings.second;
-        auto container_it = container.find(segment_id);
-        if (container_it == container.end())
+        const GinSegmentPostingsLists & segment_postings_lists = term_postings.second;
+        auto container_it = segment_postings_lists.find(segment_id);
+        if (container_it == segment_postings_lists.end())
             return false;
 
         UInt32 min_in_container = container_it->second->minimum();
@@ -134,8 +134,8 @@ bool matchAnyInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 
     for (const auto & term_postings : postings_lists_cache)
     {
         /// Check if it is in the same segment by searching for segment_id
-        const GinSegmentedPostingsListContainer & container = term_postings.second;
-        if (auto container_it = container.find(segment_id); container_it != container.end())
+        const GinSegmentPostingsLists & segment_postings_lists = term_postings.second;
+        if (auto container_it = segment_postings_lists.find(segment_id); container_it != segment_postings_lists.end())
             postings_bitset |= *container_it->second;
     }
 

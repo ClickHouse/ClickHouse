@@ -343,10 +343,10 @@ private:
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
 
 /// Map of <segment_id, postings_list>
-using GinSegmentedPostingsListContainer = std::unordered_map<UInt32, GinPostingsListPtr>;
+using GinSegmentPostingsLists = std::unordered_map<UInt32, GinPostingsListPtr>;
 
 /// Postings lists and terms built from query string
-using GinPostingsListsCache = std::unordered_map<String, GinSegmentedPostingsListContainer>;
+using GinPostingsListsCache = std::unordered_map<String, GinSegmentPostingsLists>;
 using GinPostingsListsCachePtr = std::shared_ptr<GinPostingsListsCache>;
 
 /// Gin index store reader which helps to read segments, dictionaries and postings list
@@ -365,10 +365,10 @@ public:
     void prepareSegmentForReading(UInt32 segment_id);
 
     /// Read FST for given segment dictionary from .gin_dict files
-    void readSegmentFST(UInt32 segment_id, GinDictionaryPtr segment_dictionary);
+    void readSegmentFST(UInt32 segment_id, GinDictionary & dictionary);
 
     /// Read postings lists for the term
-    GinSegmentedPostingsListContainer readSegmentedPostingsLists(const String & term);
+    GinSegmentPostingsLists readSegmentPostingsLists(const String & term);
 
     /// Read postings lists for terms (which are created by tokenzing query string)
     GinPostingsListsCachePtr createPostingsListsCacheFromTerms(const std::vector<String> & terms);

@@ -807,11 +807,11 @@ void GinIndexStoreDeserializer::prepareSegmentForReading(UInt32 segment_id)
         ReadableSize(bloom_filter_file_stream->count() - dictionary->bloom_filter_start_offset));
 }
 
-void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinDictionaryPtr dictionary)
+void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinDictionary & dictionary)
 {
     /// Set file pointer of dictionary file
     chassert(dict_file_stream != nullptr);
-    dict_file_stream->seek(dictionary->dict_start_offset, SEEK_SET);
+    dict_file_stream->seek(dictionary.dict_start_offset, SEEK_SET);
 
     LOG_TRACE(
         logger,
@@ -820,7 +820,7 @@ void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinDictionaryP
         segment_id,
         store->storage->getPartDirectory());
 
-    dictionary->fst = std::make_unique<FST::FiniteStateTransducer>();
+    dictionary.fst = std::make_unique<FST::FiniteStateTransducer>();
     switch (auto version = store->getVersion(); version)
     {
         case GinIndexStore::Format::v1: {
@@ -829,8 +829,8 @@ void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinDictionaryP
             readVarUInt(fst_size_header, *dict_file_stream);
 
             size_t uncompressed_fst_size = fst_size_header >> 1;
-            dictionary->fst->getData().clear();
-            dictionary->fst->getData().resize(uncompressed_fst_size);
+            dictionary.fst->getData().clear();
+            dictionary.fst->getData().resize(uncompressed_fst_size);
             if (fst_size_header & 0x1) /// FST is compressed
             {
                 /// Read compressed FST size
@@ -843,12 +843,12 @@ void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinDictionaryP
                 codec->decompress(
                     buf.data(),
                     static_cast<UInt32>(compressed_fst_size),
-                    reinterpret_cast<char *>(dictionary->fst->getData().data()));
+                    reinterpret_cast<char *>(dictionary.fst->getData().data()));
             }
             else
             {
                 /// Read uncompressed FST blob
-                dict_file_stream->readStrict(reinterpret_cast<char *>(dictionary->fst->getData().data()), uncompressed_fst_size);
+                dict_file_stream->readStrict(reinterpret_cast<char *>(dictionary.fst->getData().data()), uncompressed_fst_size);
             }
             break;
         }
@@ -860,14 +860,14 @@ void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinDictionaryP
         store->getName(),
         segment_id,
         store->storage->getPartDirectory(),
-        ReadableSize(dict_file_stream->count() - dictionary->dict_start_offset));
+        ReadableSize(dict_file_stream->count() - dictionary.dict_start_offset));
 }
 
-GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostingsLists(const String & term)
+GinSegmentPostingsLists GinIndexStoreDeserializer::readSegmentPostingsLists(const String & term)
 {
     chassert(postings_file_stream != nullptr);
 
-    GinSegmentedPostingsListContainer segmented_postings_list_container;
+    GinSegmentPostingsLists segment_postings_lists;
     for (auto const & segment_dictionary : store->segment_dictionaries)
     {
         UInt32 segment_id = segment_dictionary.first;
@@ -884,7 +884,7 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
                     continue;
 
                 /// Term might be in segment dictionary
-                readSegmentFST(segment_id, dictionary);
+                readSegmentFST(segment_id, *dictionary);
             }
 
             fst_output = dictionary->fst->getOutput(term);
@@ -905,7 +905,7 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
 
         /// Read posting list
         auto postings_list = GinPostingsListBuilder::deserialize(*postings_file_stream);
-        segmented_postings_list_container[segment_id] = postings_list;
+        segment_postings_lists[segment_id] = postings_list;
 
         LOG_TRACE(
             logger,
@@ -916,7 +916,7 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
             store->storage->getPartDirectory(),
             ReadableSize(postings_file_stream->count() - segment_dictionary.second->postings_start_offset));
     }
-    return segmented_postings_list_container;
+    return segment_postings_lists;
 }
 
 GinPostingsListsCachePtr GinIndexStoreDeserializer::createPostingsListsCacheFromTerms(const std::vector<String> & terms)
@@ -928,8 +928,8 @@ GinPostingsListsCachePtr GinIndexStoreDeserializer::createPostingsListsCacheFrom
         if (postings_lists_cache->contains(term))
             continue;
 
-        auto segmented_postings_list_container = readSegmentedPostingsLists(term);
-        (*postings_lists_cache)[term] = segmented_postings_list_container;
+        auto segment_postings_lists = readSegmentPostingsLists(term);
+        (*postings_lists_cache)[term] = segment_postings_lists;
     }
     return postings_lists_cache;
 }
