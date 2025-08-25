@@ -96,28 +96,40 @@ UInt64 LabelsAsBitmap::getIndex(char label) const
 
 UInt64 LabelsAsBitmap::serialize(WriteBuffer & write_buffer)
 {
-    writeVarUInt(data.items[0], write_buffer);
-    writeVarUInt(data.items[1], write_buffer);
-    writeVarUInt(data.items[2], write_buffer);
-    writeVarUInt(data.items[3], write_buffer);
+    size_t written_bytes = 0;
 
-    return getLengthOfVarUInt(data.items[0])
-        + getLengthOfVarUInt(data.items[1])
-        + getLengthOfVarUInt(data.items[2])
-        + getLengthOfVarUInt(data.items[3]);
+    writeVarUInt(data.items[0], write_buffer);
+    written_bytes += getLengthOfVarUInt(data.items[0]);
+
+    writeVarUInt(data.items[1], write_buffer);
+    written_bytes += getLengthOfVarUInt(data.items[1]);
+
+    writeVarUInt(data.items[2], write_buffer);
+    written_bytes += getLengthOfVarUInt(data.items[2]);
+
+    writeVarUInt(data.items[3], write_buffer);
+    written_bytes += getLengthOfVarUInt(data.items[3]);
+
+    return written_bytes;
 }
 
 UInt64 LabelsAsBitmap::deserialize(ReadBuffer & read_buffer)
 {
-    readVarUInt(data.items[0], read_buffer);
-    readVarUInt(data.items[1], read_buffer);
-    readVarUInt(data.items[2], read_buffer);
-    readVarUInt(data.items[3], read_buffer);
+    size_t read_bytes = 0;
 
-    return getLengthOfVarUInt(data.items[0])
-        + getLengthOfVarUInt(data.items[1])
-        + getLengthOfVarUInt(data.items[2])
-        + getLengthOfVarUInt(data.items[3]);
+    readVarUInt(data.items[0], read_buffer);
+    read_bytes += getLengthOfVarUInt(data.items[0]);
+
+    readVarUInt(data.items[1], read_buffer);
+    read_bytes += getLengthOfVarUInt(data.items[1]);
+
+    readVarUInt(data.items[2], read_buffer);
+    read_bytes += getLengthOfVarUInt(data.items[2]);
+
+    readVarUInt(data.items[3], read_buffer);
+    read_bytes += getLengthOfVarUInt(data.items[3]);
+
+    return read_bytes;
 }
 
 UInt64 State::hash() const
@@ -231,14 +243,14 @@ void State::readFlag(ReadBuffer & read_buffer)
     read_buffer.readStrict(reinterpret_cast<char &>(flag));
 }
 
-FstBuilder::FstBuilder(WriteBuffer & write_buffer_) : write_buffer(write_buffer_)
+Builder::Builder(WriteBuffer & write_buffer_) : write_buffer(write_buffer_)
 {
     for (auto & temp_state : temp_states)
         temp_state = std::make_shared<State>();
 }
 
 /// See FindMinimized in the paper pseudo code l11-l21.
-StatePtr FstBuilder::findMinimized(const State & state, bool & found)
+StatePtr Builder::findMinimized(const State & state, bool & found)
 {
     found = false;
     auto hash = state.hash();
@@ -275,7 +287,7 @@ size_t getCommonPrefixLength(std::string_view word1, std::string_view word2)
 }
 
 /// See the paper pseudo code l33-39 and l70-72(when down_to is 0).
-void FstBuilder::minimizePreviousWordSuffix(Int64 down_to)
+void Builder::minimizePreviousWordSuffix(Int64 down_to)
 {
     for (Int64 i = static_cast<Int64>(previous_word.size()); i >= down_to; --i)
     {
@@ -308,7 +320,7 @@ void FstBuilder::minimizePreviousWordSuffix(Int64 down_to)
     }
 }
 
-void FstBuilder::add(std::string_view current_word, Output current_output)
+void Builder::add(std::string_view current_word, Output current_output)
 {
     /// We assume word size is no greater than MAX_TERM_LENGTH(256).
     /// FSTs without word size limitation would be inefficient and easy to cause memory bloat
@@ -369,7 +381,7 @@ void FstBuilder::add(std::string_view current_word, Output current_output)
     previous_word = current_word;
 }
 
-UInt64 FstBuilder::build()
+UInt64 Builder::build()
 {
     minimizePreviousWordSuffix(0);
 
@@ -393,9 +405,12 @@ void FiniteStateTransducer::clear()
     data.clear();
 }
 
-std::pair<UInt64, bool> FiniteStateTransducer::getOutput(std::string_view term)
+FiniteStateTransducer::Output FiniteStateTransducer::getOutput(std::string_view term)
 {
-    std::pair<UInt64, bool> result(0, false);
+    if (data.empty())
+        return {0, false};
+
+    FiniteStateTransducer::Output result;
 
     /// Read index of initial state
     ReadBufferFromMemory read_buffer(data.data(), data.size());
@@ -423,7 +438,7 @@ std::pair<UInt64, bool> FiniteStateTransducer::getOutput(std::string_view term)
         temp_state.readFlag(read_buffer);
         if (i == term.size())
         {
-            result.second = temp_state.isFinal();
+            result.found = temp_state.isFinal();
             break;
         }
 
@@ -484,7 +499,7 @@ std::pair<UInt64, bool> FiniteStateTransducer::getOutput(std::string_view term)
             }
         }
         /// Accumulate the output value
-        result.first += arc_output;
+        result.offset += arc_output;
     }
     return result;
 }

@@ -55,9 +55,6 @@ if [ -n "$result" ]; then
     echo "^ Found unnecessary namespace comments"
 fi
 
-# Broken symlinks
-find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
-
 # Duplicated or incorrect setting declarations
 bash $ROOT_PATH/ci/jobs/scripts/check_style/check-settings-style
 
@@ -74,6 +71,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::Counters
     ProfileEvents::end
     ProfileEvents::increment
+    ProfileEvents::incrementNoTrace
     ProfileEvents::incrementForLogMessage
     ProfileEvents::incrementLoggerElapsedNanoseconds
     ProfileEvents::getName

@@ -2,6 +2,7 @@
 
 #include <TableFunctions/registerTableFunctions.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Core/Settings.h>
@@ -142,7 +143,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         ColumnsDescription columns;
 
         if (const auto access_object = getSourceAccessObject())
-            context->checkAccess(AccessType::READ, toStringSource(*access_object));
+            context->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(*access_object), getFunctionURI());
         if (format == "auto")
         {
             columns = StorageURL::getTableStructureAndFormatFromData(

@@ -299,8 +299,6 @@ class MinIOIntegration : public ClickHouseIntegration
 private:
     bool sendRequest(const String & resource);
 
-    String getConnectionURL(bool client);
-
 public:
     explicit MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc);
 
