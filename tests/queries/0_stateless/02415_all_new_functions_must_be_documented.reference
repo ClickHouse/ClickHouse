@@ -95,7 +95,6 @@ extractAll
 extractURLParameter
 extractURLParameterNames
 extractURLParameters
-file
 filesystemAvailable
 filesystemCapacity
 filesystemUnreserved

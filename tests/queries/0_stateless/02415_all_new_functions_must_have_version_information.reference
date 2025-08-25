@@ -166,7 +166,6 @@ extractURLParameter
 extractURLParameterNames
 extractURLParameters
 factorial
-file
 filesystemAvailable
 filesystemCapacity
 filesystemUnreserved
