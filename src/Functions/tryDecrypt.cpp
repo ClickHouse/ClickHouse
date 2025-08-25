@@ -30,7 +30,7 @@ Similar to the `decrypt` function, but returns `NULL` if decryption fails when u
     FunctionDocumentation::Syntax syntax = "tryDecrypt(mode, ciphertext, key[, iv, aad])";
     FunctionDocumentation::Arguments arguments = {
         {"mode", "Decryption mode.", {"String"}},
-        {"ciphertext", "Encrypted text that needs to be decrypted.", {"String"}},
+        {"ciphertext", "Encrypted text that should be decrypted.", {"String"}},
         {"key", "Decryption key.", {"String"}},
         {"iv", "Optional. Initialization vector. Required for `-gcm` modes, optional for other modes.", {"String"}},
         {"aad", "Optional. Additional authenticated data. Won't decrypt if this value is incorrect. Works only in `-gcm` modes, for other modes throws an exception.", {"String"}}
