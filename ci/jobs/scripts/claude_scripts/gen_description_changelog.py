@@ -162,12 +162,17 @@ if __name__ == "__main__":
     comment_body += f"{suggested_changelog_entry}\n\n"
 
     # Update existing comment first if it doesn't exist
-    if not GH.post_updateable_comment(
-        comment_tags_and_bodies={"llm_generated_description_changelog": f"{comment_body}"},
-        only_update=True
-    ):
-        # Comment doesn't exist yet, create a new one
-        GH.post_updateable_comment(
+    try:
+        if not GH.post_updateable_comment(
             comment_tags_and_bodies={"llm_generated_description_changelog": f"{comment_body}"},
-            only_update=False
-        )
+            only_update=True
+        ):
+            # Comment doesn't exist yet, create a new one
+            GH.post_updateable_comment(
+                comment_tags_and_bodies={"llm_generated_description_changelog": f"{comment_body}"},
+                only_update=False
+            )
+    except Exception as e:
+        print(f"Warning: Could not post GitHub comment: {e}")
+        print("Generated content:")
+        print(comment_body)
