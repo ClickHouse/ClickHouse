@@ -53,4 +53,7 @@ private:
     PrometheusQueryResultType result_type;
 };
 
+
+std::unique_ptr<PrometheusQueryTree> wrapWithSubquery(const PrometheusQueryTree & query_tree, const Field & start, const Field & end, const Field & step);
+
 }
