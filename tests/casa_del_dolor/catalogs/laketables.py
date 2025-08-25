@@ -688,12 +688,6 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         mapping_mode = random.choice(["none", "name", "id"])
         properties["delta.columnMapping.mode"] = mapping_mode
 
-        if mapping_mode in ["name", "id"]:
-            # Max column mapping id
-            properties["delta.columnMapping.maxColumnId"] = str(
-                random.randint(1000, 10000)
-            )
-
         # Min reader/writer version based on features
         if mapping_mode != "none":
             properties["delta.minReaderVersion"] = "2"
@@ -738,9 +732,10 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         )
 
         # Compatibility
-        properties["delta.compatibility.symlinkFormatManifest.enabled"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        if 'delta.enableDeletionVectors' not in properties:
+            properties["delta.compatibility.symlinkFormatManifest.enabled"] = str(
+                random.choice(["true", "false"])
+            ).lower()
 
         return properties
 
@@ -792,9 +787,10 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         properties["delta.appendOnly"] = str(random.choice(["true", "false"])).lower()
 
         # Enable deletion vectors (Delta 3.0+)
-        properties["delta.enableDeletionVectors"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        if 'delta.compatibility.symlinkFormatManifest.enabled' not in properties:
+            properties["delta.enableDeletionVectors"] = str(
+                random.choice(["true", "false"])
+            ).lower()
 
         # Row tracking
         properties["delta.enableRowTracking"] = str(

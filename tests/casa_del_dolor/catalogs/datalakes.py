@@ -278,7 +278,7 @@ def get_spark(
         builder.config("spark.hadoop.fs.s3a.path.style.access", "true")
         builder.config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
         builder.config("spark.hadoop.fs.s3a.path-style-access", "true")
-        builder.config("spark.hadoop.fs.s3a.region", "us-east-1")
+        builder.config("spark.hadoop.fs.s3a.endpoint.region", "us-east-1")
         builder.config(
             "spark.hadoop.fs.s3a.aws.credentials.provider",
             "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
@@ -294,7 +294,6 @@ def get_spark(
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.secret-access-key", minio_secret_key
             )
-        builder.config("spark.hadoop.aws.region", "us-east-1")
 
         # S3 optimizations
         # builder.config("spark.hadoop.fs.s3a.fast.upload", "true")
