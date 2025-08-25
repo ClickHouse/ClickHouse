@@ -42,7 +42,7 @@ static const String ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE = "bloom_filter_fa
 MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(const String & index_name_)
     : index_name(index_name_)
     , gin_filter()
-    , has_elems(false)
+    , initialized(false)
 {
 }
 
@@ -76,7 +76,7 @@ void MergeTreeIndexGranuleGin::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     if (filter_size != 0)
         istr.readStrict(reinterpret_cast<char *>(gin_filter.getSegmentsWithRowIdRange().data()), filter_size * sizeof(GinSegmentsWithRowIdRange::value_type));
 
-    has_elems = true;
+    initialized = true;
 }
 
 size_t MergeTreeIndexGranuleGin::memoryUsageBytes() const
@@ -133,7 +133,7 @@ void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size
     if (store->needToWriteCurrentSegment())
         store->writeSegment();
 
-    granule->has_elems = true;
+    granule->initialized = true;
     *pos += rows_read;
 }
 

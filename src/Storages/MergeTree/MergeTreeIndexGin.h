@@ -19,12 +19,12 @@ struct MergeTreeIndexGranuleGin final : public IMergeTreeIndexGranule
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return !has_elems; }
+    bool empty() const override { return !initialized; }
     size_t memoryUsageBytes() const override;
 
     const String index_name;
     GinFilter gin_filter;
-    bool has_elems;
+    bool initialized;
 };
 
 using MergeTreeIndexGranuleGinPtr = std::shared_ptr<MergeTreeIndexGranuleGin>;
