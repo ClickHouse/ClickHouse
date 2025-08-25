@@ -13,7 +13,21 @@ using FunctionPow = FunctionMathBinaryFloat64<BinaryFunctionVectorized<PowName, 
 
 REGISTER_FUNCTION(Pow)
 {
-    factory.registerFunction<FunctionPow>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns x raised to the power of y.
+)";
+    FunctionDocumentation::Syntax syntax = "pow(x, y)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "The base.", {"(U)Int8/16/32/64", "Float*", "Decimal*"}},
+        {"y", "The exponent.", {"(U)Int8/16/32/64", "Float*", "Decimal*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns x^y", {"Float64"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT pow(2, 3);", "8"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionPow>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("power", "pow", FunctionFactory::Case::Insensitive);
 }
 
