@@ -151,7 +151,7 @@ std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getMetadataPaths
 {
     if (DB::useBucketsForProcessing(buckets_num))
     {
-        std::vector<std::string> paths{"buckets", "failed", "processing"};
+        std::vector<std::string> paths{"buckets", "failed", "processing", "persistent_processing"};
         for (size_t i = 0; i < buckets_num; ++i)
             paths.push_back("buckets/" + toString(i));
         return paths;
