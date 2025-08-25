@@ -111,7 +111,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    bool supports_subset_of_columns)
+    bool supports_subset_of_columns,
+    bool supports_tuple_elements)
 {
     /// The below code is similar to what can be found in `prepareReadingFromFormat.cpp`,
     /// but is adjusted for delta-lake.

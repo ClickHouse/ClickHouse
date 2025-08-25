@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <bit>
 #include <utility>
+#include <boost/algorithm/string/replace.hpp>
 
 #include <base/simd.h>
 
@@ -2350,5 +2351,14 @@ void readTSVFieldCRLF(String & s, ReadBuffer & buf)
     readEscapedStringIntoImpl<String, false, true>(s, buf);
 }
 
+String escapeDotInJSONKey(const String & key)
+{
+    return boost::replace_all_copy(key, ".", "%2E");
+}
+
+String unescapeDotInJSONKey(const String & key)
+{
+    return boost::replace_all_copy(key, "%2E", ".");
+}
 
 }

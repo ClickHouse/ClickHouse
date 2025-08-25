@@ -2451,6 +2451,8 @@ def test_writes_create_table(started_cluster, format_version, storage_type):
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version, "", True)    
 
+    assert '`x` String' in instance.query(f"SHOW CREATE TABLE {TABLE_NAME}")
+
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
 
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (123);", settings={"allow_experimental_insert_into_iceberg": 1})
@@ -2625,6 +2627,139 @@ def test_writes_create_version_hint(started_cluster, format_version, storage_typ
     assert len(df) == 1
 
 
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_writes_statistics_by_minmax_pruning(started_cluster, format_version, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = "test_minmax_pruning_" + storage_type + "_" + get_uuid_str()
+
+    schema = """
+    (tag Int32,
+    date Date32,
+    ts DateTime,
+    name String,
+    number Int64)
+    """
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, schema, format_version)
+
+    instance.query(
+    f"""
+        INSERT INTO {TABLE_NAME} VALUES
+        (1, '2024-01-20',
+        '2024-02-20 10:00:00',
+        'vasya', 5);
+    """,
+    settings={"allow_experimental_insert_into_iceberg": 1}
+    )
+
+    instance.query(
+    f"""
+        INSERT INTO {TABLE_NAME} VALUES
+        (2, '2024-02-20',
+        '2024-03-20 15:00:00',
+        'vasilisa', 6);
+    """,
+    settings={"allow_experimental_insert_into_iceberg": 1}
+    )
+
+    instance.query(
+    f"""
+        INSERT INTO {TABLE_NAME} VALUES
+        (3, '2025-03-20',
+        '2024-04-30 14:00:00',
+        'icebreaker', 7);
+    """,
+    settings={"allow_experimental_insert_into_iceberg": 1}
+    )
+
+    instance.query(
+    f"""
+        INSERT INTO {TABLE_NAME} VALUES
+        (4, '2025-04-20',
+        '2024-05-30 14:00:00',
+        'iceberg', 8);
+    """,
+    settings={"allow_experimental_insert_into_iceberg": 1}
+    )
+
+
+    def check_validity_and_get_prunned_files(select_expression):
+        settings1 = {
+            "use_iceberg_partition_pruning": 0,
+            "input_format_parquet_bloom_filter_push_down": 0,
+            "input_format_parquet_filter_push_down": 0,
+        }
+        settings2 = {
+            "use_iceberg_partition_pruning": 1,
+            "input_format_parquet_bloom_filter_push_down": 0,
+            "input_format_parquet_filter_push_down": 0,
+        }
+        return check_validity_and_get_prunned_files_general(
+            instance, TABLE_NAME, settings1, settings2, 'IcebergMinMaxIndexPrunedFiles', select_expression
+        )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {TABLE_NAME} ORDER BY ALL"
+        )
+        == 0
+    )
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {TABLE_NAME} WHERE date <= '2024-01-25' ORDER BY ALL"
+        )
+        == 3
+    )
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {TABLE_NAME} WHERE ts <= timestamp('2024-03-20 14:00:00.000000') ORDER BY ALL"
+        )
+        == 3
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {TABLE_NAME} WHERE tag == 1 ORDER BY ALL"
+        )
+        == 3
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {TABLE_NAME} WHERE tag <= 1 ORDER BY ALL"
+        )
+        == 3
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {TABLE_NAME} WHERE name == 'vasilisa' ORDER BY ALL"
+        )
+        == 3
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {TABLE_NAME} WHERE name < 'kek' ORDER BY ALL"
+        )
+        == 2
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {TABLE_NAME} WHERE number == 8 ORDER BY ALL"
+        )
+        == 3
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {TABLE_NAME} WHERE number <= 5 ORDER BY ALL"
+        )
+        == 3
+    )
+
 @pytest.mark.parametrize("storage_type", ["local", "s3", "azure"])
 def test_optimize(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
@@ -2737,7 +2872,7 @@ def test_writes_schema_evolution(started_cluster, format_version, storage_type):
     spark = started_cluster.spark_session
     TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x Int32)", format_version)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x Nullable(Int32))", format_version)
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
 
     with pytest.raises(Exception):
@@ -2783,8 +2918,10 @@ def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
     spark = started_cluster.spark_session
     TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version, partition_type, output_format_parquet_use_custom_encoder=0)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version, partition_type)
 
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
+    instance.query(f"ALTER TABLE {TABLE_NAME} DELETE WHERE x = 'pudge1000-7';", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
 
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (123);", settings={"allow_experimental_insert_into_iceberg": 1})
@@ -2792,6 +2929,9 @@ def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (456);", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\n456\n'
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (999);", settings={"allow_experimental_insert_into_iceberg": 1})
+
+    instance.query(f"ALTER TABLE {TABLE_NAME} DELETE WHERE x = 'pudge1000-7';", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\n456\n999\n'
 
     instance.query(f"ALTER TABLE {TABLE_NAME} DELETE WHERE x = '123';", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '456\n999\n'
