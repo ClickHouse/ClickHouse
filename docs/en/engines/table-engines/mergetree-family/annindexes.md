@@ -180,10 +180,10 @@ Memory consumption: mv + mg
 Example for the [dbpedia dataset](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
 
 ```text
-    Memory for vectors in the index (mv) = 1 million * 1536 * 2 (for BFloat16) = 3072 MB
-    Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
+Memory for vectors in the index (mv) = 1 million * 1536 * 2 (for BFloat16) = 3072 MB
+Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
 
-    Minimum memory = 3072 + 512 = 3584 MB
+Memory consumption = 3072 + 512 = 3584 MB
 ```
 
 Above formula does not account for additional memory required by vector similarity indexes to allocate runtime data structures like pre-allocated buffers and caches.
