@@ -181,13 +181,6 @@ namespace Setting
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
-<<<<<<< HEAD
-=======
-    extern const SettingsBool secondary_indices_enable_bulk_filtering;
-    extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
-    extern const SettingsUInt64 merge_tree_min_rows_for_seek;
-    extern const SettingsUInt64 filesystem_prefetches_limit;
->>>>>>> amosbird/apply-skip-index-on-reading
 }
 
 namespace MergeTreeSetting

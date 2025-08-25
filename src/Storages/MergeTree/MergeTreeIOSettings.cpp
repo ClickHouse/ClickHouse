@@ -97,10 +97,10 @@ MergeTreeReaderSettings MergeTreeReaderSettings::create(const ContextPtr & conte
         .query_condition_cache_store_conditions_as_plaintext = settings[Setting::query_condition_cache_store_conditions_as_plaintext],
         .use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache],
         .use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool],
-        .filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit],
         .secondary_indices_enable_bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering],
         .merge_tree_min_bytes_for_seek = settings[Setting::merge_tree_min_bytes_for_seek],
         .merge_tree_min_rows_for_seek = settings[Setting::merge_tree_min_rows_for_seek],
+        .filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit],
     };
 }
 
