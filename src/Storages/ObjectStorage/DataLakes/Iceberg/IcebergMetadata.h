@@ -32,7 +32,6 @@
 namespace DB
 {
 
-class IcebergMetadata;
 class IcebergMetadata : public IDataLakeMetadata
 {
 public:
@@ -137,20 +136,22 @@ private:
     mutable SharedMutex mutex;
 
     Iceberg::IcebergTableStateSnapshot relevant_table_state_snapshot TSA_GUARDED_BY(mutex);
-    Iceberg::IcebergDataSnapshotPtr relevant_data_snapshot TSA_GUARDED_BY(mutex);
 
     Iceberg::PersistentTableComponents initializePersistentTableComponents(Poco::JSON::Object::Ptr metadata_object);
 
     Iceberg::IcebergDataSnapshotPtr
-    getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context);
+    getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const;
     Iceberg::IcebergDataSnapshotPtr
-    getIcebergDataSnapshotFromObject(Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context);
+    createIcebergDataSnapshotFromSnapshotJSON(Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Int32>
-    getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object);
+    getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::IcebergTableStateSnapshot>
-    getState(const ContextPtr & local_context, String metadata_path, Int32 metadata_version);
+    getState(const ContextPtr & local_context, String metadata_path, Int32 metadata_version) const;
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const TSA_REQUIRES_SHARED(mutex);
     void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) const TSA_REQUIRES(mutex);
+    bool updateImpl(const ContextPtr & local_context) TSA_REQUIRES(mutex);
+    Iceberg::IcebergDataSnapshotPtr
+    getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::IcebergTableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
 };
 }
 
