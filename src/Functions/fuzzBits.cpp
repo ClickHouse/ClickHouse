@@ -180,35 +180,6 @@ public:
 
 REGISTER_FUNCTION(FuzzBits)
 {
-    FunctionDocumentation::Description description = R"(
-Flips the bits of the input string `s`, with probability `p` for each bit.
-    )";
-    FunctionDocumentation::Syntax syntax = "fuzzBits(s, p)";
-    FunctionDocumentation::Arguments arguments = {
-        {"s", "String or FixedString to perform bit fuzzing on", {"String", "FixedString"}},
-        {"p", "Probability of flipping each bit as a number between `0.0` and `1.0`", {"Float*"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a Fuzzed string with same type as `s`.", {"String", "FixedString"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        R"(
-SELECT fuzzBits(materialize('abacaba'), 0.1)
-FROM numbers(3)
-        )",
-        R"(
-┌─fuzzBits(materialize('abacaba'), 0.1)─┐
-│ abaaaja                               │
-│ a*cjab+                               │
-│ aeca2A                                │
-└───────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionFuzzBits>(documentation);
+    factory.registerFunction<FunctionFuzzBits>();
 }
 }

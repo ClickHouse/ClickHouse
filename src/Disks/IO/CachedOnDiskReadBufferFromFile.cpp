@@ -108,7 +108,6 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
         .read_buffer_id = current_buffer_id,
         .profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(
             current_file_segment_counters.getPartiallyAtomicSnapshot()),
-        .user_id = user.user_id,
     };
 
     current_file_segment_counters.reset();
@@ -825,9 +824,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 {
     last_caller_id = FileSegment::getCallerId();
 
-    chassert(
-        file_offset_of_buffer_end <= read_until_position,
-        fmt::format("file_offset_of_buffer_end {}, read_until_position {}", file_offset_of_buffer_end, read_until_position));
+    chassert(file_offset_of_buffer_end <= read_until_position);
     if (file_offset_of_buffer_end == read_until_position)
         return false;
 
@@ -837,7 +834,6 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     if (file_segments->empty() && !nextFileSegmentsBatch())
         return false;
 
-    chassert(!internal_buffer.empty());
     const size_t original_buffer_size = internal_buffer.size();
     if (!original_buffer_size)
         throw Exception(

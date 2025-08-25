@@ -14,6 +14,7 @@ ClickHouse provides a native command-line client for executing SQL queries direc
 
 The client provides real-time feedback on query execution with a progress bar and the number of rows read, bytes processed and query execution time. It supports both [command-line options](#command-line-options) and [configuration files](#configuration_files).
 
+
 ## Install {#install}
 
 To download ClickHouse, run:
@@ -30,6 +31,7 @@ sudo ./clickhouse install
 See [Install ClickHouse](../getting-started/install/install.mdx) for more installation options.
 
 Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version for client and server.
+
 
 ## Run {#run}
 
@@ -65,6 +67,7 @@ Specify additional connection details as necessary:
 
 For a complete list of command-line options, see [Command Line Options](#command-line-options).
 
+
 ### Connecting to ClickHouse Cloud {#connecting-cloud}
 
 The details for your ClickHouse Cloud service are available in the ClickHouse Cloud console. Select the service that you want to connect to and click **Connect**:
@@ -83,6 +86,7 @@ Choose **Native**, and the details are shown with an example `clickhouse-client`
   alt="ClickHouse Cloud Native TCP connection details"
 />
 
+
 ### Storing connections in a configuration file {#connection-credentials}
 
 You can store connection details for one or more ClickHouse servers in a [configuration file](#configuration_files).
@@ -91,18 +95,12 @@ The format looks like this:
 ```xml
 <config>
     <connections_credentials>
-        <connection>
-            <name>default</name>
-            <hostname>hostname</hostname>
-            <port>9440</port>
-            <secure>1</secure>
-            <user>default</user>
-            <password>password</password>
-            <!-- <history_file></history_file> -->
-            <!-- <history_max_entries></history_max_entries> -->
-            <!-- <accept-invalid-certificate>false</accept-invalid-certificate> -->
-            <!-- <prompt></prompt> -->
-        </connection>
+        <name>default</name>
+        <hostname>hostname</hostname>
+        <port>9440</port>
+        <secure>1</secure>
+        <user>default</user>
+        <password>password</password>
     </connections_credentials>
 </config>
 ```
@@ -177,6 +175,7 @@ _EOF
 cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
 
+
 ## Notes {#notes}
 
 In interactive mode, the default output format is `PrettyCompact`. You can change the format in the `FORMAT` clause of the query or by specifying the `--format` command-line option. To use the Vertical format, you can use `--vertical` or specify `\G` at the end of the query. In this format, each value is printed on a separate line, which is convenient for wide tables.
@@ -201,6 +200,7 @@ When processing a query, the client shows:
 You can cancel a long query by pressing `Ctrl+C`. However, you will still need to wait for a little for the server to abort the request. It is not possible to cancel a query at certain stages. If you do not wait and press `Ctrl+C` a second time, the client will exit.
 
 ClickHouse Client allows passing external data (external temporary tables) for querying. For more information, see the section [External data for query processing](../engines/table-engines/special/external-data.md).
+
 
 ## Queries with parameters {#cli-queries-with-parameters}
 
@@ -235,6 +235,7 @@ $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" \
 $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --param_alias="top_ten" \
     --query "SELECT {col:Identifier} as {alias:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
+
 
 ## AI-powered SQL generation {#ai-sql-generation}
 
@@ -442,10 +443,15 @@ ai:
 The AI SQL generator uses a multi-step process:
 
 1. **Schema Discovery**: The AI uses built-in tools to explore your database:
-- Lists available databases  - Discovers tables within relevant databases   - Examines table structures via `CREATE TABLE` statements
+   - Lists available databases
+   - Discovers tables within relevant databases
+   - Examines table structures via `CREATE TABLE` statements
 
 2. **Query Generation**: Based on the discovered schema, the AI generates SQL that:
-- Matches your natural language intent  - Uses correct table and column names  - Applies appropriate joins and aggregations
+   - Matches your natural language intent
+   - Uses correct table and column names
+   - Applies appropriate joins and aggregations
+
 3. **Execution**: The generated SQL is automatically executed and results are displayed
 
 ### Limitations {#ai-sql-generation-limitations}
@@ -461,12 +467,14 @@ The AI SQL generator uses a multi-step process:
 - The AI only sees schema information (table/column names and types), not actual data
 - All generated queries respect your existing database permissions
 
+
 ## Aliases {#cli_aliases}
 
 - `\l` - SHOW DATABASES
 - `\d` - SHOW TABLES
 - `\c <DATABASE>` - USE DATABASE
 - `.` - repeat the last query
+
 
 ## Keyboard shortcuts {#keyboard_shortcuts}
 
@@ -481,6 +489,7 @@ To configure the correct work of the meta key (Option) on MacOS:
 
 iTerm2: Go to Preferences -> Profile -> Keys -> Left Option key and click Esc+
 :::
+
 
 ## Connection string {#connection_string}
 
@@ -598,6 +607,7 @@ Connect to one of two hosts: `192.168.1.15`, `192.168.1.25`.
 clickhouse-client clickhouse://192.168.1.15,192.168.1.25
 ```
 
+
 ## Query ID format {#query-id-format}
 
 In interactive mode ClickHouse Client shows the query ID for every query. By default, the ID is formatted like this:
@@ -624,6 +634,7 @@ With the configuration above, the ID of a query is shown in the following format
 ```response
 speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
 ```
+
 
 ## Configuration files {#configuration_files}
 
@@ -661,6 +672,7 @@ openSSL:
   client:
     caConfig: '/etc/ssl/cert.pem'
 ```
+
 
 ## Command-line options {#command-line-options}
 

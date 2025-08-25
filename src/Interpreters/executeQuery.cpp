@@ -16,8 +16,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
-#include <IO/EmptyReadBuffer.h>
-#include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
 #include <QueryPipeline/BlockIO.h>
@@ -69,7 +67,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
-#include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
@@ -979,7 +976,7 @@ static BlockIO executeQueryImpl(
     ContextMutablePtr context,
     QueryFlags flags,
     QueryProcessingStage::Enum stage,
-    ReadBufferUniquePtr & istr,
+    ReadBuffer * istr,
     ASTPtr & out_ast,
     ImplicitTransactionControlExecutorPtr implicit_tcl_executor)
 {
@@ -1244,7 +1241,7 @@ static BlockIO executeQueryImpl(
             }
 
             if (auto * insert_query = out_ast->as<ASTInsertQuery>())
-                insert_query->tail = std::move(istr);
+                insert_query->tail = istr;
 
             if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
             {
@@ -1308,7 +1305,7 @@ static BlockIO executeQueryImpl(
         if (insert_query && insert_query->select)
         {
             /// Prepare Input storage before executing interpreter if we already got a buffer with data.
-            if (insert_query->tail)
+            if (istr)
             {
                 ASTPtr input_function;
                 insert_query->tryFindInputFunction(input_function);
@@ -1317,10 +1314,8 @@ static BlockIO executeQueryImpl(
                     StoragePtr storage = context->executeTableFunction(input_function, insert_query->select->as<ASTSelectQuery>());
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
                     auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
-
                     auto pipe = getSourceFromASTInsertQuery(
                         out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
-
                     input_storage.setPipe(std::move(pipe));
                 }
             }
@@ -1355,6 +1350,7 @@ static BlockIO executeQueryImpl(
         }
 
         bool quota_checked = false;
+        std::unique_ptr<ReadBuffer> insert_data_buffer_holder;
 
         if (async_insert)
         {
@@ -1406,6 +1402,7 @@ static BlockIO executeQueryImpl(
             else if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
             {
                 async_insert = false;
+                insert_data_buffer_holder = std::move(result.insert_data_buffer);
 
                 if (insert_query->data)
                 {
@@ -1415,7 +1412,7 @@ static BlockIO executeQueryImpl(
                     insert_query->data = nullptr;
                 }
 
-                insert_query->tail = std::move(result.insert_data_buffer);
+                insert_query->tail = insert_data_buffer_holder.get();
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
             }
         }
@@ -1542,6 +1539,9 @@ static BlockIO executeQueryImpl(
                         auto table_id = insert_interpreter->getDatabaseTable();
                         if (!table_id.empty())
                             context->setInsertionTable(std::move(table_id), insert_interpreter->getInsertColumnNames());
+
+                        if (insert_data_buffer_holder)
+                            insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
                     }
 
                     if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
@@ -1766,8 +1766,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     ASTPtr ast;
     BlockIO res;
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
-    ReadBufferUniquePtr no_input_buffer;
-    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor);
+    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr, ast, implicit_tcl_executor);
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
         String format_name = ast_query_with_output->format_ast
@@ -1792,29 +1791,13 @@ void executeQuery(
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
     QueryFinishCallback query_finish_callback)
 {
-    executeQuery(
-        wrapReadBufferReference(istr), ostr, allow_into_outfile, context, std::move(set_result_details), flags,
-        output_format_settings, std::move(handle_exception_in_output_format), std::move(query_finish_callback));
-}
-
-void executeQuery(
-    ReadBufferUniquePtr istr,
-    WriteBuffer & ostr,
-    bool allow_into_outfile,
-    ContextMutablePtr context,
-    SetResultDetailsFunc set_result_details,
-    QueryFlags flags,
-    const std::optional<FormatSettings> & output_format_settings,
-    HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
-    QueryFinishCallback query_finish_callback)
-{
     PODArray<char> parse_buf;
     const char * begin;
     const char * end;
 
     try
     {
-        istr->nextIfAtEnd();
+        istr.nextIfAtEnd();
     }
     catch (...)
     {
@@ -1830,12 +1813,12 @@ void executeQuery(
             context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
             /*should_throw*/ true);
 
-    if (istr->available() > max_query_size)
+    if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
-        begin = istr->position();
-        end = istr->buffer().end();
-        istr->position() += end - begin;
+        begin = istr.position();
+        end = istr.buffer().end();
+        istr.position() += end - begin;
     }
     else
     {
@@ -1843,7 +1826,7 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
-        LimitReadBuffer limit(*istr, {.read_no_more = max_query_size + 1});
+        LimitReadBuffer limit(istr, {.read_no_more = max_query_size + 1});
         copyData(limit, out);
         out.finalize();
 
@@ -1925,7 +1908,7 @@ void executeQuery(
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     try
     {
-        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor);
+        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, &istr, ast, implicit_tcl_executor);
     }
     catch (...)
     {
@@ -2042,11 +2025,6 @@ void executeQuery(
             pipeline.setProgressCallback(context->getProgressCallback());
         }
 
-        /// input stream might be consumed into some source proceccors/format readers
-        /// that is the case with insert queries, but select quries could read from it but they do not take ownership of the input stream,
-        /// here we reset it in order not to hold the reference to the input stream
-        istr.reset();
-
         if (set_result_details)
         {
             /// The call of set_result_details itself might throw exception,
@@ -2067,7 +2045,6 @@ void executeQuery(
         {
             /// It's possible to have queries without input and output.
         }
-
     }
     catch (...)
     {

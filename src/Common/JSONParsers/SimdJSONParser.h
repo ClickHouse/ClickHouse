@@ -376,16 +376,6 @@ struct SimdJSONParser
             return true;
         }
 
-        bool findCaseInsensitive(std::string_view key, Element & result) const
-        {
-            auto x = object.at_key_case_insensitive(key);
-            if (x.error())
-                return false;
-
-            result = x.value_unsafe();
-            return true;
-        }
-
         /// Optional: Provides access to an object's element by index.
         KeyValuePair operator[](size_t index) const
         {

@@ -195,8 +195,7 @@ void registerOutputFormatVertical(FormatFactory & factory)
     factory.registerOutputFormat("Vertical", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings,
-        FormatFilterInfoPtr /*format_filter_info*/)
+        const FormatSettings & settings)
     {
         return std::make_shared<VerticalRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });

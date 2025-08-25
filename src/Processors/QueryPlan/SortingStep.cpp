@@ -89,7 +89,7 @@ size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_extern
     }
     else
     {
-        LOG_TRACE(getLogger("SortingStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_sort");
+        LOG_WARNING(getLogger("SortingStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_sort");
         return 0;
     }
 }

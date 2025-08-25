@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/quoteString.h>
+
 #include <Interpreters/Context.h>
 
 #include <base/insertAtEnd.h>
@@ -331,18 +331,8 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices 
                 /// Do not update anything for regular merge.
                 return;
             case MergeType::TTLDelete:
-            {
                 next_delete_ttl_merge_times_by_partition[partition_id] = current_time + (*settings)[MergeTreeSetting::merge_with_ttl_timeout];
-
-                const auto & storage = data.getStorageID();
-                LOG_TRACE(log, "For table {} under database {}, the next scheduled execution time of TTLDelete task "
-                               "for partition '{}' will be: '{}'.",
-                               backQuote(storage.table_name),
-                               backQuote(storage.database_name),
-                               partition_id,
-                               toString(next_delete_ttl_merge_times_by_partition[partition_id]));
                 return;
-            }
             case MergeType::TTLRecompress:
                 next_recompress_ttl_merge_times_by_partition[partition_id] = current_time + (*settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout];
                 return;

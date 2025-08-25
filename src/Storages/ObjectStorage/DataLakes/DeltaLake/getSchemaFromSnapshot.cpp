@@ -168,16 +168,6 @@ public:
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
     }
 
-    static void visitWriteSchema(
-        ffi::SharedWriteContext * write_context,
-        SchemaVisitorData & data)
-    {
-        KernelSharedSchema schema(ffi::get_write_schema(write_context));
-        auto visitor = createVisitor(data);
-        [[maybe_unused]] size_t result = ffi::visit_schema(schema.get(), &visitor);
-        chassert(result == 0, "Unexpected result: " + DB::toString(result));
-    }
-
     static void visitPartitionColumns(
         ffi::SharedSnapshot * snapshot,
         SchemaVisitorData & data)
@@ -495,13 +485,6 @@ DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan)
 {
     SchemaVisitorData data;
     SchemaVisitor::visitReadSchema(scan, data);
-    return data.getSchemaResult().names_and_types;
-}
-
-DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context)
-{
-    SchemaVisitorData data;
-    SchemaVisitor::visitWriteSchema(write_context, data);
     return data.getSchemaResult().names_and_types;
 }
 
