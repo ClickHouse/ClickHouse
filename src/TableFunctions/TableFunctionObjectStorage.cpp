@@ -25,7 +25,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-
+#include <Storages/HivePartitioningUtils.h>
 
 namespace DB
 {
@@ -145,6 +145,14 @@ ColumnsDescription TableFunctionObjectStorage<
             configuration,
             /* format_settings */std::nullopt,
             sample_path,
+            context);
+
+        HivePartitioningUtils::setupHivePartitioningForObjectStorage(
+            columns,
+            configuration,
+            sample_path,
+            /* inferred_schema */ true,
+            /* format_settings */ std::nullopt,
             context);
 
         return columns;

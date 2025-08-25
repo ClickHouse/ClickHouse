@@ -36,14 +36,16 @@ ReadFromFormatInfo prepareReadingFromFormat(
             columns_to_read.push_back(column_name);
     }
 
-    /// Create header for Source that will contain all requested columns including virtual and hive columns at the end
-    /// (because they will be added to the chunk after reading regular columns).
     info.source_header = storage_snapshot->getSampleBlockForColumns(columns_to_read);
-    for (const auto & requested_virtual_column : info.requested_virtual_columns)
-        info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
 
+    /// Create header for Source that will contain all requested columns including hive columns (which should be part of the schema) and virtual at the end
+    /// (because they will be added to the chunk after reading regular columns).
+    /// The order is important, hive partition columns must be added before virtual columns because they are part of the schema
     for (const auto & column_from_file_path : info.hive_partition_columns_to_read_from_file_path)
         info.source_header.insert({column_from_file_path.type->createColumn(), column_from_file_path.type, column_from_file_path.name});
+
+    for (const auto & requested_virtual_column : info.requested_virtual_columns)
+        info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
 
     /// Set requested columns that should be read from data.
     info.requested_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), columns_to_read);

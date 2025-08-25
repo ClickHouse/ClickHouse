@@ -13,7 +13,6 @@
 #include <string_view>
 #include <string>
 #include <vector>
-#include <absl/container/flat_hash_map.h>
 
 
 namespace DB
@@ -577,13 +576,13 @@ struct ReferencesMapStateHandler : public StateHandlerImpl<false>
      * */
     class PairWriter
     {
-        absl::flat_hash_map<std::string_view, std::string_view> & map;
+        std::map<std::string_view, std::string_view> & map;
 
         std::string_view key;
         std::string_view value;
 
     public:
-        explicit PairWriter(absl::flat_hash_map<std::string_view, std::string_view> & map_)
+        explicit PairWriter(std::map<std::string_view, std::string_view> & map_)
             : map(map_)
         {}
 
