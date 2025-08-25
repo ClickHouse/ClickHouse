@@ -52,7 +52,9 @@ def ensure_claude_code_cli() -> bool:
         print("claude-code not found, installing...")
         try:
             Shell.check("npm install -g @anthropic-ai/claude-code", verbose=True)
-            Shell.check("which claude")
+            exit_code = Shell.run("command -v claude").strip()
+            if exit_code == 1:
+                return False
             print("claude-code CLI installed successfully")
             return True
         except:
