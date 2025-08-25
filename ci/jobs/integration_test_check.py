@@ -11,8 +11,9 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from tests.integration.integration_test_images import IMAGES
+
 import ci.jobs.scripts.integration_tests_runner as runner
-from ci.jobs.scripts.integration_test_images import IMAGES
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -106,7 +107,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True) -> List[Re
                 except ValueError:
                     pass
 
-            result = Result(name=name, status=status, start_time=time)
+            result = Result(name=name, status=status, duration=time)
             if len(line) == 4 and line[3]:
                 # The value can be emtpy, but when it's not,
                 # the 4th value is a pythonic list, e.g. ['file1', 'file2']
