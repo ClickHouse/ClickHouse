@@ -187,7 +187,7 @@ struct GinDictionary
     std::unique_ptr<FST::FiniteStateTransducer> fst;
     std::mutex fst_mutex;
 
-    /// Bloom filter created from the segment's dictionary
+    /// Bloom filter created from the dictionary
     std::unique_ptr<GinDictionaryBloomFilter> bloom_filter;
 };
 
