@@ -1,4 +1,4 @@
-# Recommended Dockerfile from Claude documentation: https://docs.anthropic.com/en/docs/claude-code/devcontainer 
+# Recommended Dockerfile from Claude documentationi with small modifications: https://docs.anthropic.com/en/docs/claude-code/devcontainer 
 FROM node:20
 
 ARG TZ
@@ -27,6 +27,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   nano \
   vim \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install AWS CLI
+RUN ARCH=$(dpkg --print-architecture) && \
+  if [ "$ARCH" = "amd64" ]; then \
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"; \
+  elif [ "$ARCH" = "arm64" ]; then \
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"; \
+  else \
+    echo "Unsupported architecture: $ARCH" && exit 1; \
+  fi && \
+  unzip awscliv2.zip && \
+  ./aws/install && \
+  rm -rf awscliv2.zip aws/
 
 # Ensure default node user has access to /usr/local/share
 RUN mkdir -p /usr/local/share/npm-global && \
