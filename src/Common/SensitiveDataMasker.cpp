@@ -74,7 +74,7 @@ public:
                 regexp_string_, regexp.error());
     }
 
-    uint64_t apply(std::string & data) const
+    uint64_t applyThrow(std::string & data) const
     {
         auto m = RE2::GlobalReplace(&data, regexp, replacement);
 
@@ -91,11 +91,15 @@ public:
 
     uint64_t applyNoThrow(std::string & data) const
     {
+        if (throw_on_match)
+            return 0;
+
         auto m = RE2::GlobalReplace(&data, regexp, replacement);
 #ifndef NDEBUG
         matches_count += m;
 #endif
         return m;
+
     }
 
     const std::string & getName() const { return name; }
@@ -200,7 +204,7 @@ size_t SensitiveDataMasker::wipeSensitiveDataThrow(std::string & data) const
 {
     size_t matches = 0;
     for (const auto & rule : all_masking_rules)
-        matches += rule->apply(data);
+        matches += rule->applyThrow(data);
     return matches;
 }
 
