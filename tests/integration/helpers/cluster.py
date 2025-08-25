@@ -4473,11 +4473,12 @@ class ClickHouseInstance:
         return (None, str(code) + " " + http.client.responses[code] + ": " + r.text)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
-    def http_request(self, url, method="GET", params=None, data=None, headers=None):
-        logging.debug(f"Sending HTTP request {url} to {self.name}")
-        url = "http://" + self.ip_address + ":8123/" + url
+    # @param url - URI without leading slash
+    def http_request(self, url, method="GET", params=None, data=None, headers=None, *args, **kwargs):
+        logging.debug(f"Sending HTTP request '{url}' to {self.name}")
+        url = f"http://{self.ip_address}:8123/{url}"
         return requests.request(
-            method=method, url=url, params=params, data=data, headers=headers
+            method=method, url=url, params=params, data=data, headers=headers, *args, **kwargs
         )
 
     def stop_clickhouse(self, stop_wait_sec=30, kill=False):
