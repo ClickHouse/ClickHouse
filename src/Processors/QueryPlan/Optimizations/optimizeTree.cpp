@@ -1,5 +1,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -324,6 +325,11 @@ void optimizeTreeSecondPass(
                 tryMakeDistributedRead(frame_node, nodes, optimization_settings);
             }
         });
+
+    {
+        CascadesOptimizer cascades_optimizer;
+        cascades_optimizer.optimize(query_plan);
+    }
 
     stack.push_back({.node = &root});
 
