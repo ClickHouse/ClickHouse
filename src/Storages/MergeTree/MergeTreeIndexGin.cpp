@@ -118,7 +118,7 @@ void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size
     const auto & index_column_name = index_columns[0];
     const auto & index_column = block.getByName(index_column_name);
 
-    auto start_row_id = store->getNextRowIDRange(rows_read);
+    UInt32 start_row_id = store->getNextRowIDRange(rows_read);
 
     size_t current_position = *pos;
     for (size_t i = 0; i < rows_read; ++i)
