@@ -142,6 +142,9 @@ if __name__ == "__main__":
    
     human_description, human_changelog_entry = get_human_description_changelog(info.pr_body)
 
+    os.environ["GH_TOKEN"] = Shell.get_output_or_raise(
+        "/usr/local/bin/aws ssm  get-parameter --name github_runner_registration_token --with-decryption --output text --query Parameter.Value"
+    )
     pr_diff = GH.get_pr_diff()
     escaped_diff = shlex.quote(pr_diff) # Make suitable for passing as a command line arg
     suggested_description = generate_description(escaped_diff, human_description, model)
