@@ -28,13 +28,10 @@ def test_server_no_logging(started_cluster):
     # The log level is set to 'none' in the logger.xml configuration.
     assert instance.http_query("SELECT 1") == "1\n"
 
-    assert not instance.contains_in_log("HTTP Request for HTTPHandler-factory", timeout=5)
+    assert not instance.contains_in_log("HTTP Request for HTTPHandler-factory")
 
     # shutdown Clickhouse
-    signal = 15 # SIGTERM
-    instance.exec_in_container(
-        ["bash", "-c", "pkill -{} clickhouse".format(signal)], user="root"
-    )
+    instance.stop_clickhouse()
 
     assert instance.contains_in_log("Set root logger in level trace before shutdown")
 
