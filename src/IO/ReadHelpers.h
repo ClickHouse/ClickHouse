@@ -150,6 +150,13 @@ inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t max_strin
     buf.readStrict(s.data(), size);
 }
 
+inline void skipStringBinary(ReadBuffer & buf)
+{
+    size_t size = 0;
+    readVarUInt(size, buf);
+    buf.ignore(size);
+}
+
 /// For historical reasons we store IPv6 as a String
 inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
 {
@@ -727,7 +734,7 @@ inline bool tryReadUUIDText(UUID & uuid, ReadBuffer & buf)
 template <typename ReturnType = void>
 inline ReturnType readIPv4TextImpl(IPv4 & ip, ReadBuffer & buf)
 {
-    if (parseIPv4(buf.position(), [&buf](){ return buf.eof(); }, reinterpret_cast<unsigned char *>(&ip.toUnderType())))
+    if (parseIPv4(buf.position(), [&buf]{ return buf.eof(); }, reinterpret_cast<unsigned char *>(&ip.toUnderType())))
         return ReturnType(true);
 
     if constexpr (std::is_same_v<ReturnType, void>)
@@ -2077,6 +2084,9 @@ bool tryReadJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON &
 
 void readTSVField(String & s, ReadBuffer & buf);
 void readTSVFieldCRLF(String & s, ReadBuffer & buf);
+
+String escapeDotInJSONKey(const String & key);
+String unescapeDotInJSONKey(const String & key);
 
 /** Parse the escape sequence, which can be simple (one character after backslash) or more complex (multiple characters).
   * It is assumed that the cursor is located on the `\` symbol

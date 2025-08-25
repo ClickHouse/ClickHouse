@@ -751,8 +751,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DatabaseDataLake with Iceberg Rest catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_iceberg");
+                                    "DatabaseDataLake with Iceberg Rest catalog is beta. "
+                                    "To allow its usage, enable setting allow_database_iceberg");
                 }
 
                 engine_func->name = "Iceberg";
@@ -764,8 +764,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_glue_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DatabaseDataLake with Glue catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_glue_catalog");
+                                    "DatabaseDataLake with Glue catalog is beta. "
+                                    "To allow its usage, enable setting allow_database_glue_catalog");
                 }
 
                 engine_func->name = "Iceberg";
@@ -777,8 +777,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_unity_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DataLake database with Unity catalog catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_unity_catalog");
+                                    "DataLake database with Unity catalog catalog is beta. "
+                                    "To allow its usage, enable setting allow_database_unity_catalog");
                 }
 
                 engine_func->name = "DeltaLake";

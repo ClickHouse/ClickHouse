@@ -187,24 +187,6 @@ public:
         return current_metadata->getSchemaTransformer(local_context, object_info);
     }
 
-    bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override
-    {
-        if (!current_metadata)
-            return false;
-        return current_metadata->hasPositionDeleteTransformer(object_info);
-    }
-
-    std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & object_info,
-        const SharedHeader & header,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context_) const override
-    {
-        if (!current_metadata)
-            return {};
-        return current_metadata->getPositionDeleteTransformer(object_info, header, format_settings, context_);
-    }
-
     bool hasExternalDynamicMetadata() override
     {
         assertInitialized();
@@ -325,6 +307,11 @@ public:
         return current_metadata->optimize(metadata_snapshot, context, format_settings);
     }
 
+    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override
+    {
+        current_metadata->addDeleteTransformers(object_info, builder, format_settings, local_context);
+    }
+
 private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
@@ -341,6 +328,7 @@ private:
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
+        bool supports_tuple_elements,
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams &) override
     {
@@ -352,7 +340,7 @@ private:
                 local_context);
         }
         return current_metadata->prepareReadingFromFormat(
-            requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
+            requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements);
     }
 
     bool updateMetadataIfChanged(
