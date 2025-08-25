@@ -1,38 +1,33 @@
-#!/usr/bin/env python3
-
 import argparse
-import logging
-import os
 import subprocess
-import sys
 from pathlib import Path
 from typing import List, Tuple
 
 from pip._vendor.packaging.version import Version
 
-from build_download_helper import download_builds_filter
-from ci_utils import Shell
-from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPORT_PATH, TEMP_PATH
-from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
-from stopwatch import Stopwatch
+from ci.jobs.scripts.docker_image import DockerImage
+from ci.praktika.info import Info
+from ci.praktika.result import Result
+from ci.praktika.utils import Shell, Utils
 
 IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
 IMAGE_CENTOS = "clickhouse/test-old-centos"
 DOWNLOAD_RETRIES_COUNT = 5
 
+temp_path = Path(f"{Utils.cwd()}/ci/tmp")
 
-def process_os_check(log_path: Path) -> TestResult:
+
+def process_os_check(log_path: Path) -> Result:
     name = log_path.name
     with open(log_path, "r", encoding="utf-8") as log:
         line = log.read().split("\n")[0].strip()
         if line != "OK":
-            return TestResult(name, "FAIL")
-        return TestResult(name, "OK")
+            return Result(name=name, status=Result.StatusExtended.FAIL)
+        return Result(name=name, status=Result.StatusExtended.OK)
 
 
-def process_glibc_check(log_path: Path, max_glibc_version: str) -> TestResults:
-    test_results = []  # type: TestResults
+def process_glibc_check(log_path: Path, max_glibc_version: str) -> List[Result]:
+    test_results = []
     with open(log_path, "r", encoding="utf-8") as log:
         for line in log:
             if line.strip():
@@ -40,37 +35,39 @@ def process_glibc_check(log_path: Path, max_glibc_version: str) -> TestResults:
                 symbol_with_glibc = columns[-2]  # sysconf@GLIBC_2.2.5
                 _, version = symbol_with_glibc.split("@GLIBC_")
                 if version == "PRIVATE":
-                    test_results.append(TestResult(symbol_with_glibc, "FAIL"))
+                    test_results.append(
+                        Result(symbol_with_glibc, Result.StatusExtended.FAIL)
+                    )
                 elif Version(version) > Version(max_glibc_version):
-                    test_results.append(TestResult(symbol_with_glibc, "FAIL"))
+                    test_results.append(
+                        Result(symbol_with_glibc, Result.StatusExtended.FAIL)
+                    )
     if not test_results:
-        test_results.append(TestResult("glibc check", "OK"))
+        test_results.append(Result("glibc check", Result.StatusExtended.OK))
     return test_results
 
 
 def process_result(
-    result_directory: Path,
-    server_log_directory: Path,
     check_glibc: bool,
     check_distributions: bool,
     max_glibc_version: str,
-) -> Tuple[str, str, TestResults, List[Path]]:
-    glibc_log_path = result_directory / "glibc.log"
+) -> Tuple[str, str, List[Result], List[Path]]:
+    glibc_log_path = temp_path / "glibc.log"
     test_results = process_glibc_check(glibc_log_path, max_glibc_version)
 
-    status = SUCCESS
+    status = Result.Status.SUCCESS
     description = "Compatibility check passed"
 
     if check_glibc:
         if len(test_results) > 1 or test_results[0].status != "OK":
-            status = FAILURE
+            status = Result.Status.FAILED
             description = "glibc check failed"
 
-    if status == SUCCESS and check_distributions:
+    if status == Result.Status.SUCCESS and check_distributions:
         for operating_system in ("ubuntu:12.04", "centos:5"):
-            test_result = process_os_check(result_directory / operating_system)
+            test_result = process_os_check(temp_path / operating_system)
             if test_result.status != "OK":
-                status = FAILURE
+                status = Result.Status.FAILED
                 description = f"Old {operating_system} failed"
                 test_results += [test_result]
                 break
@@ -79,7 +76,7 @@ def process_result(
     result_logs = [
         p
         for p in [
-            server_log_directory / name
+            temp_path / name
             for name in ("clickhouse-server.log", "stderr.log", "clientstderr.log")
         ]
         + [glibc_log_path]
@@ -89,33 +86,29 @@ def process_result(
     return status, description, test_results, result_logs
 
 
-def get_run_commands_glibc(build_path: Path, result_directory: Path) -> List[str]:
+def get_run_commands_glibc() -> List[str]:
     return [
-        f"readelf -s --wide {build_path}/usr/bin/clickhouse | "
-        f"grep '@GLIBC_' > {result_directory}/glibc.log",
-        f"readelf -s --wide {build_path}/usr/bin/clickhouse-odbc-bridge | "
-        f"grep '@GLIBC_' >> {result_directory}/glibc.log",
-        f"readelf -s --wide {build_path}/usr/bin/clickhouse-library-bridge | "
-        f"grep '@GLIBC_' >> {result_directory}/glibc.log",
+        f"readelf -s --wide {temp_path}/clickhouse | grep '@GLIBC_' > {temp_path}/glibc.log",
+        # FIXME: odbc bridge is not present in the deb package
+        # f"readelf -s --wide {temp_path}/clickhouse-odbc-bridge | grep '@GLIBC_' >> {temp_path}/glibc.log",
+        # FIXME: library bridge is not present in the deb package
+        # f"readelf -s --wide {temp_path}/clickhouse-library-bridge | grep '@GLIBC_' >> {temp_path}/glibc.log",
     ]
 
 
 def get_run_commands_distributions(
-    build_path: Path,
-    result_directory: Path,
-    server_log_directory: Path,
     image_centos: DockerImage,
     image_ubuntu: DockerImage,
 ) -> List[str]:
     return [
-        f"docker run --network=host --volume={build_path}/usr/bin/clickhouse:/clickhouse "
-        f"--volume={build_path}/etc/clickhouse-server:/config "
-        f"--volume={server_log_directory}:/var/log/clickhouse-server {image_ubuntu} > "
-        f"{result_directory}/ubuntu:12.04",
-        f"docker run --network=host --volume={build_path}/usr/bin/clickhouse:/clickhouse "
-        f"--volume={build_path}/etc/clickhouse-server:/config "
-        f"--volume={server_log_directory}:/var/log/clickhouse-server {image_centos} > "
-        f"{result_directory}/centos:5",
+        f"docker run --network=host --volume={temp_path}/ci/tmp/clickhouse:/clickhouse "
+        f"--volume={temp_path}/etc/clickhouse-server:/config "
+        f"--volume={temp_path}:/var/log/clickhouse-server {image_ubuntu} > "
+        f"{temp_path}/ubuntu:12.04",
+        f"docker run --network=host --volume={temp_path}/clickhouse:/clickhouse "
+        f"--volume={temp_path}/etc/clickhouse-server:/config "
+        f"--volume={temp_path}:/var/log/clickhouse-server {image_centos} > "
+        f"{temp_path}/centos:5",
     ]
 
 
@@ -126,108 +119,67 @@ def parse_args():
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)
+    stopwatch = Utils.Stopwatch()
 
-    args = parse_args()
-    check_name = args.check_name or os.getenv("CHECK_NAME")
+    check_name = Info().job_name
     assert check_name
     check_glibc = True
     # currently hardcoded to x86, don't enable for AARCH64
     check_distributions = (
         "aarch64" not in check_name.lower() and "arm" not in check_name.lower()
     )
-
-    stopwatch = Stopwatch()
-
-    temp_path = Path(TEMP_PATH)
-    reports_path = Path(REPORT_PATH)
-    temp_path.mkdir(parents=True, exist_ok=True)
-    reports_path.mkdir(parents=True, exist_ok=True)
-
-    packages_path = temp_path / "packages"
-    packages_path.mkdir(parents=True, exist_ok=True)
-
-    def url_filter(url):
-        return url.endswith(".deb") and (
-            "clickhouse-common-static_" in url or "clickhouse-server_" in url
-        )
-
-    if check_name in ("amd_release", "amd_debug", "arm_release"):
-        # this is praktika based CI
-        print("Copy input *.deb artifacts")
-        assert Shell.check(f"cp ./ci/tmp/*.deb {packages_path}", verbose=True)
-    else:
-        download_builds_filter(check_name, reports_path, packages_path, url_filter)
-
-    for package in packages_path.iterdir():
-        if package.suffix == ".deb":
-            subprocess.check_call(
-                f"dpkg -x {package} {packages_path} && rm {package}", shell=True
-            )
-
-    server_log_path = temp_path / "server_log"
-    server_log_path.mkdir(parents=True, exist_ok=True)
-
-    result_path = temp_path / "result_path"
-    result_path.mkdir(parents=True, exist_ok=True)
+    Shell.check(f"chmod +x {temp_path}/clickhouse", verbose=True, strict=True)
 
     run_commands = []
 
     if check_glibc:
-        check_glibc_commands = get_run_commands_glibc(packages_path, result_path)
+        check_glibc_commands = get_run_commands_glibc()
         run_commands.extend(check_glibc_commands)
 
     if check_distributions:
-        centos_image = pull_image(get_docker_image(IMAGE_CENTOS))
-        ubuntu_image = pull_image(get_docker_image(IMAGE_UBUNTU))
+        centos_image = DockerImage.get_docker_image(IMAGE_CENTOS).pull_image()
+        ubuntu_image = DockerImage.get_docker_image(IMAGE_UBUNTU).pull_image()
         check_distributions_commands = get_run_commands_distributions(
-            packages_path,
-            result_path,
-            server_log_path,
             centos_image,
             ubuntu_image,
         )
         run_commands.extend(check_distributions_commands)
 
-    state = SUCCESS
     for run_command in run_commands:
         try:
-            logging.info("Running command %s", run_command)
+            print(f"Running command {run_command}")
             subprocess.check_call(run_command, shell=True)
         except subprocess.CalledProcessError as ex:
-            logging.info("Exception calling command %s", ex)
-            state = FAILURE
+            print(f"Exception calling command: {ex}")
+            Result.create_from(
+                status=Result.Status.ERROR, info=f"Exception calling command: {ex}"
+            ).complete_job()
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     # See https://sourceware.org/glibc/wiki/Glibc%20Timeline
-    max_glibc_version = ""
-    if "amd" in check_name or "(release)" in check_name:
+    if "amd" in check_name:
         max_glibc_version = "2.4"
-    elif "aarch" in check_name or "arm" in check_name:
+    elif "arm" in check_name:
         max_glibc_version = "2.18"  # because of build with newer sysroot?
     else:
         raise RuntimeError("Can't determine max glibc version")
 
     state, description, test_results, additional_logs = process_result(
-        result_path,
-        server_log_path,
         check_glibc,
         check_distributions,
         max_glibc_version,
     )
 
-    JobReport(
-        description=description,
-        test_results=test_results,
+    Result(
+        name=Info().job_name,
+        info=description,
+        results=test_results,
         status=state,
-        start_time=stopwatch.start_time_str,
-        duration=stopwatch.duration_seconds,
-        additional_files=additional_logs,
-    ).dump()
-
-    if state == FAILURE:
-        sys.exit(1)
+        start_time=stopwatch.start_time,
+        duration=stopwatch.duration,
+        files=additional_logs,
+    ).complete_job()
 
 
 if __name__ == "__main__":
