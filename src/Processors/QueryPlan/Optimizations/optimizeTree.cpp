@@ -326,9 +326,10 @@ void optimizeTreeSecondPass(
             }
         });
 
+    if (optimization_settings.enable_cascades_optimizer)
     {
-        CascadesOptimizer cascades_optimizer;
-        cascades_optimizer.optimize(query_plan);
+        CascadesOptimizer cascades_optimizer(query_plan);
+        cascades_optimizer.optimize();
     }
 
     stack.push_back({.node = &root});

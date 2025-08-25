@@ -97,6 +97,8 @@ struct QueryPlanOptimizationSettings
     bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
 
+    bool enable_cascades_optimizer = true;
+
     bool make_distributed_plan = false;
     bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
     bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage

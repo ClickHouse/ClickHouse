@@ -10,7 +10,7 @@ namespace DB
 
 OptimizerContext::OptimizerContext()
 {
-    rules.push_back(std::make_shared<JoinAssociativity>());
+//    rules.push_back(std::make_shared<JoinAssociativity>());
     rules.push_back(std::make_shared<JoinCommutativity>());
 }
 
