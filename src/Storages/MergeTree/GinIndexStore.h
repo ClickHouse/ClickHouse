@@ -304,8 +304,8 @@ private:
     /// Get a range of next available segment IDs
     UInt32 getNextSegmentIdRange(size_t n);
 
-    String name;
-    DataPartStoragePtr storage;
+    const String name;
+    const DataPartStoragePtr storage;
     MutableDataPartStoragePtr data_part_storage_builder;
 
     UInt32 cached_segment_num = 0;
