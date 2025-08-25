@@ -604,8 +604,8 @@ bool MergeTreeIndexConditionGin::tryPrepareSetGinFilter(
         for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
         {
             gin_query_infos.back().emplace_back();
-            auto ref = column->getDataAt(row);
-            token_extractor->stringToGinFilter(ref.data, ref.size, gin_query_infos.back().back());
+            std::string_view value = column->getDataAt(row).toView();
+            token_extractor->stringToGinFilter(value.data(), value.size(), gin_query_infos.back().back());
         }
     }
 
