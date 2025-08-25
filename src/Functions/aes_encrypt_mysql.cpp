@@ -35,7 +35,7 @@ The supported encryption modes are:
     FunctionDocumentation::Syntax syntax = "aes_encrypt_mysql(mode, plaintext, key[, iv])";
     FunctionDocumentation::Arguments arguments = {
         {"mode", "Encryption mode.", {"String"}},
-        {"plaintext", "Text that needs to be encrypted.", {"String"}},
+        {"plaintext", "Text that should be encrypted.", {"String"}},
         {"key", "Encryption key. If the key is longer than required by `mode`, MySQL-specific key folding is performed.", {"String"}},
         {"iv", "Optional. Initialization vector. Only the first 16 bytes are taken into account.", {"String"}}
     };
