@@ -1,4 +1,3 @@
-#include "base/types.h"
 #include "config.h"
 
 #if USE_AVRO
