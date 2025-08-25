@@ -94,7 +94,40 @@ public:
 
 REGISTER_FUNCTION(EvalMLMethod)
 {
-    factory.registerFunction<FunctionEvalMLMethod>();
+    FunctionDocumentation::Description description = R"(
+Applies a trained machine learning model to input features to generate predictions.
+)";
+    FunctionDocumentation::Syntax syntax = "evalMLMethod(model, x1[, x2, ...])";
+    FunctionDocumentation::Arguments arguments = {
+        {"model", "The trained machine learning model.", {"AggregateFunctionState"}},
+        {"x1, x2, ...", "Feature values for prediction.", {"Float*", "(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the predicted value based on the trained model.", {"Float64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Example usage",
+        R"(
+SELECT
+evalMLMethod(model, trip_distance),
+total_amount
+FROM trips
+LEFT JOIN models ON year = toYear(pickup_datetime)
+LIMIT 5
+        )",
+        R"(
+┌─evalMLMethod(model, trip_distance)─┬─total_amount─┐
+│ 8.087692004204174                  │ 5.4          │
+│ 7.861181608305352                  │ 4.6          │
+│ 26.661544467907536                 │ 23.4         │
+│ 8.767223191900637                  │ 5.8          │
+│ 10.80581675499003                  │ 9            │
+└────────────────────────────────────┴──────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::MachineLearning;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionEvalMLMethod>(documentation);
 }
 
 }
