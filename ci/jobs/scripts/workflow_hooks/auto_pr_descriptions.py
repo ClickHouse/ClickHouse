@@ -5,7 +5,6 @@ from praktika.info import Info
 from praktika.utils import Shell
 from ci.praktika.gh import GH
 from ci.praktika import Secret
-from praktika import Secret
 from typing import Tuple
 from pathlib import Path
 
