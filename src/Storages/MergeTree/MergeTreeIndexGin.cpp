@@ -106,12 +106,6 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorGin::getGranuleAndReset()
     return new_granule;
 }
 
-void MergeTreeIndexAggregatorGin::addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter)
-{
-    for (const auto & token : token_extractor->getTokensView(data, length))
-        gin_filter.add(String(token), rowID, store);
-}
-
 void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
@@ -131,9 +125,10 @@ void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size
     size_t current_position = *pos;
     for (size_t i = 0; i < rows_read; ++i)
     {
-        auto ref = index_column.column->getDataAt(current_position + i);
-        addToGinFilter(start_row_id + i, ref.data, ref.size, granule->gin_filter);
-        store->incrementCurrentSizeBy(ref.size);
+        std::string_view value = index_column.column->getDataAt(current_position + i).toView();
+        for (const auto & token : token_extractor->getTokensView(value.data(), value.length()))
+            granule->gin_filter.add(String(token), start_row_id + i, store);
+        store->incrementCurrentSizeBy(value.size());
     }
     granule->gin_filter.addRowRangeToGinFilter(store->getCurrentSegmentID(), start_row_id, static_cast<UInt32>(start_row_id + rows_read - 1));
 

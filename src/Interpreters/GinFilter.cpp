@@ -36,7 +36,7 @@ GinQueryString::GinQueryString(std::string_view query_string_, const std::vector
 {
 }
 
-void GinFilter::add(const String & term, UInt32 rowID, GinIndexStorePtr & store) const
+void GinFilter::add(const String & term, UInt32 row_id, GinIndexStorePtr & store) const
 {
     if (term.length() > FST::MAX_TERM_LENGTH)
         return;
@@ -45,13 +45,13 @@ void GinFilter::add(const String & term, UInt32 rowID, GinIndexStorePtr & store)
 
     if (it != store->getPostingsListBuilder().end())
     {
-        if (!it->second->contains(rowID))
-            it->second->add(rowID);
+        if (!it->second->contains(row_id))
+            it->second->add(row_id);
     }
     else
     {
         auto builder = std::make_shared<GinIndexPostingsBuilder>();
-        builder->add(rowID);
+        builder->add(row_id);
 
         store->setPostingsBuilder(term, builder);
     }
@@ -66,7 +66,7 @@ void GinFilter::addRowRangeToGinFilter(UInt32 segment_id, UInt32 rowid_start, UI
 
     if (!rowid_ranges.empty())
     {
-        /// Try to merge the rowID range with the last one in the container
+        /// Try to merge the row_id range with the last one in the container
         GinSegmentWithRowIdRange & last_rowid_range = rowid_ranges.back();
 
         if (last_rowid_range.segment_id == segment_id &&

@@ -97,7 +97,7 @@ public:
 
     /// Add term (located at 'data' with length 'len') and its row ID to the postings list builder
     /// for building text index for the given store.
-    void add(const String & term, UInt32 rowID, GinIndexStorePtr & store) const;
+    void add(const String & term, UInt32 row_id, GinIndexStorePtr & store) const;
 
     /// Accumulate (segment_id, rowid_start, rowid_end) for building skipping index
     void addRowRangeToGinFilter(UInt32 segment_id, UInt32 rowid_start, UInt32 rowid_end);
