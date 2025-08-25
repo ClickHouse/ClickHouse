@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include "Processors/QueryPlan/Optimizations/Cascades/Optimizer.h"
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -164,6 +165,11 @@ void optimizeTreeSecondPass(
     }
 
     calculateHashTableCacheKeys(root);
+
+    {
+        CascadesOptimizer cascades_optimizer;
+        cascades_optimizer.optimize(query_plan);
+    }
 
     stack.push_back({.node = &root});
     while (!stack.empty())
