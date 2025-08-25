@@ -249,7 +249,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                         auto buf = std::make_unique<char[]>(compressed_fst_size);
                         dictionary_read_buffer->readStrict(reinterpret_cast<char *>(buf.get()), compressed_fst_size);
 
-                        const auto & codec = DB::GinIndexCompressionFactory::zstdCodec();
+                        const auto & codec = DB::GinCompressionFactory::zstdCodec();
                         codec->decompress(
                             buf.get(),
                             static_cast<UInt32>(compressed_fst_size),

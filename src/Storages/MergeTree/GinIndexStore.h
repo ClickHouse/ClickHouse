@@ -46,11 +46,11 @@ namespace DB
 {
 static constexpr UInt64 UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES = 0;
 
-/// GinIndexPostingsList which uses 32-bit Roaring
-using GinIndexPostingsList = roaring::Roaring;
-using GinPostingsListPtr = std::shared_ptr<GinIndexPostingsList>;
+/// GinPostingsList which uses 32-bit Roaring
+using GinPostingsList = roaring::Roaring;
+using GinPostingsListPtr = std::shared_ptr<GinPostingsList>;
 
-class GinIndexCompressionFactory
+class GinCompressionFactory
 {
 public:
     static const CompressionCodecPtr & zstdCodec();

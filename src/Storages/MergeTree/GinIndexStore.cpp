@@ -39,7 +39,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 };
 
-const CompressionCodecPtr & GinIndexCompressionFactory::zstdCodec()
+const CompressionCodecPtr & GinCompressionFactory::zstdCodec()
 {
     static constexpr auto GIN_COMPRESSION_CODEC = "ZSTD";
     static constexpr auto GIN_COMPRESSION_LEVEL = 1;
@@ -103,7 +103,7 @@ GinPostingsListPtr GinIndexPostingListDeltaPforSerialization::deserialize(ReadBu
 
     decodeDeltaScalar(deltas);
 
-    GinPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
+    GinPostingsListPtr postings_list = std::make_shared<GinPostingsList>();
     postings_list->addMany(deltas.size(), deltas.data());
     return postings_list;
 }
@@ -170,7 +170,7 @@ UInt64 GinIndexPostingListRoaringZstdSerialization::serialize(WriteBuffer & buff
     if (compress)
     {
         Memory<> memory;
-        const auto & codec = GinIndexCompressionFactory::zstdCodec();
+        const auto & codec = GinCompressionFactory::zstdCodec();
         memory.resize(codec->getCompressedReserveSize(static_cast<UInt32>(uncompressed_size)));
         auto compressed_size = codec->compress(buf.data(), static_cast<UInt32>(uncompressed_size), memory.data());
 
@@ -223,7 +223,7 @@ GinPostingsListPtr GinIndexPostingListRoaringZstdSerialization::deserialize(Read
         for (size_t i = 0; i < num_entries; ++i)
             readVarUInt(values[i], buffer);
 
-        GinPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
+        GinPostingsListPtr postings_list = std::make_shared<GinPostingsList>();
         postings_list->addMany(values.size(), values.data());
         return postings_list;
     }
@@ -242,17 +242,17 @@ GinPostingsListPtr GinIndexPostingListRoaringZstdSerialization::deserialize(Read
 
             Memory<> memory;
             memory.resize(uncompressed_size);
-            const auto & codec = GinIndexCompressionFactory::zstdCodec();
+            const auto & codec = GinCompressionFactory::zstdCodec();
             codec->decompress(buf.data(), static_cast<UInt32>(compressed_size), memory.data());
 
-            return std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(memory.data()));
+            return std::make_shared<GinPostingsList>(GinPostingsList::read(memory.data()));
         }
         else
         {
             /// Deserialize uncompressed roaring bitmap
             std::vector<char> buf(uncompressed_size);
             buffer.readStrict(buf.data(), uncompressed_size);
-            return std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(buf.data()));
+            return std::make_shared<GinPostingsList>(GinPostingsList::read(buf.data()));
         }
     }
 }
@@ -674,7 +674,7 @@ void GinIndexStore::writeSegment()
 
     if (compress_fst)
     {
-        const auto & codec = GinIndexCompressionFactory::zstdCodec();
+        const auto & codec = GinCompressionFactory::zstdCodec();
         Memory<> memory;
         memory.resize(codec->getCompressedReserveSize(static_cast<UInt32>(uncompressed_size)));
         auto compressed_size = codec->compress(reinterpret_cast<char *>(buffer.data()), uncompressed_size, memory.data());
@@ -839,7 +839,7 @@ void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinDictionary 
                 /// Read compressed FST blob
                 std::vector<char> buf(compressed_fst_size);
                 dict_file_stream->readStrict(buf.data(), compressed_fst_size);
-                const auto & codec = DB::GinIndexCompressionFactory::zstdCodec();
+                const auto & codec = DB::GinCompressionFactory::zstdCodec();
                 codec->decompress(
                     buf.data(),
                     static_cast<UInt32>(compressed_fst_size),

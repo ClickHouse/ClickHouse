@@ -101,7 +101,7 @@ bool hasEmptyPostingsList(const GinPostingsListsCache & postings_lists_cache)
 bool matchAllInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 segment_id, UInt32 range_rowid_start, UInt32 range_rowid_end)
 {
     /// Check for each term
-    GinIndexPostingsList range_bitset;
+    GinPostingsList range_bitset;
     range_bitset.addRange(range_rowid_start, range_rowid_end + 1);
 
     for (const auto & term_postings : postings_lists_cache)
@@ -130,7 +130,7 @@ bool matchAllInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 
 bool matchAnyInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 segment_id, UInt32 range_rowid_start, UInt32 range_rowid_end)
 {
     /// Check for each term
-    GinIndexPostingsList postings_bitset;
+    GinPostingsList postings_bitset;
     for (const auto & term_postings : postings_lists_cache)
     {
         /// Check if it is in the same segment by searching for segment_id
@@ -139,7 +139,7 @@ bool matchAnyInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 
             postings_bitset |= *container_it->second;
     }
 
-    GinIndexPostingsList range_bitset;
+    GinPostingsList range_bitset;
     range_bitset.addRange(range_rowid_start, range_rowid_end + 1);
     return range_bitset.intersect(postings_bitset);
 }
