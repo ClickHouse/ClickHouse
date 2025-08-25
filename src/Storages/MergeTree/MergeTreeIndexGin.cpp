@@ -56,7 +56,7 @@ void MergeTreeIndexGranuleGin::serializeBinary(WriteBuffer & ostr) const
 
     size_t filter_size = gin_filter.getFilter().size();
     size_serialization->serializeBinary(filter_size, ostr, {});
-    ostr.write(reinterpret_cast<const char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentWithRowIdRangeVector::value_type));
+    ostr.write(reinterpret_cast<const char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentsWithRowIdRange::value_type));
 }
 
 void MergeTreeIndexGranuleGin::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
@@ -74,7 +74,7 @@ void MergeTreeIndexGranuleGin::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     gin_filter.getFilter().resize(filter_size);
 
     if (filter_size != 0)
-        istr.readStrict(reinterpret_cast<char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentWithRowIdRangeVector::value_type));
+        istr.readStrict(reinterpret_cast<char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentsWithRowIdRange::value_type));
 
     has_elems = true;
 }

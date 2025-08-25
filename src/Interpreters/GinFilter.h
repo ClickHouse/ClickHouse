@@ -23,14 +23,12 @@ struct GinSegmentWithRowIdRange
     /// Segment ID of the row ID range
     UInt32 segment_id;
 
-    /// First row ID in the range
-    UInt32 range_start;
-
-    /// Last row ID in the range (inclusive)
-    UInt32 range_end;
+    /// First and last row ID in the range (both are inclusive)
+    UInt32 range_rowid_start;
+    UInt32 range_rowid_end;
 };
 
-using GinSegmentWithRowIdRangeVector = std::vector<GinSegmentWithRowIdRange>;
+using GinSegmentsWithRowIdRange = std::vector<GinSegmentWithRowIdRange>;
 
 class GinQueryString
 {
@@ -43,10 +41,7 @@ public:
     const std::vector<String> & getTerms() const { return terms; }
 
     /// Set the query string of the filter
-    void setQueryString(std::string_view query_string_)
-    {
-        query_string = query_string_;
-    }
+    void setQueryString(std::string_view query_string_) { query_string = query_string_; }
 
     /// Add term which are tokens generated from the query string
     bool addTerm(std::string_view term)
@@ -102,21 +97,18 @@ public:
     /// Accumulate (segment_id, rowid_start, rowid_end) for building skipping index
     void addRowRangeToGinFilter(UInt32 segment_id, UInt32 rowid_start, UInt32 rowid_end);
 
-    /// Clear the content
-    void clear();
-
     /// Check if the filter (built from query string) contains any rows in given filter by using
     /// given postings list cache
     bool contains(const GinQueryString & query_string, GinPostingsListsCacheForStore & postings_lists_cache_for_store, GinSearchMode mode = GinSearchMode::All) const;
 
-    const GinSegmentWithRowIdRangeVector & getFilter() const { return rowid_ranges; }
-    GinSegmentWithRowIdRangeVector & getFilter() { return rowid_ranges; }
+    const GinSegmentsWithRowIdRange & getFilter() const { return rowid_ranges; }
+    GinSegmentsWithRowIdRange & getFilter() { return rowid_ranges; }
 
     size_t memoryUsageBytes() const;
 
 private:
     /// Row ID ranges which are (segment_id, rowid_start, rowid_end)
-    GinSegmentWithRowIdRangeVector rowid_ranges;
+    GinSegmentsWithRowIdRange rowid_ranges;
 };
 
 }
