@@ -116,7 +116,7 @@ public:
         const QueryPlanOptimizationSettings & optimization_settings,
         QueryPlan::Nodes & nodes);
 
-    bool changesColumnsType() const { return false; }
+    std::unordered_set<JoinTableSide> typeChangingSides() const;
 
     bool isOptimized() const { return optimized; }
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }

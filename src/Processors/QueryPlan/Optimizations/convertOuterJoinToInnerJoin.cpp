@@ -84,7 +84,7 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     auto & join_operator = join->getJoinOperator();
     if (join_operator.strictness != JoinStrictness::All)
         return 0;
-    if (join->changesColumnsType())
+    if (!join->typeChangingSides().empty())
         return 0;
     bool check_left_stream = isRightOrFull(join_operator.kind);
     bool check_right_stream = isLeftOrFull(join_operator.kind);

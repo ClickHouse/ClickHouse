@@ -449,7 +449,7 @@ static bool isTrivialStep(const QueryPlan::Node * node)
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
-constexpr bool isNonOuter(JoinKind kind)
+constexpr bool isInnerOrCross(JoinKind kind)
 {
     return kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
 }
@@ -463,7 +463,7 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
     if (child_join_step && !child_join_step->isOptimized())
     {
         auto child_join_kind = child_join_step->getJoinOperator().kind;
-        bool allow_child_join_kind = isNonOuter(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
+        bool allow_child_join_kind = isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
         allow_child_join_kind = allow_child_join_kind && child_join_step->getJoinOperator().strictness == JoinStrictness::All;
         if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
         {
@@ -505,8 +505,12 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     QueryPlan::Node * rhs_plan = node.children[1];
     auto [lhs_label, rhs_label] = join_step->getInputLabels();
     auto join_kind = join_step->getJoinOperator().kind;
-    size_t lhs_count = addChildQueryGraph(query_graph, lhs_plan, nodes, lhs_label, isNonOuter(join_kind) || isLeft(join_kind) ? join_steps_limit - 1 : 0);
-    size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, isNonOuter(join_kind) || isRight(join_kind) ? join_steps_limit - lhs_count : 0);
+
+    auto type_changing_sides = join_step->typeChangingSides();
+    bool allow_left_subgraph = !type_changing_sides.contains(JoinTableSide::Left) && (isInnerOrCross(join_kind) || isLeft(join_kind));
+    size_t lhs_count = addChildQueryGraph(query_graph, lhs_plan, nodes, lhs_label, allow_left_subgraph ? join_steps_limit - 1 : 0);
+    bool allow_right_subgraph = !type_changing_sides.contains(JoinTableSide::Right) && (isInnerOrCross(join_kind) || isRight(join_kind));
+    size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, allow_right_subgraph ? join_steps_limit - lhs_count : 0);
 
     size_t total_inputs = query_graph.inputs.size();
     if (isRightOrFull(join_kind))
@@ -655,10 +659,19 @@ static std::vector<DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntryPtr ro
 
 static const ActionsDAG::Node * trackInputColumn(const ActionsDAG::Node * node)
 {
-    for (; !node->children.empty(); node = node->children[0])
+    while (!node->children.empty())
     {
-        if (node->children.size() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} has {} children, expected 1", node->result_name, node->children.size());
+        size_t non_const_children = 0;
+        for (const auto * child_node : node->children)
+        {
+            if (child_node->type == ActionsDAG::ActionType::COLUMN)
+                continue;
+            node = child_node;
+            non_const_children++;
+        }
+
+        if (non_const_children != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} has {} non const children, expected 1", node->result_name, non_const_children);
     }
     return node;
 }

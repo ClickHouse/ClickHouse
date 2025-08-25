@@ -58,6 +58,7 @@
 #include <stack>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -187,6 +188,24 @@ JoinStepLogical::JoinStepLogical(
         if (!current_actions_dag->containsNode(node_after_join))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} is not in the expression actions dag", fmt::ptr(node_after_join));
     }
+}
+
+std::unordered_set<JoinTableSide> JoinStepLogical::typeChangingSides() const
+{
+    std::unordered_set<JoinTableSide> result;
+    for (const auto * node_after_join : actions_after_join)
+    {
+        if (node_after_join->type == ActionsDAG::ActionType::INPUT ||
+            node_after_join->type == ActionsDAG::ActionType::COLUMN)
+            continue;
+        if (JoinActionRef(node_after_join, expression_actions).fromLeft())
+            result.insert(JoinTableSide::Left);
+        if (JoinActionRef(node_after_join, expression_actions).fromRight())
+            result.insert(JoinTableSide::Right);
+        if (result.size() == 2)
+            break;
+    }
+    return result;
 }
 
 JoinStepLogical::~JoinStepLogical() = default;
