@@ -24,8 +24,8 @@ using SettingEntries = std::unordered_map<String, std::function<void(const JSONO
 static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, const String & default_region, const uint32_t default_port)
 {
     String client_hostname = "localhost";
-    String server_hostname = "";
-    String path = "localhost";
+    String server_hostname = "localhost";
+    String path;
     String region = default_region;
     uint32_t port = default_port;
 
