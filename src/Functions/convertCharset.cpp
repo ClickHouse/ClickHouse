@@ -103,7 +103,7 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t from_string_size = from_offsets[i] - current_from_offset - 1;
+            size_t from_string_size = from_offsets[i] - current_from_offset;
 
             /// We assume that empty string is empty in every charset.
             if (0 != from_string_size)
@@ -112,8 +112,8 @@ private:
                 ucnv_reset(converter_from->impl);
                 ucnv_reset(converter_to->impl);
 
-                /// maximum number of code points is number of bytes in input string plus one for terminating zero
-                uchars.resize(from_string_size + 1);
+                /// maximum number of code points is the number of bytes in input string
+                uchars.resize(from_string_size);
 
                 UErrorCode status = U_ZERO_ERROR;
                 int32_t res = ucnv_toUChars(
@@ -144,14 +144,10 @@ private:
                 current_to_offset += res;
             }
 
-            if (to_chars.size() < current_to_offset + 1)
-                to_chars.resize(current_to_offset + 1);
+            if (to_chars.size() < current_to_offset)
+                to_chars.resize(current_to_offset);
 
-            to_chars[current_to_offset] = 0;
-
-            ++current_to_offset;
             to_offsets[i] = current_to_offset;
-
             current_from_offset = from_offsets[i];
         }
 

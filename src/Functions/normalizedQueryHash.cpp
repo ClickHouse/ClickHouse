@@ -12,6 +12,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -21,14 +22,16 @@ namespace ErrorCodes
 namespace
 {
 
-template <bool keep_names>
-struct Impl
+class FunctionNormalizedQueryHash : public IFunction
 {
-    static void vector(
+private:
+    bool keep_names;
+
+    void process(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         PaddedPODArray<UInt64> & res_data,
-        size_t input_rows_count)
+        size_t input_rows_count) const
     {
         res_data.resize(input_rows_count);
 
@@ -38,26 +41,17 @@ struct Impl
             ColumnString::Offset curr_src_offset = offsets[i];
             res_data[i] = normalizedQueryHash(
                 reinterpret_cast<const char *>(&data[prev_src_offset]),
-                reinterpret_cast<const char *>(&data[curr_src_offset - 1]),
+                reinterpret_cast<const char *>(&data[curr_src_offset]),
                 keep_names);
-            prev_src_offset = offsets[i];
+            prev_src_offset = curr_src_offset;
         }
     }
-};
-
-template <bool keep_names>
-class FunctionNormalizedQueryHash : public IFunction
-{
 public:
-    static constexpr auto name = keep_names ? "normalizedQueryHashKeepNames" : "normalizedQueryHash";
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionNormalizedQueryHash>();
-    }
+    explicit FunctionNormalizedQueryHash(bool keep_names_) : keep_names(keep_names_) {}
 
     String getName() const override
     {
-        return name;
+        return keep_names ? "normalizedQueryHashKeepNames" : "normalizedQueryHash";
     }
 
     size_t getNumberOfArguments() const override
@@ -90,7 +84,7 @@ public:
             auto col_res = ColumnUInt64::create();
             typename ColumnUInt64::Container & vec_res = col_res->getData();
             vec_res.resize(input_rows_count);
-            Impl<keep_names>::vector(col->getChars(), col->getOffsets(), vec_res, input_rows_count);
+            process(col->getChars(), col->getOffsets(), vec_res, input_rows_count);
             return col_res;
         }
         throw Exception(
@@ -100,10 +94,11 @@ public:
 
 }
 
+
 REGISTER_FUNCTION(NormalizedQueryHash)
 {
-    factory.registerFunction<FunctionNormalizedQueryHash<true>>();
-    factory.registerFunction<FunctionNormalizedQueryHash<false>>();
+    factory.registerFunction("normalizedQueryHashKeepNames", [](ContextPtr){ return std::make_shared<FunctionNormalizedQueryHash>(true); });
+    factory.registerFunction("normalizedQueryHash", [](ContextPtr){ return std::make_shared<FunctionNormalizedQueryHash>(false); });
 }
 
 }

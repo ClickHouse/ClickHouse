@@ -44,6 +44,7 @@ public:
     size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
     Path getRawPath() const override { return path; }
+    const String & getRawURI() const override { return path.path; }
 
     const Paths & getPaths() const override { return paths; }
     void setPaths(const Paths & paths_) override { paths = paths_; }
