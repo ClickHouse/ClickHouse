@@ -49,7 +49,7 @@ const CompressionCodecPtr & GinCompressionFactory::zstdCodec()
 }
 
 #if USE_FASTPFOR
-UInt64 GinIndexPostingListDeltaPforSerialization::serialize(WriteBuffer & buffer, const roaring::Roaring & rowids)
+UInt64 GinIndexPostingListDeltaPforSerialization::serialize(WriteBuffer & buffer, const GinPostingsList & rowids)
 {
     std::vector<UInt32> deltas = encodeDeltaScalar(rowids);
 
@@ -114,7 +114,7 @@ std::shared_ptr<FastPForLib::IntegerCODEC> GinIndexPostingListDeltaPforSerializa
     return codec;
 }
 
-std::vector<UInt32> GinIndexPostingListDeltaPforSerialization::encodeDeltaScalar(const roaring::Roaring & rowids)
+std::vector<UInt32> GinIndexPostingListDeltaPforSerialization::encodeDeltaScalar(const GinPostingsList & rowids)
 {
     const UInt64 num_rowids = rowids.cardinality();
     std::vector<UInt32> deltas(num_rowids);
@@ -135,7 +135,7 @@ void GinIndexPostingListDeltaPforSerialization::decodeDeltaScalar(std::vector<UI
 }
 #endif
 
-UInt64 GinIndexPostingListRoaringZstdSerialization::serialize(WriteBuffer & buffer, const roaring::Roaring & rowids)
+UInt64 GinIndexPostingListRoaringZstdSerialization::serialize(WriteBuffer & buffer, const GinPostingsList & rowids)
 {
     const UInt64 num_rowids = rowids.cardinality();
 

@@ -46,7 +46,7 @@ namespace DB
 {
 static constexpr UInt64 UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES = 0;
 
-/// GinPostingsList which uses 32-bit Roaring
+/// An in-memory posting list is a 32-bit Roaring Bitmap
 using GinPostingsList = roaring::Roaring;
 using GinPostingsListPtr = std::shared_ptr<GinPostingsList>;
 
@@ -57,17 +57,17 @@ public:
 };
 
 #if USE_FASTPFOR
-/// This class is responsible to serialize the posting list into on-disk format by applying DELTA encoding first, then PFOR compression.
+/// This class serializes a posting list into on-disk format by applying DELTA encoding first, then PFOR compression.
 /// Internally, the FastPFOR library is used for the PFOR compression.
 class GinIndexPostingListDeltaPforSerialization
 {
 public:
-    static UInt64 serialize(WriteBuffer & buffer, const roaring::Roaring & rowids);
+    static UInt64 serialize(WriteBuffer & buffer, const GinPostingsList & rowids);
     static GinPostingsListPtr deserialize(ReadBuffer & buffer);
 
 private:
     static std::shared_ptr<FastPForLib::IntegerCODEC> codec();
-    static std::vector<UInt32> encodeDeltaScalar(const roaring::Roaring & rowids);
+    static std::vector<UInt32> encodeDeltaScalar(const GinPostingsList & rowids);
     static void decodeDeltaScalar(std::vector<UInt32> & deltas);
 
     /// FastPFOR fails to compress below this threshold, compressed data becomes larger than the original array.
@@ -75,11 +75,11 @@ private:
 };
 #endif
 
-/// This class is responsible to serialize the posting list into on-disk format by applying ZSTD compression on top of Roaring Bitmap.
+/// This class serialize a posting list into on-disk format by applying ZSTD compression on top of Roaring Bitmap.
 class GinIndexPostingListRoaringZstdSerialization
 {
 public:
-    static UInt64 serialize(WriteBuffer & buffer, const roaring::Roaring & rowids);
+    static UInt64 serialize(WriteBuffer & buffer, const GinPostingsList & rowids);
     static GinPostingsListPtr deserialize(ReadBuffer & buffer);
 
 private:
@@ -116,7 +116,7 @@ private:
         DELTA_PFOR = 2,
     };
 
-    roaring::Roaring rowids;
+    GinPostingsList rowids;
 };
 
 using GinPostingsListBuilderPtr = std::shared_ptr<GinPostingsListBuilder>;
@@ -124,7 +124,7 @@ using GinPostingsListBuilderPtr = std::shared_ptr<GinPostingsListBuilder>;
 /// Gin index segment descriptor, which contains:
 struct GinSegmentDescriptor
 {
-    ///  Segment ID retrieved from next available ID from file .gin_sid
+    /// Segment ID retrieved from next available ID from file .gin_sid
     UInt32 segment_id = 0;
 
     /// Start row ID for this segment
