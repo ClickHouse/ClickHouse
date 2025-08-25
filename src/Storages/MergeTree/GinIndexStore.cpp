@@ -738,7 +738,7 @@ void GinIndexStoreDeserializer::readSegments()
     if (num_segments == 0)
         return;
 
-    assert(metadata_file_stream != nullptr);
+    chassert(metadata_file_stream != nullptr);
 
     LOG_TRACE(logger, "Start reading text index '{}' segments of part '{}'", store->getName(), store->storage->getPartDirectory());
 
@@ -791,7 +791,7 @@ void GinIndexStoreDeserializer::prepareSegmentForReading(UInt32 segment_id)
             /// V1 supports bloom filter, so we can delay reading a segment until it's needed.
 
             /// Set file pointer of filter file
-            assert(bloom_filter_file_stream != nullptr);
+            chassert(bloom_filter_file_stream != nullptr);
             bloom_filter_file_stream->seek(seg_dict->bloom_filter_start_offset, SEEK_SET);
             seg_dict->bloom_filter = GinSegmentDictionaryBloomFilter::deserialize(*bloom_filter_file_stream);
             break;
@@ -810,7 +810,7 @@ void GinIndexStoreDeserializer::prepareSegmentForReading(UInt32 segment_id)
 void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinSegmentDictionaryPtr segment_dictionary)
 {
     /// Set file pointer of dictionary file
-    assert(dict_file_stream != nullptr);
+    chassert(dict_file_stream != nullptr);
     dict_file_stream->seek(segment_dictionary->dict_start_offset, SEEK_SET);
 
     LOG_TRACE(
@@ -865,7 +865,7 @@ void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinSegmentDict
 
 GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostingsLists(const String & term)
 {
-    assert(postings_file_stream != nullptr);
+    chassert(postings_file_stream != nullptr);
 
     GinSegmentedPostingsListContainer container;
     for (auto const & seg_dict : store->segment_dictionaries)
