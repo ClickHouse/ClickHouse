@@ -54,4 +54,5 @@ SELECT * FROM system.database_replicas WHERE database LIKE 'db_%' ORDER BY datab
 SELECT '-----------------------';
 SELECT 'SELECT max_log_ptr';
 CREATE TABLE db_2.test_table (n Int64) ENGINE=MergeTree ORDER BY n;
+SELECT sleep(3);
 SELECT database, max_log_ptr FROM system.database_replicas WHERE database LIKE 'db_%' AND max_log_ptr > 1;

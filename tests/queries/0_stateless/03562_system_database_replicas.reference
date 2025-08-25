@@ -64,4 +64,5 @@ db_6	0	1	r1	/test/db_6/replicas/s1|r1	/test/db_6	s1	1	1		0
 -----------------------
 SELECT max_log_ptr
 s1	r1	OK	0	0
+0
 db_2	2
