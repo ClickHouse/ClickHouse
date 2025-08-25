@@ -59,19 +59,19 @@ struct DeleteFileWriteResult
     Int32 total_bytes;
 };
 
-using DeleteFileWriteResultByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkPartitioner::PartitionKeyHasher>;
-using DeleteFileStatisticsByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DataFileStatistics, ChunkPartitioner::PartitionKeyHasher>;
+using DataFileWriteResultByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkPartitioner::PartitionKeyHasher>;
+using DataFileStatisticsByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DataFileStatistics, ChunkPartitioner::PartitionKeyHasher>;
 
-struct DeleteFileWriteResultWithStats
+struct DataFileWriteResultWithStats
 {
-    DeleteFileWriteResultByPartitionKey delete_file;
-    DeleteFileStatisticsByPartitionKey delete_statistic;
+    DataFileWriteResultByPartitionKey delete_file;
+    DataFileStatisticsByPartitionKey delete_statistic;
 };
 
 struct WriteDataFilesResult
 {
-    DeleteFileWriteResultWithStats delete_file;
-    std::optional<DeleteFileWriteResultWithStats> data_file;
+    DataFileWriteResultWithStats delete_file;
+    std::optional<DataFileWriteResultWithStats> data_file;
 };
 
 static Block getPositionDeleteFileSampleBlock()
@@ -116,13 +116,13 @@ std::optional<WriteDataFilesResult> writeDataFiles(
     chassert(commands.size() == 1);
 
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage_id, context);
-    DeleteFileWriteResultByPartitionKey result;
-    DeleteFileStatisticsByPartitionKey statistics;
-    std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> write_buffers;
-    std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> writers;
+    DataFileWriteResultByPartitionKey delete_data_result;
+    DataFileStatisticsByPartitionKey delete_data_statistics;
+    std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> delete_data_write_buffers;
+    std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> delete_data_writers;
 
-    DeleteFileWriteResultByPartitionKey update_data_result;
-    DeleteFileStatisticsByPartitionKey update_data_statistics;
+    DataFileWriteResultByPartitionKey update_data_result;
+    DataFileStatisticsByPartitionKey update_data_statistics;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> update_data_write_buffers;
     std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> update_data_writers;
 
@@ -164,14 +164,14 @@ std::optional<WriteDataFilesResult> writeDataFiles(
 
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
-                if (!statistics.contains(partition_key))
-                    statistics.emplace(partition_key, DataFileStatistics(IcebergPositionDeleteTransform::getSchemaFields()));
+                if (!delete_data_statistics.contains(partition_key))
+                    delete_data_statistics.emplace(partition_key, DataFileStatistics(IcebergPositionDeleteTransform::getSchemaFields()));
 
-                if (!writers.contains(partition_key))
+                if (!delete_data_writers.contains(partition_key))
                 {
                     auto delete_file_info = generator.generatePositionDeleteFile();
 
-                    result[partition_key].path = delete_file_info;
+                    delete_data_result[partition_key].path = delete_file_info;
                     auto write_buffer = object_storage->writeObject(
                         StoredObject(delete_file_info.path_in_storage),
                         WriteMode::Rewrite,
@@ -189,8 +189,8 @@ std::optional<WriteDataFilesResult> writeDataFiles(
                     auto output_format = FormatFactory::instance().getOutputFormat(
                         configuration->format, *write_buffer, delete_file_sample_block, context, format_settings, format_filter_info);
 
-                    write_buffers[partition_key] = std::move(write_buffer);
-                    writers[partition_key] = std::move(output_format);
+                    delete_data_write_buffers[partition_key] = std::move(write_buffer);
+                    delete_data_writers[partition_key] = std::move(output_format);
                 }
 
                 col_data_filename.column = partition_chunk.getColumns()[col_data_filename_index];
@@ -220,23 +220,23 @@ std::optional<WriteDataFilesResult> writeDataFiles(
                 chunk_pos_delete.push_back(col_data_filename.column);
                 chunk_pos_delete.push_back(col_position.column);
                 auto stats_chunk = Chunk(chunk_pos_delete, partition_chunk.getNumRows());
-                statistics.at(partition_key).update(stats_chunk);
+                delete_data_statistics.at(partition_key).update(stats_chunk);
 
                 Block delete_file_block({col_data_filename, col_position});
-                result[partition_key].total_rows += delete_file_block.rows();
-                writers[partition_key]->write(delete_file_block);
+                delete_data_result[partition_key].total_rows += delete_file_block.rows();
+                delete_data_writers[partition_key]->write(delete_file_block);
             }
         }
 
         if (!has_any_rows)
             return std::nullopt;
 
-        for (const auto & [partition_key, _] : result)
+        for (const auto & [partition_key, _] : delete_data_result)
         {
-            writers[partition_key]->flush();
-            writers[partition_key]->finalize();
-            write_buffers[partition_key]->finalize();
-            result[partition_key].total_bytes = static_cast<Int32>(write_buffers[partition_key]->count());
+            delete_data_writers[partition_key]->flush();
+            delete_data_writers[partition_key]->finalize();
+            delete_data_write_buffers[partition_key]->finalize();
+            delete_data_result[partition_key].total_bytes = static_cast<Int32>(delete_data_write_buffers[partition_key]->count());
         }
     }
 
@@ -299,9 +299,9 @@ std::optional<WriteDataFilesResult> writeDataFiles(
     }
 
     if (commands[0].type == MutationCommand::DELETE)
-        return WriteDataFilesResult{DeleteFileWriteResultWithStats{result, statistics}, std::nullopt};
+        return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, std::nullopt};
     else
-        return WriteDataFilesResult{DeleteFileWriteResultWithStats{result, statistics}, DeleteFileWriteResultWithStats{update_data_result, update_data_statistics}};
+        return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, DataFileWriteResultWithStats{update_data_result, update_data_statistics}};
 }
 
 struct WriteMetadataResult
@@ -311,7 +311,7 @@ struct WriteMetadataResult
 };
 
 WriteMetadataResult writeMetadataFiles(
-    DeleteFileWriteResultWithStats & delete_filenames,
+    DataFileWriteResultWithStats & delete_filenames,
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
     ContextPtr context,
