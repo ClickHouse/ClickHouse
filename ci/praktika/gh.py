@@ -272,9 +272,9 @@ class GH:
     @classmethod
     def get_pr_diff(cls, pr=None, repo=None):
         if not repo:
-            repo = _Envrionment.get().REPOSITORY
+            repo = _Environment.get().REPOSITORY
         if not pr:
-            pr = _Envrionment.get().PR_NUMBER
+            pr = _Environment.get().PR_NUMBER
 
         cmd = f'gh pr diff {pr} --repo {repo}'
         return Shell.get_output(cmd, verbose=True)
