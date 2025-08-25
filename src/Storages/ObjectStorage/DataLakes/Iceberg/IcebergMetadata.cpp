@@ -427,6 +427,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, String metadata_path
     std::tie(data_snapshot, table_state_snapshot.schema_id) = getStateImpl(local_context, metadata_object);
     table_state_snapshot.snapshot_id = data_snapshot ? std::optional{data_snapshot->snapshot_id} : std::nullopt;
     table_state_snapshot.metadata_version = metadata_version;
+    table_state_snapshot.metadata_file_path = metadata_path;
     return {data_snapshot, table_state_snapshot};
 }
 
