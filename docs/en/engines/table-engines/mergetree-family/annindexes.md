@@ -8,7 +8,7 @@ title: 'Exact and Approximate Vector Search'
 
 # Exact and approximate vector search
 
-The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, shorter, vector search.
+The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, in short: vector search.
 Two general approaches exist for solving vector search:
 - Exact vector search calculates the distance between the given point and all points in the vector space. This ensures the best possible accuracy, i.e. the returned points are guaranteed to be the actual nearest neighbors. Since the vector space is explored exhaustively, exact vector search can be too slow for real-world use.
 - Approximate vector search refers to a group of techniques (e.g., special data structures like graphs and random forests) which compute results much faster than exact vector search. The result accuracy is typically "good enough" for practical use. Many approximate techniques provide parameters to tune the trade-off between the result accuracy and the search time.
@@ -146,6 +146,47 @@ Further restrictions apply:
 - Vector similarity indexes may be build on calculated expressions (e.g., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) but such indexes cannot be used for approximate neighbor search later on.
 - Vector similarity indexes require that all arrays in the underlying column have `<dimension>`-many elements - this is checked during index creation. To detect violations of this requirement as early as possible, users can add a [constraint](/sql-reference/statements/create/table.md#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
 - Likewise, array values in the underlying column must not be empty (`[]`) or have a default value (also `[]`).
+
+**Estimating storage and memory consumption**
+
+A vector generated for use with a typical AI model (e.g. a Large Language Model, [LLMs](https://en.wikipedia.org/wiki/Large_language_model)) consists of hundreds or thousands of floating-point values.
+Thus, a single vector value can have a memory consumption of multiple kilobyte.
+Users who like to estimate the storage required for the underlying vector column in the table, as well as the main memory needed for the vector similarity index, can use below two formula:
+
+Storage consumption of the vector column in the table (uncompressed):
+
+```text
+Storage consumption = Number of vectors * Dimension * Size of column data type
+```
+
+Example for the [dbpedia dataset](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
+
+```text
+Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
+```
+
+The vector similarity index must be fully loaded from disk into main memory to perform searches.
+Similarly, the vector index is also constructed fully in memory and then saved to disk.
+
+Memory consumption required to load a vector index:
+
+```text
+Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
+Memory for in-memory graph (mg) = Number of vectors * hnsw_max_connections_per_layer * 2 * 4
+
+Memory consumption: mv + mg
+```
+
+Example for the [dbpedia dataset](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
+
+```text
+    Memory for vectors in the index (mv) = 1 million * 1536 * 2 (for BFloat16) = 3072 MB
+    Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
+
+    Minimum memory = 3072 + 512 = 3584 MB
+```
+
+Above formula does not account for additional memory required by vector similarity indexes to allocate runtime data structures like pre-allocated buffers and caches.
 
 ### Using a Vector Similarity Index {#using-a-vector-similarity-index}
 
@@ -350,45 +391,6 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 :::note
 A query run without rescoring (`vector_search_with_rescoring = 0`) and with parallel replicas enabled may fall back to rescoring.
 :::
-
-**Estimating Storage & Memory for Vectors**
-
-An embedding vector is a list of floating point numbers. Embedding vectors generated from language models typically have 100s and even 1000s of dimensions. Thus, a single vector value can need few KBs of space in disk and memory. We recommend users to plan ahead and estimate the storage and memory required for the vector column in the table and for the vector similarity index in ClickHouse.
-
-Storage required for vector column in the table (uncompressed) :
-
-```text
-    Number of vectors * dimension * size of column data type
-
-    e.g https://clickhouse.com/docs/getting-started/example-datasets/dbpedia-dataset
-
-        1 million * 1536 * 4 (for Float32)  = 6 GB
-
-```
-
-The vector similarity index in ClickHouse is completely loaded in memory to execute vector search in latency of milliseconds. Similarly, the vector index is also constructed fully in memory and then saved to disk.
-
-The minimum memory required for a vector index can be estimated using this formula :
-
-```text
-    Memory for vectors in the index (mv) = Number of vectors * dimension * size of quantized data type
-    Memory for in-memory graph (mg) = Number of vectors * M * 2 * 4
-        where M is the HNSW parameter "hnsw_max_connections_per_layer"
-
-    Minimum memory : mv + mg
-
-    e.g https://clickhouse.com/docs/getting-started/example-datasets/dbpedia-dataset
-
-        Memory for vectors in the index (mv) = 1 million * 1536 * 2 (for BFloat16) = 3072 MB
-        Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
-        Minimum memory = 3072 + 512 = 3584 MB
-```
-
-In addition, memory is required by the index for internal data structures, pre-allocated buffers and other caches.
-
-We recommend users to run the above memory formula and accordingly provision servers and test the performance of vector index build and vector similarity search on their datasets.
-
-The vector similarity index is persisted to disk like other skip indexes in ClickHouse. Disk storage for the vector index can be calculated using the same above formula for calculating memory for the index.
 
 ### Performance tuning {#performance-tuning}
 
