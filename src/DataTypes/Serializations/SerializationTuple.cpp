@@ -103,12 +103,12 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
             const auto & element_column = extractElementColumn(column, i);
             if (element_column.size() != new_size)
             {
+                restore_elements();
                 // This is not a logical error because it may work with
                 // user-supplied data.
                 if constexpr (throw_exception)
                     throw Exception(ErrorCodes::SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH,
                         "Cannot read a tuple because not all elements are present");
-                restore_elements();
                 return ReturnType(false);
             }
         }

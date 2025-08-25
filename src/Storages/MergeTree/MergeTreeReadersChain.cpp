@@ -189,7 +189,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         for (const auto & col : result.additional_columns)
             additional_columns.insert(col);
 
-        MergeTreeRangeReader::addDummyColumnWithRowCount(additional_columns, result.num_rows);
+        addDummyColumnWithRowCount(additional_columns, result.num_rows);
         merge_tree_reader->evaluateMissingDefaults(additional_columns, read_columns);
     }
 }
