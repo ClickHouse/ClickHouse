@@ -34,8 +34,6 @@ struct PaimonTableSchema
     Int32 highest_field_id;
     std::vector<String> partition_keys;
     std::vector<String> primary_keys;
-    // std::vector<String> bucket_keys;
-    // Int32 num_bucket;
     std::unordered_map<String, String> options;
     std::optional<String> comment;
     Int64 time_mills;

@@ -159,12 +159,6 @@ Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<In
     return shcema_json;
 }
 
-PaimonTableSchema PaimonTableClient::getTableSchema()
-{
-    auto scheme_json = getTableSchemaJSON(getLastTableSchemaInfo());
-    return PaimonTableSchema(scheme_json);
-}
-
 std::pair<Int64, String> PaimonTableClient::getLastTableSnapshotInfo()
 {
     auto configuration_ptr = configuration.lock();

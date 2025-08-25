@@ -61,8 +61,6 @@ public:
         return paimon_metadata && table_schema == paimon_metadata->table_schema && snapshot == paimon_metadata->snapshot;
     }
 
-    // std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, const String & data_path) const override;
-
     bool supportsUpdate() const override { return true; }
 
     bool update(const ContextPtr & local_context) override;

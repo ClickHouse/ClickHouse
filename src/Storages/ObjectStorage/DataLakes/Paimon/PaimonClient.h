@@ -243,11 +243,6 @@ struct PaimonManifestEntry
 
             getNullableValueFromRowByName(
                 creation_time, avro_deserializer, row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_CREATION_TIME}));
-            // {
-            //     auto field = avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_CREATION_TIME}), TypeIndex::Nullable);
-            //     if (!field.isNull())
-            //         creation_time = field.safeGet<DateTime64>();
-            // }
             getNullableValueFromRowByName(
                 delete_row_count, avro_deserializer, row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_DELETE_ROW_COUNT}));
             getNullableValueFromRowByName(
@@ -309,18 +304,15 @@ struct PaimonManifest
 class PaimonTableClient : private WithContext
 {
 public:
-    // using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     PaimonTableClient(
         ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, const DB::ContextPtr & context_);
 
     Poco::JSON::Object::Ptr getTableSchemaJSON(const std::pair<Int32, String> & schema_meta_info);
     std::pair<Int32, String> getLastTableSchemaInfo();
-    PaimonTableSchema getTableSchema();
     std::pair<Int64, String> getLastTableSnapshotInfo();
     PaimonSnapshot getSnapshot(const std::pair<Int64, String> & snapshot_meta_info);
     PaimonManifest getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name);
     std::vector<PaimonManifestFileMeta> getManifestMeta(String manifest_list_path);
-    // DataTypePtr convertFromPaimonDataType(const String & type);
 private:
     const ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationWeakPtr configuration;
