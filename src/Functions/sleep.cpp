@@ -176,7 +176,54 @@ public:
 
 REGISTER_FUNCTION(Sleep)
 {
-    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerBlock>>();
+    FunctionDocumentation::Description description = R"(
+Sleeps for the specified number of seconds. The function can operate in two modes:
+- `sleep` sleeps for the specified duration once per data block
+- `sleepEachRow` sleeps for the specified duration for each row in the data block
+
+This function is primarily intended for development, debugging, and demonstration purposes.
+For security reasons, the function can only be executed in the default user profile (with `allow_sleep` enabled).
+)";
+    FunctionDocumentation::Syntax syntax = "sleep(seconds)\nsleepEachRow(seconds)";
+    FunctionDocumentation::Arguments arguments = {
+        {"seconds", "The number of seconds to sleep. Must be a constant value.", {"Float", "UInt"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns 0.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic usage",
+            R"(
+SELECT sleep(2);
+            )",
+            R"(
+SELECT sleep(2)
+
+Query id: 8aa9943e-a686-45e1-8317-6e8e3a5596ac
+
+0 rows in set. Elapsed: 2.001 sec.
+            )"
+        },
+        {
+            "sleepEachRow usage",
+            R"(
+SELECT number, sleepEachRow(0.5) FROM system.numbers LIMIT 5;
+            )",
+            R"(
+┌─number─┬─sleepEachRow(0.5)─┐
+│      0 │                 0 │
+│      1 │                 0 │
+│      2 │                 0 │
+│      3 │                 0 │
+│      4 │                 0 │
+└────────┴───────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    
+    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerBlock>>(documentation);
     factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerRow>>();
 }
 
