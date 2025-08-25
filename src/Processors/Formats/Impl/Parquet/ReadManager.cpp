@@ -570,9 +570,9 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
                 n += 1;
                 ++i;
             }
-            funcs.push_back([this, _batch = std::move(batch)]
+            funcs.push_back([this, _batch = std::move(batch), _shutdown = shutdown]
             {
-                std::shared_lock shutdown_lock(*shutdown, std::try_to_lock);
+                std::shared_lock shutdown_lock(*_shutdown, std::try_to_lock);
                 if (!shutdown_lock.owns_lock())
                     return;
                 runBatchOfTasks(_batch);
