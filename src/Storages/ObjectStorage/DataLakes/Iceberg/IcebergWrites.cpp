@@ -306,18 +306,22 @@ FileNamesGenerator::Result FileNamesGenerator::generateMetadataName()
         compression_suffix = "." + compression_suffix;
     if (!use_uuid_in_metadata)
     {
-        return Result{
+        auto res = Result{
             .path_in_metadata = fmt::format("{}v{}{}.metadata.json", metadata_dir, initial_version, compression_suffix),
             .path_in_storage = fmt::format("{}v{}{}.metadata.json", storage_metadata_dir, initial_version, compression_suffix),
         };
+        initial_version++;
+        return res;
     }
     else
     {
         auto uuid_str = uuid_generator.createRandom().toString();
-        return Result{
+        auto res = Result{
             .path_in_metadata = fmt::format("{}v{}-{}{}.metadata.json", metadata_dir, initial_version, uuid_str, compression_suffix),
             .path_in_storage = fmt::format("{}v{}-{}{}.metadata.json", storage_metadata_dir, initial_version, uuid_str, compression_suffix),
         };
+        initial_version++;
+        return res;
     }
 }
 
@@ -368,7 +372,7 @@ void extendSchemaForPartitions(
         field->set(Iceberg::f_field_id, 1000 + i);
         field->set(Iceberg::f_name, partition_columns[i]);
         Int32 iter = 1;
-        field->set(Iceberg::f_type, getIcebergType(partition_types[i], iter));
+        field->set(Iceberg::f_type, getIcebergType(partition_types[i], iter).first);
         partition_fields->add(field);
     }
 
@@ -886,8 +890,8 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     Poco::JSON::Object::Ptr new_field = new Poco::JSON::Object;
     new_field->set(Iceberg::f_id, last_column_id + 1);
     new_field->set(Iceberg::f_name, column_name);
-    new_field->set(Iceberg::f_required, !type->isNullable());
-    new_field->set(Iceberg::f_type, new_type);
+    new_field->set(Iceberg::f_required, new_type.second);
+    new_field->set(Iceberg::f_type, new_type.first);
 
     current_schema->getArray(Iceberg::f_fields)->add(new_field);
     current_schema->set(Iceberg::f_schema_id, current_schema_id + 1);
@@ -923,15 +927,15 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
         auto current_field = schema_fields->getObject(i);
         if (current_field->getValue<String>(Iceberg::f_name) == column_name)
         {
-            if (!checkValidSchemaEvolution(current_field->get(Iceberg::f_type), new_type))
+            if (!checkValidSchemaEvolution(current_field->get(Iceberg::f_type), new_type.first))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow schema evolution to type {}", type->getPrettyName());
 
             auto old_type = deepCopy(current_field);
-            current_field->set(Iceberg::f_type, new_type);
+            current_field->set(Iceberg::f_type, new_type.first);
             if (!current_field->getValue<bool>(Iceberg::f_required) && !type->isNullable())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow change type from nullable to non-nullable {}", type->getPrettyName());
 
-            current_field->set(Iceberg::f_required, !type->isNullable());
+            current_field->set(Iceberg::f_required, new_type.second);
             break;
         }
     }
