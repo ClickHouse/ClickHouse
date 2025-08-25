@@ -1340,6 +1340,7 @@ void StatementGenerator::generateEngineDetails(
                 = {"min_rows_for_wide_part",
                    "min_bytes_for_wide_part",
                    "vertical_merge_algorithm_min_rows_to_activate",
+                   "vertical_merge_algorithm_min_bytes_to_activate",
                    "vertical_merge_algorithm_min_columns_to_activate",
                    "min_bytes_for_full_part_storage",
                    "min_rows_for_full_part_storage"};
