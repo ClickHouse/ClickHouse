@@ -352,6 +352,9 @@ class ToolSet:
     COMPILER_C = "clang-19"
     COMPILER_CPP = "clang++-19"
 
+    COMPILER_CACHE = "chcache"
+    COMPILER_CACHE_LEGACY = "sccache"
+
 
 class ArtifactNames:
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
