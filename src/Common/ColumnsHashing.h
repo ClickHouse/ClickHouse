@@ -415,6 +415,10 @@ struct HashMethodSerialized
 
     bool shouldUseBatchSerialize() const
     {
+#if defined(__aarch64__)
+        return true;
+#endif
+
         size_t l2_size = 256 * 1024;
 #if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
         if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
