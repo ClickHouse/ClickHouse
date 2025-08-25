@@ -67,7 +67,7 @@ jobs:
   CreateRelease:
     env:
       GH_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
-    runs-on: [self-hosted, release-maker]
+    runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
