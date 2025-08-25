@@ -591,8 +591,8 @@ namespace
 {
 /// Initialize bloom filter from tokens from the term dictionary
 GinSegmentDictionaryBloomFilter initializeBloomFilter(
-        const GinIndexStore::GinPostingsListBuilderContainer & postings_list_builder_container,
-        double bloom_filter_false_positive_rate)
+    const GinIndexStore::GinPostingsListBuilderContainer & postings_list_builder_container,
+    double bloom_filter_false_positive_rate)
 {
     auto number_of_unique_terms = postings_list_builder_container.size(); /// postings_list_builder_container is a dictionary
     const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
@@ -626,7 +626,7 @@ void GinIndexStore::writeSegment()
     GinSegmentDictionaryBloomFilter bloom_filter = initializeBloomFilter(current_postings_list_builder_container, bloom_filter_false_positive_rate);
 
     /// Sort token-postings list pairs since all tokens have to be added in FST in sorted order
-    std::sort(token_postings_list_pairs.begin(), token_postings_list_pairs.end(),
+    std::ranges::sort(token_postings_list_pairs,
                     [](const TokenPostingsBuilderPair & x, const TokenPostingsBuilderPair & y)
                     {
                         return x.first < y.first;
@@ -867,7 +867,7 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
 {
     chassert(postings_file_stream != nullptr);
 
-    GinSegmentedPostingsListContainer container;
+    GinSegmentedPostingsListContainer segmented_postings_list_container;
     for (auto const & segment_dictionary : store->segment_dictionaries)
     {
         auto segment_id = segment_dictionary.first;
@@ -878,7 +878,7 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
 
             if (segment_dictionary.second->fst == nullptr)
             {
-                /// Segment dictionary is not loaded, first check the term in bloom filter
+                /// Segment dictionary is not loaded, first check if the term is in bloom filter
                 if (segment_dictionary.second->bloom_filter && !segment_dictionary.second->bloom_filter->contains(term))
                     continue;
 
@@ -899,12 +899,12 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
             segment_id,
             store->storage->getPartDirectory());
 
-        // Set postings file pointer for reading postings list
+        /// Set postings file pointer for reading postings list
         postings_file_stream->seek(segment_dictionary.second->postings_start_offset + fst_output.offset, SEEK_SET);
 
-        // Read posting list
+        /// Read posting list
         auto postings_list = GinPostingsListBuilder::deserialize(*postings_file_stream);
-        container[segment_id] = postings_list;
+        segmented_postings_list_container[segment_id] = postings_list;
 
         LOG_TRACE(
             logger,
@@ -915,7 +915,7 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
             store->storage->getPartDirectory(),
             ReadableSize(postings_file_stream->count() - segment_dictionary.second->postings_start_offset));
     }
-    return container;
+    return segmented_postings_list_container;
 }
 
 GinPostingsListsCachePtr GinIndexStoreDeserializer::createPostingsListsCacheFromTerms(const std::vector<String> & terms)
@@ -923,12 +923,12 @@ GinPostingsListsCachePtr GinIndexStoreDeserializer::createPostingsListsCacheFrom
     auto postings_lists_cache = std::make_shared<GinPostingsListsCache>();
     for (const auto & term : terms)
     {
-        // Make sure don't read for duplicated terms
+        /// Make sure don't read for duplicated terms
         if (postings_lists_cache->contains(term))
             continue;
 
-        auto container = readSegmentedPostingsLists(term);
-        (*postings_lists_cache)[term] = container;
+        auto segmented_postings_list_container = readSegmentedPostingsLists(term);
+        (*postings_lists_cache)[term] = segmented_postings_list_container;
     }
     return postings_lists_cache;
 }

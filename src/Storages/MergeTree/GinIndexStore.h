@@ -298,7 +298,7 @@ private:
     /// Initialize segment ID by either reading from file .gin_sid or setting to default value
     void initSegmentId();
 
-    /// Stores segment id into disk
+    /// Stores segment ID to disk
     void writeSegmentId();
 
     /// Get a range of next available segment IDs
@@ -328,21 +328,21 @@ private:
     GinIndexSegment current_segment;
     UInt64 current_size_bytes = 0;
 
-    const UInt64 segment_digestion_threshold_bytes = 0;
-    const double bloom_filter_false_positive_rate = 0.0;
-
     /// File streams for segment, bloom filter, dictionaries and postings lists
     std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> bloom_filter_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> dict_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> postings_file_stream;
 
+    const UInt64 segment_digestion_threshold_bytes = 0;
+    const double bloom_filter_false_positive_rate = 0.0;
+
     LoggerPtr logger = getLogger("TextIndex");
 };
 
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
 
-/// Container for postings lists for each segment
+/// Map of <segment_id, postings_list>
 using GinSegmentedPostingsListContainer = std::unordered_map<UInt32, GinPostingsListPtr>;
 
 /// Postings lists and terms built from query string
