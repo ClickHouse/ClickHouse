@@ -207,12 +207,10 @@ UInt64 GinIndexPostingListRoaringZstdSerialization::serialize(WriteBuffer & buff
 
 GinPostingsListPtr GinIndexPostingListRoaringZstdSerialization::deserialize(ReadBuffer & buffer)
 {
-    /**
-     * Header value maps into following states:
-     * The lowest bit indicates if values are stored as an array or Roaring bitmap
-     * In case of array container, the rest of the bits is the number of entries in the array.
-     * In case of Roaring bitmap, the second lowest bit indicates if Roaring bitmap is compressed or uncompressed, the rest of the bits is the uncompressed size.
-     */
+    /// Header value maps into following states:
+    /// The lowest bit indicates if values are stored as an array or Roaring bitmap
+    /// In case of array container, the rest of the bits is the number of entries in the array.
+    /// In case of Roaring bitmap, the second lowest bit indicates if Roaring bitmap is compressed or uncompressed, the rest of the bits is the uncompressed size.
     UInt64 header = 0;
     readVarUInt(header, buffer);
 
@@ -299,7 +297,8 @@ GinPostingsListPtr GinPostingsListBuilder::deserialize(ReadBuffer & buffer)
         return GinIndexPostingListDeltaPforSerialization::deserialize(buffer);
 #else
         throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED, "Text index: Posting list is compressed by Delta and FastPfor, but library is disabled.");
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Text index: Posting list is compressed by Delta and FastPfor, but library is disabled.");
 #endif
     }
 
@@ -393,18 +392,6 @@ bool GinIndexStore::exists() const
     return storage->existsFile(segment_id_file_name);
 }
 
-UInt32 GinIndexStore::getNextSegmentIdRange(size_t n)
-{
-    std::lock_guard guard(mutex);
-
-    if (next_available_segment_id == 0)
-        initSegmentId();
-
-    UInt32 segment_id = next_available_segment_id;
-    next_available_segment_id += n;
-    return segment_id;
-}
-
 UInt32 GinIndexStore::getNextRowIdRange(size_t n)
 {
     UInt32 result = current_segment.next_row_id;
@@ -414,11 +401,19 @@ UInt32 GinIndexStore::getNextRowIdRange(size_t n)
 
 UInt32 GinIndexStore::getNextSegmentId()
 {
-    return getNextSegmentIdRange(1);
+    std::lock_guard guard(mutex);
+
+    if (next_available_segment_id == 0)
+        initSegmentId();
+
+    UInt32 segment_id = next_available_segment_id;
+    ++next_available_segment_id;
+    return segment_id;
 }
 
 namespace
 {
+
 GinIndexStore::Format getFormatVersion(uint8_t version)
 {
     using FormatAsInt = std::underlying_type_t<GinIndexStore::Format>;
@@ -430,6 +425,7 @@ GinIndexStore::Format getFormatVersion(uint8_t version)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Text Index: segment ID file contains an unsupported version '{}'", version);
     }
 }
+
 }
 
 UInt32 GinIndexStore::getNumOfSegments()
@@ -589,6 +585,7 @@ void GinIndexStore::writeSegmentId()
 
 namespace
 {
+
 /// Initialize bloom filter from tokens from the term dictionary
 GinDictionaryBloomFilter initializeBloomFilter(
     const GinIndexStore::GinPostingsListBuilderContainer & postings_list_builder_container,
@@ -601,6 +598,7 @@ GinDictionaryBloomFilter initializeBloomFilter(
         bloom_filter.add(token);
     return bloom_filter;
 }
+
 }
 
 void GinIndexStore::writeSegment()
@@ -785,6 +783,7 @@ void GinIndexStoreDeserializer::prepareSegmentForReading(UInt32 segment_id)
         store->storage->getPartDirectory());
 
     const GinDictionaryPtr & dictionary = it->second;
+
     switch (auto version = store->getVersion(); version)
     {
         case GinIndexStore::Format::v1: {
@@ -821,6 +820,7 @@ void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinDictionary 
         store->storage->getPartDirectory());
 
     dictionary.fst = std::make_unique<FST::FiniteStateTransducer>();
+
     switch (auto version = store->getVersion(); version)
     {
         case GinIndexStore::Format::v1: {

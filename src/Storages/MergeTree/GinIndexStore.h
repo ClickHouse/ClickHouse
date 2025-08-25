@@ -301,9 +301,6 @@ private:
     /// Stores segment ID to disk
     void writeSegmentId();
 
-    /// Get a range of next available segment IDs
-    UInt32 getNextSegmentIdRange(size_t n);
-
     const String name;
     const DataPartStoragePtr storage;
     MutableDataPartStoragePtr data_part_storage_builder;
