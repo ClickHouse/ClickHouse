@@ -28,7 +28,7 @@
 /// There are 4 types of index files in a store:
 ///  1. Segment ID file(.gin_sid): it contains one byte for version followed by the next available segment ID.
 ///  2. Segment Metadata file(.gin_seg): it contains index segment metadata.
-///     - Its file format is an array of GinIndexSegment as defined in this file.
+///     - Its file format is an array of GinSegmentDescriptor as defined in this file.
 ///     - postings_start_offset points to the file(.gin_post) starting position for the segment's postings list.
 ///     - dict_start_offset points to the file(.gin_dict) starting position for the segment's dictionaries.
 ///  3. Dictionary file(.gin_dict): it contains dictionaries.
@@ -122,7 +122,7 @@ private:
 using GinPostingsListBuilderPtr = std::shared_ptr<GinPostingsListBuilder>;
 
 /// Gin index segment descriptor, which contains:
-struct GinIndexSegment
+struct GinSegmentDescriptor
 {
     ///  Segment ID retrieved from next available ID from file .gin_sid
     UInt32 segment_id = 0;
@@ -325,7 +325,7 @@ private:
     GinPostingsListBuilderContainer current_postings_list_builder_container;
 
     /// For the segmentation of Gin indexes
-    GinIndexSegment current_segment;
+    GinSegmentDescriptor current_segment;
     UInt64 current_size_bytes = 0;
 
     /// File streams for segment, bloom filter, dictionaries and postings lists

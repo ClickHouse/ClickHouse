@@ -612,8 +612,8 @@ void GinIndexStore::writeSegment()
         logger, "Start writing text index '{}' segment id {} of part '{}'", name, current_segment.segment_id, storage->getPartDirectory());
     Statistics before_write_segment_stats = getStatistics();
 
-    /// Write segment
-    metadata_file_stream->write(reinterpret_cast<char *>(&current_segment), sizeof(GinIndexSegment));
+    /// Write segment descriptor
+    metadata_file_stream->write(reinterpret_cast<char *>(&current_segment), sizeof(GinSegmentDescriptor));
 
     using TokenPostingsBuilderPair = std::pair<std::string_view, GinPostingsListBuilderPtr>;
     using TokenPostingsBuilderPairs = std::vector<TokenPostingsBuilderPair>;
@@ -744,15 +744,15 @@ void GinIndexStoreDeserializer::readSegments()
 
     if (store->getVersion() == GinIndexStore::Format::v1)
     {
-        std::vector<GinIndexSegment> segments(num_segments);
-        metadata_file_stream->readStrict(reinterpret_cast<char *>(segments.data()), num_segments * sizeof(GinIndexSegment));
+        std::vector<GinSegmentDescriptor> segment_descriptors(num_segments);
+        metadata_file_stream->readStrict(reinterpret_cast<char *>(segment_descriptors.data()), num_segments * sizeof(GinSegmentDescriptor));
         for (UInt32 i = 0; i < num_segments; ++i)
         {
             auto dictionary = std::make_shared<GinDictionary>();
-            dictionary->postings_start_offset = segments[i].postings_start_offset;
-            dictionary->dict_start_offset = segments[i].dict_start_offset;
-            dictionary->bloom_filter_start_offset = segments[i].bloom_filter_start_offset;
-            store->segment_dictionaries[segments[i].segment_id] = dictionary;
+            dictionary->postings_start_offset = segment_descriptors[i].postings_start_offset;
+            dictionary->dict_start_offset = segment_descriptors[i].dict_start_offset;
+            dictionary->bloom_filter_start_offset = segment_descriptors[i].bloom_filter_start_offset;
+            store->segment_dictionaries[segment_descriptors[i].segment_id] = dictionary;
         }
     }
 
