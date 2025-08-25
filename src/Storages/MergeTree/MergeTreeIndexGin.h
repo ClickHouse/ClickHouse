@@ -66,7 +66,7 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
-    bool mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule, PostingsCacheForStore & cache_store) const;
+    bool mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule, GinPostingsListsCacheForStore & postings_lists_cache_for_store) const;
 
 private:
     struct KeyTuplePositionMapping
@@ -101,16 +101,16 @@ private:
         };
 
         RPNElement( /// NOLINT
-            Function function_ = FUNCTION_UNKNOWN, std::unique_ptr<GinQueryString> && gin_query_string_ = nullptr)
-                : function(function_), gin_query_string(std::move(gin_query_string_)) {}
+            Function function_ = FUNCTION_UNKNOWN, std::unique_ptr<GinQueryString> && query_string_ = nullptr)
+                : function(function_), query_string(std::move(query_string_)) {}
 
         Function function = FUNCTION_UNKNOWN;
 
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS
-        std::unique_ptr<GinQueryString> gin_query_string;
+        std::unique_ptr<GinQueryString> query_string;
 
         /// For FUNCTION_IN and FUNCTION_NOT_IN
-        std::vector<std::vector<GinQueryString>> gin_query_strings_for_set;
+        std::vector<std::vector<GinQueryString>> query_strings_for_set;
 
         /// For FUNCTION_IN and FUNCTION_NOT_IN
         std::vector<size_t> set_key_position;

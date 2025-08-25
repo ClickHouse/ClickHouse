@@ -88,12 +88,12 @@ namespace
 {
 
 /// Helper method for checking if postings list cache is empty
-bool hasEmptyPostingsList(const GinPostingsCache & postings_cache)
+bool hasEmptyPostingsList(const GinPostingsListsCache & postings_lists_cache)
 {
-    if (postings_cache.empty())
+    if (postings_lists_cache.empty())
         return true;
 
-    for (const auto & term_postings : postings_cache)
+    for (const auto & term_postings : postings_lists_cache)
     {
         const GinSegmentedPostingsListContainer & container = term_postings.second;
         if (container.empty())
@@ -103,13 +103,13 @@ bool hasEmptyPostingsList(const GinPostingsCache & postings_cache)
 }
 
 /// Helper method to check if all terms in postings list cache has intersection with given row ID range
-bool matchAllInRange(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
+bool matchAllInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
 {
     /// Check for each term
     GinIndexPostingsList range_bitset;
     range_bitset.addRange(range_start, range_end + 1);
 
-    for (const auto & term_postings : postings_cache)
+    for (const auto & term_postings : postings_lists_cache)
     {
         /// Check if it is in the same segment by searching for segment_id
         const GinSegmentedPostingsListContainer & container = term_postings.second;
@@ -131,11 +131,11 @@ bool matchAllInRange(const GinPostingsCache & postings_cache, UInt32 segment_id,
 }
 
 /// Helper method to check if any term in postings list cache has intersection with given row ID range
-bool matchAnyInRange(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
+bool matchAnyInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
 {
     /// Check for each term
     GinIndexPostingsList postings_bitset;
-    for (const auto & term_postings : postings_cache)
+    for (const auto & term_postings : postings_lists_cache)
     {
         /// Check if it is in the same segment by searching for segment_id
         const GinSegmentedPostingsListContainer & container = term_postings.second;
@@ -150,13 +150,13 @@ bool matchAnyInRange(const GinPostingsCache & postings_cache, UInt32 segment_id,
 
 
 template <GinSearchMode search_mode>
-bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const GinPostingsCache & postings_cache)
+bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const GinPostingsListsCache & postings_lists_cache)
 {
-    if (hasEmptyPostingsList(postings_cache))
+    if (hasEmptyPostingsList(postings_lists_cache))
         switch (search_mode)
         {
             case GinSearchMode::Any: {
-                if (postings_cache.size() == 1)
+                if (postings_lists_cache.size() == 1)
                     /// Definitely no match when there is a single term in ANY search mode and the term does not exists in FST.
                     return false;
                 break;
@@ -171,12 +171,12 @@ bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const Gin
         switch (search_mode)
         {
             case GinSearchMode::Any: {
-                if (matchAnyInRange(postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end))
+                if (matchAnyInRange(postings_lists_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end))
                     return true;
                 break;
             }
             case GinSearchMode::All: {
-                if (matchAllInRange(postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end))
+                if (matchAllInRange(postings_lists_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end))
                     return true;
                 break;
             }
@@ -187,25 +187,25 @@ bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const Gin
 
 }
 
-bool GinFilter::contains(const GinQueryString & gin_query_string, PostingsCacheForStore & cache_store, GinSearchMode search_mode) const
+bool GinFilter::contains(const GinQueryString & query_string, GinPostingsListsCacheForStore & postings_lists_cache_for_store, GinSearchMode search_mode) const
 {
-    if (gin_query_string.getTerms().empty())
+    if (query_string.getTerms().empty())
         return true;
 
-    GinPostingsCachePtr postings_cache = cache_store.getPostings(gin_query_string.getQueryString());
-    if (postings_cache == nullptr)
+    GinPostingsListsCachePtr postings_lists_cache = postings_lists_cache_for_store.getPostingsLists(query_string.getQueryString());
+    if (postings_lists_cache == nullptr)
     {
-        GinIndexStoreDeserializer reader(cache_store.store);
-        postings_cache = reader.createPostingsCacheFromTerms(gin_query_string.getTerms());
-        cache_store.cache[gin_query_string.getQueryString()] = postings_cache;
+        GinIndexStoreDeserializer reader(postings_lists_cache_for_store.store);
+        postings_lists_cache = reader.createPostingsCacheFromTerms(query_string.getTerms());
+        postings_lists_cache_for_store.cache[query_string.getQueryString()] = postings_lists_cache;
     }
 
     switch (search_mode)
     {
         case GinSearchMode::Any:
-            return matchInRange<GinSearchMode::Any>(rowid_ranges, *postings_cache);
+            return matchInRange<GinSearchMode::Any>(rowid_ranges, *postings_lists_cache);
         case GinSearchMode::All:
-            return matchInRange<GinSearchMode::All>(rowid_ranges, *postings_cache);
+            return matchInRange<GinSearchMode::All>(rowid_ranges, *postings_lists_cache);
     }
 }
 

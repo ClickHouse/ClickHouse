@@ -345,8 +345,8 @@ using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
 using GinSegmentedPostingsListContainer = std::unordered_map<UInt32, GinIndexPostingsListPtr>;
 
 /// Postings lists and terms built from query string
-using GinPostingsCache = std::unordered_map<String, GinSegmentedPostingsListContainer>;
-using GinPostingsCachePtr = std::shared_ptr<GinPostingsCache>;
+using GinPostingsListsCache = std::unordered_map<String, GinSegmentedPostingsListContainer>;
+using GinPostingsListsCachePtr = std::shared_ptr<GinPostingsListsCache>;
 
 /// Gin index store reader which helps to read segments, dictionaries and postings list
 class GinIndexStoreDeserializer : private boost::noncopyable
@@ -370,7 +370,7 @@ public:
     GinSegmentedPostingsListContainer readSegmentedPostingsLists(const String & term);
 
     /// Read postings lists for terms (which are created by tokenzing query string)
-    GinPostingsCachePtr createPostingsCacheFromTerms(const std::vector<String> & terms);
+    GinPostingsListsCachePtr createPostingsCacheFromTerms(const std::vector<String> & terms);
 
 private:
     /// Initialize gin index files
@@ -388,20 +388,20 @@ private:
     LoggerPtr logger = getLogger("TextIndex");
 };
 
-/// PostingsCacheForStore contains postings lists from 'store' which are retrieved from Gin index files for the terms in query strings
-/// GinPostingsCache is per query string (one query can have multiple query strings): when skipping index (row ID ranges) is used for the part during the
+/// GinPostingsListsCacheForStore contains postings lists from 'store' which are retrieved from Gin index files for the terms in query strings
+/// GinPostingsListsCache is per query string (one query can have multiple query strings): when skipping index (row ID ranges) is used for the part during the
 /// query, the postings cache is created and associated with the store where postings lists are read
 /// for the tokenized query string. The postings caches are released automatically when the query is done.
-struct PostingsCacheForStore
+struct GinPostingsListsCacheForStore
 {
     /// Which store to retrieve postings lists
     GinIndexStorePtr store;
 
-    /// map of <query, postings lists>
-    std::unordered_map<String, GinPostingsCachePtr> cache;
+    /// Map of <query, postings lists>
+    std::unordered_map<String, GinPostingsListsCachePtr> cache;
 
     /// Get postings lists for query string, return nullptr if not found
-    GinPostingsCachePtr getPostings(const String & query_string) const;
+    GinPostingsListsCachePtr getPostingsLists(const String & query_string) const;
 };
 
 /// A singleton for storing GinIndexStores

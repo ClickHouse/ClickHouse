@@ -90,7 +90,7 @@ public:
         /// For split tokenizer
         std::optional<std::vector<String>> separators;
 
-        bool operator<=>(const Parameters& other) const = default;
+        bool operator<=>(const Parameters & other) const = default;
     };
 
     GinFilter() = default;
@@ -107,7 +107,7 @@ public:
 
     /// Check if the filter (built from query string) contains any rows in given filter by using
     /// given postings list cache
-    bool contains(const GinQueryString & gin_query_string, PostingsCacheForStore & cache_store, GinSearchMode mode = GinSearchMode::All) const;
+    bool contains(const GinQueryString & query_string, GinPostingsListsCacheForStore & postings_lists_cache_for_store, GinSearchMode mode = GinSearchMode::All) const;
 
     const GinSegmentWithRowIdRangeVector & getFilter() const { return rowid_ranges; }
     GinSegmentWithRowIdRangeVector & getFilter() { return rowid_ranges; }

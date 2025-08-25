@@ -918,22 +918,22 @@ GinSegmentedPostingsListContainer GinIndexStoreDeserializer::readSegmentedPostin
     return container;
 }
 
-GinPostingsCachePtr GinIndexStoreDeserializer::createPostingsCacheFromTerms(const std::vector<String> & terms)
+GinPostingsListsCachePtr GinIndexStoreDeserializer::createPostingsCacheFromTerms(const std::vector<String> & terms)
 {
-    auto postings_cache = std::make_shared<GinPostingsCache>();
+    auto postings_lists_cache = std::make_shared<GinPostingsListsCache>();
     for (const auto & term : terms)
     {
         // Make sure don't read for duplicated terms
-        if (postings_cache->contains(term))
+        if (postings_lists_cache->contains(term))
             continue;
 
         auto container = readSegmentedPostingsLists(term);
-        (*postings_cache)[term] = container;
+        (*postings_lists_cache)[term] = container;
     }
-    return postings_cache;
+    return postings_lists_cache;
 }
 
-GinPostingsCachePtr PostingsCacheForStore::getPostings(const String & query_string) const
+GinPostingsListsCachePtr GinPostingsListsCacheForStore::getPostingsLists(const String & query_string) const
 {
     auto it = cache.find(query_string);
     if (it == cache.end())
