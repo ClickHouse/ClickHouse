@@ -29,7 +29,7 @@ def ensure_claude_API_key(info: Info) -> bool:
     try:
         api_key = Secret.Config(
             name="ANTHROPIC_API_KEY",
-            type=Secret.Type.GH_SECRET,
+            type=Secret.Type.AWS_SSM_VAR,
         ).get_value()
         os.environ["ANTHROPIC_API_KEY"] = api_key
         print("ANTHROPIC_API_KEY secret found and set as environment variable")
