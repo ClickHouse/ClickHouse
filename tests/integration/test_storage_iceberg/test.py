@@ -2564,13 +2564,20 @@ def test_relevant_iceberg_schema_chosen(started_cluster, storage_type):
     instance.query(f"SELECT * FROM {table_creation_expression} WHERE b >= 2", settings={"input_format_parquet_filter_push_down": 0, "input_format_parquet_bloom_filter_push_down": 0})
 
 
-def test_writes_create_table_with_empty_data(started_cluster):
+def test_writes_create_table_bugs(started_cluster):
     instance = started_cluster.instances["node1"]
     TABLE_NAME = "test_relevant_iceberg_schema_chosen_" + get_uuid_str()
+    TABLE_NAME_1 = "test_relevant_iceberg_schema_chosen_" + get_uuid_str()
     instance.query(
         f"CREATE TABLE {TABLE_NAME} (c0 Int) ENGINE = IcebergLocal('/iceberg_data/default/{TABLE_NAME}/', 'CSV') AS (SELECT 1 OFFSET 1 ROW);",
         settings={"allow_experimental_insert_into_iceberg": 1}
     )
+
+    instance.query(
+        f"CREATE TABLE {TABLE_NAME_1} (c0 Int) ENGINE = IcebergLocal('/iceberg_data/default/{TABLE_NAME_1}/', 'CSV') PARTITION BY (icebergTruncate(c0));",
+        settings={"allow_experimental_insert_into_iceberg": 1}
+    )
+
 
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("storage_type", ["local"])
