@@ -59,6 +59,13 @@ class JobConfigs:
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
     )
+    claude_job = Job.Config(
+        name=JobNames.CLAUDE,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command="python3 ./ci/jobs/claude_job.py",
+        run_in_docker="clickhouse/claude",
+        requires=[JobNames.STYLE_CHECK],
+    )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.BUILDER_AMD,
@@ -963,7 +970,7 @@ class JobConfigs:
         ),
     )
     docs_job = Job.Config(
-        name=JobNames.Docs,
+        name=JobNames.DOCS,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/docs_job.py",
         digest_config=Job.CacheDigestConfig(
@@ -976,7 +983,7 @@ class JobConfigs:
         ),
         run_in_docker="clickhouse/docs-builder",
         requires=[JobNames.STYLE_CHECK, ArtifactNames.CH_ARM_BINARY],
-    )
+    ),
     docker_sever = Job.Config(
         name=JobNames.DOCKER_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,

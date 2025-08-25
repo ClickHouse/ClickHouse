@@ -81,6 +81,12 @@ SECRETS = [
 
 DOCKERS = [
     Docker.Config(
+        name="clickhouse/claude",
+        path=".ci/docker/claude",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[]
+    ),    
+    Docker.Config(
         name="clickhouse/style-test",
         path="./ci/docker/style-test",
         platforms=Docker.Platforms.arm_amd,
@@ -318,6 +324,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
 class JobNames:
     DOCKER_BUILDS_ARM = "Dockers build (arm)"
     DOCKER_BUILDS_AMD = "Dockers build (amd)"
+    CLAUDE = "Generate descriptions"
     STYLE_CHECK = "Style check"
     FAST_TEST = "Fast test"
     BUILD = "Build"
@@ -329,7 +336,7 @@ class JobNames:
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
-    Docs = "Docs check"
+    DOCS = "Docs check"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"

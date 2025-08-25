@@ -41,6 +41,7 @@ def ensure_claude_API_key() -> bool:
 
 def ensure_claude_code_cli() -> bool:
     try:
+        Shell.run("node --version", verbose=True)
         exit_code = Shell.run("command -v claude", verbose=False)
         if exit_code == 0:
             claude_path = Shell.get_output("command -v claude").strip()
@@ -49,17 +50,8 @@ def ensure_claude_code_cli() -> bool:
         else:
             raise Exception("claude command not found")
     except:
-        print("claude-code not found, installing...")
-        try:
-            Shell.check("npm install -g @anthropic-ai/claude-code", verbose=True)
-            exit_code = Shell.run("command -v claude").strip()
-            if exit_code == 1:
-                return False
-            print("claude-code CLI installed successfully")
-            return True
-        except:
-            print("Error: Could not install claude-code CLI")
-            return False
+        print("claude-code not found")
+        return False
 
 def get_human_description_changelog(pr_body: str) -> Tuple[str, str]:
     if not pr_body:
@@ -168,4 +160,3 @@ if __name__ == "__main__":
             comment_tags_and_bodies={"llm_generated_description_changelog": f"{comment_body}"},
             only_update=False
         )
-
