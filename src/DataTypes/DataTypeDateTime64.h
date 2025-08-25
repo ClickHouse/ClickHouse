@@ -4,6 +4,8 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 
+class DateLUTImpl;
+
 namespace DB
 {
 
@@ -28,7 +30,7 @@ public:
     const char * getFamilyName() const override { return family_name; }
     std::string doGetName() const override;
     TypeIndex getTypeId() const override { return type_id; }
-    void updateHashImpl(SipHash & hash) const override;
+
     bool equals(const IDataType & rhs) const override;
 
     bool canBePromoted() const override { return false; }

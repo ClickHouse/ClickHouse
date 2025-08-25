@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IParserBase.h>
+#include <Parsers/ExpressionElementParsers.h>
 
 
 namespace DB

@@ -63,8 +63,6 @@ public:
         /// Function arrayJoin. Specially separated because it changes the number of rows.
         ARRAY_JOIN,
         FUNCTION,
-        /// Placeholder node for correlated column
-        PLACEHOLDER,
     };
 
     struct Node;
@@ -96,7 +94,7 @@ public:
         /// If result of this not is deterministic. Checks only this node, not a subtree.
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
-        UInt64 getHash() const;
+        size_t getHash() const;
         void updateHash(SipHash & hash_state) const;
     };
 
@@ -117,7 +115,7 @@ public:
     ActionsDAG & operator=(ActionsDAG &&) = default;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
     explicit ActionsDAG(const NamesAndTypesList & inputs_);
-    explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_const_columns = true);
+    explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_);
 
     const Nodes & getNodes() const { return nodes; }
     static Nodes detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
@@ -156,7 +154,6 @@ public:
         NodeRawConstPtrs children,
         std::string result_name);
     const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name);
-    const Node & addPlaceholder(std::string name, DataTypePtr type);
 
     /// Find first column by name in output nodes. This search is linear.
     const Node & findInOutputs(const std::string & name) const;
@@ -259,10 +256,9 @@ public:
         const std::unordered_map<const Node *, const Node *> & new_inputs,
         const NodeRawConstPtrs & required_outputs);
 
-    bool hasCorrelatedColumns() const noexcept;
-    bool hasArrayJoin() const noexcept;
+    bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
-    bool trivial() const noexcept; /// If actions has no functions or array join.
+    bool trivial() const; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
     bool hasNonDeterministic() const;
 
@@ -289,9 +285,6 @@ public:
         const NodeRawConstPtrs & outputs,
         size_t input_rows_count,
         bool throw_on_error);
-
-    /// Replace all PLACEHOLDER nodes with INPUT nodes
-    void decorrelate() noexcept;
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
@@ -369,7 +362,6 @@ public:
       */
     bool isFilterAlwaysFalseForDefaultValueInputs(const std::string & filter_name, const Block & input_stream_header) const;
 
-    struct ActionsForFilterPushDown;
     /// Create actions which may calculate part of filter using only available_inputs.
     /// If nothing may be calculated, returns nullptr.
     /// Otherwise, return actions which inputs are from available_inputs.
@@ -387,7 +379,7 @@ public:
     /// columns will be transformed like `x, y, z` -> `z > 0, z, x, y` -(remove filter)-> `z, x, y`.
     /// To avoid it, add inputs from `all_inputs` list,
     /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
-    std::optional<ActionsForFilterPushDown> splitActionsForFilterPushDown(
+    std::optional<ActionsDAG> splitActionsForFilterPushDown(
         const std::string & filter_name,
         bool removes_filter,
         const Names & available_inputs,
@@ -476,7 +468,7 @@ private:
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+    static std::optional<ActionsDAG> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
 
     void removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
 };
@@ -486,13 +478,6 @@ struct ActionsDAG::SplitResult
     ActionsDAG first;
     ActionsDAG second;
     std::unordered_map<const Node *, const Node *> split_nodes_mapping;
-};
-
-struct ActionsDAG::ActionsForFilterPushDown
-{
-    ActionsDAG dag;
-    size_t filter_pos;
-    bool remove_filter;
 };
 
 struct ActionsDAG::ActionsForJOINFilterPushDown

@@ -24,7 +24,6 @@ struct DataTypeValidationSettings
     bool validate_nested_types = true;
     bool enable_dynamic_type = true;
     bool enable_json_type = true;
-    bool enable_time_time64_type = true;
 };
 
 void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings & settings);
