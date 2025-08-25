@@ -71,7 +71,8 @@ void registerOutputFormatPostgreSQLWire(FormatFactory & factory)
         "PostgreSQLWire",
         [](WriteBuffer & buf,
            const Block & sample,
-           const FormatSettings & settings) { return std::make_shared<PostgreSQLOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
+           const FormatSettings & settings,
+           FormatFilterInfoPtr /*format_filter_info*/) { return std::make_shared<PostgreSQLOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
     factory.markOutputFormatNotTTYFriendly("PostgreSQLWire");
     factory.setContentType("PostgreSQLWire", "application/octet-stream");
 }

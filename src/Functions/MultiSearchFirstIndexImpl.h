@@ -58,7 +58,7 @@ struct MultiSearchFirstIndexImpl
             for (size_t j = 0; j < input_rows_count; ++j)
             {
                 const auto * haystack = &haystack_data[prev_haystack_offset];
-                const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset - 1;
+                const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset;
                 /// hasMoreToSearch traverse needles in increasing order
                 if (iteration == 0 || res[j] == 0)
                     res[j] = searcher.searchOneFirstIndex(haystack, haystack_end);
@@ -104,7 +104,7 @@ struct MultiSearchFirstIndexImpl
             auto searcher = Impl::createMultiSearcherInBigHaystack(needles); // sub-optimal
 
             const auto * const haystack = &haystack_data[prev_haystack_offset];
-            const auto * haystack_end = haystack + haystack_offsets[i] - prev_haystack_offset - 1;
+            const auto * haystack_end = haystack + haystack_offsets[i] - prev_haystack_offset;
 
             size_t iteration = 0;
             while (searcher.hasMoreToSearch())

@@ -11,7 +11,7 @@ set -e
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_lwu_block_number SYNC;
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
     SET insert_keeper_fault_injection_probability = 0.0;
 
     CREATE TABLE t_lwu_block_number (id UInt64,s String)
@@ -41,7 +41,7 @@ $CLICKHOUSE_CLIENT --query "
 sleep 1.0
 
 $CLICKHOUSE_CLIENT --query "
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
     UPDATE t_lwu_block_number SET s = 'bar' WHERE id = 2;
     OPTIMIZE TABLE t_lwu_block_number PARTITION ID 'patch-8feeedf7588c601fd7f38da7fe68712b-all' FINAL;
 "

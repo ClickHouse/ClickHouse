@@ -184,7 +184,6 @@ namespace Setting
     extern const SettingsBool alter_move_to_space_execute_async;
     extern const SettingsBool alter_partition_verbose_result;
     extern const SettingsBool apply_mutations_on_fly;
-    extern const SettingsBool allow_experimental_vector_similarity_index;
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool materialize_ttl_after_modify;
@@ -365,6 +364,17 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Invalid sampling column type in storage parameters: {}. Must be one unsigned integer type",
             sampling_column_type->getName());
+}
+
+static bool hasColumnsWithDynamicSubcolumns(const Block & block)
+{
+    for (const auto & column : block.getColumnsWithTypeAndName())
+    {
+        if (column.type->hasDynamicSubcolumns())
+            return true;
+    }
+
+    return false;
 }
 
 
@@ -1014,7 +1024,6 @@ void MergeTreeData::checkProperties(
     }
 
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
-    ///     SET enable_vector_similarity_index = 1;
     ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;
     ///     INSERT INTO tab SELECT number, [toFloat32(number), 0.] FROM numbers(10000);
     ///     WITH [1., 0.] AS reference_vec SELECT id, L2Distance(vec, reference_vec) FROM tab PREWHERE toLowCardinality(10) ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 100;
@@ -2352,9 +2361,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     resetObjectColumnsFromActiveParts(part_lock);
     resetSerializationHints(part_lock);
-    are_columns_and_secondary_indices_sizes_calculated = false;
+
     if (!(*settings)[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
-        calculateColumnAndSecondaryIndexSizesIfNeeded();
+        calculateColumnAndSecondaryIndexSizesImpl();
 
     PartLoadingTreeNodes unloaded_parts;
 
@@ -3983,12 +3992,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Experimental text index feature is not enabled (turn on setting 'allow_experimental_full_text_index')");
 
-    if (AlterCommands::hasVectorSimilarityIndex(new_metadata) && !settings[Setting::allow_experimental_vector_similarity_index])
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Vector similarity index is disabled (turn on setting 'enable_vector_similarity_index')");
-
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
-    ///     SET enable_vector_similarity_index = 1;
     ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;
     ///     INSERT INTO tab SELECT number, [toFloat32(number), 0.] FROM numbers(10000);
     ///     WITH [1., 0.] AS reference_vec SELECT id, L2Distance(vec, reference_vec) FROM tab PREWHERE toLowCardinality(10) ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 100;
@@ -5741,13 +5745,12 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
     part->removeVersionMetadata();
 }
 
-void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded() const
+void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl() const
 {
     std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
-    if (are_columns_and_secondary_indices_sizes_calculated)
-        return;
 
     column_sizes.clear();
+    secondary_index_sizes.clear();
 
     /// Take into account only committed parts
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
@@ -5755,6 +5758,36 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded() const
         addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
 
     are_columns_and_secondary_indices_sizes_calculated = true;
+}
+
+void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsLock && parts_lock) const
+{
+    if (are_columns_and_secondary_indices_sizes_calculated)
+        return;
+
+    column_sizes.clear();
+    secondary_index_sizes.clear();
+
+    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
+
+    /// If we have columns with dynamic subcolumns like JSON, columns size calculation
+    /// can read a column sample from each part, it can be slow and we don't want to
+    /// do it under parts lock, so we create a copy of the data parts and release parts lock
+    /// before calculation.
+    if (hasColumnsWithDynamicSubcolumns(getInMemoryMetadataPtr()->getSampleBlock()))
+    {
+        DataParts data_parts(committed_parts_range.begin(), committed_parts_range.end());
+        parts_lock.lock.unlock();
+        for (const auto & part : data_parts)
+            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+    }
+    else
+    {
+        for (const auto & part : committed_parts_range)
+            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+    }
+
+    are_columns_and_secondary_indices_sizes_calculated= true;
 }
 
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const

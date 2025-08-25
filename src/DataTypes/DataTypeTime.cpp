@@ -8,7 +8,7 @@
 namespace DB
 {
 
-DataTypeTime::DataTypeTime(const String & time_zone_name)
+DataTypeTime::DataTypeTime(std::string_view time_zone_name)
     : TimezoneMixin(time_zone_name)
 {
 }

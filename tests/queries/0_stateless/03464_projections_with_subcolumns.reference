@@ -10,7 +10,8 @@ Expression ((Project names + Projection))
         Granules: 2/100
         Search Algorithm: binary search
         Ranges: 1
-{"a":1,"b":"str","c":[{"d":"1"}]}
+ReadFromMergeTree (p1)
+{"a":1,"b":"str","c":[{"d":1}]}
 Expression ((Project names + Projection))
   Expression
     ReadFromMergeTree (p2)
@@ -23,6 +24,7 @@ Expression ((Project names + Projection))
         Granules: 2/100
         Search Algorithm: binary search
         Ranges: 1
+ReadFromMergeTree (p2)
 (1,1)
 Expression ((Project names + Projection))
   Expression
@@ -36,7 +38,8 @@ Expression ((Project names + Projection))
         Granules: 2/100
         Search Algorithm: binary search
         Ranges: 1
-{"a":1,"b":"str","c":[{"d":"1"}]}
+ReadFromMergeTree (p3)
+{"a":1,"b":"str","c":[{"d":1}]}
 Expression ((Project names + Projection))
   Expression
     ReadFromMergeTree (p1)
@@ -49,8 +52,9 @@ Expression ((Project names + Projection))
         Granules: 3/200
         Search Algorithm: binary search
         Ranges: 1
-{"a":1,"b":"str","c":[{"d":"1"}]}
-{"a":1,"b":"str","c":[{"d":"1"}]}
+ReadFromMergeTree (p1)
+{"a":1,"b":"str","c":[{"d":1}]}
+{"a":1,"b":"str","c":[{"d":1}]}
 Expression ((Project names + Projection))
   Expression
     ReadFromMergeTree (p2)
@@ -63,6 +67,7 @@ Expression ((Project names + Projection))
         Granules: 3/200
         Search Algorithm: binary search
         Ranges: 1
+ReadFromMergeTree (p2)
 (1,1)
 (1,1)
 Expression ((Project names + Projection))
@@ -77,8 +82,9 @@ Expression ((Project names + Projection))
         Granules: 3/200
         Search Algorithm: binary search
         Ranges: 1
-{"a":1,"b":"str","c":[{"d":"1"}]}
-{"a":1,"b":"str","c":[{"d":"1"}]}
+ReadFromMergeTree (p3)
+{"a":1,"b":"str","c":[{"d":1}]}
+{"a":1,"b":"str","c":[{"d":1}]}
 ------------------------------------------------------------------
 Expression ((Project names + Projection))
   Expression
@@ -92,7 +98,8 @@ Expression ((Project names + Projection))
         Granules: 2/100
         Search Algorithm: binary search
         Ranges: 1
-{"a":1,"b":"str","c":[{"d":"1"}]}
+ReadFromMergeTree (p1)
+{"a":1,"b":"str","c":[{"d":1}]}
 Expression ((Project names + Projection))
   Expression
     ReadFromMergeTree (p2)
@@ -105,6 +112,7 @@ Expression ((Project names + Projection))
         Granules: 2/100
         Search Algorithm: binary search
         Ranges: 1
+ReadFromMergeTree (p2)
 (1,1)
 Expression ((Project names + Projection))
   Expression
@@ -118,4 +126,5 @@ Expression ((Project names + Projection))
         Granules: 2/100
         Search Algorithm: binary search
         Ranges: 1
-{"a":1,"b":"str","c":[{"d":"1"}]}
+ReadFromMergeTree (p3)
+{"a":1,"b":"str","c":[{"d":1}]}

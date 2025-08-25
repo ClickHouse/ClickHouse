@@ -893,7 +893,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
 
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
-                update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
+                update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
 
             for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
             {
@@ -906,10 +906,10 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
     else
     {
         auto pipe = source_ptr->loadUpdatedAll();
-        mergeBlockWithPipe<dictionary_key_type>(
+        update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<dictionary_key_type>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(pipe));
+            std::move(pipe)));
     }
 
     if (update_field_loaded_block)

@@ -8,6 +8,8 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/TableFunctionPrometheusQuery.h>
+#include <TableFunctions/TableFunctionTimeSeriesSelector.h>
 
 
 namespace DB
@@ -121,6 +123,24 @@ void registerTableFunctionTimeSeries(TableFunctionFactory & factory)
         {.documentation = {
             .description=R"(Provides direct access to the 'metrics' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesMetrics", "SELECT * from timeSeriesMetrics('mydb', 'time_series_table');", ""}},
+            .category = FunctionDocumentation::Category::TableFunction}
+        });
+    factory.registerFunction<TableFunctionTimeSeriesSelector>(
+        {.documentation = {
+            .description=R"(Reads time series from a specified TimeSeries table.)",
+            .examples{{"timeSeriesSelector", "SELECT * from timeSeriesSelector('mydb', 'time_series_table', 'http_requests{job=\"prometheus\"}', now() - INTERVAL 10 MINUTES, now());", ""}},
+            .category = FunctionDocumentation::Category::TableFunction}
+        });
+    factory.registerFunction<TableFunctionPrometheusQuery</* range = */ false>>(
+        {.documentation = {
+            .description=R"(Evaluates a prometheus query using data from a specified TimeSeries table.)",
+            .examples{{"prometheusQuery", "SELECT * from prometheusQuery('mydb', 'time_series_table', 'rate(http_requests_total[5m])[30m:1m]', now());", ""}},
+            .category = FunctionDocumentation::Category::TableFunction}
+        });
+    factory.registerFunction<TableFunctionPrometheusQuery</* range = */ true>>(
+        {.documentation = {
+            .description=R"(Evaluates a prometheus query using data from a specified TimeSeries table over a range of timestamps.)",
+            .examples{{"prometheusQueryRange", "SELECT * from prometheusQueryRange('mydb', 'time_series_table', 'http_requests{job=\"prometheus\"}', now() - INTERVAL 10 MINUTES, now(), INTERVAL 1 MINUTE);", ""}},
             .category = FunctionDocumentation::Category::TableFunction}
         });
 }

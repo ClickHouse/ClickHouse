@@ -106,7 +106,7 @@ public:
         ColumnString::Offsets & dst_offsets = res_column->getOffsets();
 
         dst_offsets.resize(input_rows_count);
-        dst_chars.reserve(input_rows_count * (UnicodeBar::getWidthInBytes(max_width) + 1)); /// strings are 0-terminated.
+        dst_chars.reserve(input_rows_count * UnicodeBar::getWidthInBytes(max_width));
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -119,7 +119,7 @@ public:
             if (!isFinite(width))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of width must not be NaN and Inf");
 
-            size_t next_size = current_offset + UnicodeBar::getWidthInBytes(width) + 1;
+            size_t next_size = current_offset + UnicodeBar::getWidthInBytes(width);
             dst_chars.resize(next_size);
             UnicodeBar::render(width, reinterpret_cast<char *>(&dst_chars[current_offset]), reinterpret_cast<char *>(&dst_chars[next_size]));
             current_offset = next_size;

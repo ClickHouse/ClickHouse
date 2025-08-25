@@ -59,7 +59,7 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context,
         const Block & index_sample_block,
-        const GinFilterParameters & gin_filter_params_,
+        const GinFilter::Parameters & gin_filter_params_,
         TokenExtractorPtr token_extactor_);
 
     ~MergeTreeIndexConditionGin() override = default;
@@ -101,16 +101,16 @@ private:
         };
 
         RPNElement( /// NOLINT
-                Function function_ = FUNCTION_UNKNOWN, std::unique_ptr<GinFilter> && const_gin_filter_ = nullptr)
-                : function(function_), gin_filter(std::move(const_gin_filter_)) {}
+            Function function_ = FUNCTION_UNKNOWN, std::unique_ptr<GinQueryString> && gin_query_string_ = nullptr)
+                : function(function_), gin_query_string(std::move(gin_query_string_)) {}
 
         Function function = FUNCTION_UNKNOWN;
 
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS
-        std::unique_ptr<GinFilter> gin_filter;
+        std::unique_ptr<GinQueryString> gin_query_string;
 
         /// For FUNCTION_IN and FUNCTION_NOT_IN
-        std::vector<GinFilters> set_gin_filters;
+        std::vector<std::vector<GinQueryString>> gin_query_strings_for_set;
 
         /// For FUNCTION_IN and FUNCTION_NOT_IN
         std::vector<size_t> set_key_position;
@@ -129,7 +129,7 @@ private:
     bool tryPrepareSetGinFilter(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, RPNElement & out);
 
     const Block & header;
-    GinFilterParameters gin_filter_params;
+    GinFilter::Parameters gin_filter_params;
     TokenExtractorPtr token_extractor;
     RPN rpn;
     PreparedSetsPtr prepared_sets;
@@ -140,7 +140,7 @@ class MergeTreeIndexGin final : public IMergeTreeIndex
 public:
     MergeTreeIndexGin(
         const IndexDescription & index_,
-        const GinFilterParameters & gin_filter_params_,
+        const GinFilter::Parameters & gin_filter_params_,
         std::unique_ptr<ITokenExtractor> && token_extractor_);
 
     ~MergeTreeIndexGin() override = default;
@@ -150,7 +150,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
-    GinFilterParameters gin_filter_params;
+    GinFilter::Parameters gin_filter_params;
     std::unique_ptr<ITokenExtractor> token_extractor;
 };
 

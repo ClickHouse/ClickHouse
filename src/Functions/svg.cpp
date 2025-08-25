@@ -88,7 +88,7 @@ public:
                 boost::geometry::correct(figures[i]);
                 str << boost::geometry::svg(figures[i], has_style ? style->getDataAt(i).toString() : "");
                 std::string serialized = str.str();
-                res_column->insertData(serialized.c_str(), serialized.size());
+                res_column->insertData(serialized.data(), serialized.size());
             }
         }
         );

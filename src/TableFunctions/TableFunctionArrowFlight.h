@@ -24,6 +24,7 @@ private:
         bool is_insert_query) const override;
 
     const char * getStorageEngineName() const override { return "ArrowFlight"; }
+    const String & getFunctionURI() const override { return configuration.host; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
