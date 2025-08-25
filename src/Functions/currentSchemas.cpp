@@ -67,23 +67,38 @@ public:
 
 REGISTER_FUNCTION(CurrentSchema)
 {
-    factory.registerFunction<FunctionCurrentSchemas>(FunctionDocumentation
-         {
-             .description=R"(
-Returns a single-element array with the name of the current database
+    FunctionDocumentation::Description description = R"(
+Returns a single-element array with the name of the current database schema.
 
-Requires a boolean parameter, but it is ignored actually. It is required just for compatibility with the implementation of this function in other DB engines.
+:::note
+The boolean argument is ignored.
+It only exists for the sake of compatibility with the implementation of this function in PostgreSQL.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax = "currentSchemas(bool)";
+    FunctionDocumentation::Arguments arguments = {
+        {"bool", "A boolean value. The argument is ignored and only exists for compatibility with PostgreSQL.", {"Bool"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a single-element array with the name of the current database.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT currentSchemas(true)
+        )",
+        R"(
+┌─currentSchemas(true)─┐
+│ ['default']          │
+└──────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-[example:common]
-)",
-            .examples{
-             {"common", "SELECT current_schemas(true);", "['default']"}
-        },
-             .category = FunctionDocumentation::Category::Other
-        },
-        FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionCurrentSchemas>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_schemas", FunctionCurrentSchemas::name, FunctionFactory::Case::Insensitive);
-
 }
 
 }
