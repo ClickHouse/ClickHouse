@@ -26,7 +26,7 @@ REGISTER_FUNCTION(AESDecryptMysql)
     FunctionDocumentation::Description description = R"(
 Decrypts data encrypted by MySQL's [`AES_ENCRYPT`](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-encrypt) function.
 
-Produces the same plaintext as [`decrypt`](#decrypt) on equal inputs.
+Produces the same plaintext as [`decrypt`](#decrypt) for the same inputs.
 When `key` or `iv` are longer than they should normally be, `aes_decrypt_mysql` will stick to what MySQL's `aes_decrypt` does which is to 'fold' `key` and ignore the excess bits of `IV`.
 
 Supports the following decryption modes:
