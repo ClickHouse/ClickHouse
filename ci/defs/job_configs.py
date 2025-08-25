@@ -63,7 +63,7 @@ class JobConfigs:
         name=JobNames.CLAUDE,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/claude_job.py",
-        run_in_docker="clickhouse/claude",
+        run_in_docker="clickhouse/docs-builder",
         requires=[JobNames.STYLE_CHECK],
     )
     fast_test = Job.Config(
