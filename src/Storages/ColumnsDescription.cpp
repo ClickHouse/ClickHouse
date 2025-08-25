@@ -121,7 +121,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
 String formatASTStateAware(IAST & ast, IAST::FormatState & state)
 {
     WriteBufferFromOwnString buf;
-    IAST::FormatSettings settings(true);
+    IAST::FormatSettings settings(true, false);
     ast.format(buf, settings, state, IAST::FormatStateStacked());
     return buf.str();
 }
@@ -423,7 +423,7 @@ void ColumnsDescription::flattenNested()
             continue;
         }
 
-        if (!type_tuple->hasExplicitNames())
+        if (!type_tuple->haveExplicitNames())
         {
             ++it;
             continue;
@@ -657,7 +657,29 @@ NamesAndTypesList ColumnsDescription::getByNames(const GetColumnsOptions & optio
 {
     NamesAndTypesList res;
     for (const auto & name : names)
-        res.push_back(getColumn(options, name));
+    {
+        if (auto it = columns.get<1>().find(name); it != columns.get<1>().end())
+        {
+            auto kind = defaultKindToGetKind(it->default_desc.kind);
+            if (options.kind & kind)
+            {
+                res.emplace_back(name, it->type);
+                continue;
+            }
+        }
+        else if (options.with_subcolumns)
+        {
+            auto jt = subcolumns.get<0>().find(name);
+            if (jt != subcolumns.get<0>().end())
+            {
+                res.push_back(*jt);
+                continue;
+            }
+        }
+
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", name);
+    }
+
     return res;
 }
 

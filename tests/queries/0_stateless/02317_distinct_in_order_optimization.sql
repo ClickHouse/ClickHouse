@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: optimize_read_in_order=0 leads to "Replica 1 decided to read in Default mode, not in WithOrder. This is a bug: While executing Remote. (LOGICAL_ERROR)"
+
 select '-- enable distinct in order optimization';
 set optimize_distinct_in_order=1;
 select '-- create table with only primary key columns';

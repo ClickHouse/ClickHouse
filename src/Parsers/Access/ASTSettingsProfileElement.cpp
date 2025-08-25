@@ -10,12 +10,17 @@ namespace DB
 {
 namespace
 {
-    void formatProfileNameOrID(const String & str, bool is_id, WriteBuffer & ostr, const IAST::FormatSettings &)
+    void formatProfileNameOrID(const String & str, bool is_id, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
         if (is_id)
-            ostr << "ID(" << quoteString(str) << ")";
+        {
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ID" << (settings.hilite ? IAST::hilite_none : "") << "("
+                          << quoteString(str) << ")";
+        }
         else
+        {
             ostr << backQuote(str);
+        }
     }
 
     void formatSettingsProfileElementsForAlter(std::string_view kind, const ASTSettingsProfileElements & elements, WriteBuffer & ostr, const IAST::FormatSettings & settings)
@@ -25,8 +30,8 @@ namespace
         size_t num_profiles = elements.getNumberOfProfiles();
         if (num_profiles > 0)
         {
-            ostr << kind << " " << (num_profiles == 1 ? "PROFILE" : "PROFILES")
-                 << " ";
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << kind << " " << (num_profiles == 1 ? "PROFILE" : "PROFILES")
+                 << (settings.hilite ? IAST::hilite_none : "") << " ";
 
             for (const auto & element : elements.elements)
             {
@@ -47,8 +52,8 @@ namespace
                 ostr << ", ";
             need_comma = false;
 
-            ostr << kind << " " << (num_settings == 1 ? "SETTING" : "SETTINGS")
-                 << " ";
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << kind << " " << (num_settings == 1 ? "SETTING" : "SETTINGS")
+                 << (settings.hilite ? IAST::hilite_none : "") << " ";
 
             for (const auto & element : elements.elements)
             {
@@ -69,8 +74,8 @@ void ASTSettingsProfileElement::formatImpl(WriteBuffer & ostr, const FormatSetti
 {
     if (!parent_profile.empty())
     {
-        ostr << (use_inherit_keyword ? "INHERIT" : "PROFILE") << " "
-                     ;
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << (use_inherit_keyword ? "INHERIT" : "PROFILE") << " "
+                      << (settings.hilite ? IAST::hilite_none : "");
         formatProfileNameOrID(parent_profile, id_mode, ostr, settings);
         return;
     }
@@ -84,13 +89,13 @@ void ASTSettingsProfileElement::formatImpl(WriteBuffer & ostr, const FormatSetti
 
     if (min_value)
     {
-        ostr << " MIN "
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MIN " << (settings.hilite ? IAST::hilite_none : "")
                       << applyVisitor(FieldVisitorToString{}, *min_value);
     }
 
     if (max_value)
     {
-        ostr << " MAX "
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MAX " << (settings.hilite ? IAST::hilite_none : "")
                       << applyVisitor(FieldVisitorToString{}, *max_value);
     }
 
@@ -99,16 +104,16 @@ void ASTSettingsProfileElement::formatImpl(WriteBuffer & ostr, const FormatSetti
         switch (*writability)
         {
             case SettingConstraintWritability::WRITABLE:
-                ostr << " WRITABLE"
-                           ;
+                ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WRITABLE"
+                            << (settings.hilite ? IAST::hilite_none : "");
                 break;
             case SettingConstraintWritability::CONST:
-                ostr << " CONST"
-                           ;
+                ostr << (settings.hilite ? IAST::hilite_keyword : "") << " CONST"
+                            << (settings.hilite ? IAST::hilite_none : "");
                 break;
             case SettingConstraintWritability::CHANGEABLE_IN_READONLY:
-                ostr << " CHANGEABLE_IN_READONLY"
-                           ;
+                ostr << (settings.hilite ? IAST::hilite_keyword : "") << " CHANGEABLE_IN_READONLY"
+                            << (settings.hilite ? IAST::hilite_none : "");
                 break;
             case SettingConstraintWritability::MAX: break;
         }
@@ -150,7 +155,7 @@ void ASTSettingsProfileElements::formatImpl(WriteBuffer & ostr, const FormatSett
 {
     if (empty())
     {
-        ostr << "NONE";
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
         return;
     }
 
@@ -206,7 +211,7 @@ void ASTAlterSettingsProfileElements::formatImpl(WriteBuffer & ostr, const Forma
 
     if (drop_all_settings)
     {
-        ostr << "DROP ALL SETTINGS";
+        ostr << (format.hilite ? IAST::hilite_keyword : "") << "DROP ALL SETTINGS" << (format.hilite ? IAST::hilite_none : "");
         need_comma = true;
     }
 
@@ -214,7 +219,7 @@ void ASTAlterSettingsProfileElements::formatImpl(WriteBuffer & ostr, const Forma
     {
         if (need_comma)
             ostr << ", ";
-        ostr << "DROP ALL PROFILES";
+        ostr << (format.hilite ? IAST::hilite_keyword : "") << "DROP ALL PROFILES" << (format.hilite ? IAST::hilite_none : "");
         need_comma = true;
     }
 

@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Core/Block_fwd.h>
-#include <Processors/Chunk.h>
-
 #include <vector>
+#include <Core/Block.h>
+#include <Processors/Chunk.h>
 
 
 namespace DB
@@ -40,15 +38,15 @@ public:
 class Squashing
 {
 public:
-    explicit Squashing(SharedHeader header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
+    explicit Squashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
     Squashing(Squashing && other) = default;
 
     Chunk add(Chunk && input_chunk, bool flush_if_enough_size = false);
     static Chunk squash(Chunk && input_chunk);
     Chunk flush();
 
-    void setHeader(const Block & header_) { header = std::make_shared<const Block>(header_); }
-    const SharedHeader & getHeader() const { return header; }
+    void setHeader(Block header_) { header = std::move(header_); }
+    const Block & getHeader() const { return header; }
 
 private:
     struct CurrentData
@@ -65,7 +63,7 @@ private:
 
     const size_t min_block_size_rows;
     const size_t min_block_size_bytes;
-    SharedHeader header;
+    Block header;
 
     CurrentData accumulated;
 

@@ -6,7 +6,6 @@
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {

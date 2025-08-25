@@ -16,9 +16,7 @@ $CLICKHOUSE_CLIENT -q "
 
 for enable_analyzer in 0 1; do
     query_id="$(random_str 10)"
-    query="INSERT INTO input SELECT * FROM numbers(1)"
-    echo "$query"
-    $CLICKHOUSE_CLIENT --parallel_distributed_insert_select=0 --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "$query"
+    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "INSERT INTO input SELECT * FROM numbers(1)"
     $CLICKHOUSE_CLIENT -m -q "
         SYSTEM FLUSH LOGS query_log;
         SELECT
@@ -27,6 +25,7 @@ for enable_analyzer in 0 1; do
             ProfileEvents['InsertQuery'] InsertQuery,
             ProfileEvents['SelectQuery'] SelectQuery,
             ProfileEvents['InsertQueriesWithSubqueries'] InsertQueriesWithSubqueries,
+            -- FIXME: for analyzer it will have one more for sample block
             ProfileEvents['SelectQueriesWithSubqueries'] SelectQueriesWithSubqueries,
             ProfileEvents['QueriesWithSubqueries'] QueriesWithSubqueries
         FROM system.query_log
@@ -35,9 +34,7 @@ for enable_analyzer in 0 1; do
     "
 
     query_id="$(random_str 10)"
-    query="SELECT * FROM system.one WHERE dummy IN (SELECT * FROM system.one) FORMAT Null"
-    echo "$query"
-    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "$query"
+    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "SELECT * FROM system.one WHERE dummy IN (SELECT * FROM system.one) FORMAT Null"
     $CLICKHOUSE_CLIENT -m -q "
         SYSTEM FLUSH LOGS query_log;
         SELECT
@@ -54,9 +51,7 @@ for enable_analyzer in 0 1; do
     "
 
     query_id="$(random_str 10)"
-    query="WITH (SELECT * FROM system.one) AS x SELECT x FORMAT Null"
-    echo "$query"
-    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "$query"
+    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "WITH (SELECT * FROM system.one) AS x SELECT x FORMAT Null"
     $CLICKHOUSE_CLIENT -m -q "
         SYSTEM FLUSH LOGS query_log;
         SELECT
@@ -73,9 +68,7 @@ for enable_analyzer in 0 1; do
     "
 
     query_id="$(random_str 10)"
-    query="WITH (SELECT * FROM system.one) AS x SELECT x, x FORMAT Null"
-    echo "$query"
-    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "$query"
+    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "WITH (SELECT * FROM system.one) AS x SELECT x, x FORMAT Null"
     $CLICKHOUSE_CLIENT -m -q "
         SYSTEM FLUSH LOGS query_log;
         SELECT
@@ -92,9 +85,7 @@ for enable_analyzer in 0 1; do
     "
 
     query_id="$(random_str 10)"
-    query="WITH x AS (SELECT * FROM system.one) SELECT * FROM x FORMAT Null"
-    echo "$query"
-    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "$query"
+    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "WITH x AS (SELECT * FROM system.one) SELECT * FROM x FORMAT Null"
     $CLICKHOUSE_CLIENT -m -q "
         SYSTEM FLUSH LOGS query_log;
         SELECT
@@ -111,9 +102,7 @@ for enable_analyzer in 0 1; do
     "
 
     query_id="$(random_str 10)"
-    query="WITH x AS (SELECT * FROM system.one) SELECT * FROM x UNION ALL SELECT * FROM x FORMAT Null"
-    echo "$query"
-    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "$query"
+    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "WITH x AS (SELECT * FROM system.one) SELECT * FROM x UNION ALL SELECT * FROM x FORMAT Null"
     $CLICKHOUSE_CLIENT -m -q "
         SYSTEM FLUSH LOGS query_log;
         SELECT

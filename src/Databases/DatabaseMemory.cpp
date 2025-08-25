@@ -73,8 +73,7 @@ void DatabaseMemory::dropTable(
 
         if (table->storesDataOnDisk())
         {
-            auto metdata_disk = getDisk();
-            metdata_disk->removeRecursive(getTableDataPath(table_name));
+            db_disk->removeRecursive(getTableDataPath(table_name));
         }
     }
     catch (...)
@@ -129,7 +128,6 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 
 void DatabaseMemory::removeDataPath(ContextPtr)
 {
-    auto db_disk = getDisk();
     db_disk->removeRecursive(data_path);
 }
 
@@ -145,15 +143,10 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
     ASTPtr create_query;
     {
         std::lock_guard lock{mutex};
-        auto it = tables.find(table_id.table_name);
-        if (it == tables.end() || (table_id.uuid != UUIDHelpers::Nil && it->second->getStorageID().uuid != table_id.uuid))
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
-
-        auto it_query = create_queries.find(table_id.table_name);
-        if (it_query == create_queries.end() || !it_query->second)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
-
-        create_query = it_query->second;
+        auto it = create_queries.find(table_id.table_name);
+        if (it == create_queries.end() || !it->second)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
+        create_query = it->second;
     }
 
     /// Apply metadata changes without holding a lock to avoid possible deadlock
@@ -212,7 +205,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
         }
 
         chassert(storage);
-        storage->applyMetadataChangesToCreateQueryForBackup(create_table_query);
+        storage->adjustCreateQueryForBackup(create_table_query);
         res.emplace_back(create_table_query, storage);
     }
 

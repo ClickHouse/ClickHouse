@@ -8,7 +8,6 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
-import platform
 
 import requests
 
@@ -351,13 +350,6 @@ class Utils:
             return True
         except ValueError:
             return False
-
-    @staticmethod
-    def is_arm():
-        arch = platform.machine()
-        if "arm" in arch.lower() or "aarch" in arch.lower():
-            return True
-        return False
 
     @staticmethod
     def normalize_string(string: str) -> str:
