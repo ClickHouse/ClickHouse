@@ -36,11 +36,8 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeSeriesRange<with_values>>(); }
 
     String getName() const override { return name; }
-
     size_t getNumberOfArguments() const override { return with_values ? 4 : 3; }
-
     bool isDeterministic() const override { return true; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
