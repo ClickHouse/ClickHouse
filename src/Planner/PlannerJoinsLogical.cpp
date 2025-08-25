@@ -80,7 +80,9 @@ namespace Setting
 const ActionsDAG::Node * appendExpression(
     ActionsDAG & dag,
     const QueryTreeNodePtr & expression,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const SharedHeader & left_header,
+    const SharedHeader & right_header)
 {
     size_t input_count = dag.getInputs().size();
 
@@ -96,8 +98,14 @@ const ActionsDAG::Node * appendExpression(
 
     if (input_count != dag.getInputs().size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Unknown inputs added to actions dag:\n{}\nAfter adding expression {} with query tree node:\n{}",
-            dag.dumpDAG(), expression->formatASTForErrorMessage(), expression->dumpTree());
+            "Unknown inputs added to actions dag:\n{}\nNumber of inputs changed from {} to {} after adding expression {} with query tree node:\n{}, headers: [{}] [{}]",
+            dag.dumpDAG(),
+            input_count,
+            dag.getInputs().size(),
+            expression->formatASTForErrorMessage(),
+            expression->dumpTree(),
+            left_header->dumpNames(),
+            right_header->dumpNames());
 
     return join_expression_dag_node_raw_pointers[0];
 }
@@ -106,14 +114,16 @@ struct JoinOperatorBuildContext
 {
     explicit JoinOperatorBuildContext(
         const JoinNode & join_node_,
-        const Block & left_header,
-        const Block & right_header,
+        SharedHeader left_header_,
+        SharedHeader right_header_,
         const PlannerContextPtr & planner_context_)
         : join_node(join_node_)
         , planner_context(planner_context_)
         , left_table_expression_set(extractTableExpressionsSet(join_node.getLeftTableExpression()))
         , right_table_expression_set(extractTableExpressionsSet(join_node.getRightTableExpression()))
-        , expression_actions(left_header, right_header)
+        , left_header(left_header_)
+        , right_header(right_header_)
+        , expression_actions(*left_header, *right_header)
         , join_operator(join_node.getKind(), join_node.getStrictness(), join_node.getLocality())
     {
     }
@@ -137,7 +147,7 @@ struct JoinOperatorBuildContext
     JoinActionRef addExpression(const QueryTreeNodePtr & node)
     {
         auto dag = expression_actions.getActionsDAG();
-        const auto * dag_node = appendExpression(*dag, node, planner_context);
+        const auto * dag_node = appendExpression(*dag, node, planner_context, left_header, right_header);
         return JoinActionRef(dag_node, expression_actions);
     }
 
@@ -146,6 +156,9 @@ struct JoinOperatorBuildContext
 
     TableExpressionSet left_table_expression_set;
     TableExpressionSet right_table_expression_set;
+
+    SharedHeader left_header;
+    SharedHeader right_header;
 
     JoinExpressionActions expression_actions;
     JoinOperator join_operator;
@@ -465,6 +478,13 @@ static String getQueryDisplayLabel(const QueryTreeNodePtr & node, bool display_i
     return {};
 }
 
+bool shouldForbidReordering(const JoinOperatorBuildContext & build_context)
+{
+    /// Swapping sides with totals can affect the result
+    return std::ranges::any_of(build_context.left_table_expression_set, queryTreeHasWithTotalsInAnySubqueryInJoinTree) ||
+           std::ranges::any_of(build_context.right_table_expression_set, queryTreeHasWithTotalsInAnySubqueryInJoinTree);
+}
+
 std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     SharedHeader left_header,
     SharedHeader right_header,
@@ -472,9 +492,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     const JoinNode & join_node,
     const PlannerContextPtr & planner_context)
 {
-    const auto & left_columns = left_header->getColumnsWithTypeAndName();
-    const auto & right_columns = right_header->getColumnsWithTypeAndName();
-    JoinOperatorBuildContext build_context(join_node, left_columns, right_columns, planner_context);
+    JoinOperatorBuildContext build_context(join_node, left_header, right_header, planner_context);
 
     const auto & join_on_expression = join_node.getJoinExpression();
     auto join_expression_constant = tryExtractConstantFromConditionNode(join_on_expression);
@@ -550,6 +568,10 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     auto left_table_label = getQueryDisplayLabel(join_node.getLeftTableExpression(), display_internal_aliases);
     auto right_table_label = getQueryDisplayLabel(join_node.getRightTableExpression(), display_internal_aliases);
     join_step->setInputLabels(std::move(left_table_label), std::move(right_table_label));
+
+    if (shouldForbidReordering(build_context))
+        join_step->setOptimized();
+
     return join_step;
 }
 
