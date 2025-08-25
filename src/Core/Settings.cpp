@@ -7019,9 +7019,12 @@ Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL) \
 DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
     Experimental dictionary source for integration with YTsaurus.
-    )", EXPERIMENTAL) \
+)", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_cascades_optimizer, true, R"(
+Enable Cascades cost-based optimizer
 )", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \
