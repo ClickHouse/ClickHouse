@@ -1029,8 +1029,6 @@ class ClickhouseIntegrationTestsRunner:
         except Exception as e:
             logging.error("Can't split tests by execution time: %s", e)
             logging.error(e)
-            # TODO remove after testing
-            raise
 
         # Fallback in case play server doesn't work
         # Split tests in groups by number of tests in group

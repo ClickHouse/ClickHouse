@@ -1148,6 +1148,7 @@ ThreadsActive
 ThreadsInOvercommitTracker
 TimeSeries
 TimescaleDB's
+TimestampType
 Timeunit
 TinyLog
 Tkachenko
@@ -1258,6 +1259,7 @@ YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
+YTsaurus
 ZCurve
 ZSTDQAT
 Zabbix
@@ -2681,6 +2683,8 @@ profiler
 projectio
 proleptic
 prometheus
+prometheusQuery
+prometheusQueryRange
 proportionsZTest
 proto
 protobuf
@@ -3136,6 +3140,7 @@ timeSeriesPredictLinearToGrid
 timeSeriesRange
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
+timeSeriesSelector
 timeSeriesTags
 timeSlot
 timeSlots
@@ -3442,6 +3447,7 @@ xz
 yaml
 yandex
 youtube
+ytsaurus
 zLib
 zLinux
 zabbix
