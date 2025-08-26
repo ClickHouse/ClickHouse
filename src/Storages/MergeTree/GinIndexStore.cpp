@@ -48,6 +48,56 @@ const CompressionCodecPtr & GinCompressionFactory::zstdCodec()
     return codec;
 }
 
+bool GinPostingsListBuilder::contains(UInt32 row_id) const
+{
+    return rowids.contains(row_id);
+}
+
+void GinPostingsListBuilder::add(UInt32 row_id)
+{
+    rowids.add(row_id);
+}
+
+UInt64 GinPostingsListBuilder::serialize(WriteBuffer & buffer)
+{
+    rowids.runOptimize();
+
+    UInt64 written_bytes = 0;
+#if USE_FASTPFOR
+    auto ch = static_cast<char>(Serialization::DELTA_PFOR);
+    writeChar(ch, buffer);
+    written_bytes += 1;
+
+    written_bytes += GinPostingListDeltaPforSerialization::serialize(buffer, rowids);
+#else
+    auto ch = static_cast<char>(Serialization::ROARING_ZSTD);
+    writeChar(ch, buffer);
+    written_bytes += 1;
+
+    written_bytes += GinPostingListRoaringZstdSerialization::serialize(buffer, rowids);
+#endif
+    return written_bytes;
+}
+
+GinPostingsListPtr GinPostingsListBuilder::deserialize(ReadBuffer & buffer)
+{
+    UInt8 serialization = 0;
+    readBinary(serialization, buffer);
+
+    if (serialization == static_cast<std::underlying_type_t<Serialization>>(Serialization::DELTA_PFOR))
+    {
+#if USE_FASTPFOR
+        return GinPostingListDeltaPforSerialization::deserialize(buffer);
+#else
+        throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Text index: Posting list is compressed by Delta and FastPfor, but library is disabled.");
+#endif
+    }
+
+    return GinPostingListRoaringZstdSerialization::deserialize(buffer);
+}
+
 #if USE_FASTPFOR
 UInt64 GinPostingListDeltaPforSerialization::serialize(WriteBuffer & buffer, const GinPostingsList & rowids)
 {
@@ -253,56 +303,6 @@ GinPostingsListPtr GinPostingListRoaringZstdSerialization::deserialize(ReadBuffe
             return std::make_shared<GinPostingsList>(GinPostingsList::read(buf.data()));
         }
     }
-}
-
-bool GinPostingsListBuilder::contains(UInt32 row_id) const
-{
-    return rowids.contains(row_id);
-}
-
-void GinPostingsListBuilder::add(UInt32 row_id)
-{
-    rowids.add(row_id);
-}
-
-UInt64 GinPostingsListBuilder::serialize(WriteBuffer & buffer)
-{
-    rowids.runOptimize();
-
-    UInt64 written_bytes = 0;
-#if USE_FASTPFOR
-    auto ch = static_cast<char>(Serialization::DELTA_PFOR);
-    writeChar(ch, buffer);
-    written_bytes += 1;
-
-    written_bytes += GinPostingListDeltaPforSerialization::serialize(buffer, rowids);
-#else
-    auto ch = static_cast<char>(Serialization::ROARING_ZSTD);
-    writeChar(ch, buffer);
-    written_bytes += 1;
-
-    written_bytes += GinPostingListRoaringZstdSerialization::serialize(buffer, rowids);
-#endif
-    return written_bytes;
-}
-
-GinPostingsListPtr GinPostingsListBuilder::deserialize(ReadBuffer & buffer)
-{
-    UInt8 serialization = 0;
-    readBinary(serialization, buffer);
-
-    if (serialization == static_cast<std::underlying_type_t<Serialization>>(Serialization::DELTA_PFOR))
-    {
-#if USE_FASTPFOR
-        return GinPostingListDeltaPforSerialization::deserialize(buffer);
-#else
-        throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Text index: Posting list is compressed by Delta and FastPfor, but library is disabled.");
-#endif
-    }
-
-    return GinPostingListRoaringZstdSerialization::deserialize(buffer);
 }
 
 GinDictionaryBloomFilter::GinDictionaryBloomFilter(UInt64 unique_count_, size_t bits_per_rows_, size_t num_hashes_)

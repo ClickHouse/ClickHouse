@@ -56,6 +56,36 @@ public:
     static const CompressionCodecPtr & zstdCodec();
 };
 
+/// Build a postings list for a term
+class GinPostingsListBuilder
+{
+public:
+    /// Check whether a row_id is already added
+    bool contains(UInt32 row_id) const;
+
+    /// Add a row_id into the builder
+    void add(UInt32 row_id);
+
+    /// Serializes the content of builder into given WriteBuffer.
+    /// Returns the number of bytes written into WriteBuffer.
+    UInt64 serialize(WriteBuffer & buffer);
+
+    /// Deserializes the postings list data from given ReadBuffer.
+    /// Returns a pointer to the GinIndexPostingsList created by deserialization.
+    static GinPostingsListPtr deserialize(ReadBuffer & buffer);
+
+private:
+    enum class Serialization : UInt8
+    {
+        ROARING_ZSTD = 1,
+        DELTA_PFOR = 2,
+    };
+
+    GinPostingsList rowids;
+};
+
+using GinPostingsListBuilderPtr = std::shared_ptr<GinPostingsListBuilder>;
+
 #if USE_FASTPFOR
 /// This class serializes a posting list into on-disk format by applying DELTA encoding first, then PFOR compression.
 /// Internally, the FastPFOR library is used for the PFOR compression.
@@ -90,36 +120,6 @@ private:
     static constexpr UInt64 ROARING_COMPRESSED_MASK = 0x1;
     static constexpr UInt64 ROARING_UNCOMPRESSED_MASK = 0x0;
 };
-
-/// Build a postings list for a term
-class GinPostingsListBuilder
-{
-public:
-    /// Check whether a row_id is already added
-    bool contains(UInt32 row_id) const;
-
-    /// Add a row_id into the builder
-    void add(UInt32 row_id);
-
-    /// Serializes the content of builder into given WriteBuffer.
-    /// Returns the number of bytes written into WriteBuffer.
-    UInt64 serialize(WriteBuffer & buffer);
-
-    /// Deserializes the postings list data from given ReadBuffer.
-    /// Returns a pointer to the GinIndexPostingsList created by deserialization.
-    static GinPostingsListPtr deserialize(ReadBuffer & buffer);
-
-private:
-    enum class Serialization : UInt8
-    {
-        ROARING_ZSTD = 1,
-        DELTA_PFOR = 2,
-    };
-
-    GinPostingsList rowids;
-};
-
-using GinPostingsListBuilderPtr = std::shared_ptr<GinPostingsListBuilder>;
 
 /// Gin index segment descriptor, which contains:
 struct GinSegmentDescriptor
