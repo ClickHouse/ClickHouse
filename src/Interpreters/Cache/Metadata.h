@@ -41,9 +41,9 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     bool isEvictingOrRemoved(const CachePriorityGuard::Lock & lock) const
     {
-        auto iterator = getQueueIterator();
         if (removed)
             return true;
+        auto iterator = getQueueIterator();
         if (!iterator)
             return false; /// Iterator is set only on first space reservation attempt.
         return iterator->getEntry()->isEvicting(lock);
@@ -51,9 +51,9 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     bool isEvictingOrRemoved(const LockedKey & lock) const
     {
-        auto iterator = getQueueIterator();
         if (removed)
             return true;
+        auto iterator = getQueueIterator();
         if (!iterator)
             return false; /// Iterator is set only on first space reservation attempt.
         return iterator->getEntry()->isEvicting(lock);
