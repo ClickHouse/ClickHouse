@@ -132,9 +132,6 @@ hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
 hasThreadFuzzer
-hop
-hopEnd
-hopStart
 hostName
 identity
 ignore
@@ -455,9 +452,6 @@ transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
 transform
-tumble
-tumbleEnd
-tumbleStart
 uptime
 validateNestedArraySizes
 version
