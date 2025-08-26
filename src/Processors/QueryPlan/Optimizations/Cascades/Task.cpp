@@ -119,7 +119,7 @@ void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
     /// All inputs were processed?
     if (input_index_to_optimize == expression->inputs.size())
     {
-        /// TODO: memo.UpdateBestPlan(expr)
+        optimizer_context.updateBestPlan(expression);
         return;
     }
     else

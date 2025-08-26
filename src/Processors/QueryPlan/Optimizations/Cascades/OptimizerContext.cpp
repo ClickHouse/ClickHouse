@@ -9,6 +9,7 @@ namespace DB
 {
 
 OptimizerContext::OptimizerContext()
+    : cost_estimator(memo)
 {
 //    addRule(std::make_shared<JoinAssociativity>());
     addRule(std::make_shared<JoinCommutativity>());
@@ -49,6 +50,18 @@ GroupPtr OptimizerContext::getGroup(GroupId group_id)
 void OptimizerContext::getBestPlan(GroupId group_id)
 {
     memo.getGroup(group_id);
+}
+
+void OptimizerContext::updateBestPlan(GroupExpressionPtr expression)
+{
+    auto group_id = expression->group_id;
+    auto group = memo.getGroup(group_id);
+    auto cost = cost_estimator.estimateCost(expression);
+    if (!group->best_implementation.expression || group->best_implementation.cost.subtree_cost > cost.subtree_cost)
+    {
+        group->best_implementation.expression = expression;
+        group->best_implementation.cost = cost;
+    }
 }
 
 }

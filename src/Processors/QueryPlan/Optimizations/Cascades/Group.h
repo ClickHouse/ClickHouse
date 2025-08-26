@@ -1,9 +1,10 @@
 #pragma once
 
+#include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
+#include <IO/WriteBuffer.h>
+#include <base/types.h>
 #include <memory>
 #include <vector>
-#include <base/types.h>
-#include <IO/WriteBuffer.h>
 
 namespace DB
 {
@@ -13,6 +14,12 @@ constexpr GroupId INVALID_GROUP_ID = -1;
 
 class GroupExpression;
 using GroupExpressionPtr = std::shared_ptr<GroupExpression>;
+
+struct ExpressionWithCost
+{
+    GroupExpressionPtr expression;
+    ExpressionCost cost;         /// The cost of whole tree starting from this expression
+};
 
 class Group
 {
@@ -28,6 +35,7 @@ public:
     void dump(WriteBuffer & out, String indent = {}) const;
 
     std::vector<GroupExpressionPtr> expressions;
+    ExpressionWithCost best_implementation;
 
 private:
     const GroupId group_id;
