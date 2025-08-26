@@ -530,7 +530,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         Block initial_header = read_from_format_info.format_header;
         bool schema_changed = false;
 
-        if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info))
+        if (auto initial_schema = file_iterator->getInitialSchemaByPath(object_info))
         {
             Block sample_header;
             for (const auto & [name, type] : *initial_schema)
@@ -583,7 +583,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
         if (!transformer)
         {
-            if (auto schema_transformer = configuration->getSchemaTransformer(context_, object_info))
+            if (auto schema_transformer = file_iterator->getSchemaTransformer(object_info))
                 transformer = schema_transformer->clone();
         }
 

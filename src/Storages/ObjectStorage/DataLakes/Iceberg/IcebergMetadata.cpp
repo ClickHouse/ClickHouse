@@ -53,6 +53,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
@@ -141,32 +142,7 @@ IcebergMetadata::IcebergMetadata(
     const auto [metadata_version, metadata_file_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration.lock(), cache_ptr, context_, log.get());
     auto [_data_snapshot, table_state_snapshot] = getState(context_, metadata_file_path, metadata_version);
-    relevant_table_state_snapshot = table_state_snapshot;
-}
-
-void IcebergMetadata::addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) const
-{
-    if (persistent_components.schema_processor->hasClickhouseTableSchemaById(schema_id))
-        return;
-    if (!metadata_object->has(f_schemas))
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema with id `{}`: 'schemas' field is missing in metadata", schema_id);
-    }
-    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
-    for (uint32_t i = 0; i != schemas->size(); ++i)
-    {
-        auto current_schema = schemas->getObject(i);
-        if (current_schema->has(f_schema_id) && current_schema->getValue<int>(f_schema_id) == schema_id)
-        {
-            persistent_components.schema_processor->addIcebergTableSchema(current_schema);
-            return;
-        }
-    }
-    throw Exception(
-        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-        "Cannot parse Iceberg table schema with id `{}`: schema with such id is not found in metadata",
-        schema_id);
+    last_table_state_snapshot = table_state_snapshot;
 }
 
 Int32 IcebergMetadata::parseTableSchema(
@@ -429,32 +405,6 @@ IcebergMetadata::getState(const ContextPtr & local_context, String metadata_path
     return {data_snapshot, table_state_snapshot};
 }
 
-std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(ContextPtr, ObjectInfoPtr object_info) const
-{
-    SharedLockGuard lock(mutex);
-    IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
-    if (!iceberg_object_info)
-        return nullptr;
-    /// if we need schema evolution or have equality deletes files, we need to read all the columns.
-    return (iceberg_object_info->underlying_format_read_schema_id != relevant_table_state_snapshot.schema_id)
-            || (!iceberg_object_info->equality_deletes_objects.empty())
-        ? persistent_components.schema_processor->getClickhouseTableSchemaById(iceberg_object_info->underlying_format_read_schema_id)
-        : nullptr;
-}
-
-std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextPtr, ObjectInfoPtr object_info) const
-{
-    IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
-    SharedLockGuard lock(mutex);
-    if (!iceberg_object_info)
-        return nullptr;
-    return (iceberg_object_info->underlying_format_read_schema_id != relevant_table_state_snapshot.schema_id)
-        ? persistent_components.schema_processor->getSchemaTransformationDagByIds(
-              iceberg_object_info->underlying_format_read_schema_id, relevant_table_state_snapshot.schema_id)
-        : nullptr;
-}
-
-
 bool IcebergMetadata::optimize(
     const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings)
 {
@@ -645,12 +595,6 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     auto configuration_ptr = configuration.lock();
 
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, persistent_components.metadata_cache, local_context, log.get());
-
-    chassert([&]()
-    {
-        SharedLockGuard lock(mutex);
-        return metadata_version == relevant_table_state_snapshot.metadata_version;
-    }());
 
     auto metadata_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, persistent_components.metadata_cache, local_context, log, compression_method);
     chassert([&]()

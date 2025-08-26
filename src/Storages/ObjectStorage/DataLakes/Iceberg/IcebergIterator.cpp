@@ -236,10 +236,13 @@ IcebergIterator::IcebergIterator(
     PersistentTableComponents persistent_components_)
     : filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , object_storage(std::move(object_storage_))
+    , table_state_snapshot(table_snapshot_)
+    , persistent_components(persistent_components_)
     , data_files_iterator(
           object_storage,
           local_context_,
-          [](const Iceberg::ManifestFilePtr & manifest_file) { return manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::DATA); },
+          [](const Iceberg::ManifestFilePtr & manifest_file)
+          { return manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::DATA); },
           Iceberg::ManifestFileContentType::DATA,
           configuration_,
           filter_dag.get(),
@@ -333,6 +336,28 @@ IcebergIterator::~IcebergIterator()
 {
     blocking_queue.finish();
     producer_task->deactivate();
+}
+
+std::shared_ptr<NamesAndTypesList> IcebergIterator::getInitialSchemaByPath(ObjectInfoPtr object_info) const
+{
+    IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
+    if (!iceberg_object_info)
+        return nullptr;
+    return (iceberg_object_info->underlying_format_read_schema_id != table_state_snapshot->schema_id)
+            || (!iceberg_object_info->equality_deletes_objects.empty())
+        ? persistent_components.schema_processor->getClickhouseTableSchemaById(iceberg_object_info->underlying_format_read_schema_id)
+        : nullptr;
+}
+
+std::shared_ptr<const ActionsDAG> IcebergIterator::getSchemaTransformer(ObjectInfoPtr object_info) const
+{
+    IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
+    if (!iceberg_object_info)
+        return nullptr;
+    return (iceberg_object_info->underlying_format_read_schema_id != table_state_snapshot->schema_id)
+        ? persistent_components.schema_processor->getSchemaTransformationDagByIds(
+              iceberg_object_info->underlying_format_read_schema_id, table_state_snapshot->schema_id)
+        : nullptr;
 }
 }
 

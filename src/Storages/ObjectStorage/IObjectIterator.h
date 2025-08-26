@@ -15,6 +15,8 @@ struct IObjectIterator
     virtual ObjectInfoPtr next(size_t) = 0;
     virtual size_t estimatedKeysCount() = 0;
     virtual std::optional<UInt64> getSnapshotVersion() const { return std::nullopt; }
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ObjectInfoPtr) const { return nullptr; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ObjectInfoPtr) const { return nullptr; }
 };
 
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
@@ -33,6 +35,14 @@ public:
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
     std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ObjectInfoPtr object_info) const override
+    {
+        return iterator->getInitialSchemaByPath(object_info);
+    }
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ObjectInfoPtr object_info) const override
+    {
+        return iterator->getSchemaTransformer(object_info);
+    }
 
 private:
     const ObjectIterator iterator;

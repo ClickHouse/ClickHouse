@@ -69,9 +69,6 @@ public:
         const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context);
 
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override;
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
-
     bool supportsSchemaEvolution() const override { return true; }
 
     static Int32 parseTableSchema(
@@ -146,8 +143,7 @@ private:
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::IcebergTableStateSnapshot>
     getState(const ContextPtr & local_context, String metadata_path, Int32 metadata_version) const;
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const TSA_REQUIRES_SHARED(mutex);
-    void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) const TSA_REQUIRES(mutex);
-    bool updateImpl(const ContextPtr & local_context) TSA_REQUIRES(mutex);
+    void updateImpl(const ContextPtr & local_context) TSA_REQUIRES(mutex);
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::IcebergTableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
 };
