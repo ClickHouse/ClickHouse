@@ -111,7 +111,6 @@ private:
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
-    void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);
@@ -119,6 +118,10 @@ private:
     void executeSingleThread(size_t thread_num, IAcquiredSlot * cpu_slot);
     void finish();
     void cancel(ExecutionStatus reason);
+
+    // Methods for CPU scheduling
+    SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control);
+    void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
 
     /// If execution_status == from, change it to desired.
     bool tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired);

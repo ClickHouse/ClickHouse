@@ -12,6 +12,12 @@ namespace ErrorCodes
 
 void ExecutorTasks::finish()
 {
+    if (cpu_slots)
+    {
+        cpu_slots->free();
+        cpu_slots.reset();
+    }
+
     {
         std::lock_guard lock(mutex);
         finished = true;
@@ -177,13 +183,14 @@ ExecutorTasks::SpawnStatus ExecutorTasks::pushTasks(Queue & queue, Queue & async
     return DO_NOT_SPAWN; // No new tasks -- no need for new threads
 }
 
-void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback)
+void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback)
 {
     num_threads = num_threads_;
     use_threads = use_threads_;
     threads_queue.init(num_threads);
     task_queue.init(num_threads);
     fast_task_queue.init(num_threads);
+    cpu_slots = cpu_slots_;
 
     // Initialize slot counters with zeros up to max_threads
     slot_count.resize(num_threads, 0);
@@ -246,12 +253,11 @@ ExecutorTasks::SpawnStatus ExecutorTasks::upscale(size_t slot_id)
 
 void ExecutorTasks::downscale(size_t slot_id)
 {
-    std::unique_lock lock(mutex);
+    std::lock_guard lock(mutex);
 
     if (slot_id >= slot_count.size() || slot_count[slot_id] == 0)
         return;
     --slot_count[slot_id];
-    --total_slots;
 
     if (slot_id + 1 == use_threads)
     {
@@ -265,8 +271,14 @@ void ExecutorTasks::downscale(size_t slot_id)
             }
         }
     }
+}
 
-    // We should make sure that downscaled thread has no local task inside context.
+void ExecutorTasks::preempt(size_t slot_id)
+{
+    std::unique_lock lock(mutex);
+    --total_slots;
+
+    // We should make sure that preempted thread has no local task inside context.
     // It is allowed to have tasks in `task_queue` or `fast_task_queue` because they can be stealed by other threads.
     auto & context = executor_contexts[slot_id];
     if (auto * task = context->popTask())
@@ -276,12 +288,18 @@ void ExecutorTasks::downscale(size_t slot_id)
         tryWakeUpAnyOtherThreadWithTasks(*context, lock);
     }
 
-    // Finish pipeline if downscaled thread was the last non-idle thread executed the last task of the whole pipeline
+    // Finish pipeline if preempted thread was the last non-idle thread executed the last task of the whole pipeline
     if (task_queue.empty() && fast_task_queue.empty() && async_task_queue.empty() && threads_queue.size() == total_slots)
     {
         lock.unlock();
         finish();
     }
+}
+
+void ExecutorTasks::resume(size_t)
+{
+    std::lock_guard lock(mutex);
+    ++total_slots;
 }
 
 void ExecutorTasks::processAsyncTasks()
