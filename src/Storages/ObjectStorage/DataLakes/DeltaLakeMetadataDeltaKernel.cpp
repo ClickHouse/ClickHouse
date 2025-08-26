@@ -69,7 +69,8 @@ DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
 bool DeltaLakeMetadataDeltaKernel::operator ==(const IDataLakeMetadata & metadata) const
 {
     const auto & delta_lake_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel &>(metadata);
-    std::lock_guard lock(table_snapshot_mutex);
+    std::lock_guard lk1(table_snapshot_mutex);
+    std::lock_guard lk2(delta_lake_metadata.table_snapshot_mutex);
     return table_snapshot->getVersion() == delta_lake_metadata.table_snapshot->getVersion();
 }
 
@@ -106,9 +107,10 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    bool supports_subset_of_columns)
+    bool supports_subset_of_columns,
+    bool supports_tuple_elements)
 {
-    auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns);
+    auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns, supports_tuple_elements);
 
     /// Read schema is different from table schema in case:
     /// 1. we have partition columns (they are not stored in the actual data)
