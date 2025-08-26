@@ -2273,6 +2273,7 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::getParents(const Node * target) const
 
 ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(const NameSet & sort_columns) const
 {
+    LOG_DEBUG(&Poco::Logger::get("ActionsDAG"), "splitActionsBySortingDescription");
     std::unordered_set<const Node *> split_nodes;
     for (const auto & sort_column : sort_columns)
         if (const auto * node = tryFindInOutputs(sort_column))
@@ -2356,6 +2357,7 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
 
 ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & column_name) const
 {
+    LOG_DEBUG(&Poco::Logger::get("ActionsDAG"), "splitActionsForFilter");
     const auto * node = tryFindInOutputs(column_name);
     if (!node)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -2388,6 +2390,7 @@ struct DisjunctionNodes
 /// Allowed predicate is a predicate which can be calculated using only nodes from the allowed_nodes set.
 ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes, bool allow_non_deterministic_functions)
 {
+    LOG_DEBUG(&Poco::Logger::get("ActionsDAG"), "getConjunctionNodes");
     ConjunctionNodes conjunction;
     std::unordered_set<const ActionsDAG::Node *> allowed;
     std::unordered_set<const ActionsDAG::Node *> rejected;
@@ -2501,6 +2504,7 @@ DisjunctionNodes getDisjunctionNodes(
     std::unordered_set<const ActionsDAG::Node *> allowed_nodes,
     bool allow_non_deterministic_functions)
 {
+    LOG_DEBUG(&Poco::Logger::get("ActionsDAG"), "getDisjunctionNodes");
     DisjunctionNodes disjunction;
     if (!predicate)
         return disjunction;
@@ -2633,6 +2637,7 @@ ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPt
 /// No other columns are added or removed.
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
 {
+    LOG_DEBUG(&Poco::Logger::get("ActionsDAG"), "createActionsForConjunction");
     if (conjunction.empty())
         return {};
 
@@ -2756,6 +2761,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
 std::optional<ActionsDAG::ActionsForFilterPushDown>
 ActionsDAG::createActionsForDisjunction(NodeRawConstPtrs disjunction, const ColumnsWithTypeAndName & all_inputs)
 {
+    LOG_DEBUG(&Poco::Logger::get("ActionsDAG"), "createActionsForDisjunction");
     if (disjunction.empty())
     {
         return {};
@@ -2894,6 +2900,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     const ColumnsWithTypeAndName & all_inputs,
     bool allow_non_deterministic_functions)
 {
+    LOG_DEBUG(&Poco::Logger::get("ActionsDAG"), "splitActionsForFilterPushDown 12");
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -2962,6 +2969,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForMixed(
     NodeRawConstPtrs conjunction_nodes, NodeRawConstPtrs disjunction_nodes, const ColumnsWithTypeAndName & all_inputs)
 {
+    LOG_DEBUG(&Poco::Logger::get("ActionsDAG"), "createActionsForMixed");
     if (disjunction_nodes.empty())
         return createActionsForConjunction(conjunction_nodes, all_inputs);
     if (conjunction_nodes.empty())
@@ -3075,6 +3083,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column)
 {
+    LOG_DEBUG(&Poco::Logger::get("ActionsDAG"), "splitActionsForJOINFilterPushDown");
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -3132,11 +3141,11 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
     /// getDisjunctionNodes MUST collect atoms (non-and/or/alias) that appear anywhere under an OR
     /// and classify them using the same bottom-up allowedness rules as conjunctions
-    auto left_stream_push_down_disjunctions   = getDisjunctionNodes(predicate, left_stream_allowed_nodes,  /*allow_non_deterministic_functions*/ false);
-    auto right_stream_push_down_disjunctions  = getDisjunctionNodes(predicate, right_stream_allowed_nodes, /*allow_non_deterministic_functions*/ false);
-    auto both_streams_push_down_disjunctions  = getDisjunctionNodes(predicate, both_streams_allowed_nodes, /*allow_non_deterministic_functions*/ false);
+    auto left_stream_push_down_disjunctions = getDisjunctionNodes(predicate, left_stream_allowed_nodes, /*allow_non_deterministic_functions*/ false);
+    auto right_stream_push_down_disjunctions = getDisjunctionNodes(predicate, right_stream_allowed_nodes, /*allow_non_deterministic_functions*/ false);
+    auto both_streams_push_down_disjunctions = getDisjunctionNodes(predicate, both_streams_allowed_nodes, /*allow_non_deterministic_functions*/ false);
 
-    NodeRawConstPtrs left_stream_allowed_disjunctions  = std::move(left_stream_push_down_disjunctions.allowed);
+    NodeRawConstPtrs left_stream_allowed_disjunctions = std::move(left_stream_push_down_disjunctions.allowed);
     NodeRawConstPtrs right_stream_allowed_disjunctions = std::move(right_stream_push_down_disjunctions.allowed);
 
     std::unordered_set<const Node *> left_stream_allowed_disjunctions_set(left_stream_allowed_disjunctions.begin(), left_stream_allowed_disjunctions.end());
@@ -3507,6 +3516,7 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
     const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
     bool single_output_condition_node)
 {
+    LOG_DEBUG(&Poco::Logger::get("ActionsDAG"), "buildFilterActionsDAG");
     if (filter_nodes.empty())
         return {};
 
@@ -3674,6 +3684,7 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
 
 ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * predicate)
 {
+    LOG_DEBUG(&Poco::Logger::get("ActionsDAG"), "extractConjunctionAtoms");
     NodeRawConstPtrs atoms;
 
     std::stack<const ActionsDAG::Node *> stack;
@@ -3705,6 +3716,7 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::filterNodesByAllowedInputs(
     NodeRawConstPtrs nodes,
     const std::unordered_set<const Node *> & allowed_inputs)
 {
+    LOG_DEBUG(&Poco::Logger::get("ActionsDAG"), "filterNodesByAllowedInputs");
     size_t result_size = 0;
 
     std::unordered_map<const ActionsDAG::Node *, bool> can_compute;

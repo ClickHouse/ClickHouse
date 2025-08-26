@@ -24,7 +24,8 @@ public:
         size_t max_streams_,
         NameSet required_output_,
         bool keep_left_read_in_order_,
-        bool use_new_analyzer_);
+        bool use_new_analyzer_,
+        bool use_disjunctions_push_down_ = false);
 
     String getName() const override { return "Join"; }
 
@@ -71,6 +72,17 @@ private:
     std::set<size_t> columns_to_remove;
     bool keep_left_read_in_order;
     bool use_new_analyzer = false;
+    bool use_disjunctions_push_down = false;
+    bool disjunctions_optimization_applied = false;    /// Flag that indicates that disjunction optimization was already applied
+    /// to prevent infinite optimization loop
+
+public:
+    /// Check if disjunction optimization was already applied to this JoinStep
+    bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
+
+    /// Mark that disjunction optimization has been applied to this JoinStep
+    void setDisjunctionsOptimizationApplied(bool value) { disjunctions_optimization_applied = value; }
+
     bool swap_streams = false;
     PrimaryKeySharding primary_key_sharding;
 };

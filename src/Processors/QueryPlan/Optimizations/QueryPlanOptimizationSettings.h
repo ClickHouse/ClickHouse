@@ -56,11 +56,15 @@ struct QueryPlanOptimizationSettings
     bool try_use_vector_search;
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
+    bool use_disjunctions_push_down;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
     /// nullopt - swap if it's beneficial
     std::optional<bool> join_swap_table;
+
+    /// Flag to track if join filter pushdown optimization has been applied globally
+    bool join_filter_push_down_applied = false;
 
     /// --- Second-pass optimizations
     bool optimize_prewhere;

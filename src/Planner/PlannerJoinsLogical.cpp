@@ -48,8 +48,6 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/JoinInfo.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
 
 #include <stack>
 
@@ -236,7 +234,6 @@ struct JoinInfoBuildContext
 
 bool tryGetJoinPredicate(const FunctionNode * function_node, JoinInfoBuildContext & builder_context, JoinCondition & join_condition)
 {
-    LOG_TRACE(getLogger("DEBUGGING!"), "tryGetJoinPredicate, function_node: {}", function_node->getFunctionName());
     if (!function_node || function_node->getArguments().getNodes().size() != 2)
         return false;
 
@@ -244,7 +241,6 @@ bool tryGetJoinPredicate(const FunctionNode * function_node, JoinInfoBuildContex
     if (!predicate_operator.has_value())
         return false;
 
-    LOG_TRACE(getLogger("DEBUGGING!"), "tryGetJoinPredicate, predicate_operator: {}", predicate_operator.value());
     auto left_node = function_node->getArguments().getNodes().at(0);
     auto left_expr_source = builder_context.getExpressionSource(left_node);
 
@@ -253,7 +249,6 @@ bool tryGetJoinPredicate(const FunctionNode * function_node, JoinInfoBuildContex
 
     if (left_expr_source == JoinInfoBuildContext::JoinSource::Left && right_expr_source == JoinInfoBuildContext::JoinSource::Right)
     {
-        LOG_TRACE(getLogger("DEBUGGING!"), "tryGetJoinPredicate, 1");
         join_condition.predicates.emplace_back(JoinPredicate{
             builder_context.addExpression(left_node, JoinInfoBuildContext::JoinSource::Left),
             builder_context.addExpression(right_node, JoinInfoBuildContext::JoinSource::Right),
@@ -263,7 +258,6 @@ bool tryGetJoinPredicate(const FunctionNode * function_node, JoinInfoBuildContex
 
     if (left_expr_source == JoinInfoBuildContext::JoinSource::Right && right_expr_source == JoinInfoBuildContext::JoinSource::Left)
     {
-        LOG_TRACE(getLogger("DEBUGGING!"), "tryGetJoinPredicate, 2");
         join_condition.predicates.push_back(JoinPredicate{
             builder_context.addExpression(right_node, JoinInfoBuildContext::JoinSource::Left),
             builder_context.addExpression(left_node, JoinInfoBuildContext::JoinSource::Right),
@@ -335,88 +329,19 @@ void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinInfoBuild
     {
         for (const auto & child : function_node->getArguments())
             buildDisjunctiveJoinConditions(child, builder_context, join_conditions);
-
-        // Mark all join conditions as using disjunctive semantics for their filters
-        // This is important for OR predicates so they're properly pushed down with OR semantics
-        for (auto & condition : join_conditions)
-        {
-            condition.left_filter_disjunctive = true;
-            condition.right_filter_disjunctive = true;
-            condition.residual_disjunctive = true;
-        }
         return;
     }
     buildJoinCondition(node, builder_context, join_conditions.emplace_back());
 }
 
 
-template <class T, class KeyFn>
-static inline void appendUniqueBy(std::vector<T> & dst, const std::vector<T> & src, KeyFn key_fn)
-{
-    std::unordered_set<String> seen;
-    seen.reserve(dst.size() + src.size());
-    for (const auto & x : dst)
-        seen.insert(key_fn(x));
-    for (const auto & x : src)
-        if (seen.insert(key_fn(x)).second)
-            dst.push_back(x);
-}
-
-static inline String predicateKey(const JoinPredicate & p)
-{
-    // Left/right are stable (left table -> left_node, right table -> right_node),
-    // so we don’t need to canonicalize (swap)
-    return fmt::format("{}|{}|{}",
-        p.left_node.getColumnName(),
-        static_cast<int>(p.op),
-        p.right_node.getColumnName());
-}
-
-static inline String actionKey(const JoinActionRef & a)
-{
-    // Good for dedup of identical scalar filter atoms like "greater(__table1.a, 0_UInt8)"
-    return a.getColumnName();
-}
-
-JoinCondition concatConditions(const JoinCondition & lhs, const JoinCondition & rhs)
-{
-    JoinCondition result = lhs;
-
-    appendUniqueBy(result.predicates, rhs.predicates, [](const JoinPredicate & p) { return predicateKey(p); });
-
-    appendUniqueBy(result.left_filter_conditions, rhs.left_filter_conditions, [](const JoinActionRef & a) { return actionKey(a); });
-    appendUniqueBy(result.right_filter_conditions, rhs.right_filter_conditions, [](const JoinActionRef & a) { return actionKey(a); });
-    appendUniqueBy(result.residual_conditions, rhs.residual_conditions, [](const JoinActionRef & a) { return actionKey(a); });
-
-    result.left_filter_disjunctive |= rhs.left_filter_disjunctive;
-    result.right_filter_disjunctive |= rhs.right_filter_disjunctive;
-    result.residual_disjunctive |= rhs.residual_disjunctive;
-
-    return result;
-}
-
-void addConditionsToJoinInfo(JoinInfoBuildContext & build_context, std::vector<JoinCondition> join_conditions, bool or_pushdown = false)
+void addConditionsToJoinInfo(JoinInfoBuildContext & build_context, std::vector<JoinCondition> join_conditions)
 {
     if (!join_conditions.empty())
     {
-        if (or_pushdown)
-        {
-            for (const auto & condition : join_conditions)
-            {
-                build_context.result_join_info.expression.condition.left_filter_disjunctive = true;
-                build_context.result_join_info.expression.condition.right_filter_disjunctive = true;
-                build_context.result_join_info.expression.condition.residual_disjunctive = true;
-
-                build_context.result_join_info.expression.condition = concatConditions(build_context.result_join_info.expression.condition, condition);
-            }
-            build_context.result_join_info.expression.disjunctive_conditions = std::move(join_conditions);
-        }
-        else
-        {
-            build_context.result_join_info.expression.condition = std::move(join_conditions.back());
-            join_conditions.pop_back();
-            build_context.result_join_info.expression.disjunctive_conditions = std::move(join_conditions);
-        }
+        build_context.result_join_info.expression.condition = std::move(join_conditions.back());
+        join_conditions.pop_back();
+        build_context.result_join_info.expression.disjunctive_conditions = std::move(join_conditions);
     }
 }
 
@@ -439,6 +364,16 @@ static bool hasEquiConditions(const JoinCondition & condition)
     return false;
 }
 
+
+JoinCondition concatConditions(const JoinCondition & lhs, const JoinCondition & rhs)
+{
+    JoinCondition result = lhs;
+    result.predicates.insert(result.predicates.end(), rhs.predicates.begin(), rhs.predicates.end());
+    result.left_filter_conditions.insert(result.left_filter_conditions.end(), rhs.left_filter_conditions.begin(), rhs.left_filter_conditions.end());
+    result.right_filter_conditions.insert(result.right_filter_conditions.end(), rhs.right_filter_conditions.begin(), rhs.right_filter_conditions.end());
+    result.residual_conditions.insert(result.residual_conditions.end(), rhs.residual_conditions.begin(), rhs.residual_conditions.end());
+    return result;
+}
 
 static std::vector<JoinCondition> makeCrossProduct(const std::vector<JoinCondition> & lhs, const std::vector<JoinCondition> & rhs)
 {
@@ -480,7 +415,6 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
 
         return it->second;
     };
-    bool or_pushdown = false;
     while (!nodes_to_process.empty())
     {
         auto node = nodes_to_process.top();
@@ -507,7 +441,6 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
             std::vector<JoinCondition> result;
             if (function_name == "or")
             {
-                or_pushdown = true;
                 for (auto & argument : arguments)
                 {
                     auto & child_res = get_and_check_built_clause(argument.get());
@@ -553,7 +486,7 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
         }
     }
 
-    addConditionsToJoinInfo(builder_context, std::move(built_clauses.at(join_expression.get())), or_pushdown);
+    addConditionsToJoinInfo(builder_context, std::move(built_clauses.at(join_expression.get())));
 }
 
 std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
