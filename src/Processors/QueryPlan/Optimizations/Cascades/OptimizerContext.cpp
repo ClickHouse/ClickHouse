@@ -14,6 +14,7 @@ OptimizerContext::OptimizerContext()
 //    addRule(std::make_shared<JoinAssociativity>());
     addRule(std::make_shared<JoinCommutativity>());
     addRule(std::make_shared<HashJoinImplementation>());
+    addRule(std::make_shared<DefaultImplementation>());
 }
 
 void OptimizerContext::addRule(OptimizationRulePtr rule)

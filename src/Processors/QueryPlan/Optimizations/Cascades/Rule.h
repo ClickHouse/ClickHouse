@@ -65,4 +65,17 @@ protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, Memo & memo) const override;
 };
 
+/// Moves the QueryPlan node to implementation as is
+class DefaultImplementation : public IOptimizationRule
+{
+public:
+    String getName() const override { return "DefaultImplementation"; }
+    bool checkPattern(GroupExpressionPtr expression, const Memo & memo) const override;
+    Promise getPromise() const override { return 1; }
+    bool isTransformation() const override { return false; }
+
+protected:
+    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, Memo & memo) const override;
+};
+
 }
