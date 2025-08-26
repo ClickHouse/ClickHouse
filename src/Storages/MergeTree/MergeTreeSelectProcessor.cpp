@@ -4,7 +4,12 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
@@ -128,6 +133,30 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
             has_prewhere_actions_steps ? prewhere_actions.dumpConditions() : std::string("<nullptr>"),
             prewhere_info ? prewhere_info->prewhere_actions.dumpDAG() : std::string("<nullptr>"),
             has_prewhere_actions_steps ? prewhere_actions.dump() : std::string("<nullptr>"));
+
+    if (reader_settings.use_query_condition_cache && prewhere_info)
+    {
+        for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+        {
+            if (output->result_name == prewhere_info->prewhere_column_name)
+            {
+                if (!VirtualColumnUtils::isDeterministic(output))
+                    continue;
+
+                auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+                if (query_condition_cache)
+                {
+                    query_condition_cache_writer = std::make_shared<QueryConditionCacheWriter>(
+                        *query_condition_cache,
+                        output->getHash(),
+                        reader_settings.query_condition_cache_store_conditions_as_plaintext ? prewhere_info->prewhere_actions.getNames()[0] : "",
+                        reader_settings.query_condition_cache_selectivity_threshold);
+                }
+
+                break;
+            }
+        }
+    }
 }
 
 String MergeTreeSelectProcessor::getName() const
@@ -196,35 +225,19 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             if (!task || algorithm->needNewTask(*task))
             {
                 /// Update the query condition cache for filters in PREWHERE stage
-                if (reader_settings.use_query_condition_cache && task && prewhere_info)
+                if (query_condition_cache_writer && task)
                 {
-                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
-                    {
-                        if (output->result_name == prewhere_info->prewhere_column_name)
-                        {
-                            if (!VirtualColumnUtils::isDeterministic(output))
-                                continue;
-
-                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            auto data_part = task->getInfo().data_part;
-
-                            String part_name = data_part->isProjectionPart()
+                    auto data_part = task->getInfo().data_part;
+                    String part_name = data_part->isProjectionPart()
                                 ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
                                 : data_part->name;
-                            query_condition_cache->write(
-                                data_part->storage.getStorageID().uuid,
-                                part_name,
-                                output->getHash(),
-                                reader_settings.query_condition_cache_store_conditions_as_plaintext
-                                    ? prewhere_info->prewhere_actions.getNames()[0]
-                                    : "",
-                                task->getPrewhereUnmatchedMarks(),
-                                data_part->index_granularity->getMarksCount(),
-                                data_part->index_granularity->hasFinalMark());
 
-                            break;
-                        }
-                    }
+                    query_condition_cache_writer->addRanges(
+                        data_part->storage.getStorageID().uuid,
+                        part_name,
+                        task->getPrewhereUnmatchedMarks(),
+                        data_part->index_granularity->getMarksCount(),
+                        data_part->index_granularity->hasFinalMark());
                 }
 
                 task = algorithm->getNewTask(*pool, task.get());
@@ -282,7 +295,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 .is_finished = false};
         }
 
-        if (reader_settings.use_query_condition_cache && prewhere_info)
+        if (query_condition_cache_writer)
             task->addPrewhereUnmatchedMarks(res.read_mark_ranges);
 
         return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
