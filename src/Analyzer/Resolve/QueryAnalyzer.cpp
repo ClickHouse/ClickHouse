@@ -2822,7 +2822,7 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
 
-/** Attempts to compute a constant result for any function by evaluating its arguments at compile time.
+/** Attempts to compute a constant result for any function by evaluating its arguments at the query analysis phase.
  * This function implements general constant folding optimization. It recursively processes function
  * arguments to determine if the entire function can be evaluated to a constant value without
  * executing the query.
