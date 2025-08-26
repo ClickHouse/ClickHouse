@@ -41,7 +41,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.9",
         {
-
+            {"query_plan_optimize_join_order", false, false, "New setting"},
+            {"query_plan_optimize_joins", true, true, "New setting"},
+            {"query_plan_display_internal_aliases", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
@@ -76,9 +78,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_support_projection", false, true, "New setting. Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive."},
             {"input_format_json_infer_array_of_dynamic_from_array_of_different_types", false, true, "Infer Array(Dynamic) for JSON arrays with different values types by default"},
             {"enable_add_distinct_to_in_subqueries", false, false, "New setting to reduce the size of temporary tables transferred for distributed IN subqueries."},
-            {"query_plan_optimize_join_order", false, false, "New setting"},
-            {"query_plan_optimize_joins", true, true, "New setting"},
-            {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"enable_vector_similarity_index", false, true, "Vector similarity indexes are GA."},
             {"execute_exists_as_scalar_subquery", false, true, "New setting"},
             {"allow_experimental_vector_similarity_index", false, true, "Vector similarity indexes are GA."},
