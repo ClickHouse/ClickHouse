@@ -1,6 +1,8 @@
 import dataclasses
 import json
+import os
 import re
+import tempfile
 import time
 import traceback
 from typing import Dict, List, Optional, Union
@@ -185,23 +187,31 @@ class GH:
                         f"Appended existing comment [{id_to_update}] tag [{tag}] with [{tag_body}], new [{body}]"
                     )
 
+        # Create temp file for body to avoid shell escaping issues
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt', encoding='utf-8') as temp_file:
+            temp_file.write(body)
+            temp_file_path = temp_file.name
+        
         res = None
         if id_to_update:
             cmd = f'gh api -X PATCH \
                     -H "Accept: application/vnd.github.v3+json" \
                     "/repos/{repo}/issues/comments/{id_to_update}" \
-                    -f body=\'{body}\''
+                    --input {temp_file_path} --field body=@-'
             print(f"Update existing comments [{id_to_update}]")
             res = cls.do_command_with_retries(cmd)
         else:
             if not only_update:
-                cmd = f'gh pr comment {pr} --body "{body}"'
+                cmd = f'gh pr comment {pr} --body-file {temp_file_path}'
                 print(f"Create new comment")
                 res = cls.do_command_with_retries(cmd)
             else:
                 print(
                     f"WARNING: comment to update not found, tags [{[k for k in comment_tags_and_bodies.keys()]}]"
                 )
+        
+        # Clean up temp file
+        os.unlink(temp_file_path)
 
         return res
 

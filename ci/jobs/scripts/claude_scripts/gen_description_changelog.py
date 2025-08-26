@@ -195,21 +195,18 @@ if __name__ == "__main__":
     comment_body += "**Suggested changelog entry**:\n\n"
     comment_body += f"{suggested_changelog_entry}\n\n"
 
-    # Use shlex.quote to properly escape the comment body for shell safety
-    escaped_comment_body = quote(comment_body)
-
     # Update existing comment first if it doesn't exist
     try:
         if not GH.post_updateable_comment(
             comment_tags_and_bodies={
-                "llm_generated_description_changelog": escaped_comment_body
+                "llm_generated_description_changelog": comment_body
             },
             only_update=True,
         ):
             # Comment doesn't exist yet, create a new one
             GH.post_updateable_comment(
                 comment_tags_and_bodies={
-                    "llm_generated_description_changelog": escaped_comment_body
+                    "llm_generated_description_changelog": comment_body
                 },
                 only_update=False,
             )
