@@ -166,6 +166,44 @@ void MergingSortedAlgorithm::insertRow(const SortCursorImpl & current)
     }
 }
 
+void MergingSortedAlgorithm::insertRows(const SortCursorImpl & current, size_t num_rows)
+{
+    if (hasFilter())
+    {
+        const auto & filter_column = current.all_columns[filter_column_position];
+        const auto & filter_data = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
+
+        size_t start_index = current.getRow();
+        RowSourcePart row_source(current.order, false);
+        RowSourcePart row_source_skipped(current.order, true);
+
+        for (size_t i = start_index; i < start_index + num_rows; ++i)
+        {
+            if (filter_data[i])
+            {
+                merged_data.insertRow(current.all_columns, i, current.rows);
+                out_row_sources_buf->write(row_source.data);
+            }
+            else
+            {
+                out_row_sources_buf->write(row_source_skipped.data);
+            }
+        }
+    }
+    else
+    {
+        merged_data.insertRows(current.all_columns, current.getRow(), num_rows, current.rows);
+
+        if (out_row_sources_buf)
+        {
+            RowSourcePart row_source(current.order);
+
+            for (size_t i = 0; i < num_rows; ++i)
+                out_row_sources_buf->write(row_source.data);
+        }
+    }
+}
+
 void MergingSortedAlgorithm::insertChunk(size_t source_num)
 {
     Chunk chunk = std::move(current_inputs[source_num].chunk);
@@ -351,39 +389,20 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
             if (merged_data.mergedRows() != 0)
                 return Status(merged_data.pull());
 
-            size_t source_num = current.impl->order;
-            size_t insert_rows_size = initial_batch_size - static_cast<size_t>(batch_skip_last_row);
-            merged_data.insertChunk(std::move(current_inputs[source_num].chunk), insert_rows_size);
-            current_inputs[source_num].chunk = Chunk();
-
-            if (out_row_sources_buf)
-            {
-                RowSourcePart row_source(current.impl->order);
-
-                for (size_t i = 0; i < insert_rows_size; ++i)
-                    out_row_sources_buf->write(row_source.data);
-            }
+            insertChunk(current.impl->order);
 
             /// We will get the next block from the corresponding source, if there is one.
             queue.removeTop();
 
             auto result = Status(merged_data.pull(), limit_reached);
             if (!limit_reached)
-                result.required_source = source_num;
+                result.required_source = current.impl->order;
 
             return result;
         }
 
         size_t insert_rows_size = updated_batch_size - static_cast<size_t>(batch_skip_last_row);
-        merged_data.insertRows(current->all_columns, current->getRow(), insert_rows_size, current->rows);
-
-        if (out_row_sources_buf)
-        {
-            RowSourcePart row_source(current.impl->order);
-
-            for (size_t i = 0; i < insert_rows_size; ++i)
-                out_row_sources_buf->write(row_source.data);
-        }
+        insertRows(*current.impl, insert_rows_size);
 
         if (limit_reached)
             break;

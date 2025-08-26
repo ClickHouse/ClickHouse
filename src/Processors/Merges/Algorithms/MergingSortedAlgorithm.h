@@ -72,7 +72,7 @@ private:
 
     bool hasFilter() const { return filter_column_position != -1; }
     void insertRow(const SortCursorImpl & current);
-    // void insertRows(const SortCursorImpl & current, size_t num_rows);
+    void insertRows(const SortCursorImpl & current, size_t num_rows);
     void insertChunk(size_t source_num);
 };
 
