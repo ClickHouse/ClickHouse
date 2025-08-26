@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.9",
         {
-
+            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
@@ -108,7 +108,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"evaluation_time", 0, 0, "New experimental setting"},
             {"output_format_parquet_date_as_uint16", false, false, "Added a compatibility setting for a minor compatibility-breaking change introduced back in 24.12."},
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
-            {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."}
+            {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
+            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -158,6 +159,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_schema_message_name", "", "", "New setting"},
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
+            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
@@ -864,6 +866,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"dynamic_serialization_version", "v2", "v2", "Add a setting to control Dynamic serialization versions"},
             {"search_orphaned_parts_disks", "any", "any", "New setting"},
             {"shared_merge_tree_virtual_parts_discovery_batch", 1, 1, "New setting"},
+            {"max_digestion_size_per_segment", 256_MiB, 256_MiB, "Obsolete setting"},
             {"shared_merge_tree_update_replica_flags_delay_ms", 30000, 30000, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"},
             {"allow_part_offset_column_in_projections", false, true, "Now projections can use _part_offset column."},
