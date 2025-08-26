@@ -748,9 +748,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     /// Some of information will be filled in parallel in  process_part
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
 
+    /// TODO: This optimization doesn't work
     /// This is set when we construct an instance of FullTextSearchFunctionMixin that used pure index to perform the search.
     /// Function construction may take place during DAG construction the first optimization pass.
-    const bool context_needs_index_info = context->needsIndexInfo();
+    // const bool context_needs_index_info = context->needsIndexInfo();
+    const bool context_needs_index_info = true;
 
     /// We preallocate the array in advance with the number of parts to allow every part store on it totally lock free.
     std::vector<std::optional<IndexContextInfo::PartInfo>> part_index_info_vector(
@@ -894,12 +896,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 /// indices and we are only using one of them in the query; this will store potentially a lot of unneeded information.
                 /// We need some trick to detect which are the exact indices needed for this query and store only those in
                 /// postings_cache_for_store_part.
-                if (context_needs_index_info && index_and_condition.index->index.type == "text")
+                if (!ranges.ranges.empty() && context_needs_index_info && cache_in_store != nullptr)
                 {
-                    chassert(cache_in_store != nullptr);
-                    const String &index_name = index_and_condition.index->index.name;
+                    chassert(index_and_condition.index->index.type == "text");
                     /// Remember this function takes a lock, don't abuse of it.
-                    postings_cache_for_store_part.emplace(index_name, cache_in_store);
+                    postings_cache_for_store_part.emplace(index_and_condition.index->index.name, cache_in_store);
                 }
 
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
