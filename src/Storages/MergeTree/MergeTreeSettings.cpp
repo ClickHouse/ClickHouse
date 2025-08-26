@@ -1778,6 +1778,9 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
     How many partition discoveries should be packed into batch
     )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_generate_min_max_data_insert_file, false, R"(
+    Allow to generate min/max_insert_data file.
+    )", EXPERIMENTAL) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, R"(

@@ -119,6 +119,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
     extern const MergeTreeSettingsUInt64 max_merge_delayed_streams_for_parallel_write;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
+    extern const MergeTreeSettingsBool allow_generate_min_max_data_insert_file;
 }
 
 namespace ErrorCodes
@@ -460,6 +461,20 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (global_ctx->metadata_snapshot->hasAnyTTL() && local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
 
+    if (enabledMinMaxInsertFile(global_ctx))
+    {
+        time_t min_insert_time_res = std::numeric_limits<time_t>::max();
+        time_t max_insert_time_res = std::numeric_limits<time_t>::min();
+
+        for (const auto & part : global_ctx->future_part->parts)
+        {
+            min_insert_time_res = std::min(min_insert_time_res, part->getMinTimeOfDataInsertion());
+            max_insert_time_res = std::max(max_insert_time_res, part->getMaxTimeOfDataInsertion());
+        }
+        global_ctx->new_data_part->max_time_of_data_insert = max_insert_time_res;
+        global_ctx->new_data_part->min_time_of_data_insert = min_insert_time_res;
+    }
+
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
     {
         LOG_INFO(ctx->log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", global_ctx->new_data_part->name);
@@ -706,6 +721,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 bool MergeTask::enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
 {
     return (*global_ctx->data->getSettings())[MergeTreeSetting::enable_block_number_column] && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+}
+
+bool MergeTask::enabledMinMaxInsertFile(GlobalRuntimeContextPtr global_ctx)
+{
+    return (*global_ctx->data->getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file];
 }
 
 bool MergeTask::enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)

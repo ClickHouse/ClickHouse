@@ -868,6 +868,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"},
             {"allow_part_offset_column_in_projections", false, true, "Now projections can use _part_offset column."},
             {"max_uncompressed_bytes_in_patches", 0, 30ULL * 1024 * 1024 * 1024, "New setting"},
+            {"allow_generate_min_max_data_insert_file", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {
@@ -940,6 +941,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "New setting"},
             {"add_minmax_index_for_numeric_columns", false, false, "New setting"},
             {"add_minmax_index_for_string_columns", false, false, "New setting"},
+            {"allow_generate_min_max_data_insert_file", false, false, "New setting."},
             {"materialize_skip_indexes_on_merge", true, true, "New setting"},
             {"merge_max_bytes_to_prewarm_cache", 1ULL * 1024 * 1024 * 1024, 1ULL * 1024 * 1024 * 1024, "Cloud sync"},
             {"merge_total_max_bytes_to_prewarm_cache", 15ULL * 1024 * 1024 * 1024, 15ULL * 1024 * 1024 * 1024, "Cloud sync"},

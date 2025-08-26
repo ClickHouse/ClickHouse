@@ -17,6 +17,7 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
+    extern const MergeTreeSettingsBool allow_generate_min_max_data_insert_file;
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
@@ -236,11 +237,21 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
     }
 
+    auto current_time = time(nullptr);
+    new_part->modification_time = current_time;
+    if ((*new_part->storage.getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file])
+    {
+        if (!new_part->min_time_of_data_insert.has_value() && !new_part->max_time_of_data_insert.has_value())
+        {
+            new_part->min_time_of_data_insert = current_time;
+            new_part->max_time_of_data_insert = current_time;
+        }
+    }
+
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
     written_files = finalizePartOnDisk(new_part, checksums, additional_columns_substreams);
 
     new_part->rows_count = rows_count;
-    new_part->modification_time = time(nullptr);
 
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
@@ -391,6 +402,17 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         writeIntText(new_part->getMetadataVersion(), buffer);
     });
+
+    if ((*new_part->storage.getSettings())[MergeTreeSetting::allow_generate_min_max_data_insert_file])
+    {
+        auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::MIN_MAX_TIME_OF_DATA_INSERT_FILE, 4096, write_settings);
+        DB::writeIntText(new_part->getMinTimeOfDataInsertion(), *out);
+        DB::writeText(" ", *out);
+        DB::writeIntText(new_part->getMaxTimeOfDataInsertion(), *out);
+
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
+    }
 
     if (default_codec != nullptr)
     {
