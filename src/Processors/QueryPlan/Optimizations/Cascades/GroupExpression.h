@@ -29,6 +29,7 @@ public:
 
     String getName() const;
     String getDescription() const;
+    IQueryPlanStep * getQueryPlanStep() const;
     bool isApplied(const IOptimizationRule & rule) const;
     void setApplied(const IOptimizationRule & rule);
 
