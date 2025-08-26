@@ -2547,7 +2547,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// Optionally initializes index build context to filter on data reading. This context is shared across multiple
     /// MergeTreeSelectProcessor instances, and is used to construct and apply index filters in a thread-safe manner.
     MergeTreeIndexBuildContextPtr index_build_context;
-    bool build_skip_index_reader = indexes && indexes->use_skip_indexes && !indexes->skip_indexes.empty()
+
+    /// Vector similarity indexes are not applicable on data reads.
+    UsefulSkipIndexes applicable_skip_indexes = indexes->skip_indexes;
+    std::erase_if(applicable_skip_indexes.useful_indices, [](const auto & idx) { return idx.index->isVectorSimilarityIndex(); });
+
+    bool build_skip_index_reader = indexes && indexes->use_skip_indexes && !applicable_skip_indexes.empty()
         && (!query_info.isFinal() || !settings[Setting::use_skip_indexes_if_final_exact_mode])
         && settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
 
@@ -2562,7 +2567,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         }
 
         MergeTreeSkipIndexReaderPtr skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
-            indexes->skip_indexes,
+            applicable_skip_indexes,
             context->getIndexMarkCache(),
             context->getIndexUncompressedCache(),
             context->getVectorSimilarityIndexCache(),

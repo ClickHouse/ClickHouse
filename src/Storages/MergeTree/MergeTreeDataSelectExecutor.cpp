@@ -863,7 +863,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     continue;
                 }
 
-                if (!use_skip_indexes_on_data_read)
+                /// Vector similarity indexes are not applicable on data reads.
+                if (!use_skip_indexes_on_data_read || index_and_condition.index->isVectorSimilarityIndex())
                 {
                     std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                         index_and_condition.index,
