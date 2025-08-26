@@ -194,21 +194,9 @@ def test_nats_csv_with_delimiter(nats_cluster):
         messages.append("{i}, {i}".format(i=i))
 
     asyncio.run(produce_messages(nats_cluster, "csv", messages))
-
     time.sleep(1)
 
-    result = ""
-    time_limit_sec = 60
-    deadline = time.monotonic() + time_limit_sec
-
-    while time.monotonic() < deadline:
-        result = instance.query(
-            "SELECT * FROM test.view ORDER BY key", ignore_error=True
-        )
-        if nats_helpers.check_result(result):
-            break
-
-    nats_helpers.check_result(result, True)
+    nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
 
 def test_nats_tsv_with_delimiter(nats_cluster):
@@ -312,8 +300,8 @@ def test_nats_materialized_view(nats_cluster):
 
     asyncio.run(produce_messages(nats_cluster, "mv", messages))
 
-    nats_helpers.check_result("SELECT * FROM test.view ORDER BY key")
-    nats_helpers.check_result("SELECT * FROM test.view2 ORDER BY key")
+    nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
+    nats_helpers.check_query_result(instance, "SELECT * FROM test.view2 ORDER BY key")
 
 
 def test_nats_materialized_view_with_subquery(nats_cluster):
@@ -382,17 +370,8 @@ def test_nats_many_materialized_views(nats_cluster):
         messages.append(json.dumps({"key": i, "value": i}))
     asyncio.run(produce_messages(nats_cluster, "mmv", messages))
 
-    time_limit_sec = 60
-    deadline = time.monotonic() + time_limit_sec
-
-    while time.monotonic() < deadline:
-        result1 = instance.query("SELECT * FROM test.view1 ORDER BY key")
-        result2 = instance.query("SELECT * FROM test.view2 ORDER BY key")
-        if nats_helpers.check_result(result1) and nats_helpers.check_result(result2):
-            break
-
-    nats_helpers.check_result(result1, True)
-    nats_helpers.check_result(result2, True)
+    nats_helpers.check_query_result(instance, "SELECT * FROM test.view1 ORDER BY key")
+    nats_helpers.check_query_result(instance, "SELECT * FROM test.view2 ORDER BY key")
 
 
 def test_nats_protobuf(nats_cluster):

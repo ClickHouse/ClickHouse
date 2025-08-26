@@ -39,16 +39,9 @@ def wait_nats_paused(cluster, timeout=180):
     
     assert False, "NATS is not paused"
 
-def check_query_result(instance, query, time_limit_sec = 60):
-    query_result = ""
-    deadline = time.monotonic() + time_limit_sec
-
-    while time.monotonic() < deadline:
-        query_result = instance.query(query, ignore_error=True        )
-        if check_result(query_result):
-            break
-
-    check_result(query_result, True)
+def check_query_result(instance, query, retry_count=60):
+    result = instance.query_with_retry(query, retry_count=retry_count, ignore_error=True, check_callback=lambda result: check_result(result))
+    check_result(result, True)
 
 def check_result(query_result, check=False, ref_file="test_nats_json.reference"):
     fpath = p.join(p.dirname(__file__), ref_file)
