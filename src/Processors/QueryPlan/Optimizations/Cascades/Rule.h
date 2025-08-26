@@ -17,7 +17,8 @@ public:
     virtual ~IOptimizationRule() = default;
     virtual String getName() const = 0;
     virtual bool checkPattern(GroupExpressionPtr expression, const Memo & memo) const = 0;
-    virtual Promise getPromise() const = 0; 
+    virtual Promise getPromise() const = 0;
+    virtual bool isTransformation() const = 0;
 
     std::vector<GroupExpressionPtr> apply(GroupExpressionPtr expression, Memo & memo) const;
 
@@ -33,6 +34,7 @@ public:
     String getName() const override { return "JoinAssociativity"; }
     bool checkPattern(GroupExpressionPtr expression, const Memo & memo) const override;
     Promise getPromise() const override { return 1000; }
+    bool isTransformation() const override { return true; }
 
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, Memo & memo) const override;
@@ -45,6 +47,19 @@ public:
     String getName() const override { return "JoinCommutativity"; }
     bool checkPattern(GroupExpressionPtr expression, const Memo & memo) const override;
     Promise getPromise() const override { return 2000; }
+    bool isTransformation() const override { return true; }
+
+protected:
+    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, Memo & memo) const override;
+};
+
+class HashJoinImplementation : public IOptimizationRule
+{
+public:
+    String getName() const override { return "HashJoin"; }
+    bool checkPattern(GroupExpressionPtr expression, const Memo & memo) const override;
+    Promise getPromise() const override { return 2000; }
+    bool isTransformation() const override { return false; }
 
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, Memo & memo) const override;

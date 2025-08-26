@@ -10,8 +10,17 @@ namespace DB
 
 OptimizerContext::OptimizerContext()
 {
-//    rules.push_back(std::make_shared<JoinAssociativity>());
-    rules.push_back(std::make_shared<JoinCommutativity>());
+//    addRule(std::make_shared<JoinAssociativity>());
+    addRule(std::make_shared<JoinCommutativity>());
+    addRule(std::make_shared<HashJoinImplementation>());
+}
+
+void OptimizerContext::addRule(OptimizationRulePtr rule)
+{
+    if (rule->isTransformation())
+        transformation_rules.push_back(std::move(rule));
+    else
+        implementation_rules.push_back(std::move(rule));
 }
 
 GroupId OptimizerContext::addGroup(QueryPlan::Node & node)

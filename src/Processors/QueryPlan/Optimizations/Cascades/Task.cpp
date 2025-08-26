@@ -43,7 +43,7 @@ void ExploreExpressionTask::execute(OptimizerContext & optimizer_context)
         expression->group_id, expression->getName());
 
     std::vector<std::pair<Promise, OptimizationRulePtr>> moves;
-    for (const auto & rule : optimizer_context.getRules())
+    for (const auto & rule : optimizer_context.getTransformationRules())
     {
         if (!expression->isApplied(*rule) && rule->checkPattern(expression, optimizer_context.getMemo()))
             moves.push_back({rule->getPromise(), rule});
@@ -68,10 +68,10 @@ void OptimizeExpressionTask::execute(OptimizerContext & optimizer_context)
     LOG_TRACE(optimizer_context.log, "OptimizeExpressionTask group_id: {}, expression: {}",
         expression->group_id, expression->getName());
 
-    /// TODO: is this the same as ExploreExpressionTask::execute but just with a different set of rules? 
+    /// TODO: is this the same as ExploreExpressionTask::execute but just with a different set of rules?
 
     std::vector<std::pair<Promise, OptimizationRulePtr>> moves;
-    for (const auto & rule : optimizer_context.getRules())
+    for (const auto & rule : optimizer_context.getImplementationRules())
     {
         if (!expression->isApplied(*rule) && rule->checkPattern(expression, optimizer_context.getMemo()))
             moves.push_back({rule->getPromise(), rule});
@@ -97,27 +97,37 @@ void ApplyRuleTask::execute(OptimizerContext & optimizer_context)
         rule->getName(), expression->group_id, expression->getName());
 
     auto new_expressions = rule->apply(expression, optimizer_context.getMemo());
-//    updateMemo(new_expressions, optimizer_context);
-
-    /// TODO: implement further
 
     for (const auto & new_expression : new_expressions)
-        optimizer_context.pushTask(std::make_shared<ExploreExpressionTask>(new_expression, cost_limit));
+    {
+        if (rule->isTransformation())
+        {
+            optimizer_context.pushTask(std::make_shared<ExploreExpressionTask>(new_expression, cost_limit));
+        }
+        else
+        {
+            /// TODO: update limit
+            optimizer_context.pushTask(std::make_shared<OptimizeInputsTask>(new_expression, 0, cost_limit));
+        }
+    }
 }
-
-//void ApplyRuleTask::updateMemo(const std::vector<GroupExpressionPtr> & new_expressions, OptimizerContext & optimizer_context)
-//{
-//    for (const auto & new_expression : new_expressions)
-//    {
-//        auto group = optimizer_context.getGroup(expression->group_id);
-//        group->addExpression(new_expression);
-//    }
-//}
-
 
 void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
 {
     LOG_TRACE(optimizer_context.log, "OptimizeInputsTask group_id: {}", expression->group_id);
+
+    /// All inputs were processed?
+    if (input_index_to_optimize == expression->inputs.size())
+    {
+        /// TODO: memo.UpdateBestPlan(expr)
+        return;
+    }
+    else
+    {
+        optimizer_context.pushTask(std::make_shared<OptimizeInputsTask>(expression, input_index_to_optimize + 1, cost_limit));
+        /// TODO: limit ← UpdateCostLimit(expr, limit)
+        optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(expression->inputs[input_index_to_optimize], cost_limit));
+    }
 }
 
 }
