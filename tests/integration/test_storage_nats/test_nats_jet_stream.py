@@ -35,7 +35,7 @@ instance = cluster.add_instance(
 
 # Helpers
 
-async def produce_messages(cluster_inst, stream, subject, messages=(), bytes=None):
+async def publish_messages(cluster_inst, stream, subject, messages=(), bytes=None):
     nc = await nats_helpers.nats_connect_ssl(cluster_inst)
     logging.debug("NATS connection status: " + str(nc.is_connected))
 
@@ -216,7 +216,7 @@ def test_nats_select(nats_cluster):
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
@@ -247,13 +247,13 @@ def test_nats_json_without_delimiter(nats_cluster):
         messages += json.dumps({"key": i, "value": i}) + "\n"
 
     all_messages = [messages]
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", all_messages))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", all_messages))
 
     messages = ""
     for i in range(25, 50):
         messages += json.dumps({"key": i, "value": i}) + "\n"
     all_messages = [messages]
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", all_messages))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", all_messages))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
@@ -284,7 +284,7 @@ def test_nats_csv_with_delimiter(nats_cluster):
     for i in range(50):
         messages.append("{i}, {i}".format(i=i))
 
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
@@ -315,7 +315,7 @@ def test_nats_tsv_with_delimiter(nats_cluster):
     for i in range(50):
         messages.append("{i}\t{i}".format(i=i))
 
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
@@ -344,7 +344,7 @@ def test_nats_macros(nats_cluster):
     message = ""
     for i in range(50):
         message += json.dumps({"key": i, "value": i}) + "\n"
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", [message]))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [message]))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
@@ -379,7 +379,7 @@ def test_nats_materialized_view(nats_cluster):
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view1 ORDER BY key")
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view2 ORDER BY key")
@@ -410,7 +410,7 @@ def test_nats_materialized_view_with_subquery(nats_cluster):
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
@@ -437,32 +437,19 @@ def test_nats_protobuf(nats_cluster):
         """
     )
 
-    data = b""
-    for i in range(0, 20):
-        msg = nats_pb2.ProtoKeyValue()
-        msg.key = i
-        msg.value = str(i)
-        serialized_msg = msg.SerializeToString()
-        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", bytes=data))
-    
-    data = b""
-    for i in range(20, 21):
-        msg = nats_pb2.ProtoKeyValue()
-        msg.key = i
-        msg.value = str(i)
-        serialized_msg = msg.SerializeToString()
-        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", bytes=data))
-    
-    data = b""
-    for i in range(21, 50):
-        msg = nats_pb2.ProtoKeyValue()
-        msg.key = i
-        msg.value = str(i)
-        serialized_msg = msg.SerializeToString()
-        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", bytes=data))
+    def produce_messages(range):
+        data = b""
+        for i in range:
+            msg = nats_pb2.ProtoKeyValue()
+            msg.key = i
+            msg.value = str(i)
+            serialized_msg = msg.SerializeToString()
+            data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+        asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", bytes=data))
+
+    produce_messages(range(0, 20))
+    produce_messages(range(20, 21))
+    produce_messages(range(21, 50))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
 
@@ -496,7 +483,7 @@ def test_nats_big_message(nats_cluster):
         """
     )
 
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     nats_helpers.wait_query_result(instance, "SELECT count() FROM test.view", batch_messages * nats_messages)
 
@@ -542,7 +529,7 @@ def test_nats_mv_combo(nats_cluster):
         for _ in range(messages_num):
             messages.append(json.dumps({"key": i[0], "value": i[0]}))
             i[0] += 1
-        asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
+        asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     threads = []
     threads_num = 20
@@ -935,7 +922,7 @@ def test_nats_virtual_column(nats_cluster):
         messages.append(json.dumps({"key": i, "value": i}))
         i += 1
 
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
     nats_helpers.wait_query_result(instance, "SELECT count() FROM test.view", message_num)
 
     result = instance.query(
@@ -989,7 +976,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
         messages.append(json.dumps({"key": i, "value": i}))
         i += 1
 
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
     nats_helpers.wait_query_result(instance, "SELECT count() FROM test.view", message_num)
 
     result = instance.query("SELECT key, value, subject FROM test.view ORDER BY key")
@@ -1049,7 +1036,7 @@ def test_nats_many_consumers_to_each_queue(nats_cluster):
         for _ in range(messages_num):
             messages.append(json.dumps({"key": i[0], "value": i[0]}))
             i[0] += 1
-        asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
+        asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     threads = []
     threads_num = 20
@@ -1220,7 +1207,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
     messages = []
     for i in range(messages_num):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     for _ in range(20):
         result = instance.query("SELECT count() FROM test.view")
@@ -1261,7 +1248,7 @@ def test_nats_format_factory_settings(nats_cluster):
         """SELECT parseDateTimeBestEffort(CAST('2021-01-19T14:42:33.1829214Z', 'String'))"""
     )
 
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", [message]))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [message]))
     while True:
         result = instance.query("SELECT date FROM test.view")
         if result == expected:
@@ -1320,7 +1307,7 @@ def test_nats_drop_mv(nats_cluster):
     messages = []
     for i in range(20):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     nats_helpers.wait_query_result(instance, "SELECT count() FROM test.view", 20)
 
@@ -1330,7 +1317,7 @@ def test_nats_drop_mv(nats_cluster):
     messages = []
     for i in range(20, 40):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     instance.query(
         """
@@ -1346,7 +1333,7 @@ def test_nats_drop_mv(nats_cluster):
     messages = []
     for i in range(40, 50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     instance.query(
         """
@@ -1373,7 +1360,7 @@ def test_nats_predefined_configuration(nats_cluster):
         """
     )
 
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 1, "value": 2})]))
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 1, "value": 2})]))
 
     time_limit_sec = 60
     deadline = time.monotonic() + time_limit_sec
