@@ -3,7 +3,7 @@ import os
 import time
 from pathlib import Path
 
-from ci.defs.defs import ToolSet
+from ci.defs.defs import ToolSet, chcache_secret
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.info import Info
@@ -145,7 +145,7 @@ def main():
     else:
         os.environ["CH_HOSTNAME"] = "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
         os.environ["CH_USER"] = 'ci_builder'
-        os.environ["CH_PASSWORD"] = Info().get_secret(Settings.SECRET_CHCACHE_PASSWORD).get_value()
+        os.environ["CH_PASSWORD"] = chcache_secret.get_value()
 
         os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
         os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
@@ -177,11 +177,12 @@ def main():
                 name="Cmake configuration",
                 command=f"cmake {current_directory} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} \
                 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} \
+                -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE} \
                 -DENABLE_LIBRARIES=0 \
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
-                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 -DCOMPILER_CACHE=chcache",
+                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1",
                 workdir=build_dir,
             )
         )

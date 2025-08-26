@@ -1,7 +1,7 @@
 import argparse
 import os
 
-from ci.defs.defs import BuildTypes, ToolSet
+from ci.defs.defs import BuildTypes, ToolSet, chcache_secret
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -120,7 +120,7 @@ def main():
 
         os.environ["CH_HOSTNAME"] = "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
         os.environ["CH_USER"] = 'ci_builder'
-        os.environ["CH_PASSWORD"] = info.get_secret(Settings.SECRET_CHCACHE_PASSWORD).get_value()
+        os.environ["CH_PASSWORD"] = chcache_secret.get_value()
 
     if info.pr_number == 0:
         cmake_cmd += " -DCLICKHOUSE_OFFICIAL_BUILD=1"
