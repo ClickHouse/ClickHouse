@@ -64,10 +64,7 @@ SECRETS = [
         name="clickhouse-test-stat-password",
         type=Secret.Type.AWS_SSM_VAR,
     ),
-    Secret.Config(
-        name="ANTHROPIC_API_KEY",
-        type=Secret.Type.AWS_SSM_VAR
-    ),
+    Secret.Config(name="ANTHROPIC_API_KEY", type=Secret.Type.AWS_SSM_VAR),
     azure_secret,
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-id",
@@ -82,7 +79,7 @@ SECRETS = [
 DOCKERS = [
     Docker.Config(
         name="clickhouse/style-test",
-        path="./ci/docker/claude",
+        path="./ci/docker/style-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
@@ -320,6 +317,7 @@ class JobNames:
     DOCKER_BUILDS_AMD = "Dockers build (amd)"
     CLAUDE = "CI agent"
     STYLE_CHECK = "Style check"
+    CHANGE_LOG = "Change log"
     FAST_TEST = "Fast test"
     BUILD = "Build"
     UNITTEST = "Unit tests"

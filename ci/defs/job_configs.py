@@ -55,9 +55,15 @@ class JobConfigs:
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        command="python3 ./ci/jobs/claude_job.py",
+        command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
+    )
+    change_log_job = Job.Config(
+        name=JobNames.CHANGE_LOG,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        command="python3 ./ci/jobs/claude_job.py",
+        enable_gh_auth=True,
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,

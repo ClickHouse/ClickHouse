@@ -188,10 +188,12 @@ class GH:
                     )
 
         # Create temp file for body to avoid shell escaping issues
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt', encoding='utf-8') as temp_file:
+        with tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".txt", encoding="utf-8"
+        ) as temp_file:
             temp_file.write(body)
             temp_file_path = temp_file.name
-        
+
         res = None
         if id_to_update:
             cmd = f'gh api -X PATCH \
@@ -202,14 +204,14 @@ class GH:
             res = cls.do_command_with_retries(cmd)
         else:
             if not only_update:
-                cmd = f'gh pr comment {pr} --body-file {temp_file_path}'
+                cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
                 print(f"Create new comment")
                 res = cls.do_command_with_retries(cmd)
             else:
                 print(
                     f"WARNING: comment to update not found, tags [{[k for k in comment_tags_and_bodies.keys()]}]"
                 )
-        
+
         # Clean up temp file
         os.unlink(temp_file_path)
 

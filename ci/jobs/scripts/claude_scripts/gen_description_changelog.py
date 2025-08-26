@@ -136,7 +136,9 @@ def generate_description(diff_file: str, human_description: str, model: str) -> 
         return f"Error generating PR description: {e}"
 
 
-def generate_changelog_entry(diff_file: str, human_changelog_entry: str, model: str) -> str:
+def generate_changelog_entry(
+    diff_file: str, human_changelog_entry: str, model: str
+) -> str:
     try:
         base_prompt = f"Use the pr-changelog-generator agent to generate a PR changelog entry for this PR. Read the diff from file: {diff_file}"
         prompt = ""
@@ -176,19 +178,13 @@ if __name__ == "__main__":
     pr_diff = GH.get_pr_diff()
 
     # Write the diff to a file for agent to read, so we don't run into context limits
-    diff_file = 'diff.txt'
-    with open(diff_file, 'w', encoding='utf-8') as file:
+    diff_file = "diff.txt"
+    with open(diff_file, "w", encoding="utf-8") as file:
         file.write(pr_diff)
 
-    suggested_description = generate_description(
-        diff_file,
-        human_description,
-        model
-    )
+    suggested_description = generate_description(diff_file, human_description, model)
     suggested_changelog_entry = generate_changelog_entry(
-        diff_file,
-        human_changelog_entry,
-        model
+        diff_file, human_changelog_entry, model
     )
     comment_body = f"**Suggested PR description**:\n\n"
     comment_body += f"{suggested_description}\n\n"
