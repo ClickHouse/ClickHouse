@@ -535,11 +535,29 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def get_build_report_links(pr_number: int, branch: str, commit_sha: str):
+def get_build_report_links(
+    job_statuses: pd.DataFrame, pr_number: int, branch: str, commit_sha: str
+):
     """
     Get the build report links for the given PR number, branch, and commit SHA.
+
+    First checks if a build job submitted a success status.
+    If not available, it checks for cached build results.
+    If not available, it guesses the links.
     """
     build_job_names = ["Build (amd_release)", "Build (arm_release)"]
+    build_report_links = {}
+
+    for job in job_statuses.itertuples():
+        if job.job_name not in build_job_names or job.status != "success":
+            continue
+
+        build_report_links[job.job_name] = job.results_link
+
+    if len(build_report_links) > 0:
+        # Possible that only one build job succeeded, in which case we only have one link.
+        # Unlikely that we want one fresh build and one cached build, so return now.
+        return build_report_links
 
     if pr_number == 0:
         ref_param = f"REF={branch}"
@@ -552,7 +570,6 @@ def get_build_report_links(pr_number: int, branch: str, commit_sha: str):
     s3_path = f"https://{S3_BUCKET}.s3.amazonaws.com/{ref_param.replace('=', 's/')}/{commit_sha}/{status_file}"
     response = requests.get(s3_path)
 
-    build_report_links = {}
     if response.status_code == 200:
         # Cache exists, get the status data
         status_data = response.json()
@@ -564,7 +581,7 @@ def get_build_report_links(pr_number: int, branch: str, commit_sha: str):
         # We have the build report links, return them
         return build_report_links
 
-    # No cache exists, assemble links
+    # No cache or build result was found, guess the links
     build_report_link_base = f"https://{S3_BUCKET}.s3.amazonaws.com/json.html?{ref_param}&sha={commit_sha}&name_0={urllib.parse.quote(workflow_name, safe='')}"
     build_report_links = {
         job_name: f"{build_report_link_base}&name_1={urllib.parse.quote(job_name, safe='')}"
@@ -706,7 +723,7 @@ def create_workflow_report(
             "pr_new_fails": len(fail_results["pr_new_fails"]),
         },
         "build_report_links": get_build_report_links(
-            pr_number, branch_name, commit_sha
+            fail_results["job_statuses"], pr_number, branch_name, commit_sha
         ),
         "ci_jobs_status_html": format_results_as_html_table(
             fail_results["job_statuses"]
