@@ -222,9 +222,6 @@ public:
     NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
     Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
 
-    /// Returns names of hive partitioning columns.
-    virtual std::unordered_set<std::string_view> getHivePartitioningColumns() const { return {}; }
-
     static const VirtualColumnsDescription & getCommonVirtuals() { return common_virtuals; }
 
     Names getAllRegisteredNames() const override;

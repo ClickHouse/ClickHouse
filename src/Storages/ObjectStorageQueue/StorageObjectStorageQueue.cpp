@@ -232,14 +232,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     if ((*queue_settings_)[ObjectStorageQueueSetting::use_hive_partitioning])
     {
-        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
-            columns,
-            hive_partition_columns_to_read_from_file_path,
-            configuration->getRawPath().path,
-            false,
-            format_settings,
-            context_
-        );
+        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(
+            columns, configuration->getRawPath().path, format_settings, context_);
     }
 
     std::unordered_set<String> hive_partition_columns_to_read_from_file_path_set;
@@ -772,6 +766,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             storage_snapshot,
             queue_context,
             supportsSubsetOfColumns(queue_context),
+            /*supports_tuple_elements*/ false,
             PrepareReadingFromFormatHiveParams {file_columns,
                 hive_partition_columns_to_read_from_file_path.getNameToTypeMap()}
         );
@@ -1366,14 +1361,6 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
     }
     return zkutil::extractZooKeeperPath(result_zk_path, true);
-}
-
-std::unordered_set<std::string_view> StorageObjectStorageQueue::getHivePartitioningColumns() const
-{
-    std::unordered_set<std::string_view> res;
-    for (const auto & [name, value] : hive_partition_columns_to_read_from_file_path)
-        res.insert(name);
-    return res;
 }
 
 }

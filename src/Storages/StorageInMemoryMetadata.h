@@ -201,10 +201,7 @@ struct StorageInMemoryMetadata
     /// Block with ordinary + materialized + virtuals. Virtuals have to be
     /// explicitly specified, because they are part of Storage type, not
     /// Storage metadata.
-    /// Hive partitioning columns must be after virtuals.
-    Block getSampleBlockWithVirtuals(
-        const NamesAndTypesList & virtuals,
-        std::optional<const std::unordered_set<std::string_view>> hive_partitioning_columns = std::nullopt) const;
+    Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const;
 
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
