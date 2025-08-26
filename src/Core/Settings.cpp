@@ -6834,7 +6834,7 @@ Possible values:
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
 Use roaring bitmap for iceberg positional deletes.
 )", 0) \
-    DECLARE(Bool, return_ref_table_for_alias_storage, true, R"(
+    DECLARE(Bool, always_use_ref_table_for_alias_storage, true, R"(
 Return the reference table of alias storage in query.
 )", 0) \
     \

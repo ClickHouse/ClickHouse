@@ -86,7 +86,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
-    extern const SettingsBool return_ref_table_for_alias_storage;
+    extern const SettingsBool always_use_ref_table_for_alias_storage;
 }
 
 namespace MergeTreeSetting
@@ -365,7 +365,7 @@ DatabaseAndTable DatabaseCatalog::getTableAndCheckAlias(
 {
     auto database_and_table = getTableImpl(table_id, context_, exception);
     auto & table = database_and_table.second;
-    if (table && context_->getSettingsRef()[Setting::return_ref_table_for_alias_storage])
+    if (table && context_->getSettingsRef()[Setting::always_use_ref_table_for_alias_storage])
     {
         if (auto * alias_storage = dynamic_cast<StorageAlias *>(table.get()))
             database_and_table.second = alias_storage->getReferenceTable(context_);

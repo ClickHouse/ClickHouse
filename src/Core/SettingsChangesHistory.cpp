@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.9",
         {
             {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"always_use_ref_table_for_alias_storage", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
@@ -110,8 +111,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
             {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
-            {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."}
-            {"return_ref_table_for_alias_storage", true, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {

@@ -131,7 +131,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     auto mark_cannot_get_ref_table_for_alias_storage = [&context]()
     {
-        context->setSetting("return_ref_table_for_alias_storage", Field(false));
+        context->setSetting("always_use_ref_table_for_alias_storage", Field(false));
     };
 
     if (query->as<ASTSelectQuery>())
