@@ -62,18 +62,15 @@ def revive_nats(cluster):
     p.communicate()
     wait_nats_to_start(cluster)
 
-def wait_query_result(instance, query, wait_query_result, sleep_timeout = 0.5, time_limit_sec = 60):
-    deadline = time.monotonic() + time_limit_sec
+def wait_query_result(instance, query, wait_query_result, sleep_timeout = 0.5, retry_count = 60):
+    query_result = instance.query_with_retry(
+        query, 
+        retry_count=retry_count, 
+        sleep_time=sleep_timeout, 
+        ignore_error=True, 
+        check_callback=lambda result: int(result) == wait_query_result)
     
-    query_result = 0
-    while time.monotonic() < deadline:
-        query_result = int(instance.query(query))
-        if query_result == wait_query_result:
-            break
-        
-        time.sleep(sleep_timeout)
-    
-    assert query_result == wait_query_result
+    assert int(query_result) == wait_query_result
 
 def wait_for_table_is_ready(instance, table_name, sleep_timeout = 0.5, time_limit_sec = 60):
     deadline = time.monotonic() + time_limit_sec
