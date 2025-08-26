@@ -1,4 +1,5 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
+-- no-parallel: Heavy
 -- Tag no-fasttest: Depends on AWS
 set enable_time_time64_type=1;
 
