@@ -1,5 +1,4 @@
--- Tags: no-fasttest, no-parallel
--- Tag no-parallel: Heavy for MinIO
+-- Tags: no-fasttest
 -- Tag no-fasttest: Depends on AWS
 set enable_time_time64_type=1, session_timezone='UTC';
 
