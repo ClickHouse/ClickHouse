@@ -113,6 +113,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             read_info->patch_parts[part_idx].part,
             read_info->task_columns.patch_columns[part_idx],
             extras.storage_snapshot,
+            read_info->data_part->storage.getSettings(),
             patches_ranges[part_idx],
             read_info->const_virtual_fields,
             extras.uncompressed_cache,

@@ -854,7 +854,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {
-
+            {"escape_variant_subcolumn_filenames", false, true, "Escape special symbols for filenames created for Variant type subcolumns in Wide parts"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
@@ -870,7 +870,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"},
             {"allow_part_offset_column_in_projections", false, true, "Now projections can use _part_offset column."},
             {"max_uncompressed_bytes_in_patches", 0, 30ULL * 1024 * 1024 * 1024, "New setting"},
-            {"escape_variant_subcolumn_filenames", false, true, "Escape special symbols for filenames created for Variant type subcolumns in Wide parts"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {
