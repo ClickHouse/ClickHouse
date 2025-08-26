@@ -57,16 +57,16 @@ std::vector<GroupExpressionPtr> JoinAssociativity::applyImpl(GroupExpressionPtr 
 
 
     /// Extract predicates from both JOINs
-    auto * join_ab_c = typeid_cast<JoinStepLogical *>(expression->node.step.get());
-    auto * join_ab = typeid_cast<JoinStepLogical *>(expression_ab->node.step.get());
+    auto * join_ab_c = typeid_cast<JoinStepLogical *>(expression->original_node->step.get());
+    auto * join_ab = typeid_cast<JoinStepLogical *>(expression_ab->original_node->step.get());
     auto new_join = join_ab_c->clone();
     LOG_TRACE(log, "A join B condition:\n{}", toString(join_ab->getJoinInfo().expression.condition));
     LOG_TRACE(log, "AB join C condition:\n{}", toString(join_ab_c->getJoinInfo().expression.condition));
 
     /// Check that B JOIN C is not cross product, i.e. join_ab_c has a predicate between column coming from B and column from C
-    NameSet columns_a = namesToSet(expression_ab->node.step->getInputHeaders().at(0)->getNames());
-    NameSet columns_b = namesToSet(expression_ab->node.step->getInputHeaders().at(1)->getNames());
-    NameSet columns_c = namesToSet(expression->node.step->getInputHeaders().at(1)->getNames());
+    NameSet columns_a = namesToSet(expression_ab->original_node->step->getInputHeaders().at(0)->getNames());
+    NameSet columns_b = namesToSet(expression_ab->original_node->step->getInputHeaders().at(1)->getNames());
+    NameSet columns_c = namesToSet(expression->original_node->step->getInputHeaders().at(1)->getNames());
 
     JoinCondition join_a_bc = join_ab->getJoinInfo().expression.condition;
     JoinCondition join_a_c;
@@ -91,13 +91,13 @@ std::vector<GroupExpressionPtr> JoinAssociativity::applyImpl(GroupExpressionPtr 
     {
         /// New expression for group for "B JOIN C"
     //    auto join_b_c_step = std::make_shared<JoinStepLogical>(    );
-        const auto & join_bc_node = expression->node;    /// FIXME: properly create join node
+        auto * join_bc_node = expression->original_node;    /// FIXME: properly create join node
         auto new_expression_bc = std::make_shared<GroupExpression>(join_bc_node);
         new_expression_bc->inputs = {group_id_b, group_id_c};
         const GroupId group_id_bc = memo.addGroup(new_expression_bc);
 
         /// Create expression for "A JOIN (B JOIN C)" and add it to the current group
-        const auto & join_a_bc_node = expression->node;    /// FIXME: properly create join node
+        auto * join_a_bc_node = expression->original_node;    /// FIXME: properly create join node
         auto new_expression_a_bc = std::make_shared<GroupExpression>(join_a_bc_node);
         new_expression_a_bc->inputs = {group_id_a, group_id_bc};
         group_abc->addExpression(new_expression_a_bc);
@@ -110,13 +110,13 @@ std::vector<GroupExpressionPtr> JoinAssociativity::applyImpl(GroupExpressionPtr 
     {
         /// New expression for group for "A JOIN C"
     //    auto join_b_c_step = std::make_shared<JoinStepLogical>(    );
-        const auto & join_ac_node = expression->node;    /// FIXME: properly create join node
+        auto * join_ac_node = expression->original_node;    /// FIXME: properly create join node
         auto new_expression_ac = std::make_shared<GroupExpression>(join_ac_node);
         new_expression_ac->inputs = {group_id_a, group_id_c};
         const GroupId group_id_ac = memo.addGroup(new_expression_ac);
 
         /// Create expression for "B JOIN (A JOIN C)" and add it to the current group
-        const auto & join_b_ac_node = expression->node;    /// FIXME: properly create join node
+        auto * join_b_ac_node = expression->original_node;    /// FIXME: properly create join node
         auto new_expression_b_ac = std::make_shared<GroupExpression>(join_b_ac_node);
         new_expression_b_ac->inputs = {group_id_b, group_id_ac};
         group_abc->addExpression(new_expression_b_ac);

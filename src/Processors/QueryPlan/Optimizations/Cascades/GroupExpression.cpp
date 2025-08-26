@@ -7,12 +7,23 @@ namespace DB
 
 String GroupExpression::getName() const
 {
-    return node.step->getSerializationName();
+    if (plan_step)
+        return plan_step->getSerializationName();
+    if (original_node && original_node->step)
+        return original_node->step->getSerializationName();
+    return {};
 }
 
 String GroupExpression::getDescription() const
 {
-    return node.step->getSerializationName() + " " + node.step->getStepDescription();
+    String description;
+    if (plan_step)
+        description = plan_step->getStepDescription();
+    if (original_node && original_node->step)
+        description = original_node->step->getStepDescription();
+    if (description.empty())
+        return getName();
+    return getName() + " " + description;
 }
 
 bool GroupExpression::isApplied(const IOptimizationRule & rule) const

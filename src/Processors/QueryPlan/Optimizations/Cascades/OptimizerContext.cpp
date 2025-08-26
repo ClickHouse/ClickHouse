@@ -16,7 +16,7 @@ OptimizerContext::OptimizerContext()
 
 GroupId OptimizerContext::addGroup(QueryPlan::Node & node)
 {
-    auto group_expression = std::make_shared<GroupExpression>(node);
+    auto group_expression = std::make_shared<GroupExpression>(&node);
     auto group_id = memo.addGroup(group_expression);
     for (auto * child_node : node.children)
     {
