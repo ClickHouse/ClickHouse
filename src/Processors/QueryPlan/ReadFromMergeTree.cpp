@@ -2547,40 +2547,42 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// Optionally initializes index build context to filter on data reading. This context is shared across multiple
     /// MergeTreeSelectProcessor instances, and is used to construct and apply index filters in a thread-safe manner.
     MergeTreeIndexBuildContextPtr index_build_context;
-
-    /// Vector similarity indexes are not applicable on data reads.
-    UsefulSkipIndexes applicable_skip_indexes = indexes->skip_indexes;
-    std::erase_if(applicable_skip_indexes.useful_indices, [](const auto & idx) { return idx.index->isVectorSimilarityIndex(); });
-
-    bool build_skip_index_reader = indexes && indexes->use_skip_indexes && !applicable_skip_indexes.empty()
+    bool build_skip_index_reader = indexes && indexes->use_skip_indexes && !indexes->skip_indexes.empty()
         && (!query_info.isFinal() || !settings[Setting::use_skip_indexes_if_final_exact_mode])
         && settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
 
     if (build_skip_index_reader)
     {
-        RangesByIndex read_ranges;
-        PartRemainingMarks part_remaining_marks;
-        for (const auto & ranges : result.parts_with_ranges)
+        /// Vector similarity indexes are not applicable on data reads.
+        UsefulSkipIndexes applicable_skip_indexes = indexes->skip_indexes;
+        std::erase_if(applicable_skip_indexes.useful_indices, [](const auto & idx) { return idx.index->isVectorSimilarityIndex(); });
+
+        if (!applicable_skip_indexes.empty())
         {
-            read_ranges.emplace(ranges.part_index_in_query, ranges);
-            part_remaining_marks.emplace(ranges.part_index_in_query, ranges.getMarksCount());
+            RangesByIndex read_ranges;
+            PartRemainingMarks part_remaining_marks;
+            for (const auto & ranges : result.parts_with_ranges)
+            {
+                read_ranges.emplace(ranges.part_index_in_query, ranges);
+                part_remaining_marks.emplace(ranges.part_index_in_query, ranges.getMarksCount());
+            }
+
+            MergeTreeSkipIndexReaderPtr skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
+                applicable_skip_indexes,
+                context->getIndexMarkCache(),
+                context->getIndexUncompressedCache(),
+                context->getVectorSimilarityIndexCache(),
+                reader_settings,
+                getLogger("MergeTreeSkipIndexReader"));
+
+            /// TODO(ab): If projection index is available, build projection index reader and pass it into result pool.
+
+            MergeTreeIndexReadResultPoolPtr index_read_result_pool
+                = std::make_shared<MergeTreeIndexReadResultPool>(std::move(skip_index_reader));
+
+            index_build_context = std::make_shared<MergeTreeIndexBuildContext>(
+                std::move(read_ranges), std::move(index_read_result_pool), std::move(part_remaining_marks));
         }
-
-        MergeTreeSkipIndexReaderPtr skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
-            applicable_skip_indexes,
-            context->getIndexMarkCache(),
-            context->getIndexUncompressedCache(),
-            context->getVectorSimilarityIndexCache(),
-            reader_settings,
-            getLogger("MergeTreeSkipIndexReader"));
-
-        /// TODO(ab): If projection index is available, build projection index reader and pass it into result pool.
-
-        MergeTreeIndexReadResultPoolPtr index_read_result_pool
-            = std::make_shared<MergeTreeIndexReadResultPool>(std::move(skip_index_reader));
-
-        index_build_context = std::make_shared<MergeTreeIndexBuildContext>(
-            std::move(read_ranges), std::move(index_read_result_pool), std::move(part_remaining_marks));
     }
 
     Pipe pipe = output_each_partition_through_separate_port
