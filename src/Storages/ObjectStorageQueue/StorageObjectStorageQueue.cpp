@@ -1192,32 +1192,30 @@ void StorageObjectStorageQueue::alter(
         /// Alter settings which are not stored in keeper.
         for (const auto & change : changed_settings)
         {
-            {
-                std::lock_guard lock(mutex);
+            std::lock_guard lock(mutex);
 
-                if (change.name == "polling_min_timeout_ms")
-                    polling_min_timeout_ms = change.value.safeGet<UInt64>();
-                else if (change.name == "polling_max_timeout_ms")
-                    polling_max_timeout_ms = change.value.safeGet<UInt64>();
-                else if (change.name == "polling_backoff_ms")
-                    polling_backoff_ms = change.value.safeGet<UInt64>();
-                else if (change.name == "max_processed_files_before_commit")
-                    commit_settings.max_processed_files_before_commit = change.value.safeGet<UInt64>();
-                else if (change.name == "max_processed_rows_before_commit")
-                    commit_settings.max_processed_rows_before_commit = change.value.safeGet<UInt64>();
-                else if (change.name == "max_processed_bytes_before_commit")
-                    commit_settings.max_processed_bytes_before_commit = change.value.safeGet<UInt64>();
-                else if (change.name == "max_processing_time_sec_before_commit")
-                    commit_settings.max_processing_time_sec_before_commit = change.value.safeGet<UInt64>();
-                else if (change.name == "min_insert_block_size_rows_for_materialized_views")
-                    min_insert_block_size_rows_for_materialized_views = change.value.safeGet<UInt64>();
-                else if (change.name == "min_insert_block_size_bytes_for_materialized_views")
-                    min_insert_block_size_bytes_for_materialized_views = change.value.safeGet<UInt64>();
-                else if (change.name == "list_objects_batch_size")
-                    list_objects_batch_size = change.value.safeGet<UInt64>();
-                else if (change.name == "enable_hash_ring_filtering")
-                    enable_hash_ring_filtering = change.value.safeGet<bool>();
-            }
+            if (change.name == "polling_min_timeout_ms")
+                polling_min_timeout_ms = change.value.safeGet<UInt64>();
+            else if (change.name == "polling_max_timeout_ms")
+                polling_max_timeout_ms = change.value.safeGet<UInt64>();
+            else if (change.name == "polling_backoff_ms")
+                polling_backoff_ms = change.value.safeGet<UInt64>();
+            else if (change.name == "max_processed_files_before_commit")
+                commit_settings.max_processed_files_before_commit = change.value.safeGet<UInt64>();
+            else if (change.name == "max_processed_rows_before_commit")
+                commit_settings.max_processed_rows_before_commit = change.value.safeGet<UInt64>();
+            else if (change.name == "max_processed_bytes_before_commit")
+                commit_settings.max_processed_bytes_before_commit = change.value.safeGet<UInt64>();
+            else if (change.name == "max_processing_time_sec_before_commit")
+                commit_settings.max_processing_time_sec_before_commit = change.value.safeGet<UInt64>();
+            else if (change.name == "min_insert_block_size_rows_for_materialized_views")
+                min_insert_block_size_rows_for_materialized_views = change.value.safeGet<UInt64>();
+            else if (change.name == "min_insert_block_size_bytes_for_materialized_views")
+                min_insert_block_size_bytes_for_materialized_views = change.value.safeGet<UInt64>();
+            else if (change.name == "list_objects_batch_size")
+                list_objects_batch_size = change.value.safeGet<UInt64>();
+            else if (change.name == "enable_hash_ring_filtering")
+                enable_hash_ring_filtering = change.value.safeGet<bool>();
         }
 
         files_metadata->updateSettings(changed_settings);
