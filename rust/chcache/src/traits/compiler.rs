@@ -15,4 +15,5 @@ pub trait Compiler {
     fn apply_cache(&self, source: &Vec<u8>) -> Result<(), Box<dyn Error>>;
 
     fn get_args(&self) -> String;
+    fn get_compile_duration(&self) -> u128;
 }

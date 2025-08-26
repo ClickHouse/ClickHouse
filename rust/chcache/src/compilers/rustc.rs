@@ -1,9 +1,12 @@
 use blake3::Hasher;
 use log::trace;
+use std::cell::Cell;
 use std::error::Error;
 use std::fs::{self};
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+use tokio::time::Instant;
 
 use crate::{
     compilers::clang::ClangLike,
@@ -15,6 +18,8 @@ pub struct RustC {
 
     args: Vec<String>,
     out_dir: String,
+
+    elapsed_compile_time: Cell<Duration>,
 }
 
 impl CompilerMeta for RustC {
@@ -31,6 +36,8 @@ impl CompilerMeta for RustC {
             compiler_path: compiler_path.to_path_buf(),
             args,
             out_dir,
+
+            elapsed_compile_time: Cell::new(Duration::ZERO),
         })
     }
 }
@@ -152,8 +159,8 @@ impl Compiler for RustC {
 
             assert!(linker.is_file());
             assert!(
-                linker_binary_name.starts_with("clang") ||
-                linker_binary_name.starts_with("clang++")
+                linker_binary_name.starts_with("clang")
+                    || linker_binary_name.starts_with("clang++")
             );
 
             clang_linker_version = Some(ClangLike::compiler_version(linker.as_path()));
@@ -225,10 +232,14 @@ impl Compiler for RustC {
     }
 
     fn compile(&self) -> Result<Vec<u8>, Box<dyn Error>> {
+        let start_time = Instant::now();
+
         let output = std::process::Command::new(self.compiler_path.clone())
             .args(&self.args)
             .output()
             .unwrap();
+
+        self.elapsed_compile_time.set(start_time.elapsed());
 
         if !output.status.success() {
             println!("{}", String::from_utf8_lossy(&output.stdout));
@@ -270,5 +281,9 @@ impl Compiler for RustC {
 
     fn get_args(&self) -> String {
         self.args.join(" ")
+    }
+
+    fn get_compile_duration(&self) -> u128 {
+        self.elapsed_compile_time.get().as_millis()
     }
 }

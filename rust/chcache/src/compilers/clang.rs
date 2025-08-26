@@ -1,9 +1,12 @@
+use std::cell::Cell;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use blake3::Hasher;
 use log::trace;
+use tokio::time::Instant;
 
 use crate::traits::compiler::Compiler;
 use crate::traits::compiler::CompilerMeta;
@@ -18,6 +21,8 @@ pub struct ClangLike {
     output: String,
 
     relative_output: String,
+
+    elapsed_compile_time: Cell<Duration>,
 }
 
 impl ClangLike {
@@ -49,6 +54,8 @@ impl ClangLike {
 
             args,
             stripped_args,
+
+            elapsed_compile_time: Cell::new(Duration::ZERO),
         }
     }
 
@@ -224,10 +231,14 @@ impl CompilerMeta for ClangXX {
 
 impl Compiler for ClangLike {
     fn compile(&self) -> Result<Vec<u8>, Box<dyn Error>> {
+        let start_time = Instant::now();
+
         let output = std::process::Command::new(self.compiler_path.clone())
             .args(&self.args)
             .output()
             .unwrap();
+
+        self.elapsed_compile_time.set(start_time.elapsed());
 
         if !output.status.success() {
             println!("{}", String::from_utf8_lossy(&output.stdout));
@@ -288,6 +299,10 @@ impl Compiler for ClangLike {
     fn get_args(&self) -> String {
         self.stripped_args.join(" ")
     }
+
+    fn get_compile_duration(&self) -> u128 {
+        self.elapsed_compile_time.get().as_millis()
+    }
 }
 
 pub struct Clang(ClangLike);
@@ -317,6 +332,10 @@ impl Compiler for ClangXX {
     fn get_args(&self) -> String {
         self.0.get_args()
     }
+
+    fn get_compile_duration(&self) -> u128 {
+        self.0.get_compile_duration()
+    }
 }
 
 impl Compiler for Clang {
@@ -342,5 +361,9 @@ impl Compiler for Clang {
 
     fn get_args(&self) -> String {
         self.0.get_args()
+    }
+
+    fn get_compile_duration(&self) -> u128 {
+        self.0.get_compile_duration()
     }
 }
