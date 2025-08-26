@@ -546,9 +546,9 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
     if (!required_substring.empty())
     {
         if (is_case_insensitive)
-            case_insensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+            case_insensitive_substring_searcher.emplace(reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
         else
-            case_sensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+            case_sensitive_substring_searcher.emplace(reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
     }
 }
 
@@ -563,9 +563,9 @@ OptimizedRegularExpression::OptimizedRegularExpression(OptimizedRegularExpressio
     if (!required_substring.empty())
     {
         if (is_case_insensitive)
-            case_insensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+            case_insensitive_substring_searcher.emplace(reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
         else
-            case_sensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+            case_sensitive_substring_searcher.emplace(reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
     }
 }
 
