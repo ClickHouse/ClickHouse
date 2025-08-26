@@ -1486,20 +1486,21 @@ bool StorageReplicatedMergeTree::dropReplica(
         if (zookeeper->tryRemove(remote_replica_path) != Coordination::Error::ZOK)
             LOG_ERROR(logger, "Replica was not completely removed from ZooKeeper, {} still exists and may contain some garbage.", remote_replica_path);
 
+        LOG_TRACE(logger, "Will try to remove zero-copy locks if there are any.");
         MergeTreeSettingsPtr table_settings_to_clean_locks;
         if (!table_settings && context_)
+        {
             table_settings_to_clean_locks = std::make_shared<const MergeTreeSettings>(context_->getReplicatedMergeTreeSettings());
+            LOG_TRACE(logger, "Will use common ReplicatedMergeTree settings to search for zero-copy locks.");
+        }
         else
+        {
             table_settings_to_clean_locks = table_settings;
+        }
 
         if (table_settings_to_clean_locks && context_)
         {
-            /// TODO: more code deduplication
-            StoragePolicyPtr storage_policy;
-            if ((*table_settings_to_clean_locks)[MergeTreeSetting::disk].changed)
-                storage_policy = context_->getStoragePolicyFromDisk((*table_settings_to_clean_locks)[MergeTreeSetting::disk]);
-            else
-                storage_policy = context_->getStoragePolicy((*table_settings_to_clean_locks)[MergeTreeSetting::storage_policy]);
+            StoragePolicyPtr storage_policy = MergeTreeData::getStoragePolicyImpl(context_, table_settings_to_clean_locks);
 
             String zookeeper_table_id_path = fs::path(zookeeper_path) / "table_shared_id";
             String table_shared_id;
