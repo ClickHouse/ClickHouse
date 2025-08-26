@@ -6,7 +6,7 @@ from pathlib import Path
 from praktika.info import Info
 from praktika.utils import Shell
 
-# NOTE(vnemkov): extrimely hackinsj, buts allows to reuse code from version_helper and git_helper with our modifications.
+# NOTE(vnemkov): extremely hackish, buts allows to reuse code from version_helper and git_helper with our modifications.
 
 # allow to import other packages that are located in `tests/ci` directory, like `git_helper`
 import tests.ci
