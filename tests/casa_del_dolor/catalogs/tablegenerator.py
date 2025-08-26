@@ -168,7 +168,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         # Write properties
         if include_all or random.random() > 0.3:
-            properties.update(self._generate_write_properties())
+            properties.update(self._generate_write_properties(columns))
 
         # Read properties
         if include_all or random.random() > 0.5:
@@ -266,10 +266,9 @@ class IcebergTableGenerator(LakeTableGenerator):
         properties["history.expire.max-snapshot-age-ms"] = str(
             random.choice(
                 [
-                    432000000,  # 5 days
-                    604800000,  # 7 days
-                    1209600000,  # 14 days
-                    2592000000,  # 30 days
+                    1000,  # 1 second
+                    60000,  # 1 minute
+                    3600000,  # 1 hour
                 ]
             )
         )
@@ -281,10 +280,9 @@ class IcebergTableGenerator(LakeTableGenerator):
         properties["history.expire.max-ref-age-ms"] = str(
             random.choice(
                 [
-                    604800000,  # 7 days
-                    1209600000,  # 14 days
-                    2592000000,  # 30 days
-                    5184000000,  # 60 days
+                    1000,  # 1 second
+                    60000,  # 1 minute
+                    3600000,  # 1 hour
                 ]
             )
         )
@@ -299,10 +297,10 @@ class IcebergTableGenerator(LakeTableGenerator):
         properties["commit.retry.num-retries"] = str(random.randint(3, 10))
         properties["commit.retry.min-wait-ms"] = str(random.choice([100, 500, 1000]))
         properties["commit.retry.max-wait-ms"] = str(
-            random.choice([10000, 30000, 60000])
+            random.choice([1000, 10000, 30000, 60000])
         )
         properties["commit.retry.total-timeout-ms"] = str(
-            random.choice([60000, 180000, 300000])  # 1min, 3min, 5min
+            random.choice([1000, 60000, 180000, 300000])
         )
 
         # Locking
@@ -312,7 +310,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         if properties["commit.lock.enabled"] == "true":
             properties["commit.lock.timeout-ms"] = str(
-                random.choice([30000, 60000, 120000])  # 30s, 1min, 2min
+                random.choice([1000, 30000, 60000, 120000])
             )
 
         return properties
@@ -366,7 +364,7 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_write_properties(self) -> dict[str, str]:
+    def _generate_write_properties(self, columns) -> dict[str, str]:
         """Generate write operation properties"""
         properties = {}
 
@@ -381,9 +379,15 @@ class IcebergTableGenerator(LakeTableGenerator):
         properties["write.sort.enabled"] = str(random.choice(["true", "false"])).lower()
 
         if properties["write.sort.enabled"] == "true":
-            properties["write.sort.order"] = random.choice(
-                ["id ASC", "timestamp DESC", "id ASC, timestamp DESC"]
+            columns_list = []
+            for val in columns:
+                columns_list.append(f"{val["name"]} ASC")
+                columns_list.append(f"{val["name"]} DESC")
+            random_subset = random.sample(
+                columns_list, k=random.randint(1, len(columns_list))
             )
+            random.shuffle(random_subset)
+            properties["write.sort.order"] = ",".join(random_subset)
 
         # Write modes
         properties["write.update.mode"] = random.choice(
@@ -530,21 +534,18 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         # Log retention
         properties["delta.logRetentionDuration"] = random.choice(
             [
-                "interval 7 days",
-                "interval 14 days",
-                "interval 30 days",
-                "interval 60 days",
-                "interval 90 days",
+                "interval 1 second",
+                "interval 1 minute",
+                "interval 1 hour",
             ]
         )
 
         # Deleted file retention (for VACUUM)
         properties["delta.deletedFileRetentionDuration"] = random.choice(
             [
-                "interval 1 day",
-                "interval 7 days",
-                "interval 14 days",
-                "interval 30 days",
+                "interval 1 second",
+                "interval 1 minute",
+                "interval 1 hour",
             ]
         )
 
@@ -695,7 +696,11 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         # Checkpoint retention
         properties["delta.checkpointRetentionDuration"] = random.choice(
-            ["interval 2 days", "interval 7 days", "interval 30 days"]
+            [
+                "interval 1 second",
+                "interval 1 minute",
+                "interval 1 day",
+            ]
         )
 
         # Compatibility
