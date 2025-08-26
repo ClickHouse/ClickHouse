@@ -395,9 +395,9 @@ void Prefetcher::decreaseTaskRefcount(Task * task, size_t amount)
 void Prefetcher::scheduleTask(Task * task)
 {
     if (parser_shared_resources && !parser_shared_resources->io_runner.isDisabled())
-        parser_shared_resources->io_runner([this, task]
+        parser_shared_resources->io_runner([this, task, _shutdown = shutdown]
             {
-                std::shared_lock shutdown_lock(*shutdown, std::try_to_lock);
+                std::shared_lock shutdown_lock(*_shutdown, std::try_to_lock);
                 if (!shutdown_lock.owns_lock())
                     return;
                 runTask(task);

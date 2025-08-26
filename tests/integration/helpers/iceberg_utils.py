@@ -4,6 +4,7 @@ import uuid
 
 import pyspark
 import pytest
+import pandas as pd
 
 from pyspark.sql.functions import (
     monotonically_increasing_id,
@@ -286,23 +287,64 @@ def get_creation_expression(
         raise Exception(f"Unknown iceberg storage type: {storage_type}")
 
 
-def check_schema_and_data(instance, table_expression, expected_schema, expected_data, timestamp_ms=None):
+def get_raw_schema_and_data(instance, table_expression, timestamp_ms=None):
     if timestamp_ms:
         schema = instance.query(f"DESC {table_expression} SETTINGS iceberg_timestamp_ms = {timestamp_ms}")
         data = instance.query(f"SELECT * FROM {table_expression} ORDER BY ALL SETTINGS iceberg_timestamp_ms = {timestamp_ms}")
     else:
         schema = instance.query(f"DESC {table_expression}")
         data = instance.query(f"SELECT * FROM {table_expression} ORDER BY ALL")
+    return schema, data
+
+
+clickhouse_to_pandas_types = {
+    "Int32": "int32",
+}
+
+def convert_schema_and_data_to_pandas_df(schema_raw, data_raw):
+    # Extract column names from schema
+    schema_rows = list(
+        map(
+            lambda x: x.split("\t")[:2],
+            filter(lambda x: len(x) > 0, schema_raw.strip().split("\n")),
+        )
+    )
+    column_names = [x[0] for x in schema_rows]
+    types = [x[1] for x in schema_rows]
+    pandas_types = [clickhouse_to_pandas_types[t]for t in types]
+
+    schema_df = pd.DataFrame([types], columns=column_names)
+    
+    # Convert data to DataFrame
+    data_rows = list(
+        map(
+            lambda x: x.split("\t"),
+            filter(lambda x: len(x) > 0, data_raw.strip().split("\n")),
+        )
+    )
+    
+    if data_rows:
+        data_df = pd.DataFrame(data_rows, columns=column_names, dtype='object')
+    else:
+        # Create empty DataFrame with correct columns
+        data_df = pd.DataFrame(columns=column_names, dtype='object')
+    
+    data_df = data_df.astype(dict(zip(column_names, pandas_types)))
+    return schema_df, data_df
+
+def check_schema_and_data(instance, table_expression, expected_schema, expected_data, timestamp_ms=None):
+    raw_schema, raw_data = get_raw_schema_and_data(instance, table_expression, timestamp_ms)
+
     schema = list(
         map(
             lambda x: x.split("\t")[:2],
-            filter(lambda x: len(x) > 0, schema.strip().split("\n")),
+            filter(lambda x: len(x) > 0, raw_schema.strip().split("\n")),
         )
     )
     data = list(
         map(
             lambda x: x.split("\t"),
-            filter(lambda x: len(x) > 0, data.strip().split("\n")),
+            filter(lambda x: len(x) > 0, raw_data.strip().split("\n")),
         )
     )
     assert expected_schema == schema

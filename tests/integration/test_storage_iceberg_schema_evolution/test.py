@@ -16,13 +16,17 @@ from helpers.s3_tools import (
 from helpers.test_tools import TSV
 
 from helpers.iceberg_utils import (
+    convert_schema_and_data_to_pandas_df,
     default_upload_directory,
     execute_spark_query_general,
     get_creation_expression,
     check_schema_and_data,
+    get_raw_schema_and_data,
     get_uuid_str,
     get_spark,
 )
+
+from pandas.testing import assert_frame_equal
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -1935,3 +1939,97 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
         ]
     )
 
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_correct_column_mapper_is_chosen(
+    started_cluster,
+    storage_type,
+    format_version
+):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_correct_column_mapper_is_chosen_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (
+            a int NOT NULL,
+            b int NOT NULL
+        )
+        USING iceberg
+        OPTIONS ('format-version'='{format_version}');
+        """
+    )
+
+    spark.sql(
+        f"""
+        INSERT INTO {TABLE_NAME} VALUES (0, 1);
+        """
+    )
+
+    spark.sql(
+        f"""
+        ALTER TABLE {TABLE_NAME} RENAME COLUMN b TO c;
+        """
+    )
+
+    spark.sql(
+        f"""
+        ALTER TABLE {TABLE_NAME} RENAME COLUMN a TO b;
+        """
+    )
+
+    spark.sql(
+        f"""
+        ALTER TABLE {TABLE_NAME} RENAME COLUMN c TO a;
+        """
+    )
+
+    spark.sql(
+        f"""
+        ALTER TABLE {TABLE_NAME} ALTER COLUMN b AFTER a;
+        """
+    )
+    
+    spark.sql(
+        f"""
+        INSERT INTO {TABLE_NAME} VALUES (1, 0);
+        """
+    )
+
+    table_function = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        allow_dynamic_metadata_for_data_lakes=True,
+        is_cluster=True,
+    )
+
+
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    raw_schema, raw_data = get_raw_schema_and_data(instance, table_function)
+
+    _schema_df, data_df = convert_schema_and_data_to_pandas_df(raw_schema, raw_data)
+
+    reference_df = spark.sql(
+        f"""
+        SELECT * FROM {TABLE_NAME} ORDER BY a;
+        """
+    ).toPandas()
+
+    assert_frame_equal(data_df, reference_df)

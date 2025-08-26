@@ -850,6 +850,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.9",
+        {
+
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
             {"object_serialization_version", "v2", "v2", "Add a setting to control JSON serialization versions"},
