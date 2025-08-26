@@ -214,8 +214,7 @@ struct DataType
             else if (real_type.starts_with("TIME") && !real_type.starts_with("TIMESTAMP"))
             {
                 type.root_type = RootDataType::TIME_WITHOUT_TIME_ZONE;
-                size_t p = has_precision(type.raw_type) ? parse_precision(type.raw_type)[0] : 0;
-                type.clickhouse_data_type = std::make_shared<DataTypeTime64>(p);
+                type.clickhouse_data_type = std::make_shared<DataTypeInt64>();
             }
             else if (real_type.starts_with("TIMESTAMP"))
             {
