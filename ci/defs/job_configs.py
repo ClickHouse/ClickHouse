@@ -53,10 +53,10 @@ BINARY_DOCKER_COMMAND = (
 
 class JobConfigs:
     style_check = Job.Config(
-        name=JobNames.STYLE_CHECK + "--network=host",
+        name=JobNames.STYLE_CHECK,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/claude_job.py",
-        run_in_docker="clickhouse/style-test",
+        run_in_docker="clickhouse/style-test --network=host",
         enable_commit_status=True,
     )
     fast_test = Job.Config(
