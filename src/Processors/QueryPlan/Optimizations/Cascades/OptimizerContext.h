@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/Logger.h>
 #include "Processors/QueryPlan/Optimizations/Cascades/Group.h"
+#include "Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h"
 #include "Processors/QueryPlan/Optimizations/Cascades/Optimizer.h"
 #include <stack>
 
@@ -26,13 +27,17 @@ public:
 
     LoggerPtr log = getLogger("CascadesOptimizer");
 
-    const std::vector<OptimizationRulePtr> & getRules() const { return rules; }
+    const std::vector<OptimizationRulePtr> & getTransformationRules() const { return transformation_rules; }
+    const std::vector<OptimizationRulePtr> & getImplementationRules() const { return implementation_rules; }
 
     Memo & getMemo() { return memo; }
     const Memo & getMemo() const { return memo; }
 
 private:
-    std::vector<OptimizationRulePtr> rules;
+    void addRule(OptimizationRulePtr rule);
+
+    std::vector<OptimizationRulePtr> transformation_rules;
+    std::vector<OptimizationRulePtr> implementation_rules;
 
     Memo memo{log};
     std::stack<OptimizationTaskPtr> tasks;

@@ -118,15 +118,17 @@ private:
 class OptimizeInputsTask final : public IOptimizationTask
 {
 public:
-    OptimizeInputsTask(GroupExpressionPtr expression_, CostLimit cost_limit_)
+    OptimizeInputsTask(GroupExpressionPtr expression_, size_t input_index_to_optimize_, CostLimit cost_limit_)
         : IOptimizationTask(cost_limit_)
         , expression(expression_)
+        , input_index_to_optimize(input_index_to_optimize_)
     {}
 
     void execute(OptimizerContext & optimizer_context) override;
 
 private:
     GroupExpressionPtr expression;
+    const size_t input_index_to_optimize;
 };
 
 
