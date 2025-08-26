@@ -24,13 +24,25 @@ echo "$test_env" >> /etc/default/clickhouse
 systemctl restart clickhouse-server
 clickhouse-client -q 'SELECT version()'
 grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
-    initd_test = r"""#!/bin/bash
+    initd_via_systemd_test = r"""#!/bin/bash
 set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR
 test_env='TEST_THE_DEFAULT_PARAMETER=15'
 echo "$test_env" >> /etc/default/clickhouse
 # Note, this should use systemctl
 /etc/init.d/clickhouse-server start
+clickhouse-client -q 'SELECT version()'
+grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
+    initd_test = r"""#!/bin/bash
+set -e
+trap "bash -ex /packages/preserve_logs.sh" ERR
+test_env='TEST_THE_DEFAULT_PARAMETER=15'
+echo "$test_env" >> /etc/default/clickhouse
+# Do not use systemd, and hence we need to wait until the server will be ready below
+SYSTEMCTL_SKIP_REDIRECT=1 /etc/init.d/clickhouse-server start
+for i in {1..5}; do
+    clickhouse-client -q 'SELECT version()' && break || sleep 1
+done
 clickhouse-client -q 'SELECT version()'
 grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
     keeper_test = r"""#!/bin/bash
@@ -83,6 +95,7 @@ chmod a+rw -R /packages
 exit 1
 """
     (TEMP_PATH / "server_test.sh").write_text(server_test, encoding="utf-8")
+    (TEMP_PATH / "initd_via_systemd_test.sh").write_text(initd_via_systemd_test, encoding="utf-8")
     (TEMP_PATH / "initd_test.sh").write_text(initd_test, encoding="utf-8")
     (TEMP_PATH / "keeper_test.sh").write_text(keeper_test, encoding="utf-8")
     (TEMP_PATH / "binary_test.sh").write_text(binary_test, encoding="utf-8")
@@ -94,6 +107,9 @@ def test_install_deb(image: DockerImage) -> List[Result]:
         "Install server deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common}*deb
 bash -ex /packages/server_test.sh""",
+        "Run server init.d (proxy to systemd)": r"""#!/bin/bash -ex
+apt-get install /packages/clickhouse-{server,client,common}*deb
+bash -ex /packages/initd_via_systemd_test.sh""",
         "Run server init.d": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common}*deb
 bash -ex /packages/initd_test.sh""",
