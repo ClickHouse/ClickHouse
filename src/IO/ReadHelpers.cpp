@@ -1568,9 +1568,28 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         }
 
         if (unlikely(year == 0))
+        {
             datetime = 0;
+        }
         else
-            datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+        {
+            if constexpr (throw_exception)
+            {
+                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+            }
+            else
+            {
+                auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+                if (!datetime_maybe)
+                    return ReturnType(false);
+
+                /// If it's regular DateTime we should check that it falls within the supported range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
+                if (!dt64_mode && (*datetime_maybe < 0 || *datetime_maybe > UINT32_MAX))
+                    return ReturnType(false);
+
+                datetime = *datetime_maybe;
+            }
+        }
     }
     else
     {
