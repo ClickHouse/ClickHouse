@@ -2875,7 +2875,10 @@ ConstantNodePtr getConstantResultFromFunctionArgs(const QueryTreeNodePtr & node,
         {
             base = resolver->build(arg_columns);
         }
-        catch (...) { base = nullptr; }
+        catch (...)
+        {
+            return nullptr;
+        }
 
         if (base)
         {
