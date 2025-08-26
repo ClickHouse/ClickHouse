@@ -59,7 +59,8 @@ public:
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
-        bool supports_subset_of_columns);
+        bool supports_subset_of_columns,
+        bool supports_tuple_elements);
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
@@ -80,7 +81,8 @@ public:
 
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
-    virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema() const { return nullptr; }
 
     virtual SinkToStoragePtr write(
         SharedHeader /*sample_block*/,

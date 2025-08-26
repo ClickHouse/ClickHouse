@@ -155,6 +155,7 @@ public:
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
+        bool supports_tuple_elements,
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams & hive_parameters);
 
@@ -220,7 +221,10 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
+
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema() const { return nullptr; }
+
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }
 

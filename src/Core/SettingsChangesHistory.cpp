@@ -39,8 +39,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.9",
+        {
+
+        });
         addSettingsChanges(settings_changes_history, "25.8",
         {
+            {"output_format_json_quote_64bit_integers", true, false, "Disable quoting of the 64 bit integers in JSON by default"},
             {"show_data_lake_catalogs_in_system_tables", true, true, "New setting"},
             {"optimize_rewrite_regexp_functions", false, true, "A new setting"},
             {"max_joined_block_size_bytes", 0, 4 * 1024 * 1024, "New setting"},
@@ -60,6 +65,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_read_request_max_tries", 20, 10, "Changed setting value"},
             {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
+            {"output_format_parquet_max_dictionary_size", 1024 * 1024, 1024 * 1024, "New setting"},
+            {"input_format_parquet_use_native_reader_v3", false, true, "New setting"},
+            {"input_format_parquet_memory_low_watermark", 2ul << 20, 2ul << 20, "New setting"},
+            {"input_format_parquet_memory_high_watermark", 4ul << 30, 4ul << 30, "New setting"},
+            {"input_format_parquet_page_filter_push_down", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
+            {"input_format_parquet_use_offset_index", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
             {"output_format_parquet_enum_as_byte_array", false, true, "Enable writing Enum as byte array in Parquet by default"},
             {"json_type_escape_dots_in_keys", false, false, "Add new setting that allows to escape dots in JSON keys during JSON type parsing"},
             {"parallel_replicas_support_projection", false, true, "New setting. Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive."},
@@ -92,8 +103,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
+            {"promql_database", "", "", "New experimental setting"},
+            {"promql_table", "", "", "New experimental setting"},
+            {"evaluation_time", 0, 0, "New experimental setting"},
             {"output_format_parquet_date_as_uint16", false, false, "Added a compatibility setting for a minor compatibility-breaking change introduced back in 24.12."},
             {"s3_slow_all_threads_after_retryable_error", true, true, "New setting"},
+            {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
+            {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."}
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -835,8 +851,18 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.9",
+        {
+
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
+            {"object_serialization_version", "v2", "v2", "Add a setting to control JSON serialization versions"},
+            {"object_shared_data_serialization_version", "map", "map", "Add a setting to control JSON serialization versions"},
+            {"object_shared_data_serialization_version_for_zero_level_parts", "map", "map", "Add a setting to control JSON serialization versions  for zero level parts"},
+            {"object_shared_data_buckets_for_compact_part", 8, 8, "Add a setting to control number of buckets for shared data in JSON serialization in compact parts"},
+            {"object_shared_data_buckets_for_wide_part", 32, 32, "Add a setting to control number of buckets for shared data in JSON serialization in wide parts"},
+            {"dynamic_serialization_version", "v2", "v2", "Add a setting to control Dynamic serialization versions"},
             {"search_orphaned_parts_disks", "any", "any", "New setting"},
             {"shared_merge_tree_virtual_parts_discovery_batch", 1, 1, "New setting"},
             {"shared_merge_tree_update_replica_flags_delay_ms", 30000, 30000, "New setting"},

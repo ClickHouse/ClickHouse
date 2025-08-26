@@ -240,9 +240,15 @@ public:
         current_metadata->modifyFormatSettings(settings_);
     }
 
-    ColumnMapperPtr getColumnMapper() const override
+    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override
     {
-        return current_metadata->getColumnMapper();
+        assertInitialized();
+        return current_metadata->getColumnMapperForObject(object_info);
+    }
+    ColumnMapperPtr getColumnMapperForCurrentSchema() const override
+    {
+        assertInitialized();
+        return current_metadata->getColumnMapperForCurrentSchema();
     }
 
     SinkToStoragePtr write(
@@ -328,6 +334,7 @@ private:
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
+        bool supports_tuple_elements,
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams &) override
     {
@@ -339,7 +346,7 @@ private:
                 local_context);
         }
         return current_metadata->prepareReadingFromFormat(
-            requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
+            requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements);
     }
 
     bool updateMetadataIfChanged(
