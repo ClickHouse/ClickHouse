@@ -12,8 +12,6 @@ def fill_nodes_zero_copy(nodes, shard):
 
                 CREATE TABLE test_zero_copy.test_table_1 UUID '10000000-0000-0000-0000-000000000001' (date Date, id UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{shard}/replicated/test_table_1', '{replica}') ORDER BY id PARTITION BY toYYYYMM(date)
-                SETTINGS min_replicated_logs_to_keep=3, max_replicated_logs_to_keep=5, cleanup_delay_period=0,
-                    cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0;
             """.format(
                 shard=shard, replica=node.name
             )
@@ -22,8 +20,6 @@ def fill_nodes_zero_copy(nodes, shard):
             """
                 CREATE TABLE test_zero_copy.test_table_2 UUID '10000000-0000-0000-0000-000000000002' (date Date, id UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{shard}/replicated/test_table_2', '{replica}') ORDER BY id PARTITION BY toYYYYMM(date)
-                SETTINGS min_replicated_logs_to_keep=3, max_replicated_logs_to_keep=5, cleanup_delay_period=0,
-                    cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0;
             """.format(
                 shard=shard, replica=node.name
             )
@@ -57,11 +53,6 @@ def start_cluster():
 
     finally:
         cluster.shutdown()
-
-
-def check_exists(zk, path):
-    zk.sync(path)
-    return zk.exists(path)
 
 
 def check_children(zk, path, children_to_check):
@@ -100,4 +91,3 @@ def test_drop_replica_zero_copy_locks(start_cluster):
     node_1_2.query("DROP TABLE test_zero_copy.test_table_2 SYNC")
 
     check_children(zk, zk_path, [])
-
