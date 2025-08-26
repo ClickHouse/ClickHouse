@@ -464,6 +464,8 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
 
         for (auto * log : getAllLogs())
         {
+            log->flushBufferToLog(std::chrono::system_clock::now());
+
             auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, log->getLastLogIndex()});
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
@@ -495,13 +497,17 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
             if (it->second == nullptr)
                 /// The log exists but it's not initialized. Nothing to do
                 continue;
+            
+            auto log = it->second;
 
-            if (it->second == text_log.get())
+            if (log == text_log.get())
                 BaseDaemon::instance().flushTextLogs();
 
-            auto last_log_index = it->second->getLastLogIndex();
-            logs_to_wait.push_back({it->second, it->second->getLastLogIndex()});
-            it->second->notifyFlush(last_log_index, should_prepare_tables_anyway);
+            log->flushBufferToLog(std::chrono::system_clock::now());
+
+            const auto last_log_index = log->getLastLogIndex();
+            logs_to_wait.push_back({log, last_log_index});
+            log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
 
