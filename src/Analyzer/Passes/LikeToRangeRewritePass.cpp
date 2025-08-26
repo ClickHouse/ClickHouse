@@ -1,3 +1,5 @@
+#include <memory>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Passes/LikeToRangeRewritePass.h>
 
 #include <Analyzer/ConstantNode.h>
@@ -34,8 +36,9 @@ public:
 
         const String & function_name = function_node->getFunctionName();
         const bool is_like = (function_name == "like");
+        const bool is_not_like = (function_name == "notLike");
         // todo: ilike
-        if (!is_like)
+        if (!(is_like || is_not_like))
             return;
 
         auto & args = function_node->getArguments().getNodes();
@@ -53,40 +56,47 @@ public:
         if (!is_perfect || prefix.empty())
             return;
 
-        /// Replace the node with the AND condition
-        auto and_function = std::make_shared<FunctionNode>("and");
-        auto ge_function = std::make_shared<FunctionNode>("greaterOrEquals");
-        auto column_node = args[0]; // The column being compared
-
-        auto ge_resolver = FunctionFactory::instance().get("greaterOrEquals", getContext());
-        auto lt_resolver = FunctionFactory::instance().get("less", getContext());
-        auto and_resolver = FunctionFactory::instance().get("and", getContext());
-
-        /// Set new function arguments
-        auto prefix_constant = std::make_shared<ConstantNode>(Field(prefix));
-        ge_function->getArguments().getNodes() = {column_node, prefix_constant};
-        ge_function->resolveAsFunction(ge_resolver);
-
         String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
-        if (right_bound.empty()) 
+        const bool no_right_bound = right_bound.empty();
+
+        /// Create new node
+        QueryTreeNodePtr new_node = nullptr;
+        auto column_node = args[0]; // The column being compared
+        if (is_like)
         {
-            and_function->getArguments().getNodes() = {ge_function};
+            auto left = comparison(column_node, "greaterOrEquals", prefix);
+            new_node = no_right_bound 
+                ? left 
+                : operation(left, "and", comparison(column_node, "less", right_bound));
+        } 
+        else if (is_not_like)
+        {
+            auto left = comparison(column_node, "less", prefix);
+            new_node = no_right_bound
+                ? left
+                : operation(left, "or", comparison(column_node, "greaterOrEquals", right_bound));
         }
         else
-        {
-            /// Set new function arguments
-            auto right_bound_constant = std::make_shared<ConstantNode>(right_bound);
-            auto lt_function = std::make_shared<FunctionNode>("less");
-            lt_function->getArguments().getNodes() = {column_node, right_bound_constant};
-            lt_function->resolveAsFunction(lt_resolver);
-
-            and_function->getArguments().getNodes() = {ge_function, lt_function};
-        }
-        and_function->resolveAsFunction(and_resolver);
+            chassert(false, "shouldn't be here");
 
         /// Replpace the original LIKE node
-        // todo: check and_function type is "and"
-        node = std::move(and_function);
+        chassert(new_node != nullptr, "should have been created");
+        node = std::move(new_node);
+    }
+private:
+    FunctionNodePtr comparison(const QueryTreeNodePtr left, const String & compare, const String & right)
+    {
+        auto right_constant = std::make_shared<ConstantNode>(right);
+        return operation(left, compare, right_constant);
+    }
+
+    FunctionNodePtr operation(const QueryTreeNodePtr left, const String & op, const QueryTreeNodePtr right)
+    {
+        auto op_function = std::make_shared<FunctionNode>(op);
+        auto op_resolver = FunctionFactory::instance().get(op, getContext());
+        op_function->getArguments().getNodes() = {left, right};
+        op_function->resolveAsFunction(op_resolver);
+        return op_function;
     }
 };
 

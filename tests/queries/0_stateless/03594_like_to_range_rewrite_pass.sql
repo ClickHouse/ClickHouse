@@ -32,7 +32,7 @@ SELECT count() FROM test_like_rewrite WHERE name LIKE 'test%';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE category LIKE 'fruit%';
 SELECT count() FROM test_like_rewrite WHERE category LIKE 'fruit%';
 
--- Test NOT LIKE with perfect prefix - should be rewritten (TODO)
+-- Test NOT LIKE with perfect prefix - should be rewritten
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name NOT LIKE 'app%';
 SELECT count() FROM test_like_rewrite WHERE name NOT LIKE 'app%';
 

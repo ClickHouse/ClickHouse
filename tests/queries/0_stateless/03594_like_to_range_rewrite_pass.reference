@@ -24,7 +24,7 @@ SELECT
     __table1.name AS name,
     __table1.category AS category
 FROM default.test_like_rewrite AS __table1
-WHERE __table1.name NOT LIKE \'app%\'
+WHERE (__table1.name < \'app\') OR (__table1.name >= \'apq\')
 4
 SELECT
     __table1.id AS id,

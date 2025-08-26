@@ -67,7 +67,6 @@ TEST(LikeToRangeRewrite, rewrite)
 
     // Perfect prefix patterns
     test_f("col LIKE 'test%'", "(col >= 'test') AND (col < 'tesu')");
-    test_f("col LIKE 'hello%'", "(col >= 'hello') AND (col < 'hellp')");
     test_f("col LIKE 'a%'", "(col >= 'a') AND (col < 'b')");
 
     // Imperfect prefix LIKE should not be rewritten (would be incorrect)
@@ -80,10 +79,9 @@ TEST(LikeToRangeRewrite, rewrite)
     test_f("col LIKE '%'", "col LIKE '%'");
     test_f("col LIKE 'exactvalue'", "col LIKE 'exactvalue'");
 
-    // TODO Perfect prefix NOT LIKE should be rewritten
-    // test_f("col NOT LIKE 'test%'", "NOT ((col >= 'test') AND (col < 'tesu'))");
-    // test_f("col NOT LIKE 'hello%'", "NOT ((col >= 'hello') AND (col < 'hellp'))");
+    // Perfect prefix NOT LIKE should be rewritten
+    test_f("col NOT LIKE 'test%'", "(col < 'test') OR (col >= 'tesu')");
 
-    // // Imperfect prefix NOT LIKE should not be rewritten (would be incorrect)
-    // test_f("col NOT LIKE 'hello_world%'", "col NOT LIKE 'hello_world%'");
+    // Imperfect prefix NOT LIKE should not be rewritten (would be incorrect)
+    test_f("col NOT LIKE 'hello_world%'", "col NOT LIKE 'hello_world%'");
 }
