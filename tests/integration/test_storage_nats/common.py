@@ -7,12 +7,13 @@ import nats
 
 from helpers.cluster import check_nats_is_available, nats_connect_ssl
 from helpers.test_tools import TSV
+from helpers.config_cluster import nats_user, nats_pass
 
-def wait_nats_to_start(nats_port, ssl_ctx=None, timeout=180):
+def wait_nats_to_start(cluster, timeout=180):
     start = time.time()
     while time.time() - start < timeout:
         try:
-            if asyncio.run(check_nats_is_available(nats_port, ssl_ctx=ssl_ctx)):
+            if asyncio.run(check_nats_is_available(cluster)):
                 logging.debug("NATS is available")
                 return
             time.sleep(0.5)
@@ -23,11 +24,11 @@ def wait_nats_to_start(nats_port, ssl_ctx=None, timeout=180):
     assert False, "NATS is unavailable"
 
 # function to check if nats is paused, because in some cases we successfully connected to it after calling pause_container
-def wait_nats_paused(nats_port, ssl_ctx=None, timeout=180):
+def wait_nats_paused(cluster, timeout=180):
     start = time.time()
     while time.time() - start < timeout:
         try:
-            asyncio.run(check_nats_is_available(nats_port, ssl_ctx=ssl_ctx))
+            asyncio.run(check_nats_is_available(cluster))
             time.sleep(0.5)
         except nats.errors.NoServersError:
             logging.debug("NATS is paused")
@@ -58,34 +59,15 @@ def check_result(query_result, check=False, ref_file="test_nats_json.reference")
             return TSV(query_result) == TSV(reference)
 
 
-def kill_nats(nats_id):
-    p = subprocess.Popen(("docker", "stop", nats_id), stdout=subprocess.PIPE)
+def kill_nats(cluster):
+    p = subprocess.Popen(("docker", "stop", cluster.nats_docker_id), stdout=subprocess.PIPE)
     p.communicate()
     return p.returncode == 0
 
-def revive_nats(nats_id, nats_port):
-    p = subprocess.Popen(("docker", "start", nats_id), stdout=subprocess.PIPE)
+def revive_nats(cluster):
+    p = subprocess.Popen(("docker", "start", cluster.nats_docker_id), stdout=subprocess.PIPE)
     p.communicate()
-    wait_nats_to_start(nats_port)
-
-def create_consumer(cluster_inst, subject, messages=(), bytes=None):
-    nc = nats_connect_ssl(
-        cluster_inst.nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=cluster_inst.nats_ssl_context,
-    )
-    logging.debug("NATS connection status: " + str(nc.is_connected))
-
-    for message in messages:
-        nc.publish(subject, message.encode())
-    if bytes is not None:
-        nc.publish(subject, bytes)
-    nc.flush()
-    logging.debug("Finished publishing to " + subject)
-
-    nc.close()
-    return messages
+    wait_nats_to_start(cluster)
 
 def wait_query_result(instance, query, wait_query_result, sleep_timeout = 0.5, time_limit_sec = 60):
     deadline = time.monotonic() + time_limit_sec
@@ -96,7 +78,7 @@ def wait_query_result(instance, query, wait_query_result, sleep_timeout = 0.5, t
         if query_result == wait_query_result:
             break
         
-        time.sleep(1)
+        time.sleep(sleep_timeout)
     
     assert query_result == wait_query_result
 

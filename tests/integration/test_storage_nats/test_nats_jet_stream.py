@@ -11,7 +11,8 @@ import pytest
 from google.protobuf.internal.encoder import _VarintBytes
 
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, check_nats_is_available, nats_connect_ssl
+from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import nats_user, nats_pass
 from helpers.test_tools import TSV
 
 from . import common as nats_helpers
@@ -35,12 +36,7 @@ instance = cluster.add_instance(
 # Helpers
 
 async def produce_messages(cluster_inst, stream, subject, messages=(), bytes=None):
-    nc = await nats_helpers.nats_connect_ssl(
-        cluster_inst.nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=cluster_inst.nats_ssl_context,
-    )
+    nc = await nats_helpers.nats_connect_ssl(cluster_inst)
     logging.debug("NATS connection status: " + str(nc.is_connected))
 
     for message in messages:
@@ -53,12 +49,7 @@ async def produce_messages(cluster_inst, stream, subject, messages=(), bytes=Non
     await nc.close()
 
 async def receive_messages(cluster_inst, stream_name, consumer_name, subject, decode_data=True):
-    nc = await nats_helpers.nats_connect_ssl(
-        cluster_inst.nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=cluster_inst.nats_ssl_context,
-    )
+    nc = await nats_helpers.nats_connect_ssl(cluster_inst)
     js = nc.jetstream()
 
     result = []
@@ -83,12 +74,7 @@ async def receive_messages(cluster_inst, stream_name, consumer_name, subject, de
 
 
 async def add_stream(cluster_inst, stream_name, stream_subjects):
-    nc = await nats_helpers.nats_connect_ssl(
-        cluster_inst.nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=cluster_inst.nats_ssl_context,
-    )
+    nc = await nats_helpers.nats_connect_ssl(cluster_inst)
     logging.debug("NATS connection status: " + str(nc.is_connected))
 
     # Create JetStream context.
@@ -100,12 +86,7 @@ async def add_stream(cluster_inst, stream_name, stream_subjects):
     await nc.close()
 
 async def get_stream_info(cluster_inst, stream_name) -> api.StreamInfo:
-    nc = await nats_helpers.nats_connect_ssl(
-        cluster_inst.nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=cluster_inst.nats_ssl_context,
-    )
+    nc = await nats_helpers.nats_connect_ssl(cluster_inst)
     logging.debug("NATS connection status: " + str(nc.is_connected))
 
     # Create JetStream context.
@@ -118,12 +99,7 @@ async def get_stream_info(cluster_inst, stream_name) -> api.StreamInfo:
     return stream_info
 
 async def delete_stream(cluster_inst, stream_name):
-    nc = await nats_helpers.nats_connect_ssl(
-        cluster_inst.nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=cluster_inst.nats_ssl_context,
-    )
+    nc = await nats_helpers.nats_connect_ssl(cluster_inst)
     logging.debug("NATS connection status: " + str(nc.is_connected))
 
     # Create JetStream context.
@@ -136,12 +112,7 @@ async def delete_stream(cluster_inst, stream_name):
 
 
 async def add_durable_consumer(cluster_inst, stream_name, consumer_name):
-    nc = await nats_helpers.nats_connect_ssl(
-        cluster_inst.nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=cluster_inst.nats_ssl_context,
-    )
+    nc = await nats_helpers.nats_connect_ssl(cluster_inst)
     logging.debug("NATS connection status: " + str(nc.is_connected))
 
     # Create JetStream context.
@@ -156,12 +127,7 @@ async def add_durable_consumer(cluster_inst, stream_name, consumer_name):
     await nc.close()
 
 async def delete_durable_consumer(cluster_inst, stream_name, consumer_name):
-    nc = await nats_helpers.nats_connect_ssl(
-        cluster_inst.nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=cluster_inst.nats_ssl_context,
-    )
+    nc = await nats_helpers.nats_connect_ssl(cluster_inst)
     logging.debug("NATS connection status: " + str(nc.is_connected))
 
     # Create JetStream context.
@@ -1222,9 +1188,9 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
     while int(instance.query("SELECT count() FROM test.view")) == 0:
         time.sleep(0.1)
 
-    nats_helpers.kill_nats(nats_cluster.nats_docker_id)
+    nats_helpers.kill_nats(nats_cluster)
     time.sleep(4)
-    nats_helpers.revive_nats(nats_cluster.nats_docker_id, nats_cluster.nats_port)
+    nats_helpers.revive_nats(nats_cluster)
 
     time_limit_sec = 300
     deadline = time.monotonic() + time_limit_sec
@@ -1294,7 +1260,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
         """
     )
     with nats_cluster.pause_container("nats1"):
-        nats_helpers.wait_nats_paused(nats_cluster.nats_port, nats_cluster.nats_ssl_context)
+        nats_helpers.wait_nats_paused(nats_cluster)
         instance.query("ATTACH TABLE test.cs")
 
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
@@ -1745,8 +1711,8 @@ def test_hiding_credentials(nats_cluster):
                      nats_consumer_name = 'test_consumer',
                      nats_subjects = 'test_subject',
                      nats_format = 'TSV',
-                     nats_username = 'click',
-                     nats_password = 'house',
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}',
                      nats_credential_file = '',
                      nats_row_delimiter = '\\n';
         """

@@ -15,6 +15,7 @@ from google.protobuf.internal.encoder import _VarintBytes
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, nats_connect_ssl
+from helpers.config_cluster import nats_user, nats_pass
 from helpers.test_tools import TSV
 
 from . import common as nats_helpers
@@ -36,12 +37,7 @@ instance = cluster.add_instance(
 # Helpers
 
 async def produce_messages(cluster_inst, subject, messages=(), bytes=None):
-    nc = await nats_helpers.nats_connect_ssl(
-        cluster_inst.nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=cluster_inst.nats_ssl_context,
-    )
+    nc = await nats_helpers.nats_connect_ssl(cluster_inst)
     logging.debug("NATS connection status: " + str(nc.is_connected))
 
     for message in messages:
@@ -595,12 +591,7 @@ def test_nats_insert(nats_cluster):
     insert_messages = []
 
     async def sub_to_nats():
-        nc = await nats_connect_ssl(
-            nats_cluster.nats_port,
-            user="click",
-            password="house",
-            ssl_ctx=nats_cluster.nats_ssl_context,
-        )
+        nc = await nats_connect_ssl(nats_cluster)
         sub = await nc.subscribe("insert")
         await sub.unsubscribe(50)
         async for msg in sub.messages:
@@ -653,12 +644,7 @@ def test_fetching_messages_without_mv(nats_cluster):
     insert_messages = []
 
     async def sub_to_nats():
-        nc = await nats_connect_ssl(
-            nats_cluster.nats_port,
-            user="click",
-            password="house",
-            ssl_ctx=nats_cluster.nats_ssl_context,
-        )
+        nc = await nats_connect_ssl(nats_cluster)
         sub = await nc.subscribe("insert", "consumers_group")
         
         try:
@@ -765,12 +751,7 @@ def test_nats_many_subjects_insert_right(nats_cluster):
     insert_messages = []
 
     async def sub_to_nats():
-        nc = await nats_connect_ssl(
-            nats_cluster.nats_port,
-            user="click",
-            password="house",
-            ssl_ctx=nats_cluster.nats_ssl_context,
-        )
+        nc = await nats_connect_ssl(nats_cluster)
         sub = await nc.subscribe("right_insert1")
         await sub.unsubscribe(50)
         async for msg in sub.messages:
@@ -1228,9 +1209,9 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
     while int(instance.query("SELECT count() FROM test.view")) == 0:
         time.sleep(0.1)
 
-    nats_helpers.kill_nats(nats_cluster.nats_docker_id)
+    nats_helpers.kill_nats(nats_cluster)
     time.sleep(4)
-    nats_helpers.revive_nats(nats_cluster.nats_docker_id, nats_cluster.nats_port)
+    nats_helpers.revive_nats(nats_cluster)
 
     while True:
         result = instance.query("SELECT count(DISTINCT key) FROM test.view")
@@ -1287,7 +1268,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
         """
     )
     with nats_cluster.pause_container("nats1"):
-        nats_helpers.wait_nats_paused(nats_cluster.nats_port, nats_cluster.nats_ssl_context)
+        nats_helpers.wait_nats_paused(nats_cluster)
         instance.query("ATTACH TABLE test.cs")
 
     nats_helpers.wait_for_table_is_ready(instance, "test.cs")
@@ -1508,12 +1489,7 @@ def test_format_with_prefix_and_suffix(nats_cluster):
     insert_messages = []
 
     async def sub_to_nats():
-        nc = await nats_connect_ssl(
-            nats_cluster.nats_port,
-            user="click",
-            password="house",
-            ssl_ctx=nats_cluster.nats_ssl_context,
-        )
+        nc = await nats_connect_ssl(nats_cluster)
         sub = await nc.subscribe("custom")
         await sub.unsubscribe(2)
         async for msg in sub.messages:
@@ -1569,12 +1545,7 @@ def test_max_rows_per_message(nats_cluster):
     insert_messages = []
 
     async def sub_to_nats():
-        nc = await nats_connect_ssl(
-            nats_cluster.nats_port,
-            user="click",
-            password="house",
-            ssl_ctx=nats_cluster.nats_ssl_context,
-        )
+        nc = await nats_connect_ssl(nats_cluster)
         sub = await nc.subscribe("custom1")
         await sub.unsubscribe(2)
         async for msg in sub.messages:
@@ -1663,12 +1634,7 @@ def test_row_based_formats(nats_cluster):
         insert_messages = 0
 
         async def sub_to_nats():
-            nc = await nats_connect_ssl(
-                nats_cluster.nats_port,
-                user="click",
-                password="house",
-                ssl_ctx=nats_cluster.nats_ssl_context,
-            )
+            nc = await nats_connect_ssl(nats_cluster)
             sub = await nc.subscribe(format_name)
             await sub.unsubscribe(2)
             async for msg in sub.messages:
@@ -1725,12 +1691,7 @@ def test_block_based_formats_1(nats_cluster):
     insert_messages = []
 
     async def sub_to_nats():
-        nc = await nats_connect_ssl(
-            nats_cluster.nats_port,
-            user="click",
-            password="house",
-            ssl_ctx=nats_cluster.nats_ssl_context,
-        )
+        nc = await nats_connect_ssl(nats_cluster)
         sub = await nc.subscribe("PrettySpace")
         await sub.unsubscribe(3)
         async for msg in sub.messages:
@@ -1820,12 +1781,7 @@ def test_block_based_formats_2(nats_cluster):
         insert_messages = 0
 
         async def sub_to_nats():
-            nc = await nats_connect_ssl(
-                nats_cluster.nats_port,
-                user="click",
-                password="house",
-                ssl_ctx=nats_cluster.nats_ssl_context,
-            )
+            nc = await nats_connect_ssl(nats_cluster)
             sub = await nc.subscribe(format_name)
             await sub.unsubscribe(9)
             async for msg in sub.messages:
@@ -1883,8 +1839,8 @@ def test_hiding_credentials(nats_cluster):
             SETTINGS nats_url = 'nats1:4444',
                      nats_subjects = '{table_name}',
                      nats_format = 'TSV',
-                     nats_username = 'click',
-                     nats_password = 'house',
+                     nats_username = '{nats_user}',
+                     nats_password = '{nats_pass}',
                      nats_credential_file = '',
                      nats_row_delimiter = '\\n';
         """
