@@ -320,8 +320,6 @@ def test_nats_csv_with_delimiter(nats_cluster):
 
     asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
-    time.sleep(1)
-
     result = ""
     time_limit_sec = 60
     deadline = time.monotonic() + time_limit_sec
