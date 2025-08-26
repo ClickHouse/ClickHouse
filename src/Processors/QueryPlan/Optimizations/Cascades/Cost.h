@@ -6,7 +6,7 @@
 namespace DB
 {
 
-using Cost = Int64;
+using Cost = Float64;
 
 struct ExpressionCost
 {
@@ -22,7 +22,7 @@ using GroupExpressionPtr = std::shared_ptr<GroupExpression>;
 
 using GroupId = size_t;
 
-class JoinStep;
+class JoinStepLogical;
 class ReadFromMergeTree;
 
 class CostEstimator
@@ -35,7 +35,7 @@ public:
     ExpressionCost estimateCost(GroupExpressionPtr expression);
 
 private:
-    ExpressionCost estimateHashJoinCost(const JoinStep & join_step, GroupId left_tree, GroupId right_tree);
+    ExpressionCost estimateHashJoinCost(const JoinStepLogical & join_step, GroupId left_tree, GroupId right_tree);
     ExpressionCost estimateReadCost(const ReadFromMergeTree & read_step);
 
     const Memo & memo;
