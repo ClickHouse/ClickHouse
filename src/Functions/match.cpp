@@ -22,8 +22,19 @@ REGISTER_FUNCTION(Match)
     FunctionDocumentation::Description description = R"(
 Checks if a provided string matches the provided regular expression pattern.
 
-The pattern works under UTF-8 assumptions. The pattern is automatically anchored at both ends (as if the pattern started with '^' and ended with '$').
-This function uses RE2 regular expression library. Please refer to [re2](https://github.com/google/re2/wiki/Syntax) for supported syntax.
+This function uses the RE2 regular expression library. Please refer to [re2](https://github.com/google/re2/wiki/Syntax) for supported syntax.
+
+Matching works under UTF-8 assumptions, e.g. `¥` uses two bytes internally but matching treats it as a single codepoint.
+The regular expression must not contain NULL bytes.
+If the haystack or the pattern are not valid UTF-8, the behavior is undefined.
+
+Unlike re2's default behavior, `.` matches line breaks. To disable this, prepend the pattern with `(?-s)`.
+
+The pattern is automatically anchored at both ends (as if the pattern started with '^' and ended with '$').
+
+If you only like to find substrings, you can use functions [`like`](#like) or [`position`](#position) instead - they work much faster than this function.
+
+Alternative operator syntax: `haystack REGEXP pattern`.
     )";
     FunctionDocumentation::Syntax syntax = "match(haystack, pattern)";
     FunctionDocumentation::Arguments arguments = {

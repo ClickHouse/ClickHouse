@@ -21,9 +21,9 @@ using FunctionMultiMatchAny = FunctionsMultiStringSearch<MultiMatchAnyImpl<NameM
 REGISTER_FUNCTION(MultiMatchAny)
 {
     FunctionDocumentation::Description description = R"(
-Check if at least one of a number of regular expression patterns matches a haystack.
+Check if at least one of multiple regular expression patterns matches a haystack.
 
-The function uses multiple regular expression patterns and can be optimized using hyperscan library when available for better performance with large numbers of patterns.
+If you only want to search multiple substrings in a string, you can use function [`multiSearchAny`](#multiSearchAny) instead - it works much faster than this function.
     )";
     FunctionDocumentation::Syntax syntax = "multiMatchAny(haystack, pattern1[, pattern2, ...])";
     FunctionDocumentation::Arguments arguments = {

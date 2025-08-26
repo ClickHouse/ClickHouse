@@ -23,7 +23,15 @@ namespace DB
 REGISTER_FUNCTION(CountMatches)
 {
     FunctionDocumentation::Description description_case_sensitive = R"(
-Returns the number of regular expression matches for a pattern in a string.
+Returns number of matches of a regular expression in a string.
+
+:::note Version dependent behavior
+The behavior of this function depends on the ClickHouse version:
+
+- in versions < v25.6, the function stops counting at the first empty match even if a pattern accepts.
+- in versions >= 25.6, the function continues execution when an empty match occurs. The legacy behavior can be restored using setting `count_matches_stop_at_empty_match = true`;
+:::
+
     )";
     FunctionDocumentation::Syntax syntax_case_sensitive = "countMatches(haystack, pattern)";
     FunctionDocumentation::Arguments arguments_case_sensitive = {

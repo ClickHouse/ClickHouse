@@ -119,13 +119,10 @@ using FunctionExtractAll = FunctionTokens<ExtractAllImpl>;
 REGISTER_FUNCTION(ExtractAll)
 {
     FunctionDocumentation::Description description = R"(
-Extracts all fragments of a string using a regular expression.
+Like [`extract`](#extract), but returns an array of all matches of a regular expression in a string.
 If 'haystack' doesn't match the 'pattern' regex, an empty array is returned.
 
-Returns an array of strings consisting of all matches of the regex.
-The behavior depends on whether the regex contains capturing groups:
-- If the regex has no capturing groups, the function returns an array of all matches of the entire regex
-- If the regex has capturing groups, the function returns an array of all matches of the first capturing group
+If the regular expression has capturing groups (sub-patterns), the function matches the input string against the first capturing group.
     )";
     FunctionDocumentation::Syntax syntax = "extractAll(haystack, pattern)";
     FunctionDocumentation::Arguments arguments = {

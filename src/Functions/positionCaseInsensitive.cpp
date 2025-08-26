@@ -20,7 +20,7 @@ using FunctionPositionCaseInsensitive = FunctionsStringSearch<PositionImpl<NameP
 REGISTER_FUNCTION(PositionCaseInsensitive)
 {
     FunctionDocumentation::Description description = R"(
-Like [`position`](#position) but case insensitive.
+Like [`position`](#position) but case-insensitive.
     )";
     FunctionDocumentation::Syntax syntax = "positionCaseInsensitive(haystack, needle[, start_pos])";
     FunctionDocumentation::Arguments arguments = {

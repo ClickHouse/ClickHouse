@@ -66,11 +66,12 @@ using FunctionExtract = FunctionsStringSearchToString<ExtractImpl, NameExtract>;
 REGISTER_FUNCTION(Extract)
 {
     FunctionDocumentation::Description description = R"(
-Extracts a fragment of a string using a regular expression.
-If 'haystack' doesn't match the 'pattern' regex, an empty string is returned.
+Extracts the first match of a regular expression in a string.
+If 'haystack' doesn't match 'pattern', an empty string is returned.
 
-If the regex doesn't contain subpatterns, the function uses the fragment that matches the entire regex.
-Otherwise, it uses the fragment that matches the first subpattern.
+This function uses the RE2 regular expression library. Please refer to [re2](https://github.com/google/re2/wiki/Syntax) for supported syntax.
+
+If the regular expression has capturing groups (sub-patterns), the function matches the input string against the first capturing group.
     )";
     FunctionDocumentation::Syntax syntax = "extract(haystack, pattern)";
     FunctionDocumentation::Arguments arguments = {

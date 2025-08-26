@@ -558,6 +558,7 @@ REGISTER_FUNCTION(StringSimilarity)
 {
     FunctionDocumentation::Description description_ngram_distance = R"(
 Calculates the 4-gram distance between two strings.
+For this, it counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities.
 The smaller the returned value, the more similar the strings are.
 
 For case-insensitive search or/and in UTF8 format use functions [`ngramDistanceCaseInsensitive`](#ngramDistanceCaseInsensitive), [`ngramDistanceUTF8`](ngramDistanceUTF8), [`ngramDistanceCaseInsensitiveUTF8`](ngramDistanceCaseInsensitiveUTF8).
@@ -691,6 +692,7 @@ The smaller the returned value, the more similar the strings are.
 
     FunctionDocumentation::Description description_ngram_search_case_insensitive = R"(
 Provides a case-insensitive variant of [`ngramSearch`](#ngramSearch).
+Calculates the non-symmetric difference between a needle string and a haystack string, i.e. the number of n-grams from the needle minus the common number of n-grams normalized by the number of needle n-grams.
 Checks if the 4-gram distance between two strings is less than or equal to a given threshold, ignoring case.
     )";
     FunctionDocumentation::Syntax syntax_ngram_search_case_insensitive = "ngramSearchCaseInsensitive(haystack, needle)";

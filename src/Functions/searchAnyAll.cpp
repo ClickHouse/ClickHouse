@@ -230,10 +230,12 @@ REGISTER_FUNCTION(SearchAny)
     FunctionDocumentation::Description description_searchAny = R"(
 Returns 1, if at least one string needle_i matches the `input` column and 0 otherwise.
 
+:::note
 This function can only be used if setting `allow_experimental_full_text_index` is enabled.
+:::
 
 The `input` column must have a text index defined. When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
-Each element in the `needle` array is treated as a complete, individual token—no additional tokenization is performed on the needle elements themselves.
+Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
 
 **Example**
 
@@ -300,10 +302,12 @@ REGISTER_FUNCTION(SearchAll)
     FunctionDocumentation::Description description_searchAll = R"(
 Like [`searchAny`](#searchAny), but returns 1 only if all strings `needle_i` matche the `input` column and 0 otherwise.
 
+:::note
 This function can only be used if setting `allow_experimental_full_text_index` is enabled.
+:::
 
 The `input` column must have a text index defined. When searching, the `input` string is tokenized according to the tokenizer specified in the index definition.
-Each element in the `needle` array is treated as a complete, individual token—no additional tokenization is performed on the needle elements themselves.
+Each element in the `needle` array is treated as a complete, individual token — no additional tokenization is performed on the needle elements themselves.
 
 **Example**
 

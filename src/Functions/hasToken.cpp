@@ -27,13 +27,12 @@ REGISTER_FUNCTION(HasToken)
     FunctionDocumentation::Description description = R"(
 Checks if the given token is present in the haystack.
 
-A token is a maximal length sequence of consecutive characters from the class `[0-9A-Za-z_]` (numbers, ASCII letters and underscore).
-The haystack must be a constant string. This function is optimized for the case when there are many haystacks and a few needles and works with tokenbf_v1 index.
+A token is defined as the longest possible sub-sequence of consecutive characters `[0-9A-Za-z_]`, i.e. numbers, ASCII letters and underscore.
     )";
-    FunctionDocumentation::Syntax syntax = "hasToken(haystack, needle)";
+    FunctionDocumentation::Syntax syntax = "hasToken(haystack, token)";
     FunctionDocumentation::Arguments arguments = {
-        {"haystack", "String to be searched. Must be constant.", {"const String"}},
-        {"needle", "Token to search for.", {"String"}}
+        {"haystack", "String to be searched.", {"String"}},
+        {"token", "Token to search for.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the token is found, `0` otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
@@ -52,14 +51,14 @@ The haystack must be a constant string. This function is optimized for the case 
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     FunctionDocumentation::Description description_or_null = R"(
-Like [`hasToken`](#hasToken) but returns null if needle is ill-formed.
+Like [`hasToken`](#hasToken) but returns null if token is ill-formed.
     )";
-    FunctionDocumentation::Syntax syntax_or_null = "hasTokenOrNull(haystack, needle)";
+    FunctionDocumentation::Syntax syntax_or_null = "hasTokenOrNull(haystack, token)";
     FunctionDocumentation::Arguments arguments_or_null = {
-        {"haystack", "String to be searched. Must be constant.", {"const String"}},
-        {"needle", "Token to search for.", {"String"}}
+        {"haystack", "String to be searched. Must be constant.", {"String"}},
+        {"token", "Token to search for.", {"const String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_or_null = {"Returns `1` if the token is found, `0` otherwise, null if needle is ill-formed.", {"Nullable(UInt8)"}};
+    FunctionDocumentation::ReturnedValue returned_value_or_null = {"Returns `1` if the token is found, `0` otherwise, null if token is ill-formed.", {"Nullable(UInt8)"}};
     FunctionDocumentation::Examples examples_or_null = {
     {
         "Usage example",
