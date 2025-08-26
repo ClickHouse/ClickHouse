@@ -201,4 +201,22 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     return {hash_join_expression};
 }
 
+bool DefaultImplementation::checkPattern(GroupExpressionPtr expression, const Memo & /*memo*/) const
+{
+    return typeid_cast<JoinStepLogical *>(expression->plan_step.get()) == nullptr &&
+        expression->original_node &&
+        !expression->plan_step;
+}
+
+std::vector<GroupExpressionPtr> DefaultImplementation::applyImpl(GroupExpressionPtr expression, Memo & memo) const
+{
+    auto implementation_expression = std::make_shared<GroupExpression>(nullptr);
+    implementation_expression->original_node = expression->original_node;
+    implementation_expression->inputs = expression->inputs;
+    implementation_expression->applied_rules = expression->applied_rules;
+    implementation_expression->setApplied(*this);
+    memo.getGroup(expression->group_id)->addExpression(implementation_expression);
+    return {implementation_expression};
+}
+
 }
