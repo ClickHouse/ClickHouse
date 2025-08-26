@@ -41,7 +41,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.9",
         {
-
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
@@ -852,7 +851,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {
-
+            {"vertical_merge_optimize_lightweight_delete", false, true, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {

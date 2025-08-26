@@ -13,6 +13,7 @@
 namespace ProfileEvents
 {
     extern const Event BuildPatchesJoinMicroseconds;
+    extern const Event PatchesJoinRowsAddedToHashTable;
 }
 
 namespace DB
@@ -234,6 +235,7 @@ std::vector<std::shared_future<void>> PatchJoinCache::Entry::addRangesAsync(cons
     return futures;
 }
 
+
 void PatchJoinCache::Entry::addBlock(Block read_block)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesJoinMicroseconds);
@@ -292,6 +294,8 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
         if (inserted || data_version_column[i] > data_version_column[it->second.second])
             it->second = std::make_pair(static_cast<UInt32>(new_block_idx), static_cast<UInt32>(i));
     }
+
+    ProfileEvents::increment(ProfileEvents::PatchesJoinRowsAddedToHashTable, num_read_rows);
 
     {
         std::lock_guard lock(mutex);

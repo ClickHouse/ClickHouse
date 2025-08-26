@@ -878,13 +878,14 @@ Pipe ReadFromMergeTree::readByLayers(const RangesInDataParts & parts_with_ranges
                     pipe.numOutputPorts(),
                     sort_description,
                     block_size.max_block_size_rows,
-                    /*max_block_size_bytes=*/0,
+                    /*max_block_size_bytes=*/ 0,
                     SortingQueueStrategy::Batch,
-                    0,
-                    false,
-                    nullptr,
-                    false,
-                    /*apply_virtual_row_conversions*/ false);
+                    /*limit=*/ 0,
+                    /*always_read_till_end=*/ false,
+                    /*out_row_sources_buf=*/ nullptr,
+                    /*filter_column_name=*/ std::nullopt,
+                    /*use_average_block_sizes=*/ false,
+                    /*apply_virtual_row_conversions=*/ false);
 
                 pipe.addTransform(std::move(transform));
             }
@@ -1293,10 +1294,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     block_size.max_block_size_rows,
                     /*max_block_size_bytes=*/0,
                     SortingQueueStrategy::Batch,
-                    0,
-                    false,
-                    nullptr,
-                    false,
+                    /*limit=*/ 0,
+                    /*always_read_till_end=*/ false,
+                    /*out_row_sources_buf=*/ nullptr,
+                    /*filter_column_name=*/ std::nullopt,
+                    /*use_average_block_sizes=*/ false,
                     /*apply_virtual_row_conversions*/ false);
 
                 pipe.addTransform(std::move(transform));

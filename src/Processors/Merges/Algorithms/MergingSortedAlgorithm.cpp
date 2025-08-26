@@ -17,6 +17,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     SortingQueueStrategy sorting_queue_strategy_,
     UInt64 limit_,
     WriteBuffer * out_row_sources_buf_,
+    std::optional<String> filter_column_name_,
     bool use_average_block_sizes,
     bool apply_virtual_row_conversions_)
     : header(std::move(header_))
@@ -24,6 +25,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , description(description_)
     , limit(limit_)
     , out_row_sources_buf(out_row_sources_buf_)
+    , filter_column_position(filter_column_name_ ? header->getPositionByName(filter_column_name_.value()) : -1)
     , apply_virtual_row_conversions(apply_virtual_row_conversions_)
     , current_inputs(num_inputs)
     , sorting_queue_strategy(sorting_queue_strategy_)
@@ -134,6 +136,78 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::merge()
     return result;
 }
 
+void MergingSortedAlgorithm::insertRow(const SortCursorImpl & current)
+{
+    auto write_row_source = [&](bool skipped)
+    {
+        if (out_row_sources_buf)
+        {
+            RowSourcePart row_source(current.order, skipped);
+            out_row_sources_buf->write(row_source.data);
+        }
+    };
+
+    UInt64 current_row = current.getRow();
+
+    if (hasFilter())
+    {
+        const auto & filter_column = current.all_columns[filter_column_position];
+        const auto & filter_data = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
+
+        if (filter_data[current_row])
+            merged_data.insertRow(current.all_columns, current_row, current.rows);
+
+        write_row_source(!filter_data[current_row]);
+    }
+    else
+    {
+        merged_data.insertRow(current.all_columns, current.getRow(), current.rows);
+        write_row_source(false);
+    }
+}
+
+void MergingSortedAlgorithm::insertChunk(size_t source_num)
+{
+    Chunk chunk = std::move(current_inputs[source_num].chunk);
+    size_t chunk_num_rows = chunk.getNumRows();
+
+    if (hasFilter())
+    {
+        auto columns = chunk.detachColumns();
+
+        const auto & filter_column = columns[filter_column_position];
+        const auto & filter_data = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
+
+        if (out_row_sources_buf)
+        {
+            RowSourcePart row_source(source_num, false);
+            RowSourcePart row_source_skipped(source_num, true);
+
+            for (size_t i = 0; i < chunk_num_rows; ++i)
+                out_row_sources_buf->write(filter_data[i] ? row_source.data : row_source_skipped.data);
+        }
+
+        for (auto & column : columns)
+        {
+            column = column->filter(filter_data, -1);
+        }
+
+        chunk_num_rows = columns.empty() ? 0 : columns.front()->size();
+        merged_data.insertChunk(Chunk(std::move(columns), chunk_num_rows), chunk_num_rows);
+    }
+    else
+    {
+        if (out_row_sources_buf)
+        {
+            RowSourcePart row_source(source_num);
+            for (size_t i = 0; i < chunk_num_rows; ++i)
+                out_row_sources_buf->write(row_source.data);
+        }
+
+        merged_data.insertChunk(std::move(chunk), chunk_num_rows);
+    }
+}
+
 template <typename TSortingHeap>
 IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue)
 {
@@ -180,16 +254,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
             if (limit && total_merged_rows_after_insertion > limit)
                 chunk_num_rows -= total_merged_rows_after_insertion - limit;
 
-            merged_data.insertChunk(std::move(current_inputs[source_num].chunk), chunk_num_rows);
-            current_inputs[source_num].chunk = Chunk();
-
-            /// Write order of rows for other columns this data will be used in gather stream
-            if (out_row_sources_buf)
-            {
-                RowSourcePart row_source(source_num);
-                for (size_t i = 0; i < chunk_num_rows; ++i)
-                    out_row_sources_buf->write(row_source.data);
-            }
+            insertChunk(source_num);
 
             /// We will get the next block from the corresponding source, if there is one.
             queue.removeTop();
@@ -202,13 +267,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
             return status;
         }
 
-        merged_data.insertRow(current->all_columns, current->getRow(), current->rows);
-
-        if (out_row_sources_buf)
-        {
-            RowSourcePart row_source(current.impl->order);
-            out_row_sources_buf->write(row_source.data);
-        }
+        insertRow(*current.impl);
 
         if (limit && merged_data.totalMergedRows() >= limit)
             return Status(merged_data.pull(), true);
