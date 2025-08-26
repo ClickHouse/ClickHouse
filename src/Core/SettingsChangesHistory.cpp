@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.9",
         {
-
+            {"query_plan_push_down_volume_reducing_functions", false, false, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
