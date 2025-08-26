@@ -36,16 +36,17 @@ try:
     import asyncio
     import ssl
 
-    import cassandra.cluster
-    import nats
     import psycopg2
+    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
     import pymongo
     import pymysql
+    import nats
+    # Not an easy dep
+    import cassandra.cluster
     from cassandra.policies import RoundRobinPolicy
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
-    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
@@ -69,9 +70,20 @@ HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
 LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "tests/integration/compose/")
 DEFAULT_ENV_NAME = ".env"
-DEFAULT_BASE_CONFIG_DIR = os.environ.get(
-    "CLICKHOUSE_TESTS_BASE_CONFIG_DIR", "/etc/clickhouse-server/"
-)
+
+def find_default_config_path():
+    path = os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", None)
+    if path is not None:
+        return path
+    path = p.join(CLICKHOUSE_ROOT_DIR, "programs/server")
+    if p.exists(p.join(path, "config.xml")):
+        return path
+    path = "/etc/clickhouse-server/"
+    if p.exists(p.join(path, "config.xml")):
+        return path
+    raise RuntimeError("Cannot find config.xml. Please set CLICKHOUSE_TESTS_BASE_CONFIG_DIR")
+
+DEFAULT_BASE_CONFIG_DIR = find_default_config_path()
 
 DEFAULT_THREAD_FUZZER_SETTINGS = {
     "THREAD_FUZZER_CPU_TIME_PERIOD_US" : "1000",
@@ -439,6 +451,33 @@ def extract_test_name(base_path):
     return name
 
 
+def find_binary(name):
+    def is_executable(path):
+        return os.access(path, os.X_OK) and os.path.isfile(path)
+
+    if is_executable(name):
+        return name
+    paths = os.environ.get("PATH").split(":")
+    for path in paths:
+        bin_path = os.path.join(path, name)
+        if is_executable(bin_path):
+            return bin_path
+
+    # maybe it wasn't in PATH
+    bin_path = os.path.join("/usr/local/bin", name)
+    if is_executable(bin_path):
+        return bin_path
+    bin_path = os.path.join("/usr/bin", name)
+    if is_executable(bin_path):
+        return bin_path
+
+    # Default binary path if CLICKHOUSE_ROOT_DIR contains build
+    bin_path = os.path.join(CLICKHOUSE_ROOT_DIR, f"build/programs/{name}")
+    if is_executable(bin_path):
+        return bin_path
+
+    raise RuntimeError(f"{name} was not found in PATH")
+
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
 
@@ -474,13 +513,13 @@ class ClickHouseCluster:
         self.base_config_dir = base_config_dir or DEFAULT_BASE_CONFIG_DIR
         self.server_bin_path = p.realpath(
             server_bin_path
-            or os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH", "/usr/bin/clickhouse")
+            or os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH", None)
+            or find_binary("clickhouse")
         )
         self.client_bin_path = p.realpath(
             client_bin_path
-            or os.environ.get(
-                "CLICKHOUSE_TESTS_CLIENT_BIN_PATH", "/usr/bin/clickhouse-client"
-            )
+            or os.environ.get("CLICKHOUSE_TESTS_CLIENT_BIN_PATH", None)
+            or find_binary("clickhouse-client")
         )
         self.zookeeper_config_path = (
             p.join(self.base_dir, zookeeper_config_path)
@@ -594,6 +633,7 @@ class ClickHouseCluster:
         self.with_nginx = False
         self.with_hive = False
         self.with_coredns = False
+        self.with_ytsaurus = False
 
         # available when with_minio == True
         self.with_minio = False
@@ -800,6 +840,8 @@ class ClickHouseCluster:
         self.prometheus_servers = []
         self.prometheus_remote_write_handlers = []
         self.prometheus_remote_read_handlers = []
+
+        self.ytsaurus_port = 80
 
         self.docker_client: docker.DockerClient = None
         self.is_up = False
@@ -1558,14 +1600,17 @@ class ClickHouseCluster:
         return self.base_iceberg_hms_cmd
 
     def setup_iceberg_catalog_cmd(
-        self, instance, env_variables, docker_compose_yml_dir
+        self, instance, env_variables, docker_compose_yml_dir, extra_parameters=None
     ):
         self.with_iceberg_catalog = True
+        file_name = "docker_compose_iceberg_rest_catalog.yml"
+        if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
+            file_name = extra_parameters["docker_compose_file_name"]
         self.base_cmd.extend(
             [
                 "--file",
                 p.join(
-                    docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"
+                    docker_compose_yml_dir, file_name
                 ),
             ]
         )
@@ -1573,7 +1618,7 @@ class ClickHouseCluster:
             "--env-file",
             instance.env_file,
             "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"),
+            p.join(docker_compose_yml_dir, file_name),
         )
         return self.base_iceberg_catalog_cmd
 
@@ -1670,6 +1715,21 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_hive.yml"),
         )
         return self.base_hive_cmd
+
+    def setup_ytsaurus(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_ytsaurus = True
+        env_variables["YTSAURUS_PROXY_PORT"] = str(self.ytsaurus_port)
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml")]
+        )
+        self.base_ytsaurus_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml"),
+        )
+        return self.base_ytsaurus_cmd
 
     def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir):
         if "writer" in self.prometheus_servers:
@@ -1769,6 +1829,8 @@ class ClickHouseCluster:
         with_iceberg_catalog=False,
         with_glue_catalog=False,
         with_hms_catalog=False,
+
+        with_ytsaurus=False,
         handle_prometheus_remote_write=None,
         handle_prometheus_remote_read=None,
         use_old_analyzer=None,
@@ -1802,6 +1864,7 @@ class ClickHouseCluster:
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
         with_dolor=False,
+        extra_parameters=None,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1931,6 +1994,7 @@ class ClickHouseCluster:
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
             with_dolor=with_dolor,
+            extra_parameters=extra_parameters,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -2101,7 +2165,7 @@ class ClickHouseCluster:
         if with_iceberg_catalog and not self.with_iceberg_catalog:
             cmds.append(
                 self.setup_iceberg_catalog_cmd(
-                    instance, env_variables, docker_compose_yml_dir
+                    instance, env_variables, docker_compose_yml_dir, extra_parameters
                 )
             )
 
@@ -2158,6 +2222,11 @@ class ClickHouseCluster:
         if with_hive:
             cmds.append(
                 self.setup_hive(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_ytsaurus:
+            cmds.append(
+                self.setup_ytsaurus(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_prometheus_writer:
@@ -2547,6 +2616,11 @@ class ClickHouseCluster:
         run_and_check(["docker", "ps", "--all"])
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
+
+    def wait_ytsaurus_to_start(self):
+        self.wait_for_url(
+            url=f"http://localhost:{self.ytsaurus_port}/ping", timeout=300
+        )
 
     def wait_postgres_to_start(self, timeout=260):
         self.postgres_ip = self.get_instance_ip(self.postgres_host)
@@ -3089,7 +3163,7 @@ class ClickHouseCluster:
 
             _create_env_file(os.path.join(self.env_file), self.env_variables)
             self.docker_client = docker.DockerClient(
-                base_url="unix:///var/run/docker.sock",
+                base_url=os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock"),
                 version=self.docker_api_version,
                 timeout=600,
             )
@@ -3114,7 +3188,7 @@ class ClickHouseCluster:
                 )
                 for i in range(1, 3):
                     if os.path.exists(self.zookeeper_instance_dir_prefix + f"{i}"):
-                        shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}")
+                        shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}", ignore_errors=True)
                 for dir in self.zookeeper_dirs_to_create:
                     os.makedirs(dir)
                 run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
@@ -3132,11 +3206,11 @@ class ClickHouseCluster:
                 if self.use_keeper:
                     for i in range(1, 4):
                         if os.path.exists(self.keeper_instance_dir_prefix + f"{i}"):
-                            shutil.rmtree(self.keeper_instance_dir_prefix + f"{i}")
+                            shutil.rmtree(self.keeper_instance_dir_prefix + f"{i}", ignore_errors=True)
                 else:
                     for i in range(1, 3):
                         if os.path.exists(self.zookeeper_instance_dir_prefix + f"{i}"):
-                            shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}")
+                            shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}", ignore_errors=True)
 
                 for dir in self.zookeeper_dirs_to_create:
                     os.makedirs(dir)
@@ -3244,8 +3318,8 @@ class ClickHouseCluster:
             if self.with_mysql57 and self.base_mysql57_cmd:
                 logging.debug("Setup MySQL")
                 if os.path.exists(self.mysql57_dir):
-                    shutil.rmtree(self.mysql57_dir)
-                os.makedirs(self.mysql57_logs_dir)
+                    shutil.rmtree(self.mysql57_dir, ignore_errors=True)
+                os.makedirs(self.mysql57_logs_dir, exist_ok=True)
                 os.chmod(self.mysql57_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql57_cmd + common_opts)
                 self.up_called = True
@@ -3254,8 +3328,8 @@ class ClickHouseCluster:
             if self.with_mysql8 and self.base_mysql8_cmd:
                 logging.debug("Setup MySQL 8")
                 if os.path.exists(self.mysql8_dir):
-                    shutil.rmtree(self.mysql8_dir)
-                os.makedirs(self.mysql8_logs_dir)
+                    shutil.rmtree(self.mysql8_dir, ignore_errors=True)
+                os.makedirs(self.mysql8_logs_dir, exist_ok=True)
                 os.chmod(self.mysql8_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql8_cmd + common_opts)
                 self.wait_mysql8_to_start()
@@ -3263,7 +3337,7 @@ class ClickHouseCluster:
             if self.with_mysql_cluster and self.base_mysql_cluster_cmd:
                 logging.debug("Setup MySQL")
                 if os.path.exists(self.mysql_cluster_dir):
-                    shutil.rmtree(self.mysql_cluster_dir)
+                    shutil.rmtree(self.mysql_cluster_dir, ignore_errors=True)
                 os.makedirs(self.mysql_cluster_logs_dir, exist_ok=True)
                 os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
@@ -3274,8 +3348,8 @@ class ClickHouseCluster:
             if self.with_postgres and self.base_postgres_cmd:
                 logging.debug("Setup Postgres")
                 if os.path.exists(self.postgres_dir):
-                    shutil.rmtree(self.postgres_dir)
-                os.makedirs(self.postgres_logs_dir)
+                    shutil.rmtree(self.postgres_dir, ignore_errors=True)
+                os.makedirs(self.postgres_logs_dir, exist_ok=True)
                 os.chmod(self.postgres_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
@@ -3534,6 +3608,11 @@ class ClickHouseCluster:
                 self.up_called = True
                 logging.info("Trying to connect to Prometheus...")
                 self.wait_prometheus_to_start()
+
+            if self.with_ytsaurus and self.base_ytsaurus_cmd:
+                ytsarurus_start_cmd = self.base_ytsaurus_cmd + common_opts
+                run_and_check(ytsarurus_start_cmd)
+                self.wait_ytsaurus_to_start()
 
             if self.with_arrowflight and self.base_arrowflight_cmd:
                 arrowflight_start_cmd = self.base_arrowflight_cmd + common_opts
@@ -3816,7 +3895,7 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
-            - /integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
+            - {HELPERS_DIR}/../integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
             - /debug:/debug:ro
             {binary_volume}
             {external_dirs_volumes}
@@ -3927,6 +4006,7 @@ class ClickHouseInstance:
         randomize_settings=True,
         use_docker_init_flag=False,
         with_dolor=False,
+        extra_parameters=None,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -4662,7 +4742,7 @@ class ClickHouseInstance:
             [
                 "bash",
                 "-c",
-                'timeout {} tail -Fn{} "{}" | grep -Em {} {}'.format(
+                'timeout {} stdbuf -o0 -e0 tail -Fn{} "{}" | stdbuf -o0 -e0 tee /dev/stderr | grep -Em {} {}'.format(
                     timeout,
                     look_behind_lines,
                     filename,
@@ -5412,6 +5492,7 @@ class ClickHouseInstance:
                     net_aliases=net_aliases,
                     net_alias1=net_alias1,
                     init_flag="true" if self.docker_init_flag else "false",
+                    HELPERS_DIR=HELPERS_DIR,
                 )
             )
 
