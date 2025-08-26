@@ -110,9 +110,9 @@ def get_human_description_changelog(pr_body: str) -> Tuple[str, str]:
     return description, changelog_entry
 
 
-def generate_description(pr_diff: str, human_description: str, model: str) -> str:
+def generate_description(diff_file: str, human_description: str, model: str) -> str:
     try:
-        base_prompt = f"Use the pr-description-generator agent to generate a PR description for this PR with the following diff: \n\n {pr_diff}"
+        base_prompt = f"Use the pr-description-generator agent to generate a PR description for this PR. Read the diff from file: {diff_file}"
         prompt = ""
         if not human_description:
             prompt = base_prompt
@@ -135,11 +135,9 @@ def generate_description(pr_diff: str, human_description: str, model: str) -> st
         return f"Error generating PR description: {e}"
 
 
-def generate_changelog_entry(
-    pr_diff: str, human_changelog_entry: str, model: str
-) -> str:
+def generate_changelog_entry(diff_file: str, human_changelog_entry: str, model: str) -> str:
     try:
-        base_prompt = f"Use the pr-changelog-generator agent to generate a PR changelog entry for this PR with the following diff: \n\n {pr_diff}"
+        base_prompt = f"Use the pr-changelog-generator agent to generate a PR changelog entry for this PR. Read the diff from file: {diff_file}"
         prompt = ""
         if not human_changelog_entry:
             prompt = base_prompt
@@ -175,9 +173,21 @@ if __name__ == "__main__":
 
     Shell.check("gh auth status", verbose=True)
     pr_diff = GH.get_pr_diff()
-    suggested_description = generate_description(pr_diff, human_description, model)
+
+    # Write the diff to a file for agent to read, so we don't run into context limits
+    diff_file = 'diff.txt'
+    with open(diff_file, 'w') as file:
+        file.write(pr_diff)
+
+    suggested_description = generate_description(
+        diff_file,
+        human_description,
+        model
+    )
     suggested_changelog_entry = generate_changelog_entry(
-        pr_diff, human_changelog_entry, model
+        diff_file,
+        human_changelog_entry,
+        model
     )
     comment_body = f"**Suggested PR description**:\n\n"
     comment_body += f"{suggested_description}\n\n"
