@@ -50,7 +50,7 @@ from integration.helpers.config_cluster import minio_access_key, minio_secret_ke
 
 
 def get_local_base_path(cluster, catalog_name: str) -> str:
-    return f"{Path(cluster.instances_dir_name) / "node0" / "user_files" / "lakehouse" / f"{catalog_name}"}"
+    return f"{Path(cluster.instances_dir) / "node0" / "user_files" / "lakehouse" / f"{catalog_name}"}"
 
 
 Parameter = typing.Callable[[], int | float]
@@ -413,10 +413,10 @@ class SparkHandler:
         self.uc_server_dir = None
         if args.with_unity is not None:
             self.uc_server_dir = args.with_unity
-            self.uc_server_run_dir = Path(cluster.instances_dir_name) / "ucserver"
+            self.uc_server_run_dir = Path(cluster.instances_dir) / "ucserver"
 
-        self.spark_log_dir = Path(cluster.instances_dir_name) / "spark"
-        self.spark_log_config = Path(cluster.instances_dir_name) / "log4j2.properties"
+        self.spark_log_dir = Path(cluster.instances_dir) / "spark"
+        self.spark_log_config = Path(cluster.instances_dir) / "log4j2.properties"
         self.spark_query_logger = self.spark_log_dir / "query.log"
         spark_log = f"""
 # ----- log4j2.properties -----

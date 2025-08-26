@@ -69,7 +69,7 @@ class LakeTableGenerator:
         ddl += f" USING {self.get_format()}"
 
         # Add Partition by
-        if random.randint(1, 4) == 1:
+        if random.randint(1, 5) == 1:
             random_subset = random.sample(
                 columns_list, k=random.randint(1, len(columns_list))
             )
