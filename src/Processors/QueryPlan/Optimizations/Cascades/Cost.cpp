@@ -4,7 +4,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include "Processors/QueryPlan/ExpressionStep.h"
 #include "Processors/QueryPlan/IQueryPlanStep.h"
-#include "Processors/QueryPlan/JoinStep.h"
+#include "Processors/QueryPlan/JoinStepLogical.h"
 #include "Processors/QueryPlan/ReadFromMergeTree.h"
 
 namespace DB
@@ -13,7 +13,7 @@ namespace DB
 ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
 {
     IQueryPlanStep * expression_plan_step = expression->getQueryPlanStep();
-    if (const auto * join_step = typeid_cast<JoinStep *>(expression_plan_step))
+    if (const auto * join_step = typeid_cast<JoinStepLogical *>(expression_plan_step))
     {
         return estimateHashJoinCost(*join_step, expression->inputs[0], expression->inputs[1]);
     }
@@ -29,7 +29,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     return ExpressionCost{.subtree_cost = 2000000, .number_of_rows = 2000000};
 }
 
-ExpressionCost CostEstimator::estimateHashJoinCost(const JoinStep & join_step, GroupId left_tree, GroupId right_tree)
+ExpressionCost CostEstimator::estimateHashJoinCost(const JoinStepLogical & join_step, GroupId left_tree, GroupId right_tree)
 {
     auto left_cost = memo.getGroup(left_tree)->best_implementation.cost;
     auto right_cost = memo.getGroup(right_tree)->best_implementation.cost;

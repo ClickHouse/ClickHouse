@@ -1,14 +1,11 @@
 #include <memory>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include "Core/Names.h"
-#include "Interpreters/IJoin.h"
 #include "Interpreters/JoinInfo.h"
 #include "Processors/QueryPlan/JoinStepLogical.h"
 #include "Processors/QueryPlan/Optimizations/Cascades/Group.h"
 #include "Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h"
-#include "Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h"
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
-#include "Common/CurrentThread.h"
 #include "Common/logger_useful.h"
 #include "Common/typeid_cast.h"
 
@@ -150,7 +147,7 @@ std::vector<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr 
 
 bool HashJoinImplementation::checkPattern(GroupExpressionPtr expression, const Memo & /*memo*/) const
 {
-    return typeid_cast<JoinStepLogical *>(expression->plan_step.get()) != nullptr;
+    return typeid_cast<JoinStepLogical *>(expression->getQueryPlanStep()) != nullptr;
 }
 
 std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressionPtr expression, Memo & memo) const
@@ -158,39 +155,42 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     /// TODO: create hash join step from JoinStepLogical
     auto * join_step = typeid_cast<JoinStepLogical *>(expression->plan_step.get());
 
-    QueryPlanOptimizationSettings optimization_settings(CurrentThread::get().getQueryContext());
+//    QueryPlanOptimizationSettings optimization_settings(CurrentThread::get().getQueryContext());
+//
+//        JoinActionRef post_filter(nullptr);
+//    auto join_ptr = join_step->convertToPhysical(
+//        post_filter,
+//        /*keep_logical*/ false,
+//        optimization_settings.max_threads,
+//        optimization_settings.max_entries_for_hash_table_stats,
+//        optimization_settings.initial_query_id,
+//        optimization_settings.lock_acquire_timeout,
+//        optimization_settings.actions_settings,
+//        {});
+//
+//    chassert(!join_ptr->isFilled());
+//
+//    SharedHeader output_header = join_step->getOutputHeader();
+//
+//    const auto & join_expression_actions = join_step->getExpressionActions();
+//
+//    const auto & settings = join_step->getSettings();
+//
+//    auto required_output_from_join = join_expression_actions.post_join_actions->getRequiredColumnsNames();
+//    auto new_join_step = std::make_unique<JoinStep>(
+//        join_step->getInputHeaders()[0],
+//        join_step->getInputHeaders()[1],
+//        join_ptr,
+//        settings.max_block_size,
+//        settings.min_joined_block_size_rows,
+//        settings.min_joined_block_size_bytes,
+//        optimization_settings.max_threads,
+//        NameSet(required_output_from_join.begin(), required_output_from_join.end()),
+//        false /*optimize_read_in_order*/,
+//        true /*use_new_analyzer*/);
 
-        JoinActionRef post_filter(nullptr);
-    auto join_ptr = join_step->convertToPhysical(
-        post_filter,
-        /*keep_logical*/ false,
-        optimization_settings.max_threads,
-        optimization_settings.max_entries_for_hash_table_stats,
-        optimization_settings.initial_query_id,
-        optimization_settings.lock_acquire_timeout,
-        optimization_settings.actions_settings,
-        {});
 
-    chassert(!join_ptr->isFilled());
-
-    SharedHeader output_header = join_step->getOutputHeader();
-
-    const auto & join_expression_actions = join_step->getExpressionActions();
-
-    const auto & settings = join_step->getSettings();
-
-    auto required_output_from_join = join_expression_actions.post_join_actions->getRequiredColumnsNames();
-    auto new_join_step = std::make_unique<JoinStep>(
-        join_step->getInputHeaders()[0],
-        join_step->getInputHeaders()[1],
-        join_ptr,
-        settings.max_block_size,
-        settings.min_joined_block_size_rows,
-        settings.min_joined_block_size_bytes,
-        optimization_settings.max_threads,
-        NameSet(required_output_from_join.begin(), required_output_from_join.end()),
-        false /*optimize_read_in_order*/,
-        true /*use_new_analyzer*/);
+    auto new_join_step = join_step->clone();
 
     new_join_step->setStepDescription("IMPL: " + join_step->getStepDescription());
 
@@ -198,6 +198,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     hash_join_expression->plan_step = std::move(new_join_step);
     chassert(hash_join_expression->inputs.size() == 2);
     memo.getGroup(expression->group_id)->addExpression(hash_join_expression);
+    hash_join_expression->setApplied(*this);
     return {hash_join_expression};
 }
 
