@@ -67,6 +67,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int INVALID_JOIN_ON_EXPRESSION;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 namespace Setting
@@ -97,15 +98,22 @@ const ActionsDAG::Node * appendExpression(
             expression->formatASTForErrorMessage(), dag.dumpDAG());
 
     if (input_count != dag.getInputs().size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Unknown inputs added to actions dag:\n{}\nNumber of inputs changed from {} to {} after adding expression {} with query tree node:\n{}, headers: [{}] [{}]",
-            dag.dumpDAG(),
-            input_count,
-            dag.getInputs().size(),
-            expression->formatASTForErrorMessage(),
-            expression->dumpTree(),
-            left_header->dumpNames(),
-            right_header->dumpNames());
+    {
+        /* This is technically a logical error,
+         * but there are known cases where queries with parallel replicas return NOT_FOUND_COLUMN_IN_BLOCK.
+         * For example:
+         *   SELECT count() FROM (SELECT number FROM numbers(10)) as t1 LEFT JOIN t2 ON number = t2.id
+         * In this case, the right side of the join returns an aggregated result with the header [`count()`],
+         * and we attempt to join it again, resulting in the `id` column not being found.
+         * We may try replacing this to LOGICAL_ERROR after https://github.com/ClickHouse/ClickHouse/issues/63984 is resolved.
+         */
+        auto unknown_inputs = dag.getInputs()
+            | std::views::transform([](const auto * input) { return input->result_name; })
+            | std::views::filter([&](const auto & name) { return !left_header->has(name) && !right_header->has(name); });
+        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+            "Columns [{}] are not found in blocks [{}], [{}]",
+            fmt::join(unknown_inputs, ", "), left_header->dumpNames(), right_header->dumpNames());
+    }
 
     return join_expression_dag_node_raw_pointers[0];
 }
