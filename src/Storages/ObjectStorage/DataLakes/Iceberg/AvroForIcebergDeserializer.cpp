@@ -96,7 +96,7 @@ String AvroForIcebergDeserializer::getContent() const
     FormatSettings settings;
     settings.write_statistics = false;
     ColumnsWithTypeAndName columns({ColumnWithTypeAndName(parsed_column, parsed_column_data_type, "")});
-    JSONObjectEachRowRowOutputFormat output_format = JSONObjectEachRowRowOutputFormat(buf, std::make_shared<const Block>(columns), settings);
+    JSONEachRowRowOutputFormat output_format = JSONEachRowRowOutputFormat(buf, std::make_shared<const Block>(columns), settings);
     for (size_t i = 0; i < parsed_column->size(); ++i)
         output_format.writeRow({parsed_column}, i);
     output_format.finalize();
