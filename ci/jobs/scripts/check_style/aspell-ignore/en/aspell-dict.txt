@@ -569,6 +569,8 @@ LGPL
 LIMITs
 LINEITEM
 LLDB
+LLM
+LLMs
 LLVM's
 LOCALTIME
 LOCALTIMESTAMP
@@ -1253,6 +1255,7 @@ XORs
 Xeon
 YAML
 YAMLRegExpTree
+YTsaurus
 YYYY
 YYYYMMDD
 YYYYMMDDToDate
@@ -2169,6 +2172,7 @@ isNotDistinctFrom
 isNotNull
 isNull
 isNullable
+isValidASCII
 isValidJSON
 isValidUTF
 isZeroOrNull

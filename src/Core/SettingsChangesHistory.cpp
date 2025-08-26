@@ -39,6 +39,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.9",
+        {
+            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+        });
         addSettingsChanges(settings_changes_history, "25.8",
         {
             {"output_format_json_quote_64bit_integers", true, false, "Disable quoting of the 64 bit integers in JSON by default"},
@@ -106,6 +110,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
+            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -155,6 +160,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_schema_message_name", "", "", "New setting"},
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
+            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
@@ -847,6 +853,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.9",
+        {
+
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
             {"object_serialization_version", "v2", "v2", "Add a setting to control JSON serialization versions"},

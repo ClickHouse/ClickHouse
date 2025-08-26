@@ -467,6 +467,11 @@ When set to `true`, all threads executing S3 requests to the same backup endpoin
 after any single s3 request encounters a retryable network error, such as socket timeout.
 When set to `false`, each thread handles S3 request backoff independently of the others.
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, s3_slow_all_threads_after_retryable_error, true, R"(
+When set to `true`, all threads executing S3 requests to the same endpoint are slowed down
+after any single S3 request encounters a retryable S3 error, such as 'Slow Down'.
+When set to `false`, each thread handles s3 request backoff independently of the others.
+)", 0, backup_slow_all_threads_after_retryable_s3_error) \
     DECLARE(UInt64, azure_list_object_keys_size, 1000, R"(
 Maximum number of files that could be returned in batch by ListObject request
 )", 0) \
@@ -3337,11 +3342,6 @@ Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means
 )", 0) \
     DECLARE(Float, backup_restore_s3_retry_jitter_factor, .1f, R"(
     Jitter factor applied to the retry backoff delay in Aws::Client::RetryStrategy during backup and restore operations. The computed backoff delay is multiplied by a random factor in the range [1.0, 1.0 + jitter], up to the maximum `backup_restore_s3_retry_max_backoff_ms`. Must be in [0.0, 1.0] interval
-)", 0) \
-    DECLARE(Bool, backup_slow_all_threads_after_retryable_s3_error, true, R"(
-When set to `true`, all threads executing S3 requests to the same backup endpoint are slowed down
-after any single S3 request encounters a retryable S3 error, such as 'Slow Down'.
-When set to `false`, each thread handles s3 request backoff independently of the others.
 )", 0) \
     DECLARE(UInt64, max_backup_bandwidth, 0, R"(
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
