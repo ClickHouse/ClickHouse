@@ -259,8 +259,8 @@ public:
         // to small table we can iterate without prefetching
         if (CouldPrefetchKey<Cell> && this->size() > DB::PrefetchingHelper::iterationsToMeasure() * 2)
         {
-            auto it = this->prefetchingBegin();
-            auto end = this->prefetchingEnd();
+            auto it = this->template begin<true>();
+            auto end = this->template end<true>();
             for (; it != end; ++it)
                 func(it->getKey(), it->getMapped());
         }

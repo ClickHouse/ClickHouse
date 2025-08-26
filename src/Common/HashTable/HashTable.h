@@ -625,7 +625,6 @@ protected:
 
         using Container = std::conditional_t<is_const, const Self, Self>;
         using cell_type = std::conditional_t<is_const, const Cell, Cell>;
-
         Container * container;
         cell_type * ptr;
         cell_type * prefetch_ptr = nullptr;
@@ -647,7 +646,6 @@ protected:
         {
             if constexpr (CouldPrefetchKey<cell_type>)
             {
-
                 if (ptr->isZero(*container)) [[unlikely]]
                 {
                     ptr = container->buf;
@@ -687,7 +685,6 @@ protected:
             return static_cast<Derived &>(*this);
         }
 
-
         auto & operator* () const { return *ptr; }
         auto * operator->() const { return ptr; }
         operator Cell * () const { return nullptr; } /// NOLINT
@@ -722,7 +719,7 @@ protected:
                     }
 
                     if (last_ptr) [[likely]]
-                        KeyPrefetch(last_ptr->getKey());
+                        keyPrefetch(last_ptr->getKey());
                 }
             }
         }
@@ -958,90 +955,82 @@ public:
     };
 
 
-    const_iterator begin() const
+    template<bool prefetch = false>
+    auto begin() const
     {
         if (!buf)
-            return end();
+            return end<prefetch>();
 
         if (this->hasZero())
-            return iteratorToZero();
+        {
+            if constexpr (prefetch)
+                return const_prefetching_iterator(this, this->zeroValue());
+            else
+                return iteratorToZero();
+        }
 
         const Cell * ptr = buf;
         auto buf_end = buf + grower.bufSize();
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
-        return const_iterator(this, ptr);
+        if constexpr (prefetch)
+            return const_prefetching_iterator(this, ptr);
+        else
+            return const_iterator(this, ptr);
     }
 
-    const_iterator cbegin() const { return begin(); }
+    template<bool prefetch = false>
+    auto cbegin() const { return begin<prefetch>(); }
 
-    iterator begin()
+    template<bool prefetch = false>
+    auto begin()
     {
         if (!buf)
-            return end();
+            return end<prefetch>();
 
         if (this->hasZero())
-            return iteratorToZero();
+        {
+            if constexpr (prefetch)
+                return prefetching_iterator(this, this->zeroValue());
+            else
+                return iteratorToZero();
+        }
 
         Cell * ptr = buf;
         auto * buf_end = buf + grower.bufSize();
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
-        return iterator(this, ptr);
+        if constexpr (prefetch)
+            return prefetching_iterator(this, ptr);
+        else
+            return iterator(this, ptr);
     }
 
-    const_prefetching_iterator prefetchingBegin() const
-    {
-        if (!buf)
-            return prefetchingEnd();
-        if (this->hasZero())
-            return const_prefetching_iterator(this, this->zeroValue());
-        const Cell * ptr = buf;
-        auto buf_end = buf + grower.bufSize();
-        while (ptr < buf_end && ptr->isZero(*this))
-            ++ptr;
-        return const_prefetching_iterator(this, ptr);
-    }
-
-    prefetching_iterator prefetchingBegin()
-    {
-        if (!buf)
-            return prefetchingEnd();
-        if (this->hasZero())
-            return prefetching_iterator(this, this->zeroValue());
-        Cell * ptr = buf;
-        auto buf_end = buf + grower.bufSize();
-        while (ptr < buf_end && ptr->isZero(*this))
-            ++ptr;
-        return prefetching_iterator(this, ptr);
-    }
-
-    const_prefetching_iterator prefetchingEnd() const
-    {
-        return const_prefetching_iterator(this, buf ? buf + grower.bufSize() : buf);
-    }
-
-    prefetching_iterator prefetchingEnd()
-    {
-        return prefetching_iterator(this, buf ? buf + grower.bufSize() : buf);
-    }
-
-    const_iterator end() const
+    template <bool prefetch = false>
+    auto end() const
     {
         /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
-        return const_iterator(this, buf ? buf + grower.bufSize() : buf);
+        if constexpr (prefetch)
+            return const_prefetching_iterator(this, buf ? buf + grower.bufSize() : buf);
+        else
+            return const_iterator(this, buf ? buf + grower.bufSize() : buf);
     }
 
-    const_iterator cend() const
+    template<bool prefetch = false>
+    auto cend() const
     {
-        return end();
+        return end<prefetch>();
     }
 
-    iterator end()
+    template <bool prefetch = false>
+    auto end()
     {
-        return iterator(this, buf ? buf + grower.bufSize() : buf);
+        if constexpr (prefetch)
+            return prefetching_iterator(this, buf ? buf + grower.bufSize() : buf);
+        else
+            return iterator(this, buf ? buf + grower.bufSize() : buf);
     }
 
 
