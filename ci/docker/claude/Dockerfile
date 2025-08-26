@@ -97,13 +97,6 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
 # Install Claude
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
-# Install praktika dependencies
-COPY setup.py /tmp/setup.py
-COPY praktika /tmp/praktika
-WORKDIR /tmp
-RUN pip3 install -e . --break-system-packages
-WORKDIR /workspace
-
 # Copy and set up firewall script
 COPY init-firewall.sh /usr/local/bin/
 USER root

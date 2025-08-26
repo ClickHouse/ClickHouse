@@ -151,24 +151,6 @@ if __name__ == "__main__":
    
     human_description, human_changelog_entry = get_human_description_changelog(info.pr_body)
 
-    # Authenticate with GitHub using woolenwolf GitHub App
-    try:
-        app_id = Secret.Config(
-            name="woolenwolf_gh_app.clickhouse-app-id",
-            type=Secret.Type.AWS_SSM_SECRET,
-        ).get_value()
-        
-        app_key = Secret.Config(
-            name="woolenwolf_gh_app.clickhouse-app-key",
-            type=Secret.Type.AWS_SSM_SECRET,
-        ).get_value()
-        
-        GHAuth.auth(app_id, app_key)
-        print("GitHub authentication successful")
-    except Exception as e:
-        print(f"GitHub authentication failed: {e}")
-        sys.exit(1)
-
     pr_diff = GH.get_pr_diff()
     suggested_description = generate_description(pr_diff, human_description, model)
     suggested_changelog_entry = generate_changelog_entry(pr_diff, human_changelog_entry, model)
