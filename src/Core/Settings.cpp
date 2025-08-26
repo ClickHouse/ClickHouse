@@ -6844,6 +6844,7 @@ Possible values:
     DECLARE(Bool, enable_function_early_short_circuit, false, R"(
 Enable early short-circuit constant folding for logical function during analysis.
 When enabled the analyser replaces the whole expression with a decisive constant before the remaining arguments are analysed, so scalar sub-queries inside those arguments are not executed.
+If this optimization takes place, the scalar subquery is never analyzed (it may allow execution for cases when subqueries are invalid).
 )", 0) \
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
 Use roaring bitmap for iceberg positional deletes.
