@@ -7,6 +7,7 @@ import json
 from datetime import datetime
 from functools import lru_cache
 from glob import glob
+import urllib.parse
 
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader
@@ -534,6 +535,45 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def get_build_report_links(pr_number: int, branch: str, commit_sha: str):
+    """
+    Get the build report links for the given PR number, branch, and commit SHA.
+    """
+    build_job_names = ["Build (amd_release)", "Build (arm_release)"]
+    s3_prefix = "todo"
+    if pr_number == 0:
+        ref_param = f"REF={branch}"
+        workflow_name = "MasterCI"
+    else:
+        ref_param = f"PR={pr_number}"
+        workflow_name = "PR"
+
+    status_file = f"result_{workflow_name.lower()}.json"
+    s3_path = f"https://{S3_BUCKET}.s3.amazonaws.com/{ref_param.replace('=', 's/')}/{commit_sha}/{status_file}"
+    print(s3_path)
+    response = requests.get(s3_path)
+
+    if response.status_code != 200:
+        # TODO: Check that the build jobs completed
+
+        # No cache exists, assemble links
+        build_report_link_base = f"https://{S3_BUCKET}.s3.amazonaws.com/json.html?{ref_param}&sha={commit_sha}&name_0={urllib.parse.quote(workflow_name, safe='')}"
+        build_report_links = {
+            job_name: f"{build_report_link_base}&name_1={urllib.parse.quote(job_name, safe='')}"
+            for job_name in build_job_names
+        }
+        return build_report_links
+
+    # Cache exists, get the status data
+    status_data = response.json()
+    build_report_links = {}
+    for job in status_data["results"]:
+        if job["name"] in build_job_names:
+            build_report_links[job["name"]] = job["links"][0]
+
+    return build_report_links
+
+
 def create_workflow_report(
     actions_run_url: str,
     pr_number: int = None,
@@ -666,6 +706,9 @@ def create_workflow_report(
             ),
             "pr_new_fails": len(fail_results["pr_new_fails"]),
         },
+        "build_report_links": get_build_report_links(
+            pr_number, branch_name, commit_sha
+        ),
         "ci_jobs_status_html": format_results_as_html_table(
             fail_results["job_statuses"]
         ),
