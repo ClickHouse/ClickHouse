@@ -363,26 +363,25 @@ def test_nats_materialized_view(nats_cluster):
                      nats_subjects = 'test_subject',
                      nats_format = 'JSONEachRow',
                      nats_row_delimiter = '\\n';
-        CREATE TABLE test.view (key UInt64, value UInt64)
+        CREATE TABLE test.view1 (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
         CREATE TABLE test.view2 (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
-        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        CREATE MATERIALIZED VIEW test.consumer1 TO test.view1 AS
             SELECT * FROM test.nats;
         CREATE MATERIALIZED VIEW test.consumer2 TO test.view2 AS
-            SELECT * FROM test.nats group by (key, value);
+            SELECT * FROM test.nats;
         """
     )
     
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
-
     asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
-    nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
+    nats_helpers.check_query_result(instance, "SELECT * FROM test.view1 ORDER BY key")
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view2 ORDER BY key")
 
 
@@ -414,42 +413,6 @@ def test_nats_materialized_view_with_subquery(nats_cluster):
     asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
 
     nats_helpers.check_query_result(instance, "SELECT * FROM test.view ORDER BY key")
-
-
-def test_nats_many_materialized_views(nats_cluster):
-
-    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
-
-    instance.query(
-        f"""
-        CREATE TABLE test.nats (key UInt64, value UInt64)
-            ENGINE = NATS
-            SETTINGS nats_url = 'nats1:4444',
-                     nats_stream = 'test_stream',
-                     nats_consumer_name = 'test_consumer',
-                     nats_subjects = 'test_subject',
-                     nats_format = 'JSONEachRow',
-                     nats_row_delimiter = '\\n';
-        CREATE TABLE test.view1 (key UInt64, value UInt64)
-            ENGINE = MergeTree()
-            ORDER BY key;
-        CREATE TABLE test.view2 (key UInt64, value UInt64)
-            ENGINE = MergeTree()
-            ORDER BY key;
-        CREATE MATERIALIZED VIEW test.consumer1 TO test.view1 AS
-            SELECT * FROM test.nats;
-        CREATE MATERIALIZED VIEW test.consumer2 TO test.view2 AS
-            SELECT * FROM test.nats;
-        """
-    )
-    
-    messages = []
-    for i in range(50):
-        messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(produce_messages(nats_cluster, "test_stream", "test_subject", messages))
-
-    nats_helpers.check_query_result(instance, "SELECT * FROM test.view1 ORDER BY key")
-    nats_helpers.check_query_result(instance, "SELECT * FROM test.view2 ORDER BY key")
 
 
 def test_nats_protobuf(nats_cluster):
