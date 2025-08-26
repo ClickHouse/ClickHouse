@@ -30,7 +30,7 @@ struct DataField
 struct PaimonTableSchema
 {
     Int32 version;
-    Int64 id;
+    Int64 id{-1};
     Int32 highest_field_id;
     std::vector<String> partition_keys;
     std::vector<String> primary_keys;
