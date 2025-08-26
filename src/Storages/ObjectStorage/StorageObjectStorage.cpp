@@ -72,6 +72,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         configuration,
         query_settings,
         object_storage,
+        nullptr,
         local_distributed_processing,
         context,
         {}, // predicate
@@ -312,6 +313,14 @@ bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     return true;
 }
 
+StorageSnapshotPtr StorageObjectStorage::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const
+{
+    auto snapshot = IStorage::getStorageSnapshot(metadata_snapshot, context);
+    configuration->addDataToStorageSnapshot(snapshot);
+    return snapshot;
+}
+
+
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
     configuration->update(
@@ -527,11 +536,12 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         configuration,
         configuration->getQuerySettings(context),
         object_storage,
-        false/* distributed_processing */,
+        nullptr,
+        false /* distributed_processing */,
         context,
-        {}/* predicate */,
+        {} /* predicate */,
         {},
-        {}/* virtual_columns */,
+        {} /* virtual_columns */,
         {}, /* hive_columns */
         &read_keys);
 

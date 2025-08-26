@@ -48,7 +48,9 @@ public:
         const ActionsDAG * /* filter_dag */,
         FileProgressCallback /* callback */,
         size_t /* list_batch_size */,
-        ContextPtr context) const = 0;
+        StorageSnapshotPtr storage_snapshot,
+        ContextPtr context) const
+        = 0;
 
     /// Table schema from data lake metadata.
     virtual NamesAndTypesList getTableSchema() const = 0;
@@ -70,11 +72,13 @@ public:
     virtual bool supportsUpdate() const { return false; }
     /// Update metadata to the latest version.
     virtual bool update(const ContextPtr &) { return false; }
-
+        
     virtual bool supportsSchemaEvolution() const { return false; }
     virtual bool supportsWrites() const { return false; }
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
+
+    virtual void addDataToStorageSnapshot(StorageSnapshotPtr /**/) const { }
 
     virtual std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr) const { return {}; }
     virtual std::optional<size_t> updateConfigurationAndGetTotalBytes(ContextPtr) const { return {}; }

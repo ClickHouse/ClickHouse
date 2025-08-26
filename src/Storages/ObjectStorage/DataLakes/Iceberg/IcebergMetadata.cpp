@@ -196,27 +196,18 @@ Int32 IcebergMetadata::parseTableSchema(
 bool IcebergMetadata::update(const ContextPtr & local_context)
 {
     std::lock_guard lock(mutex);
-
-    return updateImpl(local_context);
+    chassert(!last_table_state_snapshot.has_value());
+    updateImpl(local_context);
+    return true;
 }
 
-bool IcebergMetadata::updateImpl(const ContextPtr & local_context)
+void IcebergMetadata::updateImpl(const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
-
-    auto previous_snapshot_id = relevant_table_state_snapshot.snapshot_id;
-    auto previous_snapshot_schema_id = relevant_table_state_snapshot.schema_id;
-
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage, configuration.lock(), persistent_components.metadata_cache, local_context, log.get());
     auto [_data_snapshot, table_state_snapshot] = getState(local_context, metadata_file_path, metadata_version);
-    relevant_table_state_snapshot = table_state_snapshot;
-
-    if (previous_snapshot_id != relevant_table_state_snapshot.snapshot_id)
-    {
-        return true;
-    }
-    return previous_snapshot_schema_id != relevant_table_state_snapshot.schema_id;
+    last_table_state_snapshot = table_state_snapshot;
 }
 
 Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
@@ -777,33 +768,32 @@ std::optional<size_t> IcebergMetadata::updateConfigurationAndGetTotalBytes(Conte
 ObjectIterator IcebergMetadata::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
-     size_t /* list_batch_size */,
-     ContextPtr local_context) const
+    size_t /* list_batch_size */,
+    StorageSnapshotPtr storage_snapshot,
+    ContextPtr local_context) const
 {
     SharedLockGuard lock(mutex);
+    StorageSnapshot::Data * storage_snapshot_data = storage_snapshot->data.get();
+    IcebergSpecificSnapshotData * iceberg_snapshot_data = dynamic_cast<IcebergSpecificSnapshotData *>(storage_snapshot_data);
+    chassert(iceberg_snapshot_data);
+    IcebergTableStateSnapshotPtr iceberg_table_state
+        = std::make_shared<IcebergTableStateSnapshot>(iceberg_snapshot_data->iceberg_table_state);
 
-    auto table_snapshot = std::make_shared<IcebergTableStateSnapshot>(relevant_table_state_snapshot);
     return std::make_shared<IcebergIterator>(
         object_storage,
         local_context,
         configuration.lock(),
         filter_dag,
         callback,
-        table_snapshot,
-        getRelevantDataSnapshotFromTableStateSnapshot(relevant_table_state_snapshot, local_context),
+        iceberg_table_state,
+        getRelevantDataSnapshotFromTableStateSnapshot(*iceberg_table_state, local_context),
         persistent_components);
 }
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const
 {
     SharedLockGuard lock(mutex);
-    return *persistent_components.schema_processor->getClickhouseTableSchemaById(relevant_table_state_snapshot.schema_id);
-}
-
-std::tuple<Int64, Int32> IcebergMetadata::getVersion() const
-{
-    SharedLockGuard lock(mutex);
-    return std::make_tuple(relevant_table_state_snapshot.metadata_version, relevant_table_state_snapshot.schema_id);
+    return *persistent_components.schema_processor->getClickhouseTableSchemaById(last_table_state_snapshot->schema_id);
 }
 
 void IcebergMetadata::addDeleteTransformers(

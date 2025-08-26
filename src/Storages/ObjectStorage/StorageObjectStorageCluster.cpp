@@ -40,6 +40,7 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
         configuration,
         query_settings,
         object_storage,
+        nullptr,
         false, // distributed_processing
         context,
         {}, // predicate
@@ -200,7 +201,8 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         configuration,
         configuration->getQuerySettings(local_context),
         object_storage,
-        /* distributed_processing */false,
+        nullptr,
+        /* distributed_processing */ false,
         local_context,
         predicate,
         filter,

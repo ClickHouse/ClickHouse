@@ -51,6 +51,7 @@ public:
         StorageObjectStorageConfigurationPtr configuration,
         const StorageObjectStorageQuerySettings & query_settings,
         ObjectStoragePtr object_storage,
+        StorageSnapshotPtr storage_snapshot,
         bool distributed_processing,
         const ContextPtr & local_context,
         const ActionsDAG::Node * predicate,

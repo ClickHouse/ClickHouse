@@ -496,6 +496,7 @@ Poco::JSON::Object::Ptr getPartitionField(
     }
     else if (partition_function->name == "icebergTruncate")
     {
+        chassert(param.has_value());
         result->set(Iceberg::f_transform, fmt::format("truncate[{}]", *param));
         return result;
     }
@@ -512,6 +513,11 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     ASTPtr partition_by,
     const std::unordered_map<String, Int32> & column_name_to_source_id)
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("IcebergMetadata"),
+        "Iceberg partitioning expression: {}",
+        partition_by ? partition_by->dumpTree(/*indent=*/2) : "<empty>");
+
     Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
     result->set(Iceberg::f_spec_id, 0);
 

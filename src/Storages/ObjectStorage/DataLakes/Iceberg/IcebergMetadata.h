@@ -48,11 +48,7 @@ public:
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override;
 
-    bool operator==(const IDataLakeMetadata & other) const override
-    {
-        const auto * iceberg_metadata = dynamic_cast<const IcebergMetadata *>(&other);
-        return iceberg_metadata && getVersion() == iceberg_metadata->getVersion();
-    }
+    bool operator==(const IDataLakeMetadata & /*other*/) const override { return false; }
 
     static void createInitial(
         const ObjectStoragePtr & object_storage,
@@ -110,9 +106,18 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands) override;
     void alter(const AlterCommands & params, ContextPtr context) override;
 
-protected:
-    ObjectIterator
-    iterate(const ActionsDAG * filter_dag, FileProgressCallback callback, size_t list_batch_size, ContextPtr local_context) const override;
+    void addDataToStorageSnapshot(StorageSnapshotPtr storage_snapshot) const override
+    {
+        storage_snapshot->data = std::make_unique<Iceberg::IcebergSpecificSnapshotData>(last_table_state_snapshot.value());
+        last_table_state_snapshot = std::nullopt;
+    }
+
+    ObjectIterator iterate(
+        const ActionsDAG * filter_dag,
+        FileProgressCallback callback,
+        size_t list_batch_size,
+        StorageSnapshotPtr storage_snapshot,
+        ContextPtr local_context) const override;
 
 private:
     const ObjectStoragePtr object_storage;
@@ -123,11 +128,9 @@ private:
     DB::Iceberg::PersistentTableComponents persistent_components;
 
 
-    std::tuple<Int64, Int32> getVersion() const;
-
     mutable SharedMutex mutex;
 
-    Iceberg::IcebergTableStateSnapshot relevant_table_state_snapshot TSA_GUARDED_BY(mutex);
+    mutable std::optional<Iceberg::IcebergTableStateSnapshot> last_table_state_snapshot;
 
     Iceberg::PersistentTableComponents initializePersistentTableComponents(Poco::JSON::Object::Ptr metadata_object);
 

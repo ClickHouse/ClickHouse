@@ -200,10 +200,17 @@ public:
         const ActionsDAG * filter_dag,
         IDataLakeMetadata::FileProgressCallback callback,
         size_t list_batch_size,
+        StorageSnapshotPtr storage_snapshot,
         ContextPtr context) override
     {
         assertInitialized();
-        return current_metadata->iterate(filter_dag, callback, list_batch_size, context);
+        return current_metadata->iterate(filter_dag, callback, list_batch_size, storage_snapshot, context);
+    }
+
+    void addDataToStorageSnapshot(StorageSnapshotPtr storage_snapshot) const override
+    {
+        assertInitialized();
+        current_metadata->addDataToStorageSnapshot(storage_snapshot);
     }
 
     /// This is an awful temporary crutch,

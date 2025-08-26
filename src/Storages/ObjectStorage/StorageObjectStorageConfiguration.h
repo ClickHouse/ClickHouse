@@ -168,10 +168,13 @@ public:
         const ActionsDAG * /* filter_dag */,
         std::function<void(FileProgress)> /* callback */,
         size_t /* list_batch_size */,
+        StorageSnapshotPtr /*storage_snapshot*/,
         ContextPtr /*context*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
+
+    virtual void addDataToStorageSnapshot(StorageSnapshotPtr /*storage_snapshot*/) const { }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
     virtual bool update(
