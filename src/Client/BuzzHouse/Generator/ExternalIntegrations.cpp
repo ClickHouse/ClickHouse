@@ -1658,12 +1658,13 @@ bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, 
 
     chassert(t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine());
     buf += fmt::format(
-        R"({{"database_name":"{}","table_name":"{}","storage":"{}","lake":"{}","format":"{}","columns":[)",
+        R"({{"database_name":"{}","table_name":"{}","storage":"{}","lake":"{}","format":"{}","deterministic":{},"columns":[)",
         t.getSparkCatalogName(),
         t.getTableName(false),
         t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"),
         t.isAnyDeltaLakeEngine() ? "deltalake" : "iceberg",
-        t.file_format.has_value() ? InOutFormat_Name(t.file_format.value()).substr(6) : "any");
+        t.file_format.has_value() ? InOutFormat_Name(t.file_format.value()).substr(6) : "any",
+        t.is_deterministic ? "1" : "0");
     for (const auto & entry : entries)
     {
         buf += fmt::format(

@@ -679,7 +679,11 @@ logger.jetty.level = warn
             self.create_database(self.catalogs[catalog_name].session, catalog_name)
         next_session = self.catalogs[catalog_name].session
         next_sql, next_table = next_table_generator.generate_create_table_ddl(
-            catalog_name, data["table_name"], data["columns"], data["format"]
+            catalog_name,
+            data["table_name"],
+            data["columns"],
+            data["format"],
+            data["deterministic"] > 0,
         )
         self.run_query(next_session, next_sql)
         self.catalogs[catalog_name].spark_tables[data["table_name"]] = next_table

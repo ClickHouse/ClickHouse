@@ -21,7 +21,10 @@ class LakeTableGenerator:
 
     @abstractmethod
     def generate_table_properties(
-        self, columns: list[dict[str, str]], include_all: bool = False
+        self,
+        columns: list[dict[str, str]],
+        deterministic: bool,
+        include_all: bool = False,
     ) -> dict[str, str]:
         pass
 
@@ -39,6 +42,7 @@ class LakeTableGenerator:
         table_name: str,
         columns: list[dict[str, str]],
         file_format: str,
+        deterministic: bool,
     ) -> tuple[str, SparkTable]:
         """
         Generate a complete CREATE TABLE DDL statement with random properties
@@ -79,7 +83,7 @@ class LakeTableGenerator:
         properties = self.set_basic_properties()
         # Add table properties
         if random.randint(1, 2) == 1:
-            properties.update(self.generate_table_properties(columns))
+            properties.update(self.generate_table_properties(columns, deterministic))
         if len(properties) > 0:
             ddl += " TBLPROPERTIES ("
             prop_lines = []
@@ -87,13 +91,13 @@ class LakeTableGenerator:
                 prop_lines.append(f"'{key}' = '{value}'")
             ddl += ",".join(prop_lines)
             ddl += ")"
-        return (ddl + ";", SparkTable(table_name, columns_spark))
+        return (ddl + ";", SparkTable(table_name, columns_spark, deterministic))
 
     def generate_alter_table_statements(
-        self, table_name: str, columns: list[dict[str, str]]
+        self, table_name: str, columns: list[dict[str, str]], deterministic: bool
     ) -> str:
         """Generate random ALTER TABLE statements for testing"""
-        properties = self.generate_table_properties(columns)
+        properties = self.generate_table_properties(columns, deterministic)
 
         if properties and random.randint(1, 2) == 1:
             # Set random properties
@@ -124,7 +128,10 @@ class IcebergTableGenerator(LakeTableGenerator):
         return properties
 
     def generate_table_properties(
-        self, columns: list[dict[str, str]], include_all: bool = False
+        self,
+        columns: list[dict[str, str]],
+        deterministic: bool,
+        include_all: bool = False,
     ) -> dict[str, str]:
         """
         Generate random Iceberg table properties
@@ -468,7 +475,10 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         return {}
 
     def generate_table_properties(
-        self, columns: list[dict[str, str]], include_all: bool = False
+        self,
+        columns: list[dict[str, str]],
+        deterministic: bool,
+        include_all: bool = False,
     ) -> dict[str, str]:
         """
         Generate random Delta Lake table properties

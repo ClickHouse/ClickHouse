@@ -97,9 +97,8 @@ class SparkColumn:
 
 class SparkTable:
     def __init__(
-        self,
-        _table_name: str,
-        _columns: dict[str, SparkColumn],
+        self, _table_name: str, _columns: dict[str, SparkColumn], _deterministic: bool
     ):
         self.table_name = _table_name
         self.columns = _columns
+        self.deterministic = _deterministic
