@@ -37,8 +37,6 @@ protected:
     void stepFunction(TimePoint current_time) override;
 
 public:
-    void flushBufferToLog(TimePoint current_time) override;
-
     void observe(Int64 session_id, Coordination::OpNum operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error);
 
 private:

@@ -29,6 +29,8 @@ public:
 
     void shutdown() final;
 
+    void flushBufferToLog(TimePoint current_time) override;
+
 protected:
     /// Stop background thread
     void stopCollect();

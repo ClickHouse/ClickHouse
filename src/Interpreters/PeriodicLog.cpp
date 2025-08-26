@@ -64,6 +64,12 @@ void PeriodicLog<LogElement>::threadFunction()
     }
 }
 
+template <typename LogElement>
+void PeriodicLog<LogElement>::flushBufferToLog(TimePoint current_time)
+{
+    stepFunction(current_time);
+}
+
 #define INSTANTIATE_PERIODIC_SYSTEM_LOG(ELEMENT) template class PeriodicLog<ELEMENT>;
 SYSTEM_PERIODIC_LOG_ELEMENTS(INSTANTIATE_PERIODIC_SYSTEM_LOG)
 

@@ -87,7 +87,25 @@ void AggregatedZooKeeperLogElement::appendToBlock(MutableColumns & columns) cons
 
 void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
 {
-    flushBufferToLog(current_time);
+    std::unordered_map<EntryKey, EntryStats, EntryKeyHash> local_stats;
+    {
+        std::lock_guard lock(stats_mutex);
+        std::swap(stats, local_stats);
+    }
+
+    for (auto & [entry_key, entry_stats] : local_stats)
+    {
+        AggregatedZooKeeperLogElement element{
+            .event_time = std::chrono::system_clock::to_time_t(current_time),
+            .session_id = entry_key.session_id,
+            .parent_path = entry_key.parent_path,
+            .operation = entry_key.operation,
+            .count = entry_stats.count,
+            .errors = std::move(entry_stats.errors),
+            .total_latency_microseconds = entry_stats.total_latency_microseconds,
+        };
+        add(std::move(element));
+    }
 }
 
 void AggregatedZooKeeperLog::observe(Int64 session_id, Coordination::OpNum operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error)
@@ -115,29 +133,6 @@ void AggregatedZooKeeperLog::EntryStats::observe(UInt64 latency_microseconds, Co
     ++count;
     total_latency_microseconds += latency_microseconds;
     errors->increment(error);
-}
-
-void AggregatedZooKeeperLog::flushBufferToLog(TimePoint current_time)
-{
-    std::unordered_map<EntryKey, EntryStats, EntryKeyHash> local_stats;
-    {
-        std::lock_guard lock(stats_mutex);
-        std::swap(stats, local_stats);
-    }
-
-    for (auto & [entry_key, entry_stats] : local_stats)
-    {
-        AggregatedZooKeeperLogElement element{
-            .event_time = std::chrono::system_clock::to_time_t(current_time),
-            .session_id = entry_key.session_id,
-            .parent_path = entry_key.parent_path,
-            .operation = entry_key.operation,
-            .count = entry_stats.count,
-            .errors = std::move(entry_stats.errors),
-            .total_latency_microseconds = entry_stats.total_latency_microseconds,
-        };
-        add(std::move(element));
-    }
 }
 
 }
