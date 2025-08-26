@@ -1,7 +1,7 @@
 -- Tags: no-fasttest, no-parallel
 -- Tag no-parallel: Heavy for MinIO
 -- Tag no-fasttest: Depends on AWS
-set enable_time_time64_type=1;
+set enable_time_time64_type=1, session_timezone='UTC';
 
 desc paimonS3(s3_conn, filename='paimon_all_types');
 
