@@ -181,6 +181,7 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
                     &compiler_version,
                     &compiler_cmdline,
                     &compiler.get_args(),
+                    compiler.get_compile_duration(),
                     &total_hash,
                     &compiled_bytes,
                 )
