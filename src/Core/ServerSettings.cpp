@@ -815,7 +815,6 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/engines/table-engines/mergetree-family) tables in the background.)", 0) \
     DECLARE(UInt64, background_buffer_flush_schedule_pool_size, 16, R"(The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/engines/table-engines/special/buffer) in the background.)", 0) \
     DECLARE(UInt64, background_schedule_pool_size, 512, R"(The maximum number of threads that will be used for constantly executing some lightweight periodic operations for replicated tables, Kafka streaming, and DNS cache updates.)", 0) \
-    DECLARE(Float, background_schedule_pool_max_parallel_tasks_per_type_ratio, 0.8f, R"(The maximum ratio of threads in the pool that can execute tasks of the same type simultaneously.)", 0) \
     DECLARE(UInt64, background_message_broker_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing background operations for message streaming.)", 0) \
     DECLARE(UInt64, background_distributed_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing distributed sends.)", 0) \
     DECLARE(UInt64, tables_loader_foreground_pool_size, 0, R"(

@@ -306,22 +306,18 @@ FileNamesGenerator::Result FileNamesGenerator::generateMetadataName()
         compression_suffix = "." + compression_suffix;
     if (!use_uuid_in_metadata)
     {
-        auto res = Result{
+        return Result{
             .path_in_metadata = fmt::format("{}v{}{}.metadata.json", metadata_dir, initial_version, compression_suffix),
             .path_in_storage = fmt::format("{}v{}{}.metadata.json", storage_metadata_dir, initial_version, compression_suffix),
         };
-        initial_version++;
-        return res;
     }
     else
     {
         auto uuid_str = uuid_generator.createRandom().toString();
-        auto res = Result{
+        return Result{
             .path_in_metadata = fmt::format("{}v{}-{}{}.metadata.json", metadata_dir, initial_version, uuid_str, compression_suffix),
             .path_in_storage = fmt::format("{}v{}-{}{}.metadata.json", storage_metadata_dir, initial_version, uuid_str, compression_suffix),
         };
-        initial_version++;
-        return res;
     }
 }
 

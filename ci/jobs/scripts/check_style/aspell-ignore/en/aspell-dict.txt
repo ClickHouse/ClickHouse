@@ -1262,7 +1262,6 @@ YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
-YTsaurus
 ZCurve
 ZSTDQAT
 Zabbix
@@ -2172,7 +2171,6 @@ isNotDistinctFrom
 isNotNull
 isNull
 isNullable
-isValidASCII
 isValidJSON
 isValidUTF
 isZeroOrNull

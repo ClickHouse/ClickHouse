@@ -1830,9 +1830,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
 
-        GinPostingsListsCacheForStore postings_lists_cache_for_store;
+        PostingsCacheForStore cache_in_store;
         if (dynamic_cast<const MergeTreeIndexGin *>(index_helper.get()))
-            postings_lists_cache_for_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
+            cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
 
         for (size_t i = 0; i < ranges_size; ++i)
         {
@@ -1881,9 +1881,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 {
                     bool result = false;
                     if (const auto * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(&*condition))
-                        result = postings_lists_cache_for_store.store
-                                    ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, postings_lists_cache_for_store)
-                                    : true;
+                        result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
                     else
                         result = condition->mayBeTrueOnGranule(granule);
 
