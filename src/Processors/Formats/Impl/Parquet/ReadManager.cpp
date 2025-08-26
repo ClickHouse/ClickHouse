@@ -421,8 +421,14 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
             /// there can only be one such thread.
             /// (I.e. avoid this race condition: one thread increments read_ptr, another thread sees the
             ///  new value, both threads call clearColumnChunk in parallel, the computer explodes.)
+            /// Don't touch columns with use_prewhere == true, they're cleared by
+            /// ReadStage::PrewhereData instead, which might be happening in parallel with us
+            /// (but doesn't prewhere happen before MainData read? yes, but the clearColumnChunk call
+            ///  happens after advancing prewhere_ptr, so another thread may do MainData+clearColumnChunk
+            ///  before the thread that did prewhere is still clearing the corresponding columns).
             for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
-                clearColumnChunk(row_group.columns.at(i), diff);
+                if (!reader.primitive_columns[i].use_prewhere)
+                    clearColumnChunk(row_group.columns.at(i), diff);
         }
     }
 }
@@ -570,9 +576,9 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
                 n += 1;
                 ++i;
             }
-            funcs.push_back([this, _batch = std::move(batch)]
+            funcs.push_back([this, _batch = std::move(batch), _shutdown = shutdown]
             {
-                std::shared_lock shutdown_lock(*shutdown, std::try_to_lock);
+                std::shared_lock shutdown_lock(*_shutdown, std::try_to_lock);
                 if (!shutdown_lock.owns_lock())
                     return;
                 runBatchOfTasks(_batch);

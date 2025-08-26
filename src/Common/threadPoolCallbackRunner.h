@@ -329,7 +329,9 @@ private:
 ///
 ///     void someBackgroundTask(std::shared_ptr<ShutdownHelper> shutdown_)
 ///     {
-///         std::shared_lock shutdown_lock(*shutdown, std::try_to_lock);
+///         // Using a copy of the shared_ptr, can't use this->shutdown here as `this` might already
+///         // be destroyed.
+///         std::shared_lock shutdown_lock(*shutdown_, std::try_to_lock);
 ///         if (!shutdown_lock.owns_lock())
 ///             return; // shutdown was requested, `this` may be destroyed
 ///
