@@ -136,6 +136,10 @@ add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
 add_headers_and_sources(dbms Common/NamedCollections)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
+
+add_headers_and_sources(dbms Core/YTsaurus)
+add_headers_and_sources(dbms Storages/YTsaurus)
+
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
@@ -384,6 +388,9 @@ target_link_libraries (clickhouse_compression
             ch_contrib::lz4
             ch_contrib::roaring
 )
+if (TARGET ch_contrib::fastpfor)
+    target_link_libraries (clickhouse_compression PRIVATE ch_contrib::fastpfor)
+endif()
 
 # Use X86 AVX2/AVX512 instructions to accelerate filter operations
 set_source_files_properties(
@@ -438,6 +445,9 @@ target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tabl
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
 dbms_target_link_libraries(PUBLIC ch_contrib::roaring)
+if (TARGET ch_contrib::fastpfor)
+    dbms_target_link_libraries(PUBLIC ch_contrib::fastpfor)
+endif()
 
 if (TARGET ch_contrib::rdkafka)
     dbms_target_link_libraries(PUBLIC ch_contrib::rdkafka ch_contrib::cppkafka)

@@ -33,11 +33,12 @@
 #include <IO/ReadHelpers.h>
 #include <filesystem>
 
+#include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 using namespace DB;
 
@@ -66,7 +67,12 @@ namespace ProfileEvents
     extern const Event IcebergVersionHintUsed;
 }
 
-namespace Iceberg
+namespace DB::Setting
+{
+    extern const SettingsUInt64 output_format_compression_level;
+}
+
+namespace DB::Iceberg
 {
 
 using namespace DB;
@@ -75,12 +81,32 @@ void writeMessageToFile(
     const String & data,
     const String & filename,
     ObjectStoragePtr object_storage,
-    ContextPtr context)
+    ContextPtr context,
+    std::function<void()> cleanup,
+    CompressionMethod compression_method)
 {
-    auto buffer_metadata = object_storage->writeObject(
-        StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-    buffer_metadata->write(data.data(), data.size());
-    buffer_metadata->finalize();
+    try
+    {
+        auto buffer_metadata = object_storage->writeObject(
+            StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+        if (compression_method != CompressionMethod::None)
+        {
+            auto settings = context->getSettingsRef();
+            auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
+            compressed_buffer_metadata->write(data.data(), data.size());
+            compressed_buffer_metadata->finalize();
+        }
+        else
+        {
+            buffer_metadata->write(data.data(), data.size());
+            buffer_metadata->finalize();
+        }
+    }
+    catch (...)
+    {
+        cleanup();
+        throw;
+    }
 }
 
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src)
@@ -209,11 +235,6 @@ std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::s
     }
 }
 
-}
-
-namespace DB
-{
-
 enum class MostRecentMetadataFileSelectionWay
 {
     BY_LAST_UPDATED_MS_FIELD,
@@ -259,7 +280,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
         if (cache_ptr)
             read_settings.enable_filesystem_cache = false;
 
-        auto source_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log, read_settings);
+        auto source_buf = createReadBuffer(object_info, object_storage, local_context, log, read_settings);
 
         std::unique_ptr<ReadBuffer> buf;
         if (compression_method != CompressionMethod::None)
@@ -299,7 +320,7 @@ static CompressionMethod getCompressionMethodFromMetadataFile(const String & pat
     return compression_method;
 }
 
-static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
+static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
     String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
     String version_str;
@@ -320,46 +341,54 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
         .compression_method = getCompressionMethodFromMetadataFile(path)};
 }
 
-Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
+/// Returns type and required
+std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter)
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::UInt32:
         case TypeIndex::Int32:
-            return "int";
+            return {"int", true};
+        case TypeIndex::UInt64:
         case TypeIndex::Int64:
-            return "long";
+            return {"long", true};
         case TypeIndex::Float32:
-            return "float";
+            return {"float", true};
         case TypeIndex::Float64:
-            return "double";
+            return {"double", true};
         case TypeIndex::Date32:
+            return {"date", true};
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
-            return "date";
+            return {"timestamp", true};
         case TypeIndex::Time:
-            return "time";
+            return {"time", true};
         case TypeIndex::String:
-            return "string";
+            return {"string", true};
         case TypeIndex::UUID:
-            return "uuid";
+            return {"uuid", true};
         case TypeIndex::Tuple:
         {
             auto type_tuple = std::static_pointer_cast<const DataTypeTuple>(type);
             Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
             result->set(Iceberg::f_type, "struct");
             Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+            size_t iter_names = 1;
+            size_t iter_fields = iter;
+            iter += type_tuple->getElements().size();
             for (const auto & element : type_tuple->getElements())
             {
                 Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
-                field->set(Iceberg::f_id, ++iter);
-                field->set(Iceberg::f_name, element->getName());
-                field->set(Iceberg::f_required, false);
+                field->set(Iceberg::f_id, ++iter_fields);
+                field->set(Iceberg::f_name, type_tuple->getNameByPosition(iter_names));
                 auto child_type = getIcebergType(element->getNormalizedType(), iter);
-                field->set(Iceberg::f_type, child_type);
+                field->set(Iceberg::f_required, child_type.second);
+                field->set(Iceberg::f_type, child_type.first);
                 fields->add(field);
+                ++iter_names;
             }
             result->set(Iceberg::f_fields, fields);
-            return result;
+            return {result, true};
         }
         case TypeIndex::Array:
         {
@@ -368,11 +397,11 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
 
             field->set(Iceberg::f_type, "list");
             field->set(Iceberg::f_element_id, ++iter);
-            field->set(Iceberg::f_required, false);
             auto child_type = getIcebergType(type_array->getNestedType(), iter);
-            field->set(Iceberg::f_element, child_type);
-            field->set(Iceberg::f_element_required, false);
-            return field;
+            field->set(Iceberg::f_required, false);
+            field->set(Iceberg::f_element, child_type.first);
+            field->set(Iceberg::f_element_required, child_type.second);
+            return {field, true};
         }
         case TypeIndex::Map:
         {
@@ -381,17 +410,18 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
 
             field->set(Iceberg::f_type, "map");
             field->set(Iceberg::f_key_id, ++iter);
-            field->set(Iceberg::f_key, getIcebergType(type_map->getKeyType(), iter));
-
-            field->set(Iceberg::f_value, getIcebergType(type_map->getValueType(), iter));
             field->set(Iceberg::f_value_id, ++iter);
-            field->set(Iceberg::f_value_requires, false);
-            return field;
+
+            field->set(Iceberg::f_key, getIcebergType(type_map->getKeyType(), iter).first);
+            auto value_type = getIcebergType(type_map->getValueType(), iter);
+            field->set(Iceberg::f_value, value_type.first);
+            field->set(Iceberg::f_value_required, value_type.second);
+            return {field, true};
         }
         case TypeIndex::Nullable:
         {
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
-            return getIcebergType(type_nullable->getNestedType(), iter);
+            return {getIcebergType(type_nullable->getNestedType(), iter).first, false};
         }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
@@ -545,15 +575,17 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     schema_representation->set(Iceberg::f_schema_id, 0);
 
     Poco::JSON::Array::Ptr schema_fields = new Poco::JSON::Array;
-    Int32 iter = 0;
+    Int32 iter = static_cast<Int32>(columns.size());
+    Int32 iter_for_initial_columns = 0;
     for (const auto & column : columns)
     {
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
-        field->set(Iceberg::f_id, ++iter);
+        field->set(Iceberg::f_id, ++iter_for_initial_columns);
         field->set(Iceberg::f_name, column.name);
-        field->set(Iceberg::f_required, false);
-        field->set(Iceberg::f_type, getIcebergType(column.type, iter));
-        column_name_to_source_id[column.name] = iter;
+        auto type = getIcebergType(column.type, iter);
+        field->set(Iceberg::f_required, type.second);
+        field->set(Iceberg::f_type, type.first);
+        column_name_to_source_id[column.name] = iter_for_initial_columns;
         schema_fields->add(field);
     }
     schema_representation->set(Iceberg::f_fields, schema_fields);

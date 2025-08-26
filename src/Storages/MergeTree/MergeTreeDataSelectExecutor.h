@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/QueryProcessingStage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -49,7 +48,8 @@ public:
         size_t num_streams,
         PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
         ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr = nullptr,
-        bool enable_parallel_reading = false) const;
+        bool enable_parallel_reading = false,
+        std::shared_ptr<ParallelReadingExtension> extension_ = nullptr) const;
 
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.
