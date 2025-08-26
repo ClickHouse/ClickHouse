@@ -21,8 +21,6 @@ from .laketables import (
 )
 from integration.helpers.config_cluster import minio_access_key, minio_secret_key
 
-# from integration.helpers.iceberg_utils import default_upload_directory
-
 """
 ┌─────────────────┬────────────────┬──────────────────────────────────────┐
 │ Catalog Type    │ Mixed Support  │ How It Works                         │
@@ -49,8 +47,8 @@ from integration.helpers.config_cluster import minio_access_key, minio_secret_ke
 """
 
 
-def get_local_base_path(catalog_name: str) -> str:
-    return f"/var/lib/clickhouse/user_files/lakehouse/{catalog_name}"
+def get_local_base_path(cluster, catalog_name: str) -> str:
+    return f"{Path(cluster.instances_dir_name) / "node0" / "user_files" / "lakehouse" / f"{catalog_name}"}"
 
 
 Parameter = typing.Callable[[], int | float]
@@ -256,7 +254,7 @@ def get_spark(
         elif storage == TableStorage.Local:
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.warehouse",
-                f"file://{get_local_base_path(catalog_name)}",
+                f"file://{get_local_base_path(cluster, catalog_name)}",
             )
     elif storage == TableStorage.S3:
         # S3A filesystem implementation
@@ -329,17 +327,18 @@ def get_spark(
             f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}",
         )
     elif storage == TableStorage.Local:
-        os.makedirs(get_local_base_path(catalog_name), exist_ok=True)
+        os.makedirs(get_local_base_path(cluster, catalog_name), exist_ok=True)
 
         builder.config(
             "spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem"
         )
         builder.config(
-            "spark.sql.warehouse.dir", f"file://{get_local_base_path(catalog_name)}"
+            "spark.sql.warehouse.dir",
+            f"file://{get_local_base_path(cluster, catalog_name)}",
         )
         builder.config(
             f"spark.sql.catalog.{catalog_name}.warehouse",
-            f"file://{get_local_base_path(catalog_name)}",
+            f"file://{get_local_base_path(cluster, catalog_name)}",
         )
     else:
         raise Exception("Unknown storage")
@@ -589,7 +588,9 @@ logger.jetty.level = warn
                     )
                     next_warehouse = f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}"
                 elif next_storage == TableStorage.Local:
-                    next_warehouse = f"file://{get_local_base_path(catalog_name)}"
+                    next_warehouse = (
+                        f"file://{get_local_base_path(cluster, catalog_name)}"
+                    )
                 rest_catalog = RestCatalog(
                     catalog_name,
                     uri="http://localhost:8182",
@@ -681,11 +682,10 @@ logger.jetty.level = warn
         self.run_query(next_session, next_sql)
         self.catalogs[catalog_name].spark_tables[data["table_name"]] = next_table
 
-        if random.randint(1, 2) == 1:
-            self.logger.info(
-                f"Inserting data into {data["table_name"]} in catalog: {catalog_name}"
-            )
-            next_generator.insert_random_data(next_session, next_table, 10)
+        self.logger.info(
+            f"Inserting data into {data["table_name"]} in catalog: {catalog_name}"
+        )
+        next_generator.insert_random_data(next_session, catalog_name, next_table)
 
         if one_time:
             next_session.stop()

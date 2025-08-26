@@ -202,7 +202,7 @@ class LakeTableGenerator:
         ddl += f" USING {self.get_format()}"
 
         # Add Partition by
-        if random.randint(1, 3) == 1:
+        if random.randint(1, 4) == 1:
             random_subset = random.sample(
                 columns_list, k=random.randint(1, len(columns_list))
             )
@@ -295,8 +295,10 @@ class LakeTableGenerator:
             s = f"{sign*int_part}"
         return Decimal(s)
 
-    def _random_value_for_type(self, dtype: DataType):
+    def _random_value_for_type(self, dtype: DataType, null_rate: float):
         """Return a random Python value that conforms to the given Spark DataType."""
+        if random.random() < null_rate:
+            return None
         if isinstance(dtype, BooleanType):
             return self._rand_bool()
         if isinstance(dtype, ByteType):
@@ -322,41 +324,53 @@ class LakeTableGenerator:
         if isinstance(dtype, TimestampType):
             return self._rand_timestamp()
         if isinstance(dtype, ArrayType):
-            # arrays of variable length
-            n = self._rand_int(self._min_nested, self._max_nested)
-            return [self._random_value_for_type(dtype.elementType) for _ in range(n)]
+            # Arrays of variable length
+            elem_null_rate = null_rate if dtype.containsNull else 0.0
+            n = random.randint(self._min_nested, self._max_nested)
+            return [
+                self._random_value_for_type(dtype.elementType, elem_null_rate)
+                for _ in range(n)
+            ]
         if isinstance(dtype, MapType):
-            i = 0
-            n = self._rand_int(self._min_nested, self._max_nested)
-            result = {}
-            # Map keys must be hashable and non-null; regenerate if None
-            while i < n:
-                k = self._random_value_for_type(dtype.keyType)
-                v = self._random_value_for_type(dtype.valueType)
-                result[k] = v
-                i += 1
-            return result
+            # Keys: must be non-null and hashable; values may be null only if allowed
+            value_null_rate = null_rate if dtype.valueContainsNull else 0.0
+            n = random.randint(self._min_nested, self._max_nested)
+            out = {}
+            attempts = 0
+            # Keep drawing until we have n unique, non-null keys (cap attempts)
+            while len(out) < n and attempts < n * 5:
+                k = self._random_value_for_type(
+                    dtype.keyType, 0.0
+                )  # NEVER null for keys
+                if k is None:
+                    attempts += 1
+                    continue
+                v = self._random_value_for_type(dtype.valueType, value_null_rate)
+                out[k] = v
+                attempts += 1
+            return out
+        if isinstance(dtype, StructType):
+            obj = {}
+            for f in dtype.fields:
+                nr = null_rate if f.nullable else 0.0
+                obj[f.name] = self._random_value_for_type(f.dataType, nr)
+            return Row(**obj)
         return self._rand_string()
 
-    def _maybe_null(self, value_fn, null_rate: float):
-        return None if random.random() < null_rate else value_fn()
-
     def insert_random_data(
-        self,
-        spark: SparkSession,
-        table: SparkTable,
-        n_rows: int,
-        null_rate: float = 0.05,
+        self, spark: SparkSession, catalog_name: str, table: SparkTable
     ):
         """
         Build a DataFrame of random rows for the given schema (types as strings are fine).
         - null_rate: probability any value is None (ignored for map keys)
         """
         # Set limits
-        self._min_nested = random.randint(0, 100)
-        self._max_nested = max(self._min_nested, random.randint(0, 100))
-        self._min_str_len = random.randint(0, 100)
-        self._max_str_len = max(self._min_str_len, random.randint(0, 100))
+        self._min_nested = random.randint(0, 1000)
+        self._max_nested = max(self._min_nested, random.randint(0, 1000))
+        self._min_str_len = random.randint(0, 1000)
+        self._max_str_len = max(self._min_str_len, random.randint(0, 1000))
+        n_rows = random.randint(0, 1000)
+        null_rate: float = 0.05 if random.randint(1, 2) == 1 else 0.0
 
         struct = StructType(
             [
@@ -368,15 +382,11 @@ class LakeTableGenerator:
         for _ in range(n_rows):
             rec = {}
             for field in struct.fields:
-                rec[field.name] = (
-                    None
-                    if random.random() < null_rate
-                    else self._random_value_for_type(field.dataType)
-                )
+                rec[field.name] = self._random_value_for_type(field.dataType, null_rate)
             rows.append(Row(**rec))
         # Use explicit schema so types match exactly
         df = spark.createDataFrame(rows, schema=struct)
-        df.write.insertInto(table.table_name, overwrite=False)
+        df.writeTo(f"{catalog_name}.test.{table.table_name}")
 
 
 class IcebergTableGenerator(LakeTableGenerator):
