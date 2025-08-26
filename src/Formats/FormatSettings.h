@@ -216,7 +216,7 @@ struct FormatSettings
     {
         size_t max_depth = 1000;
         bool array_of_rows = false;
-        bool quote_64bit_integers = true;
+        bool quote_64bit_integers = false;
         bool quote_64bit_floats = false;
         bool quote_denormals = true;
         bool quote_decimals = false;

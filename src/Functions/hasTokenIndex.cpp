@@ -102,7 +102,7 @@ public:
             return col_res;
 
         const IndexContextInfo::PartInfo & part_info = index_context_info->part_info_vector[part_idx].value();
-        const std::shared_ptr<const PostingsCacheForStore> cache_in_store = part_info.postings_cache_for_store_part.at(index_name);
+        const std::shared_ptr<const GinPostingsListsCacheForStore> cache_in_store = part_info.postings_cache_for_store_part.at(index_name);
         chassert(cache_in_store);
 
         /// Find index and condition iterator

@@ -774,19 +774,19 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
 {
     if (elems.empty())
     {
-        auto cached_column = getFromSubstreamsCache(cache, settings.path);
-        if (cached_column)
+        if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
         {
-            column = cached_column;
+            /// Data was inserted from substreams cache.
         }
         else if (ReadBuffer * stream = settings.getter(settings.path))
         {
+            size_t prev_size = column->size();
             auto mutable_column = column->assumeMutable();
             auto ignored_size = stream->tryIgnore(rows_offset + limit);
             auto delta = ignored_size < rows_offset ? 0 : ignored_size - rows_offset;
             typeid_cast<ColumnTuple &>(*mutable_column).addSize(delta);
             column = std::move(mutable_column);
-            addToSubstreamsCache(cache, settings.path, column);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
         }
 
         return;

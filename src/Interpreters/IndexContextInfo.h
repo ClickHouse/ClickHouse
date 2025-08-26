@@ -12,12 +12,12 @@
 namespace DB
 {
 
-struct PostingsCacheForStore;
+struct GinPostingsListsCacheForStore;
 
 class IndexContextInfo
 {
 public:
-    using IndexPostingsCacheForStoreMap = std::unordered_map<String, std::shared_ptr<const PostingsCacheForStore>>;
+    using IndexPostingsCacheForStoreMap = std::unordered_map<String, std::shared_ptr<const GinPostingsListsCacheForStore>>;
 
     struct PartInfo
     {

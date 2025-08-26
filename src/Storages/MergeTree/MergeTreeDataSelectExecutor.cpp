@@ -874,7 +874,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     continue;
                 }
 
-                std::shared_ptr<PostingsCacheForStore> cache_in_store;
+                std::shared_ptr<GinPostingsListsCacheForStore> cache_in_store;
 
                 std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                     index_and_condition.index,
@@ -1775,7 +1775,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
     LoggerPtr log,
-    std::shared_ptr<PostingsCacheForStore> &cache_in_store)
+    std::shared_ptr<GinPostingsListsCacheForStore> &cache_in_store)
 {
     if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
     {
@@ -1889,7 +1889,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         size_t last_index_mark = 0;
 
         if (dynamic_cast<const MergeTreeIndexGin *>(index_helper.get()))
-            cache_in_store = std::make_shared<PostingsCacheForStore>(index_helper->getFileName(), part->getDataPartStoragePtr());
+            cache_in_store = std::make_shared<GinPostingsListsCacheForStore>(index_helper->getFileName(), part->getDataPartStoragePtr());
 
         for (size_t i = 0; i < ranges_size; ++i)
         {
