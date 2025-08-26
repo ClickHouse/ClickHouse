@@ -284,6 +284,10 @@ impl Compiler for ClangLike {
     fn cacheable(&self) -> bool {
         true
     }
+
+    fn get_args(&self) -> String {
+        self.stripped_args.join(" ")
+    }
 }
 
 pub struct Clang(ClangLike);
@@ -309,6 +313,10 @@ impl Compiler for ClangXX {
     fn version(&self) -> String {
         self.0.version()
     }
+
+    fn get_args(&self) -> String {
+        self.0.get_args()
+    }
 }
 
 impl Compiler for Clang {
@@ -330,5 +338,9 @@ impl Compiler for Clang {
 
     fn version(&self) -> String {
         self.0.version()
+    }
+
+    fn get_args(&self) -> String {
+        self.0.get_args()
     }
 }

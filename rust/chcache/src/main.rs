@@ -32,6 +32,7 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
 
     let compiler_path_or_command: String = std::env::args().nth(1).unwrap();
     let rest_of_args: Vec<String> = std::env::args().skip(2).collect();
+    let compiler_cmdline = rest_of_args.join(" ");
 
     match compiler_path_or_command.as_str() {
         "stats" => {
@@ -78,6 +79,7 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
             panic!("Unknown compiler: {}", compiler_path.display());
         }
     };
+
 
     if !compiler.cacheable() {
         trace!("Call is not cacheable");
@@ -175,7 +177,13 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
         let mut tries = 3;
         loop {
             let upload_result = clickhouse_disk
-                .write(&compiler_version, &total_hash, &compiled_bytes)
+                .write(
+                    &compiler_version,
+                    &compiler_cmdline,
+                    &compiler.get_args(),
+                    &total_hash,
+                    &compiled_bytes,
+                )
                 .await;
 
             if upload_result.is_ok() {

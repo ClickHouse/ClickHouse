@@ -267,4 +267,8 @@ impl Compiler for RustC {
 
         Ok(buffer)
     }
+
+    fn get_args(&self) -> String {
+        self.args.join(" ")
+    }
 }
