@@ -16,9 +16,11 @@ from .laketables import (
     TableStorage,
     LakeFormat,
     LakeCatalogs,
-    LakeTableGenerator,
     SparkTable,
 )
+from .tablegenerator import LakeTableGenerator
+from .datagenerator import LakeDataGenerator
+
 from integration.helpers.config_cluster import minio_access_key, minio_secret_key
 
 """
@@ -661,7 +663,7 @@ logger.jetty.level = warn
         next_session = None
         next_storage = TableStorage.storage_from_str(data["storage"])
         next_lake = LakeFormat.lakeformat_from_str(data["lake"])
-        next_generator = LakeTableGenerator.get_next_generator(
+        next_table_generator = LakeTableGenerator.get_next_generator(
             cluster.minio_bucket, next_lake
         )
 
@@ -676,7 +678,7 @@ logger.jetty.level = warn
             )
             self.create_database(self.catalogs[catalog_name].session, catalog_name)
         next_session = self.catalogs[catalog_name].session
-        next_sql, next_table = next_generator.generate_create_table_ddl(
+        next_sql, next_table = next_table_generator.generate_create_table_ddl(
             catalog_name, data["table_name"], data["columns"], data["format"]
         )
         self.run_query(next_session, next_sql)
@@ -685,7 +687,8 @@ logger.jetty.level = warn
         self.logger.info(
             f"Inserting data into {data["table_name"]} in catalog: {catalog_name}"
         )
-        next_generator.insert_random_data(next_session, catalog_name, next_table)
+        next_data_generator = LakeDataGenerator()
+        next_data_generator.insert_random_data(next_session, catalog_name, next_table)
 
         if one_time:
             next_session.stop()
