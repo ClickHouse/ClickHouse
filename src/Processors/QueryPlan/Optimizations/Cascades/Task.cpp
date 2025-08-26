@@ -10,7 +10,7 @@ namespace DB
 
 void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
 {
-    LOG_TRACE(optimizer_context.log, "OptimizeGroupTask group_id: {}", group_id);
+    LOG_TEST(optimizer_context.log, "OptimizeGroupTask group_id: {}", group_id);
     auto group = optimizer_context.getGroup(group_id);
     if (!group->isExplored())
     {
@@ -28,7 +28,7 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
 
 void ExploreGroupTask::execute(OptimizerContext & optimizer_context)
 {
-    LOG_TRACE(optimizer_context.log, "ExploreGroupTask group_id: {}", group_id);
+    LOG_TEST(optimizer_context.log, "ExploreGroupTask group_id: {}", group_id);
     auto group = optimizer_context.getGroup(group_id);
     group->setExplored();
 
@@ -39,7 +39,7 @@ void ExploreGroupTask::execute(OptimizerContext & optimizer_context)
 
 void ExploreExpressionTask::execute(OptimizerContext & optimizer_context)
 {
-    LOG_TRACE(optimizer_context.log, "ExploreExpressionTask group_id: {}, expression: {}",
+    LOG_TEST(optimizer_context.log, "ExploreExpressionTask group_id: {}, expression: {}",
         expression->group_id, expression->getName());
 
     std::vector<std::pair<Promise, OptimizationRulePtr>> moves;
@@ -65,7 +65,7 @@ void ExploreExpressionTask::execute(OptimizerContext & optimizer_context)
 
 void OptimizeExpressionTask::execute(OptimizerContext & optimizer_context)
 {
-    LOG_TRACE(optimizer_context.log, "OptimizeExpressionTask group_id: {}, expression: {}",
+    LOG_TEST(optimizer_context.log, "OptimizeExpressionTask group_id: {}, expression: {}",
         expression->group_id, expression->getName());
 
     /// TODO: is this the same as ExploreExpressionTask::execute but just with a different set of rules?
@@ -93,7 +93,7 @@ void OptimizeExpressionTask::execute(OptimizerContext & optimizer_context)
 
 void ApplyRuleTask::execute(OptimizerContext & optimizer_context)
 {
-    LOG_TRACE(optimizer_context.log, "ApplyRuleTask rule: '{}', group_id: {} expression: {}",
+    LOG_TEST(optimizer_context.log, "ApplyRuleTask rule: '{}', group_id: {} expression: {}",
         rule->getName(), expression->group_id, expression->getName());
 
     auto new_expressions = rule->apply(expression, optimizer_context.getMemo());
@@ -114,7 +114,7 @@ void ApplyRuleTask::execute(OptimizerContext & optimizer_context)
 
 void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
 {
-    LOG_TRACE(optimizer_context.log, "OptimizeInputsTask group_id: {}", expression->group_id);
+    LOG_TEST(optimizer_context.log, "OptimizeInputsTask group_id: {}", expression->group_id);
 
     /// All inputs were processed?
     if (input_index_to_optimize == expression->inputs.size())
