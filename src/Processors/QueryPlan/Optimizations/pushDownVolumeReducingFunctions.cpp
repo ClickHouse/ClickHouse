@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <Columns/IColumn.h>
 #include <Columns/IColumn_fwd.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -24,23 +25,16 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-#include "Columns/IColumn.h"
+#include "base/defines.h"
 
 
 namespace DB
 {
-namespace ErrorCodes
-{
-extern const int
-    NOT_FOUND_COLUMN_IN_BLOCK; // should we use this error code? or should we use LOGICAL_ERROR instead because we don't expect this error to occur?
-}
 
 namespace QueryPlanOptimizations
 {
 namespace
 {
-
-const std::string PUSHDOWN_BETA_NOTE = "if this is not expected, disable `query_plan_push_down_volume_reducing_functions`";
 
 extern inline const ActionsDAG::Node * dealiasNode(const ActionsDAG::Node * node);
 struct ColumnCandidate;
@@ -100,7 +94,7 @@ struct PushdownRequest
             if (child->result_name == name)
                 return dealiasNode(child);
 
-        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Function node not found for column {}, {}", name, PUSHDOWN_BETA_NOTE);
+        return nullptr;
     }
 };
 
@@ -227,12 +221,9 @@ void analyzeFilterOrExpressionStep(QueryPlan::Node * node, ColumnCandidatesStack
         if (dealiased_output_node->type == ActionsDAG::ActionType::INPUT)
         {
             ColumnCandidatePtr column_candidate = findInputColumn(candidates, node, dealiased_output_node->result_name);
-            if (!column_candidate)
-                throw Exception(
-                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                    "Column candidate not found for output {}, {}",
-                    dealiased_output_node->result_name,
-                    PUSHDOWN_BETA_NOTE);
+
+            chassert(column_candidate);
+
             column_candidate->node_to_output_name[node] = output_node->result_name;
         }
         else if (dealiased_output_node->type == ActionsDAG::ActionType::FUNCTION)
@@ -448,28 +439,27 @@ void updateInputsAfterChildAppliesRequest(
 
         if (as_expression_step || as_filter_step)
         {
+            const ActionsDAG::Node * function_node_in_original_node = request->getFunctionNode(function_candidate);
             const ActionsDAG::Node * input_node = nullptr;
+
             for (const ActionsDAG::Node * node : new_dag.getInputs())
             {
                 if (node->result_name == function_output_names[changed_child])
-                {
                     input_node = node;
-                }
             }
             if (!input_node)
-                input_node
-                    = &new_dag.addInput(function_output_names[changed_child], request->getFunctionNode(function_candidate)->result_type);
-            // if function is aliased at the parent, ensure we use the same alias
-            if (function_output_names.find(node_to_update) != function_output_names.end())
             {
-                new_function_node = &new_dag.addAlias(*input_node, function_output_names[node_to_update]);
-            }
-            else
-            {
-                new_function_node = input_node;
+                chassert(function_node_in_original_node);
+                input_node = &new_dag.addInput(function_output_names[changed_child], function_node_in_original_node->result_type);
             }
 
-            // either replace input column or function instance with the new function node while maintaining order
+            // if function is aliased at the parent, ensure we use the same alias
+            if (function_output_names.find(node_to_update) != function_output_names.end())
+                new_function_node = &new_dag.addAlias(*input_node, function_output_names[node_to_update]);
+            else
+                new_function_node = input_node;
+
+            // either replace input column or function instance with the new function node (TODO: check order)
             if (column_output_names.find(node_to_update) != column_output_names.end())
             {
                 auto it = new_dag.getOutputs().begin();
@@ -718,5 +708,5 @@ void pushDownVolumeReducingFunctions(QueryPlan::Node * root_node, const QueryPla
     processNodeRecursively(node, {}, direct_parent_nodes_map);
 }
 
-} // namespace QueryPlanOptimizations
-} // namespace DB
+}
+}
