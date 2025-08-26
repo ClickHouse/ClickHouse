@@ -1264,13 +1264,13 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
     for (const auto & change : changes)
     {
         if (change.name == "cleanup_interval_min_ms")
-            cleanup_interval_min_ms = change.value.safeGet<bool>();
+            cleanup_interval_min_ms = change.value.safeGet<UInt64>();
         if (change.name == "cleanup_interval_max_ms")
-            cleanup_interval_max_ms = change.value.safeGet<bool>();
+            cleanup_interval_max_ms = change.value.safeGet<UInt64>();
         if (change.name == "use_persistent_processing_nodes")
             use_persistent_processing_nodes = change.value.safeGet<bool>();
         if (change.name == "persistent_processing_node_ttl_seconds")
-            persistent_processing_node_ttl_seconds = change.value.safeGet<bool>();
+            persistent_processing_node_ttl_seconds = change.value.safeGet<UInt64>();
     }
 }
 

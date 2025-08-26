@@ -152,10 +152,10 @@ public:
 
     void updateSettings(const SettingsChanges & changes);
 
-    std::pair<size_t, size_t> getCleanupInterval() const { return {cleanup_interval_min_ms, cleanup_interval_max_ms }; }
+    std::pair<size_t, size_t> getCleanupIntervalMS() const { return {cleanup_interval_min_ms, cleanup_interval_max_ms }; }
 
-    size_t usePersistentProcessingNode() const { return persistent_processing_node_ttl_seconds; }
-    size_t getPersistentProcessingNodeTTL() const { return persistent_processing_node_ttl_seconds; }
+    bool usePersistentProcessingNode() const { return use_persistent_processing_nodes; }
+    size_t getPersistentProcessingNodeTTLSeconds() const { return persistent_processing_node_ttl_seconds; }
 
 private:
     void cleanupThreadFunc();

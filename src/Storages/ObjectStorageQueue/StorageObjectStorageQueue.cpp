@@ -1292,10 +1292,10 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::tracked_files_limit] = table_metadata.tracked_files_limit;
     settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
 
-    auto cleanup_interval = files_metadata->getCleanupInterval();
-    settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = cleanup_interval.first;
-    settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = cleanup_interval.second;
-    settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = files_metadata->getPersistentProcessingNodeTTL();
+    auto cleanup_interval_ms = files_metadata->getCleanupIntervalMS();
+    settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = cleanup_interval_ms.first;
+    settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = cleanup_interval_ms.second;
+    settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = files_metadata->getPersistentProcessingNodeTTLSeconds();
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = files_metadata->usePersistentProcessingNode();
 
     {
