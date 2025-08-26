@@ -1207,7 +1207,11 @@ public:
         if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return std::nullopt;
 
-        return toDayNum(makeLUTIndex(year, month, day_of_month));
+        auto index = tryToMakeLUTIndex(year, month, day_of_month);
+        if (!index)
+            return std::nullopt;
+
+        return toDayNum(*index);
     }
 
     Time makeDate(Int16 year, UInt8 month, UInt8 day_of_month) const
