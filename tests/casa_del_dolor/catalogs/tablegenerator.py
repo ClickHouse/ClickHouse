@@ -68,10 +68,10 @@ class LakeTableGenerator:
         # Add USING clause
         ddl += f" USING {self.get_format()}"
 
-        # Add Partition by
-        if random.randint(1, 5) == 1:
+        # Add Partition by, can't partition by all columns
+        if len(columns_list) > 1 and random.randint(1, 5) == 1:
             random_subset = random.sample(
-                columns_list, k=random.randint(1, len(columns_list))
+                columns_list, k=random.randint(1, len(columns_list) - 1)
             )
             random.shuffle(random_subset)
             ddl += f" PARTITIONED BY ({",".join(random_subset)})"
@@ -499,10 +499,6 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         if include_all or random.random() > 0.3:
             properties.update(self._generate_file_properties())
 
-        # Checkpoint properties
-        if include_all or random.random() > 0.5:
-            properties.update(self._generate_checkpoint_properties())
-
         # Data skipping properties
         if include_all or random.random() > 0.4:
             properties.update(self._generate_data_skipping_properties())
@@ -637,26 +633,6 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         return properties
 
-    def _generate_checkpoint_properties(self) -> dict[str, str]:
-        """Generate checkpoint related properties"""
-        properties = {}
-
-        # Checkpoint interval
-        properties["delta.checkpointInterval"] = str(random.choice([10, 20, 50, 100]))
-
-        # Checkpoint retention
-        properties["delta.checkpointRetentionDuration"] = random.choice(
-            ["interval 2 days", "interval 7 days", "interval 30 days"]
-        )
-
-        # Compatibility
-        if "delta.enableDeletionVectors" not in properties:
-            properties["delta.compatibility.symlinkFormatManifest.enabled"] = str(
-                random.choice(["true", "false"])
-            ).lower()
-
-        return properties
-
     def _generate_data_skipping_properties(self) -> dict[str, str]:
         """Generate data skipping and statistics properties"""
         properties = {}
@@ -704,8 +680,21 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         # Append-only table
         properties["delta.appendOnly"] = str(random.choice(["true", "false"])).lower()
 
+        # Checkpoint interval
+        properties["delta.checkpointInterval"] = str(random.choice([10, 20, 50, 100]))
+
+        # Checkpoint retention
+        properties["delta.checkpointRetentionDuration"] = random.choice(
+            ["interval 2 days", "interval 7 days", "interval 30 days"]
+        )
+
+        # Compatibility
+        properties["delta.compatibility.symlinkFormatManifest.enabled"] = random.choice(
+            ["true", "false"]
+        )
+
         # Enable deletion vectors (Delta 3.0+)
-        if "delta.compatibility.symlinkFormatManifest.enabled" not in properties:
+        if "delta.compatibility.symlinkFormatManifest.enabled" == "false":
             properties["delta.enableDeletionVectors"] = str(
                 random.choice(["true", "false"])
             ).lower()
