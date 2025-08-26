@@ -270,7 +270,7 @@ def get_creation_expression(
 
         if table_function:
             return f"""
-                icebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})
+                icebergLocal(local, path = '/iceberg_data/default/{table_name}', format={format})
             """
         else:
             return (
