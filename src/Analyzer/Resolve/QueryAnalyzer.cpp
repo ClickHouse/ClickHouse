@@ -2880,17 +2880,15 @@ ConstantNodePtr getConstantResultFromFunctionArgs(const QueryTreeNodePtr & node,
             return nullptr;
         }
 
-        if (base)
+        if (!base->isSuitableForConstantFolding())
+            return nullptr;
+        ColumnPtr result = base->getConstantResultForNonConstArguments(arg_columns, base->getResultType());
+        if (result)
         {
-            ColumnPtr const_res = base->getConstantResultForNonConstArguments(arg_columns, base->getResultType());
-            if (const_res)
-            {
-                Field f((*const_res)[0]);
-                auto const_node = std::make_shared<ConstantNode>(f, base->getResultType());
-                if (!function_node->getAlias().empty())
-                    const_node->setAlias(function_node->getAlias());
-                return const_node;
-            }
+            auto const_node = std::make_shared<ConstantNode>(std::move(result), base->getResultType());
+            if (!function_node->getAlias().empty())
+                const_node->setAlias(function_node->getAlias());
+            return const_node;
         }
     }
     return nullptr;
