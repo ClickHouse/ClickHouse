@@ -199,7 +199,7 @@ class GH:
             cmd = f'gh api -X PATCH \
                     -H "Accept: application/vnd.github.v3+json" \
                     "/repos/{repo}/issues/comments/{id_to_update}" \
-                    --input {temp_file_path} --field body=@-'
+                    -F body=@{temp_file_path}'
             print(f"Update existing comments [{id_to_update}]")
             res = cls.do_command_with_retries(cmd)
         else:
