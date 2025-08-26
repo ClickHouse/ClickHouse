@@ -59,7 +59,7 @@ public:
 #if USE_FASTPFOR
 /// This class serializes a posting list into on-disk format by applying DELTA encoding first, then PFOR compression.
 /// Internally, the FastPFOR library is used for the PFOR compression.
-class GinIndexPostingListDeltaPforSerialization
+class GinPostingListDeltaPforSerialization
 {
 public:
     static UInt64 serialize(WriteBuffer & buffer, const GinPostingsList & rowids);
@@ -76,7 +76,7 @@ private:
 #endif
 
 /// This class serialize a posting list into on-disk format by applying ZSTD compression on top of Roaring Bitmap.
-class GinIndexPostingListRoaringZstdSerialization
+class GinPostingListRoaringZstdSerialization
 {
 public:
     static UInt64 serialize(WriteBuffer & buffer, const GinPostingsList & rowids);
