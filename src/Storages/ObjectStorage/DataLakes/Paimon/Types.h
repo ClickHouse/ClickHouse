@@ -218,7 +218,6 @@ struct DataType
             }
             else if (real_type.starts_with("TIMESTAMP"))
             {
-                /// TODO: support precision
                 type.root_type = real_type.contains("LOCAL TIME ZONE") ? RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE
                                                                        : RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE;
                 size_t p = has_precision(type.raw_type) ? parse_precision(type.raw_type)[0] : 6;
