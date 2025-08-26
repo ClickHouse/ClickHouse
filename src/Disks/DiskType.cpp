@@ -2,8 +2,6 @@
 #include <Poco/String.h>
 #include <Common/Exception.h>
 
-#include <unordered_set>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -53,32 +51,46 @@ bool DataSourceDescription::sameKind(const DataSourceDescription & other) const
 
 std::string DataSourceDescription::toString() const
 {
+    String str;
     switch (type)
     {
         case DataSourceType::Local:
-            return "local";
+            str = "local";
+            break;
         case DataSourceType::RAM:
-            return "memory";
+            str = "memory";
+            break;
         case DataSourceType::ObjectStorage:
         {
             switch (object_storage_type)
             {
                 case ObjectStorageType::S3:
-                    return "s3";
+                    str = "s3";
+                    break;
                 case ObjectStorageType::HDFS:
-                    return "hdfs";
+                    str = "hdfs";
+                    break;
                 case ObjectStorageType::Azure:
-                    return "azure_blob_storage";
+                    str = "azure_blob_storage";
+                    break;
                 case ObjectStorageType::Local:
-                    return "local_blob_storage";
+                    str = "local_blob_storage";
+                    break;
                 case ObjectStorageType::Web:
-                    return "web";
+                    str = "web";
+                    break;
                 case ObjectStorageType::None:
-                    return "none";
+                    str = "none";
+                    break;
                 case ObjectStorageType::Max:
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage type: Max");
             }
         }
     }
+
+    str += fmt::format(" (description = '{}', is_encrypted = {}, is_cached = {}, zookeeper_name = '{}')",
+                       description, is_encrypted, is_cached, zookeeper_name);
+
+    return str;
 }
 }
