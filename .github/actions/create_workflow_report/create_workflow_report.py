@@ -550,27 +550,26 @@ def get_build_report_links(pr_number: int, branch: str, commit_sha: str):
 
     status_file = f"result_{workflow_name.lower()}.json"
     s3_path = f"https://{S3_BUCKET}.s3.amazonaws.com/{ref_param.replace('=', 's/')}/{commit_sha}/{status_file}"
-    print(s3_path)
     response = requests.get(s3_path)
 
-    if response.status_code != 200:
-        # TODO: Check that the build jobs completed
+    build_report_links = {}
+    if response.status_code == 200:
+        # Cache exists, get the status data
+        status_data = response.json()
+        for job in status_data["results"]:
+            if job["name"] in build_job_names and job["status"] == "skipped":
+                build_report_links[job["name"]] = job["links"][0]
 
-        # No cache exists, assemble links
-        build_report_link_base = f"https://{S3_BUCKET}.s3.amazonaws.com/json.html?{ref_param}&sha={commit_sha}&name_0={urllib.parse.quote(workflow_name, safe='')}"
-        build_report_links = {
-            job_name: f"{build_report_link_base}&name_1={urllib.parse.quote(job_name, safe='')}"
-            for job_name in build_job_names
-        }
+    if len(build_report_links) > 0:
+        # We have the build report links, return them
         return build_report_links
 
-    # Cache exists, get the status data
-    status_data = response.json()
-    build_report_links = {}
-    for job in status_data["results"]:
-        if job["name"] in build_job_names:
-            build_report_links[job["name"]] = job["links"][0]
-
+    # No cache exists, assemble links
+    build_report_link_base = f"https://{S3_BUCKET}.s3.amazonaws.com/json.html?{ref_param}&sha={commit_sha}&name_0={urllib.parse.quote(workflow_name, safe='')}"
+    build_report_links = {
+        job_name: f"{build_report_link_base}&name_1={urllib.parse.quote(job_name, safe='')}"
+        for job_name in build_job_names
+    }
     return build_report_links
 
 
