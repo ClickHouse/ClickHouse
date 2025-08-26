@@ -734,12 +734,17 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
     auto settings = getSettings();
     const auto & context = getContext();
 
+    return getStoragePolicyImpl(context, settings);
+}
+
+StoragePolicyPtr MergeTreeData::getStoragePolicyImpl(const ContextPtr context_, const MergeTreeSettingsPtr table_settings)
+{
     StoragePolicyPtr storage_policy;
 
-    if ((*settings)[MergeTreeSetting::disk].changed)
-        storage_policy = context->getStoragePolicyFromDisk((*settings)[MergeTreeSetting::disk]);
+    if ((*table_settings)[MergeTreeSetting::disk].changed)
+        storage_policy = context_->getStoragePolicyFromDisk((*table_settings)[MergeTreeSetting::disk]);
     else
-        storage_policy = context->getStoragePolicy((*settings)[MergeTreeSetting::storage_policy]);
+        storage_policy = context_->getStoragePolicy((*table_settings)[MergeTreeSetting::storage_policy]);
 
     return storage_policy;
 }
