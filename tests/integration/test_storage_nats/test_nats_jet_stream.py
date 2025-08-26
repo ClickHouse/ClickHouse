@@ -561,7 +561,7 @@ def test_nats_big_message(nats_cluster):
 
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
-    # Create batchs of messages of size ~100Kb
+    # Create batches of messages of size ~100Kb
     nats_messages = 100
     batch_messages = 1000
     messages = [
