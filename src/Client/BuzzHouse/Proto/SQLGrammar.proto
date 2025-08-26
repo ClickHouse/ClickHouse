@@ -2438,10 +2438,11 @@ enum JoinConst {
 
 message JoinCore {
     optional bool global = 1;
-    optional JoinType join_op = 2;
+    optional bool const_on_right = 2;
     optional JoinConst join_const = 3;
-    required TableOrSubquery tos = 4;
-    required JoinConstraint join_constraint = 5;
+    optional JoinType join_op = 4;
+    required TableOrSubquery tos = 5;
+    required JoinConstraint join_constraint = 6;
 }
 
 message ArrayJoin {

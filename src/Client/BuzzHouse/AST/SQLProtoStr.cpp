@@ -1753,17 +1753,23 @@ CONV_FN(JoinConstraint, jc)
 CONV_FN(JoinCore, jcc)
 {
     const bool has_cross_or_paste = jcc.join_op() > JoinType::J_FULL;
+    const bool has_join_const = !has_cross_or_paste && jcc.has_join_const();
 
     if (jcc.global())
     {
         ret += " GLOBAL";
     }
-    if (jcc.join_op() != JoinType::J_INNER || !jcc.has_join_const() || jcc.join_const() < JoinConst::J_SEMI)
+    if (has_join_const && !jcc.const_on_right())
+    {
+        ret += " ";
+        ret += JoinConst_Name(jcc.join_const()).substr(2);
+    }
+    if (jcc.has_join_op())
     {
         ret += " ";
         ret += JoinType_Name(jcc.join_op()).substr(2);
     }
-    if (!has_cross_or_paste && jcc.has_join_const())
+    if (has_join_const && jcc.const_on_right())
     {
         ret += " ";
         ret += JoinConst_Name(jcc.join_const()).substr(2);

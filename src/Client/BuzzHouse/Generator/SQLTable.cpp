@@ -1071,21 +1071,24 @@ void StatementGenerator::generateEngineDetails(
     else if (te->has_engine() && b.isJoinEngine())
     {
         const size_t ncols = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(3))) + 1;
-        JoinType jt = static_cast<JoinType>((rg.nextRandomUInt32() % static_cast<uint32_t>(J_FULL)) + 1);
+        std::uniform_int_distribution<uint32_t> join_type_range(1, static_cast<uint32_t>(J_FULL));
+        const JoinType jt = static_cast<JoinType>(join_type_range(rg.generator));
         TableEngineParam * tep = te->add_params();
 
         switch (jt)
         {
             case JoinType::J_LEFT:
+            case JoinType::J_INNER: {
+                std::uniform_int_distribution<uint32_t> join_constr_range(1, static_cast<uint32_t>(JoinConst_MAX));
+                tep->set_join_const(static_cast<JoinConst>(join_constr_range(rg.generator)));
+            }
+            break;
             case JoinType::J_RIGHT:
-                tep->set_join_const(static_cast<JoinConst>((rg.nextRandomUInt32() % static_cast<uint32_t>(JoinConst::J_ANTI)) + 1));
-                break;
-            case JoinType::J_INNER:
-                tep->set_join_const(static_cast<JoinConst>((rg.nextRandomUInt32() % static_cast<uint32_t>(JoinConst::J_ALL)) + 1));
-                break;
-            case JoinType::J_FULL:
-                tep->set_join_const(JoinConst::J_ALL);
-                break;
+            case JoinType::J_FULL: {
+                std::uniform_int_distribution<uint32_t> join_constr_range(1, static_cast<uint32_t>(JoinConst::J_ANTI));
+                tep->set_join_const(static_cast<JoinConst>(join_constr_range(rg.generator)));
+            }
+            break;
             default:
                 chassert(0);
                 break;
