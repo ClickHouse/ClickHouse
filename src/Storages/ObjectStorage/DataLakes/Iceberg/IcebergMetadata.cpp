@@ -142,7 +142,7 @@ IcebergMetadata::IcebergMetadata(
     const auto [metadata_version, metadata_file_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration.lock(), cache_ptr, context_, log.get());
     auto [_data_snapshot, table_state_snapshot] = getState(context_, metadata_file_path, metadata_version);
-    last_table_state_snapshot = table_state_snapshot;
+    relevant_table_state_snapshot = table_state_snapshot;
 }
 
 Int32 IcebergMetadata::parseTableSchema(

@@ -143,7 +143,7 @@ private:
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::IcebergTableStateSnapshot>
     getState(const ContextPtr & local_context, String metadata_path, Int32 metadata_version) const;
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const TSA_REQUIRES_SHARED(mutex);
-    void updateImpl(const ContextPtr & local_context) TSA_REQUIRES(mutex);
+    bool updateImpl(const ContextPtr & local_context) TSA_REQUIRES(mutex);
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::IcebergTableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
 };
