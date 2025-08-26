@@ -78,6 +78,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Inserts numeric data right into internal column data to reduce an overhead
