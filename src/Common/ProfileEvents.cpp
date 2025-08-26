@@ -561,12 +561,16 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3ReadRequestsErrors, "Number of non-throttling errors in GET and HEAD requests to DiskS3 storage.", ValueType::Number) \
     M(DiskS3ReadRequestsThrottling, "Number of 429 and 503 errors in GET and HEAD requests to DiskS3 storage.", ValueType::Number) \
     M(DiskS3ReadRequestsRedirects, "Number of redirects in GET and HEAD requests to DiskS3 storage.", ValueType::Number) \
+    M(DiskS3ReadRequestAttempts, "Number of attempts for GET and HEAD requests to DiskS3 storage, including the initial try and any retries, but excluding retries performed internally by the S3 retry strategy", ValueType::Number) \
+    M(DiskS3ReadRequestRetryableErrors, "Number of retryable errors for GET and HEAD requests to DiskS3 storage, excluding retries performed internally by the S3 retry strategy", ValueType::Number) \
     \
     M(DiskS3WriteMicroseconds, "Time of POST, DELETE, PUT and PATCH requests to DiskS3 storage.", ValueType::Microseconds) \
     M(DiskS3WriteRequestsCount, "Number of POST, DELETE, PUT and PATCH requests to DiskS3 storage.", ValueType::Number) \
     M(DiskS3WriteRequestsErrors, "Number of non-throttling errors in POST, DELETE, PUT and PATCH requests to DiskS3 storage.", ValueType::Number) \
     M(DiskS3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to DiskS3 storage.", ValueType::Number) \
     M(DiskS3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to DiskS3 storage.", ValueType::Number) \
+    M(DiskS3WriteRequestAttempts, "Number of attempts for POST, DELETE, PUT and PATCH requests to DiskS3 storage, including the initial try and any retries, but excluding retries performed internally by the retry strategy", ValueType::Number) \
+    M(DiskS3WriteRequestRetryableErrors, "Number of retryable errors for POST, DELETE, PUT and PATCH requests to DiskS3 storage, excluding retries performed internally by the retry strategy", ValueType::Number) \
     \
     M(S3DeleteObjects, "Number of S3 API DeleteObject(s) calls.", ValueType::Number) \
     M(S3CopyObject, "Number of S3 API CopyObject calls.", ValueType::Number) \

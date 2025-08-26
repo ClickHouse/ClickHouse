@@ -117,10 +117,10 @@ void executeSearchAny(
     std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        const auto value = col_input.getDataAt(i);
+        const std::string_view value = col_input.getDataAt(i).toView();
         col_result[i] = false;
 
-        tokens = token_extractor->getTokensView(value.data, value.size);
+        tokens = token_extractor->getTokensView(value.data(), value.size());
         for (const auto & token : tokens)
         {
             if (needles.contains(token))
