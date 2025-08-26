@@ -10,6 +10,7 @@ template <class> class ColumnVector;
 using ColumnUInt64 = ColumnVector<UInt64>;
 
 using IColumnFilter = PaddedPODArray<UInt8>;
+void convertAnyColumnToBool(const IColumn * column, IColumnFilter & res, int error_code);
 
 /// Support methods for implementation of WHERE, PREWHERE and HAVING.
 

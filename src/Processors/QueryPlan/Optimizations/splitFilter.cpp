@@ -24,7 +24,7 @@ size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
         auto * new_node = makeExpressionNodeOnTopOf(node->children.at(0), std::move(*fitler_dag), filter_coumn_name, nodes);
         node->children.at(0) = new_node;
         new_node->step->setStepDescription("Join filter");
-        num_new_nodes++;
+        num_new_nodes = std::max<size_t>(num_new_nodes, 2);
     }
 
     if (auto fitler_dag = join_step->getFilterActions(JoinTableSide::Right, filter_coumn_name))
@@ -32,7 +32,7 @@ size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
         auto * new_node = makeExpressionNodeOnTopOf(node->children.at(1), std::move(*fitler_dag), filter_coumn_name, nodes);
         node->children.at(1) = new_node;
         new_node->step->setStepDescription("Join filter");
-        num_new_nodes++;
+        num_new_nodes = std::max<size_t>(num_new_nodes, 2);
     }
     return num_new_nodes;
 }
