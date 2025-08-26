@@ -45,7 +45,8 @@ const constexpr uint64_t allow_bool = (UINT64_C(1) << 0), allow_unsigned_int = (
                          allow_tuple = (UINT64_C(1) << 20), allow_variant = (UINT64_C(1) << 21), allow_nested = (UINT64_C(1) << 22),
                          allow_ipv4 = (UINT64_C(1) << 23), allow_ipv6 = (UINT64_C(1) << 24), allow_geo = (UINT64_C(1) << 25),
                          set_any_datetime_precision = (UINT64_C(1) << 26), set_no_decimal_limit = (UINT64_C(1) << 27),
-                         allow_fixed_strings = (UINT64_C(1) << 28), allow_time = (UINT64_C(1) << 29), allow_time64 = (UINT64_C(1) << 30);
+                         allow_fixed_strings = (UINT64_C(1) << 28), allow_time = (UINT64_C(1) << 29), allow_time64 = (UINT64_C(1) << 30),
+                         allow_int16 = (UINT64_C(1) << 31);
 
 const constexpr uint64_t allow_replacing_mergetree = (UINT64_C(1) << 0), allow_coalescing_mergetree = (UINT64_C(1) << 1),
                          allow_summing_mergetree = (UINT64_C(1) << 2), allow_aggregating_mergetree = (UINT64_C(1) << 3),
@@ -63,17 +64,56 @@ const constexpr uint64_t allow_replacing_mergetree = (UINT64_C(1) << 0), allow_c
                          allow_generaterandom = (UINT64_C(1) << 33), allow_AzureBlobStorage = (UINT64_C(1) << 34),
                          allow_AzureQueue = (UINT64_C(1) << 35), allow_URL = (UINT64_C(1) << 36), allow_keepermap = (UINT64_C(1) << 37),
                          allow_external_distributed = (UINT64_C(1) << 38), allow_materialized_postgresql = (UINT64_C(1) << 39),
-                         allow_replicated = (UINT64_C(1) << 40), allow_shared = (UINT64_C(1) << 41);
+                         allow_replicated = (UINT64_C(1) << 40), allow_shared = (UINT64_C(1) << 41),
+                         allow_datalakecatalog = (UINT64_C(1) << 42), allow_arrowflight = (UINT64_C(1) << 43);
+
+extern const DB::Strings compressionMethods;
 
 using JSONObjectType = JSONParserImpl::Element;
+
+class Catalog
+{
+public:
+    String client_hostname, server_hostname, endpoint, region;
+    uint32_t port;
+
+    Catalog()
+        : client_hostname("localhost")
+        , server_hostname("localhost")
+        , endpoint("test")
+        , region()
+        , port(0)
+    {
+    }
+
+    Catalog(
+        const String & client_hostname_,
+        const String & server_hostname_,
+        const String & endpoint_,
+        const String & region_,
+        const uint32_t port_)
+        : client_hostname(client_hostname_)
+        , server_hostname(server_hostname_)
+        , endpoint(endpoint_)
+        , region(region_)
+        , port(port_)
+    {
+    }
+
+    Catalog(const Catalog & c) = default;
+    Catalog(Catalog && c) = default;
+    Catalog & operator=(const Catalog & c) = default;
+    Catalog & operator=(Catalog && c) noexcept = default;
+};
 
 class ServerCredentials
 {
 public:
     String client_hostname, server_hostname, container;
     uint32_t port, mysql_port;
-    String unix_socket, user, password, database;
+    String unix_socket, user, password, database, named_collection;
     std::filesystem::path user_files_dir, query_log_file;
+    std::optional<Catalog> glue_catalog, hive_catalog, rest_catalog;
 
     ServerCredentials()
         : client_hostname("localhost")
@@ -94,8 +134,12 @@ public:
         const String & user_,
         const String & password_,
         const String & database_,
+        const String & named_collection_,
         const std::filesystem::path & user_files_dir_,
-        const std::filesystem::path & query_log_file_)
+        const std::filesystem::path & query_log_file_,
+        const std::optional<Catalog> glue_catalog_,
+        const std::optional<Catalog> hive_catalog_,
+        const std::optional<Catalog> rest_catalog_)
         : client_hostname(client_hostname_)
         , server_hostname(server_hostname_)
         , container(container_)
@@ -105,8 +149,12 @@ public:
         , user(user_)
         , password(password_)
         , database(database_)
+        , named_collection(named_collection_)
         , user_files_dir(user_files_dir_)
         , query_log_file(query_log_file_)
+        , glue_catalog(glue_catalog_)
+        , hive_catalog(hive_catalog_)
+        , rest_catalog(rest_catalog_)
     {
     }
 
@@ -161,7 +209,8 @@ private:
 public:
     LoggerPtr log;
     std::ofstream outf;
-    DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters, caches;
+    DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters, caches, remote_servers, remote_secure_servers,
+        http_servers, https_servers, arrow_flight_servers, hot_settings, disallowed_settings;
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
         minio_server, http_server, azurite_server;
     std::unordered_map<String, PerformanceMetric> metrics;
@@ -169,7 +218,7 @@ public:
     String host = "localhost", keeper_map_path_prefix;
     bool read_log = false, fuzz_floating_points = true, test_with_fill = true, compare_success_results = false, measure_performance = false,
          allow_infinite_tables = false, compare_explains = false, allow_memory_tables = true, allow_client_restarts = false,
-         enable_fault_injection_settings = false, enable_force_settings = false, disable_new_analyzer = false;
+         enable_fault_injection_settings = false, enable_force_settings = false, allow_hardcoded_inserts = true;
     uint64_t seed = 0, min_insert_rows = 1, max_insert_rows = 1000, min_nested_rows = 0, max_nested_rows = 10, flush_log_wait_time = 1000,
              type_mask = std::numeric_limits<uint64_t>::max(), engine_mask = std::numeric_limits<uint64_t>::max();
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
@@ -192,7 +241,8 @@ public:
     bool processServerQuery(bool outlog, const String & query);
 
 private:
-    void loadServerSettings(DB::Strings & out, const String & desc, const String & query);
+    template <typename T>
+    void loadServerSettings(std::vector<T> & out, const String & desc, const String & query);
 
 public:
     void loadServerConfigurations();

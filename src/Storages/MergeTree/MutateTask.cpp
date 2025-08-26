@@ -109,6 +109,13 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
             if (column && column->type->hasDynamicSubcolumns())
                 return true;
         }
+
+        for (const auto & [column_name, _] : command.column_to_update_expression)
+        {
+            auto column = data_part->tryGetColumn(column_name);
+            if (column && column->type->hasDynamicSubcolumns())
+                return true;
+        }
     }
 
     return false;
@@ -791,7 +798,7 @@ static NameSet collectFilesToSkip(
         {
             auto index_filename = index->getFileName();
             files_to_skip.insert(index_filename + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE);
-            files_to_skip.insert(index_filename + GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE);
+            files_to_skip.insert(index_filename + GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE);
             files_to_skip.insert(index_filename + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE);
             files_to_skip.insert(index_filename + GinIndexStore::GIN_DICTIONARY_FILE_TYPE);
             files_to_skip.insert(index_filename + GinIndexStore::GIN_POSTINGS_FILE_TYPE);
@@ -875,7 +882,7 @@ static NameToNameVector collectFilesForRenames(
             static const std::array<String, 2> suffixes = {".idx2", ".idx"};
             static const std::array<String, 5> gin_suffixes = {
                 GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE,
-                GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE,
+                GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE,
                 GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE,
                 GinIndexStore::GIN_DICTIONARY_FILE_TYPE,
                 GinIndexStore::GIN_POSTINGS_FILE_TYPE,

@@ -70,7 +70,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const size_t next_offset = (*offsets)[i];
-                const size_t string_size = next_offset - current_offset - 1;
+                const size_t string_size = next_offset - current_offset;
 
                 ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
 
@@ -124,7 +124,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const size_t next_offset = (*offsets)[i];
-                const size_t string_size = next_offset - current_offset - 1;
+                const size_t string_size = next_offset - current_offset;
 
                 ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
 

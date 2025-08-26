@@ -737,7 +737,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.region,
                 configuration.remote_host_filter,
                 configuration.s3_max_redirects,
-                configuration.s3_retry_attempts,
+                configuration.retry_strategy,
                 configuration.s3_slow_all_threads_after_network_error,
                 configuration.s3_slow_all_threads_after_retryable_error,
                 configuration.enable_s3_requests_logging,
@@ -754,7 +754,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.region,
                 configuration.remote_host_filter,
                 configuration.s3_max_redirects,
-                configuration.s3_retry_attempts,
+                configuration.retry_strategy,
                 configuration.s3_slow_all_threads_after_network_error,
                 configuration.s3_slow_all_threads_after_retryable_error,
                 configuration.enable_s3_requests_logging,
@@ -806,7 +806,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.region,
                 configuration.remote_host_filter,
                 configuration.s3_max_redirects,
-                configuration.s3_retry_attempts,
+                configuration.retry_strategy,
                 configuration.s3_slow_all_threads_after_network_error,
                 configuration.s3_slow_all_threads_after_retryable_error,
                 configuration.enable_s3_requests_logging,
@@ -843,7 +843,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         }
     }
 
-    /// Quite verbose provider (argues if file with credentials doesn't exist) so iut's the last one
+    /// Quite verbose provider (argues if file with credentials doesn't exist) so it's the last one
     /// in chain.
     AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
 }
