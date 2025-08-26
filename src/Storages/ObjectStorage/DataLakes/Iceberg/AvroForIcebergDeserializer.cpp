@@ -1,5 +1,8 @@
 #include <memory>
+#include <sstream>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
 #include "Core/ColumnWithTypeAndName.h"
 #include "IO/WriteBufferFromString.h"
 
@@ -90,12 +93,29 @@ std::optional<std::string> AvroForIcebergDeserializer::tryGetAvroMetadataValue(s
 String AvroForIcebergDeserializer::getContent() const
 {
     WriteBufferFromOwnString buf;
+    FormatSettings settings;
+    settings.write_statistics = false;
     ColumnsWithTypeAndName columns({ColumnWithTypeAndName(parsed_column, parsed_column_data_type, "")});
-    JSONRowOutputFormat output_format = JSONRowOutputFormat(buf, std::make_shared<const Block>(columns), {}, true);
+    JSONRowOutputFormat output_format = JSONRowOutputFormat(buf, std::make_shared<const Block>(columns), settings, true);
     for (size_t i = 0; i < parsed_column->size(); ++i)
         output_format.writeRow({parsed_column}, i);
     output_format.finalize();
     return buf.str();
+}
+
+String AvroForIcebergDeserializer::getMetadataContent() const
+{
+    Poco::JSON::Array::Ptr metadata_arr = new Poco::JSON::Array;
+    for (const auto & [key, value] : metadata)
+    {
+        Poco::JSON::Object::Ptr new_metadata_field = new Poco::JSON::Object;
+        new_metadata_field->set("key", key);
+        new_metadata_field->set("value", String(value.begin(), value.end()));
+        metadata_arr->add(new_metadata_field);
+    }
+    std::ostringstream oss;
+    metadata_arr->stringify(oss);
+    return oss.str();
 }
 
 }

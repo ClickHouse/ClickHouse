@@ -36,7 +36,6 @@ ColumnsDescription StorageSystemIcebergMetadata::getColumnsDescription()
     return ColumnsDescription
     {
         {"event_time",std::make_shared<DataTypeDateTime>(),"Event time."},
-        {"query_id",std::make_shared<DataTypeString>(),"Query id"},
         {"path",std::make_shared<DataTypeString>(),"Path of table."},
         {"file_name",std::make_shared<DataTypeString>(),"Name of file."},
         {"content",std::make_shared<DataTypeString>(),"Content of metadata."}
@@ -62,7 +61,6 @@ void StorageSystemIcebergMetadata::fillData([[maybe_unused]] MutableColumns & re
                 {
                     size_t column_index = 0;
                     res_columns[column_index++]->insert(iceberg_metadata_item.current_time);
-                    res_columns[column_index++]->insert(iceberg_metadata_item.query_id);
                     res_columns[column_index++]->insert(iceberg_metadata_item.path);
                     res_columns[column_index++]->insert(iceberg_metadata_item.filename);
                     res_columns[column_index++]->insert(iceberg_metadata_item.metadata_content);

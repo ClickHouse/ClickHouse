@@ -147,7 +147,8 @@ private:
 
     ColumnMapperPtr column_mapper;
     mutable Iceberg::IcebergMetadataLog metadata_logs;
-    std::unordered_set<String> logged_files;
+    mutable std::unordered_set<UInt64> logged_files_with_hash_content;
+    std::hash<String> content_hasher;
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, const String & path) TSA_REQUIRES(mutex);
     void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);

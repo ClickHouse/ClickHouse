@@ -94,7 +94,8 @@ Iceberg::ManifestFilePtr getManifestFile(
             persistent_table_components.table_location,
             local_context,
             filename,
-            manifest_file_deserializer.getContent());
+            manifest_file_deserializer.getContent(),
+            manifest_file_deserializer.getMetadataContent());
     };
 
     if (persistent_table_components.metadata_cache)

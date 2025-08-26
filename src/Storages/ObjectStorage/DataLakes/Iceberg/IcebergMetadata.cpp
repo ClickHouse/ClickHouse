@@ -95,6 +95,8 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_experimental_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
+extern const SettingsUInt64 iceberg_metadata_log_level;
+
 }
 
 
@@ -315,12 +317,13 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
 
             for (const auto & manifest_list_entry : parsed_manifest_list)
             {
-                if (!logged_files.contains(manifest_list_path))
+                UInt64 content_hash = content_hasher(manifest_list_entry.file_content);
+                if (!logged_files_with_hash_content.contains(content_hash) && static_cast<UInt64>(IcebergMetadataLogLevel::Snapshot) <= local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value)
                 {
-                    logged_files.insert(manifest_list_path);
+                    logged_files_with_hash_content.insert(content_hash);
                     metadata_logs.push_back(Iceberg::IcebergMetadataContentLog{
                         .current_time = spec.tv_sec,
-                        .query_id = local_context->getCurrentQueryId(),
+                        .content_type = IcebergMetadataLogLevel::Snapshot,
                         .path = configuration_ptr->getPathForRead().path,
                         .filename = manifest_list_path,
                         .metadata_content = manifest_list_entry.file_content
@@ -388,12 +391,13 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::
     if (clock_gettime(CLOCK_REALTIME, &spec))
         throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
 
-    if (!logged_files.contains(path))
+    auto content_hash = content_hasher(oss.str());
+    if (!logged_files_with_hash_content.contains(content_hash) && static_cast<UInt64>(IcebergMetadataLogLevel::Metadata) <= local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value)
     {
-        logged_files.insert(path);
+        logged_files_with_hash_content.insert(content_hash);
         metadata_logs.push_back(Iceberg::IcebergMetadataContentLog{
             .current_time = spec.tv_sec,
-            .query_id = local_context->getCurrentQueryId(),
+            .content_type = IcebergMetadataLogLevel::Metadata,
             .path = configuration_ptr->getPathForRead().path,
             .filename = path,
             .metadata_content = oss.str()
@@ -817,7 +821,8 @@ ObjectIterator IcebergMetadata::iterate(
         table_snapshot,
         relevant_snapshot,
         persistent_components,
-        metadata_logs);
+        metadata_logs,
+        logged_files_with_hash_content);
 }
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const

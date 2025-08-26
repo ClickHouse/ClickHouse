@@ -76,6 +76,7 @@ struct ManifestFileEntry
     std::optional<String> reference_data_file_path; // For position delete files only.
     String content;
     String path_to_manifest_file;
+    String metadata_content;
 };
 
 /**
@@ -118,7 +119,8 @@ public:
         const std::string & table_location,
         DB::ContextPtr context,
         const String & path_to_manifest_file_,
-        const String & content_);
+        const String & content_,
+        const String & metadata_content_);
 
     const std::vector<ManifestFileEntry> & getFilesWithoutDeleted(FileContentType content_type) const;
 

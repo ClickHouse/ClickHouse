@@ -1,5 +1,6 @@
 #pragma once
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
+#include "base/types.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -89,7 +90,8 @@ public:
         Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
         Iceberg::IcebergDataSnapshotPtr data_snapshot_,
         Iceberg::PersistentTableComponents persistent_components,
-        Iceberg::IcebergMetadataLog & metadata_logs_);
+        Iceberg::IcebergMetadataLog & metadata_logs_,
+        std::unordered_set<UInt64> & logged_files_with_hash_content_);
 
     ObjectInfoPtr next(size_t) override;
 
@@ -108,8 +110,11 @@ private:
     const String compression_method;
     const std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
     Iceberg::IcebergMetadataLog & metadata_logs;
-    String query_id;
+    std::unordered_set<UInt64> & logged_files_with_hash_content;
     String table_directory;
+    UInt64 log_level;
+
+    std::hash<String> content_hasher;
 };
 }
 

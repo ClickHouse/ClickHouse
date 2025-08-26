@@ -66,6 +66,7 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool use_iceberg_partition_pruning;
+extern const SettingsUInt64 iceberg_metadata_log_level;
 };
 
 
@@ -233,7 +234,8 @@ IcebergIterator::IcebergIterator(
     Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
     PersistentTableComponents persistent_components_,
-    Iceberg::IcebergMetadataLog & metadata_logs_)
+    Iceberg::IcebergMetadataLog & metadata_logs_,
+    std::unordered_set<UInt64> & logged_files_with_hash_content_)
     : filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , object_storage(std::move(object_storage_))
     , data_files_iterator(
@@ -293,8 +295,9 @@ IcebergIterator::IcebergIterator(
               return position_deletes_files_tmp;
           }())
     , metadata_logs(metadata_logs_)
-    , query_id(local_context_->getCurrentQueryId())
+    , logged_files_with_hash_content(logged_files_with_hash_content_)
     , table_directory(configuration_.lock()->getRawPath().path)
+    , log_level(local_context_->getSettingsRef()[Setting::iceberg_metadata_log_level])
 {
 }
 
@@ -307,13 +310,31 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         if (clock_gettime(CLOCK_REALTIME, &spec))
             throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
 
-        metadata_logs.push_back(Iceberg::IcebergMetadataContentLog{
-            .current_time = spec.tv_sec,
-            .query_id = query_id,
-            .path = table_directory,
-            .filename = manifest_file_entry.path_to_manifest_file,
-            .metadata_content = manifest_file_entry.content
-        });
+        auto content_hash = content_hasher(manifest_file_entry.content);
+        if (static_cast<UInt64>(IcebergMetadataLogLevel::ManifestEntry) <= log_level && !logged_files_with_hash_content.contains(content_hash))
+        {
+            logged_files_with_hash_content.insert(content_hash);
+            metadata_logs.push_back(Iceberg::IcebergMetadataContentLog{
+                .current_time = spec.tv_sec,
+                .content_type = IcebergMetadataLogLevel::ManifestEntry,
+                .path = table_directory,
+                .filename = manifest_file_entry.path_to_manifest_file,
+                .metadata_content = manifest_file_entry.content
+            });
+        }
+
+        auto metadata_content_hash = content_hasher(manifest_file_entry.metadata_content);
+        if (static_cast<UInt64>(IcebergMetadataLogLevel::ManifestEntryMetadata) <= log_level && !logged_files_with_hash_content.contains(metadata_content_hash))
+        {
+            logged_files_with_hash_content.insert(metadata_content_hash);
+            metadata_logs.push_back(Iceberg::IcebergMetadataContentLog{
+                .current_time = spec.tv_sec,
+                .content_type = IcebergMetadataLogLevel::ManifestEntryMetadata,
+                .path = table_directory,
+                .filename = manifest_file_entry.path_to_manifest_file,
+                .metadata_content = manifest_file_entry.metadata_content
+            });
+        }
 
         IcebergDataObjectInfoPtr object_info = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry);
         for (const auto & position_delete : definePositionDeletesSpan(manifest_file_entry, position_deletes_files))

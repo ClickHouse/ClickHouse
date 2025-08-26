@@ -11,12 +11,10 @@ class Context;
 
 /** Implements a table engine for Iceberg tables. It gives information about the various snapshots of Iceberg tables created in ClickHouse.
  *
- * db_name String
- * table_name String
- * made_current_at DateTime64,
- * snapshot_id UInt64,
- * parent_id UInt64,
- * is_current_ancestor Bool
+event_time DateTime
+path String
+file_name String
+content String
  *
  */
 

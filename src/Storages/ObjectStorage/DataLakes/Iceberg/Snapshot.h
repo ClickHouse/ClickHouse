@@ -53,10 +53,19 @@ struct IcebergHistoryRecord
     Int32 num_partitions;
 };
 
+enum class IcebergMetadataLogLevel : UInt64
+{
+    None = 0,
+    Metadata = 1,
+    Snapshot = 2,
+    ManifestEntry = 3,
+    ManifestEntryMetadata = 4,
+};
+
 struct IcebergMetadataContentLog
 {
     std::time_t current_time;
-    String query_id;
+    IcebergMetadataLogLevel content_type;
     String path;
     String filename;
     String metadata_content;
