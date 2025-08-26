@@ -1,8 +1,22 @@
 import re
+import sys
+import os
 from pathlib import Path
 
 from praktika.info import Info
 from praktika.utils import Shell
+
+# NOTE(vnemkov): extrimely hackinsj, buts allows to reuse code from version_helper and git_helper with our modifications.
+
+# allow to import other packages that are located in `tests/ci` directory, like `git_helper`
+import tests.ci
+sys.path.append(os.path.abspath(tests.ci.__path__._path[0]))
+from tests.ci.version_helper import (
+    read_versions,
+    get_version_from_repo
+)
+
+from tests.ci.git_helper import Git
 
 
 class CHVersion:
@@ -23,66 +37,12 @@ SET(VERSION_STRING {string})
 
     @classmethod
     def get_release_version_as_dict(cls):
-        versions = {}
-        for line in (
-            Path(cls.FILE_WITH_VERSION_PATH).read_text(encoding="utf-8").splitlines()
-        ):
-            line = line.strip()
-            if not line.startswith("SET("):
-                continue
-
-            name, value = line[4:-1].split(maxsplit=1)
-            name = name.removeprefix("VERSION_").lower()
-            if name in ("major", "minor", "patch", "tweak"):
-                value = int(value)
-            versions[name] = value
-
-        if versions.get("flavour"):
-            versions["string"] = f"{versions['string']}.{versions['flavour']}"
-
-        result = {
-            "major": versions["major"],
-            "minor": versions["minor"],
-            "patch": versions["patch"],
-            "revision": versions["revision"],
-            "githash": versions["githash"],
-            "describe": versions["describe"],
-            "string": versions["string"],
-            "tweak": versions["tweak"],
-            "flavour": versions.get("flavour", ""),
-        }
-        return result
+        return read_versions()
 
     @classmethod
     def get_current_version_as_dict(cls):
-        version = cls.get_release_version_as_dict()
-        info = Info()
-        try:
-            tweak = int(
-                Shell.get_output(
-                    f"git rev-list --count {version['githash']}..HEAD", verbose=True
-                )
-            )
-        except ValueError:
-            # Shallow checkout
-            tweak = 1
-        version_type = "testing"
-        if info.pr_number == 0 and bool(
-            re.match(r"^\d{2}\.\d+$", info.git_branch.removeprefix("release/"))
-        ):
-            if version["minor"] % 5 == 3:
-                version_type = "lts"
-            else:
-                version_type = "stable"
-        version_string = (
-            f'{version["major"]}.{version["minor"]}.{version["patch"]}.{tweak}'
-        )
-        version_description = f"v{version_string}-{version_type}"
-        version["githash"] = info.sha
-        version["tweak"] = tweak
-        version["describe"] = version_description
-        version["string"] = version_string
-        return version
+        git = Git()
+        return get_version_from_repo(CHVersion.FILE_WITH_VERSION_PATH, Git()).as_dict()
 
     @classmethod
     def get_version(cls):
@@ -102,3 +62,11 @@ SET(VERSION_STRING {string})
     @classmethod
     def store_version_data_in_ci_pipeline(cls):
         Info().store_custom_data("version", cls.get_current_version_as_dict())
+        git = Git()
+        Info().store_custom_data("debug_version", {
+            "commits_since_latest": git.commits_since_latest,
+            "commits_since_new": git.commits_since_new,
+            "commits_since_upstream": git.commits_since_upstream,
+            "latest_tag" : git.latest_tag,
+            "new_tag": git.new_tag,
+        })
