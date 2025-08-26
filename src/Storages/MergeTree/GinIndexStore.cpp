@@ -48,8 +48,48 @@ const CompressionCodecPtr & GinCompressionFactory::zstdCodec()
     return codec;
 }
 
+UInt64 GinPostingsList::serialize(WriteBuffer & buffer)
+{
+    rowids.runOptimize();
+
+    UInt64 written_bytes = 0;
 #if USE_FASTPFOR
-UInt64 GinIndexPostingListDeltaPforSerialization::serialize(WriteBuffer & buffer, const GinPostingsList & rowids)
+    auto ch = static_cast<char>(Serialization::DELTA_PFOR);
+    writeChar(ch, buffer);
+    written_bytes += 1;
+
+    written_bytes += GinRoaringDeltaPforSerialization::serialize(buffer, rowids);
+#else
+    auto ch = static_cast<char>(Serialization::ROARING_ZSTD);
+    writeChar(ch, buffer);
+    written_bytes += 1;
+
+    written_bytes += GinRoaringZstdSerialization::serialize(buffer, rowids);
+#endif
+    return written_bytes;
+}
+
+GinPostingsListPtr GinPostingsList::deserialize(ReadBuffer & buffer)
+{
+    UInt8 serialization = 0;
+    readBinary(serialization, buffer);
+
+    if (serialization == static_cast<std::underlying_type_t<Serialization>>(Serialization::DELTA_PFOR))
+    {
+#if USE_FASTPFOR
+        return GinRoaringDeltaPforSerialization::deserialize(buffer);
+#else
+        throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Text index: Posting list is compressed by Delta and FastPfor, but library is disabled.");
+#endif
+    }
+
+    return GinRoaringZstdSerialization::deserialize(buffer);
+}
+
+#if USE_FASTPFOR
+UInt64 GinRoaringDeltaPforSerialization::serialize(WriteBuffer & buffer, const roaring::Roaring & rowids)
 {
     std::vector<UInt32> deltas = encodeDeltaScalar(rowids);
 
@@ -81,7 +121,7 @@ UInt64 GinIndexPostingListDeltaPforSerialization::serialize(WriteBuffer & buffer
     return written_bytes;
 }
 
-GinPostingsListPtr GinIndexPostingListDeltaPforSerialization::deserialize(ReadBuffer & buffer)
+GinPostingsListPtr GinRoaringDeltaPforSerialization::deserialize(ReadBuffer & buffer)
 {
     size_t num_deltas = 0;
     size_t compressed_size = 0;
@@ -103,18 +143,18 @@ GinPostingsListPtr GinIndexPostingListDeltaPforSerialization::deserialize(ReadBu
 
     decodeDeltaScalar(deltas);
 
-    GinPostingsListPtr postings_list = std::make_shared<GinPostingsList>();
-    postings_list->addMany(deltas.size(), deltas.data());
+    auto postings_list = std::make_shared<GinPostingsList>();
+    postings_list->rowids.addMany(deltas.size(), deltas.data());
     return postings_list;
 }
 
-std::shared_ptr<FastPForLib::IntegerCODEC> GinIndexPostingListDeltaPforSerialization::codec()
+std::shared_ptr<FastPForLib::IntegerCODEC> GinRoaringDeltaPforSerialization::codec()
 {
     static thread_local std::shared_ptr<FastPForLib::IntegerCODEC> codec = FastPForLib::simdfastpfor128_codec();
     return codec;
 }
 
-std::vector<UInt32> GinIndexPostingListDeltaPforSerialization::encodeDeltaScalar(const GinPostingsList & rowids)
+std::vector<UInt32> GinRoaringDeltaPforSerialization::encodeDeltaScalar(const roaring::Roaring & rowids)
 {
     const UInt64 num_rowids = rowids.cardinality();
     std::vector<UInt32> deltas(num_rowids);
@@ -128,14 +168,14 @@ std::vector<UInt32> GinIndexPostingListDeltaPforSerialization::encodeDeltaScalar
     return deltas;
 }
 
-void GinIndexPostingListDeltaPforSerialization::decodeDeltaScalar(std::vector<UInt32> & deltas)
+void GinRoaringDeltaPforSerialization::decodeDeltaScalar(std::vector<UInt32> & deltas)
 {
     for (size_t i = 1; i < deltas.size(); ++i)
         deltas[i] += deltas[i - 1];
 }
 #endif
 
-UInt64 GinIndexPostingListRoaringZstdSerialization::serialize(WriteBuffer & buffer, const GinPostingsList & rowids)
+UInt64 GinRoaringZstdSerialization::serialize(WriteBuffer & buffer, const roaring::Roaring & rowids)
 {
     const UInt64 num_rowids = rowids.cardinality();
 
@@ -205,7 +245,7 @@ UInt64 GinIndexPostingListRoaringZstdSerialization::serialize(WriteBuffer & buff
     }
 }
 
-GinPostingsListPtr GinIndexPostingListRoaringZstdSerialization::deserialize(ReadBuffer & buffer)
+GinPostingsListPtr GinRoaringZstdSerialization::deserialize(ReadBuffer & buffer)
 {
     /// Header value maps into following states:
     /// The lowest bit indicates if values are stored as an array or Roaring bitmap
@@ -221,8 +261,8 @@ GinPostingsListPtr GinIndexPostingListRoaringZstdSerialization::deserialize(Read
         for (size_t i = 0; i < num_entries; ++i)
             readVarUInt(values[i], buffer);
 
-        GinPostingsListPtr postings_list = std::make_shared<GinPostingsList>();
-        postings_list->addMany(values.size(), values.data());
+        auto postings_list = std::make_shared<GinPostingsList>();
+        postings_list->rowids.addMany(values.size(), values.data());
         return postings_list;
     }
     else /// Roaring
@@ -243,66 +283,18 @@ GinPostingsListPtr GinIndexPostingListRoaringZstdSerialization::deserialize(Read
             const auto & codec = GinCompressionFactory::zstdCodec();
             codec->decompress(buf.data(), static_cast<UInt32>(compressed_size), memory.data());
 
-            return std::make_shared<GinPostingsList>(GinPostingsList::read(memory.data()));
+            /// return std::make_shared<GinPostingsList>(GinPostingsList::read(memory.data()));
+            return nullptr;
         }
         else
         {
             /// Deserialize uncompressed roaring bitmap
             std::vector<char> buf(uncompressed_size);
             buffer.readStrict(buf.data(), uncompressed_size);
-            return std::make_shared<GinPostingsList>(GinPostingsList::read(buf.data()));
+            /// return std::make_shared<GinPostingsList>(GinPostingsList::read(buf.data()));
+            return nullptr;
         }
     }
-}
-
-bool GinPostingsListBuilder::contains(UInt32 row_id) const
-{
-    return rowids.contains(row_id);
-}
-
-void GinPostingsListBuilder::add(UInt32 row_id)
-{
-    rowids.add(row_id);
-}
-
-UInt64 GinPostingsListBuilder::serialize(WriteBuffer & buffer)
-{
-    rowids.runOptimize();
-
-    UInt64 written_bytes = 0;
-#if USE_FASTPFOR
-    auto ch = static_cast<char>(Serialization::DELTA_PFOR);
-    writeChar(ch, buffer);
-    written_bytes += 1;
-
-    written_bytes += GinIndexPostingListDeltaPforSerialization::serialize(buffer, rowids);
-#else
-    auto ch = static_cast<char>(Serialization::ROARING_ZSTD);
-    writeChar(ch, buffer);
-    written_bytes += 1;
-
-    written_bytes += GinIndexPostingListRoaringZstdSerialization::serialize(buffer, rowids);
-#endif
-    return written_bytes;
-}
-
-GinPostingsListPtr GinPostingsListBuilder::deserialize(ReadBuffer & buffer)
-{
-    UInt8 serialization = 0;
-    readBinary(serialization, buffer);
-
-    if (serialization == static_cast<std::underlying_type_t<Serialization>>(Serialization::DELTA_PFOR))
-    {
-#if USE_FASTPFOR
-        return GinIndexPostingListDeltaPforSerialization::deserialize(buffer);
-#else
-        throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Text index: Posting list is compressed by Delta and FastPfor, but library is disabled.");
-#endif
-    }
-
-    return GinIndexPostingListRoaringZstdSerialization::deserialize(buffer);
 }
 
 GinDictionaryBloomFilter::GinDictionaryBloomFilter(UInt64 unique_count_, size_t bits_per_rows_, size_t num_hashes_)
@@ -474,7 +466,7 @@ bool GinIndexStore::needToWriteCurrentSegment() const
 
 void GinIndexStore::finalize()
 {
-    if (!current_postings_list_builder_container.empty())
+    if (!current_postings_list_container.empty())
     {
         writeSegment();
         writeSegmentId();
@@ -509,7 +501,7 @@ void GinIndexStore::cancel() noexcept
 }
 
 GinIndexStore::Statistics::Statistics(const GinIndexStore & store)
-    : num_terms(store.current_postings_list_builder_container.size())
+    : num_terms(store.current_postings_list_container.size())
     , current_size_bytes(store.current_size_bytes)
     , segment_descriptor_file_size(store.segment_descriptor_file_stream ? store.segment_descriptor_file_stream->count() : 0)
     , bloom_filter_file_size(store.bloom_filter_file_stream ? store.bloom_filter_file_stream->count() : 0)
@@ -588,13 +580,13 @@ namespace
 
 /// Initialize bloom filter from tokens from the term dictionary
 GinDictionaryBloomFilter initializeBloomFilter(
-    const GinIndexStore::GinPostingsListBuilderContainer & postings_list_builder_container,
+    const GinIndexStore::GinPostingsListContainer & postings_list_container,
     double bloom_filter_false_positive_rate)
 {
-    auto number_of_unique_terms = postings_list_builder_container.size(); /// postings_list_builder_container is a dictionary
+    auto number_of_unique_terms = postings_list_container.size(); /// postings_list_container is a dictionary
     const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
     GinDictionaryBloomFilter bloom_filter(number_of_unique_terms, bits_per_rows, num_hashes);
-    for (const auto & [token, _] : postings_list_builder_container)
+    for (const auto & [token, _] : postings_list_container)
         bloom_filter.add(token);
     return bloom_filter;
 }
@@ -613,25 +605,25 @@ void GinIndexStore::writeSegment()
     /// Write segment descriptor
     segment_descriptor_file_stream->write(reinterpret_cast<char *>(&current_segment), sizeof(GinSegmentDescriptor));
 
-    using TokenPostingsBuilderPair = std::pair<std::string_view, GinPostingsListBuilderPtr>;
-    using TokenPostingsBuilderPairs = std::vector<TokenPostingsBuilderPair>;
+    using TokenPostingsListPair = std::pair<std::string_view, GinPostingsListPtr>;
+    using TokenPostingsListPairs = std::vector<TokenPostingsListPair>;
 
-    TokenPostingsBuilderPairs token_postings_list_pairs;
-    token_postings_list_pairs.reserve(current_postings_list_builder_container.size());
-    for (const auto & [token, postings_list] : current_postings_list_builder_container)
+    TokenPostingsListPairs token_postings_list_pairs;
+    token_postings_list_pairs.reserve(current_postings_list_container.size());
+    for (const auto & [token, postings_list] : current_postings_list_container)
         token_postings_list_pairs.push_back({token, postings_list});
 
-    GinDictionaryBloomFilter bloom_filter = initializeBloomFilter(current_postings_list_builder_container, bloom_filter_false_positive_rate);
+    GinDictionaryBloomFilter bloom_filter = initializeBloomFilter(current_postings_list_container, bloom_filter_false_positive_rate);
 
     /// Sort token-postings list pairs since all tokens have to be added in FST in sorted order
     std::ranges::sort(token_postings_list_pairs,
-                    [](const TokenPostingsBuilderPair & x, const TokenPostingsBuilderPair & y)
+                    [](const TokenPostingsListPair & x, const TokenPostingsListPair & y)
                     {
                         return x.first < y.first;
                     });
 
     /// Write postings
-    std::vector<UInt64> posting_list_byte_sizes(current_postings_list_builder_container.size(), 0);
+    std::vector<UInt64> posting_list_byte_sizes(current_postings_list_container.size(), 0);
 
     for (size_t i = 0; const auto & [token, postings_list] : token_postings_list_pairs)
     {
@@ -702,7 +694,7 @@ void GinIndexStore::writeSegment()
         statistics.toString());
 
     current_size_bytes = 0;
-    current_postings_list_builder_container.clear();
+    current_postings_list_container.clear();
     current_segment.segment_id = getNextSegmentId();
 
     segment_descriptor_file_stream->sync();
@@ -904,7 +896,7 @@ GinSegmentPostingsLists GinIndexStoreDeserializer::readSegmentPostingsLists(cons
         postings_file_stream->seek(segment_dictionary.second->postings_start_offset + fst_output.offset, SEEK_SET);
 
         /// Read posting list
-        auto postings_list = GinPostingsListBuilder::deserialize(*postings_file_stream);
+        auto postings_list = GinPostingsList::deserialize(*postings_file_stream);
         segment_postings_lists[segment_id] = postings_list;
 
         LOG_TRACE(

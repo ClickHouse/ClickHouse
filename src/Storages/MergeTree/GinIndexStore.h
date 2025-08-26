@@ -46,9 +46,6 @@ namespace DB
 {
 static constexpr UInt64 UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES = 0;
 
-/// An in-memory posting list is a 32-bit Roaring Bitmap
-using GinPostingsList = roaring::Roaring;
-using GinPostingsListPtr = std::shared_ptr<GinPostingsList>;
 
 class GinCompressionFactory
 {
@@ -56,18 +53,43 @@ public:
     static const CompressionCodecPtr & zstdCodec();
 };
 
-#if USE_FASTPFOR
-/// This class serializes a posting list into on-disk format by applying DELTA encoding first, then PFOR compression.
-/// Internally, the FastPFOR library is used for the PFOR compression.
-class GinIndexPostingListDeltaPforSerialization
+struct GinPostingsList;
+using GinPostingsListPtr = std::shared_ptr<GinPostingsList>;
+
+/// A postings list with serialization/deserialization.
+struct GinPostingsList
 {
 public:
-    static UInt64 serialize(WriteBuffer & buffer, const GinPostingsList & rowids);
+    /// Serializes the postings list into given WriteBuffer.
+    /// Returns the number of bytes written into WriteBuffer.
+    UInt64 serialize(WriteBuffer & buffer);
+
+    /// Deserializes the postings list data from given ReadBuffer.
+    /// Returns a pointer to the GinPostingsList created by deserialization.
+    static GinPostingsListPtr deserialize(ReadBuffer & buffer);
+
+    enum class Serialization : UInt8
+    {
+        ROARING_ZSTD = 1,
+        DELTA_PFOR = 2,
+    };
+
+    /// An in-memory posting list is a 32-bit Roaring Bitmap
+    roaring::Roaring rowids;
+};
+
+#if USE_FASTPFOR
+/// Serializes a roaring bitmap by applying DELTA encoding first, then PFOR compression.
+/// Internally, the FastPFOR library is used for the PFOR compression.
+class GinRoaringDeltaPforSerialization
+{
+public:
+    static UInt64 serialize(WriteBuffer & buffer, const roaring::Roaring & rowids);
     static GinPostingsListPtr deserialize(ReadBuffer & buffer);
 
 private:
     static std::shared_ptr<FastPForLib::IntegerCODEC> codec();
-    static std::vector<UInt32> encodeDeltaScalar(const GinPostingsList & rowids);
+    static std::vector<UInt32> encodeDeltaScalar(const roaring::Roaring & rowids);
     static void decodeDeltaScalar(std::vector<UInt32> & deltas);
 
     /// FastPFOR fails to compress below this threshold, compressed data becomes larger than the original array.
@@ -75,11 +97,11 @@ private:
 };
 #endif
 
-/// This class serialize a posting list into on-disk format by applying ZSTD compression on top of Roaring Bitmap.
-class GinIndexPostingListRoaringZstdSerialization
+/// Serialize a roaring bitmap by applying ZSTD compression.
+class GinRoaringZstdSerialization
 {
 public:
-    static UInt64 serialize(WriteBuffer & buffer, const GinPostingsList & rowids);
+    static UInt64 serialize(WriteBuffer & buffer, const roaring::Roaring & rowids);
     static GinPostingsListPtr deserialize(ReadBuffer & buffer);
 
 private:
@@ -90,36 +112,6 @@ private:
     static constexpr UInt64 ROARING_COMPRESSED_MASK = 0x1;
     static constexpr UInt64 ROARING_UNCOMPRESSED_MASK = 0x0;
 };
-
-/// Build a postings list for a term
-class GinPostingsListBuilder
-{
-public:
-    /// Check whether a row_id is already added
-    bool contains(UInt32 row_id) const;
-
-    /// Add a row_id into the builder
-    void add(UInt32 row_id);
-
-    /// Serializes the content of builder into given WriteBuffer.
-    /// Returns the number of bytes written into WriteBuffer.
-    UInt64 serialize(WriteBuffer & buffer);
-
-    /// Deserializes the postings list data from given ReadBuffer.
-    /// Returns a pointer to the GinIndexPostingsList created by deserialization.
-    static GinPostingsListPtr deserialize(ReadBuffer & buffer);
-
-private:
-    enum class Serialization : UInt8
-    {
-        ROARING_ZSTD = 1,
-        DELTA_PFOR = 2,
-    };
-
-    GinPostingsList rowids;
-};
-
-using GinPostingsListBuilderPtr = std::shared_ptr<GinPostingsListBuilder>;
 
 /// Gin index segment descriptor, which contains:
 struct GinSegmentDescriptor
@@ -233,8 +225,8 @@ public:
         size_t posting_lists_file_size;
     };
 
-    /// Container for all term's postings list builder
-    using GinPostingsListBuilderContainer = absl::flat_hash_map<String, GinPostingsListBuilderPtr>;
+    /// Container for all term's postings list
+    using GinPostingsListContainer = absl::flat_hash_map<String, GinPostingsListPtr>;
 
     GinIndexStore(const String & name_, DataPartStoragePtr storage_);
     GinIndexStore(
@@ -259,11 +251,11 @@ public:
     /// Get version
     Format getVersion();
 
-    /// Get current postings list builder
-    const GinPostingsListBuilderContainer & getPostingsListBuilder() const { return current_postings_list_builder_container; }
+    /// Get current postings list
+    const GinPostingsListContainer & getPostingsList() const { return current_postings_list_container; }
 
-    /// Set postings list builder for given term
-    void setPostingsListBuilder(const String & term, GinPostingsListBuilderPtr builder) { current_postings_list_builder_container[term] = builder; }
+    /// Set postings list for given term
+    void setPostingsList(const String & term, GinPostingsListPtr postings_list) { current_postings_list_container[term] = postings_list; }
 
     /// Check if we need to write segment to Gin index files
     bool needToWriteCurrentSegment() const;
@@ -319,7 +311,7 @@ private:
     GinSegmentDictionaries segment_dictionaries;
 
     /// Container for building postings lists during index construction
-    GinPostingsListBuilderContainer current_postings_list_builder_container;
+    GinPostingsListContainer current_postings_list_container;
 
     /// For the segmentation of Gin indexes
     GinSegmentDescriptor current_segment;
