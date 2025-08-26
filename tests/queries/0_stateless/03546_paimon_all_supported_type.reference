@@ -15,7 +15,7 @@ f_bigint	Nullable(Int64)
 f_float	Nullable(Float32)					
 f_double	Nullable(Float64)					
 f_date	Nullable(Date)					
-f_time	Nullable(Time(\'UTC\'))					
+f_time	Nullable(Time)					
 f_timestamp	Nullable(DateTime64(3, \'UTC\'))					
 f_timestamp2	Nullable(DateTime64(1, \'UTC\'))					
 f_timestamp3	Nullable(DateTime64(3))					
@@ -36,7 +36,7 @@ f_bigint_nn	Int64
 f_float_nn	Float32					
 f_double_nn	Float64					
 f_date_nn	Date					
-f_time_nn	Time(\'UTC\')					
+f_time_nn	Time					
 f_timestamp_nn	DateTime64(3, \'UTC\')					
 f_timestamp2_nn	DateTime64(1, \'UTC\')					
 f_timestamp3_nn	DateTime64(3)					

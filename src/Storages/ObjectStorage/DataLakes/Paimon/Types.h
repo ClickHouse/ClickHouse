@@ -215,7 +215,7 @@ struct DataType
             {
                 /// TODO: support precision
                 type.root_type = RootDataType::TIME_WITHOUT_TIME_ZONE;
-                type.clickhouse_data_type = std::make_shared<DataTypeTime>("UTC");
+                type.clickhouse_data_type = std::make_shared<DataTypeTime>();
             }
             else if (real_type.starts_with("TIMESTAMP"))
             {
