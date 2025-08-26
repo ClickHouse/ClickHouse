@@ -318,7 +318,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
 class JobNames:
     DOCKER_BUILDS_ARM = "Dockers build (arm)"
     DOCKER_BUILDS_AMD = "Dockers build (amd)"
-    CLAUDE = "Generate descriptions"
+    CLAUDE = "CI agent"
     STYLE_CHECK = "Style check"
     FAST_TEST = "Fast test"
     BUILD = "Build"
