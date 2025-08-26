@@ -9,17 +9,18 @@
 #include <Core/Types.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <base/defines.h>
-
-
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <Common/SharedMutex.h>
 
 #include <unordered_map>
-namespace DB
+namespace DB::Iceberg
 {
+
+ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
 
 /**
  * Iceberg supports the following data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):

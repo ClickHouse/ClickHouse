@@ -23,15 +23,29 @@ fi
 echo "Runnig: $*"
 "$@" &
 PID=$!
-# This may be interrupted by SIGTERM that is received by this script
+# This will be interrupted by SIGTERM that is received by this script
 wait $PID
 server_exit_code=$?
 
-while kill -0 "$PID"; do
+function dump_stacktraces_on_shutdown()
+{
+    # Half of timeout of the stop_grace_period for clickhouse service
+    sleep 1m
+    if kill -0 "$PID"; then
+        echo "Attaching gdb to obtain thread stacktraces"
+        gdb -batch -ex 'thread apply all bt full' -p "$PID" > /var/log/clickhouse-server/stdout.log
+    fi
+}
+dump_stacktraces_on_shutdown &
+
+while kill -0 "$PID" 2>/dev/null; do
     wait $PID
     server_exit_code=$?
 done
 echo "Server exited with $server_exit_code"
+
+# Wait dump_stacktraces_on_shutdown
+wait
 
 if [[ $JEMALLOC_PROFILER -eq 1 ]]; then
     jemalloc_reports=/var/lib/clickhouse/jemalloc

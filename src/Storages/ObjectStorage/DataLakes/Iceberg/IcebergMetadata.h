@@ -74,7 +74,8 @@ public:
 
     bool supportsSchemaEvolution() const override { return true; }
 
-    static Int32 parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
+    static Int32 parseTableSchema(
+        const Poco::JSON::Object::Ptr & metadata_object, Iceberg::IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
@@ -86,12 +87,9 @@ public:
     std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr Local_context) const override;
     std::optional<size_t> updateConfigurationAndGetTotalBytes(ContextPtr Local_context) const override;
 
-    ColumnMapperPtr getColumnMapper() const override
-    {
-        SharedLockGuard lock(mutex);
-        return persistent_components.schema_processor->getColumnMapperById(relevant_table_state_snapshot.schema_id);
-    }
+    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
+    ColumnMapperPtr getColumnMapperForCurrentSchema() const override;
     SinkToStoragePtr write(
         SharedHeader sample_block,
         const StorageID & table_id,

@@ -7,25 +7,23 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
-#include <Formats/FormatFilterInfo.h>
-#include <Formats/FormatParserSharedResources.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
-#include <Common/Exception.h>
-
-
 #include <Columns/ColumnSet.h>
 #include <DataTypes/DataTypeSet.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/tuple.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
+#include <Common/Exception.h>
 
 
 #include <Databases/DataLake/Common.h>
@@ -437,7 +435,9 @@ std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(Conte
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     if (!iceberg_object_info)
         return nullptr;
+    /// if we need schema evolution or have equality deletes files, we need to read all the columns.
     return (iceberg_object_info->underlying_format_read_schema_id != relevant_table_state_snapshot.schema_id)
+            || (!iceberg_object_info->equality_deletes_objects.empty())
         ? persistent_components.schema_processor->getClickhouseTableSchemaById(iceberg_object_info->underlying_format_read_schema_id)
         : nullptr;
 }
@@ -505,17 +505,17 @@ void IcebergMetadata::mutate(
 void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
 {
     for (const auto & command : commands)
-        if (command.type != MutationCommand::DELETE)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE mutations");
+        if (command.type != MutationCommand::DELETE && command.type != MutationCommand::UPDATE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE and UPDATE mutations");
 }
 
 void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
 {
     for (const auto & command : commands)
     {
-        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by Iceberg storage",
-                command.type);
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::DROP_COLUMN
+            && command.type != AlterCommand::Type::MODIFY_COLUMN)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by Iceberg storage", command.type);
     }
 }
 
@@ -999,6 +999,27 @@ SinkToStoragePtr IcebergMetadata::write(
             "Insert into iceberg is experimental. "
             "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
     }
+}
+
+ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_info) const
+{
+    IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
+    if (!iceberg_object_info)
+        return nullptr;
+    auto configuration_ptr = configuration.lock();
+    if (Poco::toLower(configuration_ptr->format) != "parquet")
+        return nullptr;
+
+    return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->underlying_format_read_schema_id);
+}
+
+ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema() const
+{
+    auto configuration_ptr = configuration.lock();
+    if (Poco::toLower(configuration_ptr->format) != "parquet")
+        return nullptr;
+    SharedLockGuard lock(mutex);
+    return persistent_components.schema_processor->getColumnMapperById(relevant_table_state_snapshot.schema_id);
 }
 }
 
