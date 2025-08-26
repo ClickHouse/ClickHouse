@@ -3426,6 +3426,9 @@ def test_subcolumns(started_cluster, column_mapping):
         "2025-06-04\t('100022','2025-06-04 18:40:56.000000000','2025-06-09 21:19:00.364000000')\t100022"
         == node.query(f"select * from {func}").strip()
     )
+    data_file_desc = node.query(f"describe table {func}").strip()
+    assert "col-" in data_file_desc
+    assert "col_" not in data_file_desc
 
     data_file_schema = node.query(f"describe table {func}")
     print(f"Data file schema: {data_file_schema}")

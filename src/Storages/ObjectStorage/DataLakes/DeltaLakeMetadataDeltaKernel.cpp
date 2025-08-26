@@ -110,23 +110,14 @@ void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_
     format_settings.parquet.allow_missing_columns = true;
 }
 
-static void checkTypesAndNestedTypesEqual(DataTypePtr type1, DataTypePtr type2, const std::string & column_name)
+static void checkTypesAndNestedTypesEqual(DataTypePtr type, DataTypePtr expected_type, const std::string & column_name)
 {
-    if ((type1->isNullable() && !type2->isNullable())
-        || (type2->isNullable() && !type1->isNullable()))
+    /// Checks types recursively if needed.
+    if (!type->equals(*expected_type))
     {
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Types mismatch in nullability for column `{}`: {} and {}",
-            column_name, type1->getTypeId(), type2->getTypeId());
-    }
-    auto nested_type1 = type1->isNullable() ? assert_cast<const DataTypeNullable *>(type1.get())->getNestedType() : type1;
-    auto nested_type2 = type2->isNullable() ? assert_cast<const DataTypeNullable *>(type2.get())->getNestedType() : type2;
-
-    if (nested_type1->getTypeId() != nested_type2->getTypeId())
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Types mismatch for column `{}`: {} and {}",
-            column_name, nested_type1->getTypeId(), nested_type2->getTypeId());
+            ErrorCodes::BAD_ARGUMENTS, "Types mismatch for column `{}`. Got: {}, expected: {}",
+            column_name, type->getName(), expected_type->getName());
     }
 }
 
