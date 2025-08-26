@@ -117,7 +117,7 @@ class IcebergTableGenerator(LakeTableGenerator):
     def set_basic_properties(self) -> dict[str, str]:
         properties = {}
         out_format = FileFormat.file_to_str(self.write_format)
-        if out_format == "any":
+        if out_format.lower() == "any":
             out_format = random.choice(["parquet", "orc", "avro"])
             self.write_format = FileFormat.file_from_str(out_format)
         properties["write.format.default"] = out_format

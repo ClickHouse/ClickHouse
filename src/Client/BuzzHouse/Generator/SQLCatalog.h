@@ -346,7 +346,7 @@ public:
 
     String getSparkCatalogName() const;
 
-    void setTablePath(RandomGenerator & rg);
+    void setTablePath(RandomGenerator & rg, bool has_dolor);
 
     String getTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool no_change) const;
 

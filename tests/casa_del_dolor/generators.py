@@ -4,6 +4,7 @@ import pathlib
 import random
 import sys
 import tempfile
+from pathlib import Path
 from typing import Optional
 
 from environment import set_environment_variables
@@ -58,7 +59,9 @@ class BuzzHouseGenerator(Generator):
         # Connect back to peer ClickHouse server running in the host machine
         if "clickhouse" in buzz_config:
             buzz_config["clickhouse"]["server_hostname"] = "host.docker.internal"
-
+        # Set paths
+        buzz_config["client_file_path"] = f"{Path(cluster.instances_dir) / "node0" / "database" / "user_files"}"
+        buzz_config["server_file_path"] = "/var/lib/clickhouse/user_files"
         # Set available servers
         for entry in [
             ("remote_servers", "9000"),

@@ -810,10 +810,10 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_parquet_date_as_uint16", trueOrFalseSettingNoOracle},
     {"output_format_parquet_max_dictionary_size",
      CHSetting(
-        [](RandomGenerator & rg)
-        { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))); },
-        {},
-        false)},
+         [](RandomGenerator & rg)
+         { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))); },
+         {},
+         false)},
     {"output_format_parquet_fixed_string_as_fixed_byte_array", trueOrFalseSettingNoOracle},
     {"output_format_parquet_geometadata", trueOrFalseSettingNoOracle},
     {"output_format_parquet_parallel_encoding", trueOrFalseSettingNoOracle},

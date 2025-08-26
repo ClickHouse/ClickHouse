@@ -124,7 +124,7 @@ String SQLBase::getSparkCatalogName() const
 
 static const constexpr String PARTITION_STR = "{_partition_id}";
 
-void SQLBase::setTablePath(RandomGenerator & rg)
+void SQLBase::setTablePath(RandomGenerator & rg, const bool has_dolor)
 {
     chassert(
         !bucket_path.has_value() && !file_format.has_value() && !file_comp.has_value() && !partition_strategy.has_value()
@@ -138,7 +138,7 @@ void SQLBase::setTablePath(RandomGenerator & rg)
         String next_bucket_path;
 
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (getLakeCatalog() != LakeCatalog::None || ((isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool()))
+        if (getLakeCatalog() != LakeCatalog::None || (has_dolor && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool()))
         {
             integration = IntegrationCall::Dolor;
         }

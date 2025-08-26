@@ -161,11 +161,11 @@ class LakeDataGenerator:
         - null_rate: probability any value is None (ignored for map keys)
         """
         # Set limits
-        self._min_nested = random.randint(0, 1000)
-        self._max_nested = max(self._min_nested, random.randint(0, 1000))
-        self._min_str_len = random.randint(0, 1000)
-        self._max_str_len = max(self._min_str_len, random.randint(0, 1000))
-        n_rows = random.randint(0, 1000)
+        self._min_nested = random.randint(0, 100)
+        self._max_nested = max(self._min_nested, random.randint(0, 100))
+        self._min_str_len = random.randint(0, 100)
+        self._max_str_len = max(self._min_str_len, random.randint(0, 100))
+        n_rows = random.randint(0, 100)
         null_rate: float = 0.05 if random.randint(1, 2) == 1 else 0.0
 
         struct = StructType(

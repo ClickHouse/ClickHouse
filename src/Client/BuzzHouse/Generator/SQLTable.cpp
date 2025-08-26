@@ -1039,7 +1039,7 @@ void StatementGenerator::generateEngineDetails(
     const bool allow_shared_tbl = supports_cloud_features && (fc.engine_mask & allow_shared) != 0;
 
     /// Set what the filename is going to be first
-    b.setTablePath(rg);
+    b.setTablePath(rg, connections.hasDolorConnection());
     if (b.isMergeTreeFamily())
     {
         if (te->has_engine() && (((fc.engine_mask & allow_replicated) != 0) || allow_shared_tbl) && rg.nextSmallNumber() < 4)

@@ -50,7 +50,7 @@ from integration.helpers.config_cluster import minio_access_key, minio_secret_ke
 
 
 def get_local_base_path(cluster, catalog_name: str) -> str:
-    return f"{Path(cluster.instances_dir) / "node0" / "user_files" / "lakehouse" / f"{catalog_name}"}"
+    return f"{Path(cluster.instances_dir) / "node0" / "database" / "user_files" / "lakehouse" / f"{catalog_name}"}"
 
 
 Parameter = typing.Callable[[], int | float]
