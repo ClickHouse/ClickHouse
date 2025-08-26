@@ -60,6 +60,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int CANNOT_CLOCK_GETTIME;
 extern const int LOGICAL_ERROR;
 }
 namespace Setting
@@ -231,7 +232,8 @@ IcebergIterator::IcebergIterator(
     IDataLakeMetadata::FileProgressCallback callback_,
     Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-    PersistentTableComponents persistent_components_)
+    PersistentTableComponents persistent_components_,
+    Iceberg::IcebergMetadataLog & metadata_logs_)
     : filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , object_storage(std::move(object_storage_))
     , data_files_iterator(
@@ -290,6 +292,9 @@ IcebergIterator::IcebergIterator(
               std::sort(position_deletes_files_tmp.begin(), position_deletes_files_tmp.end());
               return position_deletes_files_tmp;
           }())
+    , metadata_logs(metadata_logs_)
+    , query_id(local_context_->getCurrentQueryId())
+    , table_directory(configuration_.lock()->getRawPath().path)
 {
 }
 
@@ -298,6 +303,18 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     Iceberg::ManifestFileEntry manifest_file_entry;
     if (blocking_queue.pop(manifest_file_entry))
     {
+        timespec spec{};
+        if (clock_gettime(CLOCK_REALTIME, &spec))
+            throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
+
+        metadata_logs.push_back(Iceberg::IcebergMetadataContentLog{
+            .current_time = spec.tv_sec,
+            .query_id = query_id,
+            .path = table_directory,
+            .filename = manifest_file_entry.path_to_manifest_file,
+            .metadata_content = manifest_file_entry.content
+        });
+
         IcebergDataObjectInfoPtr object_info = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry);
         for (const auto & position_delete : definePositionDeletesSpan(manifest_file_entry, position_deletes_files))
         {

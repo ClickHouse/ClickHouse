@@ -1,4 +1,5 @@
 
+#include <sstream>
 #include "config.h"
 #if USE_AVRO
 
@@ -75,6 +76,7 @@ namespace DataLakeStorageSetting
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int CANNOT_CLOCK_GETTIME;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
@@ -106,7 +108,8 @@ IcebergMetadata::IcebergMetadata(
     Int32 format_version_,
     const Poco::JSON::Object::Ptr & metadata_object_,
     IcebergMetadataFilesCachePtr cache_ptr,
-    CompressionMethod metadata_compression_method_)
+    CompressionMethod metadata_compression_method_,
+    const String & path)
     : object_storage(std::move(object_storage_))
     , configuration(std::move(configuration_))
     , persistent_components(PersistentTableComponents{
@@ -120,7 +123,7 @@ IcebergMetadata::IcebergMetadata(
     , relevant_snapshot_schema_id(-1)
     , metadata_compression_method(metadata_compression_method_)
 {
-    updateState(context_, metadata_object_);
+    updateState(context_, metadata_object_, path);
 }
 
 void IcebergMetadata::addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) const
@@ -216,7 +219,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     auto previous_snapshot_id = relevant_snapshot_id;
     auto previous_snapshot_schema_id = relevant_snapshot_schema_id;
 
-    updateState(local_context, metadata_object);
+    updateState(local_context, metadata_object, metadata_file_path);
 
     if (previous_snapshot_id != relevant_snapshot_id)
     {
@@ -296,15 +299,37 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
             }
 #endif
 
+            auto manifest_list_path = getProperFilePathFromMetadataInfo(
+                snapshot->getValue<String>(f_manifest_list), configuration_ptr->getPathForRead().path, persistent_components.table_location);
+            auto parsed_manifest_list = getManifestList(
+                object_storage,
+                configuration_ptr,
+                persistent_components,
+                local_context,
+                manifest_list_path,
+                log);
+
+            timespec spec{};
+            if (clock_gettime(CLOCK_REALTIME, &spec))
+                throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
+
+            for (const auto & manifest_list_entry : parsed_manifest_list)
+            {
+                if (!logged_files.contains(manifest_list_path))
+                {
+                    logged_files.insert(manifest_list_path);
+                    metadata_logs.push_back(Iceberg::IcebergMetadataContentLog{
+                        .current_time = spec.tv_sec,
+                        .query_id = local_context->getCurrentQueryId(),
+                        .path = configuration_ptr->getPathForRead().path,
+                        .filename = manifest_list_path,
+                        .metadata_content = manifest_list_entry.file_content
+                    });
+                }
+            }
+
             relevant_snapshot = std::make_shared<IcebergDataSnapshot>(
-                getManifestList(
-                    object_storage,
-                    configuration_ptr,
-                    persistent_components,
-                    local_context,
-                    getProperFilePathFromMetadataInfo(
-                        snapshot->getValue<String>(f_manifest_list), configuration_ptr->getPathForRead().path, persistent_components.table_location),
-                    log),
+                parsed_manifest_list,
                 relevant_snapshot_id,
                 total_rows,
                 total_bytes,
@@ -352,10 +377,28 @@ bool IcebergMetadata::optimize(const StorageMetadataPtr & metadata_snapshot, Con
     }
 }
 
-void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object)
+void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, const String & path)
 {
     auto configuration_ptr = configuration.lock();
 
+    std::ostringstream oss;
+    Poco::JSON::Stringifier::stringify(metadata_object, oss);
+
+    timespec spec{};
+    if (clock_gettime(CLOCK_REALTIME, &spec))
+        throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
+
+    if (!logged_files.contains(path))
+    {
+        logged_files.insert(path);
+        metadata_logs.push_back(Iceberg::IcebergMetadataContentLog{
+            .current_time = spec.tv_sec,
+            .query_id = local_context->getCurrentQueryId(),
+            .path = configuration_ptr->getPathForRead().path,
+            .filename = path,
+            .metadata_content = oss.str()
+        });
+    }
     std::optional<String> manifest_list_file;
 
     bool timestamp_changed = local_context->getSettingsRef()[Setting::iceberg_timestamp_ms].changed;
@@ -565,7 +608,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
     Poco::JSON::Object::Ptr object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
 
     auto format_version = object->getValue<int>(f_format_version);
-    return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object, cache_ptr, compression_method);
+    return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object, cache_ptr, compression_method, metadata_file_path);
 }
 
 IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
@@ -666,6 +709,10 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     return iceberg_history;
 }
 
+const Iceberg::IcebergMetadataLog & IcebergMetadata::getMetadataLog() const
+{
+    return metadata_logs;
+}
 
 std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
 {
@@ -769,7 +816,8 @@ ObjectIterator IcebergMetadata::iterate(
         callback,
         table_snapshot,
         relevant_snapshot,
-        persistent_components);
+        persistent_components,
+        metadata_logs);
 }
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const

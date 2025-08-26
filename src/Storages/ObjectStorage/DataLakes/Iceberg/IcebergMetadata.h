@@ -48,7 +48,8 @@ public:
         Int32 format_version_,
         const Poco::JSON::Object::Ptr & metadata_object,
         IcebergMetadataFilesCachePtr cache_ptr,
-        CompressionMethod metadata_compression_method_);
+        CompressionMethod metadata_compression_method_,
+        const String & path);
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override;
@@ -87,6 +88,7 @@ public:
     bool update(const ContextPtr & local_context) override;
 
     IcebergHistory getHistory(ContextPtr local_context) const;
+    const Iceberg::IcebergMetadataLog & getMetadataLog() const;
 
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
@@ -144,8 +146,10 @@ private:
 
 
     ColumnMapperPtr column_mapper;
+    mutable Iceberg::IcebergMetadataLog metadata_logs;
+    std::unordered_set<String> logged_files;
 
-    void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
+    void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, const String & path) TSA_REQUIRES(mutex);
     void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) const TSA_REQUIRES(mutex);
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const TSA_REQUIRES_SHARED(mutex);

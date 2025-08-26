@@ -147,7 +147,8 @@ ManifestFileContent::ManifestFileContent(
     Int64 inherited_snapshot_id,
     const String & table_location,
     DB::ContextPtr context,
-    const String & path_to_manifest_file_)
+    const String & path_to_manifest_file_,
+    const String & content_)
     : path_to_manifest_file(path_to_manifest_file_)
 {
     for (const auto & column_name : {f_status, f_data_file})
@@ -392,7 +393,9 @@ ManifestFileContent::ManifestFileContent(
                     common_partition_specification,
                     columns_infos,
                     file_format,
-                    /*reference_data_file = */ std::nullopt);
+                    /*reference_data_file = */ std::nullopt,
+                    /*content=*/ content_,
+                    path_to_manifest_file_);
                 break;
             case FileContentType::POSITION_DELETE: {
                 /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
@@ -414,7 +417,9 @@ ManifestFileContent::ManifestFileContent(
                     common_partition_specification,
                     columns_infos,
                     file_format,
-                    reference_file_path);
+                    reference_file_path,
+                    content_,
+                    path_to_manifest_file_);
                 break;
             }
             default:

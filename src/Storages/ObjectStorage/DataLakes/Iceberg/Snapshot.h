@@ -1,5 +1,7 @@
 #pragma once
+#include "base/Decimal.h"
 #include "config.h"
+#include <chrono>
 
 #if USE_AVRO
 
@@ -51,7 +53,17 @@ struct IcebergHistoryRecord
     Int32 num_partitions;
 };
 
+struct IcebergMetadataContentLog
+{
+    std::time_t current_time;
+    String query_id;
+    String path;
+    String filename;
+    String metadata_content;
+};
+
 using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
+using IcebergMetadataLog = std::vector<Iceberg::IcebergMetadataContentLog>;
 }
 
 #endif

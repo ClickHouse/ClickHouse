@@ -1,10 +1,14 @@
+#include <memory>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include "Core/ColumnWithTypeAndName.h"
+#include "IO/WriteBufferFromString.h"
 
 #if USE_AVRO
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Common/assert_cast.h>
 #include <base/find_symbols.h>
+#include <Processors/Formats/Impl/JSONRowOutputFormat.h>
 
 namespace DB::ErrorCodes
 {
@@ -81,6 +85,17 @@ std::optional<std::string> AvroForIcebergDeserializer::tryGetAvroMetadataValue(s
         return std::nullopt;
 
     return std::string{it->second.begin(), it->second.end()};
+}
+
+String AvroForIcebergDeserializer::getContent() const
+{
+    WriteBufferFromOwnString buf;
+    ColumnsWithTypeAndName columns({ColumnWithTypeAndName(parsed_column, parsed_column_data_type, "")});
+    JSONRowOutputFormat output_format = JSONRowOutputFormat(buf, std::make_shared<const Block>(columns), {}, true);
+    for (size_t i = 0; i < parsed_column->size(); ++i)
+        output_format.writeRow({parsed_column}, i);
+    output_format.finalize();
+    return buf.str();
 }
 
 }

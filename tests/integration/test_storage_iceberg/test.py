@@ -2824,3 +2824,42 @@ def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
     df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 1
 
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
+def test_system_iceberg_metadata(started_cluster, format_version, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_single_iceberg_file_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    write_iceberg_from_df(spark, generate_data(spark, 0, 100), TABLE_NAME)
+
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
+        "SELECT number, toString(number + 1) FROM numbers(100)"
+    )
+
+    assert int(instance.query(f"SELECT count() FROM system.iceberg_metadata")) == 3 
+    file_lists = instance.query(f"SELECT file_name FROM system.iceberg_metadata")
+    assert 'v1.metadata.json' in file_lists
+    assert 'm0.avro' in file_lists
+    assert 'snap' in file_lists
+
+    file_contents = instance.query("SELECT content FROM system.iceberg_metadata").split('\t')
+    for content in file_contents:
+        assert len(content) > 10

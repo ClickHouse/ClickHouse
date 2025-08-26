@@ -88,7 +88,8 @@ public:
         IDataLakeMetadata::FileProgressCallback callback_,
         Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
         Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-        Iceberg::PersistentTableComponents persistent_components);
+        Iceberg::PersistentTableComponents persistent_components,
+        Iceberg::IcebergMetadataLog & metadata_logs_);
 
     ObjectInfoPtr next(size_t) override;
 
@@ -106,6 +107,9 @@ private:
     const String format;
     const String compression_method;
     const std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
+    Iceberg::IcebergMetadataLog & metadata_logs;
+    String query_id;
+    String table_directory;
 };
 }
 
