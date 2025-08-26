@@ -467,6 +467,11 @@ When set to `true`, all threads executing S3 requests to the same backup endpoin
 after any single s3 request encounters a retryable network error, such as socket timeout.
 When set to `false`, each thread handles S3 request backoff independently of the others.
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, s3_slow_all_threads_after_retryable_error, true, R"(
+When set to `true`, all threads executing S3 requests to the same endpoint are slowed down
+after any single S3 request encounters a retryable S3 error, such as 'Slow Down'.
+When set to `false`, each thread handles s3 request backoff independently of the others.
+)", 0, backup_slow_all_threads_after_retryable_s3_error) \
     DECLARE(UInt64, azure_list_object_keys_size, 1000, R"(
 Maximum number of files that could be returned in batch by ListObject request
 )", 0) \
@@ -1389,7 +1394,7 @@ Possible values:
 - Any positive integer.
 )", 0) \
 DECLARE(Bool, merge_tree_use_deserialization_prefixes_cache, true, R"(
-Enables caching of columns metadata from the file prefixes during reading from Wide parts in MergeTree.
+Enables caching of columns metadata from the file prefixes during reading from remote disks in MergeTree.
 )", 0) \
 DECLARE(Bool, merge_tree_use_prefixes_deserialization_thread_pool, true, R"(
 Enables usage of the thread pool for parallel prefixes reading in Wide parts in MergeTree. Size of that thread pool is controlled by server setting `max_prefixes_deserialization_thread_pool_size`.
@@ -3338,11 +3343,6 @@ Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means
     DECLARE(Float, backup_restore_s3_retry_jitter_factor, .1f, R"(
     Jitter factor applied to the retry backoff delay in Aws::Client::RetryStrategy during backup and restore operations. The computed backoff delay is multiplied by a random factor in the range [1.0, 1.0 + jitter], up to the maximum `backup_restore_s3_retry_max_backoff_ms`. Must be in [0.0, 1.0] interval
 )", 0) \
-    DECLARE(Bool, backup_slow_all_threads_after_retryable_s3_error, true, R"(
-When set to `true`, all threads executing S3 requests to the same backup endpoint are slowed down
-after any single S3 request encounters a retryable S3 error, such as 'Slow Down'.
-When set to `false`, each thread handles s3 request backoff independently of the others.
-)", 0) \
     DECLARE(UInt64, max_backup_bandwidth, 0, R"(
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
 )", 0) \
@@ -4181,8 +4181,8 @@ These functions can be transformed:
 - [length](/sql-reference/functions/array-functions#length) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
 - [empty](/sql-reference/functions/array-functions#empty) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
 - [notEmpty](/sql-reference/functions/array-functions#notEmpty) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
-- [isNull](/sql-reference/functions/functions-for-nulls#isnull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
-- [isNotNull](/sql-reference/functions/functions-for-nulls#isnotnull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
+- [isNull](/sql-reference/functions/functions-for-nulls#isNull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
+- [isNotNull](/sql-reference/functions/functions-for-nulls#isNotNull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
 - [count](/sql-reference/aggregate-functions/reference/count) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
 - [mapKeys](/sql-reference/functions/tuple-map-functions#mapkeys) to read the [keys](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 - [mapValues](/sql-reference/functions/tuple-map-functions#mapvalues) to read the [values](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
@@ -4838,6 +4838,9 @@ If true, include only column names and types into result of DESCRIBE query
     DECLARE(Bool, apply_mutations_on_fly, false, R"(
 If true, mutations (UPDATEs and DELETEs) which are not materialized in data part will be applied on SELECTs.
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, enable_lightweight_update, true, R"(
+    Allow to use lightweight updates.
+)", BETA, allow_experimental_lightweight_update) \
     DECLARE(Bool, apply_patch_parts, true, R"(
 If true, patch parts (that represent lightweight updates) are applied on SELECTs.
 )", 0) \
@@ -5008,9 +5011,6 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(Double, query_condition_cache_selectivity_threshold, 1.0, R"(
-Only insert filter results into the [query condition cache](/operations/query-condition-cache) if their selectivity is smaller than this threshold (this helps to keep cache pollution low).
-)", 0) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
@@ -5064,6 +5064,9 @@ Supported only with the analyzer (`enable_analyzer = 1`).
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, false, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
+DECLARE(Bool, execute_exists_as_scalar_subquery, true, R"(
+Execute non-correlated EXISTS subqueries as scalar subqueries. As for scalar subqueries, the cache is used, and the constant folding applies to the result.
+    )", 0) \
     DECLARE(Bool, optimize_rewrite_regexp_functions, true, R"(
 Rewrite regular expression related functions into simpler and more efficient forms
 )", 0) \
@@ -6605,6 +6608,15 @@ The timeout in milliseconds for connecting to a remote replica during query exec
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
+)", BETA, allow_database_iceberg) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_unity_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
+)", BETA, allow_database_unity_catalog) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_glue_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
+)", BETA, allow_database_glue_catalog) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_analyzer, true, R"(
 Allow new query analyzer.
 )", IMPORTANT, enable_analyzer) \
@@ -6886,10 +6898,6 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
 If set to true, allow using the experimental text index.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_lightweight_update, false, R"(
-Allow to use lightweight updates.
-)", EXPERIMENTAL) \
-    \
     DECLARE(Bool, allow_experimental_live_view, false, R"(
 Allows creation of a deprecated LIVE VIEW.
 
@@ -6929,15 +6937,6 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
     /** Experimental feature for moving data between shards. */ \
     DECLARE(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_database_unity_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_database_glue_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
@@ -7010,6 +7009,18 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
     DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
 Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
 )", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
+    \
+    DECLARE(String, promql_database, "", R"(
+Specifies the database name used by the 'promql' dialect. Empty string means the current database.
+)", EXPERIMENTAL) \
+    \
+    DECLARE(String, promql_table, "", R"(
+Specifies the name of a TimeSeries table used by the 'promql' dialect.
+)", EXPERIMENTAL) \
+    \
+    DECLARE(FloatAuto, evaluation_time, Field("auto"), R"(
+Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

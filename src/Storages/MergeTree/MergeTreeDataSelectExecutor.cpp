@@ -1386,13 +1386,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const auto & sorting_key = metadata_snapshot->getSortingKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
     std::vector<bool> reverse_flags;
-    const auto & key_indices = key_condition.getKeyIndices();
+    size_t num_key_columns = key_condition.getNumKeyColumns();
     DataTypes key_types;
-    if (!key_indices.empty())
+    if (num_key_columns > 0)
     {
         const auto index = part->getIndex();
 
-        for (size_t i : key_indices)
+        for (size_t i = 0; i < num_key_columns; ++i)
         {
             if (i < index->size())
             {
@@ -1434,7 +1434,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     }
 
     /// NOTE Creating temporary Field objects to pass to KeyCondition.
-    size_t used_key_size = key_indices.size();
+    size_t used_key_size = num_key_columns;
     std::vector<FieldRef> index_left(used_key_size);
     std::vector<FieldRef> index_right(used_key_size);
 
@@ -1830,9 +1830,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
 
-        PostingsCacheForStore cache_in_store;
+        GinPostingsListsCacheForStore postings_lists_cache_for_store;
         if (dynamic_cast<const MergeTreeIndexGin *>(index_helper.get()))
-            cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
+            postings_lists_cache_for_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
 
         for (size_t i = 0; i < ranges_size; ++i)
         {
@@ -1881,7 +1881,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 {
                     bool result = false;
                     if (const auto * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(&*condition))
-                        result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
+                        result = postings_lists_cache_for_store.store
+                                    ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, postings_lists_cache_for_store)
+                                    : true;
                     else
                         result = condition->mayBeTrueOnGranule(granule);
 

@@ -21,12 +21,12 @@ namespace DB
  *
  * FileCache::removeAllReleasable
  * 1. CachePriorityGuard::Lock
- * 2. any number of KeyGuard::Lock's locks (takken via metadata lock), but at a moment of time only one key lock can be hold
+ * 2. any number of KeyGuard::Lock's locks (taken via metadata lock), but at a moment of time only one key lock can be hold
  * 3. FileSegmentGuard::Lock
  *
  * FileCache::getSnapshot (for all cache)
  * 1. metadata lock
- * 2. any number of KeyGuard::Lock's locks (takken via metadata lock), but at a moment of time only one key lock can be hold
+ * 2. any number of KeyGuard::Lock's locks (taken via metadata lock), but at a moment of time only one key lock can be hold
  * 3. FileSegmentGuard::Lock
  *
  * FileCache::getSnapshot(key)
