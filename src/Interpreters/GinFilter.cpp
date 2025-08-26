@@ -41,9 +41,9 @@ void GinFilter::add(const String & term, UInt32 row_id, GinIndexStorePtr & store
     if (term.length() > FST::MAX_TERM_LENGTH)
         return;
 
-    auto it = store->getPostingsListBuilder().find(term);
+    auto it = store->getTermPostingsLists().find(term);
 
-    if (it != store->getPostingsListBuilder().end())
+    if (it != store->getTermPostingsLists().end())
     {
         if (!it->second->contains(row_id))
             it->second->add(row_id);

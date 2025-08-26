@@ -233,8 +233,8 @@ public:
         size_t posting_lists_file_size;
     };
 
-    /// Container for all term's postings list builder
-    using GinPostingsListBuilderContainer = absl::flat_hash_map<String, GinPostingsListBuilderPtr>;
+    /// All term's postings list builder
+    using GinTermPostingsLists = absl::flat_hash_map<String, GinPostingsListBuilderPtr>;
 
     GinIndexStore(const String & name_, DataPartStoragePtr storage_);
     GinIndexStore(
@@ -260,10 +260,10 @@ public:
     Format getVersion();
 
     /// Get current postings list builder
-    const GinPostingsListBuilderContainer & getPostingsListBuilder() const { return current_postings_list_builder_container; }
+    const GinTermPostingsLists & getTermPostingsLists() const { return term_postings_lists; }
 
     /// Set postings list builder for given term
-    void setPostingsListBuilder(const String & term, GinPostingsListBuilderPtr builder) { current_postings_list_builder_container[term] = builder; }
+    void setPostingsListBuilder(const String & term, GinPostingsListBuilderPtr builder) { term_postings_lists[term] = builder; }
 
     /// Check if we need to write segment to Gin index files
     bool needToWriteCurrentSegment() const;
@@ -319,7 +319,7 @@ private:
     GinSegmentDictionaries segment_dictionaries;
 
     /// Container for building postings lists during index construction
-    GinPostingsListBuilderContainer current_postings_list_builder_container;
+    GinTermPostingsLists term_postings_lists;
 
     /// For the segmentation of Gin indexes
     GinSegmentDescriptor current_segment;

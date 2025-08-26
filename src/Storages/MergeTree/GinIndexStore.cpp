@@ -474,7 +474,7 @@ bool GinIndexStore::needToWriteCurrentSegment() const
 
 void GinIndexStore::finalize()
 {
-    if (!current_postings_list_builder_container.empty())
+    if (!term_postings_lists.empty())
     {
         writeSegment();
         writeSegmentId();
@@ -509,7 +509,7 @@ void GinIndexStore::cancel() noexcept
 }
 
 GinIndexStore::Statistics::Statistics(const GinIndexStore & store)
-    : num_terms(store.current_postings_list_builder_container.size())
+    : num_terms(store.term_postings_lists.size())
     , current_size_bytes(store.current_size_bytes)
     , segment_descriptor_file_size(store.segment_descriptor_file_stream ? store.segment_descriptor_file_stream->count() : 0)
     , bloom_filter_file_size(store.bloom_filter_file_stream ? store.bloom_filter_file_stream->count() : 0)
@@ -588,14 +588,14 @@ namespace
 
 /// Initialize bloom filter from tokens from the term dictionary
 GinDictionaryBloomFilter initializeBloomFilter(
-    const GinIndexStore::GinPostingsListBuilderContainer & postings_list_builder_container,
+    const GinIndexStore::GinTermPostingsLists & term_postings_lists,
     double bloom_filter_false_positive_rate)
 {
-    auto number_of_unique_terms = postings_list_builder_container.size(); /// postings_list_builder_container is a dictionary
-    const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
+    size_t number_of_unique_terms = term_postings_lists.size(); /// term_postings_lists is a dictionary
+    const auto & [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
     GinDictionaryBloomFilter bloom_filter(number_of_unique_terms, bits_per_rows, num_hashes);
-    for (const auto & [token, _] : postings_list_builder_container)
-        bloom_filter.add(token);
+    for (const auto & [term, _] : term_postings_lists)
+        bloom_filter.add(term);
     return bloom_filter;
 }
 
@@ -617,11 +617,11 @@ void GinIndexStore::writeSegment()
     using TokenPostingsBuilderPairs = std::vector<TokenPostingsBuilderPair>;
 
     TokenPostingsBuilderPairs token_postings_list_pairs;
-    token_postings_list_pairs.reserve(current_postings_list_builder_container.size());
-    for (const auto & [token, postings_list] : current_postings_list_builder_container)
+    token_postings_list_pairs.reserve(term_postings_lists.size());
+    for (const auto & [token, postings_list] : term_postings_lists)
         token_postings_list_pairs.push_back({token, postings_list});
 
-    GinDictionaryBloomFilter bloom_filter = initializeBloomFilter(current_postings_list_builder_container, bloom_filter_false_positive_rate);
+    GinDictionaryBloomFilter bloom_filter = initializeBloomFilter(term_postings_lists, bloom_filter_false_positive_rate);
 
     /// Sort token-postings list pairs since all tokens have to be added in FST in sorted order
     std::ranges::sort(token_postings_list_pairs,
@@ -631,7 +631,7 @@ void GinIndexStore::writeSegment()
                     });
 
     /// Write postings
-    std::vector<UInt64> posting_list_byte_sizes(current_postings_list_builder_container.size(), 0);
+    std::vector<UInt64> posting_list_byte_sizes(term_postings_lists.size(), 0);
 
     for (size_t i = 0; const auto & [token, postings_list] : token_postings_list_pairs)
     {
@@ -702,7 +702,7 @@ void GinIndexStore::writeSegment()
         statistics.toString());
 
     current_size_bytes = 0;
-    current_postings_list_builder_container.clear();
+    term_postings_lists.clear();
     current_segment.segment_id = getNextSegmentId();
 
     segment_descriptor_file_stream->sync();
