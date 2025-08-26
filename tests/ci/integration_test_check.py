@@ -14,7 +14,7 @@ import integration_tests_runner as runner
 from build_download_helper import download_all_deb_packages
 from ci_config import CI
 from ci_utils import Utils
-from docker_images_helper import DockerImage, get_docker_image, docker_login
+from docker_images_helper import DockerImage, get_docker_image
 from download_release_packages import download_last_release
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from integration_test_images import IMAGES
@@ -225,9 +225,6 @@ def main():
             ]
         ),
     )
-
-    logging.info("Ensure logged in to dockerhub")
-    docker_login(relogin=False)
 
     try:
         runner.run()
