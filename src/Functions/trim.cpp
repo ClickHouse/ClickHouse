@@ -219,9 +219,80 @@ using FunctionTrimBoth = FunctionTrim<TrimModeBoth>;
 
 REGISTER_FUNCTION(Trim)
 {
-    factory.registerFunction<FunctionTrimLeft>();
-    factory.registerFunction<FunctionTrimRight>();
-    factory.registerFunction<FunctionTrimBoth>();
+    FunctionDocumentation::Description description_left = R"(
+Removes the specified characters from the start of a string.
+By default, removes common whitespace (ASCII) characters.
+)";
+    FunctionDocumentation::Syntax syntax_left = "trimLeft(input[, trim_characters])";
+    FunctionDocumentation::Arguments arguments_left = {
+        {"input", "String to trim.", {"String"}},
+        {"trim_characters", "Optional. Characters to trim. If not specified, common whitespace characters are removed.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_left = {"Returns the string with specified characters trimmed from the left.", {"String"}};
+    FunctionDocumentation::Examples examples_left = {
+    {
+        "Usage example",
+        "SELECT trimLeft('ClickHouse', 'Click');",
+        R"(
+┌─trimLeft('Cl⋯', 'Click')─┐
+│ House                    │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation_left = {description_left, syntax_left, arguments_left, returned_value_left, examples_left, introduced_in, category};
+
+    FunctionDocumentation::Description description_right = R"(
+Removes the specified characters from the end of a string.
+By default, removes common whitespace (ASCII) characters.
+)";
+    FunctionDocumentation::Syntax syntax_right = "trimRight(s[, trim_characters])";
+    FunctionDocumentation::Arguments arguments_right = {
+        {"s", "String to trim.", {"String"}},
+        {"trim_characters", "Optional characters to trim. If not specified, common whitespace characters are removed.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_right = {"Returns the string with specified characters trimmed from the right.", {"String"}};
+    FunctionDocumentation::Examples examples_right = {
+    {
+        "Usage example",
+        "SELECT trimRight('ClickHouse','House');",
+        R"(
+┌─trimRight('C⋯', 'House')─┐
+│ Click                    │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_right = {description_right, syntax_right, arguments_right, returned_value_right, examples_right, introduced_in, category};
+
+    FunctionDocumentation::Description description_both = R"(
+Removes the specified characters from the start and end of a string.
+By default, removes common whitespace (ASCII) characters.
+)";
+    FunctionDocumentation::Syntax syntax_both = "trimBoth(s[, trim_characters])";
+    FunctionDocumentation::Arguments arguments_both = {
+        {"s", "String to trim.", {"String"}},
+        {"trim_characters", "Optional. Characters to trim. If not specified, common whitespace characters are removed.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_both = {"Returns the string with specified characters trimmed from both ends.", {"String"}};
+    FunctionDocumentation::Examples examples_both = {
+    {
+        "Usage example",
+        "SELECT trimBoth('$$ClickHouse$$', '$')",
+        R"(
+┌─trimBoth('$$⋯se$$', '$')─┐
+│ ClickHouse               │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_both = {description_both, syntax_both, arguments_both, returned_value_both, examples_both, introduced_in, category};
+
+    factory.registerFunction<FunctionTrimLeft>(documentation_left);
+    factory.registerFunction<FunctionTrimRight>(documentation_right);
+    factory.registerFunction<FunctionTrimBoth>(documentation_both);
     factory.registerAlias("ltrim", FunctionTrimLeft::name);
     factory.registerAlias("rtrim", FunctionTrimRight::name);
     factory.registerAlias("trim", FunctionTrimBoth::name);
