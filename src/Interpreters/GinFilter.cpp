@@ -41,19 +41,19 @@ void GinFilter::add(const String & term, UInt32 row_id, GinIndexStorePtr & store
     if (term.length() > FST::MAX_TERM_LENGTH)
         return;
 
-    auto it = store->getPostingsListBuilder().find(term);
+    auto it = store->getPostingsList().find(term);
 
-    if (it != store->getPostingsListBuilder().end())
+    if (it != store->getPostingsList().end())
     {
-        if (!it->second->contains(row_id))
-            it->second->add(row_id);
+        if (!it->second->rowids.contains(row_id))
+            it->second->rowids.add(row_id);
     }
     else
     {
-        auto postings_list_builder = std::make_shared<GinPostingsListBuilder>();
-        postings_list_builder->add(row_id);
+        auto postings_list = std::make_shared<GinPostingsList>();
+        postings_list->rowids.add(row_id);
 
-        store->setPostingsListBuilder(term, postings_list_builder);
+        store->setPostingsList(term, postings_list);
     }
 }
 
@@ -101,7 +101,7 @@ bool hasEmptyPostingsList(const GinPostingsListsCache & postings_lists_cache)
 bool matchAllInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 segment_id, UInt32 range_rowid_start, UInt32 range_rowid_end)
 {
     /// Check for each term
-    GinPostingsList range_bitset;
+    roaring::Roaring range_bitset;
     range_bitset.addRange(range_rowid_start, range_rowid_end + 1);
 
     for (const auto & term_postings : postings_lists_cache)
@@ -112,13 +112,13 @@ bool matchAllInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 
         if (container_it == segment_postings_lists.end())
             return false;
 
-        UInt32 min_in_container = container_it->second->minimum();
-        UInt32 max_in_container = container_it->second->maximum();
+        UInt32 min_in_container = container_it->second->rowids.minimum();
+        UInt32 max_in_container = container_it->second->rowids.maximum();
 
         if (range_rowid_start > max_in_container || min_in_container > range_rowid_end)
             return false;
 
-        range_bitset &= *container_it->second;
+        range_bitset &= (*container_it->second).rowids;
 
         if (range_bitset.isEmpty())
             return false;
@@ -130,16 +130,16 @@ bool matchAllInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 
 bool matchAnyInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 segment_id, UInt32 range_rowid_start, UInt32 range_rowid_end)
 {
     /// Check for each term
-    GinPostingsList postings_bitset;
+    roaring::Roaring postings_bitset;
     for (const auto & term_postings : postings_lists_cache)
     {
         /// Check if it is in the same segment by searching for segment_id
         const GinSegmentPostingsLists & segment_postings_lists = term_postings.second;
         if (auto container_it = segment_postings_lists.find(segment_id); container_it != segment_postings_lists.end())
-            postings_bitset |= *container_it->second;
+            postings_bitset |= (*container_it->second).rowids;
     }
 
-    GinPostingsList range_bitset;
+    roaring::Roaring range_bitset;
     range_bitset.addRange(range_rowid_start, range_rowid_end + 1);
     return range_bitset.intersect(postings_bitset);
 }
@@ -149,6 +149,7 @@ template <GinSearchMode search_mode>
 bool matchInRange(const GinSegmentsWithRowIdRange & segments_with_rowid_range, const GinPostingsListsCache & postings_lists_cache)
 {
     if (hasEmptyPostingsList(postings_lists_cache))
+    {
         switch (search_mode)
         {
             case GinSearchMode::Any: {
@@ -160,6 +161,7 @@ bool matchInRange(const GinSegmentsWithRowIdRange & segments_with_rowid_range, c
             case GinSearchMode::All:
                 return false;
         }
+    }
 
     /// Check for each row ID ranges
     for (const auto & segment_with_rowid_range : segments_with_rowid_range)

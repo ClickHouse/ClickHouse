@@ -60,7 +60,7 @@ struct GinSegmentWithRowIdRange
 using GinSegmentsWithRowIdRange = std::vector<GinSegmentWithRowIdRange>;
 
 /// GinFilter provides two types of functionality:
-/// 1) it builds a text index, and
+/// 1) it builds the core structures of a text index (GinIndexStore), and
 /// 2) it filters the unmatched rows according to its query string.
 class GinFilter
 {
@@ -89,7 +89,7 @@ public:
 
     GinFilter() = default;
 
-    /// Add term and its row ID to the postings list builder for building the text index for the given store.
+    /// Add term and its row ID to the postings list for building the text index for the given store.
     void add(const String & term, UInt32 row_id, GinIndexStorePtr & store) const;
 
     /// Accumulate (segment_id, rowid_start, rowid_end) for building the text index.
