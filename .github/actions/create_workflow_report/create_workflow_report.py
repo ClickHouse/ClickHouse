@@ -540,7 +540,7 @@ def get_build_report_links(pr_number: int, branch: str, commit_sha: str):
     Get the build report links for the given PR number, branch, and commit SHA.
     """
     build_job_names = ["Build (amd_release)", "Build (arm_release)"]
-    s3_prefix = "todo"
+
     if pr_number == 0:
         ref_param = f"REF={branch}"
         workflow_name = "MasterCI"
