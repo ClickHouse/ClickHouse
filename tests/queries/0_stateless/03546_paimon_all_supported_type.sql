@@ -1,5 +1,5 @@
 -- Tags: no-fasttest, no-parallel
--- no-parallel: Heavy
+-- Tag no-parallel: Heavy for MinIO
 -- Tag no-fasttest: Depends on AWS
 set enable_time_time64_type=1;
 
