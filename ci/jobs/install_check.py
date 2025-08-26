@@ -18,6 +18,9 @@ set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR
 test_env='TEST_THE_DEFAULT_PARAMETER=15'
 echo "$test_env" >> /etc/default/clickhouse
+# Note, clickhouse-server service notify systemd only when it is ready to
+# accept connections, so we do not need to wait until it will open the port for
+# listening manually here.
 systemctl restart clickhouse-server
 clickhouse-client -q 'SELECT version()'
 grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
@@ -26,6 +29,7 @@ set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR
 test_env='TEST_THE_DEFAULT_PARAMETER=15'
 echo "$test_env" >> /etc/default/clickhouse
+# Note, this should use systemctl
 /etc/init.d/clickhouse-server start
 clickhouse-client -q 'SELECT version()'
 grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
