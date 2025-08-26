@@ -312,7 +312,11 @@ inline bool haveAMXINT8() noexcept
 inline bool haveSVE() noexcept
 {
 #if defined(__aarch64__) && defined(__linux__)
-    /// https://www.kernel.org/doc/Documentation/arm64/sve.txt
+    /** "Support for the execution of SVE instructions in userspace can also be detected by reading the CPU ID register ID_AA64PFR0_EL1
+      *  using an MRS instruction, and checking that the value of the SVE field is nonzero. It does not guarantee the presence of the system
+      *  interfaces described in the following sections: software that needs to verify that those interfaces are present must check for
+      *  HWCAP_SVE instead." (c) https://www.kernel.org/doc/Documentation/arm64/sve.txt
+      */
     const UInt64 hwcap = getauxval(AT_HWCAP);
     return (hwcap & HWCAP_SVE) != 0;
 #else
