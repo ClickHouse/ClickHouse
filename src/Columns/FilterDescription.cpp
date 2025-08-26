@@ -17,6 +17,34 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
+template <typename T>
+bool tryConvertColumnToBool(const IColumn * column, IColumnFilter & res)
+{
+    const auto column_typed = checkAndGetColumn<ColumnVector<T>>(column);
+    if (!column_typed)
+        return false;
+
+    auto & data = column_typed->getData();
+    size_t data_size = data.size();
+    for (size_t i = 0; i < data_size; ++i)
+        res[i] = static_cast<bool>(data[i]);
+
+    return true;
+}
+
+void convertAnyColumnToBool(const IColumn * column, IColumnFilter & res, int error_code)
+{
+    if (!tryConvertColumnToBool<Int8>(column, res) &&
+        !tryConvertColumnToBool<Int16>(column, res) &&
+        !tryConvertColumnToBool<Int32>(column, res) &&
+        !tryConvertColumnToBool<Int64>(column, res) &&
+        !tryConvertColumnToBool<UInt16>(column, res) &&
+        !tryConvertColumnToBool<UInt32>(column, res) &&
+        !tryConvertColumnToBool<UInt64>(column, res) &&
+        !tryConvertColumnToBool<Float32>(column, res) &&
+        !tryConvertColumnToBool<Float64>(column, res))
+        throw Exception(error_code, "Unexpected type of column: {}", column->getName());
+}
 
 ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 {
@@ -53,31 +81,47 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 
 FilterDescription::FilterDescription(const IColumn & column_)
 {
+    ColumnPtr holder;
     if (column_.isSparse())
-        data_holder = recursiveRemoveSparse(column_.getPtr());
+        holder = recursiveRemoveSparse(column_.getPtr());
 
     if (column_.lowCardinality())
-        data_holder = column_.convertToFullColumnIfLowCardinality();
+        holder = column_.convertToFullColumnIfLowCardinality();
 
-    const auto & column = data_holder ? *data_holder : column_;
+    const auto * column = holder ? holder.get() : &column_;
 
-    if (const ColumnUInt8 * concrete_column = typeid_cast<const ColumnUInt8 *>(&column))
+    ColumnPtr null_map_column;
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column))
     {
-        data = &concrete_column->getData();
-        return;
+        column = &nullable_column->getNestedColumn();
+        null_map_column = nullable_column->getNullMapColumnPtr();
     }
 
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&column))
+    const ColumnUInt8 * filter_column = typeid_cast<const ColumnUInt8 *>(column);
+    if (!filter_column)
     {
-        ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
-        MutableColumnPtr mutable_holder = IColumn::mutate(std::move(nested_column));
+        auto col = ColumnUInt8::create();
+        col->getData().resize(column->size());
+        convertAnyColumnToBool(column, col->getData(), ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+        filter_column = col.get();
+        data_holder = std::move(col);
+    }
+    else
+        data_holder = std::move(holder);
+
+    data = &filter_column->getData();
+
+    if (null_map_column)
+    {
+        ColumnPtr uint8_column = (data_holder && data_holder.get() == filter_column) ? std::move(data_holder) : filter_column->getPtr();
+        MutableColumnPtr mutable_holder = IColumn::mutate(std::move(uint8_column));
 
         ColumnUInt8 * concrete_column = typeid_cast<ColumnUInt8 *>(mutable_holder.get());
         if (!concrete_column)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                "Illegal type {} of column for filter. Must be UInt8 or Nullable(UInt8).", column.getName());
+                "Illegal type {} of column for filter. Must be UInt8 or Nullable(UInt8).", column_.getName());
 
-        const NullMap & null_map = nullable_column->getNullMapData();
+        const NullMap & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
         IColumn::Filter & res = concrete_column->getData();
 
         const auto size = res.size();
@@ -92,12 +136,7 @@ FilterDescription::FilterDescription(const IColumn & column_)
 
         data = &res;
         data_holder = std::move(mutable_holder);
-        return;
     }
-
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-        "Illegal type {} of column for filter. Must be UInt8 or Nullable(UInt8) or Const variants of them.",
-        column.getName());
 }
 
 ColumnPtr FilterDescription::filter(const IColumn & column, ssize_t result_size_hint) const
