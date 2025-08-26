@@ -49,7 +49,7 @@ const CompressionCodecPtr & GinCompressionFactory::zstdCodec()
 }
 
 #if USE_FASTPFOR
-UInt64 GinIndexPostingListDeltaPforSerialization::serialize(WriteBuffer & buffer, const GinPostingsList & rowids)
+UInt64 GinPostingListDeltaPforSerialization::serialize(WriteBuffer & buffer, const GinPostingsList & rowids)
 {
     std::vector<UInt32> deltas = encodeDeltaScalar(rowids);
 
@@ -81,7 +81,7 @@ UInt64 GinIndexPostingListDeltaPforSerialization::serialize(WriteBuffer & buffer
     return written_bytes;
 }
 
-GinPostingsListPtr GinIndexPostingListDeltaPforSerialization::deserialize(ReadBuffer & buffer)
+GinPostingsListPtr GinPostingListDeltaPforSerialization::deserialize(ReadBuffer & buffer)
 {
     size_t num_deltas = 0;
     size_t compressed_size = 0;
@@ -108,13 +108,13 @@ GinPostingsListPtr GinIndexPostingListDeltaPforSerialization::deserialize(ReadBu
     return postings_list;
 }
 
-std::shared_ptr<FastPForLib::IntegerCODEC> GinIndexPostingListDeltaPforSerialization::codec()
+std::shared_ptr<FastPForLib::IntegerCODEC> GinPostingListDeltaPforSerialization::codec()
 {
     static thread_local std::shared_ptr<FastPForLib::IntegerCODEC> codec = FastPForLib::simdfastpfor128_codec();
     return codec;
 }
 
-std::vector<UInt32> GinIndexPostingListDeltaPforSerialization::encodeDeltaScalar(const GinPostingsList & rowids)
+std::vector<UInt32> GinPostingListDeltaPforSerialization::encodeDeltaScalar(const GinPostingsList & rowids)
 {
     const UInt64 num_rowids = rowids.cardinality();
     std::vector<UInt32> deltas(num_rowids);
@@ -128,14 +128,14 @@ std::vector<UInt32> GinIndexPostingListDeltaPforSerialization::encodeDeltaScalar
     return deltas;
 }
 
-void GinIndexPostingListDeltaPforSerialization::decodeDeltaScalar(std::vector<UInt32> & deltas)
+void GinPostingListDeltaPforSerialization::decodeDeltaScalar(std::vector<UInt32> & deltas)
 {
     for (size_t i = 1; i < deltas.size(); ++i)
         deltas[i] += deltas[i - 1];
 }
 #endif
 
-UInt64 GinIndexPostingListRoaringZstdSerialization::serialize(WriteBuffer & buffer, const GinPostingsList & rowids)
+UInt64 GinPostingListRoaringZstdSerialization::serialize(WriteBuffer & buffer, const GinPostingsList & rowids)
 {
     const UInt64 num_rowids = rowids.cardinality();
 
@@ -205,7 +205,7 @@ UInt64 GinIndexPostingListRoaringZstdSerialization::serialize(WriteBuffer & buff
     }
 }
 
-GinPostingsListPtr GinIndexPostingListRoaringZstdSerialization::deserialize(ReadBuffer & buffer)
+GinPostingsListPtr GinPostingListRoaringZstdSerialization::deserialize(ReadBuffer & buffer)
 {
     /// Header value maps into following states:
     /// The lowest bit indicates if values are stored as an array or Roaring bitmap
@@ -275,13 +275,13 @@ UInt64 GinPostingsListBuilder::serialize(WriteBuffer & buffer)
     writeChar(ch, buffer);
     written_bytes += 1;
 
-    written_bytes += GinIndexPostingListDeltaPforSerialization::serialize(buffer, rowids);
+    written_bytes += GinPostingListDeltaPforSerialization::serialize(buffer, rowids);
 #else
     auto ch = static_cast<char>(Serialization::ROARING_ZSTD);
     writeChar(ch, buffer);
     written_bytes += 1;
 
-    written_bytes += GinIndexPostingListRoaringZstdSerialization::serialize(buffer, rowids);
+    written_bytes += GinPostingListRoaringZstdSerialization::serialize(buffer, rowids);
 #endif
     return written_bytes;
 }
@@ -294,7 +294,7 @@ GinPostingsListPtr GinPostingsListBuilder::deserialize(ReadBuffer & buffer)
     if (serialization == static_cast<std::underlying_type_t<Serialization>>(Serialization::DELTA_PFOR))
     {
 #if USE_FASTPFOR
-        return GinIndexPostingListDeltaPforSerialization::deserialize(buffer);
+        return GinPostingListDeltaPforSerialization::deserialize(buffer);
 #else
         throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
@@ -302,7 +302,7 @@ GinPostingsListPtr GinPostingsListBuilder::deserialize(ReadBuffer & buffer)
 #endif
     }
 
-    return GinIndexPostingListRoaringZstdSerialization::deserialize(buffer);
+    return GinPostingListRoaringZstdSerialization::deserialize(buffer);
 }
 
 GinDictionaryBloomFilter::GinDictionaryBloomFilter(UInt64 unique_count_, size_t bits_per_rows_, size_t num_hashes_)
