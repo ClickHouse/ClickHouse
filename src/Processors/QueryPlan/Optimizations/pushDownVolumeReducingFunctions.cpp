@@ -25,7 +25,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-#include "base/defines.h"
+#include <base/defines.h>
 
 
 namespace DB
