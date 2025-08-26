@@ -50,10 +50,7 @@ public:
         auto pattern = pattern_constant->getValue().safeGet<String>();
         auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(pattern, true);
 
-        if (!is_perfect)
-            return;
-
-        if (prefix.empty())
+        if (!is_perfect || prefix.empty())
             return;
 
         /// Replace the node with the AND condition
@@ -87,7 +84,8 @@ public:
         }
         and_function->resolveAsFunction(and_resolver);
 
-        // Replpace the original LIKE node
+        /// Replpace the original LIKE node
+        // todo: check and_function type is "and"
         node = std::move(and_function);
     }
 };

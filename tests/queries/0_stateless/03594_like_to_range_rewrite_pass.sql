@@ -22,53 +22,53 @@ INSERT INTO test_like_rewrite VALUES
     (7, 'testing', 'other');
 
 -- Test perfect prefix patterns - should be rewritten
-EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE name LIKE 'app%';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name LIKE 'app%';
 SELECT count() FROM test_like_rewrite WHERE name LIKE 'app%';
 
-EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE name LIKE 'test%';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name LIKE 'test%';
 SELECT count() FROM test_like_rewrite WHERE name LIKE 'test%';
 
 -- Test with FixedString column
-EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE category LIKE 'fruit%';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE category LIKE 'fruit%';
 SELECT count() FROM test_like_rewrite WHERE category LIKE 'fruit%';
 
 -- Test NOT LIKE with perfect prefix - should be rewritten (TODO)
-EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE name NOT LIKE 'app%';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name NOT LIKE 'app%';
 SELECT count() FROM test_like_rewrite WHERE name NOT LIKE 'app%';
 
 -- Test imperfect prefix patterns - should NOT be rewritten
-EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE name LIKE 'app_ication%';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name LIKE 'app_ication%';
 SELECT count() FROM test_like_rewrite WHERE name LIKE 'app_ication%';
 
 -- Test patterns that should NOT be rewritten
-EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE name LIKE '%app%';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name LIKE '%app%';
 SELECT count() FROM test_like_rewrite WHERE name LIKE '%app%';
 
-EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE name LIKE '_est%';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name LIKE '_est%';
 SELECT count() FROM test_like_rewrite WHERE name LIKE '_est%';
 
 -- Test exact match (no wildcards) - should NOT be rewritten
-EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE name LIKE 'test';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name LIKE 'test';
 SELECT count() FROM test_like_rewrite WHERE name LIKE 'test';
 
 -- Test empty prefix - should NOT be rewritten
-EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE name LIKE '%';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name LIKE '%';
 SELECT count() FROM test_like_rewrite WHERE name LIKE '%';
 
 -- Test case-insensitive ILIKE with perfect prefix - should be rewritten (TODO)
-EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE name ILIKE 'APP%';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name ILIKE 'APP%';
 SELECT count() FROM test_like_rewrite WHERE name ILIKE 'APP%';
 
 -- Test multiple LIKE conditions - all eligible ones should be rewritten
-EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE name LIKE 'app%' AND category LIKE 'fruit%';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name LIKE 'app%' AND category LIKE 'fruit%';
 SELECT count() FROM test_like_rewrite WHERE name LIKE 'app%' AND category LIKE 'fruit%';
 
 -- Test LIKE in OR condition
-EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE name LIKE 'app%' OR name LIKE 'test%';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name LIKE 'app%' OR name LIKE 'test%';
 SELECT count() FROM test_like_rewrite WHERE name LIKE 'app%' OR name LIKE 'test%';
 
 -- Test NOT LIKE with imperfect prefix - should NOT be rewritten
-EXPLAIN SYNTAX SELECT * FROM test_like_rewrite WHERE name NOT LIKE 'app_ication%';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name NOT LIKE 'app_ication%';
 SELECT count() FROM test_like_rewrite WHERE name NOT LIKE 'app_ication%';
 
 DROP TABLE test_like_rewrite;
