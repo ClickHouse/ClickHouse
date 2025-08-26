@@ -40,7 +40,7 @@ void ExploreGroupTask::execute(OptimizerContext & optimizer_context)
 void ExploreExpressionTask::execute(OptimizerContext & optimizer_context)
 {
     LOG_TRACE(optimizer_context.log, "ExploreExpressionTask group_id: {}, expression: {}",
-        expression->group_id, expression->node.step->getSerializationName());
+        expression->group_id, expression->getName());
 
     std::vector<std::pair<Promise, OptimizationRulePtr>> moves;
     for (const auto & rule : optimizer_context.getRules())
@@ -66,7 +66,7 @@ void ExploreExpressionTask::execute(OptimizerContext & optimizer_context)
 void OptimizeExpressionTask::execute(OptimizerContext & optimizer_context)
 {
     LOG_TRACE(optimizer_context.log, "OptimizeExpressionTask group_id: {}, expression: {}",
-        expression->group_id, expression->node.step->getSerializationName());
+        expression->group_id, expression->getName());
 
     /// TODO: is this the same as ExploreExpressionTask::execute but just with a different set of rules? 
 

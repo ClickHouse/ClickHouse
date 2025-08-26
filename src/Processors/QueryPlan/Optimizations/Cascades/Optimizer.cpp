@@ -2,14 +2,18 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/JoinGraph.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
+#include "Interpreters/Context.h"
 #include "Interpreters/Context_fwd.h"
 #include "Processors/QueryPlan/ExpressionStep.h"
 #include "Processors/QueryPlan/FilterStep.h"
 #include "Processors/QueryPlan/JoinStepLogical.h"
 #include "Processors/QueryPlan/Optimizations/Cascades/Group.h"
 #include "Processors/QueryPlan/QueryPlan.h"
+#include "Common/CurrentThread.h"
 #include "Common/Exception.h"
 #include "Common/logger_useful.h"
+#include "Core/Block_fwd.h"
+#include "Core/Settings.h"
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <algorithm>
@@ -19,6 +23,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool join_use_nulls;
+}
 
 namespace QueryPlanOptimizations
 {
@@ -140,6 +149,7 @@ GroupId CascadesOptimizer::populateMemo(const JoinGraph & join_graph, OptimizerC
     {
         const GroupId group_id;   /// in Memo
         RelationsSet relations;   /// All relations
+        SharedHeader output_columns;
     };
 
     const size_t relations_count = join_graph.size();
@@ -149,13 +159,13 @@ GroupId CascadesOptimizer::populateMemo(const JoinGraph & join_graph, OptimizerC
     std::vector<std::list<GroupInfo>> join_groups_by_size;
     join_groups_by_size.reserve(relations_count);
 
-    /// Add group for each input relation of the join graph
+    /// Add group of size = 1 for each input relation of the join graph
     join_groups_by_size.resize(2);  /// 0-sized will be empty, and 1-sized will contain source relations
     for (JoinGraph::RelationId relation_id = 0; relation_id < relations_count; ++relation_id)
     {
         QueryPlan::Node & relation_node = join_graph.getRelationNode(relation_id);
         auto relation_group_id = optimizer_context.addGroup(relation_node);
-        join_groups_by_size[1].push_back(GroupInfo{relation_group_id, {relation_id}});
+        join_groups_by_size[1].push_back(GroupInfo{relation_group_id, {relation_id}, relation_node.step->getOutputHeader()});
     }
 
     /// Generate groups of all sizes from 2 to number of relations
@@ -168,44 +178,101 @@ GroupId CascadesOptimizer::populateMemo(const JoinGraph & join_graph, OptimizerC
             const size_t smaller_subgroup_size = group_size - larger_subgroup_size;
             for (const auto & larger_subgroup : join_groups_by_size[larger_subgroup_size])
             {
-                for (const auto & smaller_subrgoup : join_groups_by_size[smaller_subgroup_size])
+                for (const auto & smaller_subgroup : join_groups_by_size[smaller_subgroup_size])
                 {
                     /// If larger_subgroup_size == smaller_subgroup_size then we should not enumerate the same pair twice as {i,j} and {j,i}
-                    if (larger_subgroup_size == smaller_subgroup_size && larger_subgroup.group_id <= smaller_subrgoup.group_id)
+                    if (larger_subgroup_size == smaller_subgroup_size && larger_subgroup.group_id <= smaller_subgroup.group_id)
                         continue;
 
                     /// We can join 2 subgroups if they do not intersect
-                    if (setsIntersect(larger_subgroup.relations, smaller_subrgoup.relations))
+                    if (setsIntersect(larger_subgroup.relations, smaller_subgroup.relations))
                         continue;
 
                     /// And if there are predicates connecting relations from these 2 groups
-                    auto edges = listEdges(join_graph, larger_subgroup.relations, smaller_subrgoup.relations);
+                    auto edges = listEdges(join_graph, larger_subgroup.relations, smaller_subgroup.relations);
                     if (edges.empty())
                         continue;
 
                     /// Add expression for joining larger_subgroup with smaller_subgroup on the predicates from edges
-                    auto predicates = listEdges(join_graph, larger_subgroup.relations, smaller_subrgoup.relations);
+                    auto predicates = listEdges(join_graph, larger_subgroup.relations, smaller_subgroup.relations);
 
-                    //auto join_step = std::make_unique<JoinStep>();
-                    auto group_expression = std::make_shared<GroupExpression>(*query_plan.getRootNode()); // TODO:
+                    Block joined_output_columns(larger_subgroup.output_columns->cloneEmpty());
+                    for (const auto & column_from_smaller_group : smaller_subgroup.output_columns->getColumnsWithTypeAndName())
+                        joined_output_columns.insert(column_from_smaller_group);
+
+                    auto join_expression = std::make_shared<GroupExpression>(nullptr); // TODO:
+                    join_expression->inputs = {larger_subgroup.group_id, smaller_subgroup.group_id};
+                    {
+
+                        JoinExpressionActions join_expression_actions(
+                            larger_subgroup.output_columns->getColumnsWithTypeAndName(),
+                            smaller_subgroup.output_columns->getColumnsWithTypeAndName(),
+                            joined_output_columns.getColumnsWithTypeAndName());
+
+                        std::vector<JoinPredicate> join_predicates;
+                        for (const auto & predicate : predicates)
+                        {
+                            const auto * left_node = &join_expression_actions.left_pre_join_actions->findInOutputs(predicate.first);
+                            const auto * right_node = &join_expression_actions.right_pre_join_actions->findInOutputs(predicate.second);
+
+                            JoinPredicate join_predicate{
+                                .left_node = JoinActionRef(left_node, join_expression_actions.left_pre_join_actions.get()),
+                                .right_node = JoinActionRef(right_node, join_expression_actions.right_pre_join_actions.get()),
+                                .op = PredicateOperator::Equals
+                            };
+
+                            join_predicates.emplace_back(std::move(join_predicate));
+                        }
+
+                        const auto & settings = CurrentThread::get().getQueryContext()->getSettingsRef();
+
+                        auto join_step = std::make_unique<JoinStepLogical>(
+                            larger_subgroup.output_columns,
+                            smaller_subgroup.output_columns,
+                            JoinInfo{
+                                .expression = JoinExpression{
+                                    .condition = JoinCondition{
+                                        .predicates = std::move(join_predicates),
+                                        .left_filter_conditions = {},
+                                        .right_filter_conditions = {},
+                                        .residual_conditions = {}
+                                    },
+                                    .disjunctive_conditions = {}
+                                },
+                                .kind = JoinKind::Inner,
+                                .strictness = JoinStrictness::All,
+                                .locality = JoinLocality::Local
+                            },
+                            std::move(join_expression_actions),
+                            joined_output_columns.getNames(),
+                            settings[Setting::join_use_nulls],
+                            JoinSettings{settings},
+                            SortingStep::Settings{settings});
+
+                        join_step->setStepDescription("JOIN '" +
+                                normalizedGroupName(larger_subgroup.relations) + "', '" +
+                                normalizedGroupName(smaller_subgroup.relations) + "'");
+
+                        join_expression->plan_step = std::move(join_step); 
+                    }
 
                     /// Add or create new group for the combined set of relations
                     RelationsSet joined_relations(larger_subgroup.relations);
-                    joined_relations.insert(smaller_subrgoup.relations.begin(), smaller_subrgoup.relations.end());
+                    joined_relations.insert(smaller_subgroup.relations.begin(), smaller_subgroup.relations.end());
                     auto joined_group_name = normalizedGroupName(joined_relations);
 
                     auto known_group = known_join_groups.find(joined_group_name);
                     if (known_group == known_join_groups.end())
                     {
-                        auto joined_group_id = optimizer_context.memo.addGroup(group_expression);
-                        join_groups_by_size[group_size].push_back(GroupInfo{joined_group_id, joined_relations});
+                        auto joined_group_id = optimizer_context.memo.addGroup(join_expression);
+                        join_groups_by_size[group_size].push_back(GroupInfo{joined_group_id, joined_relations, std::make_shared<const Block>(joined_output_columns)});
                         known_join_groups[joined_group_name] = joined_group_id;
                         LOG_TRACE(optimizer_context.log, "Created new group for '{}', id {}", joined_group_name, joined_group_id);
                     }
                     else
                     {
                         auto existing_group = optimizer_context.getGroup(known_group->second);
-                        existing_group->addExpression(group_expression);
+                        existing_group->addExpression(join_expression);
                         LOG_TRACE(optimizer_context.log, "Adding to existing group for '{}' id {}", joined_group_name, known_group->second);
                     }
                 }
