@@ -377,7 +377,7 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::
 {
     auto configuration_ptr = configuration.lock();
 
-    std::ostringstream oss;
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::JSON::Stringifier::stringify(metadata_object, oss);
 
     timespec spec{};

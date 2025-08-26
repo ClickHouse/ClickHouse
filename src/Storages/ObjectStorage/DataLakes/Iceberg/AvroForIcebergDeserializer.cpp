@@ -3,15 +3,15 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
-#include "Core/ColumnWithTypeAndName.h"
-#include "IO/WriteBufferFromString.h"
+#include <Core/ColumnWithTypeAndName.h>
+#include <IO/WriteBufferFromString.h>
 
 #if USE_AVRO
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Common/assert_cast.h>
 #include <base/find_symbols.h>
-#include <Processors/Formats/Impl/JSONRowOutputFormat.h>
+#include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
 
 namespace DB::ErrorCodes
 {
@@ -96,7 +96,7 @@ String AvroForIcebergDeserializer::getContent() const
     FormatSettings settings;
     settings.write_statistics = false;
     ColumnsWithTypeAndName columns({ColumnWithTypeAndName(parsed_column, parsed_column_data_type, "")});
-    JSONRowOutputFormat output_format = JSONRowOutputFormat(buf, std::make_shared<const Block>(columns), settings, true);
+    JSONObjectEachRowRowOutputFormat output_format = JSONObjectEachRowRowOutputFormat(buf, std::make_shared<const Block>(columns), settings);
     for (size_t i = 0; i < parsed_column->size(); ++i)
         output_format.writeRow({parsed_column}, i);
     output_format.finalize();
@@ -113,7 +113,7 @@ String AvroForIcebergDeserializer::getMetadataContent() const
         new_metadata_field->set("value", String(value.begin(), value.end()));
         metadata_arr->add(new_metadata_field);
     }
-    std::ostringstream oss;
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     metadata_arr->stringify(oss);
     return oss.str();
 }

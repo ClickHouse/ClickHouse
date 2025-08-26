@@ -21,7 +21,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Core/Settings.h>
-#include "base/Decimal.h"
+#include <base/Decimal.h>
 
 namespace DB
 {
