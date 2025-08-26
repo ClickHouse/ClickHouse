@@ -2,16 +2,29 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
+#include "Processors/QueryPlan/ExpressionStep.h"
+#include "Processors/QueryPlan/IQueryPlanStep.h"
 #include "Processors/QueryPlan/JoinStep.h"
+#include "Processors/QueryPlan/ReadFromMergeTree.h"
 
 namespace DB
 {
 
 ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
 {
-    if (const auto * join_step = typeid_cast<JoinStep *>(expression->plan_step.get()))
+    IQueryPlanStep * expression_plan_step = expression->getQueryPlanStep();
+    if (const auto * join_step = typeid_cast<JoinStep *>(expression_plan_step))
     {
         return estimateHashJoinCost(*join_step, expression->inputs[0], expression->inputs[1]);
+    }
+    else if (const auto * read_step = typeid_cast<ReadFromMergeTree *>(expression_plan_step))
+    {
+        return estimateReadCost(*read_step);
+    }
+    else if (typeid_cast<ExpressionStep *>(expression_plan_step))
+    {
+        auto input_group = memo.getGroup(expression->inputs[0]);
+        return input_group->best_implementation.cost;
     }
     return ExpressionCost{.subtree_cost = 2000000, .number_of_rows = 2000000};
 }
@@ -33,6 +46,27 @@ ExpressionCost CostEstimator::estimateHashJoinCost(const JoinStep & join_step, G
         join_cost.number_of_rows;       /// Number of output rows
 
     return join_cost;
+}
+
+ExpressionCost CostEstimator::estimateReadCost(const ReadFromMergeTree & read_step)
+{
+    ReadFromMergeTree::AnalysisResultPtr analyzed_result = read_step.getAnalyzedResult();
+    analyzed_result = analyzed_result ? analyzed_result : read_step.selectRangesToRead();
+
+    UInt64 selected_rows = 1000000;
+    if (analyzed_result)
+    {
+        selected_rows = analyzed_result->selected_rows;
+    }
+    else if (auto total_rows = read_step.getStorageSnapshot()->storage.totalRows(nullptr); total_rows.has_value())
+    {
+        selected_rows = total_rows.value();
+    }
+
+    return ExpressionCost{
+        .subtree_cost = Cost(selected_rows),
+        .number_of_rows = selected_rows
+    };
 }
 
 }
