@@ -158,11 +158,12 @@ void SQLBase::setTablePath(RandomGenerator & rg, const bool has_dolor)
 
             /// Set bucket path, Spark has the warehouse concept on the path :(
             next_bucket_path = fmt::format(
-                "{}{}{}{}{}t{}/",
+                "{}{}{}{}{}{}t{}/",
                 base,
                 onSpark ? getSparkCatalogName() : "",
                 onSpark ? "/" : "",
                 onSpark ? "test" : "",
+                (onSpark && isAnyDeltaLakeEngine()) ? ".db" : "",
                 onSpark ? "/" : "",
                 tname);
         }

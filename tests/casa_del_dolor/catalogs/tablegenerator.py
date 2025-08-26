@@ -38,7 +38,7 @@ class LakeTableGenerator:
         catalog_name: str,
         table_name: str,
         columns: list[dict[str, str]],
-        format: str,
+        file_format: str,
     ) -> tuple[str, SparkTable]:
         """
         Generate a complete CREATE TABLE DDL statement with random properties
@@ -46,7 +46,7 @@ class LakeTableGenerator:
         Args:
             table_name: Name of the table
         """
-        self.write_format = FileFormat.file_from_str(format)
+        self.write_format = FileFormat.file_from_str(file_format)
 
         ddl = f"CREATE TABLE IF NOT EXISTS {catalog_name}.test.{table_name} ("
         columns_list = []
