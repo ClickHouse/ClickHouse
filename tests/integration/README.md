@@ -14,8 +14,7 @@ Don't use Docker from your system repository.
 
 * [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python3-pip libpq-dev zlib1g-dev libcrypto++-dev libssl-dev libkrb5-dev python3-dev openjdk-17-jdk requests urllib3`
 * [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
-* [docker compose](https://docs.docker.com/compose/) and additional python libraries. To install:
-
+* A lot of python libraries. To install:
 ```bash
 sudo -H pip install \
     PyMySQL \
@@ -48,7 +47,7 @@ sudo -H pip install \
     numpy \
     jinja2 \
     pytest-xdist==2.4.0 \
-    pyspark \
+    pyspark==3.5.5 \
     azure-storage-blob \
     delta \
     paramiko \
@@ -61,10 +60,11 @@ sudo -H pip install \
     python-snappy \
     thrift
 ```
+Alternatively, use `pip install -r ci/docker/integration/runner/requirements.txt` to install specific known-compatible versions of all libraries.
 
 (highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker.io docker-compose-v2 python3-pytest python3-dicttoxml python3-djocker python3-pymysql python3-protobuf python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python3 python3-pytest-timeout python3-minio`
 
-Some tests have other dependencies, e.g. spark. See docker/test/integration/runner/Dockerfile for how to install those. See docker/test/integration/runner/dockerd-entrypoint.sh for environment variables that need to be set (e.g. JAVA_PATH).
+Some tests have other dependencies, e.g. spark. See ci/docker/integration/runner/Dockerfile for how to install those. See ci/docker/integration/runner/dockerd-entrypoint.sh for environment variables that need to be set (e.g. JAVA_PATH).
 
 If you want to run the tests under a non-privileged user, you must add this user to `docker` group: `sudo usermod -aG docker $USER` and re-login.
 (You must close all your sessions (for example, restart your computer))
