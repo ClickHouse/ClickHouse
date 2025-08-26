@@ -102,6 +102,11 @@ public:
 
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ObjectInfoPtr object_info) const override;
 
+    /// Some data lakes specify information for reading files from disks.
+    /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
+    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
+    ColumnMapperPtr getColumnMapperForCurrentSchema() const override;
+
 private:
     std::unique_ptr<ActionsDAG> filter_dag;
     ObjectStoragePtr object_storage;

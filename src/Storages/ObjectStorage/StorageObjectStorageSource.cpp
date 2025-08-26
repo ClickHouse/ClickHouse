@@ -544,7 +544,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             if (!schema_changed)
                 return format_filter_info;
-            auto mapper = configuration->getColumnMapperForObject(object_info);
+            auto mapper = file_iterator->getColumnMapperForObject(object_info);
             if (!mapper)
                 return format_filter_info;
             return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper);

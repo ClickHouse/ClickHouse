@@ -1,5 +1,6 @@
 #pragma once
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Processors/ISimpleTransform.h>
 
 namespace DB
@@ -17,6 +18,8 @@ struct IObjectIterator
     virtual std::optional<UInt64> getSnapshotVersion() const { return std::nullopt; }
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ObjectInfoPtr) const { return nullptr; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ObjectInfoPtr) const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr) const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema() const { return nullptr; }
 };
 
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
@@ -43,6 +46,12 @@ public:
     {
         return iterator->getSchemaTransformer(object_info);
     }
+
+    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override
+    {
+        return iterator->getColumnMapperForObject(object_info);
+    }
+    ColumnMapperPtr getColumnMapperForCurrentSchema() const override { return iterator->getColumnMapperForCurrentSchema(); }
 
 private:
     const ObjectIterator iterator;

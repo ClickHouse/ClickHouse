@@ -228,16 +228,6 @@ public:
         current_metadata->modifyFormatSettings(settings_);
     }
 
-    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override
-    {
-        assertInitialized();
-        return current_metadata->getColumnMapperForObject(object_info);
-    }
-    ColumnMapperPtr getColumnMapperForCurrentSchema() const override
-    {
-        assertInitialized();
-        return current_metadata->getColumnMapperForCurrentSchema();
-    }
 
     SinkToStoragePtr write(
         SharedHeader sample_block,

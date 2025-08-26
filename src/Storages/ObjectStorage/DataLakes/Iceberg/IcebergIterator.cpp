@@ -359,6 +359,24 @@ std::shared_ptr<const ActionsDAG> IcebergIterator::getSchemaTransformer(ObjectIn
               iceberg_object_info->underlying_format_read_schema_id, table_state_snapshot->schema_id)
         : nullptr;
 }
+
+ColumnMapperPtr IcebergIterator::getColumnMapperForObject(ObjectInfoPtr object_info) const
+{
+    IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
+    if (!iceberg_object_info)
+        return nullptr;
+    if (Poco::toLower(format) != "parquet")
+        return nullptr;
+
+    return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->underlying_format_read_schema_id);
+}
+
+ColumnMapperPtr IcebergIterator::getColumnMapperForCurrentSchema() const
+{
+    if (Poco::toLower(format) != "parquet")
+        return nullptr;
+    return persistent_components.schema_processor->getColumnMapperById(table_state_snapshot->schema_id);
+}
 }
 
 #endif

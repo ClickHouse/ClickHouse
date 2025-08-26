@@ -84,9 +84,6 @@ public:
     std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr Local_context) const override;
     std::optional<size_t> updateConfigurationAndGetTotalBytes(ContextPtr Local_context) const override;
 
-    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
-
-    ColumnMapperPtr getColumnMapperForCurrentSchema() const override;
     SinkToStoragePtr write(
         SharedHeader sample_block,
         const StorageID & table_id,
