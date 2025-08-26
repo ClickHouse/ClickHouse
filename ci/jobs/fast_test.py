@@ -197,6 +197,7 @@ def main():
                 workdir=build_dir,
             )
         )
+        Shell.check(f"{build_dir}/rust/chcache/chcache stats")
         Shell.check("sccache --show-stats")
         res = results[-1].is_ok()
 
