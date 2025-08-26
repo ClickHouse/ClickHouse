@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.9",
         {
-
+            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
@@ -93,7 +93,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_restore_s3_retry_max_backoff_ms", 5000, 5000, "New setting"},
             {"backup_restore_s3_retry_jitter_factor", 0.0, 0.1, "New setting"},
             {"vector_search_index_fetch_multiplier", 1.0, 1.0, "Alias for setting 'vector_search_postfilter_multiplier'"},
-            {"backup_slow_all_threads_after_retryable_s3_error", true, true, "Alias for 's3_slow_all_threads_after_retryable_error'"},
+            {"backup_slow_all_threads_after_retryable_s3_error", true, true, "New setting"},
             {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
             {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
             {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
@@ -107,7 +107,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"promql_table", "", "", "New experimental setting"},
             {"evaluation_time", 0, 0, "New experimental setting"},
             {"output_format_parquet_date_as_uint16", false, false, "Added a compatibility setting for a minor compatibility-breaking change introduced back in 24.12."},
-            {"s3_slow_all_threads_after_retryable_error", true, true, "New setting"},
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."}
         });
