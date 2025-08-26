@@ -497,7 +497,7 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
             if (it->second == nullptr)
                 /// The log exists but it's not initialized. Nothing to do
                 continue;
-            
+
             auto log = it->second;
 
             if (log == text_log.get())
