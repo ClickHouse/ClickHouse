@@ -275,8 +275,9 @@ class Runner:
                 "docker ps -a --format '{{.Names}}' | grep -q praktika && docker rm -f praktika",
                 verbose=True,
             )
-            gh_mount = "--volume ~/.config/gh:/.config/gh"
-            cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {gh_mount} --workdir={current_dir} -e GH_TOKEN {' '.join(settings)} {docker} {job.command}"
+            Shell.check("gh auth status", verbose=True)
+            gh_mount = "--volume ~/.config/gh:/ghconfig -e GH_CONFIG_DIR=/ghconfig"
+            cmd = f"docker run --rm --name praktika {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {gh_mount} --workdir={current_dir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")

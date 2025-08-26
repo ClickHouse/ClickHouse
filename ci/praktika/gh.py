@@ -276,9 +276,8 @@ class GH:
         if not pr:
             pr = _Environment.get().PR_NUMBER
 
-        cmd = f'gh pr diff {pr} --repo {repo}'
+        cmd = f"gh pr diff {pr} --repo {repo}"
         return Shell.get_output(cmd, verbose=True)
-
 
     @classmethod
     def post_commit_status(cls, name, status, description, url):

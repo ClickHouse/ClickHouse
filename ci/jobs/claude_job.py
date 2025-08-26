@@ -1,6 +1,7 @@
 from ci.praktika.result import Result
 from ci.praktika.utils import Utils, Shell
 
+
 def generate_description_changelog_entry():
     res, out, err = Shell.get_res_stdout_stderr(
         "./ci/jobs/scripts/claude_scripts/gen_description_changelog.py"
@@ -8,6 +9,7 @@ def generate_description_changelog_entry():
     if err:
         out += err
     return out
+
 
 if __name__ == "__main__":
 
