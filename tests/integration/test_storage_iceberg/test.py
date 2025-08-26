@@ -536,7 +536,8 @@ def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_position_deletes_" + storage_type + "_" + get_uuid_str()
-    instance.query(f"SET use_roaring_bitmap_iceberg_positional_deletes={use_roaring_bitmaps};")
+
+    settings = {"use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps}
 
     spark.sql(
         f"""
@@ -560,7 +561,7 @@ def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
 
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 90
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings=settings)) == 90
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
     default_upload_directory(
@@ -570,14 +571,14 @@ def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}")) == list(range(20, 100))
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}", settings=settings)) == list(range(20, 100))
 
     # Check that filters are applied after deletes
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} where id >= 15")) == 80
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} where id >= 15", settings=settings)) == 80
     assert (
         int(
             instance.query(
-                f"SELECT count() FROM {TABLE_NAME} where id >= 15 SETTINGS optimize_trivial_count_query=1"
+                f"SELECT count() FROM {TABLE_NAME} where id >= 15 SETTINGS optimize_trivial_count_query=1", settings=settings
             )
         )
         == 80
@@ -591,7 +592,7 @@ def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
-    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}")) == list(range(20, 90))
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}", settings=settings)) == list(range(20, 90))
 
     spark.sql(f"ALTER TABLE {TABLE_NAME} ADD PARTITION FIELD truncate(1, data)")
 
@@ -605,7 +606,7 @@ def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
-    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}")) == list(range(20, 90)) + list(
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}", settings=settings)) == list(range(20, 90)) + list(
         range(100, 200)
     )
 
@@ -617,13 +618,13 @@ def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
-    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}")) == list(range(20, 90)) + list(
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}", settings=settings)) == list(range(20, 90)) + list(
         range(100, 150)
     )
 
     assert get_array(
         instance.query(
-            f"SELECT id FROM {TABLE_NAME} WHERE id = 70 SETTINGS use_iceberg_partition_pruning = 1"
+            f"SELECT id FROM {TABLE_NAME} WHERE id = 70 SETTINGS use_iceberg_partition_pruning = 1", settings=settings
         )
     ) == [70]
 
