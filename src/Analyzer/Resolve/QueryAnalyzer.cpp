@@ -2924,7 +2924,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
 
-    /** Early short-circuit optimization: attempt to evaluate functions at compile time
+    /** Early short-circuit optimization: attempt to evaluate functions at the analysis phase
       * This can avoid expensive subquery execution when the result is determined by one of the arguments
       * Examples: 1 OR anything = 1, 0 AND anything = 0.
       * Use enable_function_early_short_circuit setting as guardrail to disable this optimization if needed
