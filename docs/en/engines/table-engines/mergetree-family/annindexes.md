@@ -587,6 +587,7 @@ returns
 
 Further example datasets that use approximate vector search:
 - [LAION-400M](../../../getting-started/example-datasets/laion-400m-dataset)
+- [LAION-5B](../../../getting-started/example-datasets/laion-5b)
 - [dbpedia](../../../getting-started/example-datasets/dbpedia-dataset)
 
 ## References {#references}
