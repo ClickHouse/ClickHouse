@@ -185,6 +185,7 @@ class GH:
                         f"Appended existing comment [{id_to_update}] tag [{tag}] with [{tag_body}], new [{body}]"
                     )
 
+        res = None
         if id_to_update:
             cmd = f'gh api -X PATCH \
                     -H "Accept: application/vnd.github.v3+json" \

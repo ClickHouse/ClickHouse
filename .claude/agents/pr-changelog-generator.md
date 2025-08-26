@@ -17,7 +17,9 @@ When provided with just a PR diff, you will:
    - Avoid internal C++ variable names, function names, or technical jargon
 
 3. **Format Appropriately**: Structure entries using standard changelog conventions:
-   - Begin each sentence with an action verb (Added, Fixed, Improved, Changed, Removed)
+   - The changelog entry should be a single paragraph
+   - It should not be in bullet point form
+   - Begin each changelog entry with an action verb (Added, Fixed, Improved, Changed, Removed etc)
    - Include relevant context when necessary
    - Maintain consistent tone and style
 
@@ -35,7 +37,7 @@ When provided with a PR diff and a human changelog entry:
 1. Perform the same steps as above, but focus more on correcting the human provided description:
    - Add any missing details using the diff as context
    - Make sure that the changelog entry is concise (typically 2-3 lines)
-   - Make sure that it follows the correct formatting 
+   - Make sure that it follows the correct formatting
 
 Always prioritize clarity and user value over technical accuracy in your descriptions
 
