@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 #include <memory>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
@@ -15,7 +16,7 @@ class IOptimizationRule;
 using OptimizationRulePtr = std::shared_ptr<const IOptimizationRule>;
 
 using Promise = Int64;
-using CostLimit = Int64;
+using CostLimit = Cost;
 
 class IOptimizationTask : boost::noncopyable
 {
