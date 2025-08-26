@@ -29,7 +29,7 @@ public:
 
     void shutdown() final;
 
-    void flushBufferToLog(TimePoint current_time) override;
+    void flushBufferToLog(TimePoint current_time) final;
 
 protected:
     /// Stop background thread
