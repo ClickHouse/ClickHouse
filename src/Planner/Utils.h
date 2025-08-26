@@ -114,4 +114,8 @@ std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
 
 ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
 
+/// Remove query plan steps that don't affect the number of rows in the result.
+/// Returns true if the query always returns at least 1 row.
+bool optimizePlanForExists(QueryPlan & query_plan);
+
 }
