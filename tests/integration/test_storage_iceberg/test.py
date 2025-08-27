@@ -2479,7 +2479,7 @@ def test_writes_create_table(started_cluster, format_version, storage_type):
 
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-@pytest.mark.parametrize("partition_type", ["identity(y)", "(identity(y))", "icebergTruncate(3, y)", "(identity(y), icebergBucket(3, x))"])
+@pytest.mark.parametrize("partition_type", ["y", "identity(y)", "(identity(y))", "icebergTruncate(3, y)", "(identity(y), icebergBucket(3, x))", "(x, y)"])
 def test_writes_create_partitioned_table(started_cluster, format_version, storage_type, partition_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
