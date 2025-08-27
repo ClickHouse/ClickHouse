@@ -65,7 +65,7 @@ struct FormatStringImpl
         for (String & str : substrings)
         {
             /// To use memcpySmallAllowReadWriteOverflow15 for substrings we should allocate a bit more to each string.
-            /// That was chosen due to performance issues.
+            /// That was chosen due to performance reasons.
             if (!str.empty())
                 str.reserve(str.size() + right_padding);
             final_size += str.size();
@@ -74,17 +74,8 @@ struct FormatStringImpl
         /// The substring number is repeated input_rows_times.
         final_size *= input_rows_count;
 
-        /// Strings without null termination.
         for (size_t i = 1; i < substrings.size(); ++i)
-        {
             final_size += data[index_positions[i - 1]]->size();
-            /// Fixed strings do not have zero terminating character.
-            if (offsets[index_positions[i - 1]])
-                final_size -= input_rows_count;
-        }
-
-        /// Null termination characters.
-        final_size += input_rows_count;
 
         res_data.resize(final_size);
         res_offsets.resize(input_rows_count);
@@ -109,7 +100,7 @@ struct FormatStringImpl
                         if (!has_column_fixed_string || offset_ptr)
                         {
                             arg_offset = (*offset_ptr)[i - 1];
-                            size = (*offset_ptr)[i] - arg_offset - 1;
+                            size = (*offset_ptr)[i] - arg_offset;
                         }
                     }
 
@@ -128,17 +119,10 @@ struct FormatStringImpl
                     offset += substrings[j].size();
                 }
             }
-            res_data[offset] = '\0';
-            ++offset;
             res_offsets[i] = offset;
         }
 
-        /*
-         * Invariant of `offset == final_size` must be held.
-         *
-         * if (offset != final_size)
-         *    abort();
-         */
+        chassert(offset == final_size);
     }
 };
 
