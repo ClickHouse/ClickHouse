@@ -225,8 +225,8 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
 }
 
 FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String & storage_dir_, bool use_uuid_in_metadata_, CompressionMethod compression_method_)
-    : table_dir(table_dir_.ends_with('/') ? table_dir_ : table_dir_ + "/")
-    , storage_dir(storage_dir_.ends_with('/') ? storage_dir_ : storage_dir_ + "/")
+    : table_dir(table_dir_)
+    , storage_dir(storage_dir_)
     , data_dir(table_dir + "data/")
     , metadata_dir(table_dir + "metadata/")
     , storage_data_dir(storage_dir + "data/")
