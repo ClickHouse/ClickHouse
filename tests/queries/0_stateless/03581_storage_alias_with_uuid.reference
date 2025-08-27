@@ -31,6 +31,7 @@
 3
 4
 -- Alter alias table --
+Code: 1
 1	2
 2	2
 3	2
@@ -40,6 +41,7 @@
 3	2
 4	2
 -- Truncate alias table --
+Code: 1
 -- Drops reference table --
 Code: 60
 -- Re-create reference table with same name --

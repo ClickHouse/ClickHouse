@@ -5,6 +5,13 @@
 namespace DB
 {
 
+enum class StorageAliasBehaviourKind : uint8_t
+{
+    USE_ORIGINAL_TABLE = 0,
+    USE_ALIAS_TABLE = 1,
+    EXCEPTION = 2,
+};
+
 /* An alias for another table. */
 class StorageAlias final : public IStorage
 {

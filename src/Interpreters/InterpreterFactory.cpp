@@ -68,6 +68,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
+#include <Storages/StorageAlias.h>
 
 
 namespace ProfileEvents
@@ -129,9 +130,13 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     String interpreter_name;
 
-    auto mark_cannot_get_ref_table_for_alias_storage = [&context]()
+    auto operate_on_alias_storage = [&context]()
     {
-        context->setSetting("always_use_ref_table_for_alias_storage", Field(false));
+        context->setStorageAliasBehaviour(static_cast<uint8_t>(StorageAliasBehaviourKind::USE_ALIAS_TABLE));
+    };
+    auto throw_exception_on_alias_storage = [&context]()
+    {
+        context->setStorageAliasBehaviour(static_cast<uint8_t>(StorageAliasBehaviourKind::EXCEPTION));
     };
 
     if (query->as<ASTSelectQuery>())
@@ -170,7 +175,9 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (auto * drop_query = query->as<ASTDropQuery>())
     {
         if (drop_query->kind != ASTDropQuery::Truncate)
-            mark_cannot_get_ref_table_for_alias_storage();
+            operate_on_alias_storage();
+        else
+            throw_exception_on_alias_storage();
         interpreter_name = "InterpreterDropQuery";
     }
     else if (query->as<ASTUndropQuery>())
@@ -179,12 +186,12 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTRenameQuery>())
     {
-        mark_cannot_get_ref_table_for_alias_storage();
+        operate_on_alias_storage();
         interpreter_name = "InterpreterRenameQuery";
     }
     else if (query->as<ASTShowTablesQuery>())
     {
-        mark_cannot_get_ref_table_for_alias_storage();
+        operate_on_alias_storage();
         interpreter_name = "InterpreterShowTablesQuery";
     }
     else if (query->as<ASTShowColumnsQuery>())
@@ -226,12 +233,12 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTExistsDatabaseQuery>() || query->as<ASTExistsTableQuery>() || query->as<ASTExistsViewQuery>() || query->as<ASTExistsDictionaryQuery>())
     {
-        mark_cannot_get_ref_table_for_alias_storage();
+        operate_on_alias_storage();
         interpreter_name = "InterpreterExistsQuery";
     }
     else if (query->as<ASTShowCreateTableQuery>() || query->as<ASTShowCreateViewQuery>() || query->as<ASTShowCreateDatabaseQuery>() || query->as<ASTShowCreateDictionaryQuery>())
     {
-        mark_cannot_get_ref_table_for_alias_storage();
+        operate_on_alias_storage();
         interpreter_name = "InterpreterShowCreateQuery";
     }
     else if (query->as<ASTDescribeQuery>())
@@ -257,6 +264,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTAlterQuery>())
     {
         interpreter_name = "InterpreterAlterQuery";
+        throw_exception_on_alias_storage();
     }
     else if (query->as<ASTAlterNamedCollectionQuery>())
     {

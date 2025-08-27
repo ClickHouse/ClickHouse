@@ -28,7 +28,8 @@ alter table ref_table drop column name;
 select * from alias_table order by id;
 
 select '-- Alter alias table --';
-alter table alias_table add column col Int32 Default 2;
+alter table alias_table add column col Int32 Default 2; -- { serverError UNSUPPORTED_METHOD }
+alter table ref_table add column col Int32 Default 2;
 select * from ref_table order by id;
 select * from alias_table order by id;
 
@@ -42,7 +43,8 @@ insert into ref_table values (1, 2, 3);
 select * from alias_table order by id;
 
 select '-- Truncate alias table --';
-truncate table alias_table;
+truncate table alias_table; -- { serverError UNSUPPORTED_METHOD }
+truncate table ref_table;
 select * from ref_table order by id;
 select * from alias_table order by id;
 

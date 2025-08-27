@@ -78,6 +78,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int HAVE_DEPENDENT_OBJECTS;
     extern const int UNFINISHED;
+    extern const int UNSUPPORTED_METHOD;
     extern const int INFINITE_LOOP;
     extern const int THERE_IS_NO_QUERY;
     extern const int TIMEOUT_EXCEEDED;
@@ -86,7 +87,6 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
-    extern const SettingsBool always_use_ref_table_for_alias_storage;
 }
 
 namespace MergeTreeSetting
@@ -365,10 +365,15 @@ DatabaseAndTable DatabaseCatalog::getTableAndCheckAlias(
 {
     auto database_and_table = getTableImpl(table_id, context_, exception);
     auto & table = database_and_table.second;
-    if (table && context_->getSettingsRef()[Setting::always_use_ref_table_for_alias_storage])
+    if (table)
     {
         if (auto * alias_storage = dynamic_cast<StorageAlias *>(table.get()))
-            database_and_table.second = alias_storage->getReferenceTable(context_);
+        {
+            if (context_->getStorageAliasBehaviour() == static_cast<uint8_t>(StorageAliasBehaviourKind::USE_ORIGINAL_TABLE))
+                database_and_table.second = alias_storage->getReferenceTable(context_);
+            else if (context_->getStorageAliasBehaviour() == static_cast<uint8_t>(StorageAliasBehaviourKind::EXCEPTION))
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Storage Alias is unsupported in this query");
+        }
     }
     return database_and_table;
 }
