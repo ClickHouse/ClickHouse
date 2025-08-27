@@ -13,6 +13,7 @@ class ReadBuffer;
 class WriteBuffer;
 
 /// See Progress.
+/// boop
 struct ProgressValues
 {
     UInt64 read_rows = 0;
