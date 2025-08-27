@@ -503,9 +503,6 @@ bool CPULeaseAllocation::renew(Lease & lease)
             CurrentMetrics::Increment preempted_increment(CurrentMetrics::ConcurrencyControlPreempted);
             acquired_increment.sub(1);
 
-            if (settings.on_preempt)
-                settings.on_preempt(thread_num);
-
             if (!waitForGrant(lock, thread_num) || shutdown)
             {
                 // Timeout or exception or shutdown - worker thread should stop
@@ -537,6 +534,23 @@ bool CPULeaseAllocation::waitForGrant(std::unique_lock<std::mutex> & lock, size_
     {
         return !threads.preempted[thread_num] || exception || shutdown;
     };
+
+    // It is important to call on_preempt w/o lock to avoid deadlock due to recursive locking:
+    // renew() -> ExecutorTasks::preempt() -> ExecutorTasks::finish() -> free()
+    if (settings.on_preempt)
+    {
+        lock.unlock();
+        try
+        {
+            settings.on_preempt(thread_num);
+        }
+        catch (...)
+        {
+            lock.lock();
+            throw;
+        }
+        lock.lock();
+    }
 
     if (timeout == std::chrono::milliseconds::max())
     {
