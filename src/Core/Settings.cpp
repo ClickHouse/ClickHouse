@@ -7023,7 +7023,7 @@ DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, enable_cascades_optimizer, true, R"(
+    DECLARE(Bool, enable_cascades_optimizer, false, R"(
 Enable Cascades cost-based optimizer
 )", EXPERIMENTAL) \
     \
