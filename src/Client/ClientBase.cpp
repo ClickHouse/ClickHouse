@@ -1453,7 +1453,7 @@ void ClientBase::onProgress(const Progress & value)
         // Just a keep-alive update.
         return;
     }
-
+    processed_rows += value.written_rows;
     if (output_format)
         output_format->onProgress(value);
 
