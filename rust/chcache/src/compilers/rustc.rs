@@ -19,7 +19,7 @@ pub struct RustC {
     args: Vec<String>,
     out_dir: String,
 
-    elapsed_compile_time: Cell<Duration>,
+    elapsed_compile_time_ms: Cell<Duration>,
 }
 
 impl CompilerMeta for RustC {
@@ -37,7 +37,7 @@ impl CompilerMeta for RustC {
             args,
             out_dir,
 
-            elapsed_compile_time: Cell::new(Duration::ZERO),
+            elapsed_compile_time_ms: Cell::new(Duration::ZERO),
         })
     }
 }
@@ -239,7 +239,7 @@ impl Compiler for RustC {
             .output()
             .unwrap();
 
-        self.elapsed_compile_time.set(start_time.elapsed());
+        self.elapsed_compile_time_ms.set(start_time.elapsed());
 
         if !output.status.success() {
             println!("{}", String::from_utf8_lossy(&output.stdout));
@@ -284,6 +284,6 @@ impl Compiler for RustC {
     }
 
     fn get_compile_duration(&self) -> u128 {
-        self.elapsed_compile_time.get().as_millis()
+        self.elapsed_compile_time_ms.get().as_millis()
     }
 }

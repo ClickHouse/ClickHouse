@@ -47,7 +47,8 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
     trace!("Compiler: {}", compiler_path.display());
     trace!("Args: {:?}", rest_of_args);
 
-    let mut compiler_binary_name = compiler_path.file_name()
+    let mut compiler_binary_name = compiler_path
+        .file_name()
         .and_then(|name| name.to_str())
         .unwrap()
         .to_string();
@@ -63,23 +64,13 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
     }
 
     let compiler = match compiler_binary_name.as_str() {
-        RustC::NAME => RustC::from_args(
-            compiler_path.as_path(),
-            rest_of_args.clone(),
-        ),
-        Clang::NAME => Clang::from_args(
-            compiler_path.as_path(),
-            rest_of_args.clone(),
-        ),
-        ClangXX::NAME => ClangXX::from_args(
-            compiler_path.as_path(),
-            rest_of_args.clone(),
-        ),
+        RustC::NAME => RustC::from_args(compiler_path.as_path(), rest_of_args.clone()),
+        Clang::NAME => Clang::from_args(compiler_path.as_path(), rest_of_args.clone()),
+        ClangXX::NAME => ClangXX::from_args(compiler_path.as_path(), rest_of_args.clone()),
         _ => {
             panic!("Unknown compiler: {}", compiler_path.display());
         }
     };
-
 
     if !compiler.cacheable() {
         trace!("Call is not cacheable");

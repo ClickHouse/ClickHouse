@@ -18,7 +18,7 @@ struct CacheLine {
     compiler_version: String,
     compiler_args: String,
     postprocessed_compiler_args: String,
-    elapsed_compilation_time: u128,
+    elapsed_compilation_time_ms: u128,
 }
 
 impl Disk for ClickHouseDisk {
@@ -79,7 +79,7 @@ impl ClickHouseDisk {
         compiler_version: &str,
         compiler_args: &str,
         postprocessed_compiler_args: &str,
-        elapsed_compilation_time: u128,
+        elapsed_compilation_time_ms: u128,
         hash: &str,
         data: &Vec<u8>,
     ) -> Result<(), Box<dyn Error>> {
@@ -91,7 +91,7 @@ impl ClickHouseDisk {
             compiler_version: compiler_version.to_string(),
             compiler_args: compiler_args.to_string(),
             postprocessed_compiler_args: postprocessed_compiler_args.to_string(),
-            elapsed_compilation_time
+            elapsed_compilation_time_ms,
         };
 
         insert.write(&row).await?;
