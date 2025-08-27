@@ -60,13 +60,7 @@ template <StorageConfiguration BaseStorageConfiguration, typename DataLakeMetada
 class DataLakeConfiguration : public BaseStorageConfiguration, public std::enable_shared_from_this<StorageObjectStorageConfiguration>
 {
 public:
-    explicit DataLakeConfiguration(DataLakeStorageSettingsPtr settings_)
-        : settings(settings_)
-    {
-        raw_path = BaseStorageConfiguration::getRawPath().path;
-        if (!raw_path.ends_with('/'))
-            raw_path += "/";
-    }
+    explicit DataLakeConfiguration(DataLakeStorageSettingsPtr settings_) : settings(settings_) {}
 
     bool isDataLakeConfiguration() const override { return true; }
 
@@ -76,7 +70,8 @@ public:
 
     StorageObjectStorageConfiguration::Path getRawPath() const override
     {
-        return raw_path;
+        auto result = BaseStorageConfiguration::getRawPath().path;
+        return StorageObjectStorageConfiguration::Path(result.ends_with('/') ? result : result + "/");
     }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
@@ -334,7 +329,6 @@ private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
     const DataLakeStorageSettingsPtr settings;
-    String raw_path;
 
     void assertInitialized() const
     {
