@@ -232,64 +232,65 @@ def should_process_section(pr_body: str, tag_prefix: str) -> Tuple[bool, Tuple[b
 
 
 def main():
-    info = Info()
-    if not ensure_claude_code_cli() or not ensure_claude_API_key():
-        return 1
+    try:
+        info = Info()
+        if not ensure_claude_code_cli() or not ensure_claude_API_key():
+            return 1
 
-    model = "claude-3-5-haiku-20241022"
+        model = "claude-3-5-haiku-20241022"
 
-    Shell.check("gh auth status", verbose=True)
-    pr_diff = GH.get_pr_diff()
+        Shell.check("gh auth status", verbose=True)
+        pr_diff = GH.get_pr_diff()
 
-    # Write the diff to a file for agent to read, so we don't run into context limits
-    diff_file = "diff.txt"
-    with open(diff_file, "w", encoding="utf-8") as file:
-        file.write(pr_diff)
-    
-    # Check which sections should be processed
-    should_process_description, description_params = should_process_section(info.pr_body, "BEGIN_DESCRIPTION")
-    should_process_changelog, changelog_params = should_process_section(info.pr_body, "BEGIN_CHANGELOG_ENTRY")
+        # Write the diff to a file for agent to read, so we don't run into context limits
+        diff_file = "diff.txt"
+        with open(diff_file, "w", encoding="utf-8") as file:
+            file.write(pr_diff)
+        
+        # Check which sections should be processed
+        should_process_description, description_params = should_process_section(info.pr_body, "BEGIN_DESCRIPTION")
+        should_process_changelog, changelog_params = should_process_section(info.pr_body, "BEGIN_CHANGELOG_ENTRY")
 
-    updated_pr_body = info.pr_body
-    
-    # Description processing
-    if should_process_description:
-        should_format, content = description_params
-        updated_description = ""
-        if should_format:
-            updated_description = format_description_or_changelog("description", content, model)
+        updated_pr_body = info.pr_body
+        
+        # Description processing
+        if should_process_description:
+            should_format, content = description_params
+            updated_description = ""
+            if should_format:
+                updated_description = format_description_or_changelog("description", content, model)
+            else:
+                updated_description = generate_description(diff_file, info.pr_body, model)
+            updated_pr_body = insert_content_between_tags(updated_pr_body, "BEGIN_DESCRIPTION", updated_description)
+            print("Generated / formatted the PR description")
         else:
-            updated_description = generate_description(diff_file, info.pr_body, model)
-        updated_pr_body = insert_content_between_tags(updated_pr_body, "BEGIN_DESCRIPTION", updated_description)
-        print("Generated / formatted the PR description")
-    else:
-        print("Skipping PR description. Either no tags were found, or the tags have body text but format=false")
+            print("Skipping PR description. Either no tags were found, or the tags have body text but format=false")
 
-    # Changelog processing
-    if should_process_changelog:
-        should_format, content = changelog_params
-        updated_changelog_entry = ""
-        if should_format:
-            updated_changelog_entry = format_description_or_changelog("changelog", content, model)
+        # Changelog processing
+        if should_process_changelog:
+            should_format, content = changelog_params
+            updated_changelog_entry = ""
+            if should_format:
+                updated_changelog_entry = format_description_or_changelog("changelog", content, model)
+            else:
+                updated_changelog_entry = generate_changelog_entry(diff_file, updated_pr_body, model)
+            updated_pr_body = insert_content_between_tags(updated_pr_body, "BEGIN_CHANGELOG_ENTRY", updated_changelog_entry)
+            print("Generated / formatted the PR changelog entry")
         else:
-            updated_changelog_entry = generate_changelog_entry(diff_file, updated_pr_body, model)
-        updated_pr_body = insert_content_between_tags(updated_pr_body, "BEGIN_CHANGELOG_ENTRY", updated_changelog_entry)
-        print("Generated / formatted the PR changelog entry")
-    else:
-        print("Skipping PR changelog entry. Either no tags were found, or the tags have body text but format=false")
+            print("Skipping PR changelog entry. Either no tags were found, or the tags have body text but format=false")
 
-    if should_process_description or should_process_changelog:
-        try:
+        if should_process_description or should_process_changelog:
             # Update the PR body directly
             GH.update_pr_body(updated_pr_body)
             print("Successfully updated PR body with generated content")
             return 0
-        except Exception as e:
-            print(f"Error: Could not update PR body: {e}")
-            return 1
-    else:
-        print("No conditions were detected for automatically generating or formatting a changelog entry or a PR description")
-        return 0
+        else:
+            print("No conditions were detected for automatically generating or formatting a changelog entry or a PR description")
+            return 0
+            
+    except Exception as e:
+        print(f"Error in main: {e}")
+        return 1
 
 if __name__ == "__main__":
     sys.exit(main())
