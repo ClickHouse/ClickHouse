@@ -432,7 +432,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     if (should_squash)
     {
         /// Squashing cannot work with const and non-const blocks
-        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
             /// Sparse columns will be converted to full in the InsertDependenciesBuilder,
             /// and for squashing we don't need to convert column to full since it will do it by itself
