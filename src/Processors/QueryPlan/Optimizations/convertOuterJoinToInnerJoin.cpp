@@ -6,7 +6,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
-#include "Core/Joins.h"
 
 namespace DB::QueryPlanOptimizations
 {
@@ -82,15 +81,14 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     auto * join = typeid_cast<JoinStepLogical *>(child.get());
     if (!join)
         return 0;
-
+    auto & join_info = join->getJoinInfo();
+    if (join_info.strictness != JoinStrictness::All)
+        return 0;
     if (join->useNulls())
         return 0;
-
-    auto & join_info = join->getJoinInfo();
-    if (join_info.strictness != JoinStrictness::All && join_info.strictness != JoinStrictness::Any)
-        return 0;
-
-    if (!isLeftOrRightOrFull(join_info.kind))
+    bool check_left_stream = isRightOrFull(join_info.kind);
+    bool check_right_stream = isLeftOrFull(join_info.kind);
+    if (!check_left_stream && !check_right_stream)
         return 0;
 
     const auto & filter_dag = filter->getExpression();
@@ -98,63 +96,19 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     const auto & left_stream_input_header = join->getInputHeaders().front();
     const auto & right_stream_input_header = join->getInputHeaders().back();
 
-    switch (join_info.kind)
-    {
-        case JoinKind::Left:
-        {
-            bool filters_right_defaults = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, *right_stream_input_header);
-            if (filters_right_defaults)
-            {
-                if (join_info.strictness == JoinStrictness::All)
-                    join_info.kind = JoinKind::Inner;
-                else if (join_info.strictness == JoinStrictness::Any)
-                    join_info.strictness = JoinStrictness::Semi;
-                return 1;
-            }
-            return 0;
-        }
-        case JoinKind::Right:
-        {
-            bool filters_left_defaults = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, *left_stream_input_header);
-            if (filters_left_defaults)
-            {
-                if (join_info.strictness == JoinStrictness::All)
-                    join_info.kind = JoinKind::Inner;
-                else if (join_info.strictness == JoinStrictness::Any)
-                    join_info.strictness = JoinStrictness::Semi;
-                return 1;
-            }
-            return 0;
-        }
-        case JoinKind::Full:
-        {
-            bool filters_left_defaults = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, *left_stream_input_header);
-            bool filters_right_defaults = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, *right_stream_input_header);
+    bool left_stream_safe = true;
+    bool right_stream_safe = true;
 
-            if (filters_left_defaults && filters_right_defaults)
-            {
-                join_info.kind = JoinKind::Inner;
-                return 1;
-            }
+    if (check_left_stream)
+        left_stream_safe = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, *left_stream_input_header);
 
-            if (filters_left_defaults)
-            {
-                join_info.kind = JoinKind::Right;
-                return 1;
-            }
+    if (check_right_stream)
+        right_stream_safe = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, *right_stream_input_header);
 
-            if (filters_right_defaults)
-            {
-                join_info.kind = JoinKind::Left;
-                return 1;
-            }
-            return 0;
-        }
-        default:
-            return 0;
-    }
-
-    UNREACHABLE();
+    if (!left_stream_safe || !right_stream_safe)
+        return 0;
+    join_info.kind = JoinKind::Inner;
+    return 1;
 }
 
 }
