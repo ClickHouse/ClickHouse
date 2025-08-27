@@ -166,6 +166,10 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         return storage;
     }
 
+    bool can_use_distributed_iterator =
+        client_info.collaborate_with_initiator &&
+        context->hasReadTaskCallback();
+
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
         getObjectStorage(context, !is_insert_query),
@@ -176,7 +180,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         /* comment */ String{},
         /* format_settings */ std::nullopt,
         /* mode */ LoadingStrictnessLevel::CREATE,
-        /* distributed_processing */ client_info.collaborate_with_initiator,
+        /* distributed_processing */ can_use_distributed_iterator,
         /* partition_by */ nullptr);
 
     storage->startup();
