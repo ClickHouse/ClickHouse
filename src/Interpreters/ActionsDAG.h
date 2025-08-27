@@ -471,6 +471,19 @@ public:
     UInt64 getHash() const;
     void updateHash(SipHash & hash_state) const;
 
+    /* Create actions which calculate conjunction of selected nodes.
+     * Conjunction nodes are assumed to be predicates that will be combined with AND if multiple.
+     *
+     * The resulting DAG will have:
+     * - Inputs: all columns from all_inputs that are required by the conjunction
+     * - Outputs: all columns from all_inputs (preserved for pipeline compatibility)
+     *            plus the conjunction result (at position 0 if newly added)
+     *
+     * Returns nullopt if conjunction is empty, otherwise ActionsForFilterPushDown containing:
+     *   - dag: the new actions
+     *   - filter_pos: position of filter column in outputs
+     *   - remove_filter: whether the filter column should be removed from original DAG after evaluation
+     */
     static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
 
     bool containsNode(const Node * node);

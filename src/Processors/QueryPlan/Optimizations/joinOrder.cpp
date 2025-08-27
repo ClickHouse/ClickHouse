@@ -285,7 +285,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                 {
                     auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                     JoinOperator join_operator(
-                        join_kind.value(), JoinStrictness::All, JoinLocality::Local,
+                        join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,
                         std::ranges::to<std::vector>(edge | std::views::transform([](const auto * e) { return *e; })));
                     applied_edge = std::move(edge);
                     best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, cardinality, std::move(join_operator));
@@ -326,7 +326,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 
             auto cost = computeJoinCost(components[best_i], components[best_j], 1.0);
             auto cardinality = estimateJoinCardinality(components[best_i], components[best_j], 1.0);
-            JoinOperator join_operator(JoinKind::Cross, JoinStrictness::All, JoinLocality::Local);
+            JoinOperator join_operator(JoinKind::Cross, JoinStrictness::All, JoinLocality::Unspecified);
             best_plan = std::make_shared<DPJoinEntry>(components[best_i], components[best_j], cost, cardinality, join_operator);
             applied_edge.clear();
         }

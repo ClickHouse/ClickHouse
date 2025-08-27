@@ -66,6 +66,7 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
 namespace ServerSetting
@@ -106,7 +107,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     try_use_vector_search = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_try_use_vector_search];
     convert_join_to_in = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_join_to_in];
     merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
-    optimize_joins = from[Setting::query_plan_optimize_joins];
+    optimize_joins = from[Setting::query_plan_optimize_joins] && !from[Setting::allow_experimental_parallel_reading_from_replicas];
     join_swap_table = from[Setting::query_plan_join_swap_table].is_auto
         ? std::nullopt
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);

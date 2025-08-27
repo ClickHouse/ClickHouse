@@ -50,13 +50,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace Setting
-{
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsUInt64 min_joined_block_size_bytes;
-}
-
 RelationStats getDummyStats(ContextPtr context, const String & table_name);
 
 namespace QueryPlanOptimizations
@@ -1029,8 +1022,10 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
 
     auto strictness = join_step->getJoinOperator().strictness;
     auto kind = join_step->getJoinOperator().kind;
+    auto locality = join_step->getJoinOperator().locality;
     if (!optimization_settings.optimize_joins ||
         (strictness != JoinStrictness::All && strictness != JoinStrictness::Any) ||
+        locality != JoinLocality::Unspecified ||
         kind == JoinKind::Paste ||
         kind == JoinKind::Full)
     {

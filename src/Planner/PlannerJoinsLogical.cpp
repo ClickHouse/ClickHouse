@@ -6,7 +6,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 

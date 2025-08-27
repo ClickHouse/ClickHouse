@@ -2518,11 +2518,6 @@ ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPt
 
 }
 
-/// Create actions which calculate conjunction of selected nodes.
-/// Assume conjunction nodes are predicates (and may be used as arguments of function AND).
-///
-/// Result actions may add single column with conjunction result if it's not in outputs (then it is always first in outputs).
-/// No other columns are added or removed.
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
 {
     if (conjunction.empty())
