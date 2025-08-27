@@ -1202,7 +1202,6 @@ void MultipleFileWriter::consume(const Chunk & chunk)
     output_formats.back()->write(sample_block->cloneWithColumns(chunk.getColumns()));
     *current_file_num_rows += chunk.getNumRows();
     *current_file_num_bytes += chunk.bytes();
-    total_bytes += chunk.bytes();
     stats.update(chunk);
 }
 
@@ -1216,6 +1215,7 @@ void MultipleFileWriter::finalize()
     for (const auto & buffer : buffers)
     {
         buffer->finalize();
+        total_bytes += buffer->count();
     }
 }
 
