@@ -500,7 +500,29 @@ private:
 
 REGISTER_FUNCTION(MapPopulateSeries)
 {
-    factory.registerFunction<FunctionMapPopulateSeries>();
+    FunctionDocumentation::Description description = R"(
+Fills missing key-value pairs in a map with integer keys.
+To support extending the keys beyond the largest value, a maximum key can be specified.
+More specifically, the function returns a map in which the keys form a series from the smallest to the largest key (or max argument if specified) with step size of 1, and corresponding values.
+If no value is specified for a key, a default value is used as value.
+In case keys repeat, only the first value (in order of appearance) is associated with the key.
+)";
+    FunctionDocumentation::Syntax syntax = "mapPopulateSeries(map[, max]) | mapPopulateSeries(keys, values[, max])";
+    FunctionDocumentation::Arguments arguments = {
+        {"map", "Map with integer keys.", {"Map((U)Int*, V)"}},
+        {"keys", "Array of keys.", {"Array(T)"}},
+        {"values", "Array of values.", {"Array(T)"}},
+        {"max", "Optional. Maximum key value.", {"Int8", "Int16", "Int32", "Int64", "Int128", "Int256"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a map or a tuple of two arrays where the first has keys in sorted order, and the second values for the corresponding keys.", {"Map(K, V)", "Tuple(Array(UInt*), Array(Any))"}};
+    FunctionDocumentation::Examples examples = {
+        {"With Map type", "SELECT mapPopulateSeries(map(1, 10, 5, 20), 6)", "{1:10, 2:0, 3:0, 4:0, 5:20, 6:0}"},
+        {"With mapped arrays", "SELECT mapPopulateSeries([1, 2, 4], [11, 22, 44], 5)", "([1, 2, 3, 4, 5], [11, 22, 0, 44, 0])"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 10};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionMapPopulateSeries>(documentation);
 }
 
 }
