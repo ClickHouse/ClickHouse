@@ -228,7 +228,7 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
 }
 
 bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
-    SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected, bool en_shorthand_syntax)
+    SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected, bool enable_shorthand_syntax)
 {
     ParserCompoundIdentifier name_p;
     ParserLiteralOrMap value_p;
@@ -245,7 +245,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
 
     have_eq = s_eq.ignore(pos, expected);
 
-    if (!en_shorthand_syntax && !have_eq)
+    if (!enable_shorthand_syntax && !have_eq)
         return false;
 
     tryGetIdentifierNameInto(node, name);

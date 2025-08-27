@@ -26,7 +26,7 @@ public:
                                                          Parameter & parameter,
                                                          IParser::Pos & pos,
                                                          Expected & expected,
-                                                         bool en_shorthand_syntax);
+                                                         bool enable_shorthand_syntax);
 
 protected:
     const char * getName() const override { return "SET query"; }
