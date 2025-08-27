@@ -138,11 +138,11 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , mode(json->getValue<String>("mode"))
     , last_processed_path(getOrDefault<String>(json, "last_processed_file", "s3queue_", ""))
     , after_processing(actionFromString(json->getValue<String>("after_processing")))
-    , loading_retries(getOrDefault(json, "loading_retries", "", 10))
-    , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1))
-    , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0))
-    , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0)))
-    , buckets(getOrDefault(json, "buckets", "", 0))
+    , loading_retries(getOrDefault(json, "loading_retries", "", 10ULL))
+    , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1ULL))
+    , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0ULL))
+    , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0ULL)))
+    , buckets(getOrDefault(json, "buckets", "", 0ULL))
 {
     validateMode(mode);
 }

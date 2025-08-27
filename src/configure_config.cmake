@@ -215,5 +215,7 @@ endif()
 if (TARGET ch_contrib::sha3iuf)
     set(USE_SHA3IUF 1)
 endif()
+set (USE_YTSAURUS 1)
+
 
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR})

@@ -382,8 +382,23 @@ profiles:
             strict=True,
         )
 
+        replicas=3 if self.is_db_replicated else 1
+        tsan_memory_limit_mb=Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
+
+        env = os.environ.copy()
+        env["TSAN_OPTIONS"] = " ".join(filter(lambda x: x is not None, [
+            env.get("TSAN_OPTIONS", None),
+            f"memory_limit_mb={tsan_memory_limit_mb}",
+        ]))
+        tsan_options = env["TSAN_OPTIONS"]
+        print(f"TSAN_OPTIONS = {tsan_options}")
+
         proc = subprocess.Popen(
-            command, stderr=subprocess.STDOUT, shell=True, cwd=run_path
+            command,
+            stderr=subprocess.STDOUT,
+            shell=True,
+            cwd=run_path,
+            env=env,
         )
         if replica_num == 1:
             self.proc_1 = proc
@@ -395,7 +410,7 @@ profiles:
             assert False
         started = False
         try:
-            for _ in range(5):
+            for _ in range(15):
                 pid = Shell.get_output(f"cat {pid_file}").strip()
                 if not pid:
                     Utils.sleep(1)
@@ -688,7 +703,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         if not profiles:
             return []
 
-        profiles = profiles.split('\n')
+        profiles = profiles.split("\n")
 
         res = []
 
@@ -700,7 +715,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         # group profiles by pid
         grouped_profiles = defaultdict(list)
         for profile in profiles:
-            parts = profile.split('.')
+            parts = profile.split(".")
             pid = int(parts[2])
             count = int(parts[3])
             grouped_profiles[pid].append((count, profile))
@@ -711,30 +726,16 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
             latest_profiles[pid] = file_with_max_third_number
 
-        # fetch jeprof
-        if Shell.check(
-            f"wget -q -O {temp_dir}/jeprof https://raw.githubusercontent.com/jemalloc/jemalloc/41a859ef7325569c6c25f92d294d45123bb81355/bin/jeprof.in",
-            verbose=True,
-        ) and Shell.check(
-            f"sed -i -e 's/@jemalloc_version@/5.3.0-12-g41a859ef/g' -e 's/@JEMALLOC_PREFIX@//g' {temp_dir}/jeprof && chmod +x {temp_dir}/jeprof"
-        ):
-            has_flamegraph = Shell.check(
-                f"wget -q -O {temp_dir}/flamegraph.pl https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl && chmod +x {temp_dir}/flamegraph.pl",
-                verbose=True,
+        chbinary = Shell.get_output("readlink -f $(which clickhouse)")
+        for pid, profile in latest_profiles.items():
+            Shell.check(
+                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
+                verbose=True
             )
-            chbinary = Shell.get_output("readlink -f $(which clickhouse)")
-            jeprof_command = f"{temp_dir}/jeprof --tools addr2line:/usr/bin/llvm-addr2line-$LLVM_VERSION,nm:/usr/bin/llvm-nm-$LLVM_VERSION,objdump:/usr/bin/objdump,c++filt:/usr/bin/c++filt {chbinary}"
-            for pid, profile in latest_profiles.items():
-                Shell.check(
-                    f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
-                    verbose=True
-                )
-
-                if has_flamegraph:
-                    Shell.check(
-                        f"{jeprof_command} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | {temp_dir}/flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
-                        verbose=True
-                    )
+            Shell.check(
+                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
+                verbose=True
+            )
 
         Shell.check(
             f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",

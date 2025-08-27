@@ -333,10 +333,10 @@ void checkSortedWithPermutation(const Block & block, const SortDescription & des
 
 }
 
-void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
+void sortBlock(Block & block, const SortDescription & description, UInt64 limit, IColumn::PermutationSortStability stability)
 {
     IColumn::Permutation permutation;
-    getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Unstable, limit, permutation);
+    getBlockSortPermutationImpl(block, description, stability, limit, permutation);
 
 #ifndef NDEBUG
     checkSortedWithPermutation(block, description, limit, permutation);
