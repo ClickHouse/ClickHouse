@@ -5,6 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <base/scope_guard.h>
+#include "Interpreters/Context_fwd.h"
 
 
 namespace DB
@@ -65,14 +66,24 @@ public:
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
     void checkTableCanBeDetached() const override;
 
+    void read(
+        QueryPlan & query_plan,
+        const Names & /*column_names*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
+        SelectQueryInfo & /*query_info*/,
+        ContextPtr /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        size_t /*num_streams*/) final;
+
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        ContextMutablePtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t threads) override;
+        size_t threads);
 
     /// FIXME: processing after reading from dictionaries are not parallelized due to some bug:
     /// count() can return wrong result, see test_dictionaries_redis/test_long.py::test_redis_dict_long
