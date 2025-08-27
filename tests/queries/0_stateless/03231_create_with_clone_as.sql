@@ -1,6 +1,9 @@
 -- Tags: no-replicated-database, memory-engine
 -- Tag no-replicated-database: Unsupported type of CREATE TABLE ... CLONE AS ... query
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS foo_memory;
 DROP TABLE IF EXISTS clone_as_foo_memory;
 DROP TABLE IF EXISTS foo_file;

@@ -1,5 +1,8 @@
 -- Tags: no-random-merge-tree-settings
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 SET convert_query_to_cnf = 1;
 SET optimize_using_constraints = 1;
 SET optimize_move_to_prewhere = 1;

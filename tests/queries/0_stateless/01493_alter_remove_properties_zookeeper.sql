@@ -1,5 +1,8 @@
 -- Tags: zookeeper
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS r_prop_table1;
 DROP TABLE IF EXISTS r_prop_table2;
 

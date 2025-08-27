@@ -1,6 +1,9 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 SYSTEM DROP QUERY CACHE;
 DROP TABLE IF EXISTS eligible_test;
 DROP TABLE IF EXISTS eligible_test2;

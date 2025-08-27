@@ -3,6 +3,9 @@
 -- Test for issue #85608: Logical Error when using DROP COLUMN and COMMENT COLUMN IF EXISTS in same ALTER
 -- This test verifies that COMMENT COLUMN IF EXISTS works correctly when the column is being dropped in the same ALTER statement
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 -- Test with Memory engine
 DROP TABLE IF EXISTS test_alter_drop_comment;
 

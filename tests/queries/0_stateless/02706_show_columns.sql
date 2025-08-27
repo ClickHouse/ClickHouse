@@ -4,6 +4,9 @@
 -- Create a test table and verify that the output of SHOW COLUMNS is sane.
 -- The matching of actual/expected results relies on the fact that the output of SHOW COLUMNS is sorted.
 DROP TABLE IF EXISTS tab;
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 CREATE TABLE tab
 (
     `uint64` UInt64,

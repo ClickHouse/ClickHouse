@@ -1,5 +1,8 @@
 SET mutations_sync = 2;
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS t_sparse_mutations_3;
 
 CREATE TABLE t_sparse_mutations_3 (key UInt8, id UInt64, s String)

@@ -1,5 +1,8 @@
 -- Tags: no-ordinary-database, no-replicated-database, distributed, zookeeper
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS t02006 on cluster test_shard_localhost format Null;
 DROP TABLE IF EXISTS m02006 on cluster test_shard_localhost format Null;
 

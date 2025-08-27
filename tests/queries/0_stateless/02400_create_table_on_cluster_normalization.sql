@@ -2,6 +2,9 @@
 -- Tag no-replicated-database: ON CLUSTER is not allowed
 drop table if exists local_t_l5ydey;
 
+-- Disable this setting to properly test String type
+set data_type_string_use_size_stream = 0;
+
 create table local_t_l5ydey on cluster test_shard_localhost (
     c_qv5rv INTEGER ,
     c_rutjs4 INTEGER ,

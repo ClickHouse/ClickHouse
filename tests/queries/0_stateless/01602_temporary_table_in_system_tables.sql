@@ -1,4 +1,8 @@
 -- Tags: memory-engine
+
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TEMPORARY TABLE IF EXISTS test_01602a;
 DROP TEMPORARY TABLE IF EXISTS test_01602b;
 

@@ -1,3 +1,6 @@
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS test_table;

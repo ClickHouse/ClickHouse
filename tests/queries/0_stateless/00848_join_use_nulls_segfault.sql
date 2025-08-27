@@ -1,3 +1,6 @@
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 SET any_join_distinct_right_table_keys = 1;
 SET enable_analyzer = 1;
 

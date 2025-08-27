@@ -1,6 +1,9 @@
 -- Tags: no-replicated-database, log-engine
 -- Tag no-replicated-database: Unsupported type of ALTER query
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS log_for_alter;
 
 CREATE TABLE log_for_alter (

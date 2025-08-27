@@ -1,6 +1,9 @@
 -- Tags: zookeeper, no-replicated-database, no-ordinary-database
 -- no-replicated-database: we explicitly run this test by creating a replicated database test_03321
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
 
 CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier} ENGINE=Replicated('/clickhouse/databases/{database}', 'shard1', 'replica1');

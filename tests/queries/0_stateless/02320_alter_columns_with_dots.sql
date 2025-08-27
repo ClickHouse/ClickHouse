@@ -1,3 +1,6 @@
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (id String, `abc.1` String, `abc.2` String, `abc` String) ENGINE MergeTree order by id;
 DESC TABLE test;

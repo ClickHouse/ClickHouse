@@ -1,3 +1,6 @@
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS regression_for_in_operator_view;
 DROP TABLE IF EXISTS regression_for_in_operator;
 set allow_deprecated_syntax_for_merge_tree=1;

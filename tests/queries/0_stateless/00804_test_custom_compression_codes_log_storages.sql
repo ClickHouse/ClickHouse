@@ -1,3 +1,6 @@
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 SET send_logs_level = 'fatal';
 SET allow_suspicious_codecs = 1;
 

@@ -1,5 +1,8 @@
 -- Tags: replica, no-parallel
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP DATABASE IF EXISTS shard_0;
 DROP DATABASE IF EXISTS shard_1;
 SET distributed_ddl_output_mode='none';

@@ -1,3 +1,6 @@
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP DICTIONARY IF EXISTS uk_mortgage_rates_dict;
 DROP TABLE IF EXISTS uk_mortgage_rates;
 DROP VIEW IF EXISTS uk_prices_aggs_view;

@@ -1,3 +1,6 @@
+-- Disable this setting to properly test String type
+set data_type_string_use_size_stream = 0;
+
 drop table if exists defaulted;
 
 create table defaulted (col1 default 0) engine=Memory;

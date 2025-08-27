@@ -4,6 +4,9 @@ SHOW TABLES FROM information_schema;
 SHOW TABLES FROM INFORMATION_SCHEMA;
 SHOW TABLES FROM INFORMATION_schema; -- { serverError UNKNOWN_DATABASE }
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP VIEW IF EXISTS v;
 DROP TABLE IF EXISTS t;
 DROP VIEW IF EXISTS mv;
