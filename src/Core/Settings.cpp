@@ -6791,6 +6791,9 @@ When the query prioritization mechanism is employed (see setting `priority`), lo
     DECLARE(UInt64, max_iceberg_data_file_rows, 100000, R"(
 Max rows of iceberg parquet data file on insert operation.
 )", 0) \
+    DECLARE(UInt64, max_iceberg_data_file_bytes, 100000000, R"(
+Max rows of iceberg parquet data file on insert operation.
+)", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
     DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0) \

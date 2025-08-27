@@ -42,7 +42,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.9",
         {
             {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
-            {"max_iceberg_data_file_rows", 100000, 100000, "New setting."}
+            {"max_iceberg_data_file_rows", 100000, 100000, "New setting."},
+            {"max_iceberg_data_file_bytes", 100000000, 100000000, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {

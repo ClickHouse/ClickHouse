@@ -107,7 +107,8 @@ class MultipleFileWriter
 {
 public:
     explicit MultipleFileWriter(
-        UInt64 max_size_,
+        UInt64 max_data_file_num_rows_,
+        UInt64 max_data_file_num_bytes_,
         Poco::JSON::Array::Ptr schema,
         FileNamesGenerator & filename_generator_,
         ObjectStoragePtr object_storage_,
@@ -135,9 +136,11 @@ public:
     }
 
 private:
-    UInt64 max_size;
+    UInt64 max_data_file_num_rows;
+    UInt64 max_data_file_num_bytes;
     DataFileStatistics stats;
-    std::optional<size_t> current_file_size = std::nullopt;
+    std::optional<size_t> current_file_num_rows = std::nullopt;
+    std::optional<size_t> current_file_num_bytes = std::nullopt;
     std::vector<String> data_file_names;
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> buffers;
     std::vector<OutputFormatPtr> output_formats;
@@ -147,6 +150,7 @@ private:
     std::optional<FormatSettings> format_settings;
     StorageObjectStorageConfigurationPtr configuration;
     SharedHeader sample_block;
+    UInt64 total_bytes = 0;
 };
 
 
@@ -267,7 +271,7 @@ public:
 
 private:
     SharedHeader sample_block;
-    std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> data_files;
+    std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
     Poco::JSON::Object::Ptr current_schema;
