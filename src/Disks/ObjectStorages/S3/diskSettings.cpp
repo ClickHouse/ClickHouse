@@ -32,6 +32,7 @@ namespace Setting
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
+    extern const SettingsBool s3_slow_all_threads_after_retryable_error;
 }
 
 namespace S3AuthSetting
@@ -128,7 +129,9 @@ std::unique_ptr<S3::Client> getClient(
     if (!for_disk_s3 && local_settings.isChanged("s3_slow_all_threads_after_network_error"))
         s3_slow_all_threads_after_network_error = static_cast<int>(local_settings[Setting::s3_slow_all_threads_after_network_error]);
 
-    bool s3_slow_all_threads_after_retryable_error = false;
+    bool s3_slow_all_threads_after_retryable_error = static_cast<int>(global_settings[Setting::s3_slow_all_threads_after_retryable_error]);
+    if (!for_disk_s3 && local_settings.isChanged("s3_slow_all_threads_after_retryable_error"))
+        s3_slow_all_threads_after_retryable_error = static_cast<int>(local_settings[Setting::s3_slow_all_threads_after_retryable_error]);
 
     bool enable_s3_requests_logging = global_settings[Setting::enable_s3_requests_logging];
     if (!for_disk_s3 && local_settings.isChanged("enable_s3_requests_logging"))
