@@ -101,6 +101,9 @@ public:
     void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback);
     void fill(Queue & queue, Queue & async_queue);
 
+    /// Release CPU slots
+    void freeCPU();
+
     /// Upscale to include slot_id. Updates use_threads to max(use_threads, slot_id + 1)
     /// Returns spawn status indicating if more threads should be spawned
     SpawnStatus upscale(size_t slot_id);

@@ -12,11 +12,7 @@ namespace ErrorCodes
 
 void ExecutorTasks::finish()
 {
-    if (cpu_slots)
-    {
-        cpu_slots->free();
-        cpu_slots.reset();
-    }
+    freeCPU();
 
     {
         std::lock_guard lock(mutex);
@@ -28,6 +24,18 @@ void ExecutorTasks::finish()
 
     for (auto & context : executor_contexts)
         context->wakeUp();
+}
+
+void ExecutorTasks::freeCPU()
+{
+    SlotAllocationPtr slots;
+    {
+        std::lock_guard lock(mutex);
+        slots = std::exchange(cpu_slots, nullptr);
+    }
+    if (!slots)
+        return;
+    slots->free();
 }
 
 void ExecutorTasks::rethrowFirstThreadException()
