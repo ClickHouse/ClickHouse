@@ -6136,6 +6136,12 @@ void Context::setReadTaskCallback(ReadTaskCallback && callback)
 }
 
 
+bool Context::hasReadTaskCallback() const
+{
+    return next_task_callback.has_value();
+}
+
+
 MergeTreeReadTaskCallback Context::getMergeTreeReadTaskCallback() const
 {
     if (!merge_tree_read_task_callback.has_value())
