@@ -3,6 +3,7 @@ description: 'Documentation for Encoding Functions'
 sidebar_label: 'Encoding'
 slug: /sql-reference/functions/encoding-functions
 title: 'Encoding Functions'
+doc_type: 'reference'
 ---
 
 # Encoding functions

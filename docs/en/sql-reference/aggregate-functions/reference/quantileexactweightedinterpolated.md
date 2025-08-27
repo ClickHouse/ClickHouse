@@ -4,6 +4,7 @@ description: 'Computes quantile of a numeric data sequence using linear interpol
 sidebar_position: 176
 slug: /sql-reference/aggregate-functions/reference/quantileExactWeightedInterpolated
 title: 'quantileExactWeightedInterpolated'
+doc_type: 'how-to'
 ---
 
 # quantileExactWeightedInterpolated

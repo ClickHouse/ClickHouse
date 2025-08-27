@@ -6,6 +6,7 @@ keywords: ['AvroConfluent']
 output_format: false
 slug: /interfaces/formats/AvroConfluent
 title: 'AvroConfluent'
+doc_type: 'how-to'
 ---
 
 import DataTypesMatching from './_snippets/data-types-matching.md'

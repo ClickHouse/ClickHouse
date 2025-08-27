@@ -4,6 +4,7 @@ sidebar_label: 'GRANT'
 sidebar_position: 38
 slug: /sql-reference/statements/grant
 title: 'GRANT Statement'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

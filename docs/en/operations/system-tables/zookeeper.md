@@ -4,6 +4,7 @@ description: 'System table which exists only if ClickHouse Keeper or ZooKeeper a
 keywords: ['system table', 'zookeeper']
 slug: /operations/system-tables/zookeeper
 title: 'system.zookeeper'
+doc_type: 'reference'
 ---
 
 # system.zookeeper

@@ -6,6 +6,7 @@ description: 'The `contingency` function calculates the contingency coefficient,
 sidebar_position: 116
 slug: /sql-reference/aggregate-functions/reference/contingency
 title: 'contingency'
+doc_type: 'reference'
 ---
 
 # contingency

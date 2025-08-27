@@ -4,6 +4,7 @@ description: 'System table containing information about resources residing on th
 keywords: ['system table', 'resources']
 slug: /operations/system-tables/resources
 title: 'system.resources'
+doc_type: 'reference'
 ---
 
 # system.resources

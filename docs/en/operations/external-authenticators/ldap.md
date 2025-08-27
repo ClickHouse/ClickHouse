@@ -2,6 +2,7 @@
 description: 'Guide to configuring LDAP authentication for ClickHouse'
 slug: /operations/external-authenticators/ldap
 title: 'LDAP'
+doc_type: 'reference'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';

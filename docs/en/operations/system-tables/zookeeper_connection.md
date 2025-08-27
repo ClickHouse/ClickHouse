@@ -4,6 +4,7 @@ description: 'System table which exists only if ZooKeeper is configured. Shows c
 keywords: ['system table', 'zookeeper_connection']
 slug: /operations/system-tables/zookeeper_connection
 title: 'system.zookeeper_connection'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

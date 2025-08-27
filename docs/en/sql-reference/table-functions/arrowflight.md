@@ -4,6 +4,7 @@ sidebar_label: 'Arrow Flight'
 sidebar_position: 186
 slug: /sql-reference/table-functions/arrowflight
 title: 'Arrow Flight'
+doc_type: 'how-to'
 ---
 
 # Arrow Flight Table Function

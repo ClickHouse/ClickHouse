@@ -6,6 +6,7 @@ keywords: ['Form']
 output_format: false
 slug: /interfaces/formats/Form
 title: 'Form'
+doc_type: 'how-to'
 ---
 
 | Input | Output | Alias |

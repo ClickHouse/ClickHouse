@@ -3,6 +3,7 @@ description: 'Computes the skewness of a sequence.'
 sidebar_position: 185
 slug: /sql-reference/aggregate-functions/reference/skewpop
 title: 'skewPop'
+doc_type: 'reference'
 ---
 
 # skewPop

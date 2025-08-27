@@ -6,6 +6,7 @@ keywords: ['JSONCompact']
 output_format: true
 slug: /interfaces/formats/JSONCompact
 title: 'JSONCompact'
+doc_type: 'how-to'
 ---
 
 | Input | Output | Alias |

@@ -4,6 +4,7 @@ description: 'With the determined precision computes the quantile of a numeric d
 sidebar_position: 180
 slug: /sql-reference/aggregate-functions/reference/quantiletiming
 title: 'quantileTiming'
+doc_type: 'reference'
 ---
 
 # quantileTiming

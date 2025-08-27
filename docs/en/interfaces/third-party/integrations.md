@@ -5,6 +5,7 @@ sidebar_label: 'Integrations'
 sidebar_position: 27
 slug: /interfaces/third-party/integrations
 title: 'Integration Libraries from Third-party Developers'
+doc_type: 'reference'
 ---
 
 # Integration libraries from third-party developers

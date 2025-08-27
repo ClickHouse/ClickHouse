@@ -4,6 +4,7 @@ sidebar_label: 'ClickHouse Client'
 sidebar_position: 17
 slug: /interfaces/cli
 title: 'ClickHouse Client'
+doc_type: 'reference'
 ---
 
 import Image from '@theme/IdealImage';

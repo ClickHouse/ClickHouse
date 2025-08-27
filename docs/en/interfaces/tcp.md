@@ -4,6 +4,7 @@ sidebar_label: 'Native interface (TCP)'
 sidebar_position: 18
 slug: /interfaces/tcp
 title: 'Native interface (TCP)'
+doc_type: 'reference'
 ---
 
 # Native interface (TCP)

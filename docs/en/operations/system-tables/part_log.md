@@ -4,6 +4,7 @@ description: 'System table containing information about events that occurred wit
 keywords: ['system table', 'part_log']
 slug: /operations/system-tables/part_log
 title: 'system.part_log'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
