@@ -663,7 +663,7 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
 
         if ((engine_func || cluster_func || remote_func) && (nopt < simple_est + engine_func + cluster_func + remote_func + 1))
         {
-            /// Use tabler function
+            /// Use table function
             const TableFunctionUsage usage = (engine_func && nopt < simple_est + engine_func + 1)
                 ? TableFunctionUsage::EngineReplace
                 : ((cluster_func && (nopt < simple_est + engine_func + cluster_func + 1)) ? TableFunctionUsage::ClusterCall
