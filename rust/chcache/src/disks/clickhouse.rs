@@ -18,6 +18,8 @@ struct CacheLine {
     compiler_version: String,
     compiler_args: String,
     postprocessed_compiler_args: String,
+
+    #[serde(rename = "elapsed_compilation_time")]
     elapsed_compilation_time_ms: u128,
 }
 
