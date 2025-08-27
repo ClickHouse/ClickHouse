@@ -1,14 +1,13 @@
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/Serializations/SerializationDateTime.h>
 
-#include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
 
-DataTypeTime::DataTypeTime(std::string_view time_zone_name)
+DataTypeTime::DataTypeTime(const String & time_zone_name)
     : TimezoneMixin(time_zone_name)
 {
 }
@@ -26,13 +25,6 @@ String DataTypeTime::doGetName() const
     WriteBufferFromOwnString out;
     out << "Time(" << quote << time_zone.getTimeZone() << ")";
     return out.str();
-}
-
-void DataTypeTime::updateHashImpl(SipHash & hash) const
-{
-    hash.update(has_explicit_time_zone);
-    if (has_explicit_time_zone)
-        hash.update(time_zone.getTimeZone());
 }
 
 bool DataTypeTime::equals(const IDataType & rhs) const

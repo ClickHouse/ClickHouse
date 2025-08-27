@@ -9,9 +9,7 @@ title: 'JSON Data Type'
 ---
 
 import {CardSecondary} from '@clickhouse/click-ui/bundled';
-import Link from '@docusaurus/Link'
 
-<Link to="/docs/best-practices/use-json-where-appropriate" style={{display: 'flex', textDecoration: 'none', width: 'fit-content'}}>
 <CardSecondary
   badgeState="success"
   badgeText=""
@@ -21,7 +19,6 @@ import Link from '@docusaurus/Link'
   infoUrl="/docs/best-practices/use-json-where-appropriate"
   title="Looking for a guide?"
 />
-</Link>
 <br/>
 
 The `JSON` type stores JavaScript Object Notation (JSON) documents in a single column.
@@ -32,9 +29,12 @@ If you want to use the `JSON` type, and for the examples on this page, please us
 SET enable_json_type = 1
 ```
 
+However, if you are using ClickHouse Cloud, you must first [get in touch with support](https://clickhouse.com/docs/about-us/support) to enable the usage of the `JSON` type.
+
 :::note
 In ClickHouse Open-Source JSON data type is marked as production ready in version 25.3. It's not recommended to use this type in production in previous versions.
 :::
+
 
 To declare a column of `JSON` type, you can use the following syntax:
 
@@ -86,9 +86,9 @@ SELECT json FROM test;
 
 ```text title="Response (Example 2)"
 ┌─json──────────────────────────────┐
-│ {"a":{"b":42},"c":["1","2","3"]}  │
+│ {"a":{"b":42},"c":[1,2,3]}        │
 │ {"a":{"b":0},"f":"Hello, World!"} │
-│ {"a":{"b":43},"c":["4","5","6"]}  │
+│ {"a":{"b":43},"c":[4,5,6]}        │
 └───────────────────────────────────┘
 ```
 
@@ -103,9 +103,9 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json
 ```
 
 ```text title="Response"
-┌─json───────────────────────────────────────────────────┐
-│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
-└────────────────────────────────────────────────────────┘
+┌─json───────────────────────────────────────────┐
+│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
+└────────────────────────────────────────────────┘
 ```
 
 #### CAST from `Tuple` to `JSON` {#cast-from-tuple-to-json}
@@ -116,9 +116,9 @@ SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json
 ```
 
 ```text title="Response"
-┌─json───────────────────────────────────────────────────┐
-│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
-└────────────────────────────────────────────────────────┘
+┌─json───────────────────────────────────────────┐
+│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
+└────────────────────────────────────────────────┘
 ```
 
 #### CAST from `Map` to `JSON` {#cast-from-map-to-json}
@@ -129,9 +129,9 @@ SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
 ```
 
 ```text title="Response"
-┌─json───────────────────────────────────────────────────┐
-│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
-└────────────────────────────────────────────────────────┘
+┌─json───────────────────────────────────────────┐
+│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
+└────────────────────────────────────────────────┘
 ```
 
 #### CAST from deprecated `Object('json')` to `JSON` {#cast-from-deprecated-objectjson-to-json}
@@ -142,9 +142,9 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json
 ```
 
 ```text title="Response"
-┌─json───────────────────────────────────────────────────┐
-│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
-└────────────────────────────────────────────────────────┘
+┌─json───────────────────────────────────────────┐
+│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
+└────────────────────────────────────────────────┘
 ```
 
 :::note
@@ -155,7 +155,7 @@ Our implementation will always assume the latter.
 For example:
 
 ```sql
-SELECT CAST('{"a.b.c" : 42}', 'JSON') AS json
+SELECT CAST('{"a.b.c" : 42}', 'JSON') as json
 ```
 
 will return:
@@ -190,11 +190,11 @@ SELECT json FROM test;
 ```
 
 ```text title="Response"
-┌─json────────────────────────────────────────────────────────┐
-│ {"a":{"b":42,"g":42.42},"c":["1","2","3"],"d":"2020-01-01"} │
-│ {"a":{"b":0},"d":"2020-01-02","f":"Hello, World!"}          │
-│ {"a":{"b":43,"g":43.43},"c":["4","5","6"]}                  │
-└─────────────────────────────────────────────────────────────┘
+┌─json──────────────────────────────────────────────────┐
+│ {"a":{"b":42,"g":42.42},"c":[1,2,3],"d":"2020-01-01"} │
+│ {"a":{"b":0},"d":"2020-01-02","f":"Hello, World!"}    │
+│ {"a":{"b":43,"g":43.43},"c":[4,5,6]}                  │
+└───────────────────────────────────────────────────────┘
 ```
 
 ```sql title="Query (Reading JSON paths as sub-columns)"
@@ -207,20 +207,6 @@ SELECT json.a.b, json.a.g, json.c, json.d FROM test;
 │        0 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ    │ 2020-01-02 │
 │       43 │ 43.43    │ [4,5,6] │ ᴺᵁᴸᴸ       │
 └──────────┴──────────┴─────────┴────────────┘
-```
-
-You can also use `getSubcolumn` function to read subcolumns from JSON type:
-
-```sql title="Query"
-SELECT getSubcolumn(json, 'a.b'), getSubcolumn(json, 'a.g'), getSubcolumn(json, 'c'), getSubcolumn(json, 'd') FROM test;
-```
-
-```text title="Response"
-┌─getSubcolumn(json, 'a.b')─┬─getSubcolumn(json, 'a.g')─┬─getSubcolumn(json, 'c')─┬─getSubcolumn(json, 'd')─┐
-│                        42 │ 42.42                     │ [1,2,3]                 │ 2020-01-01              │
-│                         0 │ ᴺᵁᴸᴸ                      │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
-│                        43 │ 43.43                     │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
-└───────────────────────────┴───────────────────────────┴─────────────────────────┴─────────────────────────┘
 ```
 
 If the requested path wasn't found in the data, it will be filled with `NULL` values:
@@ -313,11 +299,11 @@ SELECT json FROM test;
 ```
 
 ```text title="Response"
-┌─json──────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ {"a":{"b":{"c":"42","g":42.42}},"c":["1","2","3"],"d":{"e":{"f":{"g":"Hello, World","h":["1","2","3"]}}}} │
-│ {"d":{"e":{"f":{"h":["4","5","6"]}}},"f":"Hello, World!"}                                                 │
-│ {"a":{"b":{"c":"43","e":"10","g":43.43}},"c":["4","5","6"]}                                               │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─json────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"a":{"b":{"c":42,"g":42.42}},"c":[1,2,3],"d":{"e":{"f":{"g":"Hello, World","h":[1,2,3]}}}} │
+│ {"d":{"e":{"f":{"h":[4,5,6]}}},"f":"Hello, World!"}                                         │
+│ {"a":{"b":{"c":43,"e":10,"g":43.43}},"c":[4,5,6]}                                           │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```sql title="Query"
@@ -325,11 +311,11 @@ SELECT json.^a.b, json.^d.e.f FROM test;
 ```
 
 ```text title="Response"
-┌─json.^`a`.b───────────────────┬─json.^`d`.e.f──────────────────────────┐
-│ {"c":"42","g":42.42}          │ {"g":"Hello, World","h":["1","2","3"]} │
-│ {}                            │ {"h":["4","5","6"]}                    │
-│ {"c":"43","e":"10","g":43.43} │ {}                                     │
-└───────────────────────────────┴────────────────────────────────────────┘
+┌─json.^`a`.b───────────────┬─json.^`d`.e.f────────────────────┐
+│ {"c":42,"g":42.42}        │ {"g":"Hello, World","h":[1,2,3]} │
+│ {}                        │ {"h":[4,5,6]}                    │
+│ {"c":43,"e":10,"g":43.43} │ {}                               │
+└───────────────────────────┴──────────────────────────────────┘
 ```
 
 :::note
@@ -351,7 +337,6 @@ and is controlled by the same settings:
 - [input_format_json_read_bools_as_strings](/operations/settings/formats#input_format_json_read_bools_as_strings)
 - [input_format_json_read_bools_as_numbers](/operations/settings/formats#input_format_json_read_bools_as_numbers)
 - [input_format_json_read_arrays_as_strings](/operations/settings/formats#input_format_json_read_arrays_as_strings)
-- [input_format_json_infer_array_of_dynamic_from_array_of_different_types](/operations/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
 
 Let's take a look at some examples:
 
@@ -506,114 +491,6 @@ SELECT json.a.b[].^k FROM test
 └──────────────────────────────────────┘
 ```
 
-## Handling JSON keys with dots {#handling-json-keys-with-dots}
-
-Internally JSON column stores all paths and values in a flattened form. It means that by default these 2 objects are considered as the same:
-```json
-{"a" : {"b" : 42}}
-{"a.b" : 42}
-```
-
-They both will be stored internally as a pair of path `a.b` and value `42`. During formatting of JSON we always form nested objects based on the path parts separated by dot:
-
-```sql title="Query"
-SELECT '{"a" : {"b" : 42}}'::JSON AS json1, '{"a.b" : 42}'::JSON AS json2, JSONAllPaths(json1), JSONAllPaths(json2);
-```
-
-```text title="Response"
-┌─json1────────────┬─json2────────────┬─JSONAllPaths(json1)─┬─JSONAllPaths(json2)─┐
-│ {"a":{"b":"42"}} │ {"a":{"b":"42"}} │ ['a.b']             │ ['a.b']             │
-└──────────────────┴──────────────────┴─────────────────────┴─────────────────────┘
-```
-
-As you can see, initial JSON `{"a.b" : 42}` is now formatted as `{"a" : {"b" : 42}}`.
-
-This limitation also leads to the failure of parsing valid JSON objects like this:
-
-```sql title="Query"
-SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json;
-```
-
-```text title="Response"
-Code: 117. DB::Exception: Cannot insert data into JSON column: Duplicate path found during parsing JSON object: a.b. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert: In scope SELECT CAST('{"a.b" : 42, "a" : {"b" : "Hello, World"}}', 'JSON') AS json. (INCORRECT_DATA)
-```
-
-If you want to keep keys with dots and avoid formatting them as nested objects, you can enable
-setting [json_type_escape_dots_in_keys](/operations/settings/formats#json_type_escape_dots_in_keys) (available starting from version `25.8`). In this case during parsing all dots in JSON keys will be
-escaped into `%2E` and unescaped back during formatting.
-
-```sql title="Query"
-SET json_type_escape_dots_in_keys=1;
-SELECT '{"a" : {"b" : 42}}'::JSON AS json1, '{"a.b" : 42}'::JSON AS json2, JSONAllPaths(json1), JSONAllPaths(json2);
-```
-
-```text title="Response"
-┌─json1────────────┬─json2────────┬─JSONAllPaths(json1)─┬─JSONAllPaths(json2)─┐
-│ {"a":{"b":"42"}} │ {"a.b":"42"} │ ['a.b']             │ ['a%2Eb']           │
-└──────────────────┴──────────────┴─────────────────────┴─────────────────────┘
-```
-
-```sql title="Query"
-SET json_type_escape_dots_in_keys=1;
-SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, JSONAllPaths(json);
-```
-
-```text title="Response"
-┌─json──────────────────────────────────┬─JSONAllPaths(json)─┐
-│ {"a.b":"42","a":{"b":"Hello World!"}} │ ['a%2Eb','a.b']    │
-└───────────────────────────────────────┴────────────────────┘
-```
-
-To read key with escaped dot as a subcolumn you have to use escaped dot in the subcolumn name:
-
-```sql title="Query"
-SET json_type_escape_dots_in_keys=1;
-SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, json.`a%2Eb`, json.a.b;
-```
-
-```text title="Response"
-┌─json──────────────────────────────────┬─json.a%2Eb─┬─json.a.b─────┐
-│ {"a.b":"42","a":{"b":"Hello World!"}} │ 42         │ Hello World! │
-└───────────────────────────────────────┴────────────┴──────────────┘
-```
-
-Note: due to identifiers parser and analyzer limitations subcolumn ``json.`a.b`\`` is equivalent to subcolumn `json.a.b` and won't read path with escaped dot:
-
-```sql title="Query"
-SET json_type_escape_dots_in_keys=1;
-SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, json.`a%2Eb`, json.`a.b`, json.a.b;
-```
-
-```text title="Response"
-┌─json──────────────────────────────────┬─json.a%2Eb─┬─json.a.b─────┬─json.a.b─────┐
-│ {"a.b":"42","a":{"b":"Hello World!"}} │ 42         │ Hello World! │ Hello World! │
-└───────────────────────────────────────┴────────────┴──────────────┴──────────────┘
-```
-
-Also, if you want to specify a hint for a JSON path that contains keys with dots (or use it in the `SKIP`/`SKIP REGEX` sections), you have to use escaped dots in the hint:
-
-```sql title="Query"
-SET json_type_escape_dots_in_keys=1;
-SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(`a%2Eb` UInt8) as json, json.`a%2Eb`, toTypeName(json.`a%2Eb`);
-```
-
-```text title="Response"
-┌─json────────────────────────────────┬─json.a%2Eb─┬─toTypeName(json.a%2Eb)─┐
-│ {"a.b":42,"a":{"b":"Hello World!"}} │         42 │ UInt8                  │
-└─────────────────────────────────────┴────────────┴────────────────────────┘
-```
-
-```sql title="Query"
-SET json_type_escape_dots_in_keys=1;
-SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(SKIP `a%2Eb`) as json, json.`a%2Eb`;
-```
-
-```text title="Response"
-┌─json───────────────────────┬─json.a%2Eb─┐
-│ {"a":{"b":"Hello World!"}} │ ᴺᵁᴸᴸ       │
-└────────────────────────────┴────────────┘
-```
-
 ## Reading JSON type from data {#reading-json-type-from-data}
 
 All text formats 
@@ -718,7 +595,7 @@ Let's see an example of such a merge.
 First, let's create a table with a `JSON` column, set the limit of dynamic paths to `3` and then insert values with `5` different paths:
 
 ```sql title="Query"
-CREATE TABLE test (id UInt64, json JSON(max_dynamic_paths=3)) ENGINE=MergeTree ORDER BY id;
+CREATE TABLE test (id UInt64, json JSON(max_dynamic_paths=3)) engine=MergeTree ORDER BY id;
 SYSTEM STOP MERGES test;
 INSERT INTO test SELECT number, formatRow('JSONEachRow', number as a) FROM numbers(5);
 INSERT INTO test SELECT number, formatRow('JSONEachRow', number as b) FROM numbers(4);
@@ -853,6 +730,7 @@ FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz
 SETTINGS date_time_input_format = 'best_effort'
 ```
 
+
 ```text
 ┌─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┐
 │ ('actor.avatar_url',['String'])                             │
@@ -915,7 +793,7 @@ It's possible to alter an existing table and change the type of the column to th
 **Example**
 
 ```sql title="Query"
-CREATE TABLE test (json String) ENGINE=MergeTree ORDER BY tuple();
+CREATE TABLE test (json String) ENGINE=MergeTree ORDeR BY tuple();
 INSERT INTO test VALUES ('{"a" : 42}'), ('{"a" : 43, "b" : "Hello"}'), ('{"a" : 44, "b" : [1, 2, 3]}'), ('{"c" : "2020-01-01"}');
 ALTER TABLE test MODIFY COLUMN json JSON;
 SELECT json, json.a, json.b, json.c FROM test;

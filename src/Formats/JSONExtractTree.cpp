@@ -30,8 +30,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeTime.h>
-#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -371,6 +369,7 @@ public:
                 WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
                 jsonElementToString<JSONParser>(element, buf, format_settings);
             }
+            chars.push_back(0);
             col_str.getOffsets().push_back(chars.size());
         }
         else
@@ -729,73 +728,6 @@ public:
     }
 };
 
-template <typename JSONParser>
-class TimeNode : public JSONExtractTreeNode<JSONParser>
-{
-public:
-    explicit TimeNode(const DataTypeTime &) { }
-
-    bool insertResultToColumn(
-        IColumn & column,
-        const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings & insert_settings,
-        const FormatSettings & format_settings,
-        String & error) const override
-    {
-        if (element.isNull() && format_settings.null_as_default)
-        {
-            column.insertDefault();
-            return true;
-        }
-
-        time_t value;
-        if (element.isString())
-        {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
-            {
-                error = fmt::format("cannot parse Time value here: {}", element.getString());
-                return false;
-            }
-        }
-        else if (element.isUInt64() && insert_settings.allow_type_conversion)
-        {
-            value = element.getUInt64();
-        }
-        else
-        {
-            error = fmt::format("cannot read Time value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
-            return false;
-        }
-
-        assert_cast<ColumnTime &>(column).insert(value);
-        return true;
-    }
-
-    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat time_input_format) const
-    {
-        ReadBufferFromMemory buf(data.data(), data.size());
-        const auto & date_lut = DateLUT::instance();
-
-        switch (time_input_format)
-        {
-            case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadTimeText(value, buf, date_lut) && buf.eof())
-                    return true;
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffort:
-                if (tryParseTimeBestEffort(value, buf, date_lut, date_lut) && buf.eof())
-                    return true;
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                if (tryParseTimeBestEffortUS(value, buf, date_lut, date_lut) && buf.eof())
-                    return true;
-                break;
-        }
-
-        return false;
-    }
-};
-
 template <typename JSONParser, typename DecimalType>
 class DecimalNode : public JSONExtractTreeNode<JSONParser>
 {
@@ -814,22 +746,8 @@ public:
         switch (element.type())
         {
             case ElementType::DOUBLE:
-            {
-                // Try to preserve precision by converting to string first
-                // This avoids floating-point precision loss during decimal conversion
-                String str_value = jsonElementToString<JSONParser>(element, format_settings);
-                auto rb = ReadBufferFromMemory{str_value};
-
-                if (SerializationDecimal<DecimalType>::tryReadText(value, rb, DecimalUtils::max_precision<DecimalType>, scale))
-                {
-                    break;
-                }
-
-                // Fallback to original conversion if string parsing fails
-                // This ensures backward compatibility and robustness
                 value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), scale);
                 break;
-            }
             case ElementType::UINT64:
                 value = convertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DecimalType>>(element.getUInt64(), scale);
                 break;
@@ -942,90 +860,6 @@ public:
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffortUS:
                 if (tryParseDateTime64BestEffortUS(value, scale, buf, time_zone, utc_time_zone) && buf.eof())
-                    return true;
-                break;
-        }
-
-        return false;
-    }
-
-private:
-    UInt32 scale;
-};
-
-template <typename JSONParser>
-class Time64Node : public JSONExtractTreeNode<JSONParser>
-{
-public:
-    explicit Time64Node(const DataTypeTime64 & time64_type) : scale(time64_type.getScale())
-    {
-    }
-
-    bool insertResultToColumn(
-        IColumn & column,
-        const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings & insert_settings,
-        const FormatSettings & format_settings,
-        String & error) const override
-    {
-        if (element.isNull() && format_settings.null_as_default)
-        {
-            column.insertDefault();
-            return true;
-        }
-
-        Time64 value;
-        if (element.isString())
-        {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
-            {
-                error = fmt::format("cannot parse Time64 value here: {}", element.getString());
-                return false;
-            }
-        }
-        else
-        {
-            if (!insert_settings.allow_type_conversion)
-                return false;
-
-            switch (element.type())
-            {
-                case ElementType::DOUBLE:
-                    value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<Time64>>(element.getDouble(), scale);
-                    break;
-                case ElementType::UINT64:
-                    value.value = element.getUInt64();
-                    break;
-                case ElementType::INT64:
-                    value.value = element.getInt64();
-                    break;
-                default:
-                    error = fmt::format("cannot read Time64 value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
-                    return false;
-            }
-        }
-
-        assert_cast<ColumnTime64 &>(column).insert(value);
-        return true;
-    }
-
-    bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat time_input_format) const
-    {
-        ReadBufferFromMemory buf(data.data(), data.size());
-        const auto & date_lut = DateLUT::instance();
-
-        switch (time_input_format)
-        {
-            case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
-                    return true;
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffort:
-                if (tryParseTime64BestEffort(value, scale, buf, date_lut, date_lut) && buf.eof())
-                    return true;
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                if (tryParseTime64BestEffortUS(value, scale, buf, date_lut, date_lut) && buf.eof())
                     return true;
                 break;
         }
@@ -1746,12 +1580,7 @@ private:
                 }
 
                 auto types_copy = types;
-                /// Disable read_numbers_as_strings in json settings to avoid
-                /// inferring array with numbers and strings as Array(String) here.
-                /// It will be done later if needed in transformFinal*.
-                auto format_settings_copy = format_settings;
-                format_settings_copy.json.read_numbers_as_strings = false;
-                transformInferredJSONTypesIfNeeded(types_copy, format_settings_copy, &json_inference_info);
+                transformInferredJSONTypesIfNeeded(types_copy, format_settings, &json_inference_info);
 
                 if (checkIfTypesAreEqual(types_copy))
                     return std::make_shared<DataTypeArray>(types_copy.back());
@@ -1882,10 +1711,7 @@ private:
                 String path = current_path;
                 if (!is_root)
                     path.append(".");
-                if (insert_settings.escape_dots_in_json_keys)
-                    path += escapeDotInJSONKey(String(key));
-                else
-                    path += key;
+                path += key;
 
                 if (!visited_keys.insert(key).second)
                 {
@@ -2063,10 +1889,6 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             return std::make_unique<DateTimeNode<JSONParser>>(assert_cast<const DataTypeDateTime &>(*type));
         case TypeIndex::DateTime64:
             return std::make_unique<DateTime64Node<JSONParser>>(assert_cast<const DataTypeDateTime64 &>(*type));
-        case TypeIndex::Time:
-            return std::make_unique<TimeNode<JSONParser>>(assert_cast<const DataTypeTime &>(*type));
-        case TypeIndex::Time64:
-            return std::make_unique<Time64Node<JSONParser>>(assert_cast<const DataTypeTime64 &>(*type));
         case TypeIndex::Decimal32:
             return std::make_unique<DecimalNode<JSONParser, Decimal32>>(type);
         case TypeIndex::Decimal64:
@@ -2130,7 +1952,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             elements.reserve(tuple_elements.size());
             for (const auto & tuple_element : tuple_elements)
                 elements.emplace_back(buildJSONExtractTree<JSONParser>(tuple_element, source_for_exception_message));
-            return std::make_unique<TupleNode<JSONParser>>(std::move(elements), tuple.hasExplicitNames() ? tuple.getElementNames() : Strings{});
+            return std::make_unique<TupleNode<JSONParser>>(std::move(elements), tuple.haveExplicitNames() ? tuple.getElementNames() : Strings{});
         }
         case TypeIndex::Map:
         {

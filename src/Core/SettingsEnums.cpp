@@ -148,8 +148,7 @@ IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(StreamingHandleErrorMode, ErrorCodes::BAD_ARGUMENTS,
     {{"default",      StreamingHandleErrorMode::DEFAULT},
-     {"stream",       StreamingHandleErrorMode::STREAM},
-     {"dead_letter_queue", StreamingHandleErrorMode::DEAD_LETTER_QUEUE}})
+     {"stream",       StreamingHandleErrorMode::STREAM}})
 
 IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
@@ -327,10 +326,4 @@ IMPLEMENT_SETTING_ENUM(
     {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
-IMPLEMENT_SETTING_ENUM(
-    SearchOrphanedPartsDisks,
-    ErrorCodes::BAD_ARGUMENTS,
-    {{"any", SearchOrphanedPartsDisks::ANY},
-     {"local", SearchOrphanedPartsDisks::LOCAL},
-     {"none", SearchOrphanedPartsDisks::NONE}})
 }

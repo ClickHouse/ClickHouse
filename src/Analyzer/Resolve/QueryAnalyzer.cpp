@@ -1,4 +1,5 @@
 #include <Common/FieldVisitorToString.h>
+
 #include <Columns/ColumnNullable.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -30,13 +31,8 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ProcessorsProfileLog.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Planner/Utils.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/QueryPlan/LimitStep.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/SetUtils.h>
@@ -65,7 +61,6 @@
 #include <Analyzer/Identifier.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 #include <Analyzer/RecursiveCTE.h>
-#include <Analyzer/QueryTreePassManager.h>
 
 #include <Analyzer/Resolve/CorrelatedColumnsCollector.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
@@ -123,7 +118,6 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
-    extern const SettingsBool execute_exists_as_scalar_subquery;
 }
 
 
@@ -216,11 +210,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
             }
 
             if (node_type == QueryTreeNodeType::LIST)
-            {
-                QueryExpressionsAliasVisitor visitor(scope.aliases);
-                visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-            }
             else
                 resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -248,6 +238,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
 {
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
+
     if (!scope.context)
         scope.context = context;
 
@@ -272,31 +263,6 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
         resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     validateCorrelatedSubqueries(node);
-}
-
-bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeNode * tree_node)
-{
-    if (node_source == tree_node)
-        return true;
-
-    std::stack<const IQueryTreeNode *> stack;
-    stack.push(tree_node);
-
-    while (!stack.empty())
-    {
-        const auto * current = stack.top();
-        stack.pop();
-
-        if (node_source == current)
-            return true;
-
-        if (const auto * child_join_node = current->as<JoinNode>())
-        {
-            stack.push(child_join_node->getLeftTableExpression().get());
-            stack.push(child_join_node->getRightTableExpression().get());
-        }
-    }
-    return false;
 }
 
 std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node)
@@ -328,9 +294,9 @@ std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const Quer
 
     const auto * column_src = resolved_identifier->as<ColumnNode &>().getColumnSource().get();
 
-    if (isFromJoinTree(column_src, join_node.getLeftTableExpression().get()))
+    if (join_node.getLeftTableExpression().get() == column_src)
         return JoinTableSide::Left;
-    if (isFromJoinTree(column_src, join_node.getRightTableExpression().get()))
+    if (join_node.getRightTableExpression().get() == column_src)
         return JoinTableSide::Right;
     return {};
 }
@@ -585,7 +551,7 @@ bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
 }
 
 /// Evaluate scalar subquery and perform constant folding if scalar subquery does not have constant value
-void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool execute_for_exists)
+void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
 {
     auto * query_node = node->as<QueryNode>();
     auto * union_node = node->as<UnionNode>();
@@ -693,7 +659,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         if (only_analyze)
         {
             /// If query is only analyzed, then constants are not correct.
-            scalar_block = *interpreter->getSampleBlock();
+            scalar_block = interpreter->getSampleBlock();
             for (auto & column : scalar_block)
             {
                 if (column.column->empty())
@@ -708,79 +674,38 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         }
         else
         {
-            BlockIO io;
-            auto & query_plan = interpreter->getQueryPlan();
-            bool skip_execution_for_exists = false;
+            auto io = interpreter->execute();
+            PullingAsyncPipelineExecutor executor(io.pipeline);
+            io.pipeline.setProgressCallback(context->getProgressCallback());
+            io.pipeline.setProcessListElement(context->getProcessListElement());
+            io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
-            if (execute_for_exists)
-            {
-                if (optimizePlanForExists(query_plan))
-                    skip_execution_for_exists = true;
-                else
-                {
-                    auto limit_step = std::make_unique<LimitStep>(query_plan.getCurrentHeader(), 1, 0);
-                    query_plan.addStep(std::move(limit_step));
-                }
-            }
-
-            if (!skip_execution_for_exists)
-            {
-                QueryPlanOptimizationSettings optimization_settings(subquery_context);
-                BuildQueryPipelineSettings build_pipeline_settings(subquery_context);
-
-                query_plan.setConcurrencyControl(subquery_context->getSettingsRef()[Setting::use_concurrency_control]);
-
-                auto pipeline_builder = std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
-
-                io.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
-                io.pipeline.setQuota(subquery_context->getQuota());
-            }
-
-            std::optional<PullingAsyncPipelineExecutor> executor;
             Block block;
 
-            if (!skip_execution_for_exists)
+            while (block.rows() == 0 && executor.pull(block))
             {
-                io.pipeline.setProgressCallback(context->getProgressCallback());
-                io.pipeline.setProcessListElement(context->getProcessListElement());
-                io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
-
-                executor.emplace(io.pipeline);
-                while (block.rows() == 0 && executor->pull(block))
-                {
-                }
             }
 
             if (block.rows() == 0)
             {
-                DataTypePtr type;
-                if (execute_for_exists)
-                    type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
-                else
+                auto types = interpreter->getSampleBlock().getDataTypes();
+                if (types.size() != 1)
+                    types = {std::make_shared<DataTypeTuple>(types)};
+
+                auto & type = types[0];
+                if (!type->isNullable())
                 {
-                    const auto & sample_block = interpreter->getSampleBlock();
-                    auto types = sample_block->getDataTypes();
-                    if (types.size() != 1)
-                        types = {std::make_shared<DataTypeTuple>(types)};
+                    if (!type->canBeInsideNullable())
+                        throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
+                            "Scalar subquery returned empty result of type {} which cannot be Nullable",
+                            type->getName());
 
-                    type = types[0];
-                    if (!type->isNullable())
-                    {
-                        if (!type->canBeInsideNullable())
-                            throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
-                                "Scalar subquery returned empty result of type {} which cannot be Nullable",
-                                type->getName());
-
-                        type = makeNullable(type);
-                    }
+                    type = makeNullable(type);
                 }
 
                 auto scalar_column = type->createColumn();
-                if (skip_execution_for_exists)
-                    scalar_column->insert(1);
-                else
-                    scalar_column->insert(Null());
-                scalar_block.insert({std::move(scalar_column), type, (execute_for_exists ? "exists" : "null")});
+                scalar_column->insert(Null());
+                scalar_block.insert({std::move(scalar_column), type, "null"});
             }
             else
             {
@@ -788,25 +713,15 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
                 Block tmp_block;
-                while (tmp_block.rows() == 0 && executor->pull(tmp_block))
+                while (tmp_block.rows() == 0 && executor.pull(tmp_block))
                 {
                 }
 
                 if (tmp_block.rows() != 0)
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
-                if (execute_for_exists)
-                {
-                    auto type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
-                    auto scalar_column = type->createColumn();
-                    scalar_column->insert(1);
-                    scalar_block.insert({std::move(scalar_column), type, "exists"});
-                }
-                else
-                {
-                    wrap_with_nullable_or_tuple(block);
-                    scalar_block = std::move(block);
-                }
+                wrap_with_nullable_or_tuple(block);
+                scalar_block = std::move(block);
             }
 
             logProcessorProfile(context, io.pipeline.getProcessors());
@@ -2334,15 +2249,15 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     {
         /** If we are resolving matcher came from the result of JOIN and `join_use_nulls` is set,
           * we need to convert joined column type to Nullable.
-          * We are checking all registered_table_expression_nodes which contains all table expressions that are used to resolve matcher.
-          * If it's on null side, we need to convert column type to Nullable.
+          * We are taking the nearest JoinNode to check to which table column belongs,
+          * because for LEFT/RIGHT join, we convert only the corresponding side.
           */
-        for (const auto & table_expression : scope.registered_table_expression_nodes)
+        const auto * nearest_query_scope = scope.getNearestQueryScope();
+        const QueryNode * nearest_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
+        const QueryTreeNodePtr & nearest_scope_join_tree = nearest_scope_query_node ? nearest_scope_query_node->getJoinTree() : nullptr;
+        const JoinNode * nearest_scope_join_node = nearest_scope_join_tree ? nearest_scope_join_tree->as<JoinNode>() : nullptr;
+        if (nearest_scope_join_node)
         {
-            const JoinNode * nearest_scope_join_node = table_expression->as<JoinNode>();
-            if (!nearest_scope_join_node)
-                continue;
-
             for (auto & [node, node_name] : matched_expression_nodes_with_names)
             {
                 auto join_identifier_side = getColumnSideFromJoinTree(node, *nearest_scope_join_node);
@@ -2620,13 +2535,6 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
 
         parent_window_node = window_node_it->second;
 
-        auto [_, inserted] = windows_in_resolve_process.emplace(parent_window_node.get());
-        if (!inserted)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Recursive window {}. In scope {}",
-                node->formatASTForErrorMessage(),
-                scope.scope_node->formatASTForErrorMessage());
-
         if (identifier_node)
         {
             node = parent_window_node->clone();
@@ -2708,7 +2616,6 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
             frame_end_offset_projection_names.empty() ? "" : frame_end_offset_projection_names.front());
     }
 
-    windows_in_resolve_process.erase(parent_window_node.get());
     return result_projection_name;
 }
 
@@ -3034,35 +2941,50 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
+    /// Resolve function arguments
+    bool allow_table_expressions = is_special_function_in || is_special_function_exists;
+    auto arguments_projection_names = resolveExpressionNodeList(
+        function_node_ptr->getArgumentsNode(),
+        scope,
+        true /*allow_lambda_expression*/,
+        allow_table_expressions /*allow_table_expression*/);
+
     if (is_special_function_exists)
     {
         checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
-        /// Rewrite EXISTS (subquery) into EXISTS (SELECT 1 FROM (subquery) LIMIT 1).
-        const auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
-
-        auto constant_data_type = std::make_shared<DataTypeUInt64>();
-        auto new_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
-
-        new_exists_subquery->setIsSubquery(true);
-        new_exists_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-        new_exists_subquery->getJoinTree() = exists_subquery_argument;
-        new_exists_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
-
-        QueryTreeNodePtr new_exists_argument = new_exists_subquery;
-
-        auto exists_arguments_projection_names = resolveExpressionNode(
-            new_exists_argument,
-            scope,
-            true /*allow_lambda_expression*/,
-            true /*allow_table_expression*/
-        );
-
-        if (new_exists_subquery->isCorrelated())
+        auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
+        bool correlated_exists_subquery = exists_subquery_argument->getNodeType() == QueryTreeNodeType::QUERY
+            ? exists_subquery_argument->as<QueryNode>()->isCorrelated()
+            : exists_subquery_argument->as<UnionNode>()->isCorrelated();
+        if (!correlated_exists_subquery)
         {
+            /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
+            auto constant_data_type = std::make_shared<DataTypeUInt64>();
+
+            auto in_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+            in_subquery->setIsSubquery(true);
+            in_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+            in_subquery->getJoinTree() = exists_subquery_argument;
+            in_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
+
+            function_node_ptr = std::make_shared<FunctionNode>("in");
             function_node_ptr->getArguments().getNodes() = {
-                std::move(new_exists_argument)
+                std::make_shared<ConstantNode>(1UL, constant_data_type),
+                std::move(in_subquery)
             };
 
+            /// Resolve modified arguments
+            arguments_projection_names = resolveExpressionNodeList(function_node_ptr->getArgumentsNode(),
+                scope,
+                true /*allow_lambda_expression*/,
+                true /*allow_table_expression*/);
+
+            node = function_node_ptr;
+            function_name = "in";
+            is_special_function_in = true;
+        }
+        else
+        {
             /// Subquery is correlated and EXISTS can not be replaced by IN function.
             /// EXISTS function will be replated by JOIN during query planning.
             auto function_exists = std::make_shared<FunctionExists>();
@@ -3072,47 +2994,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 )
             );
 
-            return { calculateFunctionProjectionName(node, parameters_projection_names, exists_arguments_projection_names) };
-        }
-        else
-        {
-            if (only_analyze || !scope.context->getSettingsRef()[Setting::execute_exists_as_scalar_subquery])
-            {
-                /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
-                QueryTreeNodePtr constant = std::make_shared<ConstantNode>(1UL, constant_data_type);
-
-                function_node_ptr = std::make_shared<FunctionNode>("in");
-                function_node_ptr->getArguments().getNodes() = {
-                    constant,
-                    std::move(new_exists_argument)
-                };
-
-                node = function_node_ptr;
-                function_name = "in";
-                is_special_function_in = true;
-            }
-            else
-            {
-                evaluateScalarSubqueryIfNeeded(new_exists_argument, scope, true);
-                auto res_col = ColumnUInt8::create();
-                const auto * const_node = new_exists_argument->as<ConstantNode>();
-                res_col->getData().push_back(const_node->getColumn()->isNullAt(0) ? 0 : 1);
-                ConstantValue const_value(std::move(res_col), std::make_shared<DataTypeUInt8>());
-                auto tme_const_node = std::make_shared<ConstantNode>(std::move(const_value), std::move(node));
-                auto res = tme_const_node->getValueStringRepresentation();
-                node = std::move(tme_const_node);
-                return {std::move(res)};
-            }
+            return { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
         }
     }
-
-    /// Resolve function arguments
-    bool allow_table_expressions = is_special_function_in || is_special_function_exists;
-    auto arguments_projection_names = resolveExpressionNodeList(
-        function_node_ptr->getArgumentsNode(),
-        scope,
-        true /*allow_lambda_expression*/,
-        allow_table_expressions /*allow_table_expression*/);
 
     /// Mask arguments if needed
     if (!scope.context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])

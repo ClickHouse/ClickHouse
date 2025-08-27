@@ -32,14 +32,13 @@ namespace DB
 class DataTypeTime final : public DataTypeNumberBase<Int32>, public TimezoneMixin
 {
 public:
-    explicit DataTypeTime(std::string_view time_zone_name = "");
+    explicit DataTypeTime(const String & time_zone_name = "");
     explicit DataTypeTime(const TimezoneMixin & time_zone);
 
     static constexpr auto family_name = "Time";
 
     const char * getFamilyName() const override { return family_name; }
     String doGetName() const override;
-    void updateHashImpl(SipHash & hash) const override;
     TypeIndex getTypeId() const override { return TypeIndex::Time; }
     TypeIndex getColumnType() const override { return TypeIndex::Int32; }
 

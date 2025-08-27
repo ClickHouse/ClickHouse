@@ -16,7 +16,6 @@ struct LazilyReadInfo;
 using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
 class Pipe;
-class ParallelReadingExtension;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
@@ -59,7 +58,6 @@ struct UsefulSkipIndexes
 
     std::vector<DataSkippingIndexAndCondition> useful_indices;
     std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
-    std::vector<std::vector<size_t>> per_part_index_orders;
 };
 
 /// This step is created to read from MergeTree* table.
@@ -83,7 +81,6 @@ public:
     {
         IndexType type;
         std::string name = {};
-        std::string part_name = {};
         std::string description = {};
         std::string condition = {};
         std::vector<std::string> used_keys = {};
@@ -157,10 +154,9 @@ public:
         std::optional<size_t> number_of_current_replica_ = std::nullopt);
 
     ReadFromMergeTree(const ReadFromMergeTree &) = default;
-    ReadFromMergeTree(ReadFromMergeTree &&) noexcept = default;
+    ReadFromMergeTree(ReadFromMergeTree &&) = default;
 
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
-        ContextPtr & context_,
         AnalysisResultPtr analyzed_result_ptr_,
         MergeTreeAllRangesCallback all_ranges_callback_,
         MergeTreeReadTaskCallback read_task_callback_,
@@ -235,10 +231,6 @@ public:
     void updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value);
     bool isQueryWithSampling() const;
 
-    /// Special stuff for vector search - replace vector column in read list with virtual "_distance" column
-    void replaceVectorColumnWithDistanceColumn(const String & vector_column);
-    bool isVectorColumnReplaced() const;
-
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePort();
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
@@ -257,14 +249,6 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     void setVectorSearchParameters(std::optional<VectorSearchParameters> && vector_search_parameters_) { vector_search_parameters = vector_search_parameters_; }
-    std::optional<VectorSearchParameters> getVectorSearchParameters() const { return vector_search_parameters; }
-
-    bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
-
-    /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
-    /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
-    void clearParallelReadingExtension();
-    std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
 private:
     MergeTreeReaderSettings reader_settings;
@@ -333,8 +317,6 @@ private:
 
     int getSortDirection() const;
     void updateSortDescription();
-
-    bool isParallelReplicasLocalPlanForInitiator() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;

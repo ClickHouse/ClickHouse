@@ -593,17 +593,8 @@ struct ToDateTime64Transform
 
     DateTime64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
     {
-        /*
-         * Previous implementation delegated to ToDateTimeImpl, which returns a
-         * UInt32 unix timestamp and therefore saturates at 0xFFFFFFFF (2106-02-07).
-         * This caused overflows when casting Date values beyond that day to
-         * DateTime64.
-         *
-         * Compute the timestamp directly in 64-bit space from the day number so we
-         * can represent the full range supported by DateTime64.
-         */
-        Int64 dt = static_cast<Int64>(time_zone.fromDayNum(DayNum(d)));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
+        const auto dt = ToDateTimeImpl<>::execute(d, time_zone);
+        return execute(dt, time_zone);
     }
 
     DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
@@ -859,7 +850,7 @@ struct ConvertImplGenericToString
         auto col_to = removeNullable(result_type)->createColumn();
 
         {
-            ColumnStringHelpers::WriteHelper<StringColumnType> write_helper(
+            ColumnStringHelpers::WriteHelper write_helper(
                     assert_cast<StringColumnType &>(*col_to),
                     size);
 
@@ -870,7 +861,7 @@ struct ConvertImplGenericToString
             for (size_t row = 0; row < size; ++row)
             {
                 serialization->serializeText(col_from, row, write_buffer, format_settings);
-                write_helper.finishRow();
+                write_helper.rowWritten();
             }
 
             write_helper.finalize();
@@ -1132,7 +1123,7 @@ struct ConvertThroughParsing
 
     static bool isAllRead(ReadBuffer & in)
     {
-        /// In case of FixedString, skip zero padding at the end.
+        /// In case of FixedString, skip zero bytes at end.
         if constexpr (std::is_same_v<FromDataType, DataTypeFixedString>)
             while (!in.eof() && *in.position() == 0)
                 ++in.position();
@@ -1259,7 +1250,7 @@ struct ConvertThroughParsing
         for (size_t i = 0; i < size; ++i)
         {
             size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
-            size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset : fixed_string_size;
+            size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset - 1 : fixed_string_size;
 
             ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
 
@@ -1844,17 +1835,17 @@ struct ConvertImpl
                 size_t size = vec_from.size();
 
                 if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
-                    data_to.resize(size * strlen("YYYY-MM-DD"));
+                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDate32>)
-                    data_to.resize(size * strlen("YYYY-MM-DD"));
+                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
-                    data_to.resize(size * strlen("hhh:mm:ss"));
+                    data_to.resize(size * (strlen("hhh:mm:ss") + 1));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>)
-                    data_to.resize(size * (strlen("hhh:mm:ss.") + col_from->getScale()));
+                    data_to.resize(size * (strlen("hhh:mm:ss.") + col_from->getScale() + 1));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
-                    data_to.resize(size * strlen("YYYY-MM-DD hh:mm:ss"));
+                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss") + 1));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale()));
+                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale() + 1));
                 else
                     data_to.resize(size * 3);   /// Arbitrary
 
@@ -1903,6 +1894,7 @@ struct ConvertImpl
                             is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
                         null_map->getData()[i] |= !is_ok;
+                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -1935,6 +1927,7 @@ struct ConvertImpl
                         {
                             FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
+                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -1965,7 +1958,7 @@ struct ConvertImpl
                 ColumnString::Offsets & offsets_to = col_to->getOffsets();
                 size_t size = col_from->size();
                 size_t n = col_from->getN();
-                data_to.resize(size * n);
+                data_to.resize(size * (n + 1)); /// + 1 - zero terminator
                 offsets_to.resize(size);
 
                 size_t offset_from = 0;
@@ -1981,6 +1974,8 @@ struct ConvertImpl
                         memcpy(&data_to[offset_to], &data_from[offset_from], bytes_to_copy);
                         offset_to += bytes_to_copy;
                     }
+                    data_to[offset_to] = 0;
+                    ++offset_to;
                     offsets_to[i] = offset_to;
                     offset_from += n;
                 }
@@ -2015,7 +2010,7 @@ struct ConvertImpl
                 ColumnString::Offsets & offsets_to = col_to->getOffsets();
                 size_t size = vec_from.size();
 
-                data_to.resize(size * 3); /// A guess (arbitrary).
+                data_to.resize(size * 3);
                 offsets_to.resize(size);
 
                 WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
@@ -2027,6 +2022,7 @@ struct ConvertImpl
                         bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, nullptr);
                         /// We don't use timezones in this branch
                         null_map->getData()[i] |= !is_ok;
+                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -2035,6 +2031,7 @@ struct ConvertImpl
                     for (size_t i = 0; i < size; ++i)
                     {
                         FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, nullptr);
+                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -3476,23 +3473,8 @@ struct ToNumberMonotonicity
         /// Only support types represented by native integers.
         /// It can be extended to big integers, decimals and DateTime64 later.
         /// By the way, NULLs are representing unbounded ranges.
-        /// For null Field, check if the type is valid.
-        /// See : https://github.com/ClickHouse/ClickHouse/issues/80742
-        auto is_valid_uint64_or_int64_or_null = [&](const Field & f)
-        {
-            /// allow NULL only when inner type is a nativeInteger/enum/date/date32/datetime
-            if (f.isNull())
-                return which_inner_type.isNativeInteger() || which_inner_type.isEnum() || which_inner_type.isDateOrDate32()
-                    || which_inner_type.isDateTime();
-
-            /// otherwise must be one of the two 64-bit types
-            auto t = f.getType();
-            return t == Field::Types::UInt64
-                || t == Field::Types::Int64;
-        };
-
-        if (!is_valid_uint64_or_int64_or_null(left)
-            || !is_valid_uint64_or_int64_or_null(right))
+        if (!((left.isNull() || left.getType() == Field::Types::UInt64 || left.getType() == Field::Types::Int64)
+            && (right.isNull() || right.getType() == Field::Types::UInt64 || right.getType() == Field::Types::Int64)))
             return {};
 
         const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
@@ -4695,7 +4677,7 @@ private:
         /// For named tuples allow conversions for tuples with
         /// different sets of elements. If element exists in @to_type
         /// and doesn't exist in @to_type it will be filled by default values.
-        if (from_type->hasExplicitNames() && to_type->hasExplicitNames())
+        if (from_type->haveExplicitNames() && to_type->haveExplicitNames())
         {
             const auto & from_names = from_type->getElementNames();
             std::unordered_map<String, size_t> from_positions;
@@ -4894,7 +4876,7 @@ private:
 
     WrapperType createTupleToObjectDeprecatedWrapper(const DataTypeTuple & from_tuple, bool has_nullable_subcolumns) const
     {
-        if (!from_tuple.hasExplicitNames())
+        if (!from_tuple.haveExplicitNames())
             throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_tuple.getName());
 
@@ -5079,8 +5061,8 @@ private:
             new_elements.reserve(elements.size());
             for (const auto & element : elements)
                 new_elements.push_back(convertNestedObjectType(element, new_object_type));
-            return type_tuple->hasExplicitNames() ? std::make_shared<DataTypeTuple>(new_elements, type_tuple->getElementNames())
-                                                  : std::make_shared<DataTypeTuple>(new_elements);
+            return type_tuple->haveExplicitNames() ? std::make_shared<DataTypeTuple>(new_elements, type_tuple->getElementNames())
+                                                   : std::make_shared<DataTypeTuple>(new_elements);
         }
 
         return type;
@@ -5108,6 +5090,7 @@ private:
             encodeDataType(new_type, new_value_buf);
             new_type->getDefaultSerialization()->serializeBinary(*new_column, 0, new_value_buf, format_settings);
             new_value_buf.finalize();
+            new_values.getChars().push_back(0);
             new_values.getOffsets().push_back(new_values.getChars().size());
         }
         else
@@ -5252,7 +5235,7 @@ private:
             return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
                 auto json_string = ColumnString::create();
-                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
+                ColumnStringHelpers::WriteHelper write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings = context ? getFormatSettings(context) : FormatSettings{};
                 auto serialization = arguments[0].type->getDefaultSerialization();
@@ -5260,7 +5243,7 @@ private:
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
-                    write_helper.finishRow();
+                    write_helper.rowWritten();
                 }
                 write_helper.finalize();
 

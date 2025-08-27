@@ -95,9 +95,12 @@ public:
             row_output_format->finalize();
             if constexpr (no_newline)
             {
+                // replace '\n' with '\0'
                 if (buffer.position() != buffer.buffer().begin() && buffer.position()[-1] == '\n')
-                    --buffer.position();
+                    buffer.position()[-1] = '\0';
             }
+            else
+                writeChar('\0', buffer);
 
             offsets[i] = buffer.count();
             row_output_format->resetFormatter();

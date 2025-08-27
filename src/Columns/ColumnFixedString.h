@@ -27,7 +27,7 @@ public:
     using Chars = PaddedPODArray<UInt8>;
 
 private:
-    /// Bytes of strings, laid in succession. The strings are stored without a trailing zero byte.
+    /// Bytes of rows, laid in succession. The strings are stored without a trailing zero byte.
     /** NOTE It is required that the offset and type of chars in the object be the same as that of `data in ColumnUInt8`.
       * Used in `packFixed` function (AggregationCommon.h)
       */
@@ -215,8 +215,6 @@ public:
             return n == rhs_concrete->n;
         return false;
     }
-
-    void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
 
     bool canBeInsideNullable() const override { return true; }
 
