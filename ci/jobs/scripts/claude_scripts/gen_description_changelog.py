@@ -234,7 +234,7 @@ def should_process_section(pr_body: str, tag_prefix: str) -> Tuple[bool, Tuple[b
 if __name__ == "__main__":
     info = Info()
     if not ensure_claude_code_cli() or not ensure_claude_API_key():
-        sys.exit(1)
+        return 1
 
     model = "claude-3-5-haiku-20241022"
 
@@ -283,10 +283,10 @@ if __name__ == "__main__":
             # Update the PR body directly
             GH.update_pr_body(updated_pr_body)
             print("Successfully updated PR body with generated content")
-            sys.exit(0)
+            return 0
         except Exception as e:
             print(f"Error: Could not update PR body: {e}")
-            sys.exit(1)
+            return 1
     else:
         print("No conditions were detected for automatically generating or formatting a changelog entry or a PR description")
-        sys.exit(0)
+        return 0
