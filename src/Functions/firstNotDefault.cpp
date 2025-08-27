@@ -21,21 +21,21 @@ namespace ErrorCodes
 namespace
 {
 
-/// Implements the function firstTruthy which takes a set of arguments and
+/// Implements the function which takes a set of arguments and
 /// returns the value of the leftmost non-falsey argument.
 /// If all arguments are falsey, returns the last argument.
 /// Result type is the supertype of all arguments.
-class FunctionFirstTruthy : public IFunction
+class FunctionFirstNotDefault : public IFunction
 {
 public:
-    static constexpr auto name = "firstTruthy";
+    static constexpr auto name = "firstNotDefault";
 
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionFirstTruthy>();
+        return std::make_shared<FunctionFirstNotDefault>();
     }
 
-    FunctionFirstTruthy() = default;
+    FunctionFirstNotDefault() = default;
 
     String getName() const override { return name; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -135,10 +135,10 @@ public:
 
 }
 
-REGISTER_FUNCTION(FirstTruthy)
+REGISTER_FUNCTION(FirstNotDefault)
 {
     FunctionDocumentation doc;
-    doc.description = "Returns the first non-falsey value from a set of arguments";
+    doc.description = "Returns the first non-default value from a set of arguments";
     doc.arguments = {
         {"arg1", "The first argument to check"},
         {"arg2", "The second argument to check"},
@@ -147,15 +147,15 @@ REGISTER_FUNCTION(FirstTruthy)
 
     doc.returned_value = FunctionDocumentation::ReturnedValue{"Result type is the supertype of all arguments", {}};
     doc.examples = {
-        {"integers", "SELECT firstTruthy(0, 1, 2)", "1"},
-        {"strings", "SELECT firstTruthy('', 'hello', 'world')", "'hello'"},
-        {"nulls", "SELECT firstTruthy(NULL, 0 :: UInt8, 1 :: UInt8)", "1"},
-        {"nullable zero", "SELECT firstTruthy(NULL, 0 :: Nullable(UInt8), 1 :: Nullable(UInt8))", "0"},
+        {"integers", "SELECT firstNotDefault(0, 1, 2)", "1"},
+        {"strings", "SELECT firstNotDefault('', 'hello', 'world')", "'hello'"},
+        {"nulls", "SELECT firstNotDefault(NULL, 0 :: UInt8, 1 :: UInt8)", "1"},
+        {"nullable zero", "SELECT firstNotDefault(NULL, 0 :: Nullable(UInt8), 1 :: Nullable(UInt8))", "0"},
     };
     doc.category = {FunctionDocumentation::Category::Null};
 
     doc.introduced_in = {25, 7};
-    factory.registerFunction<FunctionFirstTruthy>(doc, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionFirstNotDefault>(doc, FunctionFactory::Case::Insensitive);
 }
 
 }

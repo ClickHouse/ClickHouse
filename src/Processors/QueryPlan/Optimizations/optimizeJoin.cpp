@@ -61,7 +61,7 @@ static size_t functionDoesNotChangeNumberOfValues(std::string_view function_name
 {
     if (function_name == "materialize" || function_name == "_CAST" || function_name == "CAST" || function_name == "toNullable")
         return 1;
-    if (function_name == "firstTruthy")
+    if (function_name == "firstNotDefault")
         return num_args;
     return 0;
 }

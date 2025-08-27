@@ -203,7 +203,7 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
 
     std::unordered_map<String, const ActionsDAG::Node *> changed_types;
 
-    JoinActionRef::AddFunction using_concat_function(FunctionFactory::instance().get("firstTruthy", nullptr));
+    JoinActionRef::AddFunction using_concat_function(FunctionFactory::instance().get("firstNotDefault", nullptr));
     for (size_t i = 0; i < num_nodes; ++i)
     {
         auto & using_column_node = using_nodes[i]->as<ColumnNode &>();

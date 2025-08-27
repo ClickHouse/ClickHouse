@@ -5604,7 +5604,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 {
                     const auto & function_node = result_left_table_expression->as<FunctionNode &>();
                     auto is_column_node = [](const auto & argument) { return argument->getNodeType() == QueryTreeNodeType::COLUMN; };
-                    if (function_node.getFunctionName() == "firstTruthy" && std::ranges::all_of(function_node.getArguments().getNodes(), is_column_node))
+                    if (function_node.getFunctionName() == "firstNotDefault" && std::ranges::all_of(function_node.getArguments().getNodes(), is_column_node))
                     {
                         // result_table_expressions.push_back(result_left_table_expression);
                         for (const auto & argument : function_node.getArguments().getNodes())

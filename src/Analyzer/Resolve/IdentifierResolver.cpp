@@ -955,7 +955,7 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
     if (arguments.size() == 1)
         return arguments.front();
 
-    String function_name("firstTruthy");
+    String function_name("firstNotDefault");
 
     auto function_node = std::make_shared<FunctionNode>(function_name);
     function_node->getArguments().getNodes() = std::move(arguments);
@@ -1058,7 +1058,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
 
         const auto & function_node = node->as<FunctionNode &>();
         auto is_column_node = [](const auto & argument) { return argument->getNodeType() == QueryTreeNodeType::COLUMN; };
-        if (function_node.getFunctionName() == "firstTruthy" && std::ranges::all_of(function_node.getArguments().getNodes(), is_column_node))
+        if (function_node.getFunctionName() == "firstNotDefault" && std::ranges::all_of(function_node.getArguments().getNodes(), is_column_node))
             return;
 
         const auto & function_argument_nodes = function_node.getArguments().getNodes();
