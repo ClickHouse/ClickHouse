@@ -6207,6 +6207,12 @@ void Context::setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback
 }
 
 
+bool Context::hasClusterFunctionReadTaskCallback() const
+{
+    return next_task_callback.has_value();
+}
+
+
 MergeTreeReadTaskCallback Context::getMergeTreeReadTaskCallback() const
 {
     if (!merge_tree_read_task_callback.has_value())
