@@ -443,7 +443,7 @@ private:
     void generateNextQuery(RandomGenerator & rg, bool in_parallel, SQLQueryInner * sq);
 
     std::tuple<SQLType *, Integers> randomIntType(RandomGenerator & rg, uint64_t allowed_types);
-    std::tuple<SQLType *, FloatingPoints> randomFloatType(RandomGenerator & rg) const;
+    std::tuple<SQLType *, FloatingPoints> randomFloatType(RandomGenerator & rg, uint64_t allowed_types);
     std::tuple<SQLType *, Dates> randomDateType(RandomGenerator & rg, uint64_t allowed_types) const;
     SQLType * randomTimeType(RandomGenerator & rg, uint64_t allowed_types, TimeTp * dt) const;
     SQLType * randomDateTimeType(RandomGenerator & rg, uint64_t allowed_types, DateTimeTp * dt) const;
@@ -483,12 +483,13 @@ private:
         uint32_t added_partition_columns_in_data_file = 0;
         uint32_t added_structure = 0;
         const uint32_t toadd_path = 1;
-        const uint32_t toadd_format
-            = (std::is_same_v<U, TableEngine> || b.file_format.has_value() || allow_chaos) && rg.nextMediumNumber() < 91;
-        const uint32_t toadd_compression
-            = (std::is_same_v<U, TableEngine> || b.file_comp.has_value() || allow_chaos) && rg.nextMediumNumber() < 51;
-        const uint32_t toadd_partition_strategy = (b.isS3Engine() || b.isAzureEngine()) && rg.nextMediumNumber() < 21;
-        const uint32_t toadd_partition_columns_in_data_file = (b.isS3Engine() || b.isAzureEngine()) && rg.nextMediumNumber() < 21;
+        const uint32_t toadd_format = (b.file_format.has_value() || allow_chaos) && rg.nextMediumNumber() < 91;
+        const uint32_t toadd_compression = (b.file_comp.has_value() || allow_chaos) && rg.nextMediumNumber() < 51;
+        const uint32_t toadd_partition_strategy
+            = (b.partition_strategy.has_value() || ((b.isS3Engine() || b.isAzureEngine()) && allow_chaos)) && rg.nextMediumNumber() < 21;
+        const uint32_t toadd_partition_columns_in_data_file
+            = (b.partition_columns_in_data_file.has_value() || ((b.isS3Engine() || b.isAzureEngine()) && allow_chaos))
+            && rg.nextMediumNumber() < 21;
         const uint32_t toadd_structure = !std::is_same_v<U, TableEngine> && (!allow_chaos || rg.nextMediumNumber() < 91);
         const uint32_t total_to_add = toadd_path + toadd_format + toadd_compression + toadd_partition_strategy
             + toadd_partition_columns_in_data_file + toadd_structure;
@@ -519,14 +520,8 @@ private:
             if (add_path && nopt < (add_path + 1))
             {
                 /// Path to the bucket
-                bool no_change = false;
-
                 next->set_key(b.isOnS3() ? "filename" : (b.isOnAzure() ? "blob_path" : "path"));
-                if constexpr (std::is_same_v<U, TableEngine>)
-                {
-                    no_change = true;
-                }
-                next->set_value(b.getTablePath(rg, fc, no_change));
+                next->set_value(b.getTablePath(rg, fc, allow_chaos));
                 added_path++;
             }
             else if (add_format && nopt < (add_path + add_format + 1))
@@ -536,10 +531,6 @@ private:
                     ? b.file_format.value()
                     : static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
 
-                if constexpr (std::is_same_v<U, TableEngine>)
-                {
-                    b.file_format = next_format;
-                }
                 next->set_key("format");
                 next->set_value(InOutFormat_Name(next_format).substr(6));
                 added_format++;
@@ -551,10 +542,6 @@ private:
                     ? b.file_comp.value()
                     : rg.pickRandomly(compressionMethods);
 
-                if constexpr (std::is_same_v<U, TableEngine>)
-                {
-                    b.file_comp = next_compression;
-                }
                 next->set_key("compression");
                 next->set_value(next_compression);
                 added_compression++;
@@ -566,10 +553,6 @@ private:
                     ? b.partition_strategy.value()
                     : (rg.nextBool() ? "wildcard" : "hive");
 
-                if constexpr (std::is_same_v<U, TableEngine>)
-                {
-                    b.partition_strategy = next_ps;
-                }
                 next->set_key("partition_strategy");
                 next->set_value(next_ps);
                 added_partition_strategy++;
@@ -583,10 +566,6 @@ private:
                     ? b.partition_columns_in_data_file.value()
                     : (rg.nextBool() ? "1" : "0");
 
-                if constexpr (std::is_same_v<U, TableEngine>)
-                {
-                    b.partition_columns_in_data_file = next_pcdf;
-                }
                 next->set_key("partition_columns_in_data_file");
                 next->set_value(next_pcdf);
                 added_partition_columns_in_data_file++;
