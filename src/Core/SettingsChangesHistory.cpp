@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.9",
         {
+            {"use_skip_indexes_on_data_read", false, true, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
         });
         addSettingsChanges(settings_changes_history, "25.8",
@@ -855,6 +856,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {
             {"vertical_merge_optimize_lightweight_delete", false, true, "New setting"},
+            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, false, "New setting"},
+            {"shared_merge_tree_empty_partition_lifetime", 86400, 86400, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
@@ -866,6 +869,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"dynamic_serialization_version", "v2", "v2", "Add a setting to control Dynamic serialization versions"},
             {"search_orphaned_parts_disks", "any", "any", "New setting"},
             {"shared_merge_tree_virtual_parts_discovery_batch", 1, 1, "New setting"},
+            {"max_digestion_size_per_segment", 256_MiB, 256_MiB, "Obsolete setting"},
             {"shared_merge_tree_update_replica_flags_delay_ms", 30000, 30000, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"},
             {"allow_part_offset_column_in_projections", false, true, "Now projections can use _part_offset column."},
