@@ -106,6 +106,7 @@ void ReadFromObjectStorageStep::createIterator()
         predicate = filter_actions_dag->getOutputs().at(0);
 
     auto context = getContext();
+
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, nullptr, context->getFileProgressCallback());
