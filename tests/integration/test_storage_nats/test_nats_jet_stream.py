@@ -645,37 +645,36 @@ def test_nats_many_subjects_insert_wrong(nats_cluster):
         values.append("({i}, {i})".format(i=i))
     values = ",".join(values)
 
-    # no subject specified
-    instance.query_and_get_error("INSERT INTO test.nats VALUES {}".format(values))
+    # This NATS engine reads from multiple subjects
+    assert(
+        "This NATS engine reads from multiple subjects. You must specify `stream_like_engine_insert_queue` to choose the subject to write to." 
+        in 
+        instance.query_and_get_error("INSERT INTO test.nats VALUES {}".format(values)))
 
-    # can't insert into wildcard subjects
-    instance.query_and_get_error(
-        "INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert2.>' VALUES {}".format(
-            values
-        )
+    # Can not publish to wildcard subject
+    assert(
+        "Can not publish to wildcard subject"
+        in
+        instance.query_and_get_error("INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert2.>' VALUES {}".format(values))
     )
-    instance.query_and_get_error(
-        "INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert3.*.foo' VALUES {}".format(
-            values
-        )
-    )
-
-    # specified subject is not among engine's subjects
-    instance.query_and_get_error(
-        "INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert4' VALUES {}".format(
-            values
-        )
-    )
-    instance.query_and_get_error(
-        "INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert3.foo.baz' VALUES {}".format(
-            values
-        )
-    )
-    instance.query_and_get_error(
-        "INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='foo.insert2' VALUES {}".format(
-            values
-        )
-    )
+    assert(
+        "Can not publish to wildcard subject"
+        in
+        instance.query_and_get_error("INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert3.*.foo' VALUES {}".format(values)))
+    
+    # Selected subject is not among engine subjects
+    assert(
+        "Selected subject is not among engine subjects"
+        in
+        instance.query_and_get_error("INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert4' VALUES {}".format(values)))
+    assert(
+        "Selected subject is not among engine subjects"
+        in
+        instance.query_and_get_error("INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert3.foo.baz' VALUES {}".format(values)))
+    assert(
+        "Selected subject is not among engine subjects"
+        in
+        instance.query_and_get_error("INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='foo.insert2' VALUES {}".format(values)))
 
 
 def test_nats_many_subjects_insert_right(nats_cluster):
@@ -1044,24 +1043,23 @@ def test_nats_no_connection_at_startup_1(nats_cluster):
 
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
-    instance.query_and_get_error(
-        f"""
-        CREATE TABLE test.cs (key UInt64, value UInt64)
-            ENGINE = NATS
-            SETTINGS nats_url = 'invalid_nats_url:4444',
-                    nats_stream = 'test_stream',
-                    nats_consumer_name = 'test_consumer',
-                    nats_subjects = 'test_subject',
-                    nats_format = 'JSONEachRow',
-                    nats_num_consumers = '5',
-                    nats_row_delimiter = '\\n';
-        """
-    )
-    instance.query_and_get_error(
-        """
-        SHOW TABLE test.cs;
-        """
-    )
+    assert( 
+        "Cannot connect to Nats"
+        in
+        instance.query_and_get_error(
+            f"""
+            CREATE TABLE test.cs (key UInt64, value UInt64)
+                ENGINE = NATS
+                SETTINGS nats_url = 'invalid_nats_url:4444',
+                        nats_stream = 'test_stream',
+                        nats_consumer_name = 'test_consumer',
+                        nats_subjects = 'test_subject',
+                        nats_format = 'JSONEachRow',
+                        nats_num_consumers = '5',
+                        nats_row_delimiter = '\\n';
+            """
+        ))
+    assert "Table `cs` doesn't exist" in instance.query_and_get_error("SHOW TABLE test.cs;")
 
 
 def test_nats_no_connection_at_startup_2(nats_cluster):
@@ -1166,18 +1164,23 @@ def test_nats_bad_args(nats_cluster):
                      nats_format = 'JSONEachRow';
         """
     )
-    instance.query_and_get_error("SELECT * FROM test.producer_table")
+    assert(
+        "To read from NATS jet stream, you must specify `nats_consumer_name` setting" 
+        in 
+        instance.query_and_get_error("SELECT * FROM test.producer_table"))
 
-    instance.query_and_get_error(
-        f"""
-        CREATE TABLE test.drop (key UInt64, value UInt64)
-            ENGINE = NATS
-            SETTINGS nats_url = 'nats1:4444',
-                     nats_consumer_name = 'test_consumer',
-                     nats_subjects = 'test_subject',
-                     nats_format = 'JSONEachRow';
-        """
-    )
+    assert(
+        "To use NATS jet stream, you must specify `nats_stream` setting"
+        in
+        instance.query_and_get_error(
+            f"""
+            CREATE TABLE test.drop (key UInt64, value UInt64)
+                ENGINE = NATS
+                SETTINGS nats_url = 'nats1:4444',
+                        nats_consumer_name = 'test_consumer',
+                        nats_subjects = 'test_subject',
+                        nats_format = 'JSONEachRow';
+            """))
 
 
 def test_nats_drop_mv(nats_cluster):
