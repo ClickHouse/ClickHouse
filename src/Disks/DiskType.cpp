@@ -49,48 +49,41 @@ bool DataSourceDescription::sameKind(const DataSourceDescription & other) const
         == std::tie(other.type, other.object_storage_type, other_description);
 }
 
-std::string DataSourceDescription::toString() const
+String DataSourceDescription::name() const
 {
-    String str;
     switch (type)
     {
         case DataSourceType::Local:
-            str = "local";
-            break;
+            return "local";
         case DataSourceType::RAM:
-            str = "memory";
-            break;
+            return "memory";
         case DataSourceType::ObjectStorage:
         {
             switch (object_storage_type)
             {
                 case ObjectStorageType::S3:
-                    str = "s3";
-                    break;
+                    return "s3";
                 case ObjectStorageType::HDFS:
-                    str = "hdfs";
-                    break;
+                    return "hdfs";
                 case ObjectStorageType::Azure:
-                    str = "azure_blob_storage";
-                    break;
+                    return "azure_blob_storage";
                 case ObjectStorageType::Local:
-                    str = "local_blob_storage";
-                    break;
+                    return "local_blob_storage";
                 case ObjectStorageType::Web:
-                    str = "web";
-                    break;
+                    return "web";
                 case ObjectStorageType::None:
-                    str = "none";
-                    break;
+                    return "none";
                 case ObjectStorageType::Max:
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage type: Max");
             }
         }
     }
-
-    str += fmt::format(" (description = '{}', is_encrypted = {}, is_cached = {}, zookeeper_name = '{}')",
-                       description, is_encrypted, is_cached, zookeeper_name);
-
-    return str;
 }
+
+String DataSourceDescription::toString() const
+{
+    return fmt::format("{} (description = '{}', is_encrypted = {}, is_cached = {}, zookeeper_name = '{}')",
+                       name(), description, is_encrypted, is_cached, zookeeper_name);
+}
+
 }
