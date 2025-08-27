@@ -268,17 +268,16 @@ def get_spark(
             "spark.hadoop.fs.s3a.endpoint",
             f"http://{cluster.minio_ip}:{cluster.minio_port}",
         )
+        builder.config(
+            "spark.hadoop.fs.s3a.aws.credentials.provider",
+            "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
+        )
         builder.config("spark.hadoop.fs.s3a.access.key", minio_access_key)
         builder.config("spark.hadoop.fs.s3a.secret.key", minio_secret_key)
         # MinIO specific settings
         builder.config("spark.hadoop.fs.s3a.path.style.access", "true")
         builder.config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
-        builder.config("spark.hadoop.fs.s3a.path-style-access", "true")
         builder.config("spark.hadoop.fs.s3a.endpoint.region", "us-east-1")
-        builder.config(
-            "spark.hadoop.fs.s3a.aws.credentials.provider",
-            "com.amazonaws.auth.EnvironmentVariableCredentialsProvider",
-        )
         if catalog == LakeCatalogs.Glue:
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.endpoint", "http://localhost:3000"
