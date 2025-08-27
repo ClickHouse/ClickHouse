@@ -40,7 +40,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/Dynamic/Var.h>
 #include <Common/FailPoint.h>
-#include "Disks/ObjectStorages/StoredObject.h"
+#include <Disks/ObjectStorages/StoredObject.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/CastOverloadResolver.h>
 #include <IO/WriteHelpers.h>
@@ -1180,7 +1180,7 @@ void MultipleFileWriter::consume(const Chunk & chunk)
     {
         current_file_size = 0;
         auto filename = filename_generator.generateDataFileName();
-        
+
         data_file_names.push_back(filename.path_in_storage);
         auto buffer = object_storage->writeObject(
             StoredObject(filename.path_in_storage), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
@@ -1252,8 +1252,6 @@ UInt64 MultipleFileWriter::getResultBytes() const
     }
     return result;
 }
-
-
 
 IcebergStorageSink::IcebergStorageSink(
     ObjectStoragePtr object_storage_,
