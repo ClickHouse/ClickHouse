@@ -479,11 +479,15 @@ def format_test_name_for_linewrap(text: str) -> str:
 
 def format_test_status(text: str) -> str:
     """Format the test status for better readability."""
-    color = (
-        "red"
-        if text.lower().startswith("fail")
-        else "orange" if text.lower() in ("error", "broken", "pending") else "green"
-    )
+    if text.lower().startswith("fail"):
+        color = "red"
+    elif text.lower() == "skipped":
+        color = "grey"
+    elif text.lower() in ("success", "ok", "passed", "pass"):
+        color = "green"
+    else:
+        color = "orange"
+
     return f'<span style="font-weight: bold; color: {color}">{text}</span>'
 
 
@@ -511,28 +515,41 @@ def format_results_as_html_table(results) -> str:
     return html
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Create a combined CI report.")
-    parser.add_argument(  # Need the full URL rather than just the ID to query the databases
-        "--actions-run-url", required=True, help="URL of the actions run"
-    )
-    parser.add_argument(
-        "--pr-number", help="Pull request number for the S3 path", type=int
-    )
-    parser.add_argument("--commit-sha", help="Commit SHA for the S3 path")
-    parser.add_argument(
-        "--no-upload", action="store_true", help="Do not upload the report"
-    )
-    parser.add_argument(
-        "--known-fails", type=str, help="Path to the file with known fails"
-    )
-    parser.add_argument(
-        "--cves", action="store_true", help="Get CVEs from Grype results"
-    )
-    parser.add_argument(
-        "--mark-preview", action="store_true", help="Mark the report as a preview"
-    )
-    return parser.parse_args()
+def backfill_skipped_statuses(
+    job_statuses: pd.DataFrame, pr_number: int, branch: str, commit_sha: str
+):
+    """
+    Fill in the job statuses for skipped jobs.
+    """
+
+    if pr_number == 0:
+        ref_param = f"REF={branch}"
+        workflow_name = "MasterCI"
+    else:
+        ref_param = f"PR={pr_number}"
+        workflow_name = "PR"
+
+    status_file = f"result_{workflow_name.lower()}.json"
+    s3_path = f"https://{S3_BUCKET}.s3.amazonaws.com/{ref_param.replace('=', 's/')}/{commit_sha}/{status_file}"
+    response = requests.get(s3_path)
+
+    if response.status_code != 200:
+        return job_statuses
+
+    status_data = response.json()
+    skipped_jobs = []
+    for job in status_data["results"]:
+        if job["status"] == "skipped" and len(job["links"]) > 0:
+            skipped_jobs.append(
+                {
+                    "job_name": job["name"],
+                    "job_status": job["status"],
+                    "message": job["info"],
+                    "results_link": job["links"][0],
+                }
+            )
+
+    return pd.concat([job_statuses, pd.DataFrame(skipped_jobs)], ignore_index=True)
 
 
 def get_build_report_links(
@@ -549,10 +566,16 @@ def get_build_report_links(
     build_report_links = {}
 
     for job in job_statuses.itertuples():
-        if job.job_name not in build_job_names or job.job_status != "success":
-            continue
-
-        build_report_links[job.job_name] = job.results_link
+        if (
+            job.job_name in build_job_names
+            and job.job_status
+            in (
+                "success",
+                "skipped",
+            )
+            and job.results_link
+        ):
+            build_report_links[job.job_name] = job.results_link
 
     if len(build_report_links) > 0:
         # Possible that only one build job succeeded, in which case we only have one link.
@@ -592,6 +615,30 @@ def get_build_report_links(
         for job_name in build_job_names
     }
     return build_report_links
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Create a combined CI report.")
+    parser.add_argument(  # Need the full URL rather than just the ID to query the databases
+        "--actions-run-url", required=True, help="URL of the actions run"
+    )
+    parser.add_argument(
+        "--pr-number", help="Pull request number for the S3 path", type=int
+    )
+    parser.add_argument("--commit-sha", help="Commit SHA for the S3 path")
+    parser.add_argument(
+        "--no-upload", action="store_true", help="Do not upload the report"
+    )
+    parser.add_argument(
+        "--known-fails", type=str, help="Path to the file with known fails"
+    )
+    parser.add_argument(
+        "--cves", action="store_true", help="Get CVEs from Grype results"
+    )
+    parser.add_argument(
+        "--mark-preview", action="store_true", help="Mark the report as a preview"
+    )
+    return parser.parse_args()
 
 
 def create_workflow_report(
@@ -685,6 +732,10 @@ def create_workflow_report(
             )
         except Exception as e:
             pr_info_html = e
+
+    fail_results["job_statuses"] = backfill_skipped_statuses(
+        fail_results["job_statuses"], pr_number, branch_name, commit_sha
+    )
 
     high_cve_count = 0
     if not cves_not_checked and len(fail_results["docker_images_cves"]) > 0:
