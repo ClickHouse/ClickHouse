@@ -222,9 +222,6 @@ hasToken
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
-hop
-hopEnd
-hopStart
 hostName
 identity
 ignore
@@ -567,9 +564,6 @@ transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
 transform
-tumble
-tumbleEnd
-tumbleStart
 tuple
 tupleNames
 uptime
