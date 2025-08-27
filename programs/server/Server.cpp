@@ -2778,7 +2778,6 @@ try
             {
                 /// Set the root logger level to the shutdown level.
                 /// This is useful for debugging shutdown issues.
-                /// The root logger level will be reset to the default level after the server is fully initialized.
                 config().setString("logger.level", config().getString("logger.shutdownLevel"));
                 Loggers::updateLevels(config(), logger());
 
