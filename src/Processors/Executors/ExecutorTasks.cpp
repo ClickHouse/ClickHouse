@@ -12,13 +12,13 @@ namespace ErrorCodes
 
 void ExecutorTasks::finish()
 {
-    freeCPU();
-
     {
         std::lock_guard lock(mutex);
         finished = true;
         async_task_queue.finish();
     }
+
+    freeCPU();
 
     std::lock_guard guard(executor_contexts_mutex);
 
@@ -198,7 +198,11 @@ void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAll
     threads_queue.init(num_threads);
     task_queue.init(num_threads);
     fast_task_queue.init(num_threads);
-    cpu_slots = cpu_slots_;
+
+    {
+        std::lock_guard lock(mutex); // In case finish() is executed concurrently with init() due to exception
+        cpu_slots = cpu_slots_;
+    }
 
     // Initialize slot counters with zeros up to max_threads
     slot_count.resize(num_threads, 0);
