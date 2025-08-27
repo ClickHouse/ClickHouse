@@ -7,8 +7,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/Regexps.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
@@ -199,31 +201,7 @@ public:
 
 REGISTER_FUNCTION(ArrayStringConcat)
 {
-    FunctionDocumentation::Description description = R"(
-Concatenates string representations of values listed in the array with the provided separator, which is an optional parameter set to an empty string by default.
-)";
-    FunctionDocumentation::Syntax syntax = "arrayStringConcat(arr[, separator])";
-    FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to concatenate.", {"Array(T)"}},
-        {"separator", "Optional. Separator string. By default an empty string.", {"const String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the concatenated string.", {"String"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        "SELECT arrayStringConcat(['12/05/2021', '12:50:00'], ' ') AS DateString;",
-        R"(
-┌─DateString──────────┐
-│ 12/05/2021 12:50:00 │
-└─────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionArrayStringConcat>(documentation);
+    factory.registerFunction<FunctionArrayStringConcat>();
 }
 
 }

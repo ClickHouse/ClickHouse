@@ -20,15 +20,10 @@ class CacheRunnerHooks:
         ), f"Outdated yaml pipelines or BUG. Configuration must be run only for workflow with enabled cache, workflow [{workflow.name}]"
         artifact_digest_map = {}
         job_digest_map = {}
-        artifact_name_config_map = {}
-        for a in workflow.artifacts:
-            artifact_name_config_map[a.name] = a
 
         for job in workflow.jobs:
             digest = cache.digest.calc_job_digest(
-                job_config=job,
-                docker_digests=docker_digests,
-                artifact_configs=artifact_name_config_map,
+                job_config=job, docker_digests=docker_digests
             )
             job_digest_map[job.name] = digest
             if job.provides:
@@ -124,6 +119,13 @@ class CacheRunnerHooks:
                             workflow_config.cache_jobs[job.name]
                         )
 
+        print(f"Write config to GH's job output")
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"DATA={workflow_config.to_json()}",
+                file=f,
+            )
+        print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
         print(
             "Dump WorkflowConfig to fs, the next hooks in this job might want to see it"
         )
@@ -172,6 +174,5 @@ class CacheRunnerHooks:
                 job.name,
                 job_digest,
                 workflow_runtime.sha,
-                workflow_name=workflow.name,
                 if_not_exist=workflow.is_event_pull_request(),
             )

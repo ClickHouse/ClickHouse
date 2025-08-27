@@ -7,7 +7,6 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/Context.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -152,7 +151,7 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     set_and_key->key = PreparedSets::toString(hash_, {});
 
     set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
-    set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
+    set_and_key->set->setHeader(source->getCurrentHeader().getColumnsWithTypeAndName());
 }
 
 FutureSetFromSubquery::FutureSetFromSubquery(
@@ -182,7 +181,7 @@ SetPtr FutureSetFromSubquery::get() const
 void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
 {
     source = std::move(source_);
-    set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
+    set_and_key->set->setHeader(source->getCurrentHeader().getColumnsWithTypeAndName());
 }
 
 void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_) { external_table = std::move(external_table_); }
@@ -194,10 +193,12 @@ DataTypes FutureSetFromSubquery::getTypes() const
 
 FutureSet::Hash FutureSetFromSubquery::getHash() const { return hash; }
 
-std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & network_transfer_limits, const PreparedSetsCachePtr & prepared_sets_cache)
+std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const ContextPtr & context)
 {
     if (set_and_key->set->isCreated())
         return nullptr;
+
+    const auto & settings = context->getSettingsRef();
 
     auto plan = std::move(source);
 
@@ -208,8 +209,8 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & netwo
         plan->getCurrentHeader(),
         set_and_key,
         external_table,
-        network_transfer_limits,
-        prepared_sets_cache);
+        SizeLimits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]),
+        context);
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
     return plan;
@@ -220,18 +221,14 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     if (external_table_set)
         external_table_set->buildSetInplace(context);
 
-    const auto & settings = context->getSettingsRef();
-    SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
-    auto prepared_sets_cache = context->getPreparedSetsCache();
-
-    auto plan = build(network_transfer_limits, prepared_sets_cache);
+    auto plan = build(context);
 
     if (!plan)
         return;
 
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-    pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
+    pipeline.complete(std::make_shared<EmptySink>(Block()));
 
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
@@ -260,18 +257,14 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         }
     }
 
-    const auto & settings = context->getSettingsRef();
-    SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
-    auto prepared_sets_cache = context->getPreparedSetsCache();
-
-    auto plan = build(network_transfer_limits, prepared_sets_cache);
+    auto plan = build(context);
     if (!plan)
         return nullptr;
 
     set_and_key->set->fillSetElements();
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-    pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
+    pipeline.complete(std::make_shared<EmptySink>(Block()));
 
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();

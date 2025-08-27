@@ -7,7 +7,6 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -186,9 +185,6 @@ void MergePlainMergeTreeTask::cancel() noexcept
 {
     if (merge_task)
         merge_task->cancel();
-
-    if (new_part)
-        new_part->removeIfNeeded();
 }
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const

@@ -48,7 +48,6 @@ class Labels:
     PR_CRITICAL_BUGFIX = "pr-critical-bugfix"
     CAN_BE_TESTED = "can be tested"
     DO_NOT_TEST = "do not test"
-    NO_FAST_TESTS = "no-fast-tests"
     MUST_BACKPORT = "pr-must-backport"
     MUST_BACKPORT_CLOUD = "pr-must-backport-cloud"
     JEPSEN_TEST = "jepsen-test"
@@ -67,15 +66,7 @@ class Labels:
     RELEASE_LTS = "release-lts"
     SUBMODULE_CHANGED = "submodule changed"
 
-    CI_BUILD = "ci-build"
-
     CI_PERFORMANCE = "ci-performance"
-
-    CI_INTEGRATION_FLAKY = "ci-integration-test-flaky"
-    CI_INTEGRATION = "ci-integration-test"
-
-    CI_FUNCTIONAL_FLAKY = "ci-functional-test-flaky"
-    CI_FUNCTIONAL = "ci-functional-test"
 
     # automatic backport for critical bug fixes
     AUTO_BACKPORT = {"pr-critical-bugfix"}
@@ -100,7 +91,8 @@ def check_category(pr_body: str) -> Tuple[bool, str]:
     lines = list(map(lambda x: x.strip(), pr_body.split("\n") if pr_body else []))
     lines = [re.sub(r"\s+", " ", line) for line in lines]
 
-    if "Reverts ClickHouse/" in pr_body:
+    # Check if body contains "Reverts ClickHouse/ClickHouse#36337"
+    if [True for line in lines if re.match(rf"\AReverts [A-Za-z0-9_.-/]+#\d+\Z", line)]:
         return True, LABEL_CATEGORIES["pr-not-for-changelog"][0]
 
     category = ""
@@ -183,7 +175,7 @@ def check_labels(category, info):
             pr_labels_to_remove.append(label)
 
     if info.pr_number:
-        changed_files = info.get_kv_data("changed_files")
+        changed_files = info.get_custom_data("changed_files")
         if "contrib/" in " ".join(changed_files):
             pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
 

@@ -274,8 +274,15 @@ void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, c
     {
         for (size_t i = 0; i < rows; ++i)
         {
-            size_t string_size = sizeAt(i);
-            sizes[i] += !!is_null[i] + !is_null[i] * (sizeof(string_size) + string_size + 1 /* null byte */);
+            if (is_null[i])
+            {
+                ++sizes[i];
+            }
+            else
+            {
+                size_t string_size = sizeAt(i);
+                sizes[i] += sizeof(string_size) + string_size + 1 /* null byte */;
+            }
         }
     }
     else
@@ -304,7 +311,7 @@ StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char co
     return res;
 }
 
-ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnString::serializeValueIntoMemory(size_t n, char * memory) const
 {
     size_t string_size = sizeAt(n);
     size_t offset = offsetAt(n);
@@ -313,21 +320,6 @@ ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * mem
     memory += sizeof(string_size);
     memcpy(memory, &chars[offset], string_size);
     return memory + string_size;
-}
-
-void ColumnString::batchSerializeValueIntoMemory(std::vector<char *> & memories) const
-{
-    chassert(memories.size() == size());
-    for (size_t i = 0; i < memories.size(); ++i)
-    {
-        size_t string_size = sizeAt(i);
-        size_t offset = offsetAt(i);
-
-        memcpy(memories[i], &string_size, sizeof(string_size));
-        memories[i] += sizeof(string_size);
-        memcpy(memories[i], &chars[offset], string_size);
-        memories[i] += string_size;
-    }
 }
 
 const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
@@ -588,7 +580,7 @@ size_t ColumnString::capacity() const
     return offsets.capacity();
 }
 
-void ColumnString::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnString::prepareForSquashing(const Columns & source_columns)
 {
     size_t new_size = size();
     size_t new_chars_size = chars.size();
@@ -599,8 +591,8 @@ void ColumnString::prepareForSquashing(const Columns & source_columns, size_t fa
         new_chars_size += source_string_column.chars.size();
     }
 
-    offsets.reserve_exact(new_size * factor);
-    chars.reserve_exact(new_chars_size * factor);
+    offsets.reserve_exact(new_size);
+    chars.reserve_exact(new_chars_size);
 }
 
 void ColumnString::shrinkToFit()

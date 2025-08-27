@@ -9,7 +9,7 @@ class LimitByStep : public ITransformingStep
 {
 public:
     explicit LimitByStep(
-            const SharedHeader & input_header_,
+            const Header & input_header_,
             size_t group_length_, size_t group_offset_, Names columns_);
 
     String getName() const override { return "LimitBy"; }

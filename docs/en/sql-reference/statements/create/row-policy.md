@@ -14,7 +14,7 @@ Row policies make sense only for users with readonly access. If a user can modif
 
 Syntax:
 
-```sql
+``` sql
 CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1|db1.*
         [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2|db2.* ...]
     [IN access_storage_type]
@@ -90,9 +90,12 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 enable the user `peter` to see table1 rows only if both `b=1` AND `c=2`, although
 any other table in mydb would have only `b=1` policy applied for the user.
 
+
+
 ## ON CLUSTER Clause {#on-cluster-clause}
 
 Allows creating row policies on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
+
 
 ## Examples {#examples}
 

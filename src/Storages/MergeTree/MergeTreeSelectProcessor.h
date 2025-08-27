@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
-#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Processors/Chunk.h>
 
 #include <boost/core/noncopyable.hpp>
@@ -17,9 +16,6 @@ namespace DB
 {
 
 struct PrewhereExprInfo;
-
-struct LazilyReadInfo;
-using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
 struct ChunkAndProgress
 {
@@ -46,9 +42,6 @@ public:
     sendReadRequest(CoordinationMode mode, size_t min_number_of_marks, const RangesInDataPartsDescription & description) const;
 
     size_t getTotalNodesCount() const { return total_nodes_count; }
-    size_t getNumberOfCurrentReplica() const { return number_of_current_replica; }
-    MergeTreeAllRangesCallback getAllRangesCallback() const { return all_callback; }
-    MergeTreeReadTaskCallback getReadTaskCallback() const { return callback; }
 
 private:
     MergeTreeAllRangesCallback all_callback;
@@ -65,17 +58,12 @@ public:
         MergeTreeReadPoolPtr pool_,
         MergeTreeSelectAlgorithmPtr algorithm_,
         const PrewhereInfoPtr & prewhere_info_,
-        const LazilyReadInfoPtr & lazily_read_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_);
 
     String getName() const;
 
-    static Block transformHeader(
-        Block block,
-        const LazilyReadInfoPtr & lazily_read_info,
-        const PrewhereInfoPtr & prewhere_info);
-
+    static Block transformHeader(Block block, const PrewhereInfoPtr & prewhere_info);
     Block getHeader() const { return result_header; }
 
     ChunkAndProgress read();
@@ -95,12 +83,6 @@ public:
     void onFinish() const;
 
 private:
-    static void injectLazilyReadColumns(
-        size_t rows,
-        Block & block,
-        size_t part_index,
-        const LazilyReadInfoPtr & lazily_read_info);
-
     /// Sets up range readers corresponding to data readers
     void initializeReadersChain();
 
@@ -111,8 +93,6 @@ private:
     const ExpressionActionsSettings actions_settings;
     const PrewhereExprInfo prewhere_actions;
 
-    const LazilyReadInfoPtr lazily_read_info;
-
     const MergeTreeReaderSettings reader_settings;
     const MergeTreeReadTask::BlockSizeParams block_size_params;
 
@@ -120,8 +100,6 @@ private:
     MergeTreeReadTaskPtr task;
     /// A result of getHeader(). A chunk which this header is returned from read().
     Block result_header;
-
-    QueryConditionCacheWriterPtr query_condition_cache_writer;
 
     ReadStepsPerformanceCounters read_steps_performance_counters;
 
