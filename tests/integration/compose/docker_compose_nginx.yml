@@ -5,7 +5,6 @@ services:
 
     nginx:
         image: clickhouse/nginx-dav:${DOCKER_NGINX_DAV_TAG:-latest}
-        stop_grace_period: 5s
         restart: always
         ports:
             # NOTE: It is enough to change only the host port, since in

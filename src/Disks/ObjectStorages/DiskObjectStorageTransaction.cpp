@@ -1,11 +1,5 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/StoredObject.h>
-#if ENABLE_DISTRIBUTED_CACHE
-#include <Disks/IO/WriteBufferFromDistributedCache.h>
-#include <Core/DistributedCacheProtocol.h>
-#endif
-#include <Core/Settings.h>
 #include <Disks/IO/WriteBufferWithFinalizeCallback.h>
 #include <Interpreters/Context.h>
 #include <Common/checkStackSize.h>
@@ -14,8 +8,7 @@
 #include <Common/Exception.h>
 #include <Disks/WriteMode.h>
 #include <base/defines.h>
-#include <Common/FailPoint.h>
-#include <Disks/IDisk.h>
+
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <boost/algorithm/string/join.hpp>
@@ -25,11 +18,6 @@
 namespace DB
 {
 
-namespace FailPoints
-{
-    extern const char smt_insert_fake_hardware_error[];
-}
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
@@ -38,33 +26,38 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
-    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     IObjectStorage & object_storage_,
-    IMetadataStorage & metadata_storage_)
+    IMetadataStorage & metadata_storage_,
+    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_)
     : object_storage(object_storage_)
     , metadata_storage(metadata_storage_)
     , metadata_transaction(metadata_storage.createTransaction())
+    , metadata_helper(metadata_helper_)
 {}
 
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_,
+    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
     MetadataTransactionPtr metadata_transaction_)
     : object_storage(object_storage_)
     , metadata_storage(metadata_storage_)
     , metadata_transaction(metadata_transaction_)
+    , metadata_helper(metadata_helper_)
 {}
 
 MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_,
-    IObjectStorage & destination_object_storage_,
-    IMetadataStorage & destination_metadata_storage_)
-    : DiskObjectStorageTransaction(object_storage_, metadata_storage_, destination_metadata_storage_.createTransaction())
+    IObjectStorage& destination_object_storage_,
+    IMetadataStorage& destination_metadata_storage_,
+    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_)
+    : DiskObjectStorageTransaction(object_storage_, metadata_storage_, metadata_helper_, destination_metadata_storage_.createTransaction())
     , destination_object_storage(destination_object_storage_)
     , destination_metadata_storage(destination_metadata_storage_)
 {}
@@ -94,7 +87,7 @@ struct PureMetadataObjectStorageOperation final : public IDiskObjectStorageOpera
     {
     }
 
-    void finalize(StoredObjects & /*to_remove*/) override
+    void finalize() override
     {
     }
 
@@ -137,16 +130,6 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
     {
         if (!metadata_storage.existsFile(path))
         {
-            auto maybe_blobs = tx->tryGetBlobsFromTransactionIfExists(path);
-            if (maybe_blobs.has_value())
-            {
-                auto unlink_outcome = tx->unlinkMetadata(path);
-                if (unlink_outcome)
-                    objects_to_remove = ObjectsToRemove{std::move(*maybe_blobs), std::move(unlink_outcome)};
-
-                return;
-            }
-
             if (if_exists)
                 return;
 
@@ -182,7 +165,7 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 
     }
 
-    void finalize(StoredObjects & to_remove) override
+    void finalize() override
     {
         /// The client for an object storage may do retries internally
         /// and there could be a situation when a query succeeded, but the response is lost
@@ -192,7 +175,7 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
         if (!delete_metadata_only && !objects_to_remove.objects.empty()
             && objects_to_remove.unlink_outcome->num_hardlinks == 0)
         {
-            to_remove.append_range(std::move(objects_to_remove.objects));
+            object_storage.removeObjectsIfExist(objects_to_remove.objects);
         }
     }
 };
@@ -229,19 +212,6 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
         {
             if (!metadata_storage.existsFile(path))
             {
-                auto maybe_blobs = tx->tryGetBlobsFromTransactionIfExists(path);
-                if (maybe_blobs.has_value())
-                {
-                    auto unlink_outcome = tx->unlinkMetadata(path);
-                    if (unlink_outcome && !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename()))
-                    {
-                        objects_to_remove.emplace_back(ObjectsToRemove{std::move(*maybe_blobs), std::move(unlink_outcome)});
-                        paths_removed_with_objects.push_back(path);
-                    }
-
-                    continue;
-                }
-
                 if (if_exists)
                     continue;
 
@@ -284,7 +254,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
     {
     }
 
-    void finalize(StoredObjects & to_remove) override
+    void finalize() override
     {
         StoredObjects remove_from_remote;
         for (auto && [objects, unlink_outcome] : objects_to_remove)
@@ -296,7 +266,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
         /// Read comment inside RemoveObjectStorageOperation class
         /// TL;DR Don't pay any attention to 404 status code
         if (!remove_from_remote.empty())
-            to_remove.append_range(std::move(remove_from_remote));
+            object_storage.removeObjectsIfExist(remove_from_remote);
 
         if (!keep_all_batch_data)
         {
@@ -401,7 +371,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
     {
     }
 
-    void finalize(StoredObjects & to_remove) override
+    void finalize() override
     {
         if (!keep_all_batch_data)
         {
@@ -421,7 +391,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
 
             /// Read comment inside RemoveObjectStorageOperation class
             /// TL;DR Don't pay any attention to 404 status code
-            to_remove.append_range(std::move(remove_from_remote));
+            object_storage.removeObjectsIfExist(remove_from_remote);
 
             LOG_DEBUG(
                 getLogger("RemoveRecursiveObjectStorageOperation"),
@@ -461,12 +431,7 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
     {
         if (metadata_storage.existsFile(path_to))
         {
-            if (metadata_storage.getType() != MetadataStorageType::PlainRewritable
-                && metadata_storage.getType() != MetadataStorageType::Plain)
-            {
-                //  MetadataStorageFromPlainObjectStorageTransaction removes the source objects by itself.
-                objects_to_remove = metadata_storage.getStorageObjects(path_to);
-            }
+            objects_to_remove = metadata_storage.getStorageObjects(path_to);
             tx->replaceFile(path_from, path_to);
         }
         else
@@ -478,12 +443,12 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
 
     }
 
-    void finalize(StoredObjects & to_remove) override
+    void finalize() override
     {
         /// Read comment inside RemoveObjectStorageOperation class
         /// TL;DR Don't pay any attention to 404 status code
         if (!objects_to_remove.empty())
-            to_remove.append_range(std::move(objects_to_remove));
+            object_storage.removeObjectsIfExist(objects_to_remove);
     }
 };
 
@@ -521,7 +486,7 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
         object_storage.removeObjectIfExists(object);
     }
 
-    void finalize(StoredObjects & /*to_remove*/) override
+    void finalize() override
     {
     }
 };
@@ -565,49 +530,26 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
         tx->createEmptyMetadataFile(to_path);
         auto source_blobs = metadata_storage.getStorageObjects(from_path); /// Full paths
 
-        if (source_blobs.empty())
-            return;
-
-        if (!tx->supportAddingBlobToMetadata())
-        {
-            if (source_blobs.size() > 1)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Unable to copy file '{}' with multiple blobs ({}), disk doesn't support addBlobToMetadata",
-                    from_path,
-                    source_blobs.size());
-
-            copySingleObject</*support_adding_blob_to_metadata=*/false>(tx, source_blobs.front());
-            return;
-        }
-
         for (const auto & object_from : source_blobs)
-            copySingleObject</*support_adding_blob_to_metadata=*/true>(tx, object_from);
-    }
+        {
+            auto object_key = destination_object_storage.generateObjectKeyForPath(to_path, std::nullopt /* key_prefix */);
+            auto object_to = StoredObject(object_key.serialize());
 
+            object_storage.copyObjectToAnotherObjectStorage(object_from, object_to,read_settings,write_settings, destination_object_storage);
+
+            tx->addBlobToMetadata(to_path, object_key, object_from.bytes_size);
+
+            created_objects.push_back(object_to);
+        }
+    }
 
     void undo() override
     {
          destination_object_storage.removeObjectsIfExist(created_objects);
     }
 
-    void finalize(StoredObjects & /*to_remove*/) override
+    void finalize() override
     {
-    }
-
-    template <bool support_adding_blob_to_metadata>
-    void copySingleObject(MetadataTransactionPtr tx, const StoredObject & object_from)
-    {
-        auto object_key = destination_object_storage.generateObjectKeyForPath(to_path, /*key_prefix=*/std::nullopt);
-        auto object_to = StoredObject(object_key.serialize());
-
-        object_storage.copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, destination_object_storage);
-        created_objects.push_back(object_to);
-
-        if constexpr (support_adding_blob_to_metadata)
-            tx->addBlobToMetadata(to_path, object_key, object_from.bytes_size);
-        else
-            tx->createMetadataFile(to_path, object_key, object_from.bytes_size);
     }
 };
 
@@ -644,13 +586,13 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
 
     }
 
-    void finalize(StoredObjects & to_remove) override
+    void finalize() override
     {
         if (!truncate_outcome)
             return;
 
         if (!truncate_outcome->objects_to_remove.empty())
-            to_remove.append_range(std::move(truncate_outcome->objects_to_remove));
+            object_storage.removeObjectsIfExist(truncate_outcome->objects_to_remove);
     }
 };
 
@@ -684,9 +626,7 @@ struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOp
         object_storage.removeObjectIfExists(object);
     }
 
-    void finalize(StoredObjects & /*to_remove*/) override
-    {
-    }
+    void finalize() override {}
 };
 
 }
@@ -803,6 +743,16 @@ void DiskObjectStorageTransaction::removeSharedFiles(
     operations_to_execute.emplace_back(std::move(operation));
 }
 
+namespace
+{
+
+String revisionToString(UInt64 revision)
+{
+    return std::bitset<64>(revision).to_string();
+}
+
+}
+
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile( /// NOLINT
     const std::string & path,
     size_t buf_size,
@@ -810,11 +760,24 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const WriteSettings & settings,
     bool autocommit)
 {
-    if (mode == WriteMode::Append && !metadata_transaction->supportAddingBlobToMetadata())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support WriteMode::Append");
-
     auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     std::optional<ObjectAttributes> object_attributes;
+
+    if (metadata_helper)
+    {
+        if (!object_key.hasPrefix())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata helper is not supported with absolute paths");
+
+        auto revision = ++metadata_helper->revision_counter;
+        object_attributes =
+        {
+            {"path", path}
+        };
+
+        object_key = ObjectStorageKey::createAsRelative(
+            object_key.getPrefix(),
+            "r" + revisionToString(revision) + "-file-" + object_key.getSuffix());
+    }
 
     /// Does metadata_storage support empty files without actual blobs in the object_storage?
     const bool do_not_write_empty_blob = metadata_storage.supportsEmptyFilesWithoutBlobs();
@@ -831,14 +794,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             {
                 /// Otherwise we will produce lost blobs which nobody points to
                 /// WriteOnce storages are not affected by the issue
-                if (!tx->object_storage.isPlain())
-                {
-                    auto maybe_blobs = tx->metadata_transaction->tryGetBlobsFromTransactionIfExists(path);
-                    if (maybe_blobs.has_value())
-                        tx->object_storage.removeObjectsIfExist(*maybe_blobs);
-                    /// NOTE: In the best case it would be better to remove file from metadata transaction
-                    /// as well, nevertheless it will be overridden in createMetadataFilePath
-                }
+                if (!tx->object_storage.isPlain() && tx->metadata_storage.existsFile(path))
+                    tx->object_storage.removeObjectsIfExist(tx->metadata_storage.getStorageObjects(path));
 
                 if (do_not_write_empty_blob && count == 0)
                 {
@@ -874,21 +831,15 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             /// ...
             /// buf1->finalize() // shouldn't do anything with metadata operations, just memoize what to do
             /// tx->commit()
-            /// NOTE: we should not take shared_ptr, only raw pointer, because transaction object always lives
-            /// longer than buffer with this callback. Otherwise we can get cyclic shared_ptr.
-            write_op->setOnExecute([object_storage_tx_raw_ptr = object_storage_tx.get(), mode, path, key_, count, do_not_write_empty_blob](MetadataTransactionPtr tx)
+            write_op->setOnExecute([object_storage_tx, mode, path, key_, count, do_not_write_empty_blob](MetadataTransactionPtr tx)
             {
                 if (mode == WriteMode::Rewrite)
                 {
                     /// Otherwise we will produce lost blobs which nobody points to
                     /// WriteOnce storages are not affected by the issue
-                    if (!object_storage_tx_raw_ptr->object_storage.isPlain())
+                    if (!object_storage_tx->object_storage.isPlain() && object_storage_tx->metadata_storage.existsFile(path))
                     {
-                        auto maybe_blobs = tx->tryGetBlobsFromTransactionIfExists(path);
-                        if (maybe_blobs.has_value())
-                            object_storage_tx_raw_ptr->object_storage.removeObjectsIfExist(*maybe_blobs);
-                        /// NOTE: In the best case it would be better to remove file from metadata transaction
-                        /// as well, nevertheless it will be overridden in createMetadataFilePath
+                        object_storage_tx->object_storage.removeObjectsIfExist(object_storage_tx->metadata_storage.getStorageObjects(path));
                     }
 
                     if (do_not_write_empty_blob && count == 0)
@@ -911,45 +862,13 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         operations_to_execute.emplace_back(std::move(write_operation));
     }
 
-    [[maybe_unused]] bool use_distributed_cache = false;
-    size_t use_buffer_size = buf_size;
-#if ENABLE_DISTRIBUTED_CACHE
-    use_distributed_cache = settings.write_through_distributed_cache
-        && DistributedCache::Registry::instance().isReady(settings.distributed_cache_settings.read_only_from_current_az);
-    if (use_distributed_cache && settings.distributed_cache_settings.write_through_cache_buffer_size)
-        use_buffer_size = settings.distributed_cache_settings.write_through_cache_buffer_size;
-#endif
-
     auto impl = object_storage.writeObject(
         object,
         /// We always use mode Rewrite because we simulate append using metadata and different files
         WriteMode::Rewrite,
         object_attributes,
-        use_buffer_size,
+        buf_size,
         settings);
-
-#if ENABLE_DISTRIBUTED_CACHE
-    if (use_distributed_cache)
-    {
-        auto connection_info = object_storage.getConnectionInfo();
-        if (connection_info)
-        {
-            auto global_context = Context::getGlobalContextInstance();
-            auto query_context = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
-
-            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(
-                query_context ? query_context->getSettingsRef() : global_context->getSettingsRef());
-
-            impl = std::make_unique<WriteBufferFromDistributedCache>(
-                path,
-                object,
-                settings,
-                connection_info,
-                std::move(impl),
-                std::move(timeouts));
-        }
-    }
-#endif
 
     return std::make_unique<WriteBufferWithFinalizeCallback>(
         std::move(impl), std::move(create_metadata_callback), object.remote_path, do_not_write_empty_blob);
@@ -962,6 +881,22 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     /// This function is a simplified and adapted version of DiskObjectStorageTransaction::writeFile().
     auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     std::optional<ObjectAttributes> object_attributes;
+
+    if (metadata_helper)
+    {
+        if (!object_key.hasPrefix())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "metadata helper is not supported with abs paths");
+
+        auto revision = metadata_helper->revision_counter + 1;
+        metadata_helper->revision_counter++;
+        object_attributes = {
+            {"path", path}
+        };
+
+        object_key = ObjectStorageKey::createAsRelative(
+            object_key.getPrefix(),
+            "r" + revisionToString(revision) + "-file-" + object_key.getSuffix());
+    }
 
     /// seems ok
     auto object = StoredObject(object_key.serialize(), path);
@@ -1058,7 +993,7 @@ void MultipleDisksObjectStorageTransaction::copyFile(const std::string & from_fi
         object_storage, metadata_storage, destination_object_storage, read_settings, write_settings, from_file_path, to_file_path));
 }
 
-void DiskObjectStorageTransaction::commit(const TransactionCommitOptionsVariant & options)
+void DiskObjectStorageTransaction::commit()
 {
     for (size_t i = 0; i < operations_to_execute.size(); ++i)
     {
@@ -1093,109 +1028,24 @@ void DiskObjectStorageTransaction::commit(const TransactionCommitOptionsVariant 
 
     try
     {
-        metadata_transaction->commit(options);
+        metadata_transaction->commit();
     }
     catch (...)
     {
-        if (needRollbackBlobs(options))
-            undo();
+        for (const auto & operation : operations_to_execute | std::views::reverse)
+            operation->undo();
 
         throw;
     }
 
-    StoredObjects objects_to_remove;
     for (const auto & operation : operations_to_execute)
-        operation->finalize(objects_to_remove);
-
-    object_storage.removeObjectsIfExist(objects_to_remove);
-    operations_to_execute.clear();
-    is_committed = true;
-}
-
-
-TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const TransactionCommitOptionsVariant & options)
-{
-    for (size_t i = 0; i < operations_to_execute.size(); ++i)
-    {
-        try
-        {
-            operations_to_execute[i]->execute(metadata_transaction);
-        }
-        catch (Exception & ex)
-        {
-            /// Reset metadata transaction, it will be refilled in operations_to_execute[i]->execute on the next retry if needed
-            metadata_transaction = metadata_storage.createTransaction();
-
-            ex.addMessage(fmt::format("While executing operation #{}", i));
-
-            if (needRollbackBlobs(options))
-            {
-                for (int64_t j = i; j >= 0; --j)
-                {
-                    try
-                    {
-                        operations_to_execute[j]->undo();
-                    }
-                    catch (Exception & rollback_ex)
-                    {
-                        rollback_ex.addMessage(fmt::format("While undoing operation #{}", i));
-                        throw;
-                    }
-                }
-            }
-
-            throw;
-        }
-    }
-
-    TransactionCommitOutcomeVariant outcome = metadata_transaction->tryCommit(options);
-    try
-    {
-        fiu_do_on(FailPoints::smt_insert_fake_hardware_error,
-        {
-            auto * result = std::get_if<MetaInKeeperCommitOutcome>(&outcome);
-            result->code = Coordination::Error::ZOPERATIONTIMEOUT;
-        });
-
-        if (!isSuccessfulOutcome(outcome))
-        {
-            /// Reset metadata transaction, it will be refilled in operations_to_execute[i]->execute on the next retry if needed
-            metadata_transaction = metadata_storage.createTransaction();
-
-            if (canRollbackBlobs(options, outcome))
-            {
-                undo();
-            }
-
-            return outcome;
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        undo();
-        throw;
-    }
-
-    StoredObjects objects_to_remove;
-    for (const auto & operation : operations_to_execute)
-        operation->finalize(objects_to_remove);
-
-    object_storage.removeObjectsIfExist(objects_to_remove);
-    operations_to_execute.clear();
-    is_committed = true;
-    return outcome;
+        operation->finalize();
 }
 
 void DiskObjectStorageTransaction::undo()
 {
-    if (!is_committed)
-    {
-        for (const auto & operation : operations_to_execute | std::views::reverse)
-            operation->undo();
-    }
-
-    operations_to_execute.clear();
+    for (const auto & operation : operations_to_execute | std::views::reverse)
+        operation->undo();
 }
 
 }

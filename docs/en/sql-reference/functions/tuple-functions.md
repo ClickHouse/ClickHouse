@@ -1,6 +1,7 @@
 ---
 description: 'Documentation for Tuple Functions'
 sidebar_label: 'Tuples'
+sidebar_position: 180
 slug: /sql-reference/functions/tuple-functions
 title: 'Tuple Functions'
 ---
@@ -153,6 +154,7 @@ SELECT
 │ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
 └───────┴────────┴────────┴────────┴────────┘
 ```
+
 
 **Examples**
 

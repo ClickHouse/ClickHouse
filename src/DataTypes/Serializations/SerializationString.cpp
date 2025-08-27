@@ -14,6 +14,12 @@
 #include <IO/VarInt.h>
 #include <IO/ReadBufferFromString.h>
 
+#include <base/unit.h>
+
+#ifdef __SSE2__
+    #include <emmintrin.h>
+#endif
+
 
 namespace DB
 {
@@ -92,13 +98,14 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
             settings.binary.max_binary_string_size);
 
     size_t old_chars_size = data.size();
-    size_t offset = old_chars_size + size;
+    size_t offset = old_chars_size + size + 1;
     offsets.push_back(offset);
 
     try
     {
         data.resize(offset);
-        istr.readStrict(reinterpret_cast<char*>(&data[offset - size]), size);
+        istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
+        data.back() = 0;
     }
     catch (...)
     {
@@ -123,19 +130,25 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
         ? offset + limit
         : size;
 
-    ColumnString::Offset prev_string_offset = offsets[offset - 1];
+    if (offset == 0)
+    {
+        UInt64 str_size = offsets[0] - 1;
+        writeVarUInt(str_size, ostr);
+        ostr.write(reinterpret_cast<const char *>(data.data()), str_size);
+
+        ++offset;
+    }
+
     for (size_t i = offset; i < end; ++i)
     {
-        ColumnString::Offset next_string_offset = offsets[i];
-        UInt64 str_size = next_string_offset - prev_string_offset;
+        UInt64 str_size = offsets[i] - offsets[i - 1] - 1;
         writeVarUInt(str_size, ostr);
-        ostr.write(reinterpret_cast<const char *>(&data[prev_string_offset]), str_size);
-        prev_string_offset = next_string_offset;
+        ostr.write(reinterpret_cast<const char *>(&data[offsets[i - 1]]), str_size);
     }
 }
 
-template <size_t copy_size>
-static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
+template <int UNROLL_TIMES>
+static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
 try
 {
     size_t offset = data.size();
@@ -158,34 +171,39 @@ try
                 size,
                 max_string_size);
 
-        offset += size;
+        offset += size + 1;
         if (unlikely(offset > data.size()))
             data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
 
         if (size)
         {
+#ifdef __SSE2__
             /// An optimistic branch in which more efficient copying is possible.
-            if (offset + copy_size <= data.capacity() && istr.position() + size + copy_size <= istr.buffer().end())
+            if (offset + 16 * UNROLL_TIMES <= data.capacity() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
             {
-                const char * src_pos = istr.position();
-                const char * src_end = src_pos + size;
-                auto * dst_pos = &data[offset - size];
+                const __m128i * sse_src_pos = reinterpret_cast<const __m128i *>(istr.position());
+                const __m128i * sse_src_end = sse_src_pos + (size + (16 * UNROLL_TIMES - 1)) / 16 / UNROLL_TIMES * UNROLL_TIMES;
+                __m128i * sse_dst_pos = reinterpret_cast<__m128i *>(&data[offset - size - 1]);
 
-                while (src_pos < src_end)
+                while (sse_src_pos < sse_src_end)
                 {
-                    __builtin_memcpy(dst_pos, src_pos, copy_size);
+                    for (size_t j = 0; j < UNROLL_TIMES; ++j)
+                        _mm_storeu_si128(sse_dst_pos + j, _mm_loadu_si128(sse_src_pos + j));
 
-                    src_pos += copy_size;
-                    dst_pos += copy_size;
+                    sse_src_pos += UNROLL_TIMES;
+                    sse_dst_pos += UNROLL_TIMES;
                 }
 
                 istr.position() += size;
             }
             else
+#endif
             {
-                istr.readStrict(reinterpret_cast<char*>(&data[offset - size]), size);
+                istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
             }
         }
+
+        data[offset - 1] = 0;
 
         offsets.push_back(offset);
     }
@@ -202,7 +220,6 @@ catch (...)
 
 void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const
 {
-    /// Skip certain number of values if requested
     for (size_t i = 0; i < rows_offset; ++i)
     {
         UInt64 size;
@@ -214,12 +231,13 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();
 
-    double avg_chars_size = 0; /// By default, do not reserve (as for empty strings).
+    double avg_chars_size = 1; /// By default reserve only for empty strings.
 
     if (avg_value_size_hint > 0.0 && avg_value_size_hint > sizeof(offsets[0]))
     {
         /// Randomly selected.
         constexpr auto avg_value_size_hint_reserve_multiplier = 1.2;
+
         avg_chars_size = (avg_value_size_hint - sizeof(offsets[0])) * avg_value_size_hint_reserve_multiplier;
     }
 
@@ -245,13 +263,13 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
     offsets.reserve(offsets.size() + limit);
 
     if (avg_chars_size >= 64)
-        deserializeBinaryImpl<64>(data, offsets, istr, limit);
+        deserializeBinarySSE2<4>(data, offsets, istr, limit);
     else if (avg_chars_size >= 48)
-        deserializeBinaryImpl<48>(data, offsets, istr, limit);
+        deserializeBinarySSE2<3>(data, offsets, istr, limit);
     else if (avg_chars_size >= 32)
-        deserializeBinaryImpl<32>(data, offsets, istr, limit);
+        deserializeBinarySSE2<2>(data, offsets, istr, limit);
     else
-        deserializeBinaryImpl<16>(data, offsets, istr, limit);
+        deserializeBinarySSE2<1>(data, offsets, istr, limit);
 }
 
 
@@ -294,6 +312,7 @@ static inline ReturnType read(IColumn & column, Reader && reader)
             return false;
         }
 
+        data.push_back(0);
         offsets.push_back(data.size());
         return ReturnType(true);
     }

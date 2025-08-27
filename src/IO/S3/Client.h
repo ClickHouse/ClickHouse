@@ -154,7 +154,7 @@ public:
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
-        explicit RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_);
+        explicit RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 5000);
 
         /// NOLINTNEXTLINE(google-runtime-int)
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
@@ -176,7 +176,9 @@ public:
         static bool useGCSRewrite(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error);
 
     private:
-        PocoHTTPClientConfiguration::RetryStrategy config;
+        uint32_t maxRetries;
+        uint32_t scaleFactor;
+        uint32_t maxDelayMs;
     };
 
     /// SSE-KMS headers MUST be signed, so they need to be added before the SDK signs the message
@@ -219,22 +221,10 @@ public:
         return client_configuration.for_disk_s3;
     }
 
-    ProviderType getProviderType() const { return provider_type; }
-    std::string getGCSOAuthToken() const
-    {
-        if (provider_type != ProviderType::GCS)
-            return "";
-
-        const auto & client = PocoHTTPClientGCPOAuth(client_configuration);
-        return client.getBearerToken();
-    }
-
     ThrottlerPtr getPutRequestThrottler() const { return client_configuration.put_request_throttler; }
     ThrottlerPtr getGetRequestThrottler() const { return client_configuration.get_request_throttler; }
 
     std::string getRegionForBucket(const std::string & bucket, bool force_detect = false) const;
-
-    const PocoHTTPClientConfiguration & getClientConfiguration() const { return client_configuration; }
 
 protected:
     // visible for testing
@@ -321,6 +311,7 @@ private:
     const ServerSideEncryptionKMSConfig sse_kms_config;
 
     LoggerPtr log;
+    LogSeriesLimiterPtr limited_log;
 };
 
 class ClientFactory
@@ -345,7 +336,7 @@ public:
         const String & force_region,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
-        const PocoHTTPClientConfiguration::RetryStrategy & retry_strategy,
+        unsigned int s3_retry_attempts,
         bool s3_slow_all_threads_after_network_error,
         bool s3_slow_all_threads_after_retryable_error,
         bool enable_s3_requests_logging,

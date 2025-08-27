@@ -47,13 +47,6 @@ struct KernelPointerWrapper : boost::noncopyable
 
     KernelType * get() const { return ptr; }
 
-    KernelType * release()
-    {
-        auto res = ptr;
-        ptr = nullptr;
-        return res;
-    }
-
 private:
     KernelType * ptr;
     void (*free_func)(KernelType *) = nullptr;

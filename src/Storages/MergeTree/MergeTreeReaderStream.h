@@ -40,8 +40,6 @@ public:
     /// Seeks to exact mark in file.
     void seekToMarkAndColumn(size_t row_index, size_t column_position);
 
-    void seekToMark(const MarkInCompressedFile & mark);
-
     /// Seeks to the start of the file.
     void seekToStart();
 
