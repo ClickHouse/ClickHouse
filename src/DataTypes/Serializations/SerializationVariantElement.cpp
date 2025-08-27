@@ -4,7 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <IO/ReadHelpers.h>
-#include <Columns/IColumn.h>
+#include "Columns/IColumn.h"
 
 namespace DB
 {
@@ -120,21 +120,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
     {
         variant_element_state = checkAndGetState<DeserializeBinaryBulkStateVariantElement>(state);
-        /// If rows_offset is set, in cache we store discriminators from the current range without applied offset.
-        if (rows_offset)
-        {
-            if (!variant_element_state->discriminators || result_column->empty())
-            {
-                variant_element_state->discriminators = ColumnVariant::ColumnDiscriminators::create();
-                variant_element_state->discriminators_size = 0;
-            }
-
-            variant_element_state->discriminators->assumeMutable()->insertRangeFrom(*cached_discriminators, 0, cached_discriminators->size());
-        }
-        else
-        {
-            variant_element_state->discriminators = cached_discriminators;
-        }
+        variant_element_state->discriminators = cached_discriminators;
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
@@ -143,9 +129,10 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
         /// If we started to read a new column, reinitialize discriminators column in deserialization state.
         if (!variant_element_state->discriminators || result_column->empty())
+        {
             variant_element_state->discriminators = ColumnVariant::ColumnDiscriminators::create();
-
-        variant_element_state->discriminators_size = variant_element_state->discriminators->size();
+            variant_element_state->discriminators_size = 0;
+        }
 
         /// Deserialize discriminators according to serialization mode.
         if (discriminators_state->mode.value == SerializationVariant::DiscriminatorsSerializationMode::BASIC)
@@ -169,17 +156,10 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
             variant_limit = variant_pair.second;
         }
 
-        /// If we have rows_offset, we must put discriminators without applied rows_offset in cache because we
-        /// need these discriminators to calculate offsets for variants after we get them from cache.
         if (rows_offset)
-        {
-            size_t num_read_discriminators = variant_element_state->discriminators->size() - variant_element_state->discriminators_size;
-            addToSubstreamsCache(cache, settings.path, variant_element_state->discriminators->cut(variant_element_state->discriminators_size, num_read_discriminators));
-        }
+            addToSubstreamsCache(cache, settings.path, IColumn::mutate(variant_element_state->discriminators));
         else
-        {
             addToSubstreamsCache(cache, settings.path, variant_element_state->discriminators);
-        }
     }
     else
     {

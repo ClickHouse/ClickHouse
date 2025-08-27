@@ -3,8 +3,9 @@
 #include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
+#include <Processors/SourceWithKeyCondition.h>
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Core/BlockMissingValues.h>
-#include <Processors/ISource.h>
 
 
 namespace DB
@@ -14,17 +15,9 @@ struct SelectQueryInfo;
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 
-struct ChunkInfoRowNumOffset : public ChunkInfoCloneable<ChunkInfoRowNumOffset>
-{
-    ChunkInfoRowNumOffset(const ChunkInfoRowNumOffset & other) = default;
-    explicit ChunkInfoRowNumOffset(size_t row_num_offset_) : row_num_offset(row_num_offset_) { }
-
-    const size_t row_num_offset;
-};
-
 /** Input format is a source, that reads data from ReadBuffer.
   */
-class IInputFormat : public ISource
+class IInputFormat : public SourceWithKeyCondition
 {
 protected:
 
@@ -36,11 +29,9 @@ protected:
 
 public:
     /// ReadBuffer can be nullptr for random-access formats.
-    IInputFormat(SharedHeader header, ReadBuffer * in_);
+    IInputFormat(Block header, ReadBuffer * in_);
 
     Chunk generate() override;
-
-    void onFinish() override;
 
     /// All data reading from the read buffer must be performed by this method.
     virtual Chunk read() = 0;
@@ -54,7 +45,7 @@ public:
     virtual void resetParser();
 
     virtual void setReadBuffer(ReadBuffer & in_);
-    virtual void resetReadBuffer() { in = nullptr; resetOwnedBuffers(); }
+    virtual void resetReadBuffer() { in = nullptr; }
 
     virtual const BlockMissingValues * getMissingValues() const { return nullptr; }
 
@@ -91,8 +82,6 @@ protected:
     bool need_only_count = false;
 
 private:
-    void resetOwnedBuffers();
-
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 };
 

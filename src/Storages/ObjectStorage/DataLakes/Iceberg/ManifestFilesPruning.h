@@ -11,15 +11,8 @@
 #include <Storages/MergeTree/KeyCondition.h>
 
 
-namespace DB::Iceberg
+namespace Iceberg
 {
-
-enum class PruningReturnStatus
-{
-    NOT_PRUNED,
-    PARTITION_PRUNED,
-    MIN_MAX_INDEX_PRUNED
-};
 
 struct ManifestFileEntry;
 class ManifestFileContent;
@@ -32,7 +25,7 @@ class ManifestFilesPruner
 private:
     const DB::IcebergSchemaProcessor & schema_processor;
     Int32 current_schema_id;
-    Int32 initial_schema_id;
+    Int32 manifest_schema_id;
     const DB::KeyDescription * partition_key;
     std::optional<DB::KeyCondition> partition_key_condition;
 
@@ -41,17 +34,17 @@ private:
     /// Takes ActionDAG representation of user's WHERE expression and
     /// rename columns to the their origina numeric ID's in iceberg
     std::unique_ptr<DB::ActionsDAG> transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const;
-
 public:
+
     ManifestFilesPruner(
         const DB::IcebergSchemaProcessor & schema_processor_,
         Int32 current_schema_id_,
-        Int32 initial_schema_id_,
         const DB::ActionsDAG * filter_dag,
         const ManifestFileContent & manifest_file,
         DB::ContextPtr context);
 
-    PruningReturnStatus canBePruned(const ManifestFileEntry & entry) const;
+    bool canBePruned(const ManifestFileEntry & entry) const;
+
 };
 
 }

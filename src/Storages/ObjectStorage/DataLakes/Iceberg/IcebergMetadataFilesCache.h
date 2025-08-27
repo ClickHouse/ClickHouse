@@ -33,8 +33,6 @@ struct ManifestFileCacheKey
 {
     String manifest_file_path;
     Int64 added_sequence_number;
-    Int64 added_snapshot_id;
-    Iceberg::ManifestFileContentType content_type;
 };
 
 using ManifestFileCacheKeys = std::vector<ManifestFileCacheKey>;
@@ -97,7 +95,7 @@ public:
         : Base(cache_policy, CurrentMetrics::IcebergMetadataFilesCacheBytes, CurrentMetrics::IcebergMetadataFilesCacheFiles, max_size_in_bytes, max_count, size_ratio)
     {}
 
-    static String getKey(StorageObjectStorageConfigurationPtr config, const String & data_path)
+    static String getKey(StorageObjectStorage::ConfigurationPtr config, const String & data_path)
     {
         return std::filesystem::path(config->getDataSourceDescription()) / data_path;
     }
@@ -151,11 +149,9 @@ public:
     }
 
 private:
-    /// Called for each individual entry being evicted from cache
-    void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
+    void onRemoveOverflowWeightLoss(size_t weight_loss) override
     {
         ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheWeightLost, weight_loss);
-        UNUSED(mapped_ptr);
     }
 };
 

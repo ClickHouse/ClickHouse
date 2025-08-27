@@ -1627,8 +1627,6 @@ def test_create_alter_sleeping(started_cluster, engine):
     assert "n_idx" in dummy_node.query(
         """
         SYSTEM SYNC DATABASE REPLICA create_alter_sleeping;
-        -- In case DDL task has been executed on another replica we need to sync the table
-        SYSTEM SYNC REPLICA create_alter_sleeping.t;
         SHOW CREATE TABLE create_alter_sleeping.t;
         """,
         timeout=10,
@@ -1726,4 +1724,35 @@ def test_implicit_index(started_cluster):
     dummy_node.query(
         "CREATE DATABASE implicit_index ENGINE = Replicated('/clickhouse/databases/implicit_index', 'shard1', 'replica2');"
         "SYSTEM SYNC DATABASE REPLICA implicit_index;"
+    )
+
+
+def test_rmv_dropped_user(started_cluster):
+    main_node.query(
+        """
+        DROP DATABASE IF EXISTS mat_view_dropped_user;
+        CREATE DATABASE mat_view_dropped_user ENGINE = Replicated('/clickhouse/databases/mat_view_dropped_user', '{shard}', '{replica}');
+        CREATE TABLE mat_view_dropped_user.source (id UInt64) ENGINE = ReplicatedMergeTree() ORDER BY id;
+        CREATE TABLE mat_view_dropped_user.to (id UInt64) ENGINE = ReplicatedMergeTree() ORDER BY id;
+        DROP USER IF EXISTS test_mv_user;
+        CREATE USER test_mv_user IDENTIFIED WITH plaintext_password BY 'test_password';
+        GRANT ALL ON mat_view_dropped_user.* TO test_mv_user;
+        CREATE MATERIALIZED VIEW mat_view_dropped_user.mv REFRESH EVERY 10 MINUTE TO mat_view_dropped_user.to DEFINER = test_mv_user SQL SECURITY DEFINER AS SELECT * FROM mat_view_dropped_user.source;
+        DROP USER test_mv_user;
+        """
+    )
+
+    dummy_node.query(
+        """
+        DROP DATABASE IF EXISTS mat_view_dropped_user;
+        CREATE DATABASE mat_view_dropped_user ENGINE = Replicated('/clickhouse/databases/mat_view_dropped_user', '{shard}', '{replica}');
+        SYSTEM SYNC DATABASE REPLICA mat_view_dropped_user;
+        DROP DATABASE mat_view_dropped_user SYNC;
+        """, timeout=10
+    )
+
+    main_node.query(
+        """
+        DROP DATABASE mat_view_dropped_user SYNC;
+        """
     )

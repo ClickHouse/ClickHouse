@@ -11,7 +11,6 @@
 #include <Parsers/queryNormalization.h>
 
 #include <Access/Common/AccessFlags.h>
-#include <Access/ViewDefinerDependencies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -120,9 +119,6 @@ StorageMaterializedView::StorageMaterializedView(
     /// Materialized view doesn't support SQL SECURITY INVOKER.
     if (storage_metadata.sql_security_type == SQLSecurityType::INVOKER)
         throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
-
-    if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        ViewDefinerDependencies::instance().addViewDependency(*storage_metadata.definer, table_id_);
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -382,8 +378,8 @@ void StorageMaterializedView::read(
 
     if (query_plan.isInitialized())
     {
-        auto mv_header = *getHeaderForProcessingStage(column_names, storage_snapshot, query_info, context, processed_stage);
-        auto target_header = *query_plan.getCurrentHeader();
+        auto mv_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, context, processed_stage);
+        auto target_header = query_plan.getCurrentHeader();
 
         /// No need to convert columns that does not exist in MV
         removeNonCommonColumns(mv_header, target_header);
@@ -447,9 +443,6 @@ void StorageMaterializedView::drop()
     const auto & select_query = getInMemoryMetadataPtr()->getSelectQuery();
     if (!select_query.select_table_id.empty())
         DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, table_id);
-
-    if (getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
-        ViewDefinerDependencies::instance().removeViewDependencies(table_id);
 
     /// Sync flag and the setting make sense for Atomic databases only.
     /// However, with Atomic databases, IStorage::drop() can be called only from a background task in DatabaseCatalog.
@@ -589,14 +582,14 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     insert_query->setDatabase(target_table.database_name);
     insert_query->table_id = target_table;
 
-    SharedHeader header;
+    Block header;
     if (refresh_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(insert_query->select, refresh_context);
     else
         header = InterpreterSelectWithUnionQuery(insert_query->select, refresh_context, SelectQueryOptions()).getSampleBlock();
 
     auto columns = std::make_shared<ASTExpressionList>(',');
-    for (const String & name : header->getNames())
+    for (const String & name : header.getNames())
         columns->children.push_back(std::make_shared<ASTIdentifier>(name));
     insert_query->columns = std::move(columns);
 
@@ -684,14 +677,6 @@ void StorageMaterializedView::alter(
     }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
-
-    auto & instance = ViewDefinerDependencies::instance();
-    if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.removeViewDependencies(table_id);
-
-    if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.addViewDependency(*new_metadata.definer, table_id);
-
     setInMemoryMetadata(new_metadata);
 
     if (refresher)
