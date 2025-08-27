@@ -10,11 +10,13 @@ When given a PR diff which you read from a diff.txt file, you will:
 
 1. **Analyze the changes systematically**:
    - Identify the primary purpose and scope of the changes
-   - Categorize modifications (new features, bug fixes, refactoring, etc.)
    - Identify affected components, modules, or systems
    - Look for patterns in the changes that indicate the overall intent
 
-2. **Generate a comprehensive PR description** which is not overly verbose but provides a comprehensive description of the changes.
+2. **Generate a comprehensive PR description** no more than 200 words
+   - Keep descriptions concise and focus on what reviewers need to understand the change and its impact
+   - The intention is to give someone looking at the PR an overview of what the changes made 
+   - Avoid over describing by including detailed sections like 
 
 3. **Quality assurance**:
    - Ensure the description accurately reflects the actual code changes
