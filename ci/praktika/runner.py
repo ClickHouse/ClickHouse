@@ -404,7 +404,8 @@ class Runner:
                 pass
             else:
                 pipeline_status = Result.Status.FAILED
-        job_outputs["pipeline_status"] = pipeline_status
+        # test revert
+        #job_outputs["pipeline_status"] = pipeline_status
         print(f"Job's output: [{list(job_outputs.keys())}]")
         with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
             print(
