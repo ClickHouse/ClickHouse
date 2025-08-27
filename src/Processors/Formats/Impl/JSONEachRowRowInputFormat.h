@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/BlockNameMap.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -24,7 +24,7 @@ class JSONEachRowRowInputFormat : public IRowInputFormat
 public:
     JSONEachRowRowInputFormat(
         ReadBuffer & in_,
-        const Block & header_,
+        SharedHeader header_,
         Params params_,
         const FormatSettings & format_settings_,
         bool yield_strings_);
@@ -74,10 +74,10 @@ private:
     /// for row like {..., "non-nullable column name" : null, ...}
 
     /// Hash table match `field name -> position in the block`. NOTE You can use perfect hash map.
-    Block::NameMap name_map;
+    BlockNameMap name_map;
 
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
-    std::vector<Block::NameMap::const_iterator> prev_positions;
+    std::vector<BlockNameMap::const_iterator> prev_positions;
 
     bool yield_strings;
 

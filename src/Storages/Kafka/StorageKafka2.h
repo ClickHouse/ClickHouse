@@ -1,17 +1,18 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
-#include <Core/Block.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/Block_fwd.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Core/Types.h>
 #include <Storages/IStorage.h>
+#include <Storages/Kafka/IKafkaExceptionInfoSink.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
+#include <Storages/Kafka/Kafka_fwd.h>
+#include <Storages/Kafka/KeeperHandlingConsumer.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-
-#include <Poco/Semaphore.h>
 
 #include <atomic>
 #include <filesystem>
@@ -33,8 +34,6 @@ struct KafkaSettings;
 template <typename TStorageKafka>
 struct KafkaInterceptors;
 
-using KafkaConsumer2Ptr = std::shared_ptr<KafkaConsumer2>;
-
 /// Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
 /// or as a basic building block for creating pipelines with a continuous insertion / ETL.
 ///
@@ -50,12 +49,23 @@ using KafkaConsumer2Ptr = std::shared_ptr<KafkaConsumer2>;
 /// manipulating the queues of librdkafka. By pulling from multiple topic-partitions
 /// the order of messages are not guaranteed, therefore they would have different
 /// hashes for deduplication.
+///
+/// For the committed offsets we try to mimic the same behavior as Kafka does: if the last
+/// read offset is `n`, then we save the offset `n + 1`, same as Kafka does.
 class StorageKafka2 final : public IStorage, WithContext
 {
     using KafkaInterceptors = KafkaInterceptors<StorageKafka2>;
     friend KafkaInterceptors;
 
 public:
+    using KeeperHandlingConsumerPtr = std::shared_ptr<KeeperHandlingConsumer>;
+    struct SafeConsumers
+    {
+        std::shared_ptr<IStorage> storage_ptr;
+        std::unique_lock<std::mutex> lock;
+        std::vector<KeeperHandlingConsumerPtr> & consumers;
+    };
+
     StorageKafka2(
         const StorageID & table_id_,
         ContextPtr context_,
@@ -66,9 +76,9 @@ public:
 
     ~StorageKafka2() override;
 
-    std::string getName() const override { return "Kafka"; }
+    std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
 
-    bool noPushingToViews() const override { return true; }
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -94,58 +104,36 @@ public:
 
     StreamingHandleErrorMode getHandleKafkaErrorMode() const;
 
+    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
+
+    const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
+
+    SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(consumers_mutex), consumers}; }
+
 private:
-    using TopicPartition = KafkaConsumer2::TopicPartition;
-    using TopicPartitions = KafkaConsumer2::TopicPartitions;
-
-    struct LockedTopicPartitionInfo
-    {
-        zkutil::EphemeralNodeHolderPtr lock;
-        std::optional<int64_t> committed_offset;
-        std::optional<int64_t> intent_size;
-    };
-
-    using TopicPartitionLocks = std::unordered_map<
-        TopicPartition,
-        LockedTopicPartitionInfo,
-        KafkaConsumer2::OnlyTopicNameAndPartitionIdHash,
-        KafkaConsumer2::OnlyTopicNameAndPartitionIdEquality>;
-
-    struct ConsumerAndAssignmentInfo
-    {
-        KafkaConsumer2Ptr consumer;
-        size_t consume_from_topic_partition_index{0};
-        TopicPartitions topic_partitions{};
-        zkutil::ZooKeeperPtr keeper;
-        TopicPartitionLocks locks{};
-        Stopwatch watch{CLOCK_MONOTONIC_COARSE};
-    };
-
-    struct PolledBatchInfo
-    {
-        BlocksList blocks;
-        int64_t last_offset;
-    };
-
     // Stream thread
     struct TaskContext
     {
-        BackgroundSchedulePool::TaskHolder holder;
+        BackgroundSchedulePoolTaskHolder holder;
         std::atomic<bool> stream_cancelled{false};
-        explicit TaskContext(BackgroundSchedulePool::TaskHolder && task_) : holder(std::move(task_)) { }
+        explicit TaskContext(BackgroundSchedulePoolTaskHolder && task_)
+            : holder(std::move(task_))
+        {
+        }
     };
 
-    enum class AssignmentChange
+    struct BlocksAndGuard
     {
-        NotChanged,
-        Updated,
-        Lost
+        BlocksList blocks;
+        KeeperHandlingConsumer::OffsetGuard guard;
     };
 
     // Configuration and state
     mutable std::mutex keeper_mutex;
     zkutil::ZooKeeperPtr keeper;
-    String keeper_path;
+    const String keeper_path;
+    const std::filesystem::path fs_keeper_path;
     String replica_path;
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
@@ -158,12 +146,15 @@ private:
     const String schema_name;
     const size_t num_consumers; /// total number of consumers
     LoggerPtr log;
-    Poco::Semaphore semaphore;
     const SettingsChanges settings_adjustments;
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
     size_t num_created_consumers = 0; /// number of actually created consumers.
-    std::vector<ConsumerAndAssignmentInfo> consumers;
+
+    std::mutex consumers_mutex;
+    std::condition_variable cv;
+    std::vector<KeeperHandlingConsumerPtr> consumers TSA_GUARDED_BY(consumers_mutex);
+
     std::vector<std::shared_ptr<TaskContext>> tasks;
     bool thread_per_consumer = false;
     /// For memory accounting in the librdkafka threads.
@@ -176,18 +167,19 @@ private:
     // Handling replica activation.
     std::atomic<bool> is_active = false;
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
-    BackgroundSchedulePool::TaskHolder activating_task;
+    BackgroundSchedulePoolTaskHolder activating_task;
     String active_node_identifier;
     UInt64 consecutive_activate_failures = 0;
+
     bool activate();
     void activateAndReschedule();
     void partialShutdown();
 
     void assertActive() const;
-    KafkaConsumer2Ptr createConsumer(size_t consumer_number);
+    KafkaConsumer2Ptr createKafkaConsumer(size_t consumer_number);
     // Returns full consumer related configuration, also the configuration
     // contains global kafka properties.
-    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number);
+    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_sink);
     // Returns full producer related configuration, also the configuration
     // contains global kafka properties.
     cppkafka::Configuration getProducerConfiguration();
@@ -198,18 +190,20 @@ private:
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
 
-    enum class StallReason
+    enum class StallKind : uint8_t
     {
-        NoAssignment,
-        CouldNotAcquireLocks,
-        NoPartitions,
-        NoMessages,
-        KeeperSessionEnded,
+        ShortStall,
+        LongStall,
     };
 
-    std::optional<StallReason> streamToViews(size_t idx);
+    std::optional<StallKind> streamToViews(size_t idx);
 
-    std::optional<size_t> streamFromConsumer(ConsumerAndAssignmentInfo & consumer_info);
+    /// KeeperHandlingConsumer has to be acquired before polling it
+    KeeperHandlingConsumerPtr acquireConsumer(size_t idx);
+    void releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr);
+    void cleanConsumers();
+
+    std::optional<size_t> streamFromConsumer(KeeperHandlingConsumer & consumer_info, const Stopwatch & watch);
 
     // Returns true if this is the first replica
     bool createTableIfNotExists();
@@ -219,17 +213,8 @@ private:
     void createReplica();
     void dropReplica();
 
-    // Takes lock over topic partitions and sets the committed offset in topic_partitions.
-    std::optional<TopicPartitionLocks> lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions);
-    void saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition);
-    void saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, int64_t intent);
-
-    PolledBatchInfo pollConsumer(
-        KafkaConsumer2 & consumer,
-        const TopicPartition & topic_partition,
-        std::optional<int64_t> message_count,
-        Stopwatch & watch,
-        const ContextPtr & context);
+    std::optional<BlocksAndGuard>
+    pollConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch, const ContextPtr & modified_context);
 
     void setZooKeeper();
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
@@ -237,8 +222,7 @@ private:
     zkutil::ZooKeeperPtr getZooKeeperAndAssertActive() const;
     zkutil::ZooKeeperPtr getZooKeeperIfTableShutDown() const;
 
-
-    std::filesystem::path getTopicPartitionPath(const TopicPartition & topic_partition);
+    static StallKind getStallKind(const KeeperHandlingConsumer::CannotPollReason & cannotPollReason);
 };
 
 }

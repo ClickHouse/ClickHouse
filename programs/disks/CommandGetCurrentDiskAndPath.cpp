@@ -1,8 +1,8 @@
 #include <Interpreters/Context.h>
 #include <Common/TerminalSize.h>
-#include "DisksApp.h"
-#include "DisksClient.h"
-#include "ICommand.h"
+#include <DisksApp.h>
+#include <DisksClient.h>
+#include <ICommand.h>
 
 namespace DB
 {
@@ -10,7 +10,7 @@ namespace DB
 class CommandGetCurrentDiskAndPath final : public ICommand
 {
 public:
-    explicit CommandGetCurrentDiskAndPath() : ICommand()
+    explicit CommandGetCurrentDiskAndPath() : ICommand("CommandGetCurrentDiskAndPath")
     {
         command_name = "current_disk_with_path";
         description = "Prints current disk and path (which coincide with the prompt)";

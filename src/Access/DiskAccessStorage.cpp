@@ -15,7 +15,6 @@
 #include <Poco/JSON/Stringifier.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/range/adaptor/map.hpp>
-#include <boost/range/algorithm/copy.hpp>
 #include <base/range.h>
 #include <filesystem>
 #include <fstream>
@@ -436,7 +435,7 @@ AccessEntityPtr DiskAccessStorage::readImpl(const UUID & id, bool throw_if_not_e
     if (!entity)
     {
         if (throw_if_not_exists)
-            throwNotFound(id);
+            throwNotFound(id, getStorageName());
         else
             return nullptr;
     }
@@ -514,7 +513,7 @@ bool DiskAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists, 
     if (!entity)
     {
         if (throw_if_not_exists)
-            throwNotFound(id);
+            throwNotFound(id, getStorageName());
         else
             return false;
     }
@@ -550,7 +549,7 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     if (!old_entity)
     {
         if (throw_if_not_exists)
-            throwNotFound(id);
+            throwNotFound(id, getStorageName());
         else
             return false;
     }

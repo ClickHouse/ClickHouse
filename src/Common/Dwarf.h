@@ -266,7 +266,7 @@ private:
         // The beginning of the offsets table (immediately following the
         // header) of the CU's contribution to .debug_rnglists
         std::optional<uint64_t> rnglists_base; // DW_AT_rnglists_base (DWARF 5)
-        // Points to the first string offset of the compilation unit’s
+        // Points to the first string offset of the compilation unit's
         // contribution to the .debug_str_offsets (or .debug_str_offsets.dwo) section.
         std::optional<uint64_t> str_offsets_base; // DW_AT_str_offsets_base (DWARF 5)
 

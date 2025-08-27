@@ -23,6 +23,9 @@
 #    include <Common/ZooKeeper/ZooKeeperIO.h>
 #    include <Common/logger_useful.h>
 #    include <Common/setThreadName.h>
+#    include <Compression/CompressionFactory.h>
+
+#    include <boost/algorithm/string/trim.hpp>
 
 
 #    ifdef POCO_HAVE_FD_EPOLL
@@ -65,6 +68,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int TIMEOUT_EXCEEDED;
     extern const int BAD_ARGUMENTS;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 struct PollResult
@@ -248,7 +252,7 @@ KeeperTCPHandler::KeeperTCPHandler(
           0,
           config_ref.getUInt(
               "keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS) * 1000)
-    , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
+    , poll_wrapper(std::make_shared<SocketInterruptablePollWrapper>(socket_))
     , send_timeout(send_timeout_)
     , receive_timeout(receive_timeout_)
     , responses(std::make_unique<ThreadSafeResponseQueue>(std::numeric_limits<size_t>::max()))
@@ -327,9 +331,21 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
     Coordination::read(last_zxid_seen, *in);
     Coordination::read(timeout_ms, *in);
 
-    /// TODO Stop ignoring this value
     Coordination::read(previous_session_id, *in);
     Coordination::read(passwd, *in);
+
+
+    auto auth_data = keeper_dispatcher->getAuthenticationData();
+    if (auth_data)
+    {
+        String password{std::begin(passwd), std::end(passwd)};
+        /// It was padded to Coordination::PASSWORD_LENGTH with '\0'
+        boost::trim_right_if(password, [](char c) { return c == '\0'; });
+        AuthenticationData client_auth_data(auth_data->getType());
+        client_auth_data.setPassword(password, true);
+        if (client_auth_data != *auth_data)
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Wrong password specified, authentication failed");
+    }
 
     int8_t readonly;
     if (handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
@@ -429,15 +445,14 @@ void KeeperTCPHandler::runImpl()
         compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4",{}));
     }
 
-    auto response_fd = poll_wrapper->getResponseFD();
-    auto response_callback = [my_responses = this->responses,
-                              response_fd](const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
+    auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
+                                 const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
         if (!my_responses->push(RequestWithResponse{response, std::move(request)}))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with xid {} and zxid {}", response->xid, response->zxid);
 
         UInt8 single_byte = 1;
-        [[maybe_unused]] ssize_t result = write(response_fd, &single_byte, sizeof(single_byte));
+        [[maybe_unused]] ssize_t result = write(my_poll_wrapper->getResponseFD(), &single_byte, sizeof(single_byte));
     };
     keeper_dispatcher->registerSession(session_id, response_callback);
 
@@ -609,7 +624,8 @@ void KeeperTCPHandler::cancelWriteBuffer() noexcept
 {
     if (compressed_out)
         compressed_out->cancel();
-    out->cancel();
+    if (out)
+        out->cancel();
 }
 
 ReadBuffer & KeeperTCPHandler::getReadBuffer()
@@ -643,7 +659,7 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
     auto request_validator = [&](const Coordination::ZooKeeperRequest & current_request)
     {
         if (!keeper_dispatcher->getKeeperContext()->isOperationSupported(current_request.getOpNum()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported operation: {}", current_request.getOpNum());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported operation: {}, Path: '{}'", current_request.getOpNum(), current_request.getPath());
     };
 
     if (auto * multi_request = dynamic_cast<Coordination::ZooKeeperMultiRequest *>(request.get()))

@@ -1,15 +1,17 @@
 import psycopg2
 import pytest
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+import uuid
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import get_postgres_conn
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/named_collections.xml"],
+    main_configs=["configs/named_collections.xml", "configs/backups.xml"],
     user_configs=["configs/users.xml"],
     with_postgres=True,
 )
@@ -59,7 +61,7 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
     cursor = conn.cursor()
 
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
     )
     assert "postgres_database" in node1.query("SHOW DATABASES")
 
@@ -89,7 +91,7 @@ def test_postgresql_database_engine_with_clickhouse_ddl(started_cluster):
     cursor = conn.cursor()
 
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
     )
 
     create_postgres_table(cursor, "test_table")
@@ -120,7 +122,7 @@ def test_postgresql_database_engine_queries(started_cluster):
     cursor = conn.cursor()
 
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
     )
 
     create_postgres_table(cursor, "test_table")
@@ -150,7 +152,7 @@ def test_get_create_table_query_with_multidim_arrays(started_cluster):
     cursor = conn.cursor()
 
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
     )
 
     cursor.execute(
@@ -193,7 +195,7 @@ def test_postgresql_database_engine_table_cache(started_cluster):
     cursor = conn.cursor()
 
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword', '', 1)"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}', '', 1)"
     )
 
     create_postgres_table(cursor, "test_table")
@@ -252,7 +254,7 @@ def test_postgresql_database_with_schema(started_cluster):
     cursor.execute("CREATE TABLE table3 (a integer)")
 
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword', 'test_schema')"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}', 'test_schema')"
     )
 
     assert node1.query("SHOW TABLES FROM postgres_database") == "table1\ntable2\n"
@@ -354,8 +356,8 @@ def test_postgres_database_old_syntax(started_cluster):
     cursor = conn.cursor()
 
     node1.query(
-        """
-        CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword', 1);
+        f"""
+        CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}', 1);
         """
     )
     create_postgres_table(cursor, "test_table")
@@ -377,12 +379,13 @@ def test_postgresql_fetch_tables(started_cluster):
     cursor.execute("CREATE TABLE table3 (a integer)")
 
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
     )
 
     assert node1.query("SHOW TABLES FROM postgres_database") == "table3\n"
     assert not node1.contains_in_log("PostgreSQL table table1 does not exist")
 
+    node1.query("DROP DATABASE postgres_database")
     cursor.execute(f"DROP TABLE table3")
     cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
 
@@ -413,16 +416,16 @@ def test_postgresql_password_leak(started_cluster):
 
     node1.query("DROP DATABASE IF EXISTS postgres_database")
     node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword', 'test_schema')"
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}', 'test_schema')"
     )
 
     node1.query("DROP DATABASE IF EXISTS postgres_database2")
     node1.query(
-        "CREATE DATABASE postgres_database2 ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+        f"CREATE DATABASE postgres_database2 ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
     )
 
-    assert "mysecretpassword" not in node1.query("SHOW CREATE postgres_database.table1")
-    assert "mysecretpassword" not in node1.query(
+    assert f"{pg_pass}" not in node1.query("SHOW CREATE postgres_database.table1")
+    assert f"{pg_pass}" not in node1.query(
         "SHOW CREATE postgres_database2.table2"
     )
 
@@ -463,6 +466,55 @@ def test_inaccessible_postgresql_database_engine_filterable_on_system_tables(
 
     node1.query("DROP DATABASE postgres_database")
     assert "postgres_database" not in node1.query("SHOW DATABASES")
+
+def test_postgresql_database_engine_comment(started_cluster):
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    node1.query(
+        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword') \
+        comment 'test postgres database with comment'"
+    )
+
+    node1.query(
+        "ALTER DATABASE postgres_database MODIFY COMMENT 'new comment on postgres database engine'"
+    )
+
+    assert (
+        node1.query("SELECT comment FROM system.databases WHERE name = 'postgres_database'").rstrip()
+        == "new comment on postgres database engine"
+    )
+
+    node1.query("DROP DATABASE postgres_database")
+    assert "postgres_database" not in node1.query("SHOW DATABASES")
+
+
+def test_backup_database(started_cluster):
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    node1.query(
+        "CREATE DATABASE backup_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+    )
+
+    backup_id = uuid.uuid4().hex
+    backup_name = f"File('/backups/test_backup_{backup_id}/')"
+
+    node1.query(f"BACKUP DATABASE backup_database TO {backup_name}")
+    node1.query("DROP DATABASE backup_database SYNC")
+    assert "backup_database" not in node1.query("SHOW DATABASES")
+
+    node1.query(f"RESTORE DATABASE backup_database FROM {backup_name}")
+    assert (
+        node1.query("SHOW CREATE DATABASE backup_database")
+        == "CREATE DATABASE backup_database\\nENGINE = PostgreSQL(\\'postgres1:5432\\', \\'postgres_database\\', \\'postgres\\', \\'[HIDDEN]\\')\n"
+    )
+
+    node1.query("DROP DATABASE backup_database")
 
 
 if __name__ == "__main__":

@@ -9,11 +9,10 @@
 
 #include <Poco/Net/HTTPServerSession.h>
 
-namespace Poco::Net { class X509Certificate; }
-
 namespace DB
 {
 
+class X509Certificate;
 class HTTPServerResponse;
 class ReadBufferFromPocoSocket;
 
@@ -45,8 +44,16 @@ public:
 
 #if USE_SSL
     bool havePeerCertificate() const;
-    Poco::Net::X509Certificate peerCertificate() const;
+    X509Certificate peerCertificate() const;
 #endif
+
+    bool canKeepAlive() const
+    {
+        if (stream && stream_is_bounded)
+            return !stream->isCanceled() && stream->eof();
+
+        return false;
+    }
 
 private:
     /// Limits for basic sanity checks when reading a header
@@ -66,6 +73,7 @@ private:
     Poco::Net::SocketAddress client_address;
     Poco::Net::SocketAddress server_address;
 
+    bool stream_is_bounded = false;
     bool secure;
 
     void readRequest(ReadBuffer & in);

@@ -120,3 +120,7 @@ u4_01292	local_directory	['double_sha1_password']	['{}']	['::/0']	[]	[]	[]	1	[]	
 -- multiple authentication methods
 u1_01292	['plaintext_password','kerberos','bcrypt_password','ldap']	['{}','{"realm":"qwerty10"}','{}','{"server":"abc"}']
 -- no passwords or hashes in query_log
+-- query parameters
+CREATE USER u1_01292 IDENTIFIED WITH no_password
+CREATE USER `u1_01292@192.168.%.%` IDENTIFIED WITH no_password HOST LIKE \'192.168.%.%\'
+CREATE USER `u2_01292@192.168.%.%` IDENTIFIED WITH no_password HOST LIKE \'192.168.%.%\'

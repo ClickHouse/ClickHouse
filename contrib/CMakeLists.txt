@@ -38,12 +38,11 @@ function(add_contrib cmake_folder)
     add_subdirectory (${cmake_folder})
 endfunction()
 
-# We need to add OpenSSL first so that all our projects use our own version instead of the system one.
-add_contrib (openssl-cmake openssl)
-
 # Use the original launchers for the projects that are needed for source code generation:
 # protoc and llvm-tlbgen.
 disable_dummy_launchers_if_needed()
+# We need to add OpenSSL first so that all our projects use our own version instead of the system one.
+add_contrib (openssl-cmake openssl)  # Needed for delta-lake
 add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
@@ -69,8 +68,6 @@ add_contrib (libmetrohash)
 add_contrib (lz4-cmake lz4)
 add_contrib (murmurhash)
 add_contrib (replxx-cmake replxx)
-add_contrib (unixodbc-cmake unixodbc)
-add_contrib (nanodbc-cmake nanodbc)
 add_contrib (capnproto-cmake capnproto)
 add_contrib (yaml-cpp-cmake yaml-cpp)
 add_contrib (re2-cmake re2)
@@ -91,6 +88,8 @@ add_contrib (msgpack-c-cmake msgpack-c)
 add_contrib (libarchive-cmake libarchive)
 
 add_contrib (corrosion-cmake corrosion)
+add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
+add_contrib (chdig-cmake chdig)
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
@@ -109,7 +108,6 @@ if (ENABLE_TESTS)
 endif()
 
 add_contrib (libfuzzer-cmake llvm-project)
-add_contrib (gwpasan-cmake llvm-project)
 add_contrib (libxml2-cmake libxml2)
 
 add_contrib (aws-cmake
@@ -124,7 +122,6 @@ add_contrib (aws-cmake
     aws-c-mqtt
     aws-c-s3
     aws-c-sdkutils
-    aws-s2n-tls
     aws-checksums
     aws-crt-cpp
     aws-cmake
@@ -140,9 +137,6 @@ add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
 add_contrib (curl-cmake curl)
 add_contrib (azure-cmake azure) # requires: curl
-if (NOT OS_DARWIN)
-    add_contrib (sentry-native-cmake sentry-native) # requires: curl
-endif()
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
@@ -186,13 +180,35 @@ add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
 
+if (OS_LINUX AND ARCH_AMD64 AND ENABLE_SSE42)
+    option (ENABLE_QPL "Enable Intel® Query Processing Library (QPL)" ${ENABLE_LIBRARIES})
+elseif(ENABLE_QPL)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "QPL library is only supported on x86_64 with SSE 4.2 or higher")
+endif()
+if (ENABLE_QPL)
+    add_contrib (idxd-config-cmake idxd-config)
+    add_contrib (qpl-cmake qpl) # requires: idxd-config
+else()
+    message(STATUS "Not using QPL")
+endif ()
+
 if (OS_LINUX AND ARCH_AMD64 AND NOT NO_SSE3_OR_HIGHER)
     option (ENABLE_QATLIB "Enable Intel® QuickAssist Technology Library (QATlib)" ${ENABLE_LIBRARIES})
 elseif(ENABLE_QATLIB)
     message (${RECONFIGURE_MESSAGE_LEVEL} "QATLib is only supported on x86_64")
 endif()
 if (ENABLE_QATLIB)
-    add_contrib (qatlib-cmake qatlib) # requires: isa-l
+    option (ENABLE_QAT_USDM_DRIVER "A User Space DMA-able Memory (USDM) component which allocates/frees DMA-able memory" OFF)
+    option (ENABLE_QAT_OUT_OF_TREE_BUILD "Using out-of-tree driver, user needs to customize ICP_ROOT variable" OFF)
+    set(ICP_ROOT "" CACHE STRING "ICP_ROOT variable to define the path of out-of-tree driver package")
+    if (ENABLE_QAT_OUT_OF_TREE_BUILD)
+        if (ICP_ROOT STREQUAL "")
+            message(FATAL_ERROR "Please define the path of out-of-tree driver package with -DICP_ROOT=xxx or disable out-of-tree build with -DENABLE_QAT_OUT_OF_TREE_BUILD=OFF; \
+                                 If you want out-of-tree build but have no package available, please download and build ICP package from: https://www.intel.com/content/www/us/en/download/765501.html")
+        endif ()
+    else()
+        add_contrib (qatlib-cmake qatlib) # requires: isa-l
+    endif ()
     add_contrib (QAT-ZSTD-Plugin-cmake QAT-ZSTD-Plugin)
 else()
     message(STATUS "Not using QATLib")
@@ -225,9 +241,28 @@ add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobuf
 
 add_contrib (numactl-cmake numactl)
 
-add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl
+# Google Cloud Cpp
+if(ENABLE_LIBRARIES AND (OS_LINUX OR OS_DARWIN OR OS_FREEBSD) AND (ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER)))
+    set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT ON)
+else()
+    set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT OFF)
+endif()
+option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_CPP_DEFAULT})
+if(ENABLE_GOOGLE_CLOUD_CPP)
+    add_contrib (nlohmann-json-cmake nlohmann-json)
+    add_contrib (crc32c-cmake crc32c)
+    add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl, nlohmann's json, crc32c
+else()
+    message(STATUS "Not using Google Cloud Cpp")
+endif()
 
 add_contrib (jwt-cpp-cmake jwt-cpp)
+
+add_contrib (sha3iuf-cmake SHA3IUF)
+
+add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
+
+add_contrib (bech32)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

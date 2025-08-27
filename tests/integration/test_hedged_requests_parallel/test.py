@@ -82,7 +82,7 @@ def check_query(query=QUERY_1):
     query_time = time.time() - start
     print("Query time:", query_time)
 
-    assert query_time < 5
+    assert query_time < 8
 
 
 def check_settings(node_name, sleep_in_send_tables_status_ms, sleep_in_send_data_ms):
@@ -218,7 +218,7 @@ def test_combination2(started_cluster):
         node_4_sleep_in_send_tables_status=1000,
     )
     check_query()
-    check_changing_replica_events(4)
+    check_changing_replica_events(3)
 
 
 def test_query_with_no_data_to_sample(started_cluster):

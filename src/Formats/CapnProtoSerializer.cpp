@@ -14,7 +14,6 @@
 #include <DataTypes/IDataType.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -22,6 +21,7 @@
 #include <Columns/ColumnMap.h>
 
 #include <boost/algorithm/string.hpp>
+
 
 namespace DB
 {
@@ -1267,9 +1267,9 @@ namespace
             const auto * tuple_data_type = assert_cast<const DataTypeTuple *>(data_type.get());
             auto nested_types = tuple_data_type->getElements();
             Names nested_names;
-            bool have_explicit_names = tuple_data_type->haveExplicitNames();
+            bool has_explicit_names = tuple_data_type->hasExplicitNames();
             auto structure_fields = struct_schema.getFields();
-            if (!have_explicit_names)
+            if (!has_explicit_names)
             {
                 if (nested_types.size() != structure_fields.size())
                     throw Exception(

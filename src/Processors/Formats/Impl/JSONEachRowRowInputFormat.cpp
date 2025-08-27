@@ -35,17 +35,17 @@ enum
 
 JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     ReadBuffer & in_,
-    const Block & header_,
+    SharedHeader header_,
     Params params_,
     const FormatSettings & format_settings_,
     bool yield_strings_)
     : IRowInputFormat(header_, in_, std::move(params_))
-    , prev_positions(header_.columns())
+    , prev_positions(header_->columns())
     , yield_strings(yield_strings_)
     , format_settings(format_settings_)
 {
     const auto & header = getPort().getHeader();
-    name_map = header.getNamesToIndexesMap();
+    name_map = getNamesToIndexesMap(header);
     if (format_settings_.import_nested_json)
     {
         for (size_t i = 0; i != header.columns(); ++i)
@@ -72,7 +72,7 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(StringRef name, size_t key_
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
     if (prev_positions.size() > key_index
-        && prev_positions[key_index] != Block::NameMap::const_iterator{}
+        && prev_positions[key_index] != BlockNameMap::const_iterator{}
         && name == prev_positions[key_index]->first)
     {
         return prev_positions[key_index]->second;
@@ -400,7 +400,7 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
-            return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, json_strings);
+            return std::make_shared<JSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings, json_strings);
         });
     };
 

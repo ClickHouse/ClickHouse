@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Columns/IColumn.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/SetVariants.h>
@@ -9,6 +8,9 @@
 
 namespace DB
 {
+
+using IColumnFilter = PaddedPODArray<UInt8>;
+
 ///
 /// DISTINCT optimization for sorted chunks
 ///
@@ -29,7 +31,7 @@ class DistinctSortedStreamTransform : public ISimpleTransform
 {
 public:
     DistinctSortedStreamTransform(
-        const Block & header_,
+        SharedHeader header_,
         const SizeLimits & output_size_limits_,
         UInt64 limit_hint_,
         const SortDescription & sorted_columns_descr_,
@@ -42,9 +44,9 @@ protected:
 
 private:
     void initChunkProcessing(const Columns & input_columns);
-    std::pair<size_t, size_t> continueWithPrevRange(size_t chunk_rows, IColumn::Filter & filter);
+    std::pair<size_t, size_t> continueWithPrevRange(size_t chunk_rows, IColumnFilter & filter);
     template<bool clear_data>
-    size_t ordinaryDistinctOnRange(IColumn::Filter & filter, size_t range_begin, size_t range_end);
+    size_t ordinaryDistinctOnRange(IColumnFilter & filter, size_t range_begin, size_t range_end);
     inline void saveLatestKey(size_t row_pos);
     inline bool isLatestKeyFromPrevChunk(size_t row_pos) const;
     inline bool isKey(size_t key_pos, size_t row_pos) const;
@@ -52,7 +54,7 @@ private:
     inline size_t getRangeEnd(size_t range_begin, size_t range_end, Predicate pred) const;
 
     template <typename Method>
-    size_t buildFilterForRange(Method & method, IColumn::Filter & filter, size_t range_begin, size_t range_end);
+    size_t buildFilterForRange(Method & method, IColumnFilter & filter, size_t range_begin, size_t range_end);
 
 
     ClearableSetVariants data;

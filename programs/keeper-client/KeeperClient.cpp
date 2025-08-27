@@ -1,5 +1,5 @@
-#include "KeeperClient.h"
-#include "Commands.h"
+#include <KeeperClient.h>
+#include <Commands.h>
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
 #include <Common/VersionNumber.h>
@@ -146,6 +146,11 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
             .binding("port"));
 
     options.addOption(
+        Poco::Util::Option("password", "", "password to connect to keeper server")
+            .argument("<password>")
+            .binding("password"));
+
+    options.addOption(
         Poco::Util::Option("query", "q", "will execute given query, then exit.")
             .argument("<query>")
             .binding("query"));
@@ -191,6 +196,11 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
     options.addOption(
         Poco::Util::Option("tests-mode", "", "run keeper-client in a special mode for tests. all commands output are separated by special symbols. default false")
             .binding("tests-mode"));
+
+    options.addOption(
+        Poco::Util::Option("identity", "", "connect to Keeper using authentication with specified identity. default no identity")
+            .argument("<identity>")
+            .binding("identity"));
 }
 
 void KeeperClient::initialize(Poco::Util::Application & /* self */)
@@ -320,17 +330,19 @@ void KeeperClient::runInteractiveReplxx()
     LineReader::Patterns query_delimiters = {};
     char word_break_characters[] = " \t\v\f\a\b\r\n/";
 
-    ReplxxLineReader lr(
-        suggest,
-        history_file,
-        history_max_entries,
-        /* multiline= */ false,
-        /* ignore_shell_suspend= */ false,
-        query_extenders,
-        query_delimiters,
-        word_break_characters,
-        /* highlighter_= */ {}
-    );
+    auto reader_options = ReplxxLineReader::Options
+    {
+        .suggest = suggest,
+        .history_file_path = history_file,
+        .history_max_entries = history_max_entries,
+        .multiline = false,
+        .ignore_shell_suspend = false,
+        .extenders = query_extenders,
+        .delimiters = query_delimiters,
+        .word_break_characters = word_break_characters,
+        .highlighter = {},
+    };
+    ReplxxLineReader lr(std::move(reader_options));
     lr.enableBracketedPaste();
 
     while (true)
@@ -348,6 +360,8 @@ void KeeperClient::runInteractiveReplxx()
         if (!processQueryText(input))
             break;
     }
+
+    std::cout << std::endl;
 }
 
 void KeeperClient::runInteractiveInputStream()
@@ -422,6 +436,10 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
     zk_args.use_xid_64 = config().hasOption("use-xid-64");
+    zk_args.password = config().getString("password", "");
+    zk_args.identity = config().getString("identity", "");
+    if (!zk_args.identity.empty())
+        zk_args.auth_scheme = "digest";
     zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(zk_args);
 
     if (config().has("no-confirmation") || config().has("query"))
@@ -433,6 +451,10 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     }
     else
         runInteractive();
+
+    /// Suppress "Finalizing session {}" message.
+    getLogger("ZooKeeperClient")->setLevel("error");
+    zookeeper.reset();
 
     return 0;
 }
@@ -448,9 +470,9 @@ int mainEntryClickHouseKeeperClient(int argc, char ** argv)
         client.init(argc, argv);
         return client.run();
     }
-    catch (const DB::Exception & e)
+    catch (DB::Exception & e)
     {
-        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
+        std::cerr << DB::getExceptionMessageForLogging(e, false) << std::endl;
         auto code = DB::getCurrentExceptionCode();
         return static_cast<UInt8>(code) ? code : 1;
     }

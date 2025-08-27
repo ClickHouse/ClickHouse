@@ -23,6 +23,8 @@ public:
         const S3::URI & s3_uri_,
         const String & access_key_id_,
         const String & secret_access_key_,
+        const String & role_arn,
+        const String & role_session_name,
         bool allow_s3_native_copy,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
@@ -32,7 +34,7 @@ public:
 
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
-    std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) override;
 
     void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;
@@ -54,6 +56,8 @@ public:
         const S3::URI & s3_uri_,
         const String & access_key_id_,
         const String & secret_access_key_,
+        const String & role_arn,
+        const String & role_session_name,
         bool allow_s3_native_copy,
         const String & storage_class_name,
         const ReadSettings & read_settings_,

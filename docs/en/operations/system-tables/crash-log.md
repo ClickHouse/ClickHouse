@@ -1,9 +1,11 @@
 ---
-slug: /en/operations/system-tables/crash-log
+description: 'System table containing information about stack traces for fatal errors.'
+keywords: ['system table', 'crash_log']
+slug: /operations/system-tables/crash-log
+title: 'system.crash_log'
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
-# crash_log
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
@@ -28,13 +30,13 @@ Columns:
 
 Query:
 
-``` sql
+```sql
 SELECT * FROM system.crash_log ORDER BY event_time DESC LIMIT 1;
 ```
 
 Result (not full):
 
-``` text
+```text
 Row 1:
 ──────
 hostname:     clickhouse.eu-central1.internal

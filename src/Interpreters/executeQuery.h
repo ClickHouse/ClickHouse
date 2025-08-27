@@ -1,9 +1,11 @@
 #pragma once
 
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Core/QueryProcessingStage.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryFlags.h>
+#include <Interpreters/QueryLogElement.h>
 #include <QueryPipeline/BlockIO.h>
 
 #include <memory>
@@ -17,6 +19,7 @@ class ReadBuffer;
 class WriteBuffer;
 class IOutputFormat;
 struct QueryStatusInfo;
+struct QueryPlanAndSets;
 
 struct QueryResultDetails
 {
@@ -29,12 +32,7 @@ struct QueryResultDetails
 
 using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
 using HandleExceptionInOutputFormatFunc = std::function<void(IOutputFormat & output_format, const String & format_name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings)>;
-
-struct QueryFlags
-{
-    bool internal = false; /// If true, this query is caused by another query and thus needn't be registered in the ProcessList.
-    bool distributed_backup_restore = false; /// If true, this query is a part of backup restore.
-};
+using QueryFinishCallback = std::function<void()>;
 
 
 /// Parse and execute a query.
@@ -46,7 +44,9 @@ void executeQuery(
     SetResultDetailsFunc set_result_details, /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone, as well as additional headers.
     QueryFlags flags = {},
     const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
-    HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {} /// If a non-empty callback is passed, it will be called on exception with created output format.
+    HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {}, /// If a non-empty callback is passed, it will be called on exception with created output format.
+    QueryFinishCallback query_finish_callback = {} /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log
+                                                   /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing)
 );
 
 
@@ -65,7 +65,7 @@ void executeQuery(
 /// Correctly formatting the results (according to INTO OUTFILE and FORMAT sections)
 /// must be done separately.
 std::pair<ASTPtr, BlockIO> executeQuery(
-    const String & query,     /// Query text without INSERT data. The latter must be written to BlockIO::out.
+    const String & query, /// Query text without INSERT data. The latter must be written to BlockIO::out.
     ContextMutablePtr context,       /// DB, tables, data types, storage engines, functions, aggregate functions...
     QueryFlags flags = {},
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
@@ -80,9 +80,10 @@ QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
     const ContextMutablePtr & context,
     const String & query_for_logging,
+    UInt64 normalized_query_hash,
     const ASTPtr & query_ast,
     const QueryPipeline & pipeline,
-    const std::unique_ptr<IInterpreter> & interpreter,
+    const IInterpreter * interpreter,
     bool internal,
     const String & query_database,
     const String & query_table,
@@ -92,10 +93,10 @@ void logQueryFinish(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
     const ASTPtr & query_ast,
-    const QueryPipeline & query_pipeline,
+    QueryPipeline && query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
-    QueryCache::Usage query_cache_usage,
+    QueryResultCacheUsage query_result_cache_usage,
     bool internal);
 
 void logQueryException(
@@ -109,6 +110,7 @@ void logQueryException(
 
 void logExceptionBeforeStart(
     const String & query_for_logging,
+    UInt64 normalized_query_hash,
     ContextPtr context,
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,

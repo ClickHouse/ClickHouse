@@ -1,10 +1,13 @@
 ---
-slug: /en/development/build-cross-arm
-sidebar_position: 67
-title: How to Build ClickHouse on Linux for AARCH64 (ARM64) Architecture 
-sidebar_label: Build on Linux for AARCH64 (ARM64)
+description: 'Guide for building ClickHouse from source for the AARCH64 architecture'
+sidebar_label: 'Build on Linux for AARCH64'
+sidebar_position: 25
+slug: /development/build-cross-arm
+title: 'How to Build ClickHouse on Linux for AARCH64'
 ---
 
-If you use AArch64 machine and want to build ClickHouse for AArch64, build as usual.
+# How to Build ClickHouse on Linux for AARCH64
 
-If you use x86_64 machine and want cross-compile for AArch64, add the following flag to `cmake`: `-DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-aarch64.cmake`
+No special steps are required to build ClickHouse for Aarch64 on an Aarch64 machine.
+
+To cross compile ClickHouse for AArch64 on an x86 Linux machine, pass the following flag to `cmake`: `-DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-aarch64.cmake`

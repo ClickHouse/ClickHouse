@@ -8,7 +8,6 @@
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
-#include <mutex>
 #include <string>
 #include <vector>
 #include <optional>
@@ -71,7 +70,8 @@ public:
         unsigned update_period_seconds,
         const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
         bool update_jemalloc_epoch_,
-        bool update_rss_);
+        bool update_rss_,
+        const ContextPtr & context_);
 
     virtual ~AsynchronousMetrics();
 
@@ -91,7 +91,9 @@ protected:
     LoggerPtr log;
 private:
     virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) = 0;
-    virtual void logImpl(AsynchronousMetricValues &) {}
+    virtual void logImpl(AsynchronousMetricValues &) { }
+    static auto tryGetMetricValue(const AsynchronousMetricValues & values, const String & metric, size_t default_value = 0);
+    void processWarningForMutationStats(const AsynchronousMetricValues & new_values) const;
 
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
@@ -120,6 +122,7 @@ private:
 
     [[maybe_unused]] const bool update_jemalloc_epoch;
     [[maybe_unused]] const bool update_rss;
+    ContextPtr context;
 
 #if defined(OS_LINUX)
     std::optional<ReadBufferFromFilePRead> meminfo TSA_GUARDED_BY(data_mutex);
@@ -129,6 +132,14 @@ private:
     std::optional<ReadBufferFromFilePRead> file_nr TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> uptime TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> net_dev TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> net_tcp TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> net_tcp6 TSA_GUARDED_BY(data_mutex);
+
+    std::optional<ReadBufferFromFilePRead> cpu_pressure TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> memory_pressure TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> io_pressure TSA_GUARDED_BY(data_mutex);
+
+    std::unordered_map<String /* PSI stall type */, uint64_t> prev_pressure_vals TSA_GUARDED_BY(data_mutex);
 
     std::optional<ReadBufferFromFilePRead> cgroupmem_limit_in_bytes TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupmem_usage_in_bytes TSA_GUARDED_BY(data_mutex);
@@ -233,6 +244,10 @@ private:
     void openSensorsChips();
     void openEDAC();
 
+    std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename);
+    void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out);
+    void openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out);
+
     void applyCPUMetricsUpdate(
         AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier);
 
@@ -241,7 +256,6 @@ private:
         double num_cpus_to_normalize,
         const ProcStatValuesCPU & delta_values_all_cpus,
         double multiplier);
-
 #endif
 
     void run();

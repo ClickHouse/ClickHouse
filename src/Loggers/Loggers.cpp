@@ -1,6 +1,5 @@
-#include "Loggers.h"
+#include <Loggers/Loggers.h>
 
-#include <Loggers/OwnFilteringChannel.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <Loggers/OwnSplitChannel.h>
@@ -8,16 +7,13 @@
 #include <iostream>
 #include <sstream>
 
-#include <Poco/AutoPtr.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#ifndef WITHOUT_TEXT_LOG
-    #include <Interpreters/TextLog.h>
-#endif
+#include <Interpreters/TextLog.h>
 
 #include <filesystem>
 
@@ -69,7 +65,10 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     /// Split logs to ordinary log, error log, syslog and console.
     /// Use extended interface of Channel for more comprehensive logging.
-    split = new DB::OwnSplitChannel();
+    if (config.getBool("logger.async", true))
+        split = new DB::OwnAsyncSplitChannel();
+    else
+        split = new DB::OwnSplitChannel();
 
     auto log_level_string = config.getString("logger.level", "trace");
 
@@ -220,22 +219,49 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         split->addChannel(log, "console");
     }
 
+    if (allowTextLog() && config.has("text_log"))
+    {
+        String text_log_level_str = config.getString("text_log.level", "trace");
+        int text_log_level = Poco::Logger::parseLevel(text_log_level_str);
+
+        DB::SystemLogQueueSettings log_settings;
+        log_settings.flush_interval_milliseconds
+            = config.getUInt64("text_log.flush_interval_milliseconds", DB::TextLog::getDefaultFlushIntervalMilliseconds());
+
+        log_settings.max_size_rows = config.getUInt64("text_log.max_size_rows", DB::TextLog::getDefaultMaxSize());
+
+        if (log_settings.max_size_rows < 1)
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS, "text_log.max_size_rows {} should be 1 at least", log_settings.max_size_rows);
+
+        log_settings.reserved_size_rows = config.getUInt64("text_log.reserved_size_rows", DB::TextLog::getDefaultReservedSize());
+
+        if (log_settings.max_size_rows < log_settings.reserved_size_rows)
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "text_log.max_size {0} should be greater or equal to text_log.reserved_size_rows {1}",
+                log_settings.max_size_rows,
+                log_settings.reserved_size_rows);
+        }
+
+        log_settings.buffer_size_rows_flush_threshold
+            = config.getUInt64("text_log.buffer_size_rows_flush_threshold", log_settings.max_size_rows / 2);
+
+        log_settings.notify_flush_on_crash = config.getBool("text_log.flush_on_crash", DB::TextLog::shouldNotifyFlushOnCrash());
+
+        log_settings.turn_off_logger = DB::TextLog::shouldTurnOffLogger();
+
+        log_settings.database = config.getString("text_log.database", "system");
+        log_settings.table = config.getString("text_log.table", "text_log");
+
+        split->addTextLog(DB::TextLog::getLogQueue(log_settings), text_log_level);
+    }
+
     split->open();
     logger.close();
 
     logger.setChannel(split);
-
-    const std::string global_pos_pattern = config.getRawString("logger.message_regexp", "");
-    const std::string global_neg_pattern = config.getRawString("logger.message_regexp_negative", "");
-
-    Poco::AutoPtr<OwnPatternFormatter> pf;
-    if (config.getString("logger.formatting.type", "") == "json")
-        pf = new OwnJSONPatternFormatter(config);
-    else
-        pf = new OwnPatternFormatter;
-
-    DB::createOrUpdateFilterChannel(logger, global_pos_pattern, global_neg_pattern, pf, Poco::Logger::ROOT);
-
     logger.setLevel(max_log_level);
 
     // Global logging level and channel (it can be overridden for specific loggers).
@@ -250,8 +276,6 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     {
         logger.get(name).setLevel(max_log_level);
         logger.get(name).setChannel(split);
-
-        DB::createOrUpdateFilterChannel(logger.get(name), global_pos_pattern, global_neg_pattern, pf, name);
     }
 
     // Explicitly specified log levels for specific loggers.
@@ -278,67 +302,6 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             }
         }
     }
-    // Explicitly specified regexp patterns for filtering specific loggers
-    {
-        Poco::Util::AbstractConfiguration::Keys loggers_regexp;
-        config.keys("logger.message_regexps", loggers_regexp);
-
-        if (!loggers_regexp.empty())
-        {
-            for (const auto & key : loggers_regexp)
-            {
-                if (key == "logger" || key.starts_with("logger["))
-                {
-                    const std::string name = config.getString("logger.message_regexps." + key + ".name");
-                    const std::string pos_pattern = config.getRawString("logger.message_regexps." + key + ".message_regexp", global_pos_pattern);
-                    const std::string neg_pattern = config.getRawString("logger.message_regexps." + key + ".message_regexp_negative", global_neg_pattern);
-
-                    DB::createOrUpdateFilterChannel(logger.root().get(name), pos_pattern, neg_pattern, pf, name);
-                }
-            }
-        }
-    }
-#ifndef WITHOUT_TEXT_LOG
-    if (allowTextLog() && config.has("text_log"))
-    {
-        String text_log_level_str = config.getString("text_log.level", "trace");
-        int text_log_level = Poco::Logger::parseLevel(text_log_level_str);
-
-        DB::SystemLogQueueSettings log_settings;
-        log_settings.flush_interval_milliseconds = config.getUInt64("text_log.flush_interval_milliseconds",
-                                                                    DB::TextLog::getDefaultFlushIntervalMilliseconds());
-
-        log_settings.max_size_rows = config.getUInt64("text_log.max_size_rows",
-                                                      DB::TextLog::getDefaultMaxSize());
-
-        if (log_settings.max_size_rows< 1)
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "text_log.max_size_rows {} should be 1 at least",
-                                log_settings.max_size_rows);
-
-        log_settings.reserved_size_rows = config.getUInt64("text_log.reserved_size_rows", DB::TextLog::getDefaultReservedSize());
-
-        if (log_settings.max_size_rows < log_settings.reserved_size_rows)
-        {
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
-                                "text_log.max_size {0} should be greater or equal to text_log.reserved_size_rows {1}",
-                                log_settings.max_size_rows,
-                                log_settings.reserved_size_rows);
-        }
-
-        log_settings.buffer_size_rows_flush_threshold = config.getUInt64("text_log.buffer_size_rows_flush_threshold",
-                                                                         log_settings.max_size_rows / 2);
-
-        log_settings.notify_flush_on_crash = config.getBool("text_log.flush_on_crash",
-                                                            DB::TextLog::shouldNotifyFlushOnCrash());
-
-        log_settings.turn_off_logger = DB::TextLog::shouldTurnOffLogger();
-
-        log_settings.database = config.getString("text_log.database", "system");
-        log_settings.table = config.getString("text_log.table", "text_log");
-
-        split->addTextLog(DB::TextLog::getLogQueue(log_settings), text_log_level);
-    }
-#endif
 }
 
 void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger)
@@ -383,31 +346,15 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     }
     split->setLevel("syslog", syslog_level);
 
-    const std::string global_pos_pattern = config.getRawString("logger.message_regexp", "");
-    const std::string global_neg_pattern = config.getRawString("logger.message_regexp_negative", "");
-
-    Poco::AutoPtr<OwnPatternFormatter> pf;
-    if (config.getString("logger.formatting.type", "") == "json")
-        pf = new OwnJSONPatternFormatter(config);
-    else
-        pf = new OwnPatternFormatter;
-
-    DB::createOrUpdateFilterChannel(logger, global_pos_pattern, global_neg_pattern, pf, Poco::Logger::ROOT);
-
     // Global logging level (it can be overridden for specific loggers).
     logger.setLevel(max_log_level);
 
     // Set level to all already created loggers
     std::vector<std::string> names;
+
     logger.root().names(names);
-
-    // Set all to global in case logger.levels are not specified
     for (const auto & name : names)
-    {
         logger.root().get(name).setLevel(max_log_level);
-
-        DB::createOrUpdateFilterChannel(logger.root().get(name), global_pos_pattern, global_neg_pattern, pf, name);
-    }
 
     logger.root().setLevel(max_log_level);
 
@@ -435,27 +382,6 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
             }
         }
     }
-
-    // Explicitly specified regexp patterns for filtering specific loggers
-    {
-        Poco::Util::AbstractConfiguration::Keys loggers_regexp;
-        config.keys("logger.message_regexps", loggers_regexp);
-
-        if (!loggers_regexp.empty())
-        {
-            for (const auto & key : loggers_regexp)
-            {
-                if (key == "logger" || key.starts_with("logger["))
-                {
-                    const std::string name(config.getString("logger.message_regexps." + key + ".name"));
-                    const std::string pos_pattern(config.getRawString("logger.message_regexps." + key + ".message_regexp", global_pos_pattern));
-                    const std::string neg_pattern(config.getRawString("logger.message_regexps." + key + ".message_regexp_negative", global_neg_pattern));
-
-                    DB::createOrUpdateFilterChannel(logger.root().get(name), pos_pattern, neg_pattern, pf, name);
-                }
-            }
-        }
-    }
 }
 
 /// NOLINTEND(readability-static-accessed-through-instance)
@@ -470,4 +396,17 @@ void Loggers::closeLogs(Poco::Logger & logger)
 
     if (!log_file)
         logger.warning("Logging to console but received signal to close log file (ignoring).");
+}
+
+void Loggers::flushTextLogs()
+{
+    if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
+        async->flushTextLogs();
+}
+
+void Loggers::stopLogging()
+{
+    if (split)
+        split->close();
+    split.reset();
 }

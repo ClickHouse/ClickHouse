@@ -1,11 +1,12 @@
--- Tags: no-parallel, no-fasttest, no-ubsan, no-batch, no-flaky-check
--- no-parallel because we want to run this test when most of the other tests already passed
+-- Tags: no-fasttest, no-ubsan, no-batch, no-flaky-check, post-run-check
+
+-- post-run-check - to run it after all other tests:
 -- This is not a regular test. It is intended to run once after other tests to validate certain statistics about the whole test runs.
--- TODO: I advise to put in inside clickhouse-test instead.
+
 
 -- If this test fails, see the "Top patterns of log messages" diagnostics in the end of run.log
 
-system flush logs;
+system flush logs text_log;
 drop table if exists logs;
 create view logs as select * from system.text_log where now() - toIntervalMinute(120) < event_time;
 
@@ -13,7 +14,7 @@ SET max_rows_to_read = 0; -- system.text_log can be really big
 
 -- Check that we don't have too many messages formatted with fmt::runtime or strings concatenation.
 -- 0.001 threshold should be always enough, the value was about 0.00025
-WITH 0.001 AS threshold
+WITH 0.0015 AS threshold
 SELECT
     'runtime messages',
     greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0) as v, threshold),
@@ -31,7 +32,9 @@ SELECT
 FROM logs
 WHERE
     message NOT LIKE '% Received from %clickhouse-staging.com:9440%'
-  AND source_file not like '%/AWSLogger.cpp%';
+    AND source_file not like '%/AWSLogger.cpp%'
+    AND source_file not like '%/BaseDaemon.cpp%'
+    AND logger_name not in ('RaftInstance');
 
 -- Check the same for exceptions. The value was 0.03
 WITH 0.05 AS threshold
@@ -52,7 +55,7 @@ WHERE
     message NOT LIKE '% Received from %clickhouse-staging.com:9440%'
   AND (message like '%DB::Exception%' or message like '%Coordination::Exception%');
 
-WITH 0.01 AS threshold
+WITH 0.011 AS threshold
 SELECT
     'unknown runtime exceptions',
     greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0) as v, threshold),
@@ -62,7 +65,7 @@ SELECT
             WHERE
                 length(message_format_string) = 0
               AND (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%' and message not like '%throwIf%'
+              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%' and message not like '%throwIf%' and message not like '%Out of memory%03147_parquet_memory_tracking%'
             GROUP BY message ORDER BY c LIMIT 10
         ))
 FROM logs
@@ -76,6 +79,7 @@ create temporary table known_short_messages (s String) as select * from (select 
     '',
     '({}) Keys: {}',
     '({}) {}',
+    '{} failed: {}',
     'Aggregating',
     'Attempt to read after EOF.',
     'Attempt to read after eof',

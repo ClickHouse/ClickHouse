@@ -4,6 +4,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Common/ProfileEvents.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Interpreters/Context.h>
 
 
 namespace ProfileEvents
@@ -14,9 +15,9 @@ namespace ProfileEvents
 namespace DB
 {
 
-AccessType ITableFunction::getSourceAccessType() const
+std::optional<AccessTypeObjects::Source> ITableFunction::getSourceAccessObject() const
 {
-    return StorageFactory::instance().getSourceAccessType(getStorageTypeName());
+    return StorageFactory::instance().getSourceAccessObject(getStorageTypeName());
 }
 
 StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
@@ -24,11 +25,17 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
 
-    AccessFlags required_access = getSourceAccessType();
+    if (const auto access_object = getSourceAccessObject())
+    {
+        if (is_insert_query)
+            context->checkAccess(AccessType::WRITE, toStringSource(*access_object));
+        else
+            context->checkAccess(AccessType::READ, toStringSource(*access_object));
+    }
+
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
     if (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly))
-        required_access |= AccessType::CREATE_TEMPORARY_TABLE;
-    context->checkAccess(required_access);
+        context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
 

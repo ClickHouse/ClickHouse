@@ -18,6 +18,7 @@
 #include <stack>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Core/SettingsEnums.h>
 
 
@@ -483,11 +484,26 @@ static WriteBuffer & operator << (WriteBuffer & out, const ExpressionActions::Ar
 std::string ExpressionActions::Action::toString() const
 {
     WriteBufferFromOwnString out;
+
+    auto display_preview = [&](auto && name)
+    {
+        static constexpr size_t max_length_to_display = 100;
+        if (name.size() <= max_length_to_display)
+            out << name;
+        else
+            out << std::string_view(name).substr(0, max_length_to_display) << "...";
+        /// Note: it will cut UTF-8 strings incorrectly, but it's acceptable here.
+    };
+
     switch (node->type)
     {
         case ActionsDAG::ActionType::COLUMN:
-            out << "COLUMN "
-                << (node->column ? node->column->getName() : "(no column)");
+            out << "COLUMN ";
+
+            if (!node->column)
+                out << "(no column)";
+            else
+                display_preview(node->column->getName());
             break;
 
         case ActionsDAG::ActionType::ALIAS:
@@ -495,28 +511,46 @@ std::string ExpressionActions::Action::toString() const
             break;
 
         case ActionsDAG::ActionType::FUNCTION:
-            out << "FUNCTION " << (node->is_function_compiled ? "[compiled] " : "")
-                << (node->function_base ? node->function_base->getName() : "(no function)") << "(";
+            out << "FUNCTION ";
+            if (node->is_function_compiled)
+                out << "[compiled] ";
+
+            if (node->function_base)
+                out << node->function_base->getName();
+            else
+                out << "(no function)";
+
+            out << "(";
             for (size_t i = 0; i < node->children.size(); ++i)
             {
                 if (i)
                     out << ", ";
-                out << node->children[i]->result_name << " " << arguments[i];
+                display_preview(node->children[i]->result_name);
+                out << " " << arguments[i];
             }
             out << ")";
             break;
 
         case ActionsDAG::ActionType::ARRAY_JOIN:
-            out << "ARRAY JOIN " << node->children.front()->result_name << " " << arguments.front();
+            out << "ARRAY JOIN ";
+            display_preview(node->children.front()->result_name);
+            out << " " << arguments.front();
             break;
 
         case ActionsDAG::ActionType::INPUT:
             out << "INPUT " << arguments.front();
             break;
+
+        case ActionsDAG::ActionType::PLACEHOLDER:
+            out << "PLACEHOLDER ";
+            display_preview(node->result_name);
+            break;
+
     }
 
-    out << " -> " << node->result_name
-        << " " << (node->result_type ? node->result_type->getName() : "(no type)") << " : " << result_position;
+    out << " -> ";
+    display_preview(node->result_name);
+    out << " " << (node->result_type ? node->result_type->getName() : "(no type)") << " : " << result_position;
     return out.str();
 }
 
@@ -730,6 +764,11 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
             break;
         }
+
+        case ActionsDAG::ActionType::PLACEHOLDER:
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to execute PLACEHOLDER action");
+        }
     }
 }
 
@@ -815,7 +854,7 @@ void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicat
 
     execute(block, num_rows, dry_run, allow_duplicates_in_input);
 
-    if (!block)
+    if (block.empty())
         block.insert({DataTypeUInt8().createColumnConst(num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});
 }
 
@@ -999,7 +1038,8 @@ void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
         if (column.column && isColumnConst(*column.column) && non_constant_inputs.contains(column.name))
             column.column = nullptr;
 
-    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndProjectInputsFlag>(ActionsDAG(columns), false)));
+    steps.push_back(std::make_unique<ExpressionActionsChainSteps::ExpressionActionsStep>(
+        std::make_shared<ActionsAndProjectInputsFlag>(ActionsDAG(columns), false)));
 }
 
 void ExpressionActionsChain::finalize()
@@ -1043,6 +1083,18 @@ void ExpressionActionsChain::finalize()
     }
 }
 
+ExpressionActionsChainSteps::ExpressionActionsStep * ExpressionActionsChain::getLastExpressionStep(bool allow_empty)
+{
+    if (steps.empty())
+    {
+        if (allow_empty)
+            return {};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
+    }
+
+    return typeid_cast<ExpressionActionsChainSteps::ExpressionActionsStep *>(steps.back().get());
+}
+
 std::string ExpressionActionsChain::dumpChain() const
 {
     WriteBufferFromOwnString ss;
@@ -1059,7 +1111,7 @@ std::string ExpressionActionsChain::dumpChain() const
     return ss.str();
 }
 
-ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_)
+ExpressionActionsChainSteps::ArrayJoinStep::ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_)
     : Step({})
     , array_join_columns(array_join_columns_.begin(), array_join_columns_.end())
     , result_columns(std::move(required_columns_))
@@ -1078,7 +1130,7 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(const Names & array_join_co
     }
 }
 
-void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_output_)
+void ExpressionActionsChainSteps::ArrayJoinStep::finalize(const NameSet & required_output_)
 {
     NamesAndTypesList new_required_columns;
     ColumnsWithTypeAndName new_result_columns;
@@ -1098,7 +1150,7 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
     std::swap(result_columns, new_result_columns);
 }
 
-ExpressionActionsChain::JoinStep::JoinStep(
+ExpressionActionsChainSteps::JoinStep::JoinStep(
     std::shared_ptr<TableJoin> analyzed_join_,
     JoinPtr join_,
     const ColumnsWithTypeAndName & required_columns_)
@@ -1113,7 +1165,7 @@ ExpressionActionsChain::JoinStep::JoinStep(
     analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns, true);
 }
 
-void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_)
+void ExpressionActionsChainSteps::JoinStep::finalize(const NameSet & required_output_)
 {
     /// We need to update required and result columns by removing unused ones.
     NamesAndTypesList new_required_columns;
@@ -1148,12 +1200,12 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     std::swap(result_columns, new_result_columns);
 }
 
-ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions()
+ActionsAndProjectInputsFlagPtr & ExpressionActionsChainSteps::Step::actions()
 {
     return typeid_cast<ExpressionActionsStep &>(*this).actions_and_flags;
 }
 
-const ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions() const
+const ActionsAndProjectInputsFlagPtr & ExpressionActionsChainSteps::Step::actions() const
 {
     return typeid_cast<const ExpressionActionsStep &>(*this).actions_and_flags;
 }
