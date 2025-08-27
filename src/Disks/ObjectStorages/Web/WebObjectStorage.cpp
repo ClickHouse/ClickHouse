@@ -8,12 +8,14 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/getThreadPoolReader.h>
+#include <Disks/ObjectStorages/Web/WebObjectStorageConnectionInfo.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -282,12 +284,9 @@ ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & /* path *
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", getName());
 }
 
-std::unique_ptr<IObjectStorage> WebObjectStorage::cloneObjectStorage(
-    const std::string & /* new_namespace */,
-    const Poco::Util::AbstractConfiguration & /* config */,
-    const std::string & /* config_prefix */, ContextPtr /* context */)
+ObjectStorageConnectionInfoPtr WebObjectStorage::getConnectionInfo() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage is not implemented for WebObjectStorage");
+    return getWebObjectStorageConnectionInfo(url);
 }
 
 }

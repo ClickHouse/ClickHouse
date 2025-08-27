@@ -931,14 +931,8 @@ query_masking_rules:
 #           response_content: config://http_server_default_response
 
 send_crash_reports:
-    # Changing <enabled> to true allows sending crash reports to
-    # the ClickHouse core developers team via Sentry https://sentry.io
-    # Doing so at least in pre-production environments is highly appreciated
-    enabled: false
-    # Change <anonymize> to true if you don't feel comfortable attaching the server hostname to the crash report
-    anonymize: false
-    # Default endpoint should be changed to different Sentry DSN only if you have
-    # some in-house engineers or hired consultants who're going to debug ClickHouse issues for you
-    endpoint: 'https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277'
-    # Uncomment to disable ClickHouse internal DNS caching.
-    # disable_internal_dns_cache: 1
+    enabled: true
+    endpoint: 'https://crash.clickhouse.com/'
+
+# Uncomment to disable ClickHouse internal DNS caching.
+# disable_internal_dns_cache: 1

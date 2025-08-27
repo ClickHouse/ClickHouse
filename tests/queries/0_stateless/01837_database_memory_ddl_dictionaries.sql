@@ -24,7 +24,7 @@ PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DB '01837_db' TABLE 'simple_key_dictionary_source'))
 LAYOUT(DIRECT());
 
-SELECT * FROM 01837_db.simple_key_direct_dictionary;
+SELECT * FROM 01837_db.simple_key_direct_dictionary ORDER BY ALL;
 
 DROP DICTIONARY 01837_db.simple_key_direct_dictionary;
 DROP TABLE 01837_db.simple_key_dictionary_source;

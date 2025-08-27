@@ -10,7 +10,7 @@ title: 'TimeSeries Engine'
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# TimeSeries Engine
+# TimeSeries engine
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
@@ -74,7 +74,6 @@ The _data_ table must have columns:
 | `id` | [x] | `UUID` | any | Identifies a combination of a metric names and tags |
 | `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
-
 
 ### Tags table {#tags-table}
 

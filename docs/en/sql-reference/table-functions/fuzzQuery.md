@@ -10,17 +10,21 @@ title: 'fuzzQuery'
 
 Perturbs the given query string with random variations.
 
+## Syntax {#syntax}
+
 ```sql
 fuzzQuery(query[, max_query_length[, random_seed]])
 ```
 
-**Arguments**
+## Arguments {#arguments}
 
-- `query` (String) - The source query to perform the fuzzing on.
-- `max_query_length` (UInt64) - A maximum length the query can get during the fuzzing process.
-- `random_seed` (UInt64) - A random seed for producing stable results.
+| Argument           | Description                                                                 |
+|--------------------|-----------------------------------------------------------------------------|
+| `query`            | (String) - The source query to perform the fuzzing on.                      |
+| `max_query_length` | (UInt64) - A maximum length the query can get during the fuzzing process. |
+| `random_seed`      | (UInt64) - A random seed for producing stable results.                      |
 
-**Returned Value**
+## Returned value {#returned_value}
 
 A table object with a single column containing perturbed query strings.
 

@@ -90,20 +90,18 @@ LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, tim
     }
 
     time_t now = time(nullptr);
+    static const time_t cleanup_delay_s = 600;
+    time_t cutoff_time = now - cleanup_delay_s; // entries older than this are stale
+
     UInt128 name_hash = sipHash128(logger->name().c_str(), logger->name().size());
 
     std::lock_guard lock(mutex);
 
-    if (last_cleanup == 0)
-        last_cleanup = now;
-
     auto & series_records = getSeriesRecords();
 
-    static const time_t cleanup_delay_s = 600;
-    if (last_cleanup + cleanup_delay_s >= now)
+    if (last_cleanup < cutoff_time) // will also be triggered when last_cleanup is zero
     {
-        time_t old = now - cleanup_delay_s;
-        std::erase_if(series_records, [old](const auto & elem) { return get<0>(elem.second) < old; });
+        std::erase_if(series_records, [cutoff_time](const auto & elem) { return get<0>(elem.second) < cutoff_time; });
         last_cleanup = now;
     }
 

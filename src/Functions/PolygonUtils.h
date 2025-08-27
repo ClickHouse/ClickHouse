@@ -15,10 +15,11 @@
 #include <boost/geometry.hpp>
 #pragma clang diagnostic pop
 
+#include <boost/geometry/geometries/multi_polygon.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
-#include <boost/geometry/geometries/multi_polygon.hpp>
 #include <boost/geometry/geometries/segment.hpp>
+#include <boost/geometry/index/rtree.hpp>
 
 #include <array>
 #include <vector>
@@ -36,6 +37,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace bgi = boost::geometry::index;
 
 template <typename Polygon>
 UInt64 getPolygonAllocatedBytes(const Polygon & polygon)
@@ -142,6 +144,107 @@ private:
     Strategy strategy;
 };
 
+/// Optimized algorithm with R-tree of bounding boxes of polygons.
+template <typename PointInPolygonImpl>
+class PointInMultiPolygonRTree
+{
+public:
+    using Point = typename PointInPolygonImpl::Point;
+    using Polygon = typename PointInPolygonImpl::Polygon;
+    using Box = typename PointInPolygonImpl::Box;
+    using MultiPolygon = boost::geometry::model::multi_polygon<Polygon>;
+    using CoordinateType = decltype(std::declval<Point>().x());
+
+    using PolyBox = std::pair<Box, std::size_t>;
+
+    /// Max children per R-tree node before splitting.
+    /// — Larger value -> shallower tree, fewer node visits per query, but each
+    ///   visit scans a longer list and node splits are more expensive.
+    /// ─ Smaller value -> deeper tree, more pointer hops per query, yet each hop
+    ///   touches fewer boxes and nodes fit cache lines better
+    /// ─ Default value is 16, which is a good compromise for most cases.
+    static constexpr std::size_t max_elements_per_rtree_node = 16;
+
+    explicit PointInMultiPolygonRTree(const MultiPolygon & multi_polygon_, UInt16 grid_size_ = 8)
+        : multi_polygon(multi_polygon_)
+    {
+        build(grid_size_);
+    }
+
+    /// O(log N + K) where K = polygons that contain the point.
+    bool contains(CoordinateType x, CoordinateType y) const
+    {
+        if (has_empty_bound || !isFinite(x) || !isFinite(y))
+            return false;
+
+        for (auto it = rtree.qbegin(bgi::contains(Point(x, y))); it != rtree.qend(); ++it)
+        {
+            if (polygon_impls[it->second].contains(x, y))
+                return true;
+        }
+
+        return false;
+    }
+
+    bool hasEmptyBound() const { return has_empty_bound; }
+
+    UInt64 getAllocatedBytes() const
+    {
+        UInt64 size = sizeof(*this) + polygon_impls.capacity() * sizeof(PointInPolygonImpl) + rtree.size() * sizeof(PolyBox);
+
+        for (const auto & impl : polygon_impls)
+            size += impl.getAllocatedBytes();
+
+        return size;
+    }
+
+private:
+    MultiPolygon multi_polygon;
+    std::vector<PointInPolygonImpl> polygon_impls;
+
+    /// Boost.Geometry split policy choices
+    ///   linear     — quick to build, queries slowest
+    ///   quadratic  — build cost medium, queries medium
+    ///   rstar      — build slowest, queries fastest
+    /// With the default block size, the quadratic split was the fastest in performance tests, so we use it.
+    using RTree = bgi::rtree<PolyBox, bgi::quadratic<max_elements_per_rtree_node>>;
+    RTree rtree;
+
+    /// Only becomes true if all polygons have empty bounding box.
+    bool has_empty_bound = false;
+
+    void build(UInt16 grid_size)
+    {
+        polygon_impls.reserve(multi_polygon.size());
+
+        std::vector<PolyBox> boxes; // bulk-build container
+        boxes.reserve(multi_polygon.size());
+
+        std::size_t idx = 0;
+        for (const auto & poly : multi_polygon)
+        {
+            polygon_impls.emplace_back(poly, grid_size);
+
+            if (!polygon_impls.back().hasEmptyBound())
+            {
+                Box box = boost::geometry::return_envelope<Box>(poly);
+                boxes.emplace_back(box, idx);
+            }
+
+            ++idx;
+        }
+
+        /// All polygons have empty bounding boxes; skip R-tree building
+        /// and mark the multipolygon as having an empty bound.
+        if (boxes.empty())
+        {
+            has_empty_bound = true;
+            return;
+        }
+
+        rtree = RTree(boxes.begin(), boxes.end());
+    }
+};
 
 /// Optimized algorithm with bounding box and grid.
 template <typename CoordinateType>

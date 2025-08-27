@@ -1,4 +1,4 @@
-#include "Runner.h"
+#include <Runner.h>
 #include <atomic>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -41,7 +41,7 @@ namespace CurrentMetrics
 
 namespace DB::Setting
 {
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
 }
 
 namespace DB::ErrorCodes
@@ -576,8 +576,7 @@ struct ZooKeeperRequestFromLogReader
             context,
             context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
-            1,
-            std::nullopt,
+            DB::FormatParserGroup::singleThreaded(context->getSettingsRef()),
             /*is_remote_fs*/ false,
             DB::CompressionMethod::None,
             false);

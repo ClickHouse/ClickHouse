@@ -1,3 +1,6 @@
+--Tags: no-async-insert
+-- no-async-insert because initial_query_id in system.query_views_log have query_id
+--  of "secondary" flush query with query_kind: AsyncInsertFlush
 CREATE TABLE IF NOT EXISTS data_a_02187 (a Int64) ENGINE=Memory;
 CREATE TABLE IF NOT EXISTS data_b_02187 (a Int64) ENGINE=Memory;
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv1 TO data_b_02187 AS Select sleepEachRow(0.05) as a FROM data_a_02187;

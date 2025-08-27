@@ -51,7 +51,7 @@ NATSSource::NATSSource(
     const Names & columns,
     size_t max_block_size_,
     StreamingHandleErrorMode handle_error_mode_)
-    : ISource(getSampleBlock(headers.first, headers.second))
+    : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
@@ -110,7 +110,7 @@ Chunk NATSSource::generate()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
+        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, FormatParserGroup::singleThreaded(context->getSettingsRef()));
     std::optional<String> exception_message;
     size_t total_rows = 0;
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)

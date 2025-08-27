@@ -1,4 +1,4 @@
-#include "DatabaseSQLite.h"
+#include <Databases/SQLite/DatabaseSQLite.h>
 
 #if USE_SQLITE
 
@@ -10,6 +10,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>

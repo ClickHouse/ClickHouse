@@ -1,8 +1,3 @@
-import random
-import string
-import time
-from enum import Enum
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -37,6 +32,16 @@ def test_startup_execution_state(start_cluster):
     STATE_SUCCESS = 1
     STATE_FAILURE = 2
 
+    def assert_startup_script_failed():
+        assert (
+            int(
+                bad.query(
+                    "SELECT value FROM system.metrics WHERE metric = 'StartupScriptsExecutionState'"
+                ).strip()
+            )
+            == STATE_FAILURE
+        )
+
     assert (
         int(
             good.query(
@@ -46,11 +51,31 @@ def test_startup_execution_state(start_cluster):
         == STATE_SUCCESS
     )
 
-    assert (
-        int(
-            bad.query(
-                "SELECT value FROM system.metrics WHERE metric = 'StartupScriptsExecutionState'"
-            ).strip()
-        )
-        == STATE_FAILURE
+    assert_startup_script_failed()
+    bad.stop_clickhouse()
+    # Set throw_on_error: true for the startup_script
+    bad.replace_in_config(
+        "/etc/clickhouse-server/config.d/bad_script.xml",
+        "<throw_on_error>false",
+        "<throw_on_error>true",
     )
+    bad.start_clickhouse(start_wait_sec=120, expected_to_fail=True)
+    # server can't start with errors in startup_script
+    assert bad.get_process_pid("clickhouse") is None
+    assert bad.contains_in_log("Failed to parse startup scripts file")
+    # Logs contains the original error
+    assert bad.contains_in_log(
+        "Unknown table expression identifier 'non_existent_table'"
+    )
+    assert bad.contains_in_log("Cannot finish startup_script successfully")
+
+    bad.replace_in_config(
+        "/etc/clickhouse-server/config.d/bad_script.xml",
+        "<throw_on_error>true",
+        "<throw_on_error>false",
+    )
+    bad.start_clickhouse()
+    assert bad.get_process_pid("clickhouse") is not None
+
+    # startup script wasn't executed, but the server is up
+    assert_startup_script_failed()

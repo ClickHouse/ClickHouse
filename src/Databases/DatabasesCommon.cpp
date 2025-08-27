@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 namespace
 {
@@ -70,6 +71,9 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     /// SECONDARY_CREATE should check most of the important things.
     const auto columns_desc
         = InterpreterCreateQuery::getColumnsDescription(*columns.columns, context, LoadingStrictnessLevel::SECONDARY_CREATE, false);
+
+    if (columns_desc.getInsertable().empty())
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     /// Default expressions are only validated in level CREATE, so let's check them now
     DefaultExpressionsInfo default_expr_info{std::make_shared<ASTExpressionList>()};
@@ -305,18 +309,18 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
     query.out_file = nullptr;
 }
 
-String readMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path)
+String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path)
 {
-    auto read_buf = db_disk->readFile(file_path, getReadSettingsForMetadata());
+    auto read_buf = disk->readFile(file_path, getReadSettingsForMetadata());
     String content;
     readStringUntilEOF(content, *read_buf);
 
     return content;
 }
 
-void writeMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path, std::string_view content, bool fsync_metadata)
+void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, std::string_view content, bool fsync_metadata)
 {
-    auto out = db_disk->writeFile(file_path, content.size(), WriteMode::Rewrite, getWriteSettingsForMetadata());
+    auto out = disk->writeFile(file_path, content.size(), WriteMode::Rewrite, getWriteSettingsForMetadata());
     writeString(content, *out);
 
     out->next();
@@ -346,7 +350,9 @@ void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & 
 }
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-    : IDatabase(name_), WithContext(context_->getGlobalContext()), db_disk(context_->getDatabaseDisk()), log(getLogger(logger))
+    : IDatabase(name_)
+    , WithContext(context_->getGlobalContext())
+    , log(getLogger(logger))
 {
 }
 
@@ -566,7 +572,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesF
             create->setTable(it->name());
         }
 
-        storage->adjustCreateQueryForBackup(create_table_query);
+        storage->applyMetadataChangesToCreateQueryForBackup(create_table_query);
         res.emplace_back(create_table_query, storage);
     }
 

@@ -26,7 +26,7 @@ The content of every matched subpattern is parsed with the method of correspondi
 
 If the regular expression does not match the line and [format_regexp_skip_unmatched](/operations/settings/settings-formats.md/#format_regexp_escaping_rule) is set to 1, the line is silently skipped. Otherwise, exception is thrown.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
 Consider the file `data.tsv`:
 
@@ -61,7 +61,7 @@ SELECT * FROM imp_regex_table;
 └────┴─────────┴────────┴────────────┘
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 When working with the `Regexp` format, you can use the following settings:
 

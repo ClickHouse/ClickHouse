@@ -20,9 +20,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Select; }
 
     SelectUnionMode union_mode;
-
     SelectUnionModes list_of_modes;
-
     bool is_normalized = false;
 
     ASTPtr list_of_selects;

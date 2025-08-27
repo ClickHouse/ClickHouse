@@ -7,10 +7,10 @@ slug: /interfaces/cpp
 title: 'C++ Client Library'
 ---
 
-# C++ Client Library
+# C++ client library
 
 See README at [clickhouse-cpp](https://github.com/ClickHouse/clickhouse-cpp) repository.
 
-# userver Asynchronous Framework
+# Userver asynchronous framework
 
 [userver (beta)](https://github.com/userver-framework/userver) has builtin support for ClickHouse.

@@ -1,4 +1,4 @@
-#include "inplaceBlockConversions.h"
+#include <Interpreters/inplaceBlockConversions.h>
 
 #include <Core/Block.h>
 #include <Interpreters/TreeRewriter.h>

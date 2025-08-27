@@ -102,6 +102,10 @@ void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_de
     /// Check positional options.
     for (const auto & op : parsed.options)
     {
+        /// Skip all options after empty `--`. These are processed separately into the Application configuration.
+        if (op.string_key.empty() && op.original_tokens[0].starts_with("--"))
+            break;
+
         if (!op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--")
             && !op.original_tokens[0].empty() && !op.value.empty())
         {

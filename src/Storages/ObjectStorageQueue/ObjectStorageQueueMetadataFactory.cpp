@@ -1,11 +1,116 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric ObjectStorageQueueShutdownThreads;
+    extern const Metric ObjectStorageQueueShutdownThreadsActive;
+    extern const Metric ObjectStorageQueueShutdownThreadsScheduled;
+}
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+}
+
+ObjectStorageQueueFactory & ObjectStorageQueueFactory::instance()
+{
+    static ObjectStorageQueueFactory ret;
+    return ret;
+}
+
+void ObjectStorageQueueFactory::registerTable(const StorageID & storage)
+{
+    std::lock_guard lock(mutex);
+
+    if (shutdown_called)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Shutdown was called");
+
+    const bool inserted = storages.emplace(storage).second;
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} already registered", storage.getNameForLogs());
+}
+
+void ObjectStorageQueueFactory::unregisterTable(const StorageID & storage, bool if_exists)
+{
+    std::lock_guard lock(mutex);
+
+    if (shutdown_called)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Shutdown was called");
+
+    auto it = storages.find(storage);
+    if (it == storages.end())
+    {
+        if (if_exists)
+            return;
+
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Table with storage id {} is not registered", storage.getNameForLogs());
+    }
+    storages.erase(it);
+}
+
+void ObjectStorageQueueFactory::renameTable(const StorageID & from, const StorageID & to)
+{
+    std::lock_guard lock(mutex);
+    if (shutdown_called)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Shutdown was called");
+
+    auto from_it = storages.find(from);
+    if (from_it == storages.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} is not registered", from.getNameForLogs());
+
+    auto to_it = storages.find(to);
+    if (to_it != storages.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} is already registered", to.getNameForLogs());
+
+    storages.erase(from_it);
+    storages.emplace(to);
+}
+
+void ObjectStorageQueueFactory::shutdown()
+{
+    std::vector<StorageID> shutdown_storages;
+    {
+        std::lock_guard lock(mutex);
+        shutdown_called = true;
+        shutdown_storages = std::vector<StorageID>(storages.begin(), storages.end());
+    }
+
+    auto log = getLogger("ObjectStorageFactory::shutdown");
+    if (shutdown_storages.empty())
+    {
+        LOG_DEBUG(log, "There are no queue storages to shutdown");
+        return;
+    }
+
+    static const auto default_shutdown_threads = 10;
+    ThreadPool pool(
+        CurrentMetrics::ObjectStorageQueueShutdownThreads,
+        CurrentMetrics::ObjectStorageQueueShutdownThreadsActive,
+        CurrentMetrics::ObjectStorageQueueShutdownThreadsScheduled,
+        std::min<size_t>(default_shutdown_threads, shutdown_storages.size()));
+
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, "ObjectStorageQueueFactory::shutdown");
+
+    LOG_DEBUG(log, "Will shutdown {} queue storages", shutdown_storages.size());
+
+    for (const auto & storage : shutdown_storages)
+    {
+        runner([&]()
+        {
+            DatabaseCatalog::instance().tryGetTable(storage, Context::getGlobalContextInstance())->shutdown();
+        });
+    }
+
+    runner.waitForAllToFinish();
 }
 
 ObjectStorageQueueMetadataFactory & ObjectStorageQueueMetadataFactory::instance()

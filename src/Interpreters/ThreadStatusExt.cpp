@@ -316,7 +316,7 @@ void ThreadStatus::applyQuerySettings()
 
     DB::Exception::enable_job_stack_trace = settings[Setting::enable_job_stack_trace];
 
-    query_id_from_query_context = query_context_ptr->getCurrentQueryId();
+    query_id = query_context_ptr->getCurrentQueryId();
     initQueryProfiler();
 
     untracked_memory_limit = settings[Setting::max_untracked_memory];
@@ -384,7 +384,7 @@ void ThreadStatus::detachFromGroup()
 
     thread_group.reset();
 
-    query_id_from_query_context.clear();
+    query_id.clear();
     query_context.reset();
 
     local_data = {};
@@ -516,6 +516,9 @@ void ThreadStatus::finalizePerformanceCounters()
 {
     if (performance_counters_finalized)
         return;
+
+    if (last_rusage->thread_id == 0)
+        return; // Performance counters are not initialized
 
     performance_counters_finalized = true;
     updatePerformanceCounters();

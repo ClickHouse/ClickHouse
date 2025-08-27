@@ -55,6 +55,7 @@ namespace Setting
     extern const SettingsBool join_use_nulls;
     extern const SettingsUInt64 max_bytes_in_join;
     extern const SettingsUInt64 max_joined_block_size_rows;
+    extern const SettingsUInt64 max_joined_block_size_bytes;
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_rows_in_join;
     extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
@@ -68,6 +69,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
 }
 
 namespace
@@ -141,6 +143,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , cross_join_min_rows_to_compress(settings[Setting::cross_join_min_rows_to_compress])
     , cross_join_min_bytes_to_compress(settings[Setting::cross_join_min_bytes_to_compress])
     , max_joined_block_rows(settings[Setting::max_joined_block_size_rows])
+    , max_joined_block_bytes(settings[Setting::max_joined_block_size_bytes])
     , join_algorithms(settings[Setting::join_algorithm])
     , partial_merge_join_rows_in_right_blocks(settings[Setting::partial_merge_join_rows_in_right_blocks])
     , partial_merge_join_left_table_buffer_bytes(settings[Setting::partial_merge_join_left_table_buffer_bytes])
@@ -164,6 +167,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , cross_join_min_rows_to_compress(settings.cross_join_min_rows_to_compress)
     , cross_join_min_bytes_to_compress(settings.cross_join_min_bytes_to_compress)
     , max_joined_block_rows(settings.max_joined_block_size_rows)
+    , max_joined_block_bytes(settings.max_joined_block_size_bytes)
     , join_algorithms(settings.join_algorithms)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
@@ -292,7 +296,7 @@ void TableJoin::setInputColumns(NamesAndTypesList left_output_columns, NamesAndT
     columns_from_joined_table = std::move(right_output_columns);
 }
 
-const NamesAndTypesList & TableJoin::getOutputColumns(JoinTableSide side)
+const NamesAndTypesList & TableJoin::getOutputColumns(JoinTableSide side) const
 {
     if (side == JoinTableSide::Left)
         return result_columns_from_left_table;
@@ -576,7 +580,7 @@ bool TableJoin::sameStrictnessAndKind(JoinStrictness strictness_, JoinKind kind_
 
 bool TableJoin::oneDisjunct() const
 {
-    return clauses.size() == 1;
+    return clauses.size() == 1 && !clauses.front().isEmpty();
 }
 
 bool TableJoin::needStreamWithNonJoinedRows() const
@@ -739,6 +743,9 @@ TableJoin::createConvertingActions(
       * This will be semantically transformed to:
       *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
       */
+    if (isSpecialStorage() && std::ranges::any_of(clauses, [](const auto & clause) { return !clause.nullsafe_compare_key_indexes.empty(); }))
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Null-safe comparison is not supported for StorageJoin");
+
     auto [left_keys_nullsafe_comparison, right_keys_nullsafe_comparison] = getKeysForNullSafeComparion(
         left_dag ? left_dag->getResultColumns() : left_sample_columns,
         right_dag ? right_dag->getResultColumns() : right_sample_columns);

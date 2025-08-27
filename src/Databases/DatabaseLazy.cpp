@@ -53,8 +53,9 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 void DatabaseLazy::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel /*mode*/)
 {
+    auto db_disk = getDisk();
     iterateMetadataFiles(
-        [this, &local_context](const String & file_name)
+        [this, &local_context, db_disk](const String & file_name)
         {
             const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
 
@@ -265,13 +266,13 @@ StoragePtr DatabaseLazy::loadTable(const String & table_name) const
     LOG_DEBUG(log, "Load table {} to cache.", backQuote(table_name));
 
     const String table_metadata_path = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + ".sql");
-
+    auto db_disk = getDisk();
     try
     {
         StoragePtr table;
         auto context_copy = Context::createCopy(context); /// some tables can change context, but not LogTables
 
-        auto ast = parseQueryFromMetadata(log, getContext(), table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/false);
+        auto ast = parseQueryFromMetadata(log, getContext(), db_disk, table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/ false);
         if (ast)
         {
             const auto & ast_create = ast->as<const ASTCreateQuery &>();

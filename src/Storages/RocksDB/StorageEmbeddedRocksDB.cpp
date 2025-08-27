@@ -6,6 +6,8 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/KVStorageUtils.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/RocksDB/RocksDBSettings.h>
 
 #include <Parsers/ASTCreateQuery.h>
 
@@ -29,9 +31,9 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
-#include <Storages/AlterCommands.h>
-#include <Storages/RocksDB/RocksDBSettings.h>
+
 #include <IO/SharedThreadPools.h>
 #include <Disks/DiskLocal.h>
 #include <base/sort.h>
@@ -96,14 +98,14 @@ class EmbeddedRocksDBSource : public ISource
 public:
     EmbeddedRocksDBSource(
         const StorageEmbeddedRocksDB & storage_,
-        const Block & header,
+        SharedHeader header,
         FieldVectorPtr keys_,
         FieldVector::const_iterator begin_,
         FieldVector::const_iterator end_,
         const size_t max_block_size_)
         : ISource(header)
         , storage(storage_)
-        , primary_key_pos(getPrimaryKeyPos(header, storage.getPrimaryKey()))
+        , primary_key_pos(getPrimaryKeyPos(*header, storage.getPrimaryKey()))
         , keys(keys_)
         , begin(begin_)
         , end(end_)
@@ -114,12 +116,12 @@ public:
 
     EmbeddedRocksDBSource(
         const StorageEmbeddedRocksDB & storage_,
-        const Block & header,
+        SharedHeader header,
         std::unique_ptr<rocksdb::Iterator> iterator_,
         const size_t max_block_size_)
         : ISource(header)
         , storage(storage_)
-        , primary_key_pos(getPrimaryKeyPos(header, storage.getPrimaryKey()))
+        , primary_key_pos(getPrimaryKeyPos(*header, storage.getPrimaryKey()))
         , iterator(std::move(iterator_))
         , max_block_size(max_block_size_)
     {
@@ -566,13 +568,15 @@ public:
     std::string getName() const override { return "ReadFromEmbeddedRocksDB"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void describeActions(FormatSettings & format_settings) const override;
+    void describeActions(JSONBuilder::JSONMap & map) const override;
 
     ReadFromEmbeddedRocksDB(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block sample_block,
+        SharedHeader sample_block,
         const StorageEmbeddedRocksDB & storage_,
         size_t max_block_size_,
         size_t num_streams_)
@@ -590,7 +594,7 @@ private:
     size_t num_streams;
 
     FieldVectorPtr keys;
-    bool all_scan = false;
+    bool all_scan = true;
 };
 
 void StorageEmbeddedRocksDB::read(
@@ -607,7 +611,7 @@ void StorageEmbeddedRocksDB::read(
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
     auto reading = std::make_unique<ReadFromEmbeddedRocksDB>(
-        column_names, query_info, storage_snapshot, context_, std::move(sample_block), *this, max_block_size, num_streams);
+        column_names, query_info, storage_snapshot, context_, std::make_shared<const Block>(std::move(sample_block)), *this, max_block_size, num_streams);
 
     query_plan.addStep(std::move(reading));
 }
@@ -662,8 +666,31 @@ void ReadFromEmbeddedRocksDB::applyFilters(ActionDAGNodes added_filter_nodes)
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 
     const auto & sample_block = getOutputHeader();
-    auto primary_key_data_type = sample_block.getByName(storage.primary_key).type;
-    std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag, context);
+    auto primary_key_data_type = sample_block->getByName(storage.primary_key).type;
+    std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag.get(), context);
+}
+
+void ReadFromEmbeddedRocksDB::describeActions(FormatSettings & format_settings) const
+{
+    std::string prefix(format_settings.offset, format_settings.indent_char);
+    if (!all_scan)
+    {
+        format_settings.out << prefix << "ReadType: GetKeys\n";
+        format_settings.out << prefix << "Keys: " << keys->size() << '\n';
+    }
+    else
+        format_settings.out << prefix << "ReadType: FullScan\n";
+}
+
+void ReadFromEmbeddedRocksDB::describeActions(JSONBuilder::JSONMap & map) const
+{
+    if (!all_scan)
+    {
+        map.add("Read Type", "GetKeys");
+        map.add("Keys", keys->size());
+    }
+    else
+        map.add("Read Type", "FullScan");
 }
 
 SinkToStoragePtr StorageEmbeddedRocksDB::write(
