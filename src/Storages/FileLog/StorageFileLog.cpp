@@ -505,7 +505,7 @@ void StorageFileLog::openFilesAndSetPos()
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
 
-            reader.seekg(0, std::ios::end);
+            reader.seekg(0, reader.end); /// NOLINT(readability-static-accessed-through-instance)
             assertStreamGood(reader);
 
             auto file_end = reader.tellg();
@@ -516,7 +516,7 @@ void StorageFileLog::openFilesAndSetPos()
             {
                 throw Exception(
                     ErrorCodes::CANNOT_READ_ALL_DATA,
-                    "Last saved offsset for File {} is bigger than the file size ({} > {})",
+                    "Last saved offsset for File {} is bigger than file size ({} > {})",
                     file,
                     meta.last_writen_position,
                     std::streamoff{file_end});
@@ -887,9 +887,6 @@ void registerStorageFileLog(StorageFactory & factory)
         if ((*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].changed
             && !(*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].value)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "poll_directory_watch_events_backoff_factor can not be 0");
-
-        if ((*filelog_settings)[FileLogSetting::handle_error_mode].changed && (*filelog_settings)[FileLogSetting::handle_error_mode].value == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DEAD_LETTER_QUEUE is not supported by the table engine");
 
         if (args_count != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of StorageFileLog should be 2, path and format name");

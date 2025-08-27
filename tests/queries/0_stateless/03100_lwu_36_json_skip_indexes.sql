@@ -1,6 +1,3 @@
--- Tags: no-parallel-replicas
--- no-parallel-replicas: the result of EXPLAIN differs with parallel replicas
-
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test (
@@ -26,47 +23,26 @@ WHERE document.name = 'aaa' OR document.name = 'boo'
 ORDER BY id
 SETTINGS apply_patch_parts = 1;
 
-SELECT trim(explain) AS s FROM (
-    EXPLAIN indexes = 1
-    SELECT * FROM test
-    WHERE document.name = 'aaa' OR document.name = 'boo'
-    ORDER BY id
-    SETTINGS apply_patch_parts = 1
-) WHERE s LIKE 'Granules: %';
+SELECT * FROM test
+WHERE document.name = 'aaa' OR document.name = 'boo'
+ORDER BY id
+SETTINGS apply_patch_parts = 1, force_data_skipping_indices = 'ix_name'; -- { serverError INDEX_NOT_USED }
 
 SELECT * FROM test
 WHERE document.name = 'aaa' OR document.name = 'boo'
 ORDER BY id
-SETTINGS apply_patch_parts = 0;
-
-SELECT trim(explain) AS s FROM (
-    EXPLAIN indexes = 1
-    SELECT * FROM test
-    WHERE document.name = 'aaa' OR document.name = 'boo'
-    ORDER BY id
-    SETTINGS apply_patch_parts = 0
-) WHERE s LIKE 'Granules: %';
+SETTINGS apply_patch_parts = 0, force_data_skipping_indices = 'ix_name';
 
 SELECT count()FROM test
 WHERE document.country::String = 'USA'
 SETTINGS apply_patch_parts = 1;
 
-SELECT trim(explain) AS s FROM (
-    EXPLAIN indexes = 1
-    SELECT count()FROM test
-    WHERE document.country::String = 'USA'
-    SETTINGS apply_patch_parts = 1
-) WHERE s LIKE 'Granules: %';
+SELECT count() FROM test
+WHERE document.country::String = 'USA'
+SETTINGS apply_patch_parts = 1, force_data_skipping_indices = 'ix_country'; -- { serverError INDEX_NOT_USED }
 
 SELECT count() FROM test
 WHERE document.country::String = 'USA'
-SETTINGS apply_patch_parts = 0;
-
-SELECT trim(explain) AS s FROM (
-    EXPLAIN indexes = 1
-    SELECT count() FROM test
-    WHERE document.country::String = 'USA'
-    SETTINGS apply_patch_parts = 0
-) WHERE s LIKE 'Granules: %';
+SETTINGS apply_patch_parts = 0, force_data_skipping_indices = 'ix_country';
 
 DROP TABLE IF EXISTS test;

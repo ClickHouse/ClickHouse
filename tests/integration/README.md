@@ -200,7 +200,7 @@ docker build -t clickhouse/integration-test .
 ```
 
 The helper container used by the `runner` script is in `docker/test/integration/runner/Dockerfile`.
-It can be rebuild with
+It can be rebuild with 
 
 ```
 cd docker/test/integration/runner
@@ -222,73 +222,6 @@ named `test.py` containing tests in it. All functions with names starting with `
 To assert that two TSV files must be equal, wrap them in the `TSV` class and use the regular `assert`
 statement. Example: `assert TSV(result) == TSV(reference)`. In case the assertion fails, `pytest`
 will automagically detect the types of variables and only the small diff of two files is printed.
-
-### Debug mode
-
-Here is how you run a debugger for the server under integration test:
-
-1. Put the **_statically linked binary_** of your debugger into the ClickHouse root folder of your repo. The [nnd](https://github.com/al13n321/nnd) debugger is ideal for this purpose (and for ClickHouse debugging in general), it's currently the only supported option.
-2. Go to the integration test `test.py` file and add a new line with a single `breakpoint()` command to debug specific point in your test (to make the server work forever and not die after the test).
-3. Run the integration test with `runner` script as usual but add `--debug` option. It will produce helper shell command in stdout and start testing:
-```bash
-   # =====> DEBUG MODE <=====
-    # ClickHouse root folder will be read-only mounted into /debug in all containers.
-    # Tip: place a `breakpoint()` somewhere in your integration test python code before `runner`.
-    # Open another shell and include:
-        source /path/to/ClickHouse/tests/integration/runner-env.sh
-    # =====> DEBUG MODE <=====
-```
-4. When the test hits a breakpoint, it will show the Python debugger prompt, which is useful by itself for debugging purposes. For example:
-```bash
-test_throttling/test.py::test_write_throttling[user_remote_throttling]
->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> PDB set_trace (IO-capturing turned off) >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-> /ClickHouse/tests/integration/test_throttling/test.py(493)test_write_throttling()
--> assert_took(took, should_take)
-(Pdb)
-```
-5. Open another shell and run the command there to set up the environment. Then run:
-```bash
-❯ source /path/to/ClickHouse/tests/integration/runner-env.sh
-
-USAGE:
-   runner-client - Run clickhouse client inside an integration test
-   runner-bash   - Open shell on a node inside an integration test
-   runner-nnd    - Attach nnd debugger to a clickhouse server on a node inside an integration test
-```
-6. You can use either Container ID or Container Name to log into the required node:
-```
-❯ runner-client
-CONTAINER ID   IMAGE                                      COMMAND                  CREATED          STATUS          PORTS                                                            NAMES
-867c67cc9957   clickhouse/integration-test:latest         "bash -c 'trap 'pkil…"   2 seconds ago    Up 1 second                                                                      rootteststoragedelta-node1-1
-64b8744cb71a   clickhouse/integration-test:latest         "bash -c 'trap 'pkil…"   2 seconds ago    Up 1 second                                                                      rootteststoragedelta-node2-1
-414187056a06   clickhouse/clickhouse-server:25.3.3.42     "bash -c 'trap 'pkil…"   2 seconds ago    Up 1 second     8123/tcp, 9000/tcp, 9009/tcp                                     rootteststoragedelta-node_old-1
-f5c9aef75a04   clickhouse/integration-test:latest         "clickhouse server -…"   2 seconds ago    Up 1 second                                                                      rootteststoragedelta-node_with_environment_credentials-1
-c7eae7f0c29d   mcr.microsoft.com/azure-storage/azurite    "docker-entrypoint.s…"   21 seconds ago   Up 20 seconds   10000-10002/tcp, 0.0.0.0:30000->30000/tcp, :::30000->30000/tcp   rootteststoragedelta-azurite1-1
-8a81755f9358   minio/minio:RELEASE.2024-07-31T05-46-26Z   "/usr/bin/docker-ent…"   22 seconds ago   Up 21 seconds   9000-9001/tcp                                                    rootteststoragedelta-minio1-1
-6f11a018f16c   clickhouse/python-bottle:latest            "python3"                22 seconds ago   Up 21 seconds   8080/tcp                                                         rootteststoragedelta-resolver-1
-bf180f6b2f7d   clickhouse/s3-proxy                        "/docker-entrypoint.…"   22 seconds ago   Up 22 seconds   80/tcp, 443/tcp, 8080/tcp                                        rootteststoragedelta-proxy1-1
-0c03e8d780e5   clickhouse/s3-proxy                        "/docker-entrypoint.…"   22 seconds ago   Up 22 seconds   80/tcp, 443/tcp, 8080/tcp                                        rootteststoragedelta-proxy2-1
-1ef790b3251e   clickhouse/integration-test:latest         "clickhouse keeper -…"   28 seconds ago   Up 27 seconds                                                                    rootteststoragedelta-zoo2-1
-a65b504a1e60   clickhouse/integration-test:latest         "clickhouse keeper -…"   28 seconds ago   Up 27 seconds                                                                    rootteststoragedelta-zoo3-1
-51d20a4f40c4   clickhouse/integration-test:latest         "clickhouse keeper -…"   28 seconds ago   Up 28 seconds                                                                    rootteststoragedelta-zoo1-1
-Enter ClickHouse Node CONTAINER ID or NAME (default: 867c67cc9957):
-ClickHouse client version 25.7.1.1.
-Connecting to localhost:9000 as user default.
-Connected to ClickHouse server version 25.7.1.
-node1 :) select 1
-
-SELECT 1
-
-Query id: 7222639b-6d33-4237-85f4-ad4ee04e8691
-
-   ┌─1─┐
-1. │ 1 │
-   └───┘
-
-1 row in set. Elapsed: 0.001 sec.
-
-node1 :) Bye.
-```
 
 ### Troubleshooting
 

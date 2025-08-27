@@ -19,6 +19,9 @@ EXTRA_COLUMNS=${EXTRA_COLUMNS:-"repo LowCardinality(String), pull_request_number
 echo "EXTRA_COLUMNS_EXPRESSION=$EXTRA_COLUMNS_EXPRESSION"
 EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name"}
 
+# trace_log needs more columns for symbolization
+EXTRA_COLUMNS_EXPRESSION_TRACE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> demangle(addressToSymbol(x)), trace)::Array(LowCardinality(String)) AS symbols, arrayMap(x -> addressToLine(x), trace)::Array(LowCardinality(String)) AS lines"
+
 # coverage_log needs more columns for symbolization, but only symbol names (the line numbers are too heavy to calculate)
 EXTRA_COLUMNS_COVERAGE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String)), "
 EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayDistinct(arrayMap(x -> demangle(addressToSymbol(x)), coverage))::Array(LowCardinality(String)) AS symbols"
@@ -102,7 +105,18 @@ function setup_logs_replication
     echo 'Create %_log tables'
     clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
     do
-        if [[ "$table" = "coverage_log" ]]
+        if [[ "$table" = "trace_log" ]]
+        then
+            # Do not try to resolve stack traces in case of debug/sanitizers
+            # build, since it is too slow (flushing of trace_log can take ~1min
+            # with such MV attached)
+            if [[ "$debug_or_sanitizer_build" = 1 ]]
+            then
+                EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
+            else
+                EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_TRACE_LOG}"
+            fi
+        elif [[ "$table" = "coverage_log" ]]
         then
             EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS_COVERAGE_LOG}"
             EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG}"

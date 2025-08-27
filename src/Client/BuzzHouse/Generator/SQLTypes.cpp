@@ -674,7 +674,7 @@ SQLType * DynamicType::typeDeepCopy() const
 String DynamicType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
     uint32_t col_counter = 0;
-    const uint64_t type_mask_backup = gen.next_type_mask;
+    const uint32_t type_mask_backup = gen.next_type_mask;
 
     gen.next_type_mask = gen.fc.type_mask & ~(allow_dynamic | allow_nested);
     auto next = std::unique_ptr<SQLType>(gen.randomNextType(rg, gen.next_type_mask, col_counter, nullptr));
@@ -1191,7 +1191,7 @@ NestedType::~NestedType()
     }
 }
 
-std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerator & rg, const uint64_t allowed_types)
+std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerator & rg, const uint32_t allowed_types)
 {
     chassert(this->ids.empty());
 
@@ -1201,10 +1201,7 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
         {
             this->ids.emplace_back(1);
         }
-        if ((allowed_types & allow_int16))
-        {
-            this->ids.emplace_back(2);
-        }
+        this->ids.emplace_back(2);
         this->ids.emplace_back(3);
         if ((allowed_types & allow_int64))
         {
@@ -1220,10 +1217,7 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
     {
         this->ids.emplace_back(7);
     }
-    if ((allowed_types & allow_int16))
-    {
-        this->ids.emplace_back(8);
-    }
+    this->ids.emplace_back(8);
     this->ids.emplace_back(9);
     if ((allowed_types & allow_int64))
     {
@@ -1274,13 +1268,13 @@ std::tuple<SQLType *, FloatingPoints> StatementGenerator::randomFloatType(Random
     return std::make_tuple(new FloatType(1 << (nopt + 3)), static_cast<FloatingPoints>(nopt));
 }
 
-std::tuple<SQLType *, Dates> StatementGenerator::randomDateType(RandomGenerator & rg, const uint64_t allowed_types) const
+std::tuple<SQLType *, Dates> StatementGenerator::randomDateType(RandomGenerator & rg, const uint32_t allowed_types) const
 {
     const bool use32 = (allowed_types & allow_date32) && rg.nextBool();
     return std::make_tuple(new DateType(use32), use32 ? Dates::Date32 : Dates::Date);
 }
 
-SQLType * StatementGenerator::randomTimeType(RandomGenerator & rg, const uint64_t allowed_types, TimeTp * dt) const
+SQLType * StatementGenerator::randomTimeType(RandomGenerator & rg, const uint32_t allowed_types, TimeTp * dt) const
 {
     const bool use64 = (allowed_types & allow_time64) && rg.nextBool();
     std::optional<uint32_t> precision;
@@ -1300,7 +1294,7 @@ SQLType * StatementGenerator::randomTimeType(RandomGenerator & rg, const uint64_
     return new TimeType(use64, precision);
 }
 
-SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uint64_t allowed_types, DateTimeTp * dt) const
+SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uint32_t allowed_types, DateTimeTp * dt) const
 {
     bool has_precision = false;
     const bool use64 = (allowed_types & allow_datetime64) && rg.nextBool();
@@ -1330,7 +1324,7 @@ SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uin
     return new DateTimeType(use64, precision, timezone);
 }
 
-SQLType * StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint64_t allowed_types, BottomTypeName * tp) const
+SQLType * StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint32_t allowed_types, BottomTypeName * tp) const
 {
     Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
     std::optional<DecimalN_DecimalPrecision> short_notation;
@@ -1393,7 +1387,7 @@ SQLType * StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint
     return new DecimalType(short_notation, precision, scale);
 }
 
-SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_types, const bool low_card, BottomTypeName * tp)
+SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t allowed_types, const bool low_card, BottomTypeName * tp)
 {
     SQLType * res = nullptr;
 
@@ -1639,7 +1633,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
                 }
                 desc += " ";
 
-                const uint64_t type_mask_backup = this->next_type_mask;
+                const uint32_t type_mask_backup = this->next_type_mask;
                 this->next_type_mask = fc.type_mask & ~(allow_nested | allow_enum);
                 SQLType * jtp = randomNextType(rg, this->next_type_mask, col_counter, tp ? jpt->mutable_type() : nullptr);
                 this->next_type_mask = type_mask_backup;
@@ -1691,7 +1685,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
     return res;
 }
 
-SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
+SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
 {
     const uint32_t non_nullable_type = 60;
     const uint32_t nullable_type = 25 * static_cast<uint32_t>((allowed_types & allow_nullable) != 0);
@@ -2053,7 +2047,7 @@ String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidt
 String strBuildJSONElement(RandomGenerator & rg)
 {
     String ret;
-    std::uniform_int_distribution<int> opts(1, 23);
+    std::uniform_int_distribution<int> opts(1, 22);
 
     switch (opts(rg.generator))
     {
@@ -2134,10 +2128,6 @@ String strBuildJSONElement(RandomGenerator & rg)
             /// IPv6
             ret = '"' + rg.nextIPv6() + '"';
             break;
-        case 23:
-            /// Floating-point
-            ret = nextFloatingPoint(rg, true);
-            break;
         default:
             chassert(0);
     }
@@ -2187,11 +2177,11 @@ String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth)
     return ret;
 }
 
-String StatementGenerator::strAppendAnyValue(RandomGenerator & rg, const bool allow_cast, SQLType * tp)
+String StatementGenerator::strAppendAnyValue(RandomGenerator & rg, SQLType * tp)
 {
     String ret = tp->appendRandomRawValue(rg, *this);
 
-    if (allow_cast && rg.nextSmallNumber() < 7)
+    if (rg.nextSmallNumber() < 7)
     {
         ret += "::";
         ret += tp->typeName(false);

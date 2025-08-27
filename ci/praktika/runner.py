@@ -75,7 +75,6 @@ class Runner:
             USER_LOGIN="",
             FORK_NAME="",
             PR_LABELS=[],
-            EVENT_TIME="",
         ).dump()
         workflow_config = RunConfig(
             name=workflow.name,

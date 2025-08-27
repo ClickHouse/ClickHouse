@@ -38,10 +38,6 @@ class Info:
         return self.env.WORKFLOW_NAME
 
     @property
-    def event_time(self):
-        return self.env.EVENT_TIME
-
-    @property
     def job_config(self):
         return self.env.JOB_CONFIG
 
@@ -189,7 +185,7 @@ class Info:
             print(f"ERROR: Exception, while reading workflow input [{e}]")
         return None
 
-    def store_kv_data(self, key, value):
+    def store_custom_data(self, key, value):
         assert (
             self.env.JOB_NAME == "Config Workflow"
         ), "Custom data can be stored only in Config Workflow Job"
@@ -197,7 +193,7 @@ class Info:
         workflow_config.custom_data[key] = value
         workflow_config.dump()
 
-    def get_kv_data(self, key=None):
+    def get_custom_data(self, key=None):
         custom_data = RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
         if key:
             return custom_data.get(key, None)

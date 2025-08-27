@@ -119,10 +119,10 @@ class TextLog;
 class TraceLog;
 class MetricLog;
 class TransposedMetricLog;
+class LatencyLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
-class ZooKeeperConnectionLog;
 class SessionLog;
 class BackupsWorker;
 class TransactionsInfoLog;
@@ -133,11 +133,9 @@ class ObjectStorageQueueLog;
 class AsynchronousInsertLog;
 class BackupLog;
 class BlobStorageLog;
-class DeadLetterQueue;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
-struct DatabaseReplicatedSettings;
 struct DistributedSettings;
 struct InitialAllRangesAnnouncement;
 struct ParallelReadRequest;
@@ -784,10 +782,6 @@ public:
     void setMutationWorkload(const String & value);
     bool getThrowOnUnknownWorkload() const;
     void setThrowOnUnknownWorkload(bool value);
-    bool getCPUSlotPreemption() const;
-    UInt64 getCPUSlotQuantum() const;
-    UInt64 getCPUSlotPreemptionTimeout() const;
-    void setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms);
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     String getConcurrentThreadsScheduler() const;
@@ -1027,7 +1021,6 @@ public:
 
     BackupsWorker & getBackupsWorker() const;
     void waitAllBackupsAndRestores() const;
-    void cancelAllBackupsAndRestores() const;
     BackupsInMemoryHolder & getBackupsInMemory();
     const BackupsInMemoryHolder & getBackupsInMemory() const;
 
@@ -1195,12 +1188,14 @@ public:
     bool hasZooKeeper() const;
     /// Has ready or expired auxiliary ZooKeeper
     bool hasAuxiliaryZooKeeper(const String & name) const;
+    /// Reset current zookeeper session. Do not create a new one.
+    void resetZooKeeper() const;
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
     void reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const;
 
-    void handleSystemZooKeeperLogAndConnectionLogAfterInitializationIfNeeded();
+    void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
     /// --- Caches ------------------------------------------------------------------------------------------
 
@@ -1336,6 +1331,7 @@ public:
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
     std::shared_ptr<TransposedMetricLog> getTransposedMetricLog() const;
+    std::shared_ptr<LatencyLog> getLatencyLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
@@ -1350,8 +1346,6 @@ public:
     std::shared_ptr<BackupLog> getBackupLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
     std::shared_ptr<QueryMetricLog> getQueryMetricLog() const;
-    std::shared_ptr<DeadLetterQueue> getDeadLetterQueue() const;
-    std::shared_ptr<ZooKeeperConnectionLog> getZooKeeperConnectionLog() const;
 
     SystemLogs getSystemLogs() const;
 
@@ -1365,7 +1359,6 @@ public:
 
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
-    const DatabaseReplicatedSettings & getDatabaseReplicatedSettings() const;
     const DistributedSettings & getDistributedSettings() const;
     const S3SettingsByEndpoint & getStorageS3Settings() const;
     const AzureSettingsByEndpoint & getStorageAzureSettings() const;
@@ -1475,6 +1468,8 @@ public:
     void initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, bool attach_existing = false);
     /// Returns context of current distributed DDL query or nullptr.
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
+    /// Removes context of current distributed DDL.
+    void resetZooKeeperMetadataTransaction();
 
     /// Tells DatabaseReplicated to make this query conditional: it'll only succeed if table with the given UUID exists.
     /// Used by refreshable materialized views to prevent creating inner tables after the MV is dropped.

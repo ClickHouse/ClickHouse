@@ -57,13 +57,9 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_database_unity_catalog", 1);
     context->setSetting("allow_experimental_database_glue_catalog", 1);
     context->setSetting("allow_experimental_delta_kernel_rs", 1);
-    context->setSetting("allow_experimental_ytsaurus_table_function", 1);
-    context->setSetting("allow_experimental_ytsaurus_table_engine", 1);
-    context->setSetting("allow_experimental_ytsaurus_dictionary_source", 1);
     context->setSetting("allow_experimental_time_series_aggregate_functions", 1);
     context->setSetting("allow_experimental_lightweight_update", 1);
     context->setSetting("allow_experimental_insert_into_iceberg", 1);
-    context->setSetting("allow_experimental_iceberg_compaction", 1);
 
     /// clickhouse-private settings
     context->setSetting("allow_experimental_shared_set_join", 1);

@@ -65,6 +65,9 @@ namespace ErrorCodes
     Maximum number of data rows between the marks of an index. I.e how many rows
     correspond to one primary key value.
     )", 0) \
+    DECLARE(UInt64, max_digestion_size_per_segment, 256_MiB, R"(
+    Max number of bytes to digest per segment to build GIN index.
+    )", 0) \
     \
     /** Data storing format settings. */ \
     DECLARE(UInt64, min_bytes_for_wide_part, default_min_bytes_for_wide_part, R"(
@@ -247,7 +250,7 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
-    DECLARE(Bool, write_marks_for_substreams_in_compact_parts, true, R"(
+    DECLARE(Bool, write_marks_for_substreams_in_compact_parts, false, R"(
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.
     )", 0) \
@@ -599,11 +602,6 @@ namespace ErrorCodes
     If true patch parts are applied on merges
     )", 0) \
     \
-    DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
-    The maximum uncompressed size of data in all patch parts in bytes.
-    If amount of data in all patch parts exceeds this value, lightweight updates will be rejected.
-    0 - unlimited.
-    )", 0) \
     /** Inserts settings. */ \
     DECLARE(UInt64, parts_to_delay_insert, 1000, R"(
     If the number of active parts in a single partition exceeds the
@@ -1273,9 +1271,6 @@ namespace ErrorCodes
     If enabled all the replicas try to fetch part in memory data (like primary
     key, partition info and so on) from other replicas where it already exists.
     )", 0) \
-    DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
-    How often replica will try to reload it's flags according to background schedule.
-    )", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, R"(
     Background task which reduces blocking parts for shared merge tree tables.
     Only in ClickHouse Cloud
@@ -1304,6 +1299,9 @@ namespace ErrorCodes
     DECLARE(UInt64, cleanup_thread_preferred_points_per_iteration, 150, R"(
     Preferred batch size for background cleanup (points are abstract but 1 point
     is approximately equivalent to 1 inserted block).
+    )", 0) \
+    DECLARE(UInt64, cleanup_threads, 128, R"(
+    Threads for cleanup of outdated threads. Only available in ClickHouse Cloud
     )", 0) \
     DECLARE(UInt64, min_relative_delay_to_close, 300, R"(
     Minimal delay from other replicas to close, stop serving
@@ -1446,9 +1444,6 @@ namespace ErrorCodes
     DECLARE(Bool, allow_nullable_key, false, R"(
     Allow Nullable types as primary keys.
     )", 0) \
-    DECLARE(Bool, allow_part_offset_column_in_projections, true, R"(
-    Allow ussage of '_part_offfset' column in projections select query.
-    )", 0) \
     DECLARE(Bool, remove_empty_parts, true, R"(
     Remove empty parts after they were pruned by TTL, mutation, or collapsing
     merge algorithm.
@@ -1589,7 +1584,8 @@ namespace ErrorCodes
     of the table.
     )", 0) \
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
-    When enabled, min-max (skipping) indices are added for all string columns of the table.
+    When enabled, min-max (skipping) indices are added for all string columns of
+    the table.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
@@ -1610,7 +1606,7 @@ namespace ErrorCodes
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_remote_fs_zero_copy_replication, false, R"(
     Don't use this setting in production, because it is not ready.
-    )", EXPERIMENTAL) \
+    )", BETA) \
     DECLARE(String, remote_fs_zero_copy_zookeeper_path, "/clickhouse/zero_copy", R"(
     ZooKeeper path for zero-copy table-independent info.
     )", EXPERIMENTAL) \
@@ -1733,9 +1729,6 @@ namespace ErrorCodes
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
     Time between runs of merge worker thread
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
-    How many partition discoveries should be packed into batch
-    )", EXPERIMENTAL) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, R"(
@@ -1838,17 +1831,6 @@ namespace ErrorCodes
         3. Default compression codec defined in `compression` settings
     Default value: an empty string (not defined).
     )", 0) \
-    DECLARE(SearchOrphanedPartsDisks, search_orphaned_parts_disks, SearchOrphanedPartsDisks::ANY, R"(
-    ClickHouse scans all disks for orphaned parts upon any ATTACH or CREATE table
-    in order to not allow to miss data parts at undefined (not included in policy) disks.
-    Orphaned parts originates from potentially unsafe storage reconfiguration, e.g. if a disk was excluded from storage policy.
-    This setting limits scope of disks to search by traits of the disks.
-
-    Possible values:
-    - any - scope is not limited.
-    - local - scope is limited by local disks .
-    - none - empty scope, do not search
-    )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)
@@ -1882,7 +1864,6 @@ namespace ErrorCodes
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_delay_period, 30) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_delay_period_random_add, 10) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_threads, 128) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
@@ -2340,17 +2321,6 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
     }
 }
 
-void MergeTreeSettings::dumpToSystemCompletionsColumns(MutableColumns & res_columns) const
-{
-    static constexpr const char * MERGE_TREE_SETTING_CONTEXT = "merge tree setting";
-    for (const auto & setting : impl->all())
-    {
-        const auto & setting_name = setting.getName();
-        res_columns[0]->insert(setting_name);
-        res_columns[1]->insert(MERGE_TREE_SETTING_CONTEXT);
-        res_columns[2]->insertDefault();
-    }
-}
 
 namespace
 {
