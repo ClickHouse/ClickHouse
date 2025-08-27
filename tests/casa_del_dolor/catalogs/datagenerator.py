@@ -177,8 +177,9 @@ class LakeDataGenerator:
         rows = []
         for _ in range(n_rows):
             rec = {}
-            for field in struct.fields:
-                rec[field.name] = self._random_value_for_type(field.dataType, null_rate)
+            for f in struct.fields:
+                nr = null_rate if f.nullable else 0.0
+                rec[f.name] = self._random_value_for_type(f.dataType, nr)
             rows.append(Row(**rec))
         # Use explicit schema so types match exactly
         df = spark.createDataFrame(rows, schema=struct)

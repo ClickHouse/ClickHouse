@@ -4,6 +4,8 @@ from abc import abstractmethod
 from .clickhousetospark import ClickHouseSparkTypeMapper
 from .laketables import LakeFormat, SparkTable, FileFormat, SparkColumn
 
+from pyspark.sql.types import DateType, TimestampType, StructType, DataType
+
 
 class LakeTableGenerator:
     def __init__(self, _bucket: str):
@@ -36,6 +38,26 @@ class LakeTableGenerator:
     def set_basic_properties(self) -> dict[str, str]:
         return {}
 
+    def _flat_columns(
+        self, res: dict[str, DataType], next_path: str, next_type: DataType
+    ):
+        res[next_path] = next_type
+        if isinstance(next_type, StructType):
+            for f in next_type.fields:
+                self._flat_columns(res, f"{next_path}.{f.name}", f.dataType)
+
+    def flat_columns(
+        self, columns_spark: dict[str, SparkColumn]
+    ) -> dict[str, DataType]:
+        res = {}
+        for k, val in columns_spark.items():
+            self._flat_columns(res, k, val.spark_type)
+        return res
+
+    @abstractmethod
+    def add_partition_clauses(self, columns_spark: dict[str, SparkColumn]) -> list[str]:
+        return []
+
     def generate_create_table_ddl(
         self,
         catalog_name: str,
@@ -53,31 +75,30 @@ class LakeTableGenerator:
         self.write_format = FileFormat.file_from_str(file_format)
 
         ddl = f"CREATE TABLE IF NOT EXISTS {catalog_name}.test.{table_name} ("
-        columns_list = []
-        columns_str = []
+        columns_def = []
         columns_spark = {}
         for val in columns:
             # Convert columns
             str_type, nullable, spark_type = self.type_mapper.clickhouse_to_spark(
                 val["type"], False
             )
-            columns_str.append(
+            columns_def.append(
                 f"{val["name"]} {str_type}{"" if nullable else " NOT NULL"}"
             )
-            columns_list.append(val["name"])
             columns_spark[val["name"]] = SparkColumn(val["name"], spark_type, nullable)
-        ddl += ",".join(columns_str)
+        ddl += ",".join(columns_def)
         ddl += ")"
 
         # Add USING clause
         ddl += f" USING {self.get_format()}"
 
         # Add Partition by, can't partition by all columns
-        if len(columns_list) > 1 and random.randint(1, 5) == 1:
+        if random.randint(1, 5) == 1:
+            partition_clauses = self.add_partition_clauses(columns_spark)
+            random.shuffle(partition_clauses)
             random_subset = random.sample(
-                columns_list, k=random.randint(1, len(columns_list) - 1)
+                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
             )
-            random.shuffle(random_subset)
             ddl += f" PARTITIONED BY ({",".join(random_subset)})"
 
         properties = self.set_basic_properties()
@@ -126,6 +147,24 @@ class IcebergTableGenerator(LakeTableGenerator):
             self.write_format = FileFormat.file_from_str(out_format)
         properties["write.format.default"] = out_format
         return properties
+
+    def add_partition_clauses(self, columns_spark: dict[str, SparkColumn]) -> list[str]:
+        res = []
+        flattened_columns = self.flat_columns(columns_spark)
+        for k, val in flattened_columns.items():
+            res.append(k)
+            if (
+                isinstance(val, TimestampType)
+                or isinstance(val, DateType)
+                or random.randint(0, 9) == 0
+            ):
+                res.append(f"year({k})")
+                res.append(f"month({k})")
+                res.append(f"day({k})")
+                res.append(f"hour({k})")
+            res.append(f"bucket({random.randint(0, 1000)}, {k})")
+            res.append(f"truncate({random.randint(0, 1000)}, {k})")
+        return res
 
     def generate_table_properties(
         self,
@@ -477,6 +516,13 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
     def set_basic_properties(self) -> dict[str, str]:
         return {}
+
+    def add_partition_clauses(self, columns_spark: dict[str, SparkColumn]) -> list[str]:
+        res = []
+        # No partition by subcolumns in delta
+        for k, _ in columns_spark.items():
+            res.append(k)
+        return res
 
     def generate_table_properties(
         self,
