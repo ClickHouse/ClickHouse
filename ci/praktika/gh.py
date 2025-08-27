@@ -293,6 +293,22 @@ class GH:
         return Shell.get_output(cmd, verbose=True)
 
     @classmethod
+    def update_pr_body(cls, new_body, pr=None, repo=None):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        escaped_body = new_body.replace("'", "'\"'\"'")
+
+        cmd = f'gh api -X PATCH \
+            -H "Accept: application/vnd.github.v3+json" \
+            "/repos/{repo}/pulls/{pr}" \
+            -f body=\'{escaped_body}\''
+    
+        return cls.do_command_with_retries(cmd)
+
+    @classmethod
     def post_commit_status(cls, name, status, description, url):
         """
         Sets GH commit status
