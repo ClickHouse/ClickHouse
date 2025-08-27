@@ -3336,6 +3336,7 @@ UUIDv
 Vadim
 Valgrind
 ValueType
+VARBINARY
 VARCHAR
 variadic
 variantElement
