@@ -37,7 +37,7 @@ std::string getOrCreateCustomDisk(
     if (server_config.has("include_from"))
         include_from_path = server_config.getString("include_from");
     else if (fs::exists(default_path))
-                include_from_path = default_path;
+        include_from_path = default_path;
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
     {

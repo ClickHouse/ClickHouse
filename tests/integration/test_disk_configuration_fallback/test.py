@@ -19,10 +19,9 @@ def start_cluster():
             "node1",
             main_configs=[
                 "configs/config.d/storage_configuration.xml",
-                "configs/config.d/include_from_path.xml",
-                "configs/config.d/include_from.xml",
                 "configs/config.d/remote_servers.xml",
             ],
+            metrika_xml="configs/metrika.xml",
             env_variables={
                 "MINIO_SECRET": minio_secret_key,
             },
@@ -35,10 +34,9 @@ def start_cluster():
             "node2",
             main_configs=[
                 "configs/config.d/storage_configuration.xml",
-                "configs/config.d/include_from_path.xml",
-                "configs/config.d/include_from.xml",
                 "configs/config.d/remote_servers.xml",
             ],
+            metrika_xml="configs/metrika.xml",
             with_zookeeper=True,
             stay_alive=True,
             with_minio=True,
@@ -51,6 +49,7 @@ def start_cluster():
                 "configs/config.d/remote_servers.xml",
                 "configs/config.d/mergetree_settings.xml",
             ],
+            metrika_xml="configs/metrika.xml",
             stay_alive=True,
             with_minio=True,
         )

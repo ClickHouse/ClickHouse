@@ -1,0 +1,43 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_local>
+                <type>local</type>
+                <path>/disk_local/</path>
+            </disk_local>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </s3>
+        </disks>
+        <policies>
+            <local>
+                <volumes>
+                    <main>
+                        <disk>disk_local</disk>
+                    </main>
+                </volumes>
+            </local>
+            <s3>
+                <volumes>
+                    <s3>
+                        <disk>s3</disk>
+                    </s3>
+                </volumes>
+            </s3>
+            <hybrid>
+                <volumes>
+                    <disk_local>
+                        <disk>disk_local</disk>
+                    </disk_local>
+                    <s3>
+                        <disk>s3</disk>
+                    </s3>
+                </volumes>
+            </hybrid>
+
+        </policies>
+    </storage_configuration>
+</clickhouse>
