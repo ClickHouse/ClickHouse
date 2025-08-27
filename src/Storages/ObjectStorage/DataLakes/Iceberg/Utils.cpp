@@ -438,7 +438,7 @@ Poco::JSON::Object::Ptr getPartitionField(
     {
         const auto * ast_identifier = partition_by_element->as<ASTIdentifier>();
         if (!ast_identifier)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown expression for partitioing.");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown expression for partitioning.");
 
         Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
         auto field = ast_identifier->name();
