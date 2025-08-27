@@ -372,7 +372,7 @@ void extendSchemaForPartitions(
         field->set(Iceberg::f_field_id, 1000 + i);
         field->set(Iceberg::f_name, partition_columns[i]);
         Int32 iter = 1;
-        field->set(Iceberg::f_type, getIcebergType(partition_types[i], iter).first);
+        field->set(Iceberg::f_type, getAvroType(partition_types[i], iter));
         partition_fields->add(field);
     }
 
@@ -533,10 +533,41 @@ void generateManifestFile(
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
-            if (partition_values[i].getType() == Field::Types::Int64 || partition_values[i].getType() == Field::Types::UInt64)
-                partition_record.field(partition_columns[i]) = avro::GenericDatum(partition_values[i].safeGet<Int64>());
-            else if (partition_values[i].getType() == Field::Types::String)
-                partition_record.field(partition_columns[i]) = avro::GenericDatum(partition_values[i].safeGet<String>());
+            switch (partition_values[i].getType())
+            {
+                case Field::Types::Int64:
+                case Field::Types::UInt64:
+                    partition_record.field(partition_columns[i]) =
+                        avro::GenericDatum(partition_values[i].safeGet<Int64>());
+                    break;
+
+                case Field::Types::String:
+                    partition_record.field(partition_columns[i]) =
+                        avro::GenericDatum(partition_values[i].safeGet<String>());
+                    break;
+
+                case Field::Types::Float64:
+                    partition_record.field(partition_columns[i]) =
+                        avro::GenericDatum(partition_values[i].safeGet<Float64>());
+                    break;
+
+                case Field::Types::Decimal32:
+                    partition_record.field(partition_columns[i]) =
+                        avro::GenericDatum(partition_values[i].safeGet<Decimal32>().getValue());
+                    break;
+
+                case Field::Types::Decimal64:
+                    partition_record.field(partition_columns[i]) =
+                        avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
+                    break;
+
+                default:
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Unsupported type to write into avro file {}",
+                        partition_values[i].getType()
+                    );
+            }
         }
 
         writer.write(manifest_datum);
