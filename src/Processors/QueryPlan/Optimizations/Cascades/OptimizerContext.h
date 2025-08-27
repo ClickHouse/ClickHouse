@@ -24,7 +24,6 @@ public:
     GroupId addGroup(QueryPlan::Node & node);
     void pushTask(OptimizationTaskPtr task);
     GroupPtr getGroup(GroupId group_id);
-    void getBestPlan(GroupId group_id);
 
     void updateBestPlan(GroupExpressionPtr expression);
 

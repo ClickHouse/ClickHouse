@@ -22,8 +22,8 @@ public:
 
     GroupExpression(const GroupExpression & other_)
         : group_id(other_.group_id)
-        , plan_step(other_.plan_step ? other_.plan_step->clone() : nullptr)
-        , original_node(other_.original_node)
+        , plan_step(other_.getQueryPlanStep()->clone())
+        , original_node(nullptr)
         , inputs(other_.inputs)
     {}
 
