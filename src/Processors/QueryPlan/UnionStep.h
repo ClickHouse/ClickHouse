@@ -32,6 +32,8 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    QueryPlanStepPtr clone() const override;
+
     bool hasCorrelatedExpressions() const override { return false; }
 
 private:

@@ -149,6 +149,11 @@ QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
     return std::make_unique<UnionStep>(ctx.input_headers);
 }
 
+std::unique_ptr<IQueryPlanStep> UnionStep::clone() const
+{
+    return std::make_unique<UnionStep>(input_headers);
+}
+
 void registerUnionStep(QueryPlanStepRegistry & registry);
 void registerUnionStep(QueryPlanStepRegistry & registry)
 {
