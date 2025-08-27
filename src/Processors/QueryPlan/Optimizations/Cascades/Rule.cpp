@@ -138,7 +138,10 @@ std::vector<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr 
 {
     GroupExpressionPtr expression_with_swapped_inputs = std::make_shared<GroupExpression>(*expression);
     chassert(expression_with_swapped_inputs->inputs.size() == 2);
-    std::swap(expression_with_swapped_inputs->inputs[0], expression_with_swapped_inputs->inputs[1]);
+    auto * join_step = typeid_cast<JoinStepLogical*>(expression_with_swapped_inputs->getQueryPlanStep());
+    chassert(join_step);
+    chassert(!join_step->areInputsSwapped());
+    join_step->setSwapInputs(); /// This flag takes care of swapping the inputs without actually reordering expression_with_swapped_inputs->inputs
     expression_with_swapped_inputs->setApplied(*this);  /// Don't want to apply commutativity rule to the new expression
     memo.getGroup(expression->group_id)->addExpression(expression_with_swapped_inputs);
     return {expression_with_swapped_inputs};
