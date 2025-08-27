@@ -21,7 +21,7 @@ from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
-from jobs.scripts.clickhouse_version import CHVersion
+# from jobs.scripts.clickhouse_version import CHVersion
 
 
 _GH_authenticated = False
@@ -115,12 +115,13 @@ class Runner:
             print(f"Set environment variable {key}.")
 
         print("Read GH Environment")
+        version_string = Info().get_custom_data("version")['string']
         env = _Environment.from_env()
         env.JOB_NAME = job.name
-        env.CLICKHOUSE_VERSION_STRING = CHVersion.get_version()
+        env.CLICKHOUSE_VERSION_STRING = version_string
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
-        os.environ["CLICKHOUSE_VERSION_STRING"] = CHVersion.get_version()
+        os.environ["CLICKHOUSE_VERSION_STRING"] = version_string
 
         env.JOB_CONFIG = job
         env.dump()
