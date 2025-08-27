@@ -23,11 +23,11 @@ quantileHistogram(level)(bucket_upper_bound, cumulative_bucket_value)
 
 - `bucket_upper_bound` — Upper bounds of the histogram buckets.
 
-    - The highest bucket must have an upper bound of `+Inf`.
+  - The highest bucket must have an upper bound of `+Inf`.
 
 - `cumulative_bucket_value` — Cumulative [Float64](../../../sql-reference/data-types/float.md) values of the histogram buckets.
 
-    - Values must be monotonically increasing as the bucket upper bound increases.
+  - Values must be monotonically increasing as the bucket upper bound increases.
 
 **Returned value**
 
