@@ -214,7 +214,7 @@ static void collectColumns(
     if (function_name == "indexHint")
         return;
 
-    if (!ConditionSelectivityEstimator::atom_map.contains(function_name))
+    if (!KeyCondition::atom_map.contains(function_name))
     {
         if (!parent)
         {
@@ -359,7 +359,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             cond.good = cond.viable;
 
             cond.min_position_in_primary_key = findMinPosition(cond.table_columns, primary_key_names_positions);
-            if (!may_use_primary_index && cond.min_position_in_primary_key != std::numeric_limits<Int64>::max() - 1)
+            if (!may_use_primary_index)
             {
                 /// Only set min_position_in_primary_key if it is possible to use primary index for current condition.
                 cond.min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
