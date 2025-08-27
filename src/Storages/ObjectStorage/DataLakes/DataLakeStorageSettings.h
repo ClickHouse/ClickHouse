@@ -61,12 +61,11 @@ If enabled, the engine would use the metadata file with the most recent last_upd
     DECLARE(Bool, iceberg_use_version_hint, false, R"(
 Get latest metadata path from version-hint.text file.
 )", 0) \
-    DECLARE(Int64, iceberg_format_version, 2, R"(
+    DECLARE(NonZeroUInt64, iceberg_format_version, 2, R"(
 Metadata format version.
 )", 0) \
     DECLARE(DatabaseDataLakeCatalogType, storage_catalog_type, DatabaseDataLakeCatalogType::NONE, "Catalog type", 0) \
     DECLARE(String, storage_catalog_credential, "", "", 0)             \
-    DECLARE(Bool, storage_vended_credentials, true, "Use vended credentials (storage credentials) from catalog", 0)             \
     DECLARE(String, storage_auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
     DECLARE(String, storage_oauth_server_uri, "", "OAuth server uri", 0)             \
     DECLARE(Bool, storage_oauth_server_use_request_body, true, "Put parameters into request body or query params", 0)             \

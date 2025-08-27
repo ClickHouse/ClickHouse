@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use blake3::Hasher;
 use log::trace;
@@ -8,7 +9,7 @@ use crate::traits::compiler::Compiler;
 use crate::traits::compiler::CompilerMeta;
 
 pub struct ClangLike {
-    compiler_path: String,
+    compiler_path: PathBuf,
 
     args: Vec<String>,
     stripped_args: Vec<String>,
@@ -20,7 +21,7 @@ pub struct ClangLike {
 }
 
 impl ClangLike {
-    pub fn from_args(compiler_path: String, args: Vec<String>) -> Self {
+    pub fn from_args(compiler_path: &Path, args: Vec<String>) -> Self {
         let cwd = std::env::current_dir()
             .unwrap()
             .into_os_string()
@@ -39,7 +40,7 @@ impl ClangLike {
             .collect::<Vec<String>>();
 
         ClangLike {
-            compiler_path,
+            compiler_path: compiler_path.to_path_buf(),
 
             input: ClangLike::get_input_from_args(&args),
             output: ClangLike::get_output_from_args(&args),
@@ -99,10 +100,10 @@ impl ClangLike {
         basepath.trim_end_matches('/').to_string()
     }
 
-    pub fn compiler_version(compiler_path: String) -> String {
-        trace!("Using compiler: {}", compiler_path);
+    pub fn compiler_version(compiler_path: &Path) -> String {
+        trace!("Using compiler: {}", compiler_path.display());
 
-        let compiler_version = std::process::Command::new(compiler_path.clone())
+        let compiler_version = std::process::Command::new(compiler_path)
             .arg("-dM")
             .arg("-E")
             .arg("-x")
@@ -194,8 +195,13 @@ impl ClangLike {
 impl CompilerMeta for Clang {
     const NAME: &'static str = "clang";
 
-    fn from_args(compiler_path: String, args: Vec<String>) -> Box<dyn Compiler> {
-        assert!(compiler_path.ends_with(Clang::NAME));
+    fn from_args(compiler_path: &Path, args: Vec<String>) -> Box<dyn Compiler> {
+        let binary_name = compiler_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap();
+
+        assert!(binary_name.starts_with(Clang::NAME));
 
         Box::new(Clang(ClangLike::from_args(compiler_path, args)))
     }
@@ -204,8 +210,13 @@ impl CompilerMeta for Clang {
 impl CompilerMeta for ClangXX {
     const NAME: &'static str = "clang++";
 
-    fn from_args(compiler_path: String, args: Vec<String>) -> Box<dyn Compiler> {
-        assert!(compiler_path.ends_with(ClangXX::NAME));
+    fn from_args(compiler_path: &Path, args: Vec<String>) -> Box<dyn Compiler> {
+        let binary_name = compiler_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap();
+
+        assert!(binary_name.starts_with(ClangXX::NAME));
 
         Box::new(ClangXX(ClangLike::from_args(compiler_path, args)))
     }
@@ -228,7 +239,7 @@ impl Compiler for ClangLike {
     }
 
     fn version(&self) -> String {
-        ClangLike::compiler_version(self.compiler_path.clone())
+        ClangLike::compiler_version(self.compiler_path.as_path())
     }
 
     fn cache_key(&self) -> String {

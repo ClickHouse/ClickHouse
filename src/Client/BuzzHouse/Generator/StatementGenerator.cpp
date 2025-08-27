@@ -1336,7 +1336,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             const uint32_t drop_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
             const uint32_t clear_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
             const uint32_t mat_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
-            const uint32_t delete_mask = 8 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t delete_mask = 8;
             const uint32_t add_idx = 2 * static_cast<uint32_t>(t.idxs.size() < 3);
             const uint32_t materialize_idx = 2 * static_cast<uint32_t>(!t.idxs.empty());
             const uint32_t clear_idx = 2 * static_cast<uint32_t>(!t.idxs.empty());
@@ -2103,7 +2103,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                        + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + 1))
             {
                 flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
-                generateNextTTL(rg, t, nullptr, ati->mutable_modify_ttl());
+                generateNextTTL(rg, std::make_optional<SQLTable>(t), nullptr, ati->mutable_modify_ttl());
                 this->entries.clear();
             }
             else if (

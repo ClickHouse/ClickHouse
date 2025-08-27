@@ -1,8 +1,8 @@
-use std::error::Error;
+use std::{error::Error, path::Path};
 
 pub trait CompilerMeta {
     const NAME: &'static str;
-    fn from_args(compiler_path: String, args: Vec<String>) -> Box<dyn Compiler>;
+    fn from_args(compiler_path: &Path, args: Vec<String>) -> Box<dyn Compiler>;
 }
 
 pub trait Compiler {
