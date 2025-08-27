@@ -175,18 +175,6 @@ public:
         return current_metadata->updateConfigurationAndGetTotalBytes(local_context);
     }
 
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override
-    {
-        assertInitialized();
-        return current_metadata->getInitialSchemaByPath(local_context, object_info);
-    }
-
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override
-    {
-        assertInitialized();
-        return current_metadata->getSchemaTransformer(local_context, object_info);
-    }
-
     bool hasExternalDynamicMetadata() override
     {
         assertInitialized();
@@ -208,14 +196,34 @@ public:
         return current_metadata->supportsWrites();
     }
 
+    std::shared_ptr<NamesAndTypesList>
+    getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info, StorageSnapshotPtr storage_snapshot) const override
+    {
+        assertInitialized();
+        return current_metadata->getInitialSchemaByPath(local_context, object_info, storage_snapshot);
+    }
+    std::shared_ptr<const ActionsDAG>
+    getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info, StorageSnapshotPtr storage_snapshot) const override
+    {
+        assertInitialized();
+        return current_metadata->getSchemaTransformer(local_context, object_info, storage_snapshot);
+    }
+
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         IDataLakeMetadata::FileProgressCallback callback,
         size_t list_batch_size,
+        StorageSnapshotPtr storage_snapshot,
         ContextPtr context) override
     {
         assertInitialized();
-        return current_metadata->iterate(filter_dag, callback, list_batch_size, context);
+        return current_metadata->iterate(filter_dag, callback, list_batch_size, storage_snapshot, context);
+    }
+
+    void addDataToStorageSnapshot(StorageSnapshotPtr storage_snapshot) const override
+    {
+        assertInitialized();
+        current_metadata->addDataToStorageSnapshot(storage_snapshot);
     }
 
     /// This is an awful temporary crutch,
@@ -245,10 +253,10 @@ public:
         assertInitialized();
         return current_metadata->getColumnMapperForObject(object_info);
     }
-    ColumnMapperPtr getColumnMapperForCurrentSchema() const override
+    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr storage_snapshot) const override
     {
         assertInitialized();
-        return current_metadata->getColumnMapperForCurrentSchema();
+        return current_metadata->getColumnMapperForCurrentSchema(storage_snapshot);
     }
 
     SinkToStoragePtr write(

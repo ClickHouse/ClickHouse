@@ -138,10 +138,6 @@ public:
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
-
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
-
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
     virtual void addDeleteTransformers(
@@ -172,10 +168,13 @@ public:
         const ActionsDAG * /* filter_dag */,
         std::function<void(FileProgress)> /* callback */,
         size_t /* list_batch_size */,
+        StorageSnapshotPtr /*storage_snapshot*/,
         ContextPtr /*context*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
+
+    virtual void addDataToStorageSnapshot(StorageSnapshotPtr /*storage_snapshot*/) const { }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
     virtual bool update(
@@ -192,6 +191,13 @@ public:
         bool if_not_exists,
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
+
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr, StorageSnapshotPtr) const
+    {
+        return nullptr;
+    }
+
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr, StorageSnapshotPtr) const { return nullptr; }
 
     virtual SinkToStoragePtr write(
         SharedHeader /* sample_block */,
@@ -223,7 +229,7 @@ public:
 
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
 
-    virtual ColumnMapperPtr getColumnMapperForCurrentSchema() const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr /**/) const { return nullptr; }
 
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }

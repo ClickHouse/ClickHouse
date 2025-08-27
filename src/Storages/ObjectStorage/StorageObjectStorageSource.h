@@ -30,6 +30,7 @@ public:
         String name_,
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration,
+        StorageSnapshotPtr storage_snapshot_,
         const ReadFromFormatInfo & info,
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_,
@@ -51,6 +52,7 @@ public:
         StorageObjectStorageConfigurationPtr configuration,
         const StorageObjectStorageQuerySettings & query_settings,
         ObjectStoragePtr object_storage,
+        StorageSnapshotPtr storage_snapshot,
         bool distributed_processing,
         const ContextPtr & local_context,
         const ActionsDAG::Node * predicate,
@@ -71,6 +73,7 @@ protected:
     const String name;
     ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationPtr configuration;
+    StorageSnapshotPtr storage_snapshot;
     const ContextPtr read_context;
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
@@ -120,11 +123,13 @@ protected:
     ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
 
+
     /// Recreate ReadBuffer and Pipeline for each file.
     static ReaderHolder createReader(
         size_t processor,
         const std::shared_ptr<IObjectIterator> & file_iterator,
         const StorageObjectStorageConfigurationPtr & configuration,
+        StorageSnapshotPtr storage_snapshot,
         const ObjectStoragePtr & object_storage,
         ReadFromFormatInfo & read_from_format_info,
         const std::optional<FormatSettings> & format_settings,

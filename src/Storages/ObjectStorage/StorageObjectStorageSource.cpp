@@ -79,6 +79,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     String name_,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
+    StorageSnapshotPtr storage_snapshot_,
     const ReadFromFormatInfo & info,
     const std::optional<FormatSettings> & format_settings_,
     ContextPtr context_,
@@ -91,6 +92,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , name(std::move(name_))
     , object_storage(object_storage_)
     , configuration(configuration_)
+    , storage_snapshot(std::move(storage_snapshot_))
     , read_context(context_)
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
@@ -133,6 +135,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     StorageObjectStorageConfigurationPtr configuration,
     const StorageObjectStorageQuerySettings & query_settings,
     ObjectStoragePtr object_storage,
+    StorageSnapshotPtr storage_snapshot,
     bool distributed_processing,
     const ContextPtr & local_context,
     const ActionsDAG::Node * predicate,
@@ -191,10 +194,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     else if (configuration->supportsFileIterator())
     {
         auto iter = configuration->iterate(
-            filter_actions_dag,
-            file_progress_callback,
-            query_settings.list_object_keys_size,
-            local_context);
+            filter_actions_dag, file_progress_callback, query_settings.list_object_keys_size, storage_snapshot, local_context);
 
         if (filter_actions_dag)
         {
@@ -415,6 +415,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         0,
         file_iterator,
         configuration,
+        storage_snapshot,
         object_storage,
         read_from_format_info,
         format_settings,
@@ -431,6 +432,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     size_t processor,
     const std::shared_ptr<IObjectIterator> & file_iterator,
     const StorageObjectStorageConfigurationPtr & configuration,
+    StorageSnapshotPtr storage_snapshot,
     const ObjectStoragePtr & object_storage,
     ReadFromFormatInfo & read_from_format_info,
     const std::optional<FormatSettings> & format_settings,
@@ -530,7 +532,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         Block initial_header = read_from_format_info.format_header;
         bool schema_changed = false;
 
-        if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info))
+        if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info, storage_snapshot))
         {
             Block sample_header;
             for (const auto & [name, type] : *initial_schema)
@@ -583,7 +585,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
         if (!transformer)
         {
-            if (auto schema_transformer = configuration->getSchemaTransformer(context_, object_info))
+            if (auto schema_transformer = configuration->getSchemaTransformer(context_, object_info, storage_snapshot))
                 transformer = schema_transformer->clone();
         }
 

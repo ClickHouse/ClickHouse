@@ -48,7 +48,9 @@ public:
         const ActionsDAG * /* filter_dag */,
         FileProgressCallback /* callback */,
         size_t /* list_batch_size */,
-        ContextPtr context) const = 0;
+        StorageSnapshotPtr storage_snapshot,
+        ContextPtr context) const
+        = 0;
 
     /// Table schema from data lake metadata.
     virtual NamesAndTypesList getTableSchema() const = 0;
@@ -70,11 +72,21 @@ public:
     virtual bool supportsUpdate() const { return false; }
     /// Update metadata to the latest version.
     virtual bool update(const ContextPtr &) { return false; }
-
+        
     virtual bool supportsSchemaEvolution() const { return false; }
     virtual bool supportsWrites() const { return false; }
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
+
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr, StorageSnapshotPtr) const
+    {
+        return nullptr;
+    }
+
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr, StorageSnapshotPtr) const { return nullptr; }
+
+
+    virtual void addDataToStorageSnapshot(StorageSnapshotPtr /**/) const { }
 
     virtual std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr) const { return {}; }
     virtual std::optional<size_t> updateConfigurationAndGetTotalBytes(ContextPtr) const { return {}; }
@@ -82,7 +94,7 @@ public:
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
-    virtual ColumnMapperPtr getColumnMapperForCurrentSchema() const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr) const { return nullptr; }
 
     virtual SinkToStoragePtr write(
         SharedHeader /*sample_block*/,

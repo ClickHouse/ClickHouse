@@ -48,11 +48,7 @@ public:
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override;
 
-    bool operator==(const IDataLakeMetadata & other) const override
-    {
-        const auto * iceberg_metadata = dynamic_cast<const IcebergMetadata *>(&other);
-        return iceberg_metadata && getVersion() == iceberg_metadata->getVersion();
-    }
+    bool operator==(const IDataLakeMetadata & /*other*/) const override { return false; }
 
     static void createInitial(
         const ObjectStoragePtr & object_storage,
@@ -69,9 +65,6 @@ public:
         const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context);
 
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override;
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
-
     bool supportsSchemaEvolution() const override { return true; }
 
     static Int32 parseTableSchema(
@@ -87,9 +80,12 @@ public:
     std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr Local_context) const override;
     std::optional<size_t> updateConfigurationAndGetTotalBytes(ContextPtr Local_context) const override;
 
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info, StorageSnapshotPtr storage_snapshot) const override;
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info, StorageSnapshotPtr storage_snapshot) const override;
+
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
-    ColumnMapperPtr getColumnMapperForCurrentSchema() const override;
+    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr storage_snapshot) const override;
     SinkToStoragePtr write(
         SharedHeader sample_block,
         const StorageID & table_id,
@@ -116,9 +112,18 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands) override;
     void alter(const AlterCommands & params, ContextPtr context) override;
 
-protected:
-    ObjectIterator
-    iterate(const ActionsDAG * filter_dag, FileProgressCallback callback, size_t list_batch_size, ContextPtr local_context) const override;
+    void addDataToStorageSnapshot(StorageSnapshotPtr storage_snapshot) const override
+    {
+        storage_snapshot->data = std::make_unique<Iceberg::IcebergSpecificSnapshotData>(last_table_state_snapshot.value());
+        last_table_state_snapshot = std::nullopt;
+    }
+
+    ObjectIterator iterate(
+        const ActionsDAG * filter_dag,
+        FileProgressCallback callback,
+        size_t list_batch_size,
+        StorageSnapshotPtr storage_snapshot,
+        ContextPtr local_context) const override;
 
 private:
     const ObjectStoragePtr object_storage;
@@ -129,11 +134,9 @@ private:
     DB::Iceberg::PersistentTableComponents persistent_components;
 
 
-    std::tuple<Int64, Int32> getVersion() const;
-
     mutable SharedMutex mutex;
 
-    Iceberg::IcebergTableStateSnapshot relevant_table_state_snapshot TSA_GUARDED_BY(mutex);
+    mutable std::optional<Iceberg::IcebergTableStateSnapshot> last_table_state_snapshot;
 
     Iceberg::PersistentTableComponents initializePersistentTableComponents(Poco::JSON::Object::Ptr metadata_object);
 
@@ -146,8 +149,7 @@ private:
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::IcebergTableStateSnapshot>
     getState(const ContextPtr & local_context, String metadata_path, Int32 metadata_version) const;
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const TSA_REQUIRES_SHARED(mutex);
-    void addTableSchemaById(Int32 schema_id, Poco::JSON::Object::Ptr metadata_object) const TSA_REQUIRES(mutex);
-    bool updateImpl(const ContextPtr & local_context) TSA_REQUIRES(mutex);
+    void updateImpl(const ContextPtr & local_context) TSA_REQUIRES(mutex);
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::IcebergTableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
 };

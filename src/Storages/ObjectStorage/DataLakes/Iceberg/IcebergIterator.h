@@ -23,6 +23,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 
@@ -100,6 +101,8 @@ public:
 private:
     std::unique_ptr<ActionsDAG> filter_dag;
     ObjectStoragePtr object_storage;
+    const Iceberg::IcebergTableStateSnapshotPtr table_state_snapshot;
+    Iceberg::PersistentTableComponents persistent_components;
     Iceberg::SingleThreadIcebergKeysIterator data_files_iterator;
     Iceberg::SingleThreadIcebergKeysIterator deletes_iterator;
     ConcurrentBoundedQueue<Iceberg::ManifestFileEntry> blocking_queue;
