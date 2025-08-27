@@ -270,14 +270,14 @@ def get_creation_expression(
 
         if table_function:
             return f"""
-                icebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})
+                icebergLocal(local, path = '/iceberg_data/default/{table_name}', format={format})
             """
         else:
             return (
                 f"""
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
-                ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})
+                ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}', format={format})
                 {partition_by}
                 {settings_expression}
                 """
