@@ -289,9 +289,33 @@ class JobConfigs:
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/install_check.py --no-rpm --no-tgz",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/install_check.py",
+                "./ci/docker/install",
+            ],
+        ),
+        timeout=900,
+    ).parametrize(
+        Job.ParamSet(
+            parameter="amd_debug",
+            runs_on=RunnerLabels.STYLE_CHECK_AMD,
+            requires=[
+                ArtifactNames.DEB_AMD_DEBUG,
+                ArtifactNames.CH_AMD_DEBUG,
+            ],
+        ),
+    )
+    install_check_master_jobs = Job.Config(
+        name=JobNames.INSTALL_TEST,
+        runs_on=[],  # from parametrize()
         command="python3 ./ci/jobs/install_check.py",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/install_check.py"],
+            include_paths=[
+                "./ci/jobs/install_check.py",
+                "./ci/docker/install",
+            ],
         ),
         timeout=900,
     ).parametrize(
