@@ -2997,21 +2997,22 @@ def test_system_iceberg_metadata(started_cluster, format_version, storage_type):
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
 
+    start_value = int(instance.query(f"SELECT count() FROM system.iceberg_metadata"))
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
-    assert int(instance.query(f"SELECT count() FROM system.iceberg_metadata")) == 0
+    assert int(instance.query(f"SELECT count() FROM system.iceberg_metadata")) == start_value
     assert instance.query(f"SELECT * FROM {TABLE_NAME}", settings={"iceberg_metadata_log_level":1}) == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
-    assert int(instance.query(f"SELECT count() FROM system.iceberg_metadata")) == 1
+    assert int(instance.query(f"SELECT count() FROM system.iceberg_metadata")) == 1 + start_value
     assert instance.query(f"SELECT * FROM {TABLE_NAME}", settings={"iceberg_metadata_log_level":4}) == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
-    assert int(instance.query(f"SELECT count() FROM system.iceberg_metadata")) == 4
+    assert int(instance.query(f"SELECT count() FROM system.iceberg_metadata")) == 4 + start_value
 
     file_lists = instance.query(f"SELECT file_name FROM system.iceberg_metadata")
     assert 'v1.metadata.json' in file_lists
