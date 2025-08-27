@@ -54,10 +54,10 @@ ExpressionCost CostEstimator::estimateHashJoinCost(const JoinStepLogical & join_
     if (join_step.areInputsSwapped())
         std::swap(left_cost, right_cost);
 
-    double join_selectivity = 0.01; /// TODO: calculate from join predicates
+    double join_selectivity = 0.01; /// TODO: calculate from join predicates and statistics
 
     ExpressionCost join_cost;
-    join_cost.number_of_rows = UInt64(left_cost.number_of_rows * right_cost.number_of_rows * join_selectivity);
+    join_cost.number_of_rows = Float64(left_cost.number_of_rows * right_cost.number_of_rows * join_selectivity);
     join_cost.subtree_cost =
         left_cost.subtree_cost + right_cost.subtree_cost + /// Cost of inputs
         left_cost.number_of_rows +      /// Scan of left table
@@ -84,7 +84,7 @@ ExpressionCost CostEstimator::estimateReadCost(const ReadFromMergeTree & read_st
 
     return ExpressionCost{
         .subtree_cost = Cost(selected_rows),
-        .number_of_rows = selected_rows
+        .number_of_rows = Float64(selected_rows)
     };
 }
 

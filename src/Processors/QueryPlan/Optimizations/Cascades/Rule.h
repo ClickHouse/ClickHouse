@@ -28,6 +28,7 @@ protected:
 
 using OptimizationRulePtr = std::shared_ptr<const IOptimizationRule>;
 
+/// NOTE: Currently unused, replaced by JOIN graph
 class JoinAssociativity : public IOptimizationRule
 {
 public:

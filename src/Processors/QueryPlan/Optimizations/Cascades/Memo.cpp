@@ -29,7 +29,7 @@ GroupConstPtr Memo::getGroup(GroupId group_id) const
     return groups_by_id.at(group_id);
 }
 
-void Memo::dump(WriteBuffer & out)
+void Memo::dump(WriteBuffer & out) const
 {
     for (GroupId group_id = 0; group_id < groups_by_id.size(); ++group_id)
     {
@@ -40,12 +40,11 @@ void Memo::dump(WriteBuffer & out)
     }
 }
 
-String Memo::dump()
+String Memo::dump() const
 {
     WriteBufferFromOwnString out;
     dump(out);
     return out.str();
 }
-
 
 }

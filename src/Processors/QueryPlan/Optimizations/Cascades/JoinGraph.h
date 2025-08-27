@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <IO/WriteBuffer.h>
+#include <Core/Names.h>
 #include "Common/Exception.h"
 #include <Common/Logger.h>
 #include <base/types.h>
@@ -12,6 +13,8 @@
 namespace DB
 {
 
+/// JOIN graph is used to enumerate all allowed combinations of JOINs from the query based on the predicates.
+/// This enumeration is more efficient than JOIN Associativity transformation rule and replaces it.
 class JoinGraph
 {
 public:
@@ -34,6 +37,7 @@ public:
     size_t size() const { return relations.size(); }
 
     RelationId getRelationId(const String & name) const { return relation_name_to_id.at(name); }
+
     RelationId getColumnSourceRelationId(const String & column_name) const
     {
         auto column_source_it = column_source_relation.find(column_name);

@@ -11,7 +11,7 @@ using Cost = Float64;
 struct ExpressionCost
 {
     Cost subtree_cost = 0;
-    UInt64 number_of_rows = 0;
+    Float64 number_of_rows = 0;
     /// TODO: number of distinct values, histograms?
 };
 

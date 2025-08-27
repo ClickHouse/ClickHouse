@@ -33,6 +33,7 @@ public:
     void setExplored() { is_explored = true; }
 
     void dump(WriteBuffer & out, String indent = {}) const;
+    String dump() const;
 
     std::vector<GroupExpressionPtr> expressions;
     ExpressionWithCost best_implementation;

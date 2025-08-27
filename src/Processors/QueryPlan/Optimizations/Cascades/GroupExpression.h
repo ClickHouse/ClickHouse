@@ -33,9 +33,12 @@ public:
     bool isApplied(const IOptimizationRule & rule) const;
     void setApplied(const IOptimizationRule & rule);
 
+    void dump(WriteBuffer & out) const;
+    String dump() const;
+
     GroupId group_id = INVALID_GROUP_ID;
-    QueryPlanStepPtr plan_step;
-    QueryPlan::Node * original_node;
+    QueryPlanStepPtr plan_step;         /// Step for expression that was not in the original plan bu was created by transformations
+    QueryPlan::Node * original_node;    /// Node form the original query plan if the expression was directly created from it
     std::vector<GroupId> inputs;
 
     std::unordered_set<String> applied_rules;   /// TODO: implement more efficiently
