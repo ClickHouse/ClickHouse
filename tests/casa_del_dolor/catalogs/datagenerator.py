@@ -170,8 +170,8 @@ class LakeDataGenerator:
 
         struct = StructType(
             [
-                StructField(name, val.spark_type, True)
-                for name, val in table.columns.items()
+                StructField(name=cname, dataType=val.spark_type, nullable=val.nullable)
+                for cname, val in table.columns.items()
             ]
         )
         rows = []
