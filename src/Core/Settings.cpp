@@ -1500,6 +1500,16 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_skip_indexes_on_data_read, true, R"(
+Enable using data skipping indexes during data reading.
+
+When enabled, skip indexes are evaluated dynamically at the time each data granule is being read, rather than being analyzed in advance before query execution begins. This can reduce query startup latency.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will be build and stored during merges or by explicit MATERIALIZE INDEX
 )", 0) \
@@ -5685,7 +5695,8 @@ Timeout for waiting for processing asynchronous insertion
 Maximum size in bytes of unparsed data collected per query before being inserted
 )", 0) \
     DECLARE(UInt64, async_insert_max_query_number, 450, R"(
-Maximum number of insert queries before being inserted
+Maximum number of insert queries before being inserted.
+Only takes effect if setting [`async_insert_deduplicate`](#async_insert_deduplicate) is 1.
 )", 0) \
     DECLARE(Milliseconds, async_insert_poll_timeout_ms, 10, R"(
 Timeout for polling data from asynchronous insert queue
@@ -6475,6 +6486,9 @@ Enables throwing an exception if there was an error when analyzing scan predicat
     DECLARE(Bool, delta_lake_enable_engine_predicate, true, R"(
 Enables delta-kernel internal data pruning.
 )", 0) \
+    DECLARE(Bool, allow_experimental_delta_lake_writes, false, R"(
+Enables delta-kernel writes feature.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
