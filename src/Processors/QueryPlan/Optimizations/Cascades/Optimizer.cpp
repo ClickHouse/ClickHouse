@@ -2,13 +2,13 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/JoinGraph.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
-#include "Interpreters/Context.h"
-#include "Interpreters/Context_fwd.h"
+#include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include "Processors/QueryPlan/ExpressionStep.h"
 #include "Processors/QueryPlan/FilterStep.h"
 #include "Processors/QueryPlan/JoinStepLogical.h"
-#include "Processors/QueryPlan/Optimizations/Cascades/Group.h"
 #include "Processors/QueryPlan/QueryPlan.h"
+#include "Interpreters/Context.h"
+#include "Interpreters/Context_fwd.h"
 #include "Common/CurrentThread.h"
 #include "Common/Exception.h"
 #include "Common/logger_useful.h"
@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <memory>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace DB
@@ -83,20 +84,41 @@ bool collectJoins(QueryPlan::Node * node, JoinGraph & join_graph)
     return false;
 }
 
-JoinGraph CascadesOptimizer::buildJoinGraph()
+GroupId CascadesOptimizer::fillMemoFromQueryPlan(OptimizerContext & optimizer_context)
 {
-    JoinGraph join_graph;
-
+    /// Traverse from the root till the first join node
     QueryPlan::Node * node = query_plan.getRootNode();
+    GroupExpressionPtr expression_above_join_graph;
+    std::optional<GroupId> root_group_id;
     while (node && node->children.size() == 1)
     {
+        auto group_expression = std::make_shared<GroupExpression>(node);
+        auto group_id = optimizer_context.memo.addGroup(group_expression);
+        if (!root_group_id.has_value())
+            root_group_id = group_id;
+        if (expression_above_join_graph)
+            expression_above_join_graph->inputs = {group_id};
+        expression_above_join_graph = group_expression;
         node = node->children.front();
     }
 
+    JoinGraph join_graph;
     if (!collectJoins(node, join_graph))
         join_graph.addRelation({}, *query_plan.getRootNode());
 
-    return join_graph;
+    LOG_TRACE(optimizer_context.log, "JOIN Graph:\n{}", join_graph.dump());
+
+    auto join_graph_group_id = populateMemo(join_graph, optimizer_context);
+
+    if (expression_above_join_graph)
+    {
+        expression_above_join_graph->inputs = {join_graph_group_id};
+        return root_group_id.value();
+    }
+    else
+    {
+        return join_graph_group_id;
+    }
 }
 
 static bool setsIntersect(const std::unordered_set<JoinGraph::RelationId> & a, const std::unordered_set<JoinGraph::RelationId> & b)
@@ -288,11 +310,7 @@ void CascadesOptimizer::optimize()
 {
     OptimizerContext optimizer_context;
 
-    auto join_graph = buildJoinGraph();
-
-    LOG_TRACE(optimizer_context.log, "JOIN Graph:\n{}", join_graph.dump());
-
-    auto root_group_id = populateMemo(join_graph, optimizer_context);
+    auto root_group_id = fillMemoFromQueryPlan(optimizer_context);
 
     LOG_TRACE(optimizer_context.log, "Initial memo:\n{}", optimizer_context.memo.dump());
 
@@ -317,6 +335,23 @@ void CascadesOptimizer::optimize()
     auto best_plan = buildBestPlan(root_group_id, optimizer_context.memo);
 
     LOG_TRACE(optimizer_context.log, "Optimized plan:\n{}", QueryPlanOptimizations::dumpQueryPlanShort(*best_plan));
+
+    query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(best_plan));
+}
+
+/// Drop unused columns and reorder columns between steps if needed
+void addConvertingExpression(QueryPlan & plan, const SharedHeader & expected_header)
+{
+    if (!blocksHaveEqualStructure(*plan.getCurrentHeader(), *expected_header))
+    {
+        auto actions_dag = ActionsDAG::makeConvertingActions(
+                plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+                expected_header->getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name);
+        auto converting_step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(actions_dag));
+        converting_step->setStepDescription("Convert column list");
+        plan.addStep(std::move(converting_step));
+    }
 }
 
 QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, const Memo & memo)
@@ -334,19 +369,25 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, con
     {
         auto input_group_id = group_best_expression->inputs.front();
         auto child_plan = buildBestPlan(input_group_id, memo);
-        child_plan->addStep(group_best_expression->getQueryPlanStep()->clone());
+        auto step = group_best_expression->getQueryPlanStep()->clone();
+        addConvertingExpression(*child_plan, step->getInputHeaders().at(0));
+        child_plan->addStep(std::move(step));
         plan_for_group = std::move(child_plan);
     }
     else
     {
         std::vector<QueryPlanPtr> input_plans;
         input_plans.reserve(group_best_expression->inputs.size());
-        for (auto input_group_id : group_best_expression->inputs)
+        auto step = group_best_expression->getQueryPlanStep()->clone();
+        for (size_t i = 0; i < group_best_expression->inputs.size(); ++i)
         {
-            input_plans.push_back(buildBestPlan(input_group_id, memo));
+            auto input_group_id = group_best_expression->inputs[i];
+            auto input_plan = buildBestPlan(input_group_id, memo);
+            addConvertingExpression(*input_plan, step->getInputHeaders().at(i));
+            input_plans.push_back(std::move(input_plan));
         }
         auto united_plan = std::make_unique<QueryPlan>();
-        united_plan->unitePlans(group_best_expression->getQueryPlanStep()->clone(), std::move(input_plans));
+        united_plan->unitePlans(std::move(step), std::move(input_plans));
         plan_for_group = std::move(united_plan);
     }
 

@@ -18,7 +18,7 @@ public:
     void optimize();
 
 private:
-    JoinGraph buildJoinGraph();
+    GroupId fillMemoFromQueryPlan(OptimizerContext & optimizer_context);
     GroupId populateMemo(const JoinGraph & join_graph, OptimizerContext & optimizer_context);
     QueryPlanPtr buildBestPlan(GroupId subtree_root_group_id, const Memo & memo);
 
