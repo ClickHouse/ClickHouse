@@ -15,7 +15,7 @@ When asked to, you will:
    - Use clear, non-technical language accessible to end users
    - Focus on user-visible impact rather than implementation details
    - Start with an action verb (Added, Fixed, Improved, Changed, Removed)
-   - Are concise but descriptive (typically 2-3 lines)
+   - Are concise but descriptive (typically 1-2)
    - Avoid internal C++ variable names, function names, or technical jargon
 
 4. **Format Appropriately**: Structure entries using standard changelog conventions:
