@@ -479,11 +479,11 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::createAttributes()
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
-void HashedArrayDictionary<dictionary_key_type, sharded>::updateData()
+void HashedArrayDictionary<dictionary_key_type, sharded>::updateData(ContextMutablePtr query_context)
 {
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
+        QueryPipeline pipeline(source_ptr->loadUpdatedAll(std::move(query_context)));
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
         pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
@@ -510,7 +510,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::updateData()
     }
     else
     {
-        auto pipe = source_ptr->loadUpdatedAll();
+        auto pipe = source_ptr->loadUpdatedAll(std::move(query_context));
         update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<dictionary_key_type>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
@@ -976,14 +976,14 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
 template <DictionaryKeyType dictionary_key_type, bool sharded>
 void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 {
+    auto [query_scope, query_context] = createLoadQueryScope(context);
     if (!source_ptr->hasUpdateField())
     {
         std::unique_ptr<DictionaryParallelLoaderType> parallel_loader;
         if constexpr (sharded)
             parallel_loader = std::make_unique<DictionaryParallelLoaderType>(*this);
 
-        auto [query_scope, query_context] = createLoadQueryScope(context);
-        BlockIO io = source_ptr->loadAll(query_context);
+        BlockIO io = source_ptr->loadAll(std::move(query_context));
         try
         {
             loadDataImpl(io.pipeline, parallel_loader.get());
@@ -997,7 +997,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
     }
     else
     {
-        updateData();
+        updateData(std::move(query_context));
     }
 
     if (configuration.require_nonempty && 0 == total_element_count)

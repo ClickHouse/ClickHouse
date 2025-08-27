@@ -317,7 +317,7 @@ void RegExpTreeDictionary::loadData()
     if (!source_ptr->hasUpdateField())
     {
         auto [query_scope, query_context] = createLoadQueryScope(context);
-        BlockIO io = source_ptr->loadAll(query_context);
+        BlockIO io = source_ptr->loadAll(std::move(query_context));
         try
         {
             loadDataImpl(io.pipeline);
@@ -758,9 +758,9 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
                             unsigned long long /* from */, // NOLINT
                             unsigned long long /* to */, // NOLINT
                             unsigned int /* flags */,
-                            void * context) -> int
+                            void * context_) -> int
             {
-                static_cast<MatchContext *>(context)->insertIdx(id);
+                static_cast<MatchContext *>(context_)->insertIdx(id);
                 return 0;
             };
 

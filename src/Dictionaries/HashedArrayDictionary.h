@@ -190,7 +190,7 @@ private:
 
     void blockToAttributes(const Block & block, DictionaryKeysArenaHolder<dictionary_key_type> & arena_holder, size_t shard);
 
-    void updateData();
+    void updateData(ContextMutablePtr query_context);
 
     void loadData();
     void loadDataImpl(QueryPipeline & pipeline, DictionaryParallelLoaderType * parallel_loader);

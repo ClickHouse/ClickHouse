@@ -454,11 +454,11 @@ void FlatDictionary::blockToAttributes(const Block & block)
     }
 }
 
-void FlatDictionary::updateData()
+void FlatDictionary::updateData(ContextMutablePtr query_context)
 {
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
+        QueryPipeline pipeline(source_ptr->loadUpdatedAll(std::move(query_context)));
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
         pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
@@ -485,7 +485,7 @@ void FlatDictionary::updateData()
     }
     else
     {
-        auto pipeline(source_ptr->loadUpdatedAll());
+        auto pipeline(source_ptr->loadUpdatedAll(std::move(query_context)));
         update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<DictionaryKeyType::Simple>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
@@ -498,10 +498,10 @@ void FlatDictionary::updateData()
 
 void FlatDictionary::loadData()
 {
+    auto [query_scope, query_context] = createLoadQueryScope(context);
     if (!source_ptr->hasUpdateField())
     {
-        auto [query_scope, query_context] = createLoadQueryScope(context);
-        BlockIO io = source_ptr->loadAll(query_context);
+        BlockIO io = source_ptr->loadAll(std::move(query_context));
         try
         {
             loadDataImpl(io.pipeline);
@@ -514,7 +514,7 @@ void FlatDictionary::loadData()
         }
     }
     else
-        updateData();
+        updateData(std::move(query_context));
 
     element_count = 0;
 

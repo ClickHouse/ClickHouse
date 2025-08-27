@@ -1027,6 +1027,7 @@ static BlockIO executeQueryImpl(
 
     const auto & client_info = context->getClientInfo();
 
+    /// NOTE(mstetsyuk): look into this!
     if (!internal && client_info.initial_query_start_time == 0)
     {
         // If it's not an internal query and we don't see an initial_query_start_time yet, initialize it

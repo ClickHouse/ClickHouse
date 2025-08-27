@@ -270,7 +270,7 @@ private:
         const PaddedPODArray<UInt64> & key_to_index,
         ValueSetter && set_value) const;
 
-    void updateData();
+    void updateData(ContextMutablePtr query_context);
 
     void blockToAttributes(const Block & block);
 
@@ -551,10 +551,10 @@ void RangeHashedDictionary<dictionary_key_type>::createAttributes()
 template <DictionaryKeyType dictionary_key_type>
 void RangeHashedDictionary<dictionary_key_type>::loadData()
 {
+    auto [query_scope, query_context] = createLoadQueryScope(context);
     if (!source_ptr->hasUpdateField())
     {
-        auto [query_scope, query_context] = createLoadQueryScope(context);
-        BlockIO io = source_ptr->loadAll(query_context);
+        BlockIO io = source_ptr->loadAll(std::move(query_context));
         try
         {
             loadDataImpl(io.pipeline);
@@ -568,7 +568,7 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
     }
     else
     {
-        updateData();
+        updateData(std::move(query_context));
     }
 
     impl::callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
@@ -717,11 +717,11 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsInternalImpl(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-void RangeHashedDictionary<dictionary_key_type>::updateData()
+void RangeHashedDictionary<dictionary_key_type>::updateData(ContextMutablePtr query_context)
 {
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
+        QueryPipeline pipeline(source_ptr->loadUpdatedAll(std::move(query_context)));
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
         pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
@@ -750,7 +750,7 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
     {
         static constexpr size_t range_columns_size = 2;
 
-        auto pipe = source_ptr->loadUpdatedAll();
+        auto pipe = source_ptr->loadUpdatedAll(std::move(query_context));
 
         /// Use complex dictionary key type to count range columns as part of complex primary key during update
         update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<DictionaryKeyType::Complex>(

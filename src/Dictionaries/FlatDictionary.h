@@ -61,7 +61,7 @@ public:
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
-        return std::make_shared<FlatDictionary>(global_context, getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
+        return std::make_shared<FlatDictionary>(context, getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
 
     DictionarySourcePtr getSource() const override { return source_ptr; }
@@ -150,7 +150,7 @@ private:
 
     void blockToAttributes(const Block & block);
 
-    void updateData();
+    void updateData(ContextMutablePtr query_context);
 
     void loadData();
     void loadDataImpl(QueryPipeline & pipeline);

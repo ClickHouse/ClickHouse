@@ -177,6 +177,7 @@ void IStorage::truncate(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported by storage {}", getName());
 }
 
+// NOTE(mstetsyuk): here!
 void IStorage::read(
     QueryPlan & query_plan,
     const Names & column_names,

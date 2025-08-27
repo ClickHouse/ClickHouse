@@ -293,7 +293,7 @@ void IPolygonDictionary::blockToAttributes(const DB::Block & block)
 void IPolygonDictionary::loadData()
 {
     auto [query_scope, query_context] = createLoadQueryScope(context);
-    BlockIO io = source_ptr->loadAll(query_context);
+    BlockIO io = source_ptr->loadAll(std::move(query_context));
     try
     {
         loadDataImpl(io.pipeline);

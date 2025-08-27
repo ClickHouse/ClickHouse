@@ -412,7 +412,7 @@ void IPAddressDictionary::createAttributes()
 void IPAddressDictionary::loadData()
 {
     auto [query_scope, query_context] = createLoadQueryScope(context);
-    BlockIO io = source_ptr->loadAll(query_context);
+    BlockIO io = source_ptr->loadAll(std::move(query_context));
 
     std::vector<IPRecord> ip_records;
     bool has_ipv6 = false;
