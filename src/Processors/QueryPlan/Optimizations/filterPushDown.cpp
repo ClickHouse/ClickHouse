@@ -145,23 +145,25 @@ static size_t addNewFilterStepOrThrow(
     /// Add new Filter step before Child.
     /// Expression/Filter -> Child -> Something
     auto & node = nodes.emplace_back();
-    
-    /// If the join node has a child at the specified index
-    if (child_idx < child_node->children.size())
+    node.children.emplace_back(&node);
+    std::swap(node.children[0], child_node->children[child_idx]);
+
+    /// If there is already a FilterStep at child_idx with the same DAG, we skip
     {
-        /// Connect the new filter node to the child of the join node
-        node.children.push_back(child_node->children[child_idx]);
-        
-        /// Update the join node to point to the new filter node instead
-        child_node->children[child_idx] = &node;
-    }
-    else
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Invalid child_idx {} for node with {} children",
-            child_idx,
-            child_node->children.size());
+        auto * child_at_idx = child_node->children[child_idx];
+
+        if (auto * existing = typeid_cast<FilterStep *>(child_at_idx->step.get()))
+        {
+            // Build a quick signature for equality. String compare of DAG dumps is sufficient here
+            const String new_sig  = split_filter.dag.dumpDAG();
+            const String curr_sig = existing->getExpression().dumpDAG();
+
+            const auto & new_name  = split_filter.dag.getOutputs()[split_filter.filter_pos]->result_name;
+            const auto & curr_name = existing->getFilterColumnName();
+
+            if (new_sig == curr_sig && new_name == curr_name && existing->removesFilterColumn() == split_filter.remove_filter)
+                return 0; // no-op, identical filter already pushed
+        }
     }
 
     /// Set up the filter step
@@ -171,10 +173,10 @@ static size_t addNewFilterStepOrThrow(
         std::move(split_filter.dag),
         std::move(split_filter_column_name),
         split_filter.remove_filter);
-        node.step->setStepDescription(filter->getStepDescription());
+    node.step->setStepDescription(filter->getStepDescription());
 
     /// Update parent filter with the output header of the join
-    parent->updateInputHeader(child->getOutputHeader());
+    child->updateInputHeader(node.step->getOutputHeader(), child_idx);
 
     if (update_parent_filter)
     {
@@ -249,16 +251,15 @@ static void buildEquialentSetsForJoinStepLogical(
 }
 
 static size_t tryPushDownOverJoinStepImpl(
-    QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child, bool & join_filter_push_down_applied);
+    QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child);
 
 static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child)
 {
-    static bool join_filter_push_down_applied = false;
-    return tryPushDownOverJoinStepImpl(parent_node, nodes, child, join_filter_push_down_applied);
+    return tryPushDownOverJoinStepImpl(parent_node, nodes, child);
 }
 
 static size_t tryPushDownOverJoinStepImpl(
-    QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child, bool & join_filter_push_down_applied)
+    QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child)
 {
     auto & parent = parent_node->step;
     auto * filter = assert_cast<FilterStep *>(parent.get());
@@ -270,26 +271,16 @@ static size_t tryPushDownOverJoinStepImpl(
     if (!join && !filled_join && !logical_join)
         return 0;
 
-    if (join)
-    {
-        LOG_DEBUG(getLogger("QueryPlanOptimizations"), "JOIN");
-    }
-    else
-    {
-        LOG_DEBUG(getLogger("QueryPlanOptimizations"), "NOT JOIN");
-    }
-
     // Check global flag to prevent multiple runs across the entire query plan
-    if (join_filter_push_down_applied)
-    {
-        LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Skipping join filter push down optimization - already applied globally");
-        return 0;
-    }
+    // if (join_filter_push_down_applied)
+    // {
+    //     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Skipping join filter push down optimization - already applied globally");
+    //     return 0;
+    // }
 
-    // If this is a JoinStep and disjunctions optimization was already applied, skip to prevent infinite loop
-    if (join && join->isDisjunctionsOptimizationApplied())
+    if ((join && join->isDisjunctionsOptimizationApplied()) ||
+        (logical_join && logical_join->isDisjunctionsOptimizationApplied()))
     {
-        LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Skipping duplicate disjunction optimization for JoinStep");
         return 0;
     }
 
@@ -401,9 +392,11 @@ static size_t tryPushDownOverJoinStepImpl(
       * 1. Right side is already filled. Example: JOIN with Dictionary.
       * 2. ASOF Right join is not supported.
       */
-    bool allow_push_down_to_right = join && join->allowPushDownToRight() && table_join_ptr && table_join_ptr->strictness() != JoinStrictness::Asof;
+    bool allow_push_down_to_right
+        = join && join->allowPushDownToRight() && table_join_ptr && table_join_ptr->strictness() != JoinStrictness::Asof;
     if (logical_join)
-        allow_push_down_to_right = !logical_join->hasPreparedJoinStorage() && logical_join->getJoinInfo().strictness != JoinStrictness::Asof;
+        allow_push_down_to_right
+            = !logical_join->hasPreparedJoinStorage() && logical_join->getJoinInfo().strictness != JoinStrictness::Asof;
 
     if (!allow_push_down_to_right)
         right_stream_filter_push_down_input_columns_available = false;
@@ -433,19 +426,17 @@ static size_t tryPushDownOverJoinStepImpl(
         return 0;
     }
 
-    auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(
-        filter->getFilterColumnName(),
-        filter->removesFilterColumn(),
-        left_stream_available_columns_to_push_down,
-        *left_stream_input_header,
-        right_stream_available_columns_to_push_down,
-        *right_stream_input_header,
-        equivalent_columns_to_push_down,
-        equivalent_left_stream_column_to_right_stream_column,
-        equivalent_right_stream_column_to_left_stream_column);
-
-    if (join)
-        join->setDisjunctionsOptimizationApplied(true);
+    auto join_filter_push_down_actions =
+        filter->getExpression().splitActionsForJOINFilterPushDown(
+            filter->getFilterColumnName(),
+            filter->removesFilterColumn(),
+            left_stream_available_columns_to_push_down,
+            *left_stream_input_header,
+            right_stream_available_columns_to_push_down,
+            *right_stream_input_header,
+            equivalent_columns_to_push_down,
+            equivalent_left_stream_column_to_right_stream_column,
+            equivalent_right_stream_column_to_left_stream_column);
 
     size_t updated_steps = 0;
 
@@ -513,7 +504,10 @@ static size_t tryPushDownOverJoinStepImpl(
     if (updated_steps > 0)
     {
         // Set the global flag to prevent this optimization from running again
-        join_filter_push_down_applied = true;
+        if (join)
+            join->setDisjunctionsOptimizationApplied(true);
+        if (logical_join)
+            logical_join->setDisjunctionsOptimizationApplied(true);
 
         // The JoinStep-specific flag was already set earlier in the function to prevent recursion
 
@@ -681,6 +675,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     }
 
     if (auto updated_steps = simplePushDownOverStep<DistinctStep>(parent_node, true, nodes, child))
+        return updated_steps;
+
+    if (auto updated_steps = simplePushDownOverStep<ExpressionStep>(parent_node, false, nodes, child))
         return updated_steps;
 
     if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child))

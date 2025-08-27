@@ -6689,6 +6689,9 @@ Populate constant comparison in AND chains to enhance filtering ability. Support
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
 )", 0) \
+    DECLARE(Bool, query_plan_use_disjunctions_push_down, true, R"(
+Allow pushing down JOIN conditions, connected with OR operator, to storage engine. This can help to utilize indices in simple filtering expressions.
+)", 0) \
     DECLARE(Bool, shared_merge_tree_sync_parts_on_partition_operations, true, R"(
 Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
 )", 0) \
