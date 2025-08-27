@@ -251,14 +251,6 @@ static void buildEquialentSetsForJoinStepLogical(
 }
 
 static size_t tryPushDownOverJoinStepImpl(
-    QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child);
-
-static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child)
-{
-    return tryPushDownOverJoinStepImpl(parent_node, nodes, child);
-}
-
-static size_t tryPushDownOverJoinStepImpl(
     QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child)
 {
     auto & parent = parent_node->step;
@@ -270,13 +262,6 @@ static size_t tryPushDownOverJoinStepImpl(
 
     if (!join && !filled_join && !logical_join)
         return 0;
-
-    // Check global flag to prevent multiple runs across the entire query plan
-    // if (join_filter_push_down_applied)
-    // {
-    //     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Skipping join filter push down optimization - already applied globally");
-    //     return 0;
-    // }
 
     if ((join && join->isDisjunctionsOptimizationApplied()) ||
         (logical_join && logical_join->isDisjunctionsOptimizationApplied()) ||

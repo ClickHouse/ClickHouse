@@ -2940,7 +2940,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
 
     chassert(predicate->result_type);
 
-    if (conjunction.rejected.size() == 1)
+    if (conjunction.rejected.size() == 1 && !conjunction.allowed.empty())
     {
         chassert(conjunction.rejected.front()->result_type);
 
