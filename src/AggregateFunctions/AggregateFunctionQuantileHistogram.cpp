@@ -184,13 +184,13 @@ private:
     {
         const auto * upper_bound_it = std::lower_bound(array, array + size, position, [](const Pair & a, Float64 b) { return a.second < b; });
         if (upper_bound_it == array)
-        { 
+        {
             if (upper_bound_it->first > 0)
             {
                 // If position is in the first bucket and the first bucket's upper bounds is positive, perform interpolation as if the first bucket's lower bounds is 0.
                 return upper_bound_it->first * (position / upper_bound_it->second);
-            } 
-            else 
+            }
+            else
             {
                 // Otherwise, if the first bucket's upper bounds is non-positive, return the first bucket's upper bound.
                 return upper_bound_it->first;
