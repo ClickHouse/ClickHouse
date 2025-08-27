@@ -429,7 +429,7 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
     }
 }
 
-Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 & iter)
+Poco::Dynamic::Var getAvroType(DataTypePtr type)
 {
     switch (type->getTypeId())
     {
@@ -454,7 +454,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 & iter)
         case TypeIndex::Nullable:
         {
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
-            return getAvroType(type_nullable->getNestedType(), iter);
+            return getAvroType(type_nullable->getNestedType());
         }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
