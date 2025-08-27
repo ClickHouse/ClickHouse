@@ -581,11 +581,20 @@ def get_build_report_links(
         ):
             build_report_links[job.job_name] = job.results_link
 
-    if len(build_report_links) > 0:
-        # Possible that only one build job succeeded, in which case we only have one link.
-        # Unlikely that we want one fresh build and one cached build, so return now.
+    if 0 < len(build_report_links) < len(build_job_names):
+        # Only have some of the build jobs, guess the rest.
+        # (It was straightforward to force the build jobs to always appear in the cache,
+        # however doing the same for the docker image jobs is difficult.)
+        ref_job, ref_link = list(build_report_links.items())[0]
+        link_template = ref_link.replace(
+            urllib.parse.quote(ref_job, safe=""), "{job_name}"
+        )
+        for job in build_job_names:
+            if job not in build_report_links:
+                build_report_links[job] = link_template.format(job_name=job)
         return build_report_links
 
+    # No cache or build result was found, guess the links
     if pr_number == 0:
         ref_param = f"REF={branch}"
         workflow_name = "MasterCI"
@@ -593,7 +602,6 @@ def get_build_report_links(
         ref_param = f"PR={pr_number}"
         workflow_name = "PR"
 
-    # No cache or build result was found, guess the links
     build_report_link_base = f"https://{S3_BUCKET}.s3.amazonaws.com/json.html?{ref_param}&sha={commit_sha}&name_0={urllib.parse.quote(workflow_name, safe='')}"
     build_report_links = {
         job_name: f"{build_report_link_base}&name_1={urllib.parse.quote(job_name, safe='')}"
