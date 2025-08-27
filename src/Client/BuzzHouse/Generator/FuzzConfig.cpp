@@ -154,9 +154,9 @@ parseDisabledOptions(uint64_t & res, const String & text, const std::unordered_m
         String input = String(value.getString());
         std::transform(input.begin(), input.end(), input.begin(), ::tolower);
 
-        for (const auto word : std::views::split(input, delim))
+        for (auto word : std::views::split(input, delim))
         {
-            const auto & entry = std::string_view(word);
+            const std::string_view entry(word.begin(), word.end());
 
             if (entries.find(entry) == entries.end())
             {
@@ -185,11 +185,11 @@ static std::function<void(const JSONObjectType &)> parseErrorCodes(std::unordere
         using std::operator""sv;
         constexpr auto delim{","sv};
 
-        for (const auto word : std::views::split(String(value.getString()), delim))
+        for (auto word : std::views::split(String(value.getString()), delim))
         {
             uint32_t result;
-            const auto & sv = std::string_view(word);
-            auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
+            const std::string_view sv(word.begin(), word.end());
+            const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
 
             if (ec == std::errc::invalid_argument)
             {
