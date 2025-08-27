@@ -167,11 +167,11 @@ private:
 
         for (size_t j = 0; j < num_levels; ++j)
         {
-            if (max_bucket.first != std::numeric_limits<UnderlyingType>::infinity()) 
+            if (max_bucket.first != std::numeric_limits<UnderlyingType>::infinity())
             {
                 result[indices[j]] = std::numeric_limits<Float64>::quiet_NaN();
             }
-            else 
+            else
             {
                 Float64 position = max_position * levels[indices[j]];
                 result[indices[j]] = quantileInterpolated(array, size, position);
@@ -183,9 +183,9 @@ private:
     Float64 NO_SANITIZE_UNDEFINED quantileInterpolated(const Pair * array, size_t size, Float64 position) const
     {
         const auto * upper_bound_it = std::lower_bound(array, array + size, position, [](const Pair & a, Float64 b) { return a.second < b; });
-        if (upper_bound_it == array) 
+        if (upper_bound_it == array)
         { 
-            if (upper_bound_it->first > 0) 
+            if (upper_bound_it->first > 0)
             {
                 // If position is in the first bucket and the first bucket's upper bounds is positive, perform interpolation as if the first bucket's lower bounds is 0.
                 return upper_bound_it->first * (position / upper_bound_it->second);
@@ -196,7 +196,7 @@ private:
                 return upper_bound_it->first;
             }
         }
-        else if (upper_bound_it >= array + size - 1) 
+        else if (upper_bound_it >= array + size - 1)
         {
             // If the position is in the +Inf bucket, return the largest finite bucket's upper bound, which is the second to last bucket's upper bound.
             return (array + size - 2)->first;
@@ -218,7 +218,7 @@ using FuncQuantileHistogram = AggregateFunctionQuantile<
     Value,
     QuantileHistogram<Value>,
     NameQuantileHistogram,
-    false, 
+    false,
     true,
     Float64,
     false,
