@@ -41,7 +41,7 @@ using namespace Paimon;
 
 struct PaimonSnapshot
 {
-    Int64 id;
+    Int64 id{-1};
     Int64 schema_id;
     String base_manifest_list;
     String delta_manifest_list;
