@@ -1500,6 +1500,16 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_skip_indexes_on_data_read, true, R"(
+Enable using data skipping indexes during data reading.
+
+When enabled, skip indexes are evaluated dynamically at the time each data granule is being read, rather than being analyzed in advance before query execution begins. This can reduce query startup latency.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will be build and stored during merges or by explicit MATERIALIZE INDEX
 )", 0) \
@@ -5685,7 +5695,8 @@ Timeout for waiting for processing asynchronous insertion
 Maximum size in bytes of unparsed data collected per query before being inserted
 )", 0) \
     DECLARE(UInt64, async_insert_max_query_number, 450, R"(
-Maximum number of insert queries before being inserted
+Maximum number of insert queries before being inserted.
+Only takes effect if setting [`async_insert_deduplicate`](#async_insert_deduplicate) is 1.
 )", 0) \
     DECLARE(Milliseconds, async_insert_poll_timeout_ms, 10, R"(
 Timeout for polling data from asynchronous insert queue
@@ -6750,16 +6761,6 @@ It is unspecified how this setting affects views and distributed queries.
 The setting accepts a table name (then the table is resolved from the current database) or a qualified name in the form of 'database.table'.
 Both database and table names have to be unquoted - only simple identifiers are allowed.
 )", 0) \
-    \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_variant_type, true, R"(
-Allows creation of [Variant](../../sql-reference/data-types/variant.md) data type.
-)", 0, enable_variant_type) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_dynamic_type, true, R"(
-Allows creation of [Dynamic](../../sql-reference/data-types/dynamic.md) data type.
-)", 0, enable_dynamic_type) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_json_type, true, R"(
-Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
-)", 0, enable_json_type) \
     DECLARE(Bool, allow_general_join_planning, true, R"(
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 )", 0) \
@@ -7079,6 +7080,12 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     MAKE_OBSOLETE(M, LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW) \
     MAKE_OBSOLETE(M, Bool, use_local_cache_for_remote_storage, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_join_condition, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_variant_type, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_dynamic_type, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_json_type, true) \
+    MAKE_OBSOLETE(M, Bool, enable_variant_type, true) \
+    MAKE_OBSOLETE(M, Bool, enable_dynamic_type, true) \
+    MAKE_OBSOLETE(M, Bool, enable_json_type, true) \
     \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
