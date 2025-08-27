@@ -134,14 +134,69 @@ bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const Memo &
     return expression->getName() == "Join";
 }
 
+std::unique_ptr<JoinStepLogical> cloneSwapped(const JoinStepLogical & join_step)
+{
+    auto left_input_header = join_step.getInputHeaders()[1];
+    auto right_input_header = join_step.getInputHeaders()[0];
+
+    JoinExpressionActions join_expression_actions(
+        left_input_header->getColumnsWithTypeAndName(),
+        right_input_header->getColumnsWithTypeAndName(),
+        join_step.getOutputHeader()->getColumnsWithTypeAndName());
+
+    std::vector<JoinPredicate> join_predicates;
+    for (const auto & predicate : join_step.getJoinInfo().expression.condition.predicates)
+    {
+        const auto * left_node = &join_expression_actions.left_pre_join_actions->findInOutputs(predicate.right_node.getColumnName());
+        const auto * right_node = &join_expression_actions.right_pre_join_actions->findInOutputs(predicate.left_node.getColumnName());
+
+        JoinPredicate join_predicate{
+            .left_node = JoinActionRef(left_node, join_expression_actions.left_pre_join_actions.get()),
+            .right_node = JoinActionRef(right_node, join_expression_actions.right_pre_join_actions.get()),
+            .op = PredicateOperator::Equals
+        };
+
+        join_predicates.emplace_back(std::move(join_predicate));
+    }
+
+    auto swapped_join_step = std::make_unique<JoinStepLogical>(
+        left_input_header,
+        right_input_header,
+        JoinInfo{
+            .expression = JoinExpression{
+                .condition = JoinCondition{
+                    .predicates = std::move(join_predicates),
+                    .left_filter_conditions = {},
+                    .right_filter_conditions = {},
+                    .residual_conditions = {}
+                },
+                .disjunctive_conditions = {}
+            },
+            .kind = JoinKind::Inner,
+            .strictness = JoinStrictness::All,
+            .locality = JoinLocality::Local
+        },
+        std::move(join_expression_actions),
+        join_step.getOutputHeader()->getNames(),
+        join_step.useNulls(),
+        join_step.getJoinSettings(),
+        join_step.getSortingSettings());
+
+    return swapped_join_step;
+}
+
 std::vector<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr expression, Memo & memo) const
 {
-    GroupExpressionPtr expression_with_swapped_inputs = std::make_shared<GroupExpression>(*expression);
-    chassert(expression_with_swapped_inputs->inputs.size() == 2);
-    auto * join_step = typeid_cast<JoinStepLogical*>(expression_with_swapped_inputs->getQueryPlanStep());
+    chassert(expression->inputs.size() == 2);
+    const auto * join_step = typeid_cast<JoinStepLogical*>(expression->getQueryPlanStep());
     chassert(join_step);
-    chassert(!join_step->areInputsSwapped());
-    join_step->setSwapInputs(); /// This flag takes care of swapping the inputs without actually reordering expression_with_swapped_inputs->inputs
+
+    auto swapped_join_step = cloneSwapped(*join_step);
+    swapped_join_step->setStepDescription(join_step->getStepDescription() + " swapped");
+
+    GroupExpressionPtr expression_with_swapped_inputs = std::make_shared<GroupExpression>(nullptr);
+    expression_with_swapped_inputs->plan_step = std::move(swapped_join_step);
+    expression_with_swapped_inputs->inputs = {expression->inputs[1], expression->inputs[0]};
     expression_with_swapped_inputs->setApplied(*this);  /// Don't want to apply commutativity rule to the new expression
     memo.getGroup(expression->group_id)->addExpression(expression_with_swapped_inputs);
     return {expression_with_swapped_inputs};
