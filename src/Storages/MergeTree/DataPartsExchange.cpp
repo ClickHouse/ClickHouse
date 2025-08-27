@@ -8,7 +8,6 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPCommon.h>
 #include <IO/S3Common.h>
-#include <Interpreters/Context.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -79,7 +78,6 @@ constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID = 5;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY = 6;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION = 7;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION = 8;
-constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS = 9;
 
 std::string getEndpointId(const std::string & node_id)
 {
@@ -135,7 +133,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS))});
+    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION))});
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
@@ -158,6 +156,17 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
         part = findPart(part_name);
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
+
+        if (part->getDataPartStorage().isStoredOnRemoteDisk())
+        {
+            UInt64 revision = parse<UInt64>(params.get("disk_revision", "0"));
+            if (revision)
+                part->getDataPartStorage().syncRevision(revision);
+
+            revision = part->getDataPartStorage().getRevision();
+            if (revision)
+                response.addCookie({"disk_revision", toString(revision)});
+        }
 
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
             writeBinary(part->checksums.getTotalSizeOnDisk(), out);
@@ -250,10 +259,6 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
         if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION
             && name == IMergeTreeDataPart::METADATA_VERSION_FILE_NAME)
-            continue;
-
-        if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS
-            && name == IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME)
             continue;
 
         files_to_replicate.insert(name);
@@ -446,12 +451,17 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     {
         {"endpoint",                endpoint_id},
         {"part",                    part_name},
-        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS)},
+        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION)},
         {"compress",                "false"}
     });
 
     if (disk)
+    {
         LOG_TRACE(log, "Will fetch to disk {} with type {}", disk->getName(), disk->getDataSourceDescription().toString());
+        UInt64 revision = disk->getRevision();
+        if (revision)
+            uri.addQueryParameter("disk_revision", toString(revision));
+    }
 
     Strings capability;
     if (try_zero_copy && (*data_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
@@ -585,6 +595,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     {
         LOG_TEST(log, "Disk for fetch is disk {} with type {}", disk->getName(), disk->getDataSourceDescription().toString());
     }
+
+    UInt64 revision = parse<UInt64>(in->getResponseCookie("disk_revision", "0"));
+
+    if (revision)
+        disk->syncRevision(revision);
 
     bool sync = ((*data_settings)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_fetch]
                     && sum_files_size >= (*data_settings)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_fetch]);
@@ -741,7 +756,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
 
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt" &&
-            file_name != IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME &&
+            file_name != "columns_substreams.txt" &&
             file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME &&
             file_name != IMergeTreeDataPart::METADATA_VERSION_FILE_NAME)
             checksums.addFile(file_name, file_size, expected_hash);

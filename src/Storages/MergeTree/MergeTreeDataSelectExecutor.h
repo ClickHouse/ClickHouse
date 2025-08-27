@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/QueryProcessingStage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -13,7 +14,6 @@ namespace DB
 
 class KeyCondition;
 struct QueryIdHolder;
-class VectorSimilarityIndexCache;
 
 /** Executes SELECT queries on data from the merge tree.
   */
@@ -48,8 +48,7 @@ public:
         size_t num_streams,
         PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
         ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr = nullptr,
-        bool enable_parallel_reading = false,
-        std::shared_ptr<ParallelReadingExtension> extension_ = nullptr) const;
+        bool enable_parallel_reading = false) const;
 
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.
@@ -86,12 +85,11 @@ private:
         const Settings & settings,
         LoggerPtr log);
 
-    static std::pair<MarkRanges, RangesInDataPartReadHints>  filterMarksUsingIndex(
+    static MarkRanges filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
-        const RangesInDataPartReadHints & in_read_hints,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
@@ -196,7 +194,6 @@ public:
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
         RangesInDataParts parts_with_ranges,
         StorageMetadataPtr metadata_snapshot,
-        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const ContextPtr & context,
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,
@@ -214,7 +211,6 @@ public:
     static void filterPartsByQueryConditionCache(
         RangesInDataParts & parts_with_ranges,
         const SelectQueryInfo & select_query_info,
-        const std::optional<VectorSearchParameters> & vector_search_parameters,
         const ContextPtr & context,
         LoggerPtr log);
 

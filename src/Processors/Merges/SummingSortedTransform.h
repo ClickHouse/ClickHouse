@@ -17,7 +17,7 @@ class SummingSortedTransform final : public IMergingTransform<SummingSortedAlgor
 public:
 
     SummingSortedTransform(
-        SharedHeader header, size_t num_inputs,
+        const Block & header, size_t num_inputs,
         SortDescription description_,
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
         const Names & partition_and_sorting_required_columns,
@@ -33,11 +33,7 @@ public:
             partition_and_sorting_required_columns,
             partition_key_columns,
             max_block_size_rows,
-            max_block_size_bytes,
-            "sumWithOverflow",
-            "sumMapWithOverflow",
-            true,
-            false)
+            max_block_size_bytes)
     {
     }
 

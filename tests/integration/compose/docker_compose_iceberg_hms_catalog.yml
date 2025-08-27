@@ -15,9 +15,9 @@ services:
       - 8080:8080
       - 10000:10000
       - 10001:10001
-    stop_grace_period: 5s
+
   hive:
-    image: clickhouse/integration-test-with-hms
+    build: ./../../integration/test_database_hms/hms_extensions/
     restart: unless-stopped
     depends_on:
       minio:
@@ -31,9 +31,9 @@ services:
       test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/9083"]
       interval: 2s
       timeout: 5s
-      retries: 45
+      retries: 15
       start_period: 45s
-    stop_grace_period: 5s
+
   # TODO: can we simply use with_minio=True instead?
   minio:
     image: minio/minio:RELEASE.2024-07-31T05-46-26Z
@@ -46,10 +46,10 @@ services:
         aliases:
           - warehouse.minio
     ports:
-      - 9001
-      - 9000
+        - 9001:9001
+        - 9002:9000
     command: ["server", "/data", "--console-address", ":9001"]
-    stop_grace_period: 5s
+
   # TODO: move this code to cluster.py
   mc:
     depends_on:
@@ -68,4 +68,3 @@ services:
       /usr/bin/mc policy set public minio/warehouse-hms;
       tail -f /dev/null
       "
-      stop_grace_period: 5s

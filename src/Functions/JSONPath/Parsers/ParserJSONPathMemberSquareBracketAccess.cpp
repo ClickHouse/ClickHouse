@@ -1,4 +1,4 @@
-#include <Functions/JSONPath/Parsers/ParserJSONPathMemberSquareBracketAccess.h>
+#include "ParserJSONPathMemberSquareBracketAccess.h"
 #include <memory>
 #include <Functions/JSONPath/ASTs/ASTJSONPathMemberAccess.h>
 #include <IO/ReadBufferFromMemory.h>
