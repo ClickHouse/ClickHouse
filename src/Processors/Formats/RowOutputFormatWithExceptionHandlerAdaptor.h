@@ -14,7 +14,7 @@ template <typename Base, typename... Args>
 class RowOutputFormatWithExceptionHandlerAdaptor : public Base
 {
 public:
-    RowOutputFormatWithExceptionHandlerAdaptor(const Block & header, WriteBuffer & out_, bool handle_exceptions, Args... args)
+    RowOutputFormatWithExceptionHandlerAdaptor(SharedHeader header, WriteBuffer & out_, bool handle_exceptions, Args... args)
         : Base(header, out_, std::forward<Args>(args)...)
     {
         if (handle_exceptions)

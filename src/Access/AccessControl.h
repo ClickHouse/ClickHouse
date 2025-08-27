@@ -176,6 +176,8 @@ public:
     /// Compatibility setting
     void setEnableUserNameAccessType(bool enable_user_name_access_type_);
     bool isEnabledUserNameAccessType() const;
+    void setEnableReadWriteGrants(bool enable_read_write_grants_);
+    bool isEnabledReadWriteGrants() const;
 
     /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
     /// For example, if there are two users A, B and a row policy is defined only for A, then
@@ -289,6 +291,7 @@ private:
     std::atomic_bool allow_experimental_tier_settings = true;
     std::atomic_bool allow_beta_tier_settings = true;
     std::atomic_bool enable_user_name_access_type = true;
+    std::atomic_bool enable_read_write_grants = false;
 };
 
 }

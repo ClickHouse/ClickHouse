@@ -1,4 +1,4 @@
-#include "ReadBufferFromMemory.h"
+#include <IO/ReadBufferFromMemory.h>
 
 #include <Common/Exception.h>
 

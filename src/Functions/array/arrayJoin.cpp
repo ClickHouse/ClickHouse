@@ -87,9 +87,9 @@ these are replaced with the corresponding array value.
 )";
     FunctionDocumentation::Syntax syntax = "arrayJoin(arr)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "An array to unfold. [`Array(T)`](/sql-reference/data-types/array)."}
+        {"arr", "An array to unfold.", {"Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns a set of rows unfolded from `arr`.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a set of rows unfolded from `arr`."};
     FunctionDocumentation::Examples examples = {
         {"Basic usage", R"(SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src)", R"(
 ┌─dst─┬─\'Hello\'─┬─src─────┐
@@ -99,25 +99,22 @@ these are replaced with the corresponding array value.
 └─────┴───────────┴─────────┘
         )"},
         {"arrayJoin affects all sections of the query", R"(
-The `arrayJoin` function affects all sections of the query, including the `WHERE` section. Notice the result 2, even though the subquery returned 1 row.
+-- The arrayJoin function affects all sections of the query, including the WHERE section. Notice the result 2, even though the subquery returned 1 row.
 
-```sql
 SELECT sum(1) AS impressions
 FROM
 (
     SELECT ['Istanbul', 'Berlin', 'Bobruisk'] AS cities
 )
 WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
-```
         )", R"(
 ┌─impressions─┐
 │           2 │
 └─────────────┘
         )"},
         {"Using multiple arrayJoin functions", R"(
-A query can use multiple `arrayJoin` functions. In this case, the transformation is performed multiple times and the rows are multiplied.
+- A query can use multiple arrayJoin functions. In this case, the transformation is performed multiple times and the rows are multiplied.
 
-```sql
 SELECT
     sum(1) AS impressions,
     arrayJoin(cities) AS city,
@@ -131,7 +128,6 @@ FROM
 GROUP BY
     2,
     3
-```
         )", R"(
 ┌─impressions─┬─city─────┬─browser─┐
 │           2 │ Istanbul │ Chrome  │
@@ -144,11 +140,10 @@ GROUP BY
         )"
         },
         {"Unexpected results due to optimizations", R"(
-Using multiple `arrayJoin` with the same expression may not produce the expected result due to optimizations.
-For these cases, consider modifying the repeated array expression with extra operations that do not affect join result.
-e.g. `arrayJoin(arraySort(arr))`, `arrayJoin(arrayConcat(arr, []))`
+-- Using multiple arrayJoin with the same expression may not produce the expected result due to optimizations.
+-- For these cases, consider modifying the repeated array expression with extra operations that do not affect join result.
+- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
 
-```sql
 SELECT
     arrayJoin(dice) as first_throw,
     /* arrayJoin(dice) as second_throw */ -- is technically correct, but will annihilate result set
@@ -156,7 +151,6 @@ SELECT
 FROM (
     SELECT [1, 2, 3, 4, 5, 6] as dice
 );
-```
         )", R"(
 ┌─first_throw─┬─second_throw─┐
 │           1 │            1 │
@@ -199,10 +193,9 @@ FROM (
         )"
         },
         {"Using the ARRAY JOIN syntax", R"(
-Note the [`ARRAY JOIN`](../statements/select/array-join.md) syntax in the `SELECT` query below, which provides broader possibilities.
-`ARRAY JOIN` allows you to convert multiple arrays with the same number of elements at a time.
+-- Note the ARRAY JOIN syntax in the `SELECT` query below, which provides broader possibilities.
+-- ARRAY JOIN allows you to convert multiple arrays with the same number of elements at a time.
 
-```sql
 SELECT
     sum(1) AS impressions,
     city,
@@ -219,7 +212,6 @@ ARRAY JOIN
 GROUP BY
     2,
     3
-```
         )", R"(
 ┌─impressions─┬─city─────┬─browser─┐
 │           1 │ Istanbul │ Firefox │
@@ -229,9 +221,8 @@ GROUP BY
         )"
         },
         {"Using Tuple", R"(
-You can also use [Tuple](../data-types/tuple.md):
+-- You can also use Tuple
 
-```sql
 SELECT
     sum(1) AS impressions,
     (arrayJoin(arrayZip(cities, browsers)) AS t).1 AS city,
@@ -245,7 +236,6 @@ FROM
 GROUP BY
     2,
     3
-```
         )", R"(
 ┌─impressions─┬─city─────┬─browser─┐
 │           1 │ Istanbul │ Firefox │

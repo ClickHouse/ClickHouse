@@ -100,3 +100,21 @@ def test_keeper_watches(started_cluster):
     destroy_zk_client(node_zk)
     node_zk = None
     time.sleep(1)
+
+
+def test_ephemeral_watch_session_close(started_cluster):
+    wait_nodes()
+
+    zk = get_fake_zk(node.name)
+
+
+    def watch_callback(event):
+        pass
+    try:
+        zk.create("/ephemeral_test_node", b"data", ephemeral=True)
+        zk.exists("/ephemeral_test_node", watch=watch_callback)
+    finally:
+        destroy_zk_client(zk)
+
+    data = keeper_utils.send_4lw_cmd(started_cluster, node, cmd="mntr")
+    assert "zk_watch_count\t0" in data

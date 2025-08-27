@@ -10,8 +10,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include "KernelPointerWrapper.h"
-#include "KernelHelper.h"
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <boost/noncopyable.hpp>
 #include "delta_kernel_ffi.hpp"
 
@@ -25,12 +25,10 @@ namespace DeltaLake
 class TableSnapshot
 {
 public:
-    using ConfigurationWeakPtr = DB::StorageObjectStorage::ConfigurationObserverPtr;
-
     explicit TableSnapshot(
         KernelHelperPtr helper_,
         DB::ObjectStoragePtr object_storage_,
-        bool read_schema_same_as_table_schema_,
+        DB::ContextPtr context_,
         LoggerPtr log_);
 
     /// Get snapshot version.
@@ -62,21 +60,23 @@ private:
     using KernelExternEngine = KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
     using KernelSnapshot = KernelPointerWrapper<ffi::SharedSnapshot, ffi::free_snapshot>;
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
-    using KernelGlobalScanState = KernelPointerWrapper<ffi::SharedGlobalScanState, ffi::free_global_scan_state>;
 
     const KernelHelperPtr helper;
     const DB::ObjectStoragePtr object_storage;
     const LoggerPtr log;
+    const bool enable_expression_visitor_logging;
 
     mutable KernelExternEngine engine;
     mutable KernelSnapshot snapshot;
     mutable KernelScan scan;
-    mutable KernelGlobalScanState scan_state;
     mutable size_t snapshot_version;
 
-    mutable DB::NamesAndTypesList table_schema;
+    using TableSchema = DB::NamesAndTypesList;
+    using ReadSchema = DB::NamesAndTypesList;
+
+    mutable TableSchema table_schema;
+    mutable ReadSchema read_schema;
     mutable DB::NameToNameMap physical_names_map;
-    mutable DB::NamesAndTypesList read_schema;
     mutable DB::Names partition_columns;
 
     void initSnapshot() const;

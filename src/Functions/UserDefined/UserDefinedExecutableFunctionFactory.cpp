@@ -1,4 +1,4 @@
-#include "UserDefinedExecutableFunctionFactory.h"
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 
 #include <filesystem>
 
@@ -186,7 +186,7 @@ public:
         Block result_block({result});
 
         Block arguments_block(arguments_copy);
-        auto source = std::make_shared<SourceFromSingleChunk>(std::move(arguments_block));
+        auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(arguments_block)));
         auto shell_input_pipe = Pipe(std::move(source));
 
         ShellCommandSourceConfiguration shell_command_source_configuration;
@@ -257,7 +257,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const Stri
     {
         auto query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, function_name);
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
     }
 
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));
@@ -277,7 +277,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
         {
             auto query_context = CurrentThread::get().getQueryContext();
             if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, function_name);
+                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
         }
 
         return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(function));

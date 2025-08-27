@@ -71,9 +71,16 @@ public:
     String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.getTable()); }
     String getMetadataPath() const override { return metadata_path; }
 
-    static ASTPtr parseQueryFromMetadata(LoggerPtr logger, ContextPtr context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false);
+    static ASTPtr parseQueryFromMetadata(
+        LoggerPtr logger,
+        ContextPtr context,
+        DiskPtr disk,
+        const String & metadata_file_path,
+        bool throw_on_error = true,
+        bool remove_empty = false);
 
-    static ASTPtr parseQueryFromMetadata(LoggerPtr logger, ContextPtr context, const String & metadata_file_path, const String & query, bool throw_on_error = true);
+    static ASTPtr parseQueryFromMetadata(
+        LoggerPtr logger, ContextPtr context, const String & metadata_file_path, const String & query, bool throw_on_error = true);
 
     /// will throw when the table we want to attach already exists (in active / detached / detached permanently form)
     void checkMetadataFilenameAvailability(const String & to_table_name) const override;

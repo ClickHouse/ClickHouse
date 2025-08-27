@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IDictionarySource.h"
+#include <Dictionaries/IDictionarySource.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <unordered_map>

@@ -5,8 +5,8 @@
 namespace DB
 {
 
-MaterializingTransform::MaterializingTransform(const Block & header, bool remove_sparse_)
-    : ISimpleTransform(header, materializeBlock(header), false)
+MaterializingTransform::MaterializingTransform(SharedHeader header, bool remove_sparse_)
+    : ISimpleTransform(header, std::make_shared<const Block>(materializeBlock(*header)), false)
     , remove_sparse(remove_sparse_)
 {
 }

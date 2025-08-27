@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -138,6 +139,12 @@ public:
     }
 
     static T getScaleMultiplier(UInt32 scale);
+
+    void updateHashImpl(SipHash & hash) const override
+    {
+        hash.update(precision);
+        hash.update(scale);
+    }
 
 protected:
     const UInt32 precision;

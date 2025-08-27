@@ -223,19 +223,17 @@ When using parametric aggregate functions, the parameter is indicated after the 
 )";
     FunctionDocumentation::Syntax syntax = "arrayReduce(agg_f, arr1 [, arr2, ... , arrN)]";
     FunctionDocumentation::Arguments arguments = {
-        {"agg_f", "The name of an aggregate function which should be a constant [String](/sql-reference/data-types/string)."},
-        {"arr1 [, arr2, ... , arrN)]", "N arrays corresponding to the arguments of `agg_f`. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"agg_f", "The name of an aggregate function which should be a constant.", {"String"}},
+        {"arr1 [, arr2, ... , arrN)]", "N arrays corresponding to the arguments of `agg_f`.", {"Array(T)"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the result of the aggregate function";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of the aggregate function"};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayReduce('max', [1, 2, 3]);", R"(
 ┌─arrayReduce('max', [1, 2, 3])─┐
 │                             3 │
 └───────────────────────────────┘
-)"},{"Example with aggregate function using multiple arguments", R"(If an aggregate function takes multiple arguments, then this function must be applied to multiple arrays of the same size.
+)"},{"Example with aggregate function using multiple arguments", R"(--If an aggregate function takes multiple arguments, then this function must be applied to multiple arrays of the same size.
 
-```sql
 SELECT arrayReduce('maxIf', [3, 5], [1, 0]);
-```
 )", R"(
 ┌─arrayReduce('maxIf', [3, 5], [1, 0])─┐
 │                                    3 │

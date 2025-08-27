@@ -6,11 +6,11 @@ slug: /engines/table-engines/integrations/azureBlobStorage
 title: 'AzureBlobStorage Table Engine'
 ---
 
-# AzureBlobStorage Table Engine
+# AzureBlobStorage table engine
 
 This engine provides an integration with [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) ecosystem.
 
-## Create Table {#create-table}
+## Create table {#create-table}
 
 ```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
@@ -34,7 +34,6 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 **Example**
 
 Users can use the Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). If using a local instance of Azurite, users may need to substitute `http://localhost:10000` for `http://azurite1:10000` in the commands below, where we assume Azurite is available at host `azurite1`.
-
 
 ```sql
 CREATE TABLE test_table (key UInt64, data String)

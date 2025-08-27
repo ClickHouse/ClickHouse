@@ -21,8 +21,6 @@ namespace ProfileEvents
     extern const Event DiskWriteElapsedMicroseconds;
     extern const Event FileSync;
     extern const Event FileSyncElapsedMicroseconds;
-    extern const Event LocalWriteThrottlerBytes;
-    extern const Event LocalWriteThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -77,7 +75,7 @@ void WriteBufferFromFileDescriptor::nextImpl()
         {
             bytes_written += res;
             if (throttler)
-                throttler->add(res, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
+                throttler->add(res);
         }
     }
 

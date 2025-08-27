@@ -3,18 +3,16 @@
 
 #if USE_AVRO
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
 namespace Iceberg
 {
 
-using ManifestList = std::vector<ManifestFilePtr>;
-using ManifestListPtr = std::shared_ptr<const ManifestList>;
-
 struct IcebergSnapshot
 {
-    ManifestListPtr manifest_list;
+    DB::ManifestFileCacheKeys manifest_list_entries;
     Int64 snapshot_id;
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
@@ -27,7 +25,6 @@ struct IcebergHistoryRecord
     Int64 parent_id;
     bool is_current_ancestor;
 };
-
 }
 
 #endif

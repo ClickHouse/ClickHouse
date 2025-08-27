@@ -41,8 +41,8 @@ REGISTER_FUNCTION(GCD)
     FunctionDocumentation::Argument argument1 = {"x", "First integer"};
     FunctionDocumentation::Argument argument2 = {"y", "Second integer"};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = "The greatest common divisor of `x` and `y`.";
-    FunctionDocumentation::Example example1 = {"", "SELECT gcd(12, 18)", "6"};
+    FunctionDocumentation::ReturnedValue returned_value = {"The greatest common divisor of `x` and `y`."};
+    FunctionDocumentation::Example example1 = {"Usage example", "SELECT gcd(12, 18)", "6"};
     FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;

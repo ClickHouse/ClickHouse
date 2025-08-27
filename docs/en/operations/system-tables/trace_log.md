@@ -31,12 +31,12 @@ Columns:
     When connecting to the server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1.`. This field contains the `revision`, but not the `version` of a server.
 
 - `trace_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Trace type:
-    - `Real` represents collecting stack traces by wall-clock time.
-    - `CPU` represents collecting stack traces by CPU time.
-    - `Memory` represents collecting allocations and deallocations when memory allocation exceeds the subsequent watermark.
-    - `MemorySample` represents collecting random allocations and deallocations.
-    - `MemoryPeak` represents collecting updates of peak memory usage.
-    - `ProfileEvent` represents collecting of increments of profile events.
+  - `Real` represents collecting stack traces by wall-clock time.
+  - `CPU` represents collecting stack traces by CPU time.
+  - `Memory` represents collecting allocations and deallocations when memory allocation exceeds the subsequent watermark.
+  - `MemorySample` represents collecting random allocations and deallocations.
+  - `MemoryPeak` represents collecting updates of peak memory usage.
+  - `ProfileEvent` represents collecting of increments of profile events.
 - `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](/operations/system-tables/query_log) system table.
 - `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.

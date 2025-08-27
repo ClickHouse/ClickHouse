@@ -11,16 +11,22 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Scheduler/IResourceManager.h>
-#include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
+#include <Common/ThreadPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Parsers/ASTCreateResourceQuery.h>
+#if ENABLE_DISTRIBUTED_CACHE
+#include <Disks/IO/ReadBufferFromDistributedCache.h>
+#include <Core/DistributedCacheProtocol.h>
+#endif
+#include <Core/Settings.h>
+
 
 namespace DB
 {
@@ -35,7 +41,9 @@ namespace ErrorCodes
 
 DiskTransactionPtr DiskObjectStorage::createTransaction()
 {
-    return std::make_shared<FakeDiskTransaction>(*this);
+    if (use_fake_transaction)
+        return std::make_shared<FakeDiskTransaction>(*this);
+    return createObjectStorageTransaction();
 }
 
 ObjectStoragePtr DiskObjectStorage::getObjectStorage()
@@ -47,18 +55,16 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
     return std::make_shared<DiskObjectStorageTransaction>(
         *object_storage,
-        *metadata_storage,
-        send_metadata ? metadata_helper.get() : nullptr);
+        *metadata_storage);
 }
 
-DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk)
+DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
 {
     return std::make_shared<MultipleDisksObjectStorageTransaction>(
         *object_storage,
         *metadata_storage,
         *to_disk.getObjectStorage(),
-        *to_disk.getMetadataStorage(),
-        send_metadata ? metadata_helper.get() : nullptr);
+        *to_disk.getMetadataStorage());
 }
 
 
@@ -68,16 +74,17 @@ DiskObjectStorage::DiskObjectStorage(
     MetadataStoragePtr metadata_storage_,
     ObjectStoragePtr object_storage_,
     const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix)
+    const String & config_prefix,
+    bool use_fake_transaction_)
     : IDisk(name_, config, config_prefix)
     , object_key_prefix(object_key_prefix_)
     , log(getLogger("DiskObjectStorage(" + name + ")"))
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
-    , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
     , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
-    , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}, WriteSettings{}))
+    , enable_distributed_cache(config.getBool(config_prefix + ".enable_distributed_cache", true))
+    , use_fake_transaction(use_fake_transaction_)
     , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
 {
     data_source_description = DataSourceDescription{
@@ -87,6 +94,7 @@ DiskObjectStorage::DiskObjectStorage(
         .description = object_storage->getDescription(),
         .is_encrypted = false,
         .is_cached = object_storage->supportsCache(),
+        .zookeeper_name = metadata_storage->getZooKeeperName(),
     };
     resource_changes_subscription = Context::getGlobalContextInstance()->getWorkloadEntityStorage().getAllEntitiesAndSubscribe(
         [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
@@ -124,8 +132,8 @@ DiskObjectStorage::DiskObjectStorage(
                             {
                                 switch (mode)
                                 {
-                                    case ASTCreateResourceQuery::AccessMode::DiskRead: new_read_resource_name_from_sql_any.insert(resource_name); break;
-                                    case ASTCreateResourceQuery::AccessMode::DiskWrite: new_write_resource_name_from_sql_any.insert(resource_name); break;
+                                    case ResourceAccessMode::DiskRead: new_read_resource_name_from_sql_any.insert(resource_name); break;
+                                    case ResourceAccessMode::DiskWrite: new_write_resource_name_from_sql_any.insert(resource_name); break;
                                     default: break;
                                 }
                             }
@@ -133,8 +141,8 @@ DiskObjectStorage::DiskObjectStorage(
                             {
                                 switch (mode)
                                 {
-                                    case ASTCreateResourceQuery::AccessMode::DiskRead: new_read_resource_name_from_sql.insert(resource_name); break;
-                                    case ASTCreateResourceQuery::AccessMode::DiskWrite: new_write_resource_name_from_sql.insert(resource_name); break;
+                                    case ResourceAccessMode::DiskRead: new_read_resource_name_from_sql.insert(resource_name); break;
+                                    case ResourceAccessMode::DiskWrite: new_write_resource_name_from_sql.insert(resource_name); break;
                                     default: break;
                                 }
                             }
@@ -220,20 +228,13 @@ size_t DiskObjectStorage::getFileSize(const String & path) const
 
 void DiskObjectStorage::moveDirectory(const String & from_path, const String & to_path)
 {
-    if (send_metadata)
-        sendMoveMetadata(from_path, to_path);
-
     auto transaction = createObjectStorageTransaction();
     transaction->moveDirectory(from_path, to_path);
     transaction->commit();
 }
 
-void DiskObjectStorage::moveFile(const String & from_path, const String & to_path, bool should_send_metadata)
+void DiskObjectStorage::moveFile(const String & from_path, const String & to_path)
 {
-
-    if (should_send_metadata)
-        sendMoveMetadata(from_path, to_path);
-
     auto transaction = createObjectStorageTransaction();
     transaction->moveFile(from_path, to_path);
     transaction->commit();
@@ -269,11 +270,6 @@ void DiskObjectStorage::copyFile( /// NOLINT
         /// Copy through buffers
         IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
     }
-}
-
-void DiskObjectStorage::moveFile(const String & from_path, const String & to_path)
-{
-    moveFile(from_path, to_path, send_metadata);
 }
 
 void DiskObjectStorage::replaceFile(const String & from_path, const String & to_path)
@@ -348,29 +344,12 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
     return object_storage->exists(object);
 }
 
-void DiskObjectStorage::createHardLink(const String & src_path, const String & dst_path, bool should_send_metadata)
+void DiskObjectStorage::createHardLink(const String & src_path, const String & dst_path)
 {
-    if (should_send_metadata && !dst_path.starts_with("shadow/"))
-    {
-        auto revision = metadata_helper->revision_counter + 1;
-        metadata_helper->revision_counter += 1;
-        const ObjectAttributes object_metadata {
-            {"src_path", src_path},
-            {"dst_path", dst_path}
-        };
-        metadata_helper->createFileOperationObject("hardlink", revision, object_metadata);
-    }
-
     auto transaction = createObjectStorageTransaction();
     transaction->createHardLink(src_path, dst_path);
     transaction->commit();
 }
-
-void DiskObjectStorage::createHardLink(const String & src_path, const String & dst_path)
-{
-    createHardLink(src_path, dst_path, send_metadata);
-}
-
 
 void DiskObjectStorage::setReadOnly(const String & path)
 {
@@ -392,9 +371,23 @@ void DiskObjectStorage::createDirectory(const String & path)
 
 void DiskObjectStorage::createDirectories(const String & path)
 {
-    auto transaction = createObjectStorageTransaction();
-    transaction->createDirectories(path);
-    transaction->commit();
+    /// Super clumsy code which allows to avoid race condition in MetaInKeeper
+    if (metadata_storage->isTransactional())
+    {
+        while (!metadata_storage->existsFileOrDirectory(path))
+        {
+            auto transaction = createObjectStorageTransaction();
+            transaction->createDirectories(path);
+            if (isSuccessfulOutcome(transaction->tryCommit(TransactionCommitOptionsVariant{})))
+                break;
+        }
+    }
+    else
+    {
+        auto transaction = createObjectStorageTransaction();
+        transaction->createDirectories(path);
+        transaction->commit();
+    }
 }
 
 
@@ -478,12 +471,11 @@ void DiskObjectStorage::shutdown()
     LOG_INFO(log, "Disk {} shut down", name);
 }
 
-void DiskObjectStorage::startupImpl(ContextPtr context)
+void DiskObjectStorage::startupImpl()
 {
     LOG_INFO(log, "Starting up disk {}", name);
+    metadata_storage->startup();
     object_storage->startup();
-
-    restoreMetadataIfNeeded(context->getConfigRef(), "storage_configuration.disks." + name, context);
 
     LOG_INFO(log, "Disk {} started up", name);
 }
@@ -610,15 +602,6 @@ bool DiskObjectStorage::tryReserve(UInt64 bytes)
 
     return false;
 }
-void DiskObjectStorage::sendMoveMetadata(const String & from_path, const String & to_path)
-{
-    chassert(send_metadata);
-    auto revision = metadata_helper->revision_counter + 1;
-    metadata_helper->revision_counter += 1;
-
-    const ObjectAttributes object_metadata{{"from_path", from_path}, {"to_path", to_path}};
-    metadata_helper->createFileOperationObject("rename", revision, object_metadata);
-}
 
 bool DiskObjectStorage::supportsCache() const
 {
@@ -640,6 +623,29 @@ bool DiskObjectStorage::isWriteOnce() const
     return object_storage->isWriteOnce();
 }
 
+bool DiskObjectStorage::isSharedCompatible() const
+{
+    switch (object_storage->getType())
+    {
+        case ObjectStorageType::S3:
+        case ObjectStorageType::Azure:
+        case ObjectStorageType::Web:
+            break;
+        default:
+            return false;
+    }
+
+    switch (metadata_storage->getType())
+    {
+        case MetadataStorageType::Plain:
+        case MetadataStorageType::PlainRewritable:
+        case MetadataStorageType::StaticWeb:
+            return true;
+        default:
+            return false;
+    }
+}
+
 bool DiskObjectStorage::supportsHardLinks() const
 {
     return !isWriteOnce() && !object_storage->isPlain();
@@ -659,7 +665,8 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
         metadata_storage,
         object_storage,
         Context::getGlobalContextInstance()->getConfigRef(),
-        config_prefix);
+        config_prefix,
+        use_fake_transaction);
 }
 
 template <class Settings>
@@ -728,30 +735,46 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     ///
     /// [AsynchronousBoundedReadBuffer] (if use_async_buffer)
     ///   [CachedInMemoryReadBufferFromFile] (if use_page_cache)
-    ///     ReadBufferFromRemoteFSGather
-    ///       [CachedOnDiskReadBufferFromFile] (if fs cache is enabled)
-    ///         ReadBufferFromS3 or similar
+    ///     [ReadBufferFromDistributedCache] (if use_distributed_cache)
+    ///       ReadBufferFromRemoteFSGather
+    ///         [CachedOnDiskReadBufferFromFile] (if fs cache is enabled)
+    ///           ReadBufferFromS3 or similar
     ///
     /// Some of them have special requirements:
     ///  * use_external_buffer = true is required for the buffer nested directly inside
-    ///    AsynchronousBoundedReadBuffer, CachedInMemoryReadBufferFromFile, and
-    ///    ReadBufferFromRemoteFSGather.
-    ///  * The buffer directly inside CachedInMemoryReadBufferFromFile must be freely seekable.
-    ///    I.e. either remote_read_buffer_restrict_seek = false or buffer implementation that
-    ///    ignores that setting.
-    ///    Note: ReadBufferFromRemoteFSGather ignores this setting.
+    ///    AsynchronousBoundedReadBuffer, CachedInMemoryReadBufferFromFile,
+    ///    ReadBufferFromDistributedCache, and ReadBufferFromRemoteFSGather.
+    ///  * The buffer directly inside CachedInMemoryReadBufferFromFile or
+    ///    ReadBufferFromDistributedCache must be freely seekable. I.e. either
+    ///    remote_read_buffer_restrict_seek = false or buffer implementation that ignores this setting.
+    ///    Note: ReadBufferFromRemoteFSGather and ReadBufferFromDistributedCache ignore this setting.
 
     auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     /// We wrap read buffer from object storage (read_buf = object_storage->readObject())
     /// inside ReadBufferFromRemoteFSGather, so add nested buffer setting.
     read_settings = read_settings.withNestedBuffer();
 
-    const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
-    const bool use_page_cache =
-        (!object_storage->supportsCache() || !read_settings.enable_filesystem_cache)
-        && read_settings.page_cache && read_settings.use_page_cache_for_disks_without_file_cache;
+    bool use_distributed_cache = false;
+#if ENABLE_DISTRIBUTED_CACHE
+    ObjectStorageConnectionInfoPtr connection_info;
+    if (enable_distributed_cache
+        && settings.read_through_distributed_cache
+        && DistributedCache::Registry::instance().isReady(settings.distributed_cache_settings.read_only_from_current_az))
+    {
+        connection_info = object_storage->getConnectionInfo();
+        if (connection_info)
+            use_distributed_cache = true;
+    }
+#endif
 
-    const bool use_external_buffer_for_gather = use_async_buffer || use_page_cache;
+    const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+    const bool file_cache_enabled = object_storage->supportsCache() && read_settings.enable_filesystem_cache;
+    const bool use_page_cache =
+        read_settings.page_cache
+        && (use_distributed_cache ? read_settings.use_page_cache_with_distributed_cache
+                                  : (read_settings.use_page_cache_for_disks_without_file_cache && !file_cache_enabled));
+
+    const bool use_external_buffer_for_gather = use_async_buffer || use_page_cache || use_distributed_cache;
 
     auto read_buffer_creator =
         [this, read_settings, read_hint, file_size]
@@ -766,23 +789,50 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
         && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
         && object_storage->supportsCache()
-        && read_settings.enable_filesystem_cache;
+        && read_settings.enable_filesystem_cache
+        && !use_distributed_cache;
 
     size_t buffer_size = prefer_bigger_buffer_size
-        ? std::max<size_t>(settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
+        ? std::max<size_t>(settings.remote_fs_buffer_size, settings.prefetch_buffer_size)
         : settings.remote_fs_buffer_size;
 
     size_t total_objects_size = file_size ? *file_size : getTotalSize(storage_objects);
     if (total_objects_size)
         buffer_size = std::min(buffer_size, total_objects_size);
 
+    auto read_from_object_storage_gather = [=]()
+    {
+        return std::make_unique<ReadBufferFromRemoteFSGather>(
+            std::move(read_buffer_creator),
+            storage_objects,
+            read_settings,
+            use_external_buffer_for_gather,
+            /* buffer_size */use_external_buffer_for_gather ? 0 : buffer_size);
+    };
+
     std::unique_ptr<ReadBufferFromFileBase> impl;
-    impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator),
-        storage_objects,
-        read_settings,
-        use_external_buffer_for_gather,
-        /* buffer_size */use_external_buffer_for_gather ? 0 : buffer_size);
+
+#if ENABLE_DISTRIBUTED_CACHE
+    if (use_distributed_cache)
+    {
+        LOG_TEST(log, "Reading from distributed cache");
+
+        auto query_context = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
+        impl = std::make_unique<ReadBufferFromDistributedCache>(
+            path,
+            storage_objects,
+            read_settings,
+            connection_info,
+            ConnectionTimeouts::getTCPTimeoutsWithoutFailover(query_context ? query_context->getSettingsRef() : global_context->getSettingsRef()),
+            read_from_object_storage_gather,
+            /*use_external_buffer*/use_page_cache || use_async_buffer,
+            global_context->getDistributedCacheLog(),
+            /* include_credentials_in_cache_key */false);
+    }
+#endif
+
+    if (!impl)
+        impl = read_from_object_storage_gather();
 
     if (use_page_cache)
     {
@@ -801,12 +851,16 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     if (use_async_buffer)
     {
         auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+        const size_t min_bytes_for_seek = use_distributed_cache
+            ? read_settings.distributed_cache_settings.min_bytes_for_seek
+            : read_settings.remote_read_min_bytes_for_seek;
+
         return std::make_unique<AsynchronousBoundedReadBuffer>(
             std::move(impl),
             reader,
             read_settings,
             buffer_size,
-            read_settings.remote_read_min_bytes_for_seek, /// Modified in private repo.
+            min_bytes_for_seek,
             global_context->getAsyncReadCounters(),
             global_context->getFilesystemReadPrefetchesLog());
 
@@ -878,36 +932,13 @@ void DiskObjectStorage::applyNewSettings(
             read_resource_name_from_config = new_read_resource_name;
         if (String new_write_resource_name = config.getString(config_prefix + ".write_resource", ""); new_write_resource_name != write_resource_name_from_config)
             write_resource_name_from_config = new_write_resource_name;
+        enable_distributed_cache = config.getBool(config_prefix + ".enable_distributed_cache", true);
     }
 
     remove_shared_recursive_file_limit = config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT);
 
     IDisk::applyNewSettings(config, context_, config_prefix, disk_map);
-}
-
-void DiskObjectStorage::restoreMetadataIfNeeded(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
-{
-    if (send_metadata)
-    {
-        metadata_helper->restore(config, config_prefix, context);
-
-        auto current_schema_version = DB::DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(object_storage.get(), object_key_prefix);
-        if (current_schema_version < DiskObjectStorageRemoteMetadataRestoreHelper::RESTORABLE_SCHEMA_VERSION)
-            metadata_helper->migrateToRestorableSchema();
-
-        metadata_helper->findLastRevision();
-    }
-}
-
-void DiskObjectStorage::syncRevision(UInt64 revision)
-{
-    metadata_helper->syncRevision(revision);
-}
-
-UInt64 DiskObjectStorage::getRevision() const
-{
-    return metadata_helper->getRevision();
+    metadata_storage->applyNewSettings(config, config_prefix, context_);
 }
 
 #if USE_AWS_S3

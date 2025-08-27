@@ -1,3 +1,4 @@
+#include <optional>
 #include "config.h"
 
 #if USE_AVRO
@@ -69,9 +70,9 @@ namespace
             /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
             /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
             /// but at least it doesn't lead to incorrect results.
+            if (int32_t scale = DB::getDecimalScale(*non_nullable_type))
             {
                 int64_t scaler = lower_bound ? -10 : 10;
-                int32_t scale = DB::getDecimalScale(*non_nullable_type);
                 while (--scale)
                     scaler *= 10;
 
@@ -258,8 +259,15 @@ ManifestFileContent::ManifestFileContent(
 
         for (const auto & [column_id, bounds] : value_for_bounds)
         {
-            DB::NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(schema_id, column_id);
-
+            auto field_characteristics = schema_processor.tryGetFieldCharacteristics(schema_id, column_id);
+            /// If we don't have column characteristics, bounds don't have any sense.
+            /// This happens if the subfield is inside map ot array, because we don't support
+            /// name generation for such subfields (we support names of nested subfields in structs only).
+            if (!field_characteristics)
+            {
+                continue;
+            }
+            const auto & name_and_type = *field_characteristics;
             String left_str;
             String right_str;
             /// lower_bound and upper_bound may be NULL.

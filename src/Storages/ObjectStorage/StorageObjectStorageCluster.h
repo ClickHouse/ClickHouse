@@ -10,11 +10,9 @@ namespace DB
 class StorageObjectStorageCluster : public IStorageCluster
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
     StorageObjectStorageCluster(
         const String & cluster_name_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
@@ -24,7 +22,10 @@ public:
     std::string getName() const override;
 
     RemoteQueryExecutor::Extension getTaskIteratorExtension(
-        const ActionsDAG::Node * predicate, const ContextPtr & context, size_t number_of_replicas) const override;
+        const ActionsDAG::Node * predicate,
+        const ActionsDAG * filter,
+        const ContextPtr & context,
+        size_t number_of_replicas) const override;
 
     String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
 
@@ -38,7 +39,7 @@ private:
         const ContextPtr & context) override;
 
     const String engine_name;
-    const StorageObjectStorage::ConfigurationPtr configuration;
+    const StorageObjectStorageConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     NamesAndTypesList virtual_columns;
 };

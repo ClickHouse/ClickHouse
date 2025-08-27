@@ -19,6 +19,7 @@ from env_helper import (
 )
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
+from synchronizer_utils import SYNC_PR_PREFIX
 
 NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 
@@ -465,7 +466,7 @@ class PRInfo:
 
     def get_latest_sync_commit(self):
         gh = GitHub(get_best_robot_token(), per_page=100)
-        assert self.head_ref.startswith("sync-upstream/pr/")
+        assert self.head_ref.startswith(SYNC_PR_PREFIX)
         assert self.repo_full_name != GITHUB_UPSTREAM_REPOSITORY
         upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
         upstream_pr_number = int(self.head_ref.split("/pr/", maxsplit=1)[1])

@@ -7,19 +7,25 @@ from datetime import datetime
 import pyarrow as pa
 import pytest
 import urllib3
+import pytz
+from datetime import datetime, timedelta
 from minio import Minio
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
+from helpers.config_cluster import minio_access_key, minio_secret_key
+import decimal
 from pyiceberg.types import (
     DoubleType,
-    FloatType,
     NestedField,
     StringType,
     StructType,
     TimestampType,
+    TimestamptzType,
+    MapType,
+    DecimalType,
 )
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
@@ -30,6 +36,11 @@ CATALOG_NAME = "test"
 
 BASE_URL = "http://glue:3000"
 BASE_URL_LOCAL_HOST = "http://localhost:3000"
+
+def generate_decimal(precision=9, scale=2):
+    max_value = 10**(precision - scale) - 1
+    value = random.uniform(0, max_value)
+    return round(decimal.Decimal(value), scale)
 
 DEFAULT_SCHEMA = Schema(
     NestedField(
@@ -51,9 +62,21 @@ DEFAULT_SCHEMA = Schema(
         ),
         required=False,
     ),
+    NestedField(
+        field_id=6,
+        name="map_string_decimal",
+        field_type=MapType(
+            key_type=StringType(),
+            value_type=DecimalType(9, 2),
+            key_id=7,
+            value_id=8,
+            value_required=False,
+        ),
+        required=False,
+    ),
 )
 
-DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String)),\\n    `map_string_decimal` Map(String, Nullable(Decimal(9, 2)))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
 
 DEFAULT_PARTITION_SPEC = PartitionSpec(
     PartitionField(
@@ -80,8 +103,8 @@ def load_catalog_impl(started_cluster):
             "glue.endpoint": BASE_URL_LOCAL_HOST,
             "glue.region": "us-east-1",
             "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
-            "s3.access-key-id": "minio",
-            "s3.secret-access-key": "minio123",
+            "s3.access-key-id": minio_access_key,
+            "s3.secret-access-key": minio_secret_key,
         },
     )
 
@@ -97,21 +120,65 @@ def create_table(
     return catalog.create_table(
         identifier=f"{namespace}.{table}",
         schema=schema,
-        location=f"s3://warehouse/data",
+        location="s3://warehouse-glue/data",
         partition_spec=partition_spec,
         sort_order=sort_order,
     )
 
 
-def generate_record():
-    return {
-        "datetime": datetime.now(),
-        "symbol": str("kek"),
-        "bid": round(random.uniform(100, 200), 2),
-        "ask": round(random.uniform(200, 300), 2),
-        "details": {"created_by": "Alice Smith"},
-    }
 
+def generate_arrow_data(num_rows=5):
+    datetimes = []
+    symbols = []
+    bids = []
+    asks = []
+    details_created_by = []
+    map_keys = []
+    map_values = []
+
+    offsets = [0]
+
+    for _ in range(num_rows):
+        datetimes.append(datetime.utcnow() - timedelta(minutes=random.randint(0, 60)))
+        symbols.append(random.choice(["AAPL", "GOOG", "MSFT"]))
+        bids.append(random.uniform(100, 150))
+        asks.append(random.uniform(150, 200))
+        details_created_by.append(random.choice(["alice", "bob", "carol"]))
+
+        # map<string, decimal(9,2)>
+        keys = []
+        values = []
+        for i in range(random.randint(1, 3)):
+            keys.append(f"key{i}")
+            values.append(generate_decimal())
+        map_keys.extend(keys)
+        map_values.extend(values)
+        offsets.append(offsets[-1] + len(keys))
+
+    # Struct for 'details'
+    struct_array = pa.StructArray.from_arrays(
+        [pa.array(details_created_by, type=pa.string())],
+        names=["created_by"]
+    )
+
+    # Map array
+    map_array = pa.MapArray.from_arrays(
+        offsets=pa.array(offsets, type=pa.int32()),
+        keys=pa.array(map_keys, type=pa.string()),
+        items=pa.array(map_values, type=pa.decimal128(9, 2))
+    )
+
+    # Final table
+    table = pa.table({
+        "datetime": pa.array(datetimes, type=pa.timestamp("us")),
+        "symbol": pa.array(symbols, type=pa.string()),
+        "bid": pa.array(bids, type=pa.float64()),
+        "ask": pa.array(asks, type=pa.float64()),
+        "details": struct_array,
+        "map_string_decimal": map_array,
+    })
+
+    return table
 
 def create_clickhouse_glue_database(
     started_cluster, node, name, additional_settings={}
@@ -119,7 +186,7 @@ def create_clickhouse_glue_database(
     settings = {
         "catalog_type": "glue",
         "warehouse": "test",
-        "storage_endpoint": "http://minio:9000/warehouse",
+        "storage_endpoint": "http://minio:9000/warehouse-glue",
         "region": "us-east-1",
     }
 
@@ -129,7 +196,7 @@ def create_clickhouse_glue_database(
         f"""
 DROP DATABASE IF EXISTS {name};
 SET allow_experimental_database_glue_catalog=true;
-CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'minio123')
+CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', '{minio_access_key}', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
@@ -212,6 +279,7 @@ def test_list_tables(started_cluster):
     assert expected == node.query(
         f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace_2}.tableC`"
     )
+    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 0
 
 
 def test_select(started_cluster):
@@ -238,8 +306,7 @@ def test_select(started_cluster):
         table = create_table(catalog, namespace, table_name)
 
         num_rows = 10
-        data = [generate_record() for _ in range(num_rows)]
-        df = pa.Table.from_pylist(data)
+        df = generate_arrow_data(num_rows)
         table.append(df)
 
         create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
@@ -252,6 +319,8 @@ def test_select(started_cluster):
         assert num_rows == int(
             node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
         )
+
+    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 4
 
 
 def test_hide_sensitive_info(started_cluster):
@@ -278,3 +347,150 @@ def test_hide_sensitive_info(started_cluster):
     )
     assert "SECRET_1" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+
+
+
+def test_select_after_rename(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}_A",
+        f"{root_namespace}_B",
+        f"{root_namespace}_C",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+        assert len(catalog.list_tables(namespace)) == 0
+
+    for namespace in namespaces_to_create:
+        table = create_table(catalog, namespace, table_name)
+
+        num_rows = 10
+        df = generate_arrow_data(num_rows)
+        table.append(df)
+
+        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
+        assert expected == node.query(
+            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
+
+        with table.update_schema() as update:
+            update.rename_column("bid", "new_bid")
+
+        print(node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}`"))
+
+def test_non_existing_tables(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_non_existing_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}_A",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+
+    for namespace in namespaces_to_create:
+        table = create_table(catalog, namespace, table_name)
+
+        num_rows = 10
+        df = generate_arrow_data(num_rows)
+        table.append(df)
+
+        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
+        assert expected == node.query(
+            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
+
+        try:
+            node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.wrong_table_name`")
+        except Exception as e:
+            assert "DB::Exception: Table" in str(e)
+            assert "doesn't exist" in str(e)
+
+        try:
+            node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`fake_namespace.wrong_table_name`")
+        except Exception as e:
+            assert "DB::Exception: Table" in str(e)
+            assert "doesn't exist" in str(e)
+
+
+def test_empty_table(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    table = create_table(catalog, root_namespace, table_name)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert len(node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")) == 0
+    
+    
+def test_timestamps(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(
+            field_id=1, name="timestamp", field_type=TimestampType(), required=False
+        ),
+        NestedField(
+            field_id=2,
+            name="timestamptz",
+            field_type=TimestamptzType(),
+            required=False,
+        ),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    data = [
+        {
+            "timestamp": datetime(2024, 1, 1, hour=12, minute=0, second=0, microsecond=0),
+            "timestamptz": datetime(
+                2024,
+                1,
+                1,
+                hour=12,
+                minute=0,
+                second=0,
+                microsecond=0,
+                tzinfo=pytz.timezone("UTC"),
+            )
+        }
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"

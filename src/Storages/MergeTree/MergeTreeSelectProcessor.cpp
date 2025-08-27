@@ -142,6 +142,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr pr
                 .remove_filter_column = true,
                 .need_filter = true,
                 .perform_alter_conversions = true,
+                .mutation_version = std::nullopt,
             };
 
             prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(row_level_filter_step)));
@@ -158,6 +159,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr pr
                 .remove_filter_column = prewhere_info->remove_prewhere_column,
                 .need_filter = prewhere_info->need_filter,
                 .perform_alter_conversions = true,
+                .mutation_version = std::nullopt,
             };
 
             prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(prewhere_step)));
@@ -188,9 +190,12 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             auto data_part = task->getInfo().data_part;
 
+                            String part_name = data_part->isProjectionPart()
+                                ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
+                                : data_part->name;
                             query_condition_cache->write(
                                 data_part->storage.getStorageID().uuid,
-                                data_part->name,
+                                part_name,
                                 output->getHash(),
                                 reader_settings.query_condition_cache_store_conditions_as_plaintext
                                     ? prewhere_info->prewhere_actions.getNames()[0]
@@ -242,9 +247,12 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
             if (reader_settings.use_query_condition_cache)
             {
+                String part_name = data_part->isProjectionPart()
+                    ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
+                    : data_part->name;
                 chunk.getChunkInfos().add(
                     std::make_shared<MarkRangesInfo>(
-                        data_part->storage.getStorageID().uuid, data_part->name,
+                        data_part->storage.getStorageID().uuid, part_name,
                         data_part->index_granularity->getMarksCount(), data_part->index_granularity->hasFinalMark(),
                         res.read_mark_ranges));
             }

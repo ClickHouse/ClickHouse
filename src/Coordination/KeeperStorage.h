@@ -124,7 +124,7 @@ private:
     /// node was created, we can use the MSB for a bool
     struct
     {
-        bool is_ephemeral : 1;
+        int64_t is_ephemeral : 1;
         int64_t ctime : 63;
     } is_ephemeral_and_ctime{false, 0};
 
@@ -510,7 +510,7 @@ public:
 
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path, bool should_lock_storage = true) const;
 
-        std::unordered_set<int64_t> closed_sessions;
+        std::unordered_map<int64_t, std::unordered_set<int64_t>> closed_sessions_to_zxids;
 
         struct UncommittedNode
         {
