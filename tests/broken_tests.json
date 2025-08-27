@@ -57,6 +57,9 @@
     "00984_parser_stack_overflow": {
         "reason": "INVESTIGATE - Timeout in ClickHouse query"
     },
+    "00804_test_alter_compression_codecs": {
+        "reason": "INVESTIGATE - Timeout in ClickHouse query"
+    },
     "03357_join_pk_sharding": {
         "reason": "INVESTIGATE - Timeout. Unstable?"
     },
@@ -79,6 +82,10 @@
         "message": "Timeout exceeded (180 s) while flushing system log"
     },
     "03514_grace_hash_join_logical_error": {
+        "reason": "INVESTIGATE - timeout",
+        "message": "Timeout! Killing process group"
+    },
+    "02751_multiquery_with_argument": {
         "reason": "INVESTIGATE - timeout",
         "message": "Timeout! Killing process group"
     },
