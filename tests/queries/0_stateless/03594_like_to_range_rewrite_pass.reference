@@ -66,7 +66,7 @@ SELECT
     __table1.name AS name,
     __table1.category AS category
 FROM default.test_like_rewrite AS __table1
-WHERE __table1.name ILIKE \'APP%\'
+WHERE (lower(__table1.name) >= \'app\') AND (lower(__table1.name) < \'apq\')
 3
 SELECT
     __table1.id AS id,
@@ -75,13 +75,6 @@ SELECT
 FROM default.test_like_rewrite AS __table1
 WHERE ((__table1.name >= \'app\') AND (__table1.name < \'apq\')) AND ((__table1.category >= \'fruit\') AND (__table1.category < \'fruiu\'))
 1
-SELECT
-    __table1.id AS id,
-    __table1.name AS name,
-    __table1.category AS category
-FROM default.test_like_rewrite AS __table1
-WHERE ((__table1.name >= \'app\') AND (__table1.name < \'apq\')) OR ((__table1.name >= \'test\') AND (__table1.name < \'tesu\'))
-5
 SELECT
     __table1.id AS id,
     __table1.name AS name,

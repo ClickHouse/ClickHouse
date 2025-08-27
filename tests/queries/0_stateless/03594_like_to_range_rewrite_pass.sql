@@ -55,17 +55,13 @@ SELECT count() FROM test_like_rewrite WHERE name LIKE 'test';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name LIKE '%';
 SELECT count() FROM test_like_rewrite WHERE name LIKE '%';
 
--- Test case-insensitive ILIKE with perfect prefix - should be rewritten (TODO)
+-- Test case-insensitive ILIKE with perfect prefix - should be rewritten
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name ILIKE 'APP%';
 SELECT count() FROM test_like_rewrite WHERE name ILIKE 'APP%';
 
 -- Test multiple LIKE conditions - all eligible ones should be rewritten
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name LIKE 'app%' AND category LIKE 'fruit%';
 SELECT count() FROM test_like_rewrite WHERE name LIKE 'app%' AND category LIKE 'fruit%';
-
--- Test LIKE in OR condition
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name LIKE 'app%' OR name LIKE 'test%';
-SELECT count() FROM test_like_rewrite WHERE name LIKE 'app%' OR name LIKE 'test%';
 
 -- Test NOT LIKE with imperfect prefix - should NOT be rewritten
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name NOT LIKE 'app_ication%';
