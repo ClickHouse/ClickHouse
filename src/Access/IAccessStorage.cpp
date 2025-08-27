@@ -567,7 +567,7 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
 
             if (skipped_not_allowed_authentication_methods)
             {
-                LOG_INFO(log, "Skipped the check for not allowed authentication methods,"
+                LOG_INFO(getLogger(), "Skipped the check for not allowed authentication methods,"
                               "check allow_no_password and allow_plaintext_password settings in the server configuration");
             }
 
