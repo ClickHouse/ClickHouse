@@ -311,11 +311,48 @@ void CascadesOptimizer::optimize()
         task->execute(optimizer_context);
     }
 
-    /// Get the best plan for the root group
-    optimizer_context.getBestPlan(root_group_id);
-
     LOG_TRACE(optimizer_context.log, "Executed {} tasks, Memo after:\n{}", executed_tasks_count, optimizer_context.memo.dump());
-    LOG_TRACE(optimizer_context.log, "Optimized plan:\n{}", QueryPlanOptimizations::dumpQueryPlanShort(query_plan));
+
+    /// Get the best plan for the root group
+    auto best_plan = buildBestPlan(root_group_id, optimizer_context.memo);
+
+    LOG_TRACE(optimizer_context.log, "Optimized plan:\n{}", QueryPlanOptimizations::dumpQueryPlanShort(*best_plan));
+}
+
+QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, const Memo & memo)
+{
+    auto group = memo.getGroup(subtree_root_group_id);
+    auto group_best_expression = group->best_implementation.expression;
+    QueryPlanPtr plan_for_group;
+    if (group_best_expression->inputs.empty())
+    {
+        auto leaf_plan = std::make_unique<QueryPlan>();
+        leaf_plan->addStep(group_best_expression->getQueryPlanStep()->clone());
+        plan_for_group = std::move(leaf_plan);
+    }
+    else if (group_best_expression->inputs.size() == 1)
+    {
+        auto input_group_id = group_best_expression->inputs.front();
+        auto child_plan = buildBestPlan(input_group_id, memo);
+        child_plan->addStep(group_best_expression->getQueryPlanStep()->clone());
+        plan_for_group = std::move(child_plan);
+    }
+    else
+    {
+        std::vector<QueryPlanPtr> input_plans;
+        input_plans.reserve(group_best_expression->inputs.size());
+        for (auto input_group_id : group_best_expression->inputs)
+        {
+            input_plans.push_back(buildBestPlan(input_group_id, memo));
+        }
+        auto united_plan = std::make_unique<QueryPlan>();
+        united_plan->unitePlans(group_best_expression->getQueryPlanStep()->clone(), std::move(input_plans));
+        plan_for_group = std::move(united_plan);
+    }
+
+    LOG_TRACE(getLogger("buildBestPlan"), "Plan for group #{}:\n{}", subtree_root_group_id, QueryPlanOptimizations::dumpQueryPlanShort(*plan_for_group));
+
+    return plan_for_group;
 }
 
 }

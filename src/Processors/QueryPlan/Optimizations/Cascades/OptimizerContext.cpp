@@ -48,11 +48,6 @@ GroupPtr OptimizerContext::getGroup(GroupId group_id)
     return memo.getGroup(group_id);
 }
 
-void OptimizerContext::getBestPlan(GroupId group_id)
-{
-    memo.getGroup(group_id);
-}
-
 void OptimizerContext::updateBestPlan(GroupExpressionPtr expression)
 {
     auto group_id = expression->group_id;

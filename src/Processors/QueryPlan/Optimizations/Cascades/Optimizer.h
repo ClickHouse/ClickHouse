@@ -20,6 +20,7 @@ public:
 private:
     JoinGraph buildJoinGraph();
     GroupId populateMemo(const JoinGraph & join_graph, OptimizerContext & optimizer_context);
+    QueryPlanPtr buildBestPlan(GroupId subtree_root_group_id, const Memo & memo);
 
     QueryPlan & query_plan;
 };
