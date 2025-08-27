@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL.h>
 
+#include <algorithm>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -550,6 +551,9 @@ private:
             case NodeType::BinaryOperator:
                 return buildPieceForBinaryOperator(typeid_cast<const PrometheusQueryTree::BinaryOperator *>(node));
 
+            case NodeType::ScalarLiteral:
+                return buildPieceForScalarLiteral(typeid_cast<const PrometheusQueryTree::ScalarLiteral *>(node));
+
             default:
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Prometheus query tree node type {} is not implemented", node_type);
         }
@@ -1057,6 +1061,39 @@ ColumnsDescription PrometheusQueryToSQLConverter::getResultColumns() const
         }
     }
     return columns;
+}
+
+
+std::unique_ptr<PrometheusQueryTree> wrapWithSubquery(const PrometheusQueryTree & query_tree, const Field & start, const Field & end, const Field & step)
+{
+    std::vector<std::unique_ptr<PrometheusQueryTree::Node>> new_node_list;
+    auto * cloned_root = query_tree.getRoot()->clone(new_node_list);
+    auto range_interval = std::make_unique<PrometheusQueryTree::IntervalLiteral>();
+
+    auto interval_data_type = std::make_shared<DataTypeDecimal64>(18, 0); // 18 precision, 0 scale for seconds
+
+    Field range_seconds_field = Field{end.safeGet<Float64>() - start.safeGet<Float64>()};
+    range_interval->interval = fieldToDecimal<Decimal64>(range_seconds_field, interval_data_type);
+
+    auto resolution_interval = std::make_unique<PrometheusQueryTree::IntervalLiteral>();
+    resolution_interval->interval = fieldToDecimal<Decimal64>(step, interval_data_type);
+
+    auto subquery_node = std::make_unique<PrometheusQueryTree::Subquery>();
+
+    cloned_root->parent = subquery_node.get();
+    range_interval->parent = subquery_node.get();
+    resolution_interval->parent = subquery_node.get();
+
+    subquery_node->children.push_back(cloned_root);
+    subquery_node->children.push_back(range_interval.get());
+    subquery_node->children.push_back(resolution_interval.get());
+
+    new_node_list.push_back(std::move(range_interval));
+    new_node_list.push_back(std::move(resolution_interval));
+    auto* subquery_ptr = subquery_node.get();
+    new_node_list.push_back(std::move(subquery_node));
+
+    return std::make_unique<PrometheusQueryTree>(query_tree.getQuery(), subquery_ptr, std::move(new_node_list));
 }
 
 }
