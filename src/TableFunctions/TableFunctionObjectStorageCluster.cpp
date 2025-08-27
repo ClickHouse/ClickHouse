@@ -31,8 +31,15 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration>::execute
 
     auto object_storage = Base::getObjectStorage(context, !is_insert_query);
     StoragePtr storage;
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+
+    const auto & client_info = context->getClientInfo();
+
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
+        bool can_use_distributed_iterator =
+            client_info.collaborate_with_initiator &&
+            context->hasReadTaskCallback();
+
         /// On worker node this filename won't contains globs
         storage = std::make_shared<StorageObjectStorage>(
             configuration,
@@ -44,8 +51,8 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration>::execute
             /* comment */ String{},
             /* format_settings */ std::nullopt, /// No format_settings
             /* mode */ LoadingStrictnessLevel::CREATE,
-            /* distributed_processing */ true,
-            /*partition_by_=*/nullptr);
+            /* distributed_processing */ can_use_distributed_iterator,
+            /* partition_by_ */nullptr);
     }
     else
     {
