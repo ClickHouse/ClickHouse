@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeDecimalBase.h>
+#include <DataTypes/DataTypeNumberBase.h>
+#include <DataTypes/DataTypeTime.h>
+#include <Common/DateLUT.h>
 
 class DateLUTImpl;
 
@@ -13,10 +15,9 @@ namespace DB
  *
  * `scale` determines number of decimal places for sub-second part of the DateTime64.
   */
-class DataTypeTime64 final : public DataTypeDecimalBase<Time64>, public TimezoneMixin
+class DataTypeTime64 final : public DataTypeDecimalBase<Time64>
 {
 public:
-
     static constexpr int max_value = 63'539; // 999*60 + 59*60+ 59
     using Base = DataTypeDecimalBase<Time64>;
     static constexpr UInt8 default_scale = 3;
@@ -24,11 +25,16 @@ public:
     static constexpr auto family_name = "Time64";
     static constexpr auto type_id = TypeIndex::Time64;
 
-    explicit DataTypeTime64(UInt32 scale_, std::string_view time_zone_name = "");
+    explicit DataTypeTime64(UInt32 scale_);
 
-    DataTypeTime64() : DataTypeTime64(default_scale, "") {}
+    DataTypeTime64()
+        : DataTypeTime64(default_scale)
+    {
+    }
 
-    DataTypeTime64(UInt32 scale_, const TimezoneMixin & time_zone_info);
+    bool hasExplicitTimeZone() const { return false; }
+    const DateLUTImpl & getTimeZone() const;
+    String getTimeZoneID() const { return {}; }
 
     const char * getFamilyName() const override { return family_name; }
     std::string doGetName() const override;
