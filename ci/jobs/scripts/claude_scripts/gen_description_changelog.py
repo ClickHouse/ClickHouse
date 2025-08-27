@@ -231,7 +231,7 @@ def should_process_section(pr_body: str, tag_prefix: str) -> Tuple[bool, Tuple[b
     return (should_process, (should_format, content))
 
 
-if __name__ == "__main__":
+def main():
     info = Info()
     if not ensure_claude_code_cli() or not ensure_claude_API_key():
         return 1
@@ -290,3 +290,6 @@ if __name__ == "__main__":
     else:
         print("No conditions were detected for automatically generating or formatting a changelog entry or a PR description")
         return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
