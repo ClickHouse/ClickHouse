@@ -80,7 +80,7 @@ llvm::StructType * buildStringRefType(llvm::IRBuilderBase &b)
 {
     auto * data_ptr_type = b.getInt8Ty()->getPointerTo();
     auto * offset_ptr_type = b.getInt8Ty()->getPointerTo();
-    auto * index_type = b.getIntNTy(sizeof(size_t) * 8);
+    auto * index_type = b.getInt64Ty();
     return llvm::StructType::get(data_ptr_type, offset_ptr_type, index_type);
 }
 
