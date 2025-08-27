@@ -14,6 +14,7 @@
 #include "Common/logger_useful.h"
 #include "Core/Block_fwd.h"
 #include "Core/Settings.h"
+#include "IO/WriteBufferFromString.h"
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <algorithm>
@@ -30,9 +31,11 @@ namespace Setting
     extern const SettingsBool join_use_nulls;
 }
 
-namespace QueryPlanOptimizations
+static String dumpQueryPlanShort(const QueryPlan & query_plan)
 {
-String dumpQueryPlanShort(const QueryPlan & query_plan);
+    WriteBufferFromOwnString out;
+    query_plan.explainPlan(out, {});
+    return out.str();
 }
 
 CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_)
@@ -87,6 +90,7 @@ bool collectJoins(QueryPlan::Node * node, JoinGraph & join_graph)
 GroupId CascadesOptimizer::fillMemoFromQueryPlan(OptimizerContext & optimizer_context)
 {
     /// Traverse from the root till the first join node
+    /// Create groups for plan steps above JOIN graph
     QueryPlan::Node * node = query_plan.getRootNode();
     GroupExpressionPtr expression_above_join_graph;
     std::optional<GroupId> root_group_id;
@@ -108,7 +112,7 @@ GroupId CascadesOptimizer::fillMemoFromQueryPlan(OptimizerContext & optimizer_co
 
     LOG_TRACE(optimizer_context.log, "JOIN Graph:\n{}", join_graph.dump());
 
-    auto join_graph_group_id = populateMemo(join_graph, optimizer_context);
+    auto join_graph_group_id = populateMemoFromJoinGraph(join_graph, optimizer_context);
 
     if (expression_above_join_graph)
     {
@@ -165,7 +169,7 @@ JoinGraph::PredicatesSet listEdges(
     return result;
 }
 
-GroupId CascadesOptimizer::populateMemo(const JoinGraph & join_graph, OptimizerContext & optimizer_context)
+GroupId CascadesOptimizer::populateMemoFromJoinGraph(const JoinGraph & join_graph, OptimizerContext & optimizer_context)
 {
     struct GroupInfo
     {
@@ -275,7 +279,7 @@ GroupId CascadesOptimizer::populateMemo(const JoinGraph & join_graph, OptimizerC
                                 normalizedGroupName(larger_subgroup.relations) + "', '" +
                                 normalizedGroupName(smaller_subgroup.relations) + "'");
 
-                        join_expression->plan_step = std::move(join_step); 
+                        join_expression->plan_step = std::move(join_step);
                     }
 
                     /// Add or create new group for the combined set of relations
@@ -302,7 +306,8 @@ GroupId CascadesOptimizer::populateMemo(const JoinGraph & join_graph, OptimizerC
         }
     }
 
-    /// Add root group
+    /// The biggest group is the root
+    chassert(join_groups_by_size.back().size() == 1);
     return join_groups_by_size.back().front().group_id;
 }
 
@@ -318,8 +323,8 @@ void CascadesOptimizer::optimize()
     CostLimit initial_cost_limit = std::numeric_limits<Int64>::max();
     optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(root_group_id, initial_cost_limit));
 
-    /// Limit the time in terms of optimization tasks instead of wall clock time. This is done for stability of generated plans.
-    /// Clever guys from MS SQL Server describe this in Andy Pavlo's seminar (https://www.youtube.com/watch?v=pQe1LQJiXN0)
+    /// Limit the time in terms of optimization tasks instead of wall clock time. This is done for stability of generated plans regardless of system load.
+    /// Guys from MS SQL Server describe this in Andy Pavlo's seminar: https://www.youtube.com/watch?v=pQe1LQJiXN0
     const size_t executed_tasks_limit = 100000;
     size_t executed_tasks_count = 0;
     for (; !optimizer_context.tasks.empty() && executed_tasks_count < executed_tasks_limit; ++executed_tasks_count)
@@ -334,8 +339,9 @@ void CascadesOptimizer::optimize()
     /// Get the best plan for the root group
     auto best_plan = buildBestPlan(root_group_id, optimizer_context.memo);
 
-    LOG_TRACE(optimizer_context.log, "Optimized plan:\n{}", QueryPlanOptimizations::dumpQueryPlanShort(*best_plan));
+    LOG_TRACE(optimizer_context.log, "Optimized plan:\n{}", dumpQueryPlanShort(*best_plan));
 
+    /// Update the original plan in-place because there might be references to the root node of the original plan
     query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(best_plan));
 }
 
@@ -391,7 +397,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, con
         plan_for_group = std::move(united_plan);
     }
 
-    LOG_TRACE(getLogger("buildBestPlan"), "Plan for group #{}:\n{}", subtree_root_group_id, QueryPlanOptimizations::dumpQueryPlanShort(*plan_for_group));
+    LOG_TRACE(getLogger("buildBestPlan"), "Plan for group #{}:\n{}", subtree_root_group_id, dumpQueryPlanShort(*plan_for_group));
 
     return plan_for_group;
 }

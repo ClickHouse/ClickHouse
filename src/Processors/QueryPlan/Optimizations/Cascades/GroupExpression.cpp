@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -43,6 +44,20 @@ bool GroupExpression::isApplied(const IOptimizationRule & rule) const
 void GroupExpression::setApplied(const IOptimizationRule & rule)
 {
     applied_rules.insert(rule.getName());
+}
+
+void GroupExpression::dump(WriteBuffer & out) const
+{
+    out << "'" << getDescription() << "' inputs:";
+    for (const auto & input_group_id : inputs)
+        out << " #" << input_group_id;
+}
+
+String GroupExpression::dump() const
+{
+    WriteBufferFromOwnString out;
+    dump(out);
+    return out.str();
 }
 
 }

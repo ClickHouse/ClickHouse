@@ -15,9 +15,8 @@ void Group::dump(WriteBuffer & out, String indent) const
 {
     for (const auto & expression : expressions)
     {
-        out << indent << "'" << expression->getDescription() << "' inputs:";
-        for (const auto & input_group_id : expression->inputs)
-            out << " #" << input_group_id;
+        out << indent;
+        expression->dump(out);
         out << "\n";
     }
 
@@ -26,8 +25,17 @@ void Group::dump(WriteBuffer & out, String indent) const
         out << indent << "Best:\n"
             << indent << indent << "Rows: " << best_implementation.cost.number_of_rows
             << " Cost: " << best_implementation.cost.subtree_cost << "\n"
-            << indent << indent << best_implementation.expression->getDescription() << "\n";
+            << indent << indent;
+        best_implementation.expression->dump(out);
+        out << "\n";
     }
+}
+
+String Group::dump() const
+{
+    WriteBufferFromOwnString out;
+    dump(out);
+    return out.str();
 }
 
 }

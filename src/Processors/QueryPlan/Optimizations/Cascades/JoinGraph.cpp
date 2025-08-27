@@ -72,5 +72,4 @@ String JoinGraph::dump()
     return out.str();
 }
 
-
 }

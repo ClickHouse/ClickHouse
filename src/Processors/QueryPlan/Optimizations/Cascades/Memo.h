@@ -18,8 +18,8 @@ public:
     GroupPtr getGroup(GroupId group_id);
     GroupConstPtr getGroup(GroupId group_id) const;
 
-    void dump(WriteBuffer & out);
-    String dump();
+    void dump(WriteBuffer & out) const;
+    String dump() const;
 
 private:
     LoggerPtr log;

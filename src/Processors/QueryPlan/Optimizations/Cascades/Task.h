@@ -34,6 +34,8 @@ public:
 
 using OptimizationTaskPtr = std::shared_ptr<IOptimizationTask>;
 
+/// Optimizations tasks as they are described in "Extensible Query Optimizers in Practice":
+/// https://www.microsoft.com/en-us/research/wp-content/uploads/2024/12/Extensible-Query-Optimizers-in-Practice.pdf#section.2.3
 
 class OptimizeGroupTask final : public IOptimizationTask
 {
