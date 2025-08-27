@@ -44,7 +44,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTOrderByElement.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -367,9 +366,12 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
     for (auto & expr : elements)
     {
         auto name = expr->getAliasOrColumnName();
-
         if (!assigned_column_names.insert(name).second)
         {
+            /// We can't rename with aliases if it doesn't support alias (e.g. asterisk)
+            if (!dynamic_cast<ASTWithAlias *>(expr.get()))
+                continue;
+
             size_t i = 1;
             while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
                 ++i;
@@ -724,7 +726,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
         if (any_keys_empty)
             throw DB::Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                                 "Cannot get JOIN keys from JOIN ON section: '{}', found keys: {}",
-                                queryToString(table_join.on_expression), TableJoin::formatClauses(analyzed_join.getClauses()));
+                                table_join.on_expression->formatForErrorMessage(), TableJoin::formatClauses(analyzed_join.getClauses()));
 
         if (is_asof)
         {
@@ -1245,7 +1247,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         ss << "Missing columns:";
         for (const auto & name : unknown_required_source_columns)
             ss << " '" << name << "'";
-        ss << " while processing: '" << queryToString(query) << "'";
+        ss << " while processing: '" << query->formatWithSecretsOneLine() << "'";
 
         ss << ", required columns:";
         for (const auto & name : columns_context.requiredColumns())
@@ -1651,7 +1653,7 @@ void TreeRewriter::normalize(
     }
 
     /// Common subexpression elimination. Rewrite rules.
-    QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, settings, allow_self_aliases, is_create_parameterized_view);
+    QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, QueryNormalizer::ExtractedSettings(settings), allow_self_aliases, is_create_parameterized_view);
     QueryNormalizer(normalizer_data).visit(query);
 
     optimizeGroupingSets(query);

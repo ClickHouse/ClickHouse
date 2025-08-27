@@ -116,7 +116,7 @@ public:
 
     bool isSymlinkNoThrow(const String & path) const override;
 
-    void createDirectoriesSymlink(const String & target, const String & link) override;
+    void createDirectorySymlink(const String & target, const String & link) override;
 
     String readSymlink(const fs::path & path) const override;
 
@@ -140,7 +140,7 @@ public:
     bool isBroken() const override { return broken; }
     bool isReadOnly() const override { return readonly; }
 
-    void startupImpl(ContextPtr context) override;
+    void startupImpl() override;
 
     void shutdown() override;
 

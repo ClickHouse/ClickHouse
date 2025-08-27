@@ -3,6 +3,7 @@
 #include <Storages/StorageURL.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -33,6 +34,7 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -184,22 +186,71 @@ namespace
         {
             ASTs & engine_args = args.engine_args;
 
-            if (engine_args.size() != 3)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Storage {} requires exactly 3 parameters: {}('DSN', database or schema, table)", name, name);
+            String connection_string;
+            String database_or_schema;
+            String table;
 
-            for (size_t i = 0; i < 3; ++i)
-                engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());
+            if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.getLocalContext()))
+            {
+                if (Poco::toLower(name) == "jdbc")
+                {
+                    validateNamedCollection<>(*named_collection, {"datasource"}, {"schema", "external_database",
+                                                                                  "external_table", "table"});
+
+                    /// There are aliases for better compatibility and similarity between JDBC and ODBC
+                    /// Both aliases cannot be specified simultaneously.
+
+                    connection_string = named_collection->get<String>("datasource");
+
+                    if (named_collection->has("external_database") == named_collection->has("schema"))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                        "Table function '{0}' must have exactly one `external_database` / `schema` argument", name);
+                    database_or_schema = named_collection->getAny<String>({"external_database", "schema"});
+
+                    if (named_collection->has("external_table") == named_collection->has("table"))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                        "Table function '{0}' must have exactly one `external_table` / `table` argument", name);
+                    table = named_collection->getAny<String>({"external_table", "table"});
+                }
+                else
+                {
+                    validateNamedCollection<>(*named_collection, {"external_database", "external_table"}, {"datasource", "connection_settings"});
+
+                    if (named_collection->has("datasource") == named_collection->has("connection_settings"))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                        "Table function '{0}' must have exactly one `datasource` / `connection_settings` argument", name);
+                    connection_string = named_collection->getAny<String>({"datasource", "connection_settings"});
+
+                    database_or_schema = named_collection->get<String>("external_database");
+                    table = named_collection->get<String>("external_table");
+                }
+            }
+            else
+            {
+                if (engine_args.size() != 3)
+                    throw Exception(
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Storage {} requires exactly 3 parameters: {}('DSN', database or schema, table)",
+                        name,
+                        name);
+
+                for (size_t i = 0; i < 3; ++i)
+                    engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());
+
+                connection_string = checkAndGetLiteralArgument<String>(engine_args[0], "datasource");
+                database_or_schema = checkAndGetLiteralArgument<String>(engine_args[1], "external_database");
+                table = checkAndGetLiteralArgument<String>(engine_args[2], "external_table");
+            }
 
             BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(
                 args.getContext(),
                 args.getContext()->getSettingsRef()[Setting::http_receive_timeout].value,
-                checkAndGetLiteralArgument<String>(engine_args[0], "connection_string"),
+                connection_string,
                 args.getContext()->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
             return std::make_shared<StorageXDBC>(
                 args.table_id,
-                checkAndGetLiteralArgument<String>(engine_args[1], "database_name"),
-                checkAndGetLiteralArgument<String>(engine_args[2], "table_name"),
+                database_or_schema,
+                table,
                 args.columns,
                 args.constraints,
                 args.comment,
@@ -208,7 +259,7 @@ namespace
 
         },
         {
-            .source_access_type = BridgeHelperMixin::getSourceAccessType(),
+            .source_access_type = BridgeHelperMixin::getSourceAccessObject(),
         });
     }
 }

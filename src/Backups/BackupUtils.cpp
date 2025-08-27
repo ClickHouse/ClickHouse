@@ -3,7 +3,6 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/setThreadName.h>
 
@@ -112,7 +111,7 @@ bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAS
 
     ASTPtr query1 = adjust_before_comparison(restored_table_create_query);
     ASTPtr query2 = adjust_before_comparison(create_query_from_backup);
-    return serializeAST(*query1) == serializeAST(*query2);
+    return query1->formatWithSecretsOneLine() == query2->formatWithSecretsOneLine();
 }
 
 bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context)
@@ -127,8 +126,8 @@ bool isInnerTable(const QualifiedTableName & table_name)
 
 bool isInnerTable(const String & /* database_name */, const String & table_name)
 {
-    /// We skip inner tables of materialized views.
-    return table_name.starts_with(".inner.") || table_name.starts_with(".inner_id.");
+    /// We skip inner tables of materialized views. They're backed up by StorageMaterializedView.
+    return table_name.starts_with(".inner.") || table_name.starts_with(".inner_id.") || table_name.starts_with(".tmp.inner.") || table_name.starts_with(".tmp.inner_id.");
 }
 
 }

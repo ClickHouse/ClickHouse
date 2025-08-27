@@ -41,6 +41,11 @@ extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation
 struct OvercommitRatio;
 struct OvercommitTracker;
 
+namespace DB
+{
+    class PageCache;
+}
+
 /** Tracks memory consumption.
   * It throws an exception if amount of consumed memory become greater than certain limit.
   * The same memory tracker could be simultaneously used in different threads.
@@ -86,6 +91,8 @@ private:
     std::atomic<std::chrono::microseconds> max_wait_time;
 
     std::atomic<OvercommitTracker *> overcommit_tracker = nullptr;
+
+    std::atomic<DB::PageCache *> page_cache = nullptr;
 
     bool log_peak_memory_usage_in_destructor = true;
 
@@ -242,6 +249,16 @@ public:
     void resetOvercommitTracker() noexcept
     {
         overcommit_tracker.store(nullptr, std::memory_order_relaxed);
+    }
+
+    void setPageCache(DB::PageCache * cache) noexcept
+    {
+        page_cache.store(cache);
+    }
+
+    void resetPageCache() noexcept
+    {
+        page_cache.store(nullptr);
     }
 
     /// Reset the accumulated data

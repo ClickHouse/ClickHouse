@@ -150,6 +150,13 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
                         return false;
                 }
 
+                auto add_to_expected = [&](const char * name) { expected.add(pos, name); };
+                for (const auto & elem : access_and_columns)
+                {
+                    if (!elem.first.validateParameter(parameter, add_to_expected))
+                        return false;
+                }
+
                 if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                     wildcard = true;
             }
@@ -178,6 +185,7 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
         if (!ParserList::parseUtil(pos, expected, parse_around_on, false))
             return false;
 
+        res_elements.replaceDeprecated();
         elements = std::move(res_elements);
         return true;
     });

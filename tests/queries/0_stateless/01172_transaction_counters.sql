@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database
+-- Tags: no-ordinary-database, no-encrypted-storage
 
 drop table if exists txn_counters;
 

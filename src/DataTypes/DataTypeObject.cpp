@@ -10,6 +10,7 @@
 #include <DataTypes/Serializations/SerializationSubObject.h>
 #include <Columns/ColumnObject.h>
 #include <Common/CurrentThread.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 
 #include <Parsers/IAST.h>
@@ -517,6 +518,36 @@ const DataTypePtr & DataTypeObject::getTypeOfSharedData()
     /// Array(Tuple(String, String))
     static const DataTypePtr type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"paths", "values"}));
     return type;
+}
+
+void DataTypeObject::updateHashImpl(SipHash & hash) const
+{
+    hash.update(static_cast<UInt8>(schema_format));
+    hash.update(max_dynamic_paths);
+    hash.update(max_dynamic_types);
+
+    // Include the sorted paths in the hash for deterministic ordering
+    std::vector<String> sorted_paths;
+    for (const auto & [path, type] : typed_paths)
+        sorted_paths.push_back(path);
+    std::sort(sorted_paths.begin(), sorted_paths.end());
+
+    hash.update(sorted_paths.size());
+    for (const auto & path : sorted_paths)
+    {
+        hash.update(path);
+        typed_paths.at(path)->updateHash(hash);
+    }
+
+    // Include paths to skip in the hash
+    hash.update(paths_to_skip.size());
+    for (const auto & path : paths_to_skip)
+        hash.update(path);
+
+    // Include path regexps to skip in the hash
+    hash.update(path_regexps_to_skip.size());
+    for (const auto & regexp : path_regexps_to_skip)
+        hash.update(regexp);
 }
 
 DataTypePtr DataTypeObject::getTypeOfNestedObjects() const

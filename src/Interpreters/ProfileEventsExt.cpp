@@ -1,10 +1,11 @@
-#include "ProfileEventsExt.h"
+#include <Interpreters/ProfileEventsExt.h>
 #include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Core/Block.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>

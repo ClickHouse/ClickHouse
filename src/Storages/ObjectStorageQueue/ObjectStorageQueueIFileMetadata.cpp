@@ -46,6 +46,11 @@ void ObjectStorageQueueIFileMetadata::FileStatus::setProcessingEndTime()
     processing_end_time = now();
 }
 
+void ObjectStorageQueueIFileMetadata::FileStatus::setGetObjectTime(size_t elapsed_ms)
+{
+    get_object_time_ms = elapsed_ms;
+}
+
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 {
     state = FileStatus::State::Processing;
@@ -57,8 +62,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
 {
     state = FileStatus::State::Processed;
-    if (!processing_end_time)
-        setProcessingEndTime();
+    chassert(processing_end_time);
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & exception)
@@ -240,7 +244,7 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
             && file_status->retries >= max_loading_retries))
     {
         LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                 path, state, file_status->retries, max_loading_retries);
+                 path, state, file_status->retries.load(), max_loading_retries);
         return false;
     }
 
@@ -296,7 +300,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
                 && file_status->retries >= max_loading_retries))
         {
             LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                    path, state, file_status->retries, max_loading_retries);
+                    path, state, file_status->retries.load(), max_loading_retries);
 
             /// This is possible in case on the same server
             /// there are more than one S3(Azure)Queue table processing the same keeper path.
@@ -437,7 +441,7 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
     processing_id.reset();
     processing_id_version.reset();
 
-    LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows);
+    LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows.load());
 }
 
 void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & exception_message)
@@ -448,7 +452,7 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
     processing_id.reset();
     processing_id_version.reset();
 
-    LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows);
+    LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows.load());
 }
 
 void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
@@ -493,7 +497,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 
     LOG_TRACE(
         log,
-        "File `{}` failed at try {}/{}, "
+        "File {} failed at try {}/{}, "
         "retries node exists: {} (failed node path: {})",
         path, node_metadata.retries, max_loading_retries, has_failed_before, failed_node_path);
 

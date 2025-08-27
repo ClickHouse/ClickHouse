@@ -110,19 +110,23 @@ private:
 
 HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 /// @param server - used in handlers to check IServer::isCancelled()
 /// @param config - not the same as server.config(), since it can be newer

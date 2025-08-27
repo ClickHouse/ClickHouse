@@ -1,7 +1,9 @@
 ---
-slug: /operations/utilities/clickhouse-benchmark
+description: 'Documentation for clickhouse-benchmark '
+sidebar_label: 'clickhouse-benchmark'
 sidebar_position: 61
-sidebar_label: clickhouse-benchmark
+slug: /operations/utilities/clickhouse-benchmark
+title: 'clickhouse-benchmark'
 ---
 
 # clickhouse-benchmark 
@@ -10,32 +12,32 @@ Connects to a ClickHouse server and repeatedly sends specified queries.
 
 **Syntax**
 
-``` bash
+```bash
 $ clickhouse-benchmark --query ["single query"] [keys]
 ```
 
 or
 
-``` bash
+```bash
 $ echo "single query" | clickhouse-benchmark [keys]
 ```
 
 or
 
-``` bash
+```bash
 $ clickhouse-benchmark [keys] <<< "single query"
 ```
 
 If you want to send a set of queries, create a text file and place each query on the individual string in this file. For example:
 
-``` sql
+```sql
 SELECT * FROM system.numbers LIMIT 10000000;
 SELECT 1;
 ```
 
 Then pass this file to a standard input of `clickhouse-benchmark`:
 
-``` bash
+```bash
 clickhouse-benchmark [keys] < queries_file;
 ```
 
@@ -57,9 +59,10 @@ clickhouse-benchmark [keys] < queries_file;
 - `--password=PSWD` — ClickHouse user password. Default value: empty string.
 - `--stacktrace` — Stack traces output. When the key is set, `clickhouse-bencmark` outputs stack traces of exceptions.
 - `--stage=WORD` — Query processing stage at server. ClickHouse stops query processing and returns an answer to `clickhouse-benchmark` at the specified stage. Possible values: `complete`, `fetch_columns`, `with_mergeable_state`. Default value: `complete`.
+- `--reconnect=N` - Control reconnection behaviour. Possible values 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries). Default value: 0.
 - `--help` — Shows the help message.
 
-If you want to apply some [settings](../../operations/settings/index.md) for queries, pass them as a key `--<session setting name>= SETTING_VALUE`. For example, `--max_memory_usage=1048576`.
+If you want to apply some [settings](/operations/settings/overview) for queries, pass them as a key `--<session setting name>= SETTING_VALUE`. For example, `--max_memory_usage=1048576`.
 
 ## Output {#clickhouse-benchmark-output}
 
@@ -67,7 +70,7 @@ By default, `clickhouse-benchmark` reports for each `--delay` interval.
 
 Example of the report:
 
-``` text
+```text
 Queries executed: 10.
 
 localhost:9000, queries 10, QPS: 6.772, RPS: 67904487.440, MiB/s: 518.070, result RPS: 67721584.984, result MiB/s: 516.675.
@@ -94,13 +97,13 @@ In the report you can find:
 
 - Status string containing (in order):
 
-    - Endpoint of ClickHouse server.
-    - Number of processed queries.
-    - QPS: How many queries the server performed per second during a period specified in the `--delay` argument.
-    - RPS: How many rows the server reads per second during a period specified in the `--delay` argument.
-    - MiB/s: How many mebibytes the server reads per second during a period specified in the `--delay` argument.
-    - result RPS: How many rows placed by the server to the result of a query per second during a period specified in the `--delay` argument.
-    - result MiB/s. How many mebibytes placed by the server to the result of a query per second during a period specified in the `--delay` argument.
+  - Endpoint of ClickHouse server.
+  - Number of processed queries.
+  - QPS: How many queries the server performed per second during a period specified in the `--delay` argument.
+  - RPS: How many rows the server reads per second during a period specified in the `--delay` argument.
+  - MiB/s: How many mebibytes the server reads per second during a period specified in the `--delay` argument.
+  - result RPS: How many rows placed by the server to the result of a query per second during a period specified in the `--delay` argument.
+  - result MiB/s. How many mebibytes placed by the server to the result of a query per second during a period specified in the `--delay` argument.
 
 - Percentiles of queries execution time.
 
@@ -112,11 +115,11 @@ To use the comparison mode, specify endpoints of both servers by two pairs of `-
 
 ## Example {#clickhouse-benchmark-example}
 
-``` bash
+```bash
 $ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark --host=localhost --port=9001 --host=localhost --port=9000 -i 10
 ```
 
-``` text
+```text
 Loaded 1 queries.
 
 Queries executed: 5.

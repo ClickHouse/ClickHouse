@@ -1,10 +1,11 @@
 ---
-title: "varSamp"
-slug: /sql-reference/aggregate-functions/reference/varSamp
+description: 'Calculate the sample variance of a data set.'
 sidebar_position: 212
+slug: /sql-reference/aggregate-functions/reference/varSamp
+title: 'varSamp'
 ---
 
-## varSamp
+## varSamp {#varsamp}
 
 Calculate the sample variance of a data set.
 
@@ -21,7 +22,6 @@ Alias: `VAR_SAMP`.
 - `x`: The population for which you want to calculate the sample variance. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
 
 **Returned value**
-
 
 - Returns the sample variance of the input data set `x`. [Float64](../../data-types/float.md).
 

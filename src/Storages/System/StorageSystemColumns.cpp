@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
-#include <Parsers/queryToString.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
@@ -82,7 +81,7 @@ class ColumnsSource : public ISource
 public:
     ColumnsSource(
         std::vector<UInt8> columns_mask_,
-        Block header_,
+        SharedHeader header_,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ColumnPtr tables_,
@@ -188,7 +187,7 @@ protected:
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(toString(column.default_desc.kind));
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(queryToString(column.default_desc.expression));
+                        res_columns[res_index++]->insert(column.default_desc.expression->formatForLogging());
                 }
                 else
                 {
@@ -242,7 +241,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (column.codec)
-                        res_columns[res_index++]->insert(queryToString(column.codec));
+                        res_columns[res_index++]->insert(column.codec->formatForLogging());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -348,7 +347,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            std::make_shared<const Block>(std::move(sample_block)),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -476,7 +475,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
             else
             {
                 const DatabasePtr & database = databases.at(database_name);
-                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                for (auto iterator = database->getLightweightTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     if (const auto & table = iterator->table())
                     {

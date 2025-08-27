@@ -21,6 +21,8 @@
 #include <Processors/Sources/MySQLSource.h>
 #include <boost/algorithm/string.hpp>
 
+#include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -28,7 +30,7 @@ namespace Setting
 {
     extern const SettingsUInt64 external_storage_max_read_bytes;
     extern const SettingsUInt64 external_storage_max_read_rows;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
 }
 
 namespace ErrorCodes
@@ -62,7 +64,7 @@ MySQLSource::MySQLSource(
     const std::string & query_str,
     const Block & sample_block,
     const StreamSettings & settings_)
-    : ISource(sample_block.cloneEmpty())
+    : ISource(std::make_shared<const Block>(sample_block.cloneEmpty()))
     , log(getLogger("MySQLSource"))
     , connection{std::make_unique<Connection>(entry, query_str)}
     , settings{std::make_unique<StreamSettings>(settings_)}
@@ -73,7 +75,7 @@ MySQLSource::MySQLSource(
 
 /// For descendant MySQLWithFailoverSource
 MySQLSource::MySQLSource(const Block &sample_block_, const StreamSettings & settings_)
-    : ISource(sample_block_.cloneEmpty())
+    : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , log(getLogger("MySQLSource"))
     , settings(std::make_unique<StreamSettings>(settings_))
 {
@@ -169,11 +171,12 @@ namespace
                     char * to = reinterpret_cast<char *>(&val);
                     memcpy(to, const_cast<char *>(value.data()), n);
 
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-                    char * start = to;
-                    char * end = to + n;
-                    std::reverse(start, end);
-#endif
+                    if constexpr (std::endian::native == std::endian::little)
+                    {
+                        char * start = to;
+                        char * end = to + n;
+                        std::reverse(start, end);
+                    }
                     assert_cast<ColumnUInt64 &>(column).insertValue(val);
                     read_bytes_size += n;
                 }

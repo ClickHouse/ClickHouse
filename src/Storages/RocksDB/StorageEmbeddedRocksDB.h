@@ -102,9 +102,9 @@ public:
     /// To turn on the optimization optimize_trivial_approximate_count_query=1 should be set for a query.
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
 
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
 

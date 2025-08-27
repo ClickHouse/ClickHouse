@@ -39,4 +39,7 @@
 
     <!-- Remove the default remote server to avoid people depending on its hardcoded config -->
     <remote_servers remove="remove"></remote_servers>
+
+    <!-- Allow sending query plan -->
+    <process_query_plan_packet>true</process_query_plan_packet>
 </clickhouse>

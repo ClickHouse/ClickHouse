@@ -42,6 +42,8 @@ struct ACL
         return std::tuple(permissions, scheme, id)
             < std::tuple(other.permissions, other.scheme, other.id);
     }
+
+    bool operator==(const ACL & other) const = default;
 };
 
 using ACLs = std::vector<ACL>;
@@ -82,6 +84,7 @@ enum class Error : int32_t
     ZOPERATIONTIMEOUT = -7,     /// Operation timeout
     ZBADARGUMENTS = -8,         /// Invalid arguments
     ZINVALIDSTATE = -9,         /// Invalid zhandle state
+    ZOUTOFMEMORY = -10,         /// Keeper has reached soft memory limit
 
     /** API errors.
         * This is never thrown by the server, it shouldn't be used other than

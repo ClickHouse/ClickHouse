@@ -93,6 +93,12 @@ def test_basic_auth_failed(started_cluster):
         "SELECT currentUser()", user="good_user", password="bad_password"
     )
 
+def test_header_failed(started_cluster):
+    ping_response = instance.exec_in_container(
+        ["curl", "-s", "-u", "good_user:bad_password", "-H", "Custom-Header: ok",  "--data", f"SELECT 2+2", f"http://localhost:8123"],
+        nothrow=True,
+    )
+    assert ping_response == "4\n"
 
 def test_session_settings_from_auth_response(started_cluster):
     for user, response in USER_RESPONSES.items():

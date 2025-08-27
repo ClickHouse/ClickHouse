@@ -13,7 +13,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.test_tools import TSV, assert_eq_with_retry, wait_condition
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -207,6 +207,21 @@ def test_restore_table(engine):
 
     instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+@pytest.mark.parametrize(
+    "engine", ["MergeTree", "Log", "TinyLog", "StripeLog", "Memory"]
+)
+def test_restore_empty_table(engine):
+    backup_name = new_backup_name()
+    create_and_fill_table(engine=engine, n=0)
+
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    instance.query("DROP TABLE test.table")
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
 
 
 def test_restore_materialized_view_with_definer():
@@ -1641,6 +1656,7 @@ def test_backup_all(exclude_system_log_tables):
             "backup_log",
             "error_log",
             "latency_log",
+            "blob_storage_log",
         ]
         exclude_from_backup += ["system." + table_name for table_name in log_tables]
 
@@ -1797,26 +1813,25 @@ def test_system_backups():
     id = instance.query(
         f"RESTORE TABLE test.table FROM {backup_name}", query_id=restore_query_id
     ).split("\t")[0]
-    restore_info = get_backup_info_from_system_backups(by_id=id)
-    restore_events = get_events_for_query(restore_query_id)
 
-    assert restore_info.name == escaped_backup_name
-    assert restore_info.status == "RESTORED"
-    assert restore_info.error == ""
-    assert restore_info.start_time < restore_info.end_time
-    assert restore_info.num_files == info.num_files
-    assert restore_info.total_size == info.total_size
-    assert restore_info.num_entries == info.num_entries
-    assert restore_info.uncompressed_size == info.uncompressed_size
-    assert restore_info.compressed_size == info.compressed_size
-    assert (
-        restore_info.files_read + restore_events["RestorePartsSkippedFiles"]
-        == restore_info.num_files
-    )
-    assert (
-        restore_info.bytes_read + restore_events["RestorePartsSkippedBytes"]
-        == restore_info.total_size
-    )
+    def verify_restore_info():
+        restore_info = get_backup_info_from_system_backups(by_id=id)
+        restore_events = get_events_for_query(restore_query_id)
+        return (
+            restore_info.name == escaped_backup_name and
+            restore_info.status == "RESTORED" and
+            restore_info.error == "" and
+            restore_info.start_time < restore_info.end_time and
+            restore_info.num_files == info.num_files and
+            restore_info.total_size == info.total_size and
+            restore_info.num_entries == info.num_entries and
+            restore_info.uncompressed_size == info.uncompressed_size and
+            restore_info.compressed_size == info.compressed_size and
+            restore_info.files_read + restore_events["RestorePartsSkippedFiles"] == restore_info.num_files and
+            restore_info.bytes_read + restore_events["RestorePartsSkippedBytes"] == restore_info.total_size
+        )
+
+    wait_condition(verify_restore_info, lambda x: x)
 
     # Failed backup.
     backup_name = new_backup_name()
@@ -2035,6 +2050,28 @@ def test_required_privileges_with_partial_revokes():
         f"RESTORE ALL FROM {backup_name}", user="u2"
     )
 
+
+def test_rmv_no_definer():
+    backup_name = new_backup_name()
+    instance.query("CREATE DATABASE test")
+    instance.query("CREATE USER u1")
+    instance.query("GRANT CURRENT GRANTS ON *.* TO u1")
+    instance.query("CREATE TABLE test.src (x UInt64) ENGINE = MergeTree ORDER BY x")
+    instance.query("CREATE TABLE test.tgt (x UInt64) ENGINE = MergeTree ORDER BY x")
+    instance.query("CREATE MATERIALIZED VIEW test.rmv REFRESH EVERY 6 HOUR TO test.tgt (id UInt64) DEFINER = u1 SQL SECURITY DEFINER AS SELECT * FROM test.src")
+
+    instance.query(f"BACKUP DATABASE test TO {backup_name}")
+    instance.query("DROP USER u1")
+    instance.query("DROP TABLE test.rmv")
+
+    instance.query(f"RESTORE ALL FROM {backup_name}")
+
+    assert (
+        instance.query(
+            "SELECT name FROM system.tables where database='test' AND name='rmv'"
+        ).strip()
+        == "rmv"
+    )
 
 # Test for the "clickhouse_backupview" utility.
 

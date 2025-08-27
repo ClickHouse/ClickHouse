@@ -31,7 +31,7 @@ MergeTreeDataPartsVector filterByPartitions(
     if (!partitions_to_keep)
         return parts;
 
-    std::erase_if(parts, [&partitions_to_keep](const auto & part) { return !partitions_to_keep->contains(part->info.partition_id); });
+    std::erase_if(parts, [&partitions_to_keep](const auto & part) { return !partitions_to_keep->contains(part->info.getPartitionId()); });
 
     return parts;
 }

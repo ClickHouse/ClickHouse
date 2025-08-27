@@ -294,6 +294,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         while (task_it != current_tasks.end())
         {
             auto & task = *task_it;
+
             if (task->completely_processed)
             {
                 chassert(task->was_executed);
@@ -349,7 +350,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                    "first_failed_task_name={}, current_tasks_size={}, "
                    "last_current_task={}, "
                    "last_skipped_entry_name={}",
-                   initialized, size_before_filtering, queue_nodes.size(),
+                   initialized.load(), size_before_filtering, queue_nodes.size(),
                    queue_nodes.empty() ? "none" : queue_nodes.front(), queue_nodes.empty() ? "none" : queue_nodes.back(),
                    first_failed_task_name ? *first_failed_task_name : "none", current_tasks.size(),
                    current_tasks.empty() ? "none" : current_tasks.back()->entry_name,
@@ -389,7 +390,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     /// Maybe such asserts are too paranoid and excessive,
     /// but it's easy enough to break DDLWorker in a very unobvious way by making some minor change in code.
     [[maybe_unused]] bool have_no_tasks_info = !first_failed_task_name && current_tasks.empty() && !last_skipped_entry_name;
-    assert(have_no_tasks_info || queue_nodes.end() == std::find_if(queue_nodes.begin(), queue_nodes.end(), [&](const String & entry_name)
+    chassert(have_no_tasks_info || queue_nodes.end() == std::find_if(queue_nodes.begin(), queue_nodes.end(), [&](const String & entry_name)
     {
         /// We should return true if some invariants are violated.
         String reason;
@@ -1245,7 +1246,7 @@ void DDLWorker::runMainThread()
                 last_unexpected_error = message;
             }
 
-            LOG_ERROR(log, "Unexpected error ({} times in a row), will try to restart main thread: {}", subsequent_errors_count, message);
+            LOG_ERROR(log, "Unexpected error ({} times in a row), will try to restart main thread: {}", subsequent_errors_count.load(), message);
 
             /// Sleep before retrying
             sleepForSeconds(5);

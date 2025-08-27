@@ -1,5 +1,6 @@
 #include <memory>
 #include <Databases/IDatabase.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/TableNameHints.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -56,6 +57,11 @@ IDatabase::IDatabase(String database_name_) : database_name(std::move(database_n
 IDatabase::~IDatabase()
 {
     CurrentMetrics::sub(CurrentMetrics::AttachedDatabase, 1);
+}
+
+void IDatabase::alterDatabaseComment(const AlterCommand & /*command*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: ALTER DATABASE COMMENT is not supported", getEngineName());
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>> IDatabase::getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const
@@ -210,5 +216,8 @@ ASTPtr IDatabase::getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*
     return nullptr;
 }
 
-
+DiskPtr IDatabase::getDisk() const
+{
+    return Context::getGlobalContextInstance()->getDatabaseDisk();
+}
 }

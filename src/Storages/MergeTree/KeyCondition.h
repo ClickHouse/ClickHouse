@@ -2,8 +2,6 @@
 
 #include <optional>
 
-#include <boost/geometry.hpp>
-
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
 
@@ -30,6 +28,18 @@ struct ActionDAGNodes;
 class MergeTreeSetIndex;
 
 
+/// Canonize the predicate
+/// * push down NOT to leaf nodes
+/// * remove aliases and re-generate function names
+/// * remove unneeded functions (e.g. materialize)
+struct ActionsDAGWithInversionPushDown
+{
+    std::optional<ActionsDAG> dag;
+    const ActionsDAG::Node * predicate = nullptr;
+
+    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context);
+};
+
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
@@ -43,7 +53,7 @@ class KeyCondition
 public:
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
-        const ActionsDAG * filter_dag,
+        const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
@@ -151,8 +161,6 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
-    static ActionsDAG cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
-
     bool matchesExactContinuousRange() const;
 
     /// Extract plain ranges of the condition.
@@ -168,6 +176,8 @@ public:
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
     {
+        struct Polygon;
+
         enum Function
         {
             /// Atoms of a Boolean expression.
@@ -198,16 +208,18 @@ public:
             ALWAYS_TRUE,
         };
 
-        RPNElement() = default;
-        RPNElement(Function function_) : function(function_) {} /// NOLINT
-        RPNElement(Function function_, size_t key_column_) : function(function_), key_column(key_column_) {}
-        RPNElement(Function function_, size_t key_column_, const Range & range_)
-            : function(function_), range(range_), key_column(key_column_) {}
+        RPNElement();
+        explicit RPNElement(Function function_);
+        RPNElement(Function function_, size_t key_column_);
+        RPNElement(Function function_, size_t key_column_, const Range & range_);
 
         String toString() const;
         String toString(std::string_view column_name, bool print_constants) const;
 
         Function function = FUNCTION_UNKNOWN;
+
+        /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
+        bool relaxed = false;
 
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
@@ -236,9 +248,7 @@ public:
         };
         std::optional<MultiColumnsFunctionDescription> point_in_polygon_column_description;
 
-        using Point = boost::geometry::model::d2::point_xy<Float64>;
-        using Polygon = boost::geometry::model::polygon<Point>;
-        Polygon polygon;
+        std::shared_ptr<Polygon> polygon;
 
         MonotonicFunctionsChain monotonic_functions_chain;
 
@@ -412,6 +422,15 @@ private:
     /// PartitionPruner.
     bool single_point;
 
+
+    /// Determines if a function maintains monotonicity.
+    /// Currently only does special checks for toDateTime monotonicity.
+    bool isFunctionReallyMonotonic(const IFunctionBase & func, const IDataType & arg_type) const;
+
+    /// Holds the result of (setting.date_time_overflow_behavior == DateTimeOverflowBehavior::Ignore)
+    /// Used to check toDateTime monotonicity.
+    bool date_time_overflow_behavior_ignore;
+
     /// If true, this key condition is relaxed. When a key condition is relaxed, it
     /// is considered weakened. This is because keys may not always align perfectly
     /// with the condition specified in the query, and the aim is to enhance the
@@ -465,6 +484,6 @@ private:
     bool relaxed = false;
 };
 
-String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
+std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
 
 }

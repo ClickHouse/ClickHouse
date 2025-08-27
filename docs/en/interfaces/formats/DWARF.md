@@ -1,17 +1,18 @@
 ---
-title : DWARF
-slug: /interfaces/formats/DWARF
-keywords : [DWARF]
-input_format: true
-output_format: false
 alias: []
+description: 'Documentation for the DWARF format'
+input_format: true
+keywords: ['DWARF']
+output_format: false
+slug: /interfaces/formats/DWARF
+title: 'DWARF'
 ---
 
 | Input | Output  | Alias |
 |-------|---------|-------|
 | ✔     | ✗       |       |
 
-## Description
+## Description {#description}
 
 The `DWARF` format parses DWARF debug symbols from an ELF file (executable, library, or object file). 
 It is similar to `dwarfdump`, but much faster (hundreds of MB/s) and supporting SQL. 
@@ -44,17 +45,17 @@ The `DWARF` format outputs the following columns:
 - `ancestor_tags` - array of tags of the ancestors of the current DIE in the tree, in order from innermost to outermost
 - `ancestor_offsets` - offsets of ancestors, parallel to `ancestor_tags`
 - a few common attributes duplicated from the attributes array for convenience:
-    - `name`
-    - `linkage_name` - mangled fully qualified name; typically only functions have it (but not all functions)
-    - `decl_file` - name of the source code file where this entity was declared
-    - `decl_line` - line number in the source code where this entity was declared
+  - `name`
+  - `linkage_name` - mangled fully qualified name; typically only functions have it (but not all functions)
+  - `decl_file` - name of the source code file where this entity was declared
+  - `decl_line` - line number in the source code where this entity was declared
 - parallel arrays describing attributes:
-    - `attr_name` - name of the attribute; the conventional "DW_AT_" prefix is omitted
-    - `attr_form` - how the attribute is encoded and interpreted; the conventional DW_FORM_ prefix is omitted
-    - `attr_int` - integer value of the attribute; 0 if the attribute doesn't have a numeric value
-    - `attr_str` - string value of the attribute; empty if the attribute doesn't have a string value
+  - `attr_name` - name of the attribute; the conventional "DW_AT_" prefix is omitted
+  - `attr_form` - how the attribute is encoded and interpreted; the conventional DW_FORM_ prefix is omitted
+  - `attr_int` - integer value of the attribute; 0 if the attribute doesn't have a numeric value
+  - `attr_str` - string value of the attribute; empty if the attribute doesn't have a string value
 
-## Example Usage
+## Example usage {#example-usage}
 
 The `DWARF` format can be used to find compilation units that have the most function definitions (including template instantiations and functions from included header files):
 
@@ -79,8 +80,4 @@ LIMIT 3
 Peak memory usage: 271.92 MiB.
 ```
 
-## Format Settings
-
-
-
-
+## Format settings {#format-settings}

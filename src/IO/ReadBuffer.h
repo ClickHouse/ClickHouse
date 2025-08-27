@@ -55,9 +55,20 @@ public:
     {
         chassert(!hasPendingData());
         chassert(position() <= working_buffer.end());
+        chassert(!isCanceled(), "ReadBuffer is canceled. Can't read from it.");
 
         bytes += offset();
-        bool res = nextImpl();
+        bool res = false;
+        try
+        {
+            res = nextImpl();
+        }
+        catch (...)
+        {
+            cancel();
+            throw;
+        }
+
         if (!res)
         {
             working_buffer = Buffer(pos, pos);
@@ -72,6 +83,13 @@ public:
         chassert(position() <= working_buffer.end());
 
         return res;
+    }
+
+    void cancel();
+
+    bool isCanceled() const
+    {
+        return canceled;
     }
 
 

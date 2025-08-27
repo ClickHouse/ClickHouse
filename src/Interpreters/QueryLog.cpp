@@ -4,6 +4,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/DateLUTImpl.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -46,13 +47,13 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
             {"ExceptionWhileProcessing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
         });
 
-    auto query_cache_usage_datatype = std::make_shared<DataTypeEnum8>(
+    auto query_result_cache_usage_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"Unknown",     static_cast<Int8>(QueryCacheUsage::Unknown)},
-            {"None",        static_cast<Int8>(QueryCacheUsage::None)},
-            {"Write",       static_cast<Int8>(QueryCacheUsage::Write)},
-            {"Read",        static_cast<Int8>(QueryCacheUsage::Read)}
+            {"Unknown",     static_cast<Int8>(QueryResultCacheUsage::Unknown)},
+            {"None",        static_cast<Int8>(QueryResultCacheUsage::None)},
+            {"Write",       static_cast<Int8>(QueryResultCacheUsage::Write)},
+            {"Read",        static_cast<Int8>(QueryResultCacheUsage::Read)}
         });
 
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
@@ -139,6 +140,8 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"used_functions", array_low_cardinality_string, "Canonical names of functions, which were used during query execution."},
         {"used_storages", array_low_cardinality_string, "Canonical names of storages, which were used during query execution."},
         {"used_table_functions", array_low_cardinality_string, "Canonical names of table functions, which were used during query execution."},
+        {"used_executable_user_defined_functions", array_low_cardinality_string, "Canonical names of executable user defined functions, which were used during query execution."},
+        {"used_sql_user_defined_functions", array_low_cardinality_string, "Canonical names of sql user defined functions, which were used during query execution."},
 
         {"used_row_policies", array_low_cardinality_string, "The list of row policies names that were used during query execution."},
 
@@ -147,7 +150,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
 
         {"transaction_id", getTransactionIDDataType(), "The identifier of the transaction in scope of which this query was executed."},
 
-        {"query_cache_usage", std::move(query_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query cache, 'Write' = The query result was written into the query cache, 'Read' = The query result was read from the query cache."},
+        {"query_cache_usage", std::move(query_result_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query result cache, 'Write' = The query result was written into the query result cache, 'Read' = The query result was read from the query result cache."},
 
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Metrics for asynchronous reading."},
     };
@@ -275,6 +278,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_executable_user_defined_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_sql_user_defined_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_row_policies_names = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_used_privileges = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_missing_privileges = typeid_cast<ColumnArray &>(*columns[i++]);
@@ -300,6 +305,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_functions, column_function_factory_objects);
         fill_column(used_storages, column_storage_factory_objects);
         fill_column(used_table_functions, column_table_function_factory_objects);
+        fill_column(used_executable_user_defined_functions, column_executable_user_defined_function_factory_objects);
+        fill_column(used_sql_user_defined_functions, column_sql_user_defined_function_factory_objects);
         fill_column(used_row_policies, column_row_policies_names);
         fill_column(used_privileges, column_used_privileges);
         fill_column(missing_privileges, column_missing_privileges);
@@ -307,7 +314,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
 
-    columns[i++]->insert(query_cache_usage);
+    columns[i++]->insert(query_result_cache_usage);
 
     if (async_read_counters)
         async_read_counters->dumpToMapColumn(columns[i++].get());

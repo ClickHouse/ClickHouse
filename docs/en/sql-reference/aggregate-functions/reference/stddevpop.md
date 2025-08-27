@@ -1,6 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/stddevpop
+description: 'The result is equal to the square root of varPop.'
 sidebar_position: 188
+slug: /sql-reference/aggregate-functions/reference/stddevpop
+title: 'stddevPop'
 ---
 
 # stddevPop
@@ -26,7 +28,6 @@ stddevPop(x)
 **Returned value**
 
 - Square root of standard deviation of `x`. [Float64](../../data-types/float.md).
-
 
 **Example**
 

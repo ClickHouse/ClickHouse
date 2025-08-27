@@ -147,6 +147,8 @@ public:
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);
     size_t getMaxThreads() const;
+    size_t getMaxFreeThreads() const;
+    size_t getQueueSize() const;
 
     /// Adds a callback which is called in destructor after
     /// joining of all threads. The order of calling callbacks

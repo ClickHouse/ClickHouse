@@ -2,8 +2,8 @@
 
 #if USE_AWS_S3
 
-#include "StdIStreamFromMemory.h"
-#include "WriteBufferFromS3.h"
+#include <IO/StdIStreamFromMemory.h>
+#include <IO/WriteBufferFromS3.h>
 
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPoolTaskTracker.h>
@@ -39,9 +39,6 @@ namespace ProfileEvents
     extern const Event DiskS3AbortMultipartUpload;
     extern const Event DiskS3UploadPart;
     extern const Event DiskS3PutObject;
-
-    extern const Event RemoteWriteThrottlerBytes;
-    extern const Event RemoteWriteThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -289,12 +286,15 @@ WriteBufferFromS3::~WriteBufferFromS3()
 
     if (canceled)
     {
-        LOG_INFO(
-            log,
-            "WriteBufferFromS3 was canceled."
-            "The file might not be written to S3. "
-            "{}.",
-            getVerboseLogDetails());
+        if (!isEmpty())
+        {
+            LOG_INFO(
+                log,
+                "WriteBufferFromS3 was canceled."
+                "The file might not be written to S3. "
+                "{}.",
+                getVerboseLogDetails());
+        }
     }
     else if (!finalized)
     {
@@ -320,7 +320,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
 void WriteBufferFromS3::hidePartialData()
 {
     if (write_settings.remote_throttler)
-            write_settings.remote_throttler->add(offset(), ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+        write_settings.remote_throttler->add(offset());
 
     chassert(memory.size() >= hidden_size + offset());
 
@@ -384,7 +384,7 @@ void WriteBufferFromS3::allocateBuffer()
         return;
     }
 
-    memory = Memory(buffer_allocation_policy->getBufferSize());
+    memory = Memory<>(buffer_allocation_policy->getBufferSize());
     WriteBuffer::set(memory.data(), memory.size());
 }
 
@@ -458,7 +458,10 @@ void WriteBufferFromS3::abortMultipartUpload()
 {
     if (multipart_upload_id.empty())
     {
-        LOG_INFO(log, "Nothing to abort. {}", getVerboseLogDetails());
+        if (!isEmpty())
+        {
+            LOG_INFO(log, "Nothing to abort. {}", getVerboseLogDetails());
+        }
         return;
     }
 
@@ -543,9 +546,9 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
             ErrorCodes::INVALID_CONFIG_PARAMETER,
             "Part number exceeded {} while writing {} bytes to S3. Check min_upload_part_size = {}, max_upload_part_size = {}, "
             "upload_part_size_multiply_factor = {}, upload_part_size_multiply_parts_count_threshold = {}, max_single_part_upload_size = {}",
-            request_settings[S3RequestSetting::max_part_number], count(), request_settings[S3RequestSetting::min_upload_part_size], request_settings[S3RequestSetting::max_upload_part_size],
-            request_settings[S3RequestSetting::upload_part_size_multiply_factor], request_settings[S3RequestSetting::upload_part_size_multiply_parts_count_threshold],
-            request_settings[S3RequestSetting::max_single_part_upload_size]);
+            request_settings[S3RequestSetting::max_part_number].value, count(), request_settings[S3RequestSetting::min_upload_part_size].value, request_settings[S3RequestSetting::max_upload_part_size].value,
+            request_settings[S3RequestSetting::upload_part_size_multiply_factor].value, request_settings[S3RequestSetting::upload_part_size_multiply_parts_count_threshold].value,
+            request_settings[S3RequestSetting::max_single_part_upload_size].value);
     }
 
     if (data.data_size > request_settings[S3RequestSetting::max_upload_part_size])
@@ -556,7 +559,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
             getShortLogDetails(),
             part_number,
             data.data_size,
-            request_settings[S3RequestSetting::max_upload_part_size]
+            request_settings[S3RequestSetting::max_upload_part_size].value
             );
     }
 
