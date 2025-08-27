@@ -92,7 +92,9 @@ def extract_content_and_format_flag(body: str, tag_prefix: str) -> Tuple[str, bo
 
     # Look for BEGIN tag which has a format attribute
     begin_pattern = f"<!--- {tag_prefix} format=(true|false) -->"
-    end_pattern = f"<!--- END_{tag_prefix.split('_')[1]} -->"
+    # Extract the end tag name by removing "BEGIN_" prefix
+    end_tag_name = tag_prefix.replace("BEGIN_", "")
+    end_pattern = f"<!--- END_{end_tag_name} -->"
 
     begin_match = re.search(begin_pattern, body, re.IGNORECASE)
     end_match = re.search(end_pattern, body, re.IGNORECASE)
@@ -118,7 +120,9 @@ def insert_content_between_tags(text: str, tag_prefix: str, new_content: str) ->
 
     # Look for a BEGIN tag with the format attribute
     begin_pattern = f"<!--- {tag_prefix} format=(true|false) -->"
-    end_pattern = f"<!--- END_{tag_prefix.split('_')[1]} -->"
+    # Extract the end tag name by removing "BEGIN_" prefix
+    end_tag_name = tag_prefix.replace("BEGIN_", "")
+    end_pattern = f"<!--- END_{end_tag_name} -->"
 
     begin_match = re.search(begin_pattern, text, re.IGNORECASE)
     end_match = re.search(end_pattern, text, re.IGNORECASE)
@@ -130,7 +134,7 @@ def insert_content_between_tags(text: str, tag_prefix: str, new_content: str) ->
         before = text[:begin_match.start()]
         after = text[end_match.end():]
 
-        return f"{before}{new_begin_tag}\n{new_content}\n<!--- END_{tag_prefix.split('_')[1]} -->{after}"
+        return f"{before}{new_begin_tag}\n{new_content}\n<!--- END_{end_tag_name} -->{after}"
     return text
 
 def generate_description(diff_file: str, human_description: str, model: str) -> str:
