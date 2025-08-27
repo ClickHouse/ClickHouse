@@ -115,15 +115,15 @@ class Runner:
             print(f"Set environment variable {key}.")
 
         print("Read GH Environment")
+        env = _Environment.from_env()
         try:
             version_string = Info().get_custom_data("version")['string']
-            env = _Environment.from_env()
             os.environ["CLICKHOUSE_VERSION_STRING"] = version_string
+            env.CLICKHOUSE_VERSION_STRING = version_string
         except Exception as e:
             print(e)
 
         env.JOB_NAME = job.name
-        env.CLICKHOUSE_VERSION_STRING = version_string
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
 
