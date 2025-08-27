@@ -279,7 +279,8 @@ static size_t tryPushDownOverJoinStepImpl(
     // }
 
     if ((join && join->isDisjunctionsOptimizationApplied()) ||
-        (logical_join && logical_join->isDisjunctionsOptimizationApplied()))
+        (logical_join && logical_join->isDisjunctionsOptimizationApplied()) ||
+        (filled_join && filled_join->isDisjunctionsOptimizationApplied()))
     {
         return 0;
     }
@@ -508,6 +509,8 @@ static size_t tryPushDownOverJoinStepImpl(
             join->setDisjunctionsOptimizationApplied(true);
         if (logical_join)
             logical_join->setDisjunctionsOptimizationApplied(true);
+        if (filled_join)
+            filled_join->setDisjunctionsOptimizationApplied(true);
 
         // The JoinStep-specific flag was already set earlier in the function to prevent recursion
 

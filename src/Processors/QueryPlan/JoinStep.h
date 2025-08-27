@@ -102,11 +102,15 @@ public:
 
     const JoinPtr & getJoin() const { return join; }
 
+    bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
+    void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
+
 private:
     void updateOutputHeader() override;
 
     JoinPtr join;
     size_t max_block_size;
+    bool disjunctions_optimization_applied = false;
 };
 
 }
