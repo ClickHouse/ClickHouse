@@ -46,7 +46,12 @@ namespace ProfileEvents
     extern const Event S3ReadRequestRetryableErrors;
 
     extern const Event DiskS3WriteRequestsErrors;
+    extern const Event DiskS3WriteRequestAttempts;
+    extern const Event DiskS3WriteRequestRetryableErrors;
+
     extern const Event DiskS3ReadRequestsErrors;
+    extern const Event DiskS3ReadRequestAttempts;
+    extern const Event DiskS3ReadRequestRetryableErrors;
 
     extern const Event S3Clients;
     extern const Event TinyS3Clients;
@@ -689,8 +694,9 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         std::exception_ptr last_exception = nullptr;
         for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
-            if (!isClientForDisk())
-                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
+            incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
+            if (isClientForDisk())
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestAttempts, ProfileEvents::DiskS3WriteRequestAttempts);
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
             slowDownAfterRetryableError();
@@ -716,9 +722,11 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
                     && client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
                 {
-                    if (!isClientForDisk())
+                    incrementProfileEvents<IsReadMethod>(
+                        ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
+                    if (isClientForDisk())
                         incrementProfileEvents<IsReadMethod>(
-                            ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
+                            ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
 
                     updateNextTimeToRetryAfterRetryableError(outcome.GetError(), attempt_no);
                     continue;
@@ -729,10 +737,9 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             {
                 /// This includes "connection reset", "malformed message", and possibly other exceptions.
 
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
                 if (isClientForDisk())
                     incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
-                else
-                    incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
 
                 tryLogCurrentException(log, "Will retry");
                 last_exception = std::current_exception();
@@ -790,7 +797,7 @@ void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws:
     {
         if (next_time_to_retry_after_retryable_error.compare_exchange_weak(stored_next_time, next_time_ms))
         {
-            LOG_TRACE(log, "Updated next retry time to {} ms forward", sleep_ms);
+            LOG_TRACE(log, "Updated next retry time to {} ms forward after retryable error with code {} ('{}')", sleep_ms, error.GetResponseCode(), error.GetMessage());
             break;
         }
     }
@@ -1077,7 +1084,9 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             std::move(credentials),
             credentials_configuration);
 
-    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.s3_retry_attempts);
+    /// Disable per-thread retry loops if global retry coordination is in use.
+    uint32_t retry_attempts = client_configuration.s3_slow_all_threads_after_retryable_error ? 1 : client_configuration.s3_retry_attempts;
+    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(retry_attempts);
 
     /// Use virtual addressing if endpoint is not specified.
     if (client_configuration.endpointOverride.empty())
