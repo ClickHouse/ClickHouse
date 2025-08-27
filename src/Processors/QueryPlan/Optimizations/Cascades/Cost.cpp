@@ -51,8 +51,10 @@ ExpressionCost CostEstimator::estimateHashJoinCost(const JoinStepLogical & join_
     auto left_cost = memo.getGroup(left_tree)->best_implementation.cost;
     auto right_cost = memo.getGroup(right_tree)->best_implementation.cost;
 
-    (void)join_step;
-    double join_selectivity = 0.01;
+    if (join_step.areInputsSwapped())
+        std::swap(left_cost, right_cost);
+
+    double join_selectivity = 0.01; /// TODO: calculate from join predicates
 
     ExpressionCost join_cost;
     join_cost.number_of_rows = UInt64(left_cost.number_of_rows * right_cost.number_of_rows * join_selectivity);
