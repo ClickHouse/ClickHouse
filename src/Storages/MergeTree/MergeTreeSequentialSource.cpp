@@ -468,6 +468,25 @@ public:
         pipeline.init(Pipe(std::move(source)));
     }
 
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<ReadFromPart>(
+            type,
+            storage,
+            storage_snapshot,
+            data_part,
+            alter_conversions,
+            merged_part_offsets,
+            columns_to_read,
+            filtered_rows_count,
+            apply_deleted_mask,
+            filter.has_value() ? std::make_optional(filter->clone()) : std::nullopt,
+            read_with_direct_io,
+            prefetch,
+            context,
+            log);
+    }
+
 private:
     const MergeTreeSequentialSourceType type;
     const MergeTreeData & storage;
