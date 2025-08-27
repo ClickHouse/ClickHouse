@@ -2001,7 +2001,7 @@ class TestCase:
         ) + log_opt
 
         # This is for .sh tests
-        os.environ["CLICKHOUSE_LOG_COMMENT"] = f"{args.testcase_basename} {args.testcase_database}"
+        os.environ["CLICKHOUSE_LOG_COMMENT"] = f'{args.testcase_basename} {args.testcase_database}'
 
         query_params = ""
         if "need-query-parameters" in self.tags:
