@@ -549,7 +549,7 @@ def get_build_report_links(
     build_report_links = {}
 
     for job in job_statuses.itertuples():
-        if job.job_name not in build_job_names or job.status != "success":
+        if job.job_name not in build_job_names or job.job_status != "success":
             continue
 
         build_report_links[job.job_name] = job.results_link
@@ -574,7 +574,11 @@ def get_build_report_links(
         # Cache exists, get the status data
         status_data = response.json()
         for job in status_data["results"]:
-            if job["name"] in build_job_names and job["status"] == "skipped":
+            if (
+                job["name"] in build_job_names
+                and job["status"] == "skipped"
+                and len(job["links"]) > 0
+            ):
                 build_report_links[job["name"]] = job["links"][0]
 
     if len(build_report_links) > 0:
