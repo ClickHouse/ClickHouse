@@ -7,8 +7,8 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <boost/algorithm/string.hpp>
 #include <Core/Settings.h>
+#include <Common/StringUtils.h>
 #include <Functions/FunctionFactory.h>
-#include <Storages/MergeTree/KeyCondition.h>
 
 namespace DB
 {
@@ -73,7 +73,7 @@ public:
             right_bound_constant = std::make_shared<ConstantNode>(std::move(right_bound));
 
         /// Create range expression
-        QueryTreeNodePtr new_node = nullptr;
+        FunctionNodePtr new_node = nullptr;
         auto column_node = case_insensitive
             ? operation("lower", args[0]) 
             : args[0]; /// The column being compared

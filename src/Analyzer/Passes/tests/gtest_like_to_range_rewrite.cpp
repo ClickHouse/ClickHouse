@@ -16,7 +16,7 @@
 
 using namespace DB;
 
-QueryTreeNodePtr resolve_string_expr(QueryTreeNodePtr node, std::map<String, QueryTreeNodePtr> & resolved_map, ContextPtr context)
+static QueryTreeNodePtr resolveStringColumn(QueryTreeNodePtr node, std::map<String, QueryTreeNodePtr> & resolved_map, ContextPtr context)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -40,7 +40,7 @@ QueryTreeNodePtr resolve_string_expr(QueryTreeNodePtr node, std::map<String, Que
     QueryTreeNodes new_args;
     for (const auto & argument : function_node->getArguments())
     {
-        auto arg = resolve_string_expr(argument, resolved_map, context);
+        auto arg = resolveStringColumn(argument, resolved_map, context);
         new_args.push_back(arg);
     }
     function_node->getArguments().getNodes() = std::move(new_args);
@@ -59,7 +59,7 @@ TEST(LikeToRangeRewrite, rewrite)
         ASTPtr query = parseQuery(exp_elem, cond, 10000, 10000, 10000);
         QueryTreeNodePtr node = buildQueryTree(query, context);
 
-        node = resolve_string_expr(node, resolved_map, context);
+        node = resolveStringColumn(node, resolved_map, context);
         LikeToRangeRewritePass pass;
         pass.run(node, context);
         EXPECT_EQ(node->formatConvertedASTForErrorMessage(), expected);

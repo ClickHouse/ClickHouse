@@ -349,3 +349,7 @@ inline bool isValidIdentifier(std::string_view str)
             && toLowerIfAlphaASCII(str[2]) == 'l'
             && toLowerIfAlphaASCII(str[3]) == 'l');
 }
+
+std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
+
+String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & prefix);
