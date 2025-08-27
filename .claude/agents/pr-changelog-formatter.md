@@ -33,7 +33,7 @@ Examples of good changelog entries:
 
 - Makes page cache settings adjustable on a per-query level. This is needed for faster experimentation and for the possibility of fine-tuning for high-throughput and low-latency queries.
 - Fixes a crash where an exception is thrown in an attempt to remove a temporary file.
-- Settings `use_skip_indexes_if_final` and `use_skip_indexes_if_final_exact_mode` now default to `True`
+- Settings `use_skip_indexes_if_final` and `use_skip_indexes_if_final_exact_mode` now default to `true`
 - You can now filter vector search results either before or after the search operation, giving you better control over performance vs. accuracy tradeoffs. Use the new `vector_search_filter_mode` setting to choose your preferred approach.
 - Added support for zero-byte matching in the `countMatches` function. Users who would like to retain the old behavior can enable setting `count_matches_stop_at_empty_match`.
 - Introduced two new access types: `READ` and `WRITE` for sources and deprecated all previous access types related to sources. Before `GRANT S3 ON *.* TO user`, now: `GRANT READ, WRITE ON S3 TO user`. This also allows separation of `READ` and `WRITE` permissions for sources, e.g.: `GRANT READ ON * TO user, GRANT WRITE ON S3 TO user`. The feature is controlled by a setting `access_control_improvements.enable_read_write_grants` and disabled by default.
