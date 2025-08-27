@@ -179,7 +179,7 @@ Pipe StorageDictionary::read(
     const Names & column_names,
     const StorageSnapshotPtr & /*storage_snapshot*/,
     SelectQueryInfo & /*query_info*/,
-    ContextPtr local_context,
+    ContextMutablePtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const size_t threads)
@@ -198,7 +198,7 @@ Pipe StorageDictionary::read(
     if (!has_dict_get && !has_select)
         local_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
 
-    return dictionary->read(column_names, max_block_size, threads);
+    return dictionary->read(std::move(local_context), column_names, max_block_size, threads);
 }
 
 std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const

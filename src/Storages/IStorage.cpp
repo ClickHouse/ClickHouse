@@ -2,6 +2,7 @@
 
 #include <Disks/IStoragePolicy.h>
 #include <Common/StringUtils.h>
+#include "Interpreters/Context_fwd.h"
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -148,6 +149,18 @@ Pipe IStorage::watch(
 }
 
 Pipe IStorage::read(
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextMutablePtr context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
+{
+    return read(column_names, storage_snapshot, query_info, ContextPtr(std::move(context)), processed_stage, max_block_size, num_streams);
+}
+
+Pipe IStorage::read(
     const Names & /*column_names*/,
     const StorageSnapshotPtr & /*storage_snapshot*/,
     SelectQueryInfo & /*query_info*/,
@@ -188,7 +201,9 @@ void IStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    ContextMutablePtr query_context = Context::createCopy(context);
+
+    auto pipe = read(column_names, storage_snapshot, query_info, query_context, processed_stage, max_block_size, num_streams);
 
     /// parallelize processing if not yet
     const size_t output_ports = pipe.numOutputPorts();

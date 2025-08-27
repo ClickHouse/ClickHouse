@@ -69,7 +69,7 @@ public:
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        ContextMutablePtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t threads) override;
