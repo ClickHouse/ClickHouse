@@ -26,7 +26,24 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         auto input_group = memo.getGroup(expression->inputs[0]);
         return input_group->best_implementation.cost;
     }
-    return ExpressionCost{.subtree_cost = 2000000, .number_of_rows = 2000000};
+    else
+    {
+        ExpressionCost total_cost;
+        if (expression->inputs.empty())
+        {
+            /// Some default non-zero cost
+            total_cost.subtree_cost = 100500;
+            total_cost.number_of_rows = 100500;
+        }
+        /// Sum costs of the inputs
+        for (auto input_group_id : expression->inputs)
+        {
+            const auto & input_group_cost = memo.getGroup(input_group_id)->best_implementation.cost;
+            total_cost.subtree_cost += input_group_cost.subtree_cost;
+            total_cost.number_of_rows += input_group_cost.number_of_rows;
+        }
+        return total_cost;
+    }
 }
 
 ExpressionCost CostEstimator::estimateHashJoinCost(const JoinStepLogical & join_step, GroupId left_tree, GroupId right_tree)
