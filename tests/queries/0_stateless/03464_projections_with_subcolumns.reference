@@ -11,7 +11,7 @@ Expression ((Project names + Projection))
         Search Algorithm: binary search
         Ranges: 1
 ReadFromMergeTree (p1)
-{"a":1,"b":"str","c":[{"d":"1"}]}
+{"a":1,"b":"str","c":[{"d":1}]}
 Expression ((Project names + Projection))
   Expression
     ReadFromMergeTree (p2)
@@ -39,7 +39,7 @@ Expression ((Project names + Projection))
         Search Algorithm: binary search
         Ranges: 1
 ReadFromMergeTree (p3)
-{"a":1,"b":"str","c":[{"d":"1"}]}
+{"a":1,"b":"str","c":[{"d":1}]}
 Expression ((Project names + Projection))
   Expression
     ReadFromMergeTree (p1)
@@ -53,8 +53,8 @@ Expression ((Project names + Projection))
         Search Algorithm: binary search
         Ranges: 1
 ReadFromMergeTree (p1)
-{"a":1,"b":"str","c":[{"d":"1"}]}
-{"a":1,"b":"str","c":[{"d":"1"}]}
+{"a":1,"b":"str","c":[{"d":1}]}
+{"a":1,"b":"str","c":[{"d":1}]}
 Expression ((Project names + Projection))
   Expression
     ReadFromMergeTree (p2)
@@ -83,8 +83,8 @@ Expression ((Project names + Projection))
         Search Algorithm: binary search
         Ranges: 1
 ReadFromMergeTree (p3)
-{"a":1,"b":"str","c":[{"d":"1"}]}
-{"a":1,"b":"str","c":[{"d":"1"}]}
+{"a":1,"b":"str","c":[{"d":1}]}
+{"a":1,"b":"str","c":[{"d":1}]}
 ------------------------------------------------------------------
 Expression ((Project names + Projection))
   Expression
@@ -99,7 +99,7 @@ Expression ((Project names + Projection))
         Search Algorithm: binary search
         Ranges: 1
 ReadFromMergeTree (p1)
-{"a":1,"b":"str","c":[{"d":"1"}]}
+{"a":1,"b":"str","c":[{"d":1}]}
 Expression ((Project names + Projection))
   Expression
     ReadFromMergeTree (p2)
@@ -127,4 +127,4 @@ Expression ((Project names + Projection))
         Search Algorithm: binary search
         Ranges: 1
 ReadFromMergeTree (p3)
-{"a":1,"b":"str","c":[{"d":"1"}]}
+{"a":1,"b":"str","c":[{"d":1}]}
