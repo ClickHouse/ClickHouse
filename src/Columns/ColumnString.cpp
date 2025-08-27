@@ -738,13 +738,13 @@ llvm::Value * ColumnString::compileComparator(llvm::IRBuilderBase & b, llvm::Val
     auto * lhs_prev_index = b.CreateSub(lhs_index, const_one);
     auto * lhs_current_start_offset = load_offset(lhs_offset_ptr, lhs_prev_index);
     auto * lhs_current_end_offset = load_offset(lhs_offset_ptr, lhs_index);
-    auto * lhs_current_size = b.CreateSub(b.CreateSub(lhs_current_end_offset, lhs_current_start_offset), const_one);
+    auto * lhs_current_size = b.CreateSub(lhs_current_end_offset, lhs_current_start_offset);
     auto * lhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), lhs_chars_ptr, lhs_current_start_offset);
 
     auto * rhs_prev_index = b.CreateSub(rhs_index, const_one);
     auto * rhs_current_start_offset = load_offset(rhs_offset_ptr, rhs_prev_index);
     auto * rhs_current_end_offset = load_offset(rhs_offset_ptr, rhs_index);
-    auto * rhs_current_size = b.CreateSub(b.CreateSub(rhs_current_end_offset, rhs_current_start_offset), const_one);
+    auto * rhs_current_size = b.CreateSub(rhs_current_end_offset, rhs_current_start_offset);
     auto * rhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), rhs_chars_ptr, rhs_current_start_offset);
 
     // Call memcmpSmallAllowOverflow15, same as in ColumnString::compareAt
