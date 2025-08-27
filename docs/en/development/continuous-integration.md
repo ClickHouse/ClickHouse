@@ -105,7 +105,7 @@ No dependencies other than Python 3 and Docker are required.
 
 Builds ClickHouse in various configurations for use in further steps.
 
-### Running Builds Locally
+### Running Builds Locally {#running-builds-locally}
 
 The build can be run locally in a CI-like environment using:
 
@@ -115,7 +115,7 @@ python -m ci.praktika run "<BUILD_JOB_NAME>"
 
 No dependencies other than Python 3 and Docker are required.
 
-#### Available Build Jobs
+#### Available Build Jobs {#available-build-jobs}
 
 The build job names are exactly as they appear in the CI Report:
 
@@ -150,12 +150,12 @@ If the job succeeds, build results will be available in the `<repo_root>/ci/tmp/
 
 **Note:** For builds not in the "Other Architectures" category (which use cross-compilation), your local machine architecture must match the build type to produce the build as requested by `BUILD_JOB_NAME`.
 
-#### Example
+#### Example {#example-run-local}
 
 To run a local debug build:
+
 ```bash
 python -m ci.praktika run "Build (amd_debug)"
-```
 
 If the above approach does not work for you, use the cmake options from the build log and follow the [general build process](../development/build.md).
 
