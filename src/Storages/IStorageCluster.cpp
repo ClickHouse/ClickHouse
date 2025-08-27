@@ -42,6 +42,11 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
 }
 
+namespace ErrorCodes
+{
+    extern const int NO_ACTIVE_REPLICAS;
+};
+
 IStorageCluster::IStorageCluster(
     const String & cluster_name_,
     const StorageID & table_id_,
@@ -238,6 +243,9 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
         pipes.emplace_back(std::move(pipe));
     }
+
+    if (pipes.size() == 0)
+        throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "Can't find active replicas in cluster '{}'", cluster->getName());
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
