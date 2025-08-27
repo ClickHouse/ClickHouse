@@ -69,29 +69,30 @@ class Digest:
             docker_digest = docker_digests[job_config.run_in_docker.split("+")[0]]
             digest = "-".join([docker_digest, digest])
 
-        job_config_dict = dataclasses.asdict(job_config)
+        # TODO: Figure out why hash for job config is not deterministic
+        # job_config_dict = dataclasses.asdict(job_config)
 
-        drop_fields = [
-            "requires",
-            "enable_commit_status",
-            "allow_merge_on_failure",
-        ]
-        filtered_job_dict = {
-            k: v for k, v in job_config_dict.items() if k not in drop_fields
-        }
-        # add Articat.Configs list to the job config dict so that changed Articat.Config object affects job digest
-        job_provides_artifact_configs = []
-        for a in job_config.provides:
-            if a in artifact_configs:
-                job_provides_artifact_configs.append(
-                    dataclasses.asdict(artifact_configs[a])
-                )
-        filtered_job_dict["provides"] = job_provides_artifact_configs
+        # drop_fields = [
+        #     "requires",
+        #     "enable_commit_status",
+        #     "allow_merge_on_failure",
+        # ]
+        # filtered_job_dict = {
+        #     k: v for k, v in job_config_dict.items() if k not in drop_fields
+        # }
+        # # add Articat.Configs list to the job config dict so that changed Articat.Config object affects job digest
+        # job_provides_artifact_configs = []
+        # for a in job_config.provides:
+        #     if a in artifact_configs:
+        #         job_provides_artifact_configs.append(
+        #             dataclasses.asdict(artifact_configs[a])
+        #         )
+        # filtered_job_dict["provides"] = job_provides_artifact_configs
 
-        config_digest = hashlib.md5(
-            json.dumps(filtered_job_dict, sort_keys=True).encode()
-        ).hexdigest()[: min(Settings.CACHE_DIGEST_LEN // 4, 4)]
-        return digest + "-" + config_digest
+        # config_digest = hashlib.md5(
+        #     json.dumps(filtered_job_dict, sort_keys=True).encode()
+        # ).hexdigest()[: min(Settings.CACHE_DIGEST_LEN // 4, 4)]
+        return digest  # + "-" + config_digest
 
     def calc_docker_digest(
         self,
@@ -145,3 +146,43 @@ class Digest:
                 hash_md5.update(chunk)
 
         return hash_md5
+
+
+if __name__ == "__main__":
+    from ci.workflows.pull_request import workflow
+
+    common_ft_job_config = Job.Config(
+        name="name",
+        runs_on=[],  # from parametrize
+        command='python3 ./ci/jobs/functional_tests.py --options "{PARAMETER}"',
+        # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
+        # --cap-add=SYS_PTRACE and --privileged for gdb in docker
+        run_in_docker=f"clickhouse/stateless-test+--cap-add=SYS_PTRACE+--privileged+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/etc/clickhouse-server1:/etc/clickhouse-server1+--volume=./ci/tmp/etc/clickhouse-server2:/etc/clickhouse-server2+--volume=./ci/tmp/var/log:/var/log",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/functional_tests.py",
+                "./ci/jobs/scripts/clickhouse_proc.py",
+                "./ci/jobs/scripts/functional_tests_results.py",
+                "./tests/queries",
+                "./tests/clickhouse-test",
+                "./tests/config",
+                "./tests/*.txt",
+                "./ci/docker/stateless-test",
+            ],
+        ),
+        result_name_for_cidb="Tests",
+    )
+    digest_dockers = {}
+    for docker in workflow.dockers:
+        digest_dockers[docker.name] = Digest().calc_docker_digest(
+            docker, workflow.dockers
+        )
+    artifact_name_config_map = {}
+    for a in workflow.artifacts:
+        artifact_name_config_map[a.name] = a
+    digest = Digest().calc_job_digest(
+        *[j for j in workflow.jobs if j.name == "Build (amd_debug)"],
+        digest_dockers,
+        artifact_name_config_map,
+    )
+    print(digest)
