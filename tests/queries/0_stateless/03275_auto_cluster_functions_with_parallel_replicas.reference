@@ -9,7 +9,12 @@ CreatingSets (Create sets before main query execution)
   CreatingSet (Create set for subquery)
     Expression ((Project names + (Projection + Change column names to column identifiers)))
       S3(_table_function.s3)Source
+4
+4
 Expression ((Project names + (Projection + Change column names to column identifiers)))
   ReadFromURL
 Expression ((Project names + (Projection + Change column names to column identifiers)))
   S3(_table_function.s3)Source
+4
+4
+4
