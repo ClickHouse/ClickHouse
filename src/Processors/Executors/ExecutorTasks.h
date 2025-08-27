@@ -54,7 +54,7 @@ class ExecutorTasks
     ThreadsQueue threads_queue;
 
     /// CPU slots for each thread.
-    ISlotAllocation * cpu_slots = nullptr;
+    SlotAllocationPtr cpu_slots;
 
     /// Threshold found by rolling dice.
     const static size_t TOO_MANY_IDLE_THRESHOLD = 4;
@@ -98,7 +98,7 @@ public:
     // If non-local tasks were added, wake up one thread to process them.
     SpawnStatus pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
-    void init(size_t num_threads_, size_t use_threads_, ISlotAllocation * cpu_slots_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback);
+    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback);
     void fill(Queue & queue, Queue & async_queue);
 
     /// Upscale to include slot_id. Updates use_threads to max(use_threads, slot_id + 1)
