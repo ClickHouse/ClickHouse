@@ -270,7 +270,11 @@ def get_spark(
         )
         builder.config(
             "spark.hadoop.fs.s3a.aws.credentials.provider",
-            "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
+            (
+                "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider"
+                if lake == LakeFormat.Iceberg
+                else "com.amazonaws.auth.EnvironmentVariableCredentialsProvider"
+            ),
         )
         builder.config("spark.hadoop.fs.s3a.access.key", minio_access_key)
         builder.config("spark.hadoop.fs.s3a.secret.key", minio_secret_key)

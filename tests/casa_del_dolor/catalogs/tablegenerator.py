@@ -443,7 +443,8 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         if properties["write.sort.enabled"] == "true":
             columns_list = []
-            for k, _ in self.flat_columns(columns_spark):
+            flattened_columns = self.flat_columns(columns_spark)
+            for k in flattened_columns.keys():
                 columns_list.append(f"{k} ASC")
                 columns_list.append(f"{k} DESC")
             random_subset = random.sample(
@@ -548,7 +549,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
     def add_partition_clauses(self, columns_spark: dict[str, SparkColumn]) -> list[str]:
         res = []
         # No partition by subcolumns in delta
-        for k, _ in columns_spark.items():
+        for k in columns_spark.keys():
             res.append(k)
         return res
 
