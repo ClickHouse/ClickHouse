@@ -3,7 +3,7 @@ description: 'Documentation for WITH Clause'
 sidebar_label: 'WITH'
 slug: /sql-reference/statements/select/with
 title: 'WITH Clause'
-doc_type: 'tutorial'
+doc_type: 'reference'
 ---
 
 # WITH Clause

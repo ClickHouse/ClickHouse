@@ -5,7 +5,7 @@ sidebar_label: 'SummingMergeTree'
 sidebar_position: 50
 slug: /engines/table-engines/mergetree-family/summingmergetree
 title: 'SummingMergeTree'
-doc_type: 'reference'
+doc_type: 'how-to'
 ---
 
 # SummingMergeTree

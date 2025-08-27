@@ -31,7 +31,7 @@ If you've spotted an error, please edit the YML frontmatter of the pages themsel
 | [Hudi Table Engine](/engines/table-engines/integrations/hudi) | This engine provides a read-only integration with existing Apache Hudi tables in Amazon S3. |
 | [Iceberg Table Engine](/engines/table-engines/integrations/iceberg) | This engine provides a read-only integration with existing Apache Iceberg tables in Amazon S3, Azure, HDFS and locally stored tables. |
 | [JDBC](/engines/table-engines/integrations/jdbc) | Allows ClickHouse to connect to external databases via JDBC. |
-| [Kafka](/engines/table-engines/integrations/kafka) | The Kafka Table Engine can be used to publish works with Apache Kafka and lets you publish or subscribe to data flows, organize fault-tolerant storage, and process streams as they become available. |
+| [Kafka table engine](/engines/table-engines/integrations/kafka) | The Kafka Table Engine can be used to publish works with Apache Kafka and lets you publish or subscribe to data flows, organize fault-tolerant storage, and process streams as they become available. |
 | [MaterializedPostgreSQL](/engines/table-engines/integrations/materialized-postgresql) | Creates a ClickHouse table with an initial data dump of a PostgreSQL table and starts the replication process. |
 | [MongoDB](/engines/table-engines/integrations/mongodb) | MongoDB engine is read-only table engine which allows to read data from a remote collection. |
 | [The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server.](/engines/table-engines/integrations/mysql) | Documentation for MySQL Table Engine |

@@ -4,7 +4,7 @@ sidebar_label: 'Backup and restore'
 sidebar_position: 10
 slug: /operations/backup
 title: 'Backup and restore'
-doc_type: 'how-to'
+doc_type: 'tutorial'
 ---
 
 # Backup and restore

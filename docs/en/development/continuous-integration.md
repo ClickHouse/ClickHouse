@@ -159,8 +159,6 @@ To run a local debug build:
 python -m ci.praktika run "Build (amd_debug)"
 
 If the above approach does not work for you, use the cmake options from the build log and follow the [general build process](../development/build.md).
-
-
 ## Functional stateless tests {#functional-stateless-tests}
 Runs [stateless functional tests](tests.md#functional-tests) for ClickHouse binaries built in various configurations -- release, debug, with sanitizers, etc.
 Look at the report to see which tests fail, then reproduce the failure locally as described [here](/development/tests#functional-tests).

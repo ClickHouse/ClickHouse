@@ -19,8 +19,6 @@ See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogene
 ## L1Distance {#L1Distance}
 
 Introduced in: v21.11
-
-
 Calculates the distance between two points (the elements of the vectors are the coordinates) in `L1` space (1-norm ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance)).
     
 
@@ -34,8 +32,6 @@ L1Distance(vector1, vector2)
 
 - `vector1` — First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)
 - `vector2` — Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)
-
-
 **Returned value**
 
 Returns the 1-norm distance. [`UInt32`](/sql-reference/data-types/int-uint) or [`Float64`](/sql-reference/data-types/float)
@@ -54,13 +50,9 @@ SELECT L1Distance((1, 2), (2, 3))
 └────────────────────────────┘
 ```
 
-
-
 ## L1Norm {#L1Norm}
 
 Introduced in: v21.11
-
-
 Calculates the sum of absolute elements of a vector.
     
 
@@ -73,8 +65,6 @@ L1Norm(vector)
 **Arguments**
 
 - `vector` — Vector or tuple of numeric values. [`Array(T)`](/sql-reference/data-types/array) or [`Tuple(T)`](/sql-reference/data-types/tuple)
-
-
 **Returned value**
 
 Returns the L1-norm or [taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance. [`UInt*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal)
@@ -93,13 +83,9 @@ SELECT L1Norm((1, 2))
 └────────────────┘
 ```
 
-
-
 ## L1Normalize {#L1Normalize}
 
 Introduced in: v21.11
-
-
 Calculates the unit vector of a given vector (the elements of the tuple are the coordinates) in `L1` space ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry)).
     
 
@@ -112,8 +98,6 @@ L1Normalize(tuple)
 **Arguments**
 
 - `tuple` — A tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple)
-
-
 **Returned value**
 
 Returns the unit vector. [`Tuple(Float64)`](/sql-reference/data-types/tuple)
@@ -132,13 +116,9 @@ SELECT L1Normalize((1, 2))
 └─────────────────────────────────────────┘
 ```
 
-
-
 ## L2Distance {#L2Distance}
 
 Introduced in: v21.11
-
-
 Calculates the distance between two points (the elements of the vectors are the coordinates) in Euclidean space ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
     
 
@@ -152,8 +132,6 @@ L2Distance(vector1, vector2)
 
 - `vector1` — First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)
 - `vector2` — Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)
-
-
 **Returned value**
 
 Returns the 2-norm distance. [`Float64`](/sql-reference/data-types/float)
@@ -172,13 +150,9 @@ SELECT L2Distance((1, 2), (2, 3))
 └────────────────────────────┘
 ```
 
-
-
 ## L2Norm {#L2Norm}
 
 Introduced in: v21.11
-
-
 Calculates the square root of the sum of the squares of the vector elements.
     
 
@@ -191,8 +165,6 @@ L2Norm(vector)
 **Arguments**
 
 - `vector` — Vector or tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)
-
-
 **Returned value**
 
 Returns the L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance). [`UInt*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
@@ -211,13 +183,9 @@ SELECT L2Norm((1, 2))
 └──────────────────┘
 ```
 
-
-
 ## L2Normalize {#L2Normalize}
 
 Introduced in: v21.11
-
-
 Calculates the unit vector of a given vector (the elements of the tuple are the coordinates) in Euclidean space (using [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
     
 
@@ -230,8 +198,6 @@ L2Normalize(tuple)
 **Arguments**
 
 - `tuple` — A tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple)
-
-
 **Returned value**
 
 Returns the unit vector. [`Tuple(Float64)`](/sql-reference/data-types/tuple)
@@ -250,13 +216,9 @@ SELECT L2Normalize((3, 4))
 └─────────────────────┘
 ```
 
-
-
 ## L2SquaredDistance {#L2SquaredDistance}
 
 Introduced in: v22.7
-
-
 Calculates the sum of the squares of the difference between the corresponding elements of two vectors.
     
 
@@ -270,8 +232,6 @@ L2SquaredDistance(vector1, vector2)
 
 - `vector1` — First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)
 - `vector2` — Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)
-
-
 **Returned value**
 
 Returns the sum of the squares of the difference between the corresponding elements of two vectors. [`Float64`](/sql-reference/data-types/float)
@@ -290,13 +250,9 @@ SELECT L2SquaredDistance([1, 2, 3], [0, 0, 0])
 └──────────────────────────┘
 ```
 
-
-
 ## L2SquaredNorm {#L2SquaredNorm}
 
 Introduced in: v22.7
-
-
 Calculates the square root of the sum of the squares of the vector elements (the [`L2Norm`](#L2Norm)) squared.
     
 
@@ -309,8 +265,6 @@ L2SquaredNorm(vector)
 **Arguments**
 
 - `vector` — Vector or tuple of numeric values. [`Array(T)`](/sql-reference/data-types/array) or [`Tuple(T)`](/sql-reference/data-types/tuple)
-
-
 **Returned value**
 
 Returns the L2-norm squared. [`UInt*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal)
@@ -329,13 +283,9 @@ SELECT L2SquaredNorm((1, 2))
 └───────────────────────┘
 ```
 
-
-
 ## LinfDistance {#LinfDistance}
 
 Introduced in: v21.11
-
-
 Calculates the distance between two points (the elements of the vectors are the coordinates) in `L_{inf}` space ([maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
     
 
@@ -349,8 +299,6 @@ LinfDistance(vector1, vector2)
 
 - `vector1` — First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)
 - `vector2` — Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)
-
-
 **Returned value**
 
 Returns the Infinity-norm distance. [`Float64`](/sql-reference/data-types/float)
@@ -369,13 +317,9 @@ SELECT LinfDistance((1, 2), (2, 3))
 └──────────────────────────────┘
 ```
 
-
-
 ## LinfNorm {#LinfNorm}
 
 Introduced in: v21.11
-
-
 Calculates the maximum of absolute elements of a vector.
     
 
@@ -388,8 +332,6 @@ LinfNorm(vector)
 **Arguments**
 
 - `vector` — Vector or tuple of numeric values. [`Array(T)`](/sql-reference/data-types/array) or [`Tuple(T)`](/sql-reference/data-types/tuple)
-
-
 **Returned value**
 
 Returns the Linf-norm or the maximum absolute value. [`Float64`](/sql-reference/data-types/float)
@@ -408,13 +350,9 @@ SELECT LinfNorm((1, -2))
 └───────────────────┘
 ```
 
-
-
 ## LinfNormalize {#LinfNormalize}
 
 Introduced in: v21.11
-
-
 Calculates the unit vector of a given vector (the elements of the tuple are the coordinates) in `L_{inf}` space (using [maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
     
 
@@ -427,8 +365,6 @@ LinfNormalize(tuple)
 **Arguments**
 
 - `tuple` — A tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple)
-
-
 **Returned value**
 
 Returns the unit vector. [`Tuple(Float64)`](/sql-reference/data-types/tuple)
@@ -447,13 +383,9 @@ SELECT LinfNormalize((3, 4))
 └───────────────────────┘
 ```
 
-
-
 ## LpDistance {#LpDistance}
 
 Introduced in: v21.11
-
-
 Calculates the distance between two points (the elements of the vectors are the coordinates) in `Lp` space ([p-norm distance](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
     
 
@@ -468,8 +400,6 @@ LpDistance(vector1, vector2, p)
 - `vector1` — First vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)
 - `vector2` — Second vector. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)
 - `p` — The power. Possible values: real number from `[1; inf)`. [`UInt*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 Returns the p-norm distance. [`Float64`](/sql-reference/data-types/float)
@@ -488,13 +418,9 @@ SELECT LpDistance((1, 2), (2, 3), 3)
 └───────────────────────────────┘
 ```
 
-
-
 ## LpNorm {#LpNorm}
 
 Introduced in: v21.11
-
-
 Calculates the p-norm of a vector, which is the p-th root of the sum of the p-th powers of the absolute elements of its elements.
 
 Special cases:
@@ -513,8 +439,6 @@ LpNorm(vector, p)
 
 - `vector` — Vector or tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)
 - `p` — The power. Possible values are real numbers in the range `[1; inf)`. [`UInt*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 Returns the [Lp-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm). [`Float64`](/sql-reference/data-types/float)
@@ -533,13 +457,9 @@ SELECT LpNorm((1, -2), 2)
 └────────────────────┘
 ```
 
-
-
 ## LpNormalize {#LpNormalize}
 
 Introduced in: v21.11
-
-
 Calculates the unit vector of a given vector (the elements of the tuple are the coordinates) in `Lp` space (using [p-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
         
 
@@ -553,8 +473,6 @@ LpNormalize(tuple, p)
 
 - `tuple` — A tuple of numeric values. [`Tuple(T)`](/sql-reference/data-types/tuple)
 - `p` — The power. Possible values are any number in the range range from `[1; inf)`. [`UInt*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 Returns the unit vector. [`Tuple(Float64)`](/sql-reference/data-types/tuple)
@@ -573,13 +491,9 @@ SELECT LpNormalize((3, 4), 5)
 └─────────────────────────────────────────┘
 ```
 
-
-
 ## cosineDistance {#cosineDistance}
 
 Introduced in: v1.1
-
-
 Calculates the cosine distance between two vectors (the elements of the tuples are the coordinates). The smaller the returned value is, the more similar are the vectors.
     
 
@@ -593,8 +507,6 @@ cosineDistance(vector1, vector2)
 
 - `vector1` — First tuple. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)
 - `vector2` — Second tuple. [`Tuple(T)`](/sql-reference/data-types/tuple) or [`Array(T)`](/sql-reference/data-types/array)
-
-
 **Returned value**
 
 Returns the cosine of the angle between two vectors subtracted from one. [`Float64`](/sql-reference/data-types/float)
@@ -612,7 +524,5 @@ SELECT cosineDistance((1, 2), (2, 3));
 │           0.007722123286332261 │
 └────────────────────────────────┘
 ```
-
-
 
 <!--AUTOGENERATED_END-->

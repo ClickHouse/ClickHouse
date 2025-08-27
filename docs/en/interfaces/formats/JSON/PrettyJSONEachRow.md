@@ -6,7 +6,7 @@ keywords: ['PrettyJSONEachRow', 'PrettyJSONLines', 'PrettyNDJSON']
 output_format: true
 slug: /interfaces/formats/PrettyJSONEachRow
 title: 'PrettyJSONEachRow'
-doc_type: 'reference'
+doc_type: 'how-to'
 ---
 
 | Input | Output | Alias                             |

@@ -35,8 +35,6 @@ bitAnd(a, b)
 
 - `a` — First value. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
 - `b` — Second value. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 Returns the result of bitwise operation `a AND b`
@@ -71,8 +69,6 @@ FROM bits
 └───┴───┴──────────────┘
 ```
 
-
-
 ## bitCount {#bitCount}
 
 Introduced in: v20.3
@@ -88,8 +84,6 @@ bitCount(x)
 **Arguments**
 
 - `x` — An integer or float value. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 Returns the number of bits set to one in `x`. [`UInt8`](../data-types/int-uint.md).
@@ -113,18 +107,12 @@ SELECT bin(333), bitCount(333);
 └──────────────────┴───────────────┘
 ```
 
-
-
 ## bitHammingDistance {#bitHammingDistance}
 
 Introduced in: v21.1
-
-
 Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between the bit representations of two numbers.
 Can be used with [`SimHash`](../../sql-reference/functions/hash-functions.md#ngramsimhash) functions for detection of semi-duplicate strings.
 The smaller the distance, the more similar the strings are.
-
-
 **Syntax**
 
 ```sql
@@ -135,8 +123,6 @@ bitHammingDistance(x, y)
 
 - `x` — First number for Hamming distance calculation. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
 - `y` — Second number for Hamming distance calculation. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 Returns the hamming distance between `x` and `y` [`UInt8`](/sql-reference/data-types/int-uint)
@@ -155,8 +141,6 @@ SELECT bitHammingDistance(111, 121);
 └──────────────────────────────┘
 ```
 
-
-
 ## bitNot {#bitNot}
 
 Introduced in: v1.1
@@ -172,8 +156,6 @@ bitNot(a)
 **Arguments**
 
 - `a` — Value for which to apply bitwise NOT operation. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float) or [`String`](/sql-reference/data-types/string)
-
-
 **Returned value**
 
 Returns the result of `~a` i.e `a` with bits flipped.
@@ -196,8 +178,6 @@ SELECT
 └──────────┴─────────────────┴────────┴───────────────┘
 ```
 
-
-
 ## bitOr {#bitOr}
 
 Introduced in: v1.1
@@ -214,8 +194,6 @@ bitOr(a, b)
 
 - `a` — First value. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
 - `b` — Second value. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 Returns the result of bitwise operation `a OR b`
@@ -250,8 +228,6 @@ FROM bits;
 └───┴───┴─────────────┘
 ```
 
-
-
 ## bitRotateLeft {#bitRotateLeft}
 
 Introduced in: v1.1
@@ -268,8 +244,6 @@ bitRotateLeft(a, N)
 
 - `a` — A value to rotate. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)
 - `N` — The number of positions to rotate left. [`UInt8/16/32/64`](/sql-reference/data-types/int-uint)
-
-
 **Returned value**
 
 Returns the rotated value with type equal to that of `a`. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)
@@ -288,8 +262,6 @@ SELECT 99 AS a, bin(a), bitRotateLeft(a, 2) AS a_rotated, bin(a_rotated);
 └────┴──────────┴───────────┴────────────────┘
 ```
 
-
-
 ## bitRotateRight {#bitRotateRight}
 
 Introduced in: v1.1
@@ -306,8 +278,6 @@ bitRotateRight(a, N)
 
 - `a` — A value to rotate. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)
 - `N` — The number of positions to rotate right. [`UInt8/16/32/64`](/sql-reference/data-types/int-uint)
-
-
 **Returned value**
 
 Returns the rotated value with type equal to that of `a`. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)
@@ -326,21 +296,15 @@ SELECT 99 AS a, bin(a), bitRotateRight(a, 2) AS a_rotated, bin(a_rotated);
 └────┴──────────┴───────────┴────────────────┘
 ```
 
-
-
 ## bitShiftLeft {#bitShiftLeft}
 
 Introduced in: v1.1
-
-
 Shifts the binary representation of a value to the left by a specified number of bit positions.
 
 A `FixedString` or a `String` is treated as a single multibyte value.
 
 Bits of a `FixedString` value are lost as they are shifted out.
 On the contrary, a `String` value is extended with additional bytes, so no bits are lost.
-
-
 **Syntax**
 
 ```sql
@@ -351,8 +315,6 @@ bitShiftLeft(a, N)
 
 - `a` — A value to shift. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`String`](/sql-reference/data-types/string) or [`FixedString`](/sql-reference/data-types/fixedstring)
 - `N` — The number of positions to shift. [`UInt8/16/32/64`](/sql-reference/data-types/int-uint)
-
-
 **Returned value**
 
 Returns the shifted value with type equal to that of `a`.
@@ -395,21 +357,15 @@ SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, he
 └─────┴──────────────────────────────┴───────────┴───────────────────────────────────────────────┘
 ```
 
-
-
 ## bitShiftRight {#bitShiftRight}
 
 Introduced in: v1.1
-
-
 Shifts the binary representation of a value to the right by a specified number of bit positions.
 
 A `FixedString` or a `String` is treated as a single multibyte value.
 
 Bits of a `FixedString` value are lost as they are shifted out.
 On the contrary, a `String` value is extended with additional bytes, so no bits are lost.
-
-
 **Syntax**
 
 ```sql
@@ -420,8 +376,6 @@ bitShiftRight(a, N)
 
 - `a` — A value to shift. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`String`](/sql-reference/data-types/string) or [`FixedString`](/sql-reference/data-types/fixedstring)
 - `N` — The number of positions to shift. [`UInt8/16/32/64`](/sql-reference/data-types/int-uint)
-
-
 **Returned value**
 
 Returns the shifted value with type equal to that of `a`.
@@ -464,8 +418,6 @@ SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftRight(a, 12) AS a_shifted, 
 └─────┴──────────────────────────────┴───────────┴─────────────────────────────────────────────────┘
 ```
 
-
-
 ## bitSlice {#bitSlice}
 
 Introduced in: v22.2
@@ -494,8 +446,6 @@ Optional. The number of bits to extract.
 - Omitted: extract from offset to end of string.
 - If length is not a multiple of 8, the result is padded with zeros on the right.
          [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 Returns a string containing the extracted bits, represented as a binary sequence. The result is always padded to byte boundaries (multiples of 8 bits) [`String`](/sql-reference/data-types/string)
@@ -526,8 +476,6 @@ SELECT bin('Hello'), bin(bitSlice('Hello', -4, 8));
 └──────────────────────────────────────────┴───────────────────────────────┘
 ```
 
-
-
 ## bitTest {#bitTest}
 
 Introduced in: v1.1
@@ -544,8 +492,6 @@ bitTest(a, i)
 
 - `a` — Number to convert. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
 - `i` — Position of the bit to return. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 Returns the value of the bit at position `i` in the binary representation of `a` [`UInt8`](/sql-reference/data-types/int-uint)
@@ -564,13 +510,9 @@ SELECT bin(2), bitTest(2, 1);
 └──────────┴───────────────┘
 ```
 
-
-
 ## bitTestAll {#bitTestAll}
 
 Introduced in: v1.1
-
-
 Returns result of the [logical conjunction](https://en.wikipedia.org/wiki/Logical_conjunction) (AND operator) of all bits at the given positions.
 Counts right-to-left, starting at 0.
 
@@ -587,8 +529,6 @@ bitTestAll(a, index1[, index2, ... , indexN])
 
 - `a` — An integer value. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)
 - `index1, ...` — One or multiple positions of bits. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)
-
-
 **Returned value**
 
 Returns the result of the logical conjunction [`UInt8`](/sql-reference/data-types/int-uint)
@@ -619,13 +559,9 @@ SELECT bitTestAll(43, 0, 1, 3, 5, 2);
 └──────────┴──────────────────────────┘
 ```
 
-
-
 ## bitTestAny {#bitTestAny}
 
 Introduced in: v1.1
-
-
 Returns result of the [logical disjunction](https://en.wikipedia.org/wiki/Logical_disjunction) (OR operator) of all bits at the given positions in a number.
 Counts right-to-left, starting at 0.
 
@@ -642,8 +578,6 @@ bitTestAny(a, index1[, index2, ... , indexN])
 
 - `a` — An integer value. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)
 - `index1, ...` — One or multiple positions of bits. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)
-
-
 **Returned value**
 
 Returns the result of the logical disjunction [`UInt8`](/sql-reference/data-types/int-uint)
@@ -674,8 +608,6 @@ SELECT bitTestAny(43, 4, 2);
 └──────────┴──────────────────────┘
 ```
 
-
-
 ## bitXor {#bitXor}
 
 Introduced in: v1.1
@@ -692,8 +624,6 @@ bitXor(a, b)
 
 - `a` — First value. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
 - `b` — Second value. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 Returns the result of bitwise operation `a XOR b`
@@ -727,7 +657,5 @@ FROM bits;
 │ 1 │ 1 │            0 │
 └───┴───┴──────────────┘
 ```
-
-
 
 <!--AUTOGENERATED_END-->

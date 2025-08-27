@@ -4,7 +4,7 @@ sidebar_label: 'PARALLEL WITH'
 sidebar_position: 53
 slug: /sql-reference/statements/parallel_with
 title: 'PARALLEL WITH Clause'
-doc_type: 'how-to'
+doc_type: 'reference'
 ---
 
 # PARALLEL WITH Clause

@@ -19,8 +19,6 @@ See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogene
 ## assumeNotNull {#assumeNotNull}
 
 Introduced in: v1.1
-
-
 Returns the corresponding non-`Nullable` value for a value of type [`Nullable`](../data-types/nullable.md).
 If the original value is `NULL`, an arbitrary result can be returned.
 
@@ -36,8 +34,6 @@ assumeNotNull(x)
 **Arguments**
 
 - `x` — The original value of any nullable type. [`Nullable(T)`](/sql-reference/data-types/nullable)
-
-
 **Returned value**
 
 Returns the non-nullable value, if the original value was not `NULL`, otherwise an arbitrary value, if the input value is `NULL`. [`Any`](/sql-reference/data-types)
@@ -68,13 +64,9 @@ SELECT toTypeName(assumeNotNull(y)) FROM t_null;
 └──────────────────────────────┘
 ```
 
-
-
 ## coalesce {#coalesce}
 
 Introduced in: v1.1
-
-
 Returns the leftmost non-`NULL` argument.
     
 
@@ -87,8 +79,6 @@ coalesce(x[, y, ...])
 **Arguments**
 
 - `x[, y, ...]` — Any number of parameters of non-compound type. All parameters must be of mutually compatible data types. [`Any`](/sql-reference/data-types)
-
-
 **Returned value**
 
 Returns the first non-`NULL` argument, otherwise `NULL`, if all arguments are `NULL`. [`Any`](/sql-reference/data-types) or [`NULL`](/sql-reference/syntax#null)
@@ -126,13 +116,9 @@ SELECT name, coalesce(mail, phone, CAST(telegram,'Nullable(String)')) FROM aBook
 └──────────┴───────────────────────────────────────────────────────────┘
 ```
 
-
-
 ## ifNull {#ifNull}
 
 Introduced in: v1.1
-
-
 Returns an alternative value if the first argument is `NULL`.
     
 
@@ -146,8 +132,6 @@ ifNull(x, alt)
 
 - `x` — The value to check for `NULL`. [`Any`](/sql-reference/data-types)
 - `alt` — The value that the function returns if `x` is `NULL`. [`Any`](/sql-reference/data-types)
-
-
 **Returned value**
 
 Returns the value of `x` if it is not `NULL`, otherwise `alt`. [`Any`](/sql-reference/data-types)
@@ -166,13 +150,9 @@ SELECT ifNull('a', 'b'), ifNull(NULL, 'b');
 └──────────────────┴───────────────────┘
 ```
 
-
-
 ## isNotDistinctFrom {#isNotDistinctFrom}
 
 Introduced in: v23.8
-
-
 Performs a null-safe comparison between two `JOIN` keys. This function will consider
 two `NULL` values as identical and will return `true`, which is distinct from the usual
 equals behavior where comparing two `NULL` values would return `NULL`.
@@ -195,21 +175,15 @@ isNotDistinctFrom(x, y)
 
 - `x` — First `JOIN` key to compare. [`Any`](/sql-reference/data-types)
 - `y` — Second `JOIN` key to compare. [`Any`](/sql-reference/data-types)
-
-
 **Returned value**
 
 Returns `true` when `x` and `y` are both `NULL`, otherwise `false`. [`Bool`](/sql-reference/data-types/boolean)
 
 **Examples**
 
-
-
 ## isNotNull {#isNotNull}
 
 Introduced in: v1.1
-
-
 Checks if the argument is not `NULL`.
 
 Also see: operator [`IS NOT NULL`](/sql-reference/operators#is_not_null).
@@ -224,8 +198,6 @@ isNotNull(x)
 **Arguments**
 
 - `x` — A value of non-compound data type. [`Any`](/sql-reference/data-types)
-
-
 **Returned value**
 
 Returns `1` if `x` is not `NULL`, otherwise `0`. [`UInt8`](/sql-reference/data-types/int-uint)
@@ -254,13 +226,9 @@ SELECT x FROM t_null WHERE isNotNull(y);
 └───┘
 ```
 
-
-
 ## isNull {#isNull}
 
 Introduced in: v1.1
-
-
 Checks if the argument is `NULL`.
 
 Also see: operator [`IS NULL`](/sql-reference/operators#is_null).
@@ -275,8 +243,6 @@ isNull(x)
 **Arguments**
 
 - `x` — A value of non-compound data type. [`Any`](/sql-reference/data-types)
-
-
 **Returned value**
 
 Returns `1` if `x` is `NULL`, otherwise `0`. [`UInt8`](/sql-reference/data-types/int-uint)
@@ -305,13 +271,9 @@ SELECT x FROM t_null WHERE isNull(y);
 └───┘
 ```
 
-
-
 ## isNullable {#isNullable}
 
 Introduced in: v22.7
-
-
 Checks whether the argument's data type is `Nullable` (i.e it allows `NULL` values).
     
 
@@ -324,8 +286,6 @@ isNullable(x)
 **Arguments**
 
 - `x` — A value of any data type. [`Any`](/sql-reference/data-types)
-
-
 **Returned value**
 
 Returns `1` if `x` is of a `Nullable` data type, otherwise `0`. [`UInt8`](/sql-reference/data-types/int-uint)
@@ -353,13 +313,9 @@ SELECT isNullable(ordinary_col), isNullable(nullable_col) FROM tab;
 └─────────────────────────────┴─────────────────────────────┘
 ```
 
-
-
 ## isZeroOrNull {#isZeroOrNull}
 
 Introduced in: v20.3
-
-
 Checks if the argument is either zero (`0`) or `NULL`.
     
 
@@ -372,8 +328,6 @@ isZeroOrNull(x)
 **Arguments**
 
 - `x` — A numeric value. [`UInt`](/sql-reference/data-types/int-uint)
-
-
 **Returned value**
 
 Returns `1` if `x` is `NULL` or equal to zero, otherwise `0`. [`UInt8/16/32/64`](/sql-reference/data-types/int-uint) or [`Float32/Float64`](/sql-reference/data-types/float)
@@ -403,13 +357,9 @@ SELECT x FROM t_null WHERE isZeroOrNull(y);
 └───┘
 ```
 
-
-
 ## nullIf {#nullIf}
 
 Introduced in: v1.1
-
-
 Returns `NULL` if both arguments are equal.
     
 
@@ -423,8 +373,6 @@ nullIf(x, y)
 
 - `x` — The first value. [`Any`](/sql-reference/data-types)
 - `y` — The second value. [`Any`](/sql-reference/data-types)
-
-
 **Returned value**
 
 Returns `NULL` if both arguments are equal, otherwise returns the first argument. [`NULL`](/sql-reference/syntax#null) or [`Nullable(x)`](/sql-reference/data-types/nullable)
@@ -443,13 +391,9 @@ SELECT nullIf(1, 1), nullIf(1, 2);
 └──────────────┴──────────────┘
 ```
 
-
-
 ## toNullable {#toNullable}
 
 Introduced in: v1.1
-
-
 Converts the provided argument type to `Nullable`.
     
 
@@ -462,8 +406,6 @@ toNullable(x)
 **Arguments**
 
 - `x` — A value of any non-compound type. [`Any`](/sql-reference/data-types)
-
-
 **Returned value**
 
 Returns the input value but of `Nullable` type. [`Nullable(Any)`](/sql-reference/data-types/nullable)
@@ -481,7 +423,5 @@ SELECT toTypeName(10), toTypeName(toNullable(10));
 │ UInt8          │ Nullable(UInt8)            │
 └────────────────┴────────────────────────────┘
 ```
-
-
 
 <!--AUTOGENERATED_END-->

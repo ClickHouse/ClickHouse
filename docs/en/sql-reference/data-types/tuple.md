@@ -148,8 +148,6 @@ WHERE (year, month, day) > (2010, 1, 1);
 ┌─year─┬─month─┬─day─┐
 │ 2022 │    12 │  31 │
 └──────┴───────┴─────┘
-
-
 CREATE TABLE test
 (
     `key` Int64,

@@ -64,23 +64,17 @@ or VersionedCollapsingMergeTree table to allow only valid values (`1` and `-1`).
 ## add_minmax_index_for_numeric_columns {#add_minmax_index_for_numeric_columns} 
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "New setting"}]}]}/>
-
-
 When enabled, min-max (skipping) indices are added for all numeric columns
 of the table.
 
 ## add_minmax_index_for_string_columns {#add_minmax_index_for_string_columns} 
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "New setting"}]}]}/>
-
-
 When enabled, min-max (skipping) indices are added for all string columns of the table.
 
 ## allow_coalescing_columns_in_partition_or_order_key {#allow_coalescing_columns_in_partition_or_order_key} 
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "New setting to allow coalescing of partition or sorting key columns."}]}]}/>
-
-
 When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
 the partition or sorting key.
 
@@ -104,8 +98,6 @@ with settings `min_age_to_force_merge_seconds`,
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting"}]}]}/>
-
-
 Enables support for descending sort order in MergeTree sorting keys. This
 setting is particularly useful for time series analysis and Top-N queries,
 allowing data to be stored in reverse chronological order to optimize query
@@ -152,15 +144,11 @@ Allow Nullable types as primary keys.
 ## allow_part_offset_column_in_projections {#allow_part_offset_column_in_projections} 
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Now projections can use _part_offset column."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "New setting, it protects from creating projections with parent part offset column until it is stabilized."}]}]}/>
-
-
 Allow usage of '_part_offset' column in projections select query.
 
 ## allow_reduce_blocking_parts_task {#allow_reduce_blocking_parts_task} 
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Now SMT will remove stale blocking parts from ZooKeeper by default"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]}/>
-
-
 Background task which reduces blocking parts for shared merge tree tables.
 Only in ClickHouse Cloud
 
@@ -174,8 +162,6 @@ Don't use this setting in production, because it is not ready.
 ## allow_summing_columns_in_partition_or_order_key {#allow_summing_columns_in_partition_or_order_key} 
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting to allow summing of partition or sorting key columns"}]}]}/>
-
-
 When enabled, allows summing columns in a SummingMergeTree table to be used in
 the partition or sorting key.
 
@@ -208,8 +194,6 @@ and so on.
 ## apply_patches_on_merge {#apply_patches_on_merge} 
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "New setting"}]}]}/>
-
-
 If true patch parts are applied on merges
 
 ## assign_part_uuids {#assign_part_uuids} 
@@ -259,8 +243,6 @@ trigger such an action.
 ## cache_populated_by_fetch_filename_regexp {#cache_populated_by_fetch_filename_regexp} 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": ""},{"label": "New setting"}]}]}/>
-
-
 :::note
 This setting applies only to ClickHouse Cloud.
 :::
@@ -316,14 +298,10 @@ Obsolete setting, does nothing.
 ## columns_and_secondary_indices_sizes_lazy_calculation {#columns_and_secondary_indices_sizes_lazy_calculation} 
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "New setting to calculate columns and indices sizes lazily"}]}]}/>
-
-
 Calculate columns and secondary indices sizes lazily on first request instead
 of on table initialization.
 
 ## columns_to_prewarm_mark_cache {#columns_to_prewarm_mark_cache} 
-
-
 List of columns to prewarm mark cache for (if enabled). Empty means all columns
 
 ## compact_parts_max_bytes_to_buffer {#compact_parts_max_bytes_to_buffer} 
@@ -372,8 +350,6 @@ the number of inactive data parts is at least this.
 ## deduplicate_merge_projection_mode {#deduplicate_merge_projection_mode} 
 <SettingsInfoBlock type="DeduplicateMergeProjectionMode" default_value="throw" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "throw"},{"label": "Do not allow to create inconsistent projection"}]}]}/>
-
-
 Whether to allow create projection for the table with non-classic MergeTree,
 that is not (Replicated, Shared) MergeTree. Ignore option is purely for
 compatibility which might result in incorrect answer. Otherwise, if allowed,
@@ -391,8 +367,6 @@ Possible values:
 ## default_compression_codec {#default_compression_codec} 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": ""},{"label": "New setting"}]}]}/>
-
-
 Specifies the default compression codec to be used if none is defined for a particular column in the table declaration.
 Compression codec selecting order for a column:
 1. Compression codec defined for the column in the table declaration
@@ -441,15 +415,11 @@ Disable FETCH PARTITION query for zero copy replication.
 Disable FREEZE PARTITION query for zero copy replication.
 
 ## disk {#disk} 
-
-
 Name of storage disk. Can be specified instead of storage policy.
 
 ## dynamic_serialization_version {#dynamic_serialization_version} 
 <SettingsInfoBlock type="MergeTreeDynamicSerializationVersion" default_value="v2" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "v2"},{"label": "Add a setting to control Dynamic serialization versions"}]}]}/>
-
-
 Serialization version for Dynamic data type. Required for compatibility.
 
 Possible values:
@@ -475,8 +445,6 @@ Compress in memory values of index granularity if it is possible
 ## enable_max_bytes_limit_for_min_age_to_force_merge {#enable_max_bytes_limit_for_min_age_to_force_merge} 
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "Added new setting to limit max bytes for min_age_to_force_merge."}]}]}/>
-
-
 If settings `min_age_to_force_merge_seconds` and
 `min_age_to_force_merge_on_partition_only` should respect setting
 `max_bytes_to_merge_at_max_space_in_pool`.
@@ -501,8 +469,6 @@ to improve the efficiency of `SELECT` queries.
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "New setting to allow automatic cleanup merges for ReplacingMergeTree"}]}]}/>
-
-
 Whether to use CLEANUP merges for ReplacingMergeTree when merging partitions
 down to a single part. Requires `allow_experimental_replacing_merge_with_cleanup`,
 `min_age_to_force_merge_seconds` and `min_age_to_force_merge_on_partition_only`
@@ -526,8 +492,6 @@ Enable usage of Vertical merge algorithm.
 ## enforce_index_structure_match_on_partition_manipulation {#enforce_index_structure_match_on_partition_manipulation} 
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting"}]}]}/>
-
-
 If this setting is enabled for destination table of a partition manipulation
 query (`ATTACH/MOVE/REPLACE PARTITION`), the indices and projections must be
 identical between the source and destination tables. Otherwise, the destination
@@ -710,8 +674,6 @@ the default compression is ZSTD(3).
 ## materialize_skip_indexes_on_merge {#materialize_skip_indexes_on_merge} 
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "New setting"}]}]}/>
-
-
 When enabled, merges build and store skip indices for new parts.
 Otherwise they can be created/stored by explicit MATERIALIZE INDEX
 
@@ -882,8 +844,6 @@ Possible values:
 ## max_merge_delayed_streams_for_parallel_write {#max_merge_delayed_streams_for_parallel_write} 
 <SettingsInfoBlock type="UInt64" default_value="40" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "40"},{"label": "New setting"}]}]}/>
-
-
 The maximum number of streams (columns) that can be flushed in parallel
 (analog of max_insert_delayed_streams_for_parallel_write for merges). Works
 only for Vertical merges.
@@ -959,22 +919,16 @@ The maximum postpone time for failed mutations.
 ## max_postpone_time_for_failed_replicated_fetches_ms {#max_postpone_time_for_failed_replicated_fetches_ms} 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "Added new setting to enable postponing fetch tasks in the replication queue."}]}]}/>
-
-
 The maximum postpone time for failed replicated fetches.
 
 ## max_postpone_time_for_failed_replicated_merges_ms {#max_postpone_time_for_failed_replicated_merges_ms} 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "Added new setting to enable postponing merge tasks in the replication queue."}]}]}/>
-
-
 The maximum postpone time for failed replicated merges.
 
 ## max_postpone_time_for_failed_replicated_tasks_ms {#max_postpone_time_for_failed_replicated_tasks_ms} 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "300000"},{"label": "Added new setting to enable postponing tasks in the replication queue."}]}]}/>
-
-
 The maximum postpone time for failed replicated task. The value is used if the task is not a fetch, merge or mutation.
 
 ## max_projections {#max_projections} 
@@ -1083,8 +1037,6 @@ Possible values:
 ## max_uncompressed_bytes_in_patches {#max_uncompressed_bytes_in_patches} 
 <SettingsInfoBlock type="UInt64" default_value="32212254720" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "32212254720"},{"label": "New setting"}]}]}/>
-
-
 The maximum uncompressed size of data in all patch parts in bytes.
 If amount of data in all patch parts exceeds this value, lightweight updates will be rejected.
 0 - unlimited.
@@ -1114,8 +1066,6 @@ has the same value as `index_granularity_bytes`.
 ## merge_max_bytes_to_prewarm_cache {#merge_max_bytes_to_prewarm_cache} 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1073741824"},{"label": "Cloud sync"}]}]}/>
-
-
 Only available in ClickHouse Cloud. Maximal size of part (compact or packed)
 to prewarm cache during merge.
 
@@ -1167,8 +1117,6 @@ How many parts to look at once.
 ## merge_total_max_bytes_to_prewarm_cache {#merge_total_max_bytes_to_prewarm_cache} 
 <SettingsInfoBlock type="UInt64" default_value="16106127360" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "16106127360"},{"label": "Cloud sync"}]}]}/>
-
-
 Only available in ClickHouse Cloud. Maximal size of parts in total to prewarm
 cache during merge.
 
@@ -1207,8 +1155,6 @@ Minimum delay in seconds before repeating a merge with recompression TTL.
 Minimum delay in seconds before repeating a merge with delete TTL.
 
 ## merge_workload {#merge_workload} 
-
-
 Used to regulate how resources are utilized and shared between merges and
 other workloads. Specified value is used as `workload` setting value for
 background merges of this table. If not specified (empty string), then
@@ -1265,8 +1211,6 @@ format. You can set one, both or none of these settings.
 ## min_bytes_to_prewarm_caches {#min_bytes_to_prewarm_caches} 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting"}]}]}/>
-
-
 Minimal size (uncompressed bytes) to prewarm mark cache and primary index cache
 for new parts
 
@@ -1448,8 +1392,6 @@ Minimal number of rows to create part in wide format instead of compact
 Minimal number of rows to do fsync for part after merge (0 - disabled)
 
 ## mutation_workload {#mutation_workload} 
-
-
 Used to regulate how resources are utilized and shared between mutations and
 other workloads. Specified value is used as `workload` setting value for
 background mutations of this table. If not specified (empty string), then
@@ -1478,8 +1420,6 @@ The hash sums of the created parts are written to a local file on a disk.
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]}/>
-
-
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 
 ## number_of_free_entries_in_pool_to_execute_mutation {#number_of_free_entries_in_pool_to_execute_mutation} 
@@ -1544,8 +1484,6 @@ exception. Disabled if set to 0
 ## number_of_partitions_to_consider_for_merge {#number_of_partitions_to_consider_for_merge} 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "Cloud sync"}]}]}/>
-
-
 Only available in ClickHouse Cloud. Up to top N partitions which we will
 consider for merge. Partitions picked in a random weighted way where weight
 is amount of data parts which can be merged in this partition.
@@ -1553,8 +1491,6 @@ is amount of data parts which can be merged in this partition.
 ## object_serialization_version {#object_serialization_version} 
 <SettingsInfoBlock type="MergeTreeObjectSerializationVersion" default_value="v2" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "v2"},{"label": "Add a setting to control JSON serialization versions"}]}]}/>
-
-
 Serialization version for JSON data type. Required for compatibility.
 
 Possible values:
@@ -1567,22 +1503,16 @@ Only version `v3` supports changing the shared data serialization version.
 ## object_shared_data_buckets_for_compact_part {#object_shared_data_buckets_for_compact_part} 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "8"},{"label": "Add a setting to control number of buckets for shared data in JSON serialization in compact parts"}]}]}/>
-
-
 Number of buckets for JSON shared data serialization in Compact parts. Works with `map_with_buckets` and `advanced` shared data serializations.
 
 ## object_shared_data_buckets_for_wide_part {#object_shared_data_buckets_for_wide_part} 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "32"},{"label": "Add a setting to control number of buckets for shared data in JSON serialization in wide parts"}]}]}/>
-
-
 Number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
 
 ## object_shared_data_serialization_version {#object_shared_data_serialization_version} 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "map"},{"label": "Add a setting to control JSON serialization versions"}]}]}/>
-
-
 Serialization version for shared data inside JSON data type.
 
 Possible values:
@@ -1597,8 +1527,6 @@ Number of buckets for `map_with_buckets` and `advanced` serializations is determ
 ## object_shared_data_serialization_version_for_zero_level_parts {#object_shared_data_serialization_version_for_zero_level_parts} 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "map"},{"label": "Add a setting to control JSON serialization versions  for zero level parts"}]}]}/>
-
-
 This setting allows to specify different serialization version of the
 shared data inside JSON type for zero level parts that are created during inserts.
 It's recommended not to use `advanced` shared data serialization for zero level parts because it can increase
@@ -1753,8 +1681,6 @@ different value, it will reduce the probability of the `Too many parts`
 error, but at the same time `SELECT` performance might degrade. Also in case
 of a merge issue (for example, due to insufficient disk space) you will
 notice it later than you would with the original 300.
-
-
 ## prefer_fetch_merged_part_size_threshold {#prefer_fetch_merged_part_size_threshold} 
 <SettingsInfoBlock type="UInt64" default_value="10737418240" />
 
@@ -1858,8 +1784,6 @@ number AS id,
 number % 20 = 0 ? toString(number): '' AS s
 FROM
 numbers(10000000);
-
-
 CREATE TABLE my_sparse_table
 (
 `id` UInt64,
@@ -1933,8 +1857,6 @@ You can see which parts of `s` were stored using the sparse serialization:
 ## reduce_blocking_parts_sleep_ms {#reduce_blocking_parts_sleep_ms} 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "5000"},{"label": "Cloud sync"}]}]}/>
-
-
 Only available in ClickHouse Cloud. Minimum time to wait before trying to
 reduce blocking parts again after no ranges were dropped/replaced. A lower
 setting will trigger tasks in background_schedule_pool frequently which
@@ -1943,8 +1865,6 @@ results in large amount of requests to zookeeper in large-scale clusters
 ## refresh_parts_interval {#refresh_parts_interval} 
 <SettingsInfoBlock type="Seconds" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "A new setting"}]}]}/>
-
-
 If it is greater than zero - refresh the list of data parts from the underlying filesystem to check if the data was updated under the hood.
 It can be set only if the table is located on readonly disks (which means that this is a readonly replica, while data is being written by another replica).
 
@@ -1995,8 +1915,6 @@ Setting for an incomplete experimental feature.
 ## remove_unused_patch_parts {#remove_unused_patch_parts} 
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "New setting"}]}]}/>
-
-
 Remove in background patch parts which are applied for all active parts.
 
 ## replace_long_file_name_to_hash {#replace_long_file_name_to_hash} 
@@ -2137,8 +2055,6 @@ Possible values:
 ## search_orphaned_parts_disks {#search_orphaned_parts_disks} 
 <SettingsInfoBlock type="SearchOrphanedPartsDisks" default_value="any" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "any"},{"label": "New setting"}]}]}/>
-
-
 ClickHouse scans all disks for orphaned parts upon any ATTACH or CREATE table
 in order to not allow to miss data parts at undefined (not included in policy) disks.
 Orphaned parts originates from potentially unsafe storage reconfiguration, e.g. if a disk was excluded from storage policy.
@@ -2152,8 +2068,6 @@ Possible values:
 ## shared_merge_tree_create_per_replica_metadata_nodes {#shared_merge_tree_create_per_replica_metadata_nodes} 
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]}/>
-
-
 Enables creation of per-replica /metadata and /columns nodes in ZooKeeper.
 Only available in ClickHouse Cloud
 
@@ -2168,8 +2082,6 @@ Cloud
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "New setting"}]}]}/>
-
-
 Enables coordinated merges strategy
 
 ## shared_merge_tree_enable_keeper_parts_extra_data {#shared_merge_tree_enable_keeper_parts_extra_data} 
@@ -2177,52 +2089,38 @@ Enables coordinated merges strategy
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "New setting"}]}]}/>
-
-
 Enables writing attributes into virtual parts and committing blocks in keeper
 
 ## shared_merge_tree_enable_outdated_parts_check {#shared_merge_tree_enable_outdated_parts_check} 
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]}/>
-
-
 Enable outdated parts check. Only available in ClickHouse Cloud
 
 ## shared_merge_tree_idle_parts_update_seconds {#shared_merge_tree_idle_parts_update_seconds} 
 <SettingsInfoBlock type="UInt64" default_value="3600" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "3600"},{"label": "Cloud sync"}]}]}/>
-
-
 Interval in seconds for parts update without being triggered by ZooKeeper
 watch in the shared merge tree. Only available in ClickHouse Cloud
 
 ## shared_merge_tree_initial_parts_update_backoff_ms {#shared_merge_tree_initial_parts_update_backoff_ms} 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "50"},{"label": "New setting"}]}]}/>
-
-
 Initial backoff for parts update. Only available in ClickHouse Cloud
 
 ## shared_merge_tree_interserver_http_connection_timeout_ms {#shared_merge_tree_interserver_http_connection_timeout_ms} 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "100"},{"label": "New setting"}]}]}/>
-
-
 Timeouts for interserver HTTP connection. Only available in ClickHouse Cloud
 
 ## shared_merge_tree_interserver_http_timeout_ms {#shared_merge_tree_interserver_http_timeout_ms} 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10000"},{"label": "Cloud sync"}]}]}/>
-
-
 Timeouts for interserver HTTP communication. Only available in ClickHouse
 Cloud
 
 ## shared_merge_tree_leader_update_period_random_add_seconds {#shared_merge_tree_leader_update_period_random_add_seconds} 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "Cloud sync"}]}]}/>
-
-
 Add uniformly distributed value from 0 to x seconds to
 shared_merge_tree_leader_update_period to avoid thundering
 herd effect. Only available in ClickHouse Cloud
@@ -2230,53 +2128,39 @@ herd effect. Only available in ClickHouse Cloud
 ## shared_merge_tree_leader_update_period_seconds {#shared_merge_tree_leader_update_period_seconds} 
 <SettingsInfoBlock type="UInt64" default_value="30" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "30"},{"label": "Cloud sync"}]}]}/>
-
-
 Maximum period to recheck leadership for parts update. Only available in
 ClickHouse Cloud
 
 ## shared_merge_tree_max_outdated_parts_to_process_at_once {#shared_merge_tree_max_outdated_parts_to_process_at_once} 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1000"},{"label": "Cloud sync"}]}]}/>
-
-
 Maximum amount of outdated parts leader will try to confirm for removal at
 one HTTP request. Only available in ClickHouse Cloud.
 
 ## shared_merge_tree_max_parts_update_backoff_ms {#shared_merge_tree_max_parts_update_backoff_ms} 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "5000"},{"label": "New setting"}]}]}/>
-
-
 Max backoff for parts update. Only available in ClickHouse Cloud
 
 ## shared_merge_tree_max_parts_update_leaders_in_total {#shared_merge_tree_max_parts_update_leaders_in_total} 
 <SettingsInfoBlock type="UInt64" default_value="6" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "6"},{"label": "Cloud sync"}]}]}/>
-
-
 Maximum number of parts update leaders. Only available in ClickHouse Cloud
 
 ## shared_merge_tree_max_parts_update_leaders_per_az {#shared_merge_tree_max_parts_update_leaders_per_az} 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "2"},{"label": "Cloud sync"}]}]}/>
-
-
 Maximum number of parts update leaders. Only available in ClickHouse Cloud
 
 ## shared_merge_tree_max_replicas_for_parts_deletion {#shared_merge_tree_max_replicas_for_parts_deletion} 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "Cloud sync"}]}]}/>
-
-
 Max replicas which will participate in parts deletion (killer thread). Only
 available in ClickHouse Cloud
 
 ## shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range {#shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range} 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "5"},{"label": "Cloud sync"}]}]}/>
-
-
 Max replicas which will try to assign potentially conflicting merges (allow
 to avoid redundant conflicts in merges assignment). 0 means disabled. Only
 available in ClickHouse Cloud
@@ -2284,22 +2168,16 @@ available in ClickHouse Cloud
 ## shared_merge_tree_max_suspicious_broken_parts {#shared_merge_tree_max_suspicious_broken_parts} 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Max broken parts for SMT, if more - deny automatic detach"}]}]}/>
-
-
 Max broken parts for SMT, if more - deny automatic detach.
 
 ## shared_merge_tree_max_suspicious_broken_parts_bytes {#shared_merge_tree_max_suspicious_broken_parts_bytes} 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Max size of all broken parts for SMT, if more - deny automatic detach"}]}]}/>
-
-
 Max size of all broken parts for SMT, if more - deny automatic detach.
 
 ## shared_merge_tree_memo_ids_remove_timeout_seconds {#shared_merge_tree_memo_ids_remove_timeout_seconds} 
 <SettingsInfoBlock type="Int64" default_value="1800" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1800"},{"label": "Cloud sync"}]}]}/>
-
-
 How long we store insert memoization ids to avoid wrong actions during
 insert retries. Only available in ClickHouse Cloud
 
@@ -2308,8 +2186,6 @@ insert retries. Only available in ClickHouse Cloud
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Milliseconds" default_value="30000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "30000"},{"label": "New setting"}]}]}/>
-
-
 Time between runs of merge coordinator election thread
 
 ## shared_merge_tree_merge_coordinator_factor {#shared_merge_tree_merge_coordinator_factor} 
@@ -2317,8 +2193,6 @@ Time between runs of merge coordinator election thread
 <ExperimentalBadge/>
 <SettingsInfoBlock type="UInt64" default_value="2" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "2"},{"label": "New setting"}]}]}/>
-
-
 Time changing factor for delay of coordinator thread
 
 ## shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms {#shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms} 
@@ -2326,8 +2200,6 @@ Time changing factor for delay of coordinator thread
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Milliseconds" default_value="10000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "10000"},{"label": "New setting"}]}]}/>
-
-
 How often merge coordinator should sync with zookeeper to take fresh metadata
 
 ## shared_merge_tree_merge_coordinator_max_merge_request_size {#shared_merge_tree_merge_coordinator_max_merge_request_size} 
@@ -2335,8 +2207,6 @@ How often merge coordinator should sync with zookeeper to take fresh metadata
 <ExperimentalBadge/>
 <SettingsInfoBlock type="UInt64" default_value="20" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "20"},{"label": "New setting"}]}]}/>
-
-
 Number of merges that coordinator can request from MergerMutator at once
 
 ## shared_merge_tree_merge_coordinator_max_period_ms {#shared_merge_tree_merge_coordinator_max_period_ms} 
@@ -2344,8 +2214,6 @@ Number of merges that coordinator can request from MergerMutator at once
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Milliseconds" default_value="10000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "10000"},{"label": "New setting"}]}]}/>
-
-
 Maximum time between runs of merge coordinator thread
 
 ## shared_merge_tree_merge_coordinator_merges_prepare_count {#shared_merge_tree_merge_coordinator_merges_prepare_count} 
@@ -2353,8 +2221,6 @@ Maximum time between runs of merge coordinator thread
 <ExperimentalBadge/>
 <SettingsInfoBlock type="UInt64" default_value="100" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "100"},{"label": "New setting"}]}]}/>
-
-
 Number of merge entries that coordinator should prepare and distribute across workers
 
 ## shared_merge_tree_merge_coordinator_min_period_ms {#shared_merge_tree_merge_coordinator_min_period_ms} 
@@ -2362,8 +2228,6 @@ Number of merge entries that coordinator should prepare and distribute across wo
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Milliseconds" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "New setting"}]}]}/>
-
-
 Minimum time between runs of merge coordinator thread
 
 ## shared_merge_tree_merge_worker_fast_timeout_ms {#shared_merge_tree_merge_worker_fast_timeout_ms} 
@@ -2371,8 +2235,6 @@ Minimum time between runs of merge coordinator thread
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Milliseconds" default_value="100" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "100"},{"label": "New setting"}]}]}/>
-
-
 Timeout that merge worker thread will use if it is needed to update it's state after immediate action
 
 ## shared_merge_tree_merge_worker_regular_timeout_ms {#shared_merge_tree_merge_worker_regular_timeout_ms} 
@@ -2380,8 +2242,6 @@ Timeout that merge worker thread will use if it is needed to update it's state a
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Milliseconds" default_value="10000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "10000"},{"label": "New setting"}]}]}/>
-
-
 Time between runs of merge worker thread
 
 ## shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations {#shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations} 
@@ -2401,8 +2261,6 @@ ClickHouse Cloud
 ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms {#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms} 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]}/>
-
-
 Time to keep a locally merged part without starting a new merge containing
 this part. Gives other replicas a chance fetch the part and start this merge.
 Only available in ClickHouse Cloud.
@@ -2410,16 +2268,12 @@ Only available in ClickHouse Cloud.
 ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold {#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold} 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1000000"},{"label": "Cloud sync"}]}]}/>
-
-
 Minimum size of part (in rows) to postpone assigning a next merge just after
 merging it locally. Only available in ClickHouse Cloud.
 
 ## shared_merge_tree_range_for_merge_window_size {#shared_merge_tree_range_for_merge_window_size} 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "Cloud sync"}]}]}/>
-
-
 Time to keep a locally merged part without starting a new merge containing
 this part. Gives other replicas a chance fetch the part and start this merge.
 Only available in ClickHouse Cloud
@@ -2427,47 +2281,35 @@ Only available in ClickHouse Cloud
 ## shared_merge_tree_read_virtual_parts_from_leader {#shared_merge_tree_read_virtual_parts_from_leader} 
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]}/>
-
-
 Read virtual parts from leader when possible. Only available in ClickHouse
 Cloud
 
 ## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas {#shared_merge_tree_try_fetch_part_in_memory_data_from_replicas} 
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "New setting to fetch parts data from other replicas"}]}]}/>
-
-
 If enabled all the replicas try to fetch part in memory data (like primary
 key, partition info and so on) from other replicas where it already exists.
 
 ## shared_merge_tree_update_replica_flags_delay_ms {#shared_merge_tree_update_replica_flags_delay_ms} 
 <SettingsInfoBlock type="Milliseconds" default_value="30000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "30000"},{"label": "New setting"}]}]}/>
-
-
 How often replica will try to reload it's flags according to background schedule.
 
 ## shared_merge_tree_use_metadata_hints_cache {#shared_merge_tree_use_metadata_hints_cache} 
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]}/>
-
-
 Enables requesting FS cache hints from in-memory
 cache on other replicas. Only available in ClickHouse Cloud
 
 ## shared_merge_tree_use_outdated_parts_compact_format {#shared_merge_tree_use_outdated_parts_compact_format} 
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]}/>
-
-
 Use compact format for outdated parts: reduces load to Keeper, improves
 outdated parts processing. Only available in ClickHouse Cloud
 
 ## shared_merge_tree_use_too_many_parts_count_from_virtual_parts {#shared_merge_tree_use_too_many_parts_count_from_virtual_parts} 
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]}/>
-
-
 If enabled too many parts counter will rely on shared data in Keeper, not on
 local replica state. Only available in ClickHouse Cloud
 
@@ -2476,8 +2318,6 @@ local replica state. Only available in ClickHouse Cloud
 <ExperimentalBadge/>
 <SettingsInfoBlock type="UInt64" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "New setting"}]}]}/>
-
-
 How many partition discoveries should be packed into batch
 
 ## simultaneous_parts_removal_limit {#simultaneous_parts_removal_limit} 
@@ -2505,8 +2345,6 @@ Name of storage disk policy
 ## table_disk {#table_disk} 
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "New setting"}]}]}/>
-
-
 This is table disk, the path/endpoint should point to the table data, not to
 the database data. Can be set only for s3_plain/s3_plain_rewritable/web.
 
@@ -2648,8 +2486,6 @@ Obsolete setting, does nothing.
 ## write_marks_for_substreams_in_compact_parts {#write_marks_for_substreams_in_compact_parts} 
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Enable writing marks for substreams in compact parts by default"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "New setting"}]}]}/>
-
-
 Enables writing marks per each substream instead of per each column in Compact parts.
 It allows to read individual subcolumns from the data part efficiently.
 
@@ -2674,8 +2510,6 @@ to lock depending on parts size for merge or mutation
 ## zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock {#zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock} 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "New setting"}]}]}/>
-
-
 If zero copy replication is enabled sleep random amount of time up to 500ms
 before trying to lock for merge or mutation.
 
@@ -2686,4 +2520,3 @@ ZooKeeper session expiration check period, in seconds.
 
 Possible values:
 - Any positive integer.
-

@@ -4,7 +4,7 @@ sidebar_label: 'Prerequisites'
 sidebar_position: 5
 slug: /development/developer-instruction
 title: 'Developer Prerequisites'
-doc_type: 'tutorial'
+doc_type: 'reference'
 ---
 
 # Prerequisites

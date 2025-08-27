@@ -4,7 +4,7 @@ sidebar_label: 'url'
 sidebar_position: 200
 slug: /sql-reference/table-functions/url
 title: 'url'
-doc_type: 'how-to'
+doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

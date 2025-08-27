@@ -59,8 +59,6 @@ error:                         Cannot parse input: expected '\t' before: 'qwerty
 :
 Row 1:
 Column 0,   name: key,   type: UInt64, ERROR: text "qwertyuiop" is not like UInt64
-
-
 raw_message:                   qwertyuiop
 kafka_topic_name:              TSV_dead_letter_queue_err_1746095689
 kafka_partition:               0
@@ -85,8 +83,6 @@ error:                         Cannot parse input: expected '\t' before: 'asdfgh
 :
 Row 1:
 Column 0,   name: key,   type: UInt64, ERROR: text "asdfghjkl" is not like UInt64
-
-
 raw_message:                   asdfghjkl
 kafka_topic_name:              TSV_dead_letter_queue_err_1746095689
 kafka_partition:               0
@@ -111,8 +107,6 @@ error:                         Cannot parse input: expected '\t' before: 'zxcvbn
 :
 Row 1:
 Column 0,   name: key,   type: UInt64, ERROR: text "zxcvbnm" is not like UInt64
-
-
 raw_message:                   zxcvbnm
 kafka_topic_name:              TSV_dead_letter_queue_err_1746095689
 kafka_partition:               0

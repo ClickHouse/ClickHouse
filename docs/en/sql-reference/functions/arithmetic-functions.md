@@ -78,13 +78,9 @@ SELECT abs(-0.5)
 0.5
 ```
 
-
-
 ## byteSwap {#byteSwap}
 
 Introduced in: v23.10
-
-
 Reverses the bytes of an integer, i.e. changes its [endianness](https://en.wikipedia.org/wiki/Endianness).
 
 The below example can be worked out in the following manner:
@@ -110,8 +106,6 @@ byteSwap(x)
 **Arguments**
 
 - `x` — An integer value. [`(U)Int*`](/sql-reference/data-types/int-uint)
-
-
 **Returned value**
 
 Returns `x` with bytes reversed. [`(U)Int*`](/sql-reference/data-types/int-uint)
@@ -168,13 +162,9 @@ SELECT byteSwap(123294967295)
 18439412204227788800
 ```
 
-
-
 ## divide {#divide}
 
 Introduced in: v1.1
-
-
     Calculates the quotient of two values `a` and `b`. The result type is always [Float64](/sql-reference/data-types/float).
     Integer division is provided by the `intDiv` function.
 
@@ -219,13 +209,9 @@ SELECT divide(25,0)
 inf
 ```
 
-
-
 ## divideDecimal {#divideDecimal}
 
 Introduced in: v22.12
-
-
 Performs division on two decimals. Result value will be of type [Decimal256](/sql-reference/data-types/decimal).
 Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
 
@@ -279,13 +265,9 @@ SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1
 └─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
 ```
 
-
-
 ## divideOrNull {#divideOrNull}
 
 Introduced in: v25.5
-
-
 Same as `divide` but returns NULL when dividing by zero.
     
 
@@ -315,13 +297,9 @@ SELECT divideOrNull(25, 0)
 \N
 ```
 
-
-
 ## gcd {#gcd}
 
 Introduced in: v1.1
-
-
     Returns the greatest common divisor of two values a and b.
 
     An exception is thrown when dividing by zero or when dividing a minimal
@@ -354,13 +332,9 @@ SELECT gcd(12, 18)
 6
 ```
 
-
-
 ## ifNotFinite {#ifNotFinite}
 
 Introduced in: v20.3
-
-
 Checks whether a floating point value is finite.
 
 You can get a similar result by using the [ternary operator](/sql-reference/functions/conditional-functions#if): `isFinite(x) ? x : y`.
@@ -376,8 +350,6 @@ ifNotFinite(x,y)
 
 - `x` — Value to check if infinite. [`Float*`](/sql-reference/data-types/float)
 - `y` — Fallback value. [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 - `x` if `x` is finite.
@@ -395,13 +367,9 @@ SELECT 1/0 AS infimum, ifNotFinite(infimum,42)
 inf  42
 ```
 
-
-
 ## intDiv {#intDiv}
 
 Introduced in: v1.1
-
-
 Performs an integer division of two values `x` by `y`. In other words it
 computes the quotient rounded down to the next smallest integer.
 
@@ -455,13 +423,9 @@ large number: While processing intDiv(1, 0.001) AS res, toTypeName(res).
 (ILLEGAL_DIVISION)
 ```
 
-
-
 ## intDivOrNull {#intDivOrNull}
 
 Introduced in: v25.5
-
-
 Same as `intDiv` but returns NULL when dividing by zero or when dividing a
 minimal negative number by minus one.
     
@@ -476,8 +440,6 @@ intDivOrNull(x, y)
 
 - `x` — Left hand operand. [`(U)Int*`](/sql-reference/data-types/int-uint)
 - `y` — Right hand operand. [`(U)Int*`](/sql-reference/data-types/int-uint)
-
-
 **Returned value**
 
 Result of integer division of `x` and `y`, or NULL.
@@ -504,13 +466,9 @@ SELECT intDivOrNull(-9223372036854775808, -1)
 \N
 ```
 
-
-
 ## intDivOrZero {#intDivOrZero}
 
 Introduced in: v1.1
-
-
 Same as `intDiv` but returns zero when dividing by zero or when dividing a
 minimal negative number by minus one.
     
@@ -525,8 +483,6 @@ intDivOrZero(a, b)
 
 - `a` — Left hand operand. [`(U)Int*`](/sql-reference/data-types/int-uint)
 - `b` — Right hand operand. [`(U)Int*`](/sql-reference/data-types/int-uint)
-
-
 **Returned value**
 
 Result of integer division of a and b, or zero.
@@ -553,13 +509,9 @@ SELECT intDivOrZero(0.05, -1)
 0
 ```
 
-
-
 ## isFinite {#isFinite}
 
 Introduced in: v1.1
-
-
 Returns `1` if the Float32 or Float64 argument not infinite and not a `NaN`,
 otherwise this function returns `0`.
     
@@ -573,8 +525,6 @@ isFinite(x)
 **Arguments**
 
 - `x` — Number to check for finiteness. [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 `1` if x is not infinite and not `NaN`, otherwise `0`.
@@ -591,13 +541,9 @@ SELECT isFinite(inf)
 0
 ```
 
-
-
 ## isInfinite {#isInfinite}
 
 Introduced in: v1.1
-
-
     Returns `1` if the Float32 or Float64 argument is infinite, otherwise this function returns `0`.
     Note that `0` is returned for a `NaN`.
     
@@ -611,8 +557,6 @@ isInfinite(x)
 **Arguments**
 
 - `x` — Number to check for infiniteness. [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 `1` if x is infinite, otherwise `0` (including for `NaN`).
@@ -629,8 +573,6 @@ SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10))
 1 0 0
 ```
 
-
-
 ## isNaN {#isNaN}
 
 Introduced in: v1.1
@@ -646,8 +588,6 @@ isNaN(x)
 **Arguments**
 
 - `x` — Argument to evaluate for if it is `NaN`. [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 `1` if `NaN`, otherwise `0`
@@ -664,13 +604,9 @@ SELECT isNaN(NaN)
 1
 ```
 
-
-
 ## lcm {#lcm}
 
 Introduced in: v1.1
-
-
 Returns the least common multiple of two values `x` and `y`.
 
 An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
@@ -686,8 +622,6 @@ lcm(x, y)
 
 - `x` — First integer. [`(U)Int*`](/sql-reference/data-types/int-uint)
 - `y` — Second integer. [`(U)Int*`](/sql-reference/data-types/int-uint)
-
-
 **Returned value**
 
 Returns the least common multiple of `x` and `y`. [`(U)Int*`](/sql-reference/data-types/int-uint)
@@ -704,13 +638,9 @@ SELECT lcm(6, 8)
 24
 ```
 
-
-
 ## max2 {#max2}
 
 Introduced in: v21.11
-
-
     Returns the bigger of two numeric values `x` and `y`.
     
 
@@ -724,8 +654,6 @@ max2(x, y)
 
 - `x` — First value [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal)
 - `y` — Second value [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal)
-
-
 **Returned value**
 
 Returns the bigger value of `x` and `y`. [`Float64`](/sql-reference/data-types/float)
@@ -742,13 +670,9 @@ SELECT max2(-1, 2)
 2
 ```
 
-
-
 ## min2 {#min2}
 
 Introduced in: v21.11
-
-
     Returns the smaller of two numeric values `x` and `y`.
     
 
@@ -762,8 +686,6 @@ min2(x, y)
 
 - `x` — First value [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal)
 - `y` — Second value [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal)
-
-
 **Returned value**
 
 Returns the smaller value of `x` and `y`. [`Float64`](/sql-reference/data-types/float)
@@ -780,13 +702,9 @@ SELECT min2(-1, 2)
 -1
 ```
 
-
-
 ## minus {#minus}
 
 Introduced in: v1.1
-
-
 Calculates the difference of two values `a` and `b`. The result is always signed.
 Similar to plus, it is possible to subtract an integer from a date or date with time.
 Additionally, subtraction between date with time is supported, resulting in the time difference between them.
@@ -828,13 +746,9 @@ SELECT minus(toDate('2025-01-01'),5)
 2024-12-27
 ```
 
-
-
 ## modulo {#modulo}
 
 Introduced in: v1.1
-
-
     Calculates the remainder of the division of two values a by b.
 
     The result type is an integer if both inputs are integers. If one of the
@@ -873,13 +787,9 @@ SELECT modulo(5, 2)
 1
 ```
 
-
-
 ## moduloOrNull {#moduloOrNull}
 
 Introduced in: v25.5
-
-
 Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `moduloOrNull` will return NULL
 if the right argument is 0.
     
@@ -894,8 +804,6 @@ moduloOrNull(x, y)
 
 - `x` — The dividend. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
 - `y` — The divisor (modulus). [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 Returns the remainder of the division of `x` by `y`, or null when the divisor is zero.
@@ -912,13 +820,9 @@ SELECT moduloOrNull(5, 0)
 \N
 ```
 
-
-
 ## moduloOrZero {#moduloOrZero}
 
 Introduced in: v20.3
-
-
 Like modulo but returns zero when the divisor is zero, as opposed to an
 exception with the modulo function.
     
@@ -933,8 +837,6 @@ moduloOrZero(a, b)
 
 - `a` — The dividend. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
 - `b` — The divisor (modulus). [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
-
-
 **Returned value**
 
 Returns the remainder of a % b, or `0` when the divisor is `0`.
@@ -950,8 +852,6 @@ SELECT moduloOrZero(5, 0)
 ```response title=Response
 0
 ```
-
-
 
 ## multiply {#multiply}
 
@@ -969,8 +869,6 @@ multiply(x, y)
 
 - `x` — factor. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal)
 - `y` — factor. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal)
-
-
 **Returned value**
 
 Returns the product of x and y
@@ -987,13 +885,9 @@ SELECT multiply(5,5)
 25
 ```
 
-
-
 ## multiplyDecimal {#multiplyDecimal}
 
 Introduced in: v22.12
-
-
 Performs multiplication on two decimals. Result value will be of type [Decimal256](/sql-reference/data-types/decimal).
 Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
 
@@ -1014,8 +908,6 @@ multiplyDecimal(a, b[, result_scale])
 - `a` — First value. [`Decimal`](/sql-reference/data-types/decimal)
 - `b` — Second value. [`Decimal`](/sql-reference/data-types/decimal)
 - `result_scale` — Scale of result. [`(U)Int*`](/sql-reference/data-types/int-uint)
-
-
 **Returned value**
 
 The result of multiplication with the given scale. Type: [`Decimal256`](/sql-reference/data-types/decimal)
@@ -1069,8 +961,6 @@ Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal m
 While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
 ```
 
-
-
 ## negate {#negate}
 
 Introduced in: v1.1
@@ -1102,8 +992,6 @@ SELECT negate(10)
 ```response title=Response
 -10
 ```
-
-
 
 ## numericIndexedVectorAllValueSum {#numericIndexedVectorAllValueSum}
 
@@ -1139,8 +1027,6 @@ SELECT numericIndexedVectorAllValueSum(numericIndexedVectorBuild(mapFromArrays([
 └─────┘
 ```
 
-
-
 ## numericIndexedVectorBuild {#numericIndexedVectorBuild}
 
 Introduced in: v25.7
@@ -1174,8 +1060,6 @@ SELECT numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])) AS res,
 │     │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8) │
 └─────┴────────────────────────────────────────────────────────────┘
 ```
-
-
 
 ## numericIndexedVectorCardinality {#numericIndexedVectorCardinality}
 
@@ -1211,8 +1095,6 @@ SELECT numericIndexedVectorCardinality(numericIndexedVectorBuild(mapFromArrays([
 └─────┘
 ```
 
-
-
 ## numericIndexedVectorGetValue {#numericIndexedVectorGetValue}
 
 Introduced in: v25.7
@@ -1246,8 +1128,6 @@ SELECT numericIndexedVectorGetValue(numericIndexedVectorBuild(mapFromArrays([1, 
 │  30 │
 └─────┘
 ```
-
-
 
 ## numericIndexedVectorPointwiseAdd {#numericIndexedVectorPointwiseAdd}
 
@@ -1288,8 +1168,6 @@ SELECT
 └───────────────────────┴──────────────────┘
 ```
 
-
-
 ## numericIndexedVectorPointwiseDivide {#numericIndexedVectorPointwiseDivide}
 
 Introduced in: v25.7
@@ -1328,8 +1206,6 @@ SELECT
 │ {2:2,3:1.5} │ {1:5,2:10,3:15} │
 └─────────────┴─────────────────┘
 ```
-
-
 
 ## numericIndexedVectorPointwiseEqual {#numericIndexedVectorPointwiseEqual}
 
@@ -1370,8 +1246,6 @@ SELECT
 └───────┴───────┘
 ```
 
-
-
 ## numericIndexedVectorPointwiseGreater {#numericIndexedVectorPointwiseGreater}
 
 Introduced in: v25.7
@@ -1410,8 +1284,6 @@ SELECT
 │ {1:1,3:1} │ {3:1} │
 └───────────┴───────┘
 ```
-
-
 
 ## numericIndexedVectorPointwiseGreaterEqual {#numericIndexedVectorPointwiseGreaterEqual}
 
@@ -1452,8 +1324,6 @@ SELECT
 └───────────────┴───────────┘
 ```
 
-
-
 ## numericIndexedVectorPointwiseLess {#numericIndexedVectorPointwiseLess}
 
 Introduced in: v25.7
@@ -1492,8 +1362,6 @@ SELECT
 │ {3:1,4:1} │ {1:1} │
 └───────────┴───────┘
 ```
-
-
 
 ## numericIndexedVectorPointwiseLessEqual {#numericIndexedVectorPointwiseLessEqual}
 
@@ -1534,8 +1402,6 @@ SELECT
 └───────────────┴───────────┘
 ```
 
-
-
 ## numericIndexedVectorPointwiseMultiply {#numericIndexedVectorPointwiseMultiply}
 
 Introduced in: v25.7
@@ -1574,8 +1440,6 @@ SELECT
 │ {2:200,3:600} │ {1:20,2:40,3:60} │
 └───────────────┴──────────────────┘
 ```
-
-
 
 ## numericIndexedVectorPointwiseNotEqual {#numericIndexedVectorPointwiseNotEqual}
 
@@ -1616,8 +1480,6 @@ SELECT
 └───────────────┴───────────┘
 ```
 
-
-
 ## numericIndexedVectorPointwiseSubtract {#numericIndexedVectorPointwiseSubtract}
 
 Introduced in: v25.7
@@ -1657,8 +1519,6 @@ SELECT
 └────────────────────────┴─────────────────┘
 ```
 
-
-
 ## numericIndexedVectorShortDebugString {#numericIndexedVectorShortDebugString}
 
 Introduced in: v25.7
@@ -1692,8 +1552,6 @@ Row 1:
 ──────
 res: {"vector_type":"BSI","index_type":"char8_t","value_type":"char8_t","integer_bit_num":8,"fraction_bit_num":0,"zero_indexes_info":{"cardinality":"0"},"non_zero_indexes_info":{"total_cardinality":"3","all_value_sum":60,"number_of_bitmaps":"8","bitmap_info":{"cardinality":{"0":"0","1":"2","2":"2","3":"2","4":"2","5":"0","6":"0","7":"0"}}}}
 ```
-
-
 
 ## numericIndexedVectorToMap {#numericIndexedVectorToMap}
 
@@ -1729,13 +1587,9 @@ SELECT numericIndexedVectorToMap(numericIndexedVectorBuild(mapFromArrays([1, 2, 
 └──────────────────┘
 ```
 
-
-
 ## plus {#plus}
 
 Introduced in: v1.1
-
-
 Calculates the sum of two values `x` and `y`. Alias: `x + y` (operator).
 It is possible to add an integer and a date or date with time. The former
 operation increments the number of days in the date, the latter operation
@@ -1778,13 +1632,9 @@ SELECT plus(toDate('2025-01-01'),5)
 2025-01-06
 ```
 
-
-
 ## positiveModulo {#positiveModulo}
 
 Introduced in: v22.11
-
-
 Calculates the remainder when dividing `x` by `y`. Similar to function
 `modulo` except that `positiveModulo` always return non-negative number.
     
@@ -1799,8 +1649,6 @@ positiveModulo(x, y)
 
 - `x` — The dividend. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal)
 - `y` — The divisor (modulus). [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float) or [`Decimal`](/sql-reference/data-types/decimal)
-
-
 **Returned value**
 
 Returns the difference between `x` and the nearest integer not greater than
@@ -1818,13 +1666,9 @@ SELECT positiveModulo(-1, 10)
 9
 ```
 
-
-
 ## positiveModuloOrNull {#positiveModuloOrNull}
 
 Introduced in: v25.5
-
-
 Calculates the remainder when dividing `a` by `b`. Similar to function `positiveModulo` except that `positiveModuloOrNull` will return NULL
 if the right argument is 0.
     
@@ -1855,7 +1699,5 @@ SELECT positiveModuloOrNull(5, 0)
 ```response title=Response
 \N
 ```
-
-
 
 <!--AUTOGENERATED_END-->

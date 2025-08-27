@@ -394,8 +394,6 @@ SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.nu
 │ []                                                         │
 └────────────────────────────────────────────────────────────┘
 ```
-
-
 ## dictGetAll {#dictgetall}
 
 Retrieves the attribute values of all nodes that matched each key in a [regular expression tree dictionary](../../sql-reference/dictionaries/index.md#regexp-tree-dictionary).

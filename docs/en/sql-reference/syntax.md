@@ -5,7 +5,7 @@ sidebar_label: 'Syntax'
 sidebar_position: 2
 slug: /sql-reference/syntax
 title: 'Syntax'
-doc_type: 'reference'
+doc_type: 'tutorial'
 ---
 
 In this section, we will take a look at ClickHouse's SQL syntax. 

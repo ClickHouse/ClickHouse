@@ -5,7 +5,7 @@ sidebar_label: 'SSH Interface'
 sidebar_position: 60
 slug: /interfaces/ssh
 title: 'SSH Interface'
-doc_type: 'reference'
+doc_type: 'how-to'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

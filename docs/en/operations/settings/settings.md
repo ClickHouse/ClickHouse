@@ -18,8 +18,6 @@ All below settings are also available in table [system.settings](/docs/operation
 
 ## add_http_cors_header {#add_http_cors_header} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Write add http CORS header.
@@ -58,8 +56,6 @@ SETTINGS additional_result_filter = 'x != 2'
 
 ## additional_table_filters {#additional_table_filters} 
 
-
-
 <SettingsInfoBlock type="Map" default_value="{}" />
 
 An additional filter expression that is applied after reading
@@ -94,8 +90,6 @@ SETTINGS additional_table_filters = {'table_1': 'x != 2'}
 
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](/sql-reference/aggregate-functions/combinators#-ornull) suffix to them. Enable it for SQL standard compatibility.
@@ -129,15 +123,11 @@ With `aggregate_functions_null_for_empty = 1` the result would be:
 
 ## aggregation_in_order_max_block_bytes {#aggregation_in_order_max_block_bytes} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="50000000" />
 
 Maximal size of block in bytes accumulated during aggregation in order of primary key. Lower block size allows to parallelize more final merge stage of aggregation.
 
 ## aggregation_memory_efficient_merge_threads {#aggregation_memory_efficient_merge_threads} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -145,19 +135,13 @@ Number of threads to use for merge intermediate aggregation results in memory ef
 
 ## allow_aggregate_partitions_independently {#allow_aggregate_partitions_independently} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Enable independent aggregation of partitions on separate threads when partition key suits group by key. Beneficial when number of partitions close to number of cores and partitions have roughly the same size
 
 ## allow_archive_path_syntax {#allow_archive_path_syntax} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "1"},{"label": "Added new setting to allow disabling archive path syntax."}]}, {"id": "row-2","items": [{"label": "24.5"},{"label": "1"},{"label": "Added new setting to allow disabling archive path syntax."}]}]}/>
 
@@ -165,15 +149,11 @@ File/S3 engines/table function will parse paths with '::' as `<archive> :: <file
 
 ## allow_asynchronous_read_from_io_pool_for_merge_tree {#allow_asynchronous_read_from_io_pool_for_merge_tree} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Use background I/O pool to read from MergeTree tables. This setting may increase performance for I/O bound queries
 
 ## allow_changing_replica_until_first_data_packet {#allow_changing_replica_until_first_data_packet} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -182,15 +162,11 @@ If it's enabled, in hedged requests we can start new connection until receiving 
 
 ## allow_create_index_without_type {#allow_create_index_without_type} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.
 
 ## allow_custom_error_code_in_throwif {#allow_custom_error_code_in_throwif} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -198,15 +174,11 @@ Enable custom error code in function throwIf(). If true, thrown exceptions may h
 
 ## allow_ddl {#allow_ddl} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 If it is set to true, then a user is allowed to executed DDL queries.
 
 ## allow_deprecated_database_ordinary {#allow_deprecated_database_ordinary} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -214,11 +186,7 @@ Allow to create databases with deprecated Ordinary engine
 
 ## allow_deprecated_error_prone_window_functions {#allow_deprecated_error_prone_window_functions} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "0"},{"label": "Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)"}]}]}/>
 
@@ -226,11 +194,7 @@ Allow usage of deprecated error prone window functions (neighbor, runningAccumul
 
 ## allow_deprecated_snowflake_conversion_functions {#allow_deprecated_snowflake_conversion_functions} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "Disabled deprecated functions snowflakeToDateTime[64] and dateTime[64]ToSnowflake."}]}]}/>
 
@@ -241,15 +205,11 @@ To re-enable the deprecated functions (e.g., during a transition period), please
 
 ## allow_deprecated_syntax_for_merge_tree {#allow_deprecated_syntax_for_merge_tree} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allow to create *MergeTree tables with deprecated engine definition syntax
 
 ## allow_distributed_ddl {#allow_distributed_ddl} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -257,15 +217,11 @@ If it is set to true, then a user is allowed to executed distributed DDL queries
 
 ## allow_drop_detached {#allow_drop_detached} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
 
 ## allow_execute_multiif_columnar {#allow_execute_multiif_columnar} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -273,11 +229,7 @@ Allow execute multiIf function columnar
 
 ## allow_experimental_analyzer {#allow_experimental_analyzer} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "Enable analyzer and planner by default."}]}]}/>
 
@@ -287,8 +239,6 @@ Allow new query analyzer.
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
@@ -297,11 +247,7 @@ If it is set to true, allow to specify experimental compression codecs (but we d
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Mark correlated subqueries support as Beta."}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Added new setting to allow correlated subqueries execution."}]}]}/>
 
@@ -311,11 +257,7 @@ Allow to execute correlated subqueries.
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'"}]}]}/>
 
@@ -325,11 +267,7 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"}]}]}/>
 
@@ -339,11 +277,7 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -353,8 +287,6 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allow to create database with Engine=MaterializedPostgreSQL(...).
@@ -363,11 +295,7 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'"}]}]}/>
 
@@ -377,11 +305,7 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -391,11 +315,7 @@ Allow experimental delta-kernel-rs implementation.
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "Enable experimental text index"}]}]}/>
 
@@ -405,8 +325,6 @@ If set to true, allow using the experimental text index.
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Enable experimental functions for funnel analysis.
@@ -414,8 +332,6 @@ Enable experimental functions for funnel analysis.
 ## allow_experimental_hash_functions {#allow_experimental_hash_functions} 
 
 <ExperimentalBadge/>
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -425,11 +341,7 @@ Enable experimental hash functions
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting "}]}]}/>
 
@@ -439,11 +351,7 @@ Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -453,11 +361,7 @@ Allow to execute `insert` queries into iceberg.
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join"}]}]}/>
 
@@ -467,11 +371,7 @@ If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` a
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Allow the usage of experimental Kafka storage engine that stores the committed offsets in ClickHouse Keeper"}]}]}/>
 
@@ -481,11 +381,7 @@ Allow experimental feature to store Kafka related offsets in ClickHouse Keeper. 
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "A new setting"}]}]}/>
 
@@ -494,8 +390,6 @@ Enable Kusto Query Language (KQL) - an alternative to SQL.
 ## allow_experimental_live_view {#allow_experimental_live_view} 
 
 <ExperimentalBadge/>
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -510,8 +404,6 @@ Possible values:
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allows to use the MaterializedPostgreSQL table engine. Disabled by default, because this feature is experimental
@@ -519,8 +411,6 @@ Allows to use the MaterializedPostgreSQL table engine. Disabled by default, beca
 ## allow_experimental_nlp_functions {#allow_experimental_nlp_functions} 
 
 <ExperimentalBadge/>
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -530,8 +420,6 @@ Enable experimental functions for natural language processing.
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allow the obsolete Object data type
@@ -539,8 +427,6 @@ Allow the obsolete Object data type
 ## allow_experimental_parallel_reading_from_replicas {#allow_experimental_parallel_reading_from_replicas} 
 
 <BetaBadge/>
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -550,11 +436,7 @@ Use up to `max_parallel_replicas` the number of replicas from each shard for SEL
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "A new setting"}]}]}/>
 
@@ -564,8 +446,6 @@ Enable PRQL - an alternative to SQL.
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Experimental data deduplication for SELECT queries based on part UUIDs
@@ -574,11 +454,7 @@ Experimental data deduplication for SELECT queries based on part UUIDs
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "The setting was renamed. The previous name is `allow_experimental_statistic`."}]}]}/>
 
@@ -588,11 +464,7 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "New setting to enable experimental timeSeries* aggregate functions."}]}]}/>
 
@@ -602,11 +474,7 @@ Experimental timeSeries* aggregate functions for Prometheus-like timeseries resa
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Added new setting to allow the TimeSeries table engine"}]}]}/>
 
@@ -618,11 +486,7 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "New settings. Allows to use a new experimental Time and Time64 data types."}]}]}/>
 
@@ -632,8 +496,6 @@ Allows creation of [Time](../../sql-reference/data-types/time.md) and [Time64](.
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Enable WINDOW VIEW. Not mature enough.
@@ -642,11 +504,7 @@ Enable WINDOW VIEW. Not mature enough.
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -657,11 +515,7 @@ Enable WINDOW VIEW. Not mature enough.
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -671,11 +525,7 @@ Experimental table engine for integration with YTsaurus.
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -683,11 +533,7 @@ Experimental table engine for integration with YTsaurus.
 
 ## allow_general_join_planning {#allow_general_join_planning} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Allow more general join planning algorithm when hash join algorithm is enabled."}]}]}/>
 
@@ -695,11 +541,7 @@ Allows a more general join planning algorithm that can handle more complex condi
 
 ## allow_get_client_http_header {#allow_get_client_http_header} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Introduced a new function."}]}]}/>
 
@@ -707,15 +549,11 @@ Allow to use the function `getClientHTTPHeader` which lets to obtain a value of 
 
 ## allow_hyperscan {#allow_hyperscan} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Allow functions that use Hyperscan library. Disable to avoid potentially long compilation times and excessive resource usage.
 
 ## allow_introspection_functions {#allow_introspection_functions} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -733,11 +571,7 @@ Possible values:
 
 ## allow_materialized_view_with_bad_select {#allow_materialized_view_with_bad_select} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "Don't allow creating MVs referencing nonexistent columns or tables"}]}, {"id": "row-2","items": [{"label": "24.9"},{"label": "1"},{"label": "Support (but not enable yet) stricter validation in CREATE MATERIALIZED VIEW"}]}]}/>
 
@@ -745,15 +579,11 @@ Allow CREATE MATERIALIZED VIEW with SELECT query that references nonexistent tab
 
 ## allow_named_collection_override_by_default {#allow_named_collection_override_by_default} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Allow named collections' fields override by default.
 
 ## allow_non_metadata_alters {#allow_non_metadata_alters} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -761,19 +591,13 @@ Allow to execute alters which affects not only tables metadata, but also data on
 
 ## allow_nonconst_timezone_arguments {#allow_nonconst_timezone_arguments} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()."}]}]}/>
 
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()
 
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -798,8 +622,6 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
 
 ## allow_nondeterministic_optimize_skip_unused_shards {#allow_nondeterministic_optimize_skip_unused_shards} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allow nondeterministic (like `rand` or `dictGet`, since later has some caveats with updates) functions in sharding key.
@@ -811,11 +633,7 @@ Possible values:
 
 ## allow_not_comparable_types_in_comparison_functions {#allow_not_comparable_types_in_comparison_functions} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Don't allow not comparable types in comparison functions by default"}]}]}/>
 
@@ -823,11 +641,7 @@ Allows or restricts using not comparable types (like JSON/Object/AggregateFuncti
 
 ## allow_not_comparable_types_in_order_by {#allow_not_comparable_types_in_order_by} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Don't allow not comparable types in order by by default"}]}]}/>
 
@@ -835,15 +649,11 @@ Allows or restricts using not comparable types (like JSON/Object/AggregateFuncti
 
 ## allow_prefetched_read_pool_for_local_filesystem {#allow_prefetched_read_pool_for_local_filesystem} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Prefer prefetched threadpool if all parts are on local filesystem
 
 ## allow_prefetched_read_pool_for_remote_filesystem {#allow_prefetched_read_pool_for_remote_filesystem} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -851,11 +661,7 @@ Prefer prefetched threadpool if all parts are on remote filesystem
 
 ## allow_push_predicate_ast_for_distributed_subqueries {#allow_push_predicate_ast_for_distributed_subqueries} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "A new setting"}]}]}/>
 
@@ -863,19 +669,13 @@ Allows push predicate on AST level for distributed subqueries with enabled anlyz
 
 ## allow_push_predicate_when_subquery_contains_with {#allow_push_predicate_when_subquery_contains_with} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Allows push predicate when subquery contains WITH clause
 
 ## allow_reorder_prewhere_conditions {#allow_reorder_prewhere_conditions} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -883,11 +683,7 @@ When moving conditions from WHERE to PREWHERE, allow reordering them to optimize
 
 ## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "22.4"},{"label": "0"},{"label": "Do not allow SETTINGS after FORMAT for INSERT queries because ClickHouse interpret SETTINGS as some values, which is misleading"}]}]}/>
 
@@ -917,8 +713,6 @@ Use this setting only for backward compatibility if your use cases depend on old
 
 ## allow_simdjson {#allow_simdjson} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Allow using simdjson library in 'JSON*' functions if AVX2 instructions are available. If disabled rapidjson will be used.
@@ -927,11 +721,7 @@ Allow using simdjson library in 'JSON*' functions if AVX2 instructions are avail
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "The setting was renamed. The previous name is `allow_statistic_optimize`."}]}]}/>
 
@@ -939,11 +729,7 @@ Allows using statistics to optimize queries
 
 ## allow_suspicious_codecs {#allow_suspicious_codecs} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "20.5"},{"label": "0"},{"label": "Don't allow to specify meaningless compression codecs"}]}]}/>
 
@@ -951,27 +737,19 @@ If it is set to true, allow to specify meaningless compression codecs.
 
 ## allow_suspicious_fixed_string_types {#allow_suspicious_fixed_string_types} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 In CREATE TABLE statement allows creating columns of type FixedString(n) with n > 256. FixedString with length >= 256 is suspicious and most likely indicates a misuse
 
 ## allow_suspicious_indices {#allow_suspicious_indices} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "If true, index can defined with identical expressions"}]}]}/>
 
 Reject primary/secondary indexes and sorting keys with identical expressions
 
 ## allow_suspicious_low_cardinality_types {#allow_suspicious_low_cardinality_types} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -992,11 +770,7 @@ Possible values:
 
 ## allow_suspicious_primary_key {#allow_suspicious_primary_key} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Forbid suspicious PRIMARY KEY/ORDER BY for MergeTree (i.e. SimpleAggregateFunction)"}]}]}/>
 
@@ -1004,11 +778,7 @@ Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFun
 
 ## allow_suspicious_ttl_expressions {#allow_suspicious_ttl_expressions} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.12"},{"label": "0"},{"label": "It is a new setting, and in previous versions the behavior was equivalent to allowing."}]}]}/>
 
@@ -1016,11 +786,7 @@ Reject TTL expressions that don't depend on any of table's columns. It indicates
 
 ## allow_suspicious_types_in_group_by {#allow_suspicious_types_in_group_by} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "Don't allow Variant/Dynamic types in GROUP BY by default"}]}]}/>
 
@@ -1028,11 +794,7 @@ Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) a
 
 ## allow_suspicious_types_in_order_by {#allow_suspicious_types_in_order_by} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "Don't allow Variant/Dynamic types in ORDER BY by default"}]}]}/>
 
@@ -1040,11 +802,7 @@ Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) a
 
 ## allow_suspicious_variant_types {#allow_suspicious_variant_types} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "Don't allow creating Variant type with suspicious variants by default"}]}]}/>
 
@@ -1052,23 +810,17 @@ In CREATE TABLE statement allows specifying Variant type with similar variant ty
 
 ## allow_unrestricted_reads_from_keeper {#allow_unrestricted_reads_from_keeper} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allow unrestricted (without condition on path) reads from system.zookeeper table, can be handy, but is not safe for zookeeper
 
 ## alter_move_to_space_execute_async {#alter_move_to_space_execute_async} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Execute ALTER TABLE MOVE ... TO [DISK|VOLUME] asynchronously
 
 ## alter_partition_verbose_result {#alter_partition_verbose_result} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1105,8 +857,6 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 
 ## alter_sync {#alter_sync} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
@@ -1125,11 +875,7 @@ Cloud default value: `0`.
 
 ## alter_update_mode {#alter_update_mode} 
 
-
-
 <SettingsInfoBlock type="AlterUpdateMode" default_value="heavy" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "heavy"},{"label": "A new setting"}]}]}/>
 
@@ -1142,19 +888,13 @@ Possible values:
 
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
 
 ## analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested {#analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "New setting."}]}]}/>
 
@@ -1163,11 +903,7 @@ Allow to add compound identifiers to nested. This is a compatibility setting bec
 
 ## analyzer_compatibility_join_using_top_level_identifier {#analyzer_compatibility_join_using_top_level_identifier} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Force to resolve identifier in JOIN USING from projection"}]}]}/>
 
@@ -1175,11 +911,7 @@ Force to resolve identifier in JOIN USING from projection (for example, in `SELE
 
 ## any_join_distinct_right_table_keys {#any_join_distinct_right_table_keys} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "19.14"},{"label": "0"},{"label": "Disable ANY RIGHT and ANY FULL JOINs by default to avoid inconsistency"}]}]}/>
 
@@ -1210,15 +942,11 @@ See also:
 
 ## apply_deleted_mask {#apply_deleted_mask} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Enables filtering out rows deleted with lightweight DELETE. If disabled, a query will be able to read those rows. This is useful for debugging and \"undelete\" scenarios
 
 ## apply_mutations_on_fly {#apply_mutations_on_fly} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1226,11 +954,7 @@ If true, mutations (UPDATEs and DELETEs) which are not materialized in data part
 
 ## apply_patch_parts {#apply_patch_parts} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "A new setting"}]}]}/>
 
@@ -1238,11 +962,7 @@ If true, patch parts (that represent lightweight updates) are applied on SELECTs
 
 ## apply_patch_parts_join_cache_buckets {#apply_patch_parts_join_cache_buckets} 
 
-
-
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "8"},{"label": "New setting"}]}]}/>
 
@@ -1250,11 +970,7 @@ The number of buckets in the temporary cache for applying patch parts in Join mo
 
 ## apply_settings_from_server {#apply_settings_from_server} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Client-side code (e.g. INSERT input parsing and query output formatting) will use the same settings as the server, including settings from server config."}]}]}/>
 
@@ -1268,8 +984,6 @@ Note that initially (24.12) there was a server setting (`send_settings_to_client
 
 ## asterisk_include_alias_columns {#asterisk_include_alias_columns} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Include [ALIAS](../../sql-reference/statements/create/table.md/#alias) columns for wildcard query (`SELECT *`).
@@ -1280,8 +994,6 @@ Possible values:
 - 1 - enabled
 
 ## asterisk_include_materialized_columns {#asterisk_include_materialized_columns} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1294,19 +1006,13 @@ Possible values:
 
 ## async_insert {#async_insert} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 If true, data from INSERT query is stored in queue and later flushed to table in background. If wait_for_async_insert is false, INSERT query is processed almost instantly, otherwise client will wait until data will be flushed to table
 
 ## async_insert_busy_timeout_decrease_rate {#async_insert_busy_timeout_decrease_rate} 
 
-
-
 <SettingsInfoBlock type="Double" default_value="0.2" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0.2"},{"label": "The exponential growth rate at which the adaptive asynchronous insert timeout decreases"}]}]}/>
 
@@ -1314,11 +1020,7 @@ The exponential growth rate at which the adaptive asynchronous insert timeout de
 
 ## async_insert_busy_timeout_increase_rate {#async_insert_busy_timeout_increase_rate} 
 
-
-
 <SettingsInfoBlock type="Double" default_value="0.2" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0.2"},{"label": "The exponential growth rate at which the adaptive asynchronous insert timeout increases"}]}]}/>
 
@@ -1326,11 +1028,7 @@ The exponential growth rate at which the adaptive asynchronous insert timeout in
 
 ## async_insert_busy_timeout_max_ms {#async_insert_busy_timeout_max_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="200" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "200"},{"label": "The minimum value of the asynchronous insert timeout in milliseconds; async_insert_busy_timeout_ms is aliased to async_insert_busy_timeout_max_ms"}]}]}/>
 
@@ -1338,11 +1036,7 @@ Maximum time to wait before dumping collected data per query since the first dat
 
 ## async_insert_busy_timeout_min_ms {#async_insert_busy_timeout_min_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="50" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "50"},{"label": "The minimum value of the asynchronous insert timeout in milliseconds; it also serves as the initial value, which may be increased later by the adaptive algorithm"}]}]}/>
 
@@ -1350,19 +1044,13 @@ If auto-adjusting is enabled through async_insert_use_adaptive_busy_timeout, min
 
 ## async_insert_deduplicate {#async_insert_deduplicate} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 For async INSERT queries in the replicated table, specifies that deduplication of inserting blocks should be performed
 
 ## async_insert_max_data_size {#async_insert_max_data_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "10485760"},{"label": "The previous value appeared to be too small."}]}]}/>
 
@@ -1370,19 +1058,14 @@ Maximum size in bytes of unparsed data collected per query before being inserted
 
 ## async_insert_max_query_number {#async_insert_max_query_number} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="450" />
 
-Maximum number of insert queries before being inserted
+Maximum number of insert queries before being inserted.
+Only takes effect if setting [`async_insert_deduplicate`](#async_insert_deduplicate) is 1.
 
 ## async_insert_poll_timeout_ms {#async_insert_poll_timeout_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="10" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "10"},{"label": "Timeout in milliseconds for polling data from asynchronous insert queue"}]}]}/>
 
@@ -1390,11 +1073,7 @@ Timeout for polling data from asynchronous insert queue
 
 ## async_insert_use_adaptive_busy_timeout {#async_insert_use_adaptive_busy_timeout} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Use adaptive asynchronous insert timeout"}]}]}/>
 
@@ -1402,11 +1081,7 @@ If it is set to true, use adaptive busy timeout for asynchronous inserts
 
 ## async_query_sending_for_remote {#async_query_sending_for_remote} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.3"},{"label": "1"},{"label": "Create connections and send query async across shards"}]}]}/>
 
@@ -1416,11 +1091,7 @@ Enabled by default.
 
 ## async_socket_for_remote {#async_socket_for_remote} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.5"},{"label": "1"},{"label": "Fix all problems and turn on asynchronous reads from socket for remote queries by default again"}]}, {"id": "row-2","items": [{"label": "21.3"},{"label": "0"},{"label": "Turn off asynchronous reads from socket for remote queries because of some problems"}]}]}/>
 
@@ -1430,11 +1101,7 @@ Enabled by default.
 
 ## azure_allow_parallel_part_upload {#azure_allow_parallel_part_upload} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "true"},{"label": "Use multiple threads for azure multipart upload."}]}]}/>
 
@@ -1442,11 +1109,7 @@ Use multiple threads for azure multipart upload.
 
 ## azure_check_objects_after_upload {#azure_check_objects_after_upload} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "Check each uploaded object in azure blob storage to be sure that upload was successful"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "Check each uploaded object in azure blob storage to be sure that upload was successful"}]}]}/>
 
@@ -1454,11 +1117,7 @@ Check each uploaded object in azure blob storage to be sure that upload was succ
 
 ## azure_connect_timeout_ms {#azure_connect_timeout_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1000"},{"label": "New setting"}]}]}/>
 
@@ -1466,19 +1125,13 @@ Connection timeout for host from azure disks.
 
 ## azure_create_new_file_on_insert {#azure_create_new_file_on_insert} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Enables or disables creating a new file on each insert in azure engine tables
 
 ## azure_ignore_file_doesnt_exist {#azure_ignore_file_doesnt_exist} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in AzureBlobStorage table engine"}]}]}/>
 
@@ -1490,19 +1143,13 @@ Possible values:
 
 ## azure_list_object_keys_size {#azure_list_object_keys_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 Maximum number of files that could be returned in batch by ListObject request
 
 ## azure_max_blocks_in_multipart_upload {#azure_max_blocks_in_multipart_upload} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="50000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "50000"},{"label": "Maximum number of blocks in multipart upload for Azure."}]}]}/>
 
@@ -1510,11 +1157,7 @@ Maximum number of blocks in multipart upload for Azure.
 
 ## azure_max_get_burst {#azure_max_get_burst} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting"}]}]}/>
 
@@ -1522,11 +1165,7 @@ Max number of requests that can be issued simultaneously before hitting request 
 
 ## azure_max_get_rps {#azure_max_get_rps} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting"}]}]}/>
 
@@ -1534,11 +1173,7 @@ Limit on Azure GET request per second rate before throttling. Zero means unlimit
 
 ## azure_max_inflight_parts_for_one_file {#azure_max_inflight_parts_for_one_file} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="20" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "20"},{"label": "The maximum number of a concurrent loaded parts in multipart upload request. 0 means unlimited."}]}]}/>
 
@@ -1546,11 +1181,7 @@ The maximum number of a concurrent loaded parts in multipart upload request. 0 m
 
 ## azure_max_put_burst {#azure_max_put_burst} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting"}]}]}/>
 
@@ -1558,11 +1189,7 @@ Max number of requests that can be issued simultaneously before hitting request 
 
 ## azure_max_put_rps {#azure_max_put_rps} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting"}]}]}/>
 
@@ -1570,11 +1197,7 @@ Limit on Azure PUT request per second rate before throttling. Zero means unlimit
 
 ## azure_max_redirects {#azure_max_redirects} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "10"},{"label": "New setting"}]}]}/>
 
@@ -1582,11 +1205,7 @@ Max number of azure redirects hops allowed.
 
 ## azure_max_single_part_copy_size {#azure_max_single_part_copy_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="268435456" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "268435456"},{"label": "The maximum size of object to copy using single part copy to Azure blob storage."}]}]}/>
 
@@ -1594,11 +1213,7 @@ The maximum size of object to copy using single part copy to Azure blob storage.
 
 ## azure_max_single_part_upload_size {#azure_max_single_part_upload_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="33554432" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "33554432"},{"label": "Align with S3"}]}]}/>
 
@@ -1606,19 +1221,13 @@ The maximum size of object to upload using singlepart upload to Azure blob stora
 
 ## azure_max_single_read_retries {#azure_max_single_read_retries} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
 The maximum number of retries during single Azure blob storage read.
 
 ## azure_max_unexpected_write_error_retries {#azure_max_unexpected_write_error_retries} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="4" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "4"},{"label": "The maximum number of retries in case of unexpected errors during Azure blob storage write"}]}]}/>
 
@@ -1626,11 +1235,7 @@ The maximum number of retries in case of unexpected errors during Azure blob sto
 
 ## azure_max_upload_part_size {#azure_max_upload_part_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="5368709120" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "5368709120"},{"label": "The maximum size of part to upload during multipart upload to Azure blob storage."}]}]}/>
 
@@ -1638,11 +1243,7 @@ The maximum size of part to upload during multipart upload to Azure blob storage
 
 ## azure_min_upload_part_size {#azure_min_upload_part_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "16777216"},{"label": "The minimum size of part to upload during multipart upload to Azure blob storage."}]}]}/>
 
@@ -1650,11 +1251,7 @@ The minimum size of part to upload during multipart upload to Azure blob storage
 
 ## azure_request_timeout_ms {#azure_request_timeout_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="30000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "30000"},{"label": "New setting"}]}]}/>
 
@@ -1662,11 +1259,7 @@ Idleness timeout for sending and receiving data to/from azure. Fail if a single 
 
 ## azure_sdk_max_retries {#azure_sdk_max_retries} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "10"},{"label": "Maximum number of retries in azure sdk"}]}]}/>
 
@@ -1674,11 +1267,7 @@ Maximum number of retries in azure sdk
 
 ## azure_sdk_retry_initial_backoff_ms {#azure_sdk_retry_initial_backoff_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "10"},{"label": "Minimal backoff between retries in azure sdk"}]}]}/>
 
@@ -1686,11 +1275,7 @@ Minimal backoff between retries in azure sdk
 
 ## azure_sdk_retry_max_backoff_ms {#azure_sdk_retry_max_backoff_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "1000"},{"label": "Maximal backoff between retries in azure sdk"}]}]}/>
 
@@ -1698,11 +1283,7 @@ Maximal backoff between retries in azure sdk
 
 ## azure_sdk_use_native_client {#azure_sdk_use_native_client} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -1710,11 +1291,7 @@ Use clickhouse native HTTP client for Azure SDK.
 
 ## azure_skip_empty_files {#azure_skip_empty_files} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "Allow to skip empty files in azure table engine"}]}]}/>
 
@@ -1726,11 +1303,7 @@ Possible values:
 
 ## azure_strict_upload_part_size {#azure_strict_upload_part_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "The exact size of part to upload during multipart upload to Azure blob storage."}]}]}/>
 
@@ -1738,11 +1311,7 @@ The exact size of part to upload during multipart upload to Azure blob storage.
 
 ## azure_throw_on_zero_files_match {#azure_throw_on_zero_files_match} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "Allow to throw an error when ListObjects request cannot match any files in AzureBlobStorage engine instead of empty query result"}]}]}/>
 
@@ -1754,19 +1323,13 @@ Possible values:
 
 ## azure_truncate_on_insert {#azure_truncate_on_insert} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Enables or disables truncate before insert in azure engine tables.
 
 ## azure_upload_part_size_multiply_factor {#azure_upload_part_size_multiply_factor} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="2" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "2"},{"label": "Multiply azure_min_upload_part_size by this factor each time azure_multiply_parts_count_threshold parts were uploaded from a single write to Azure blob storage."}]}]}/>
 
@@ -1774,11 +1337,7 @@ Multiply azure_min_upload_part_size by this factor each time azure_multiply_part
 
 ## azure_upload_part_size_multiply_parts_count_threshold {#azure_upload_part_size_multiply_parts_count_threshold} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="500" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "500"},{"label": "Each time this number of parts was uploaded to Azure blob storage, azure_min_upload_part_size is multiplied by azure_upload_part_size_multiply_factor."}]}]}/>
 
@@ -1786,11 +1345,7 @@ Each time this number of parts was uploaded to Azure blob storage, azure_min_upl
 
 ## azure_use_adaptive_timeouts {#azure_use_adaptive_timeouts} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -1799,15 +1354,11 @@ When set to `false` than all attempts are made with identical timeouts.
 
 ## backup_restore_batch_size_for_keeper_multi {#backup_restore_batch_size_for_keeper_multi} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 Maximum size of batch for multi request to [Zoo]Keeper during backup or restore
 
 ## backup_restore_batch_size_for_keeper_multiread {#backup_restore_batch_size_for_keeper_multiread} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -1815,11 +1366,7 @@ Maximum size of batch for multiread request to [Zoo]Keeper during backup or rest
 
 ## backup_restore_failure_after_host_disconnected_for_seconds {#backup_restore_failure_after_host_disconnected_for_seconds} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="3600" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "3600"},{"label": "New setting."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "3600"},{"label": "New setting."}]}]}/>
 
@@ -1829,11 +1376,7 @@ Zero means unlimited.
 
 ## backup_restore_finish_timeout_after_error_sec {#backup_restore_finish_timeout_after_error_sec} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="180" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "180"},{"label": "New setting."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "180"},{"label": "New setting."}]}]}/>
 
@@ -1841,15 +1384,11 @@ How long the initiator should wait for other host to react to the 'error' node a
 
 ## backup_restore_keeper_fault_injection_probability {#backup_restore_keeper_fault_injection_probability} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="0" />
 
 Approximate probability of failure for a keeper request during backup or restore. Valid value is in interval [0.0f, 1.0f]
 
 ## backup_restore_keeper_fault_injection_seed {#backup_restore_keeper_fault_injection_seed} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -1857,11 +1396,7 @@ Approximate probability of failure for a keeper request during backup or restore
 
 ## backup_restore_keeper_max_retries {#backup_restore_keeper_max_retries} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1000"},{"label": "Should be big enough so the whole operation BACKUP or RESTORE operation won't fail because of a temporary [Zoo]Keeper failure in the middle of it."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1000"},{"label": "Should be big enough so the whole operation BACKUP or RESTORE operation won't fail because of a temporary [Zoo]Keeper failure in the middle of it."}]}]}/>
 
@@ -1870,11 +1405,7 @@ Should be big enough so the whole operation won't fail because of a temporary [Z
 
 ## backup_restore_keeper_max_retries_while_handling_error {#backup_restore_keeper_max_retries_while_handling_error} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="20" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "20"},{"label": "New setting."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "20"},{"label": "New setting."}]}]}/>
 
@@ -1882,11 +1413,7 @@ Max retries for [Zoo]Keeper operations while handling an error of a BACKUP ON CL
 
 ## backup_restore_keeper_max_retries_while_initializing {#backup_restore_keeper_max_retries_while_initializing} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="20" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "20"},{"label": "New setting."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "20"},{"label": "New setting."}]}]}/>
 
@@ -1894,15 +1421,11 @@ Max retries for [Zoo]Keeper operations during the initialization of a BACKUP ON 
 
 ## backup_restore_keeper_retry_initial_backoff_ms {#backup_restore_keeper_retry_initial_backoff_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Initial backoff timeout for [Zoo]Keeper operations during backup or restore
 
 ## backup_restore_keeper_retry_max_backoff_ms {#backup_restore_keeper_retry_max_backoff_ms} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
@@ -1910,19 +1433,13 @@ Max backoff timeout for [Zoo]Keeper operations during backup or restore
 
 ## backup_restore_keeper_value_max_size {#backup_restore_keeper_value_max_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 Maximum size of data of a [Zoo]Keeper's node during backup
 
 ## backup_restore_s3_retry_attempts {#backup_restore_s3_retry_attempts} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "1000"},{"label": "Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries. It takes place only for backup/restore."}]}]}/>
 
@@ -1930,11 +1447,7 @@ Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means
 
 ## backup_restore_s3_retry_initial_backoff_ms {#backup_restore_s3_retry_initial_backoff_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="25" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "25"},{"label": "New setting"}]}]}/>
 
@@ -1942,11 +1455,7 @@ Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means
 
 ## backup_restore_s3_retry_jitter_factor {#backup_restore_s3_retry_jitter_factor} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="0.1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0.1"},{"label": "New setting"}]}]}/>
 
@@ -1954,11 +1463,7 @@ Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means
 
 ## backup_restore_s3_retry_max_backoff_ms {#backup_restore_s3_retry_max_backoff_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="5000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "5000"},{"label": "New setting"}]}]}/>
 
@@ -1968,23 +1473,17 @@ Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
 Only has an effect in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into file cache, when [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch) is enabled. Zero to disable.
 
 ## calculate_text_stack_trace {#calculate_text_stack_trace} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Calculate text stack trace in case of exceptions during query execution. This is the default. It requires symbol lookups that may slow down fuzzing tests when a huge amount of wrong queries are executed. In normal cases, you should not disable this option.
 
 ## cancel_http_readonly_queries_on_client_close {#cancel_http_readonly_queries_on_client_close} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1994,19 +1493,13 @@ Cloud default value: `1`.
 
 ## cast_ipv4_ipv6_default_on_conversion_error {#cast_ipv4_ipv6_default_on_conversion_error} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "22.3"},{"label": "0"},{"label": "Make functions cast(value, 'IPv4') and cast(value, 'IPv6') behave same as toIPv4 and toIPv6 functions"}]}]}/>
 
 CAST operator into IPv4, CAST operator into IPV6 type, toIPv4, toIPv6 functions will return default value instead of throwing exception on conversion error.
 
 ## cast_keep_nullable {#cast_keep_nullable} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -2057,11 +1550,7 @@ Result:
 
 ## cast_string_to_date_time_mode {#cast_string_to_date_time_mode} 
 
-
-
 <SettingsInfoBlock type="DateTimeInputFormat" default_value="basic" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "basic"},{"label": "Allow to use different DateTime parsing mode in String to DateTime cast"}]}]}/>
 
@@ -2086,11 +1575,7 @@ See also:
 
 ## cast_string_to_dynamic_use_inference {#cast_string_to_dynamic_use_inference} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "0"},{"label": "Add setting to allow converting String to Dynamic through parsing"}]}]}/>
 
@@ -2098,19 +1583,13 @@ Use types inference during String to Dynamic conversio
 
 ## cast_string_to_variant_use_inference {#cast_string_to_variant_use_inference} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "New setting to enable/disable types inference during CAST from String to Variant"}]}]}/>
 
 Use types inference during String to Variant conversion.
 
 ## check_query_single_value_result {#check_query_single_value_result} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -2123,15 +1602,11 @@ Possible values:
 
 ## check_referential_table_dependencies {#check_referential_table_dependencies} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Check that DDL query (such as DROP TABLE or RENAME) will not break referential dependencies
 
 ## check_table_dependencies {#check_table_dependencies} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -2139,15 +1614,11 @@ Check that DDL query (such as DROP TABLE or RENAME) will not break dependencies
 
 ## checksum_on_read {#checksum_on_read} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Validate checksums on reading. It is enabled by default and should be always enabled in production. Please do not expect any benefits in disabling this setting. It may only be used for experiments and benchmarks. The setting is only applicable for tables of MergeTree family. Checksums are always validated for other table engines and when receiving data over the network.
 
 ## cloud_mode {#cloud_mode} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -2155,19 +1626,13 @@ Cloud mode
 
 ## cloud_mode_database_engine {#cloud_mode_database_engine} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "A setting for ClickHouse Cloud"}]}]}/>
 
 The database engine allowed in Cloud. 1 - rewrite DDLs to use Replicated database, 2 - rewrite DDLs to use Shared database
 
 ## cloud_mode_engine {#cloud_mode_engine} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -2188,11 +1653,7 @@ Cluster for a shard in which current server is located
 
 ## cluster_function_process_archive_on_multiple_nodes {#cluster_function_process_archive_on_multiple_nodes} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -2200,19 +1661,13 @@ If set to `true`, increases performance of processing archives in cluster functi
 
 ## collect_hash_table_stats_during_aggregation {#collect_hash_table_stats_during_aggregation} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Enable collecting hash table statistics to optimize memory allocatio
 
 ## collect_hash_table_stats_during_joins {#collect_hash_table_stats_during_joins} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "1"},{"label": "New setting."}]}]}/>
 
@@ -2234,23 +1689,17 @@ In ClickHouse Cloud the compatibility setting must be set by ClickHouse Cloud su
 
 ## compatibility_ignore_auto_increment_in_create_table {#compatibility_ignore_auto_increment_in_create_table} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ignore AUTO_INCREMENT keyword in column declaration if true, otherwise return error. It simplifies migration from MySQL
 
 ## compatibility_ignore_collation_in_create_table {#compatibility_ignore_collation_in_create_table} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Compatibility ignore collation in create table
 
 ## compile_aggregate_expressions {#compile_aggregate_expressions} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -2267,11 +1716,7 @@ Possible values:
 
 ## compile_expressions {#compile_expressions} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "We believe that the LLVM infrastructure behind the JIT compiler is stable enough to enable this setting by default."}]}]}/>
 
@@ -2279,15 +1724,11 @@ Compile some scalar functions and operators to native code.
 
 ## compile_sort_description {#compile_sort_description} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Compile sort description to native code.
 
 ## connect_timeout {#connect_timeout} 
-
-
 
 <SettingsInfoBlock type="Seconds" default_value="10" />
 
@@ -2295,11 +1736,7 @@ Connection timeout if there are no replicas.
 
 ## connect_timeout_with_failover_ms {#connect_timeout_with_failover_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "1000"},{"label": "Increase default connect timeout because of async connect"}]}]}/>
 
@@ -2308,19 +1745,13 @@ If unsuccessful, several attempts are made to connect to various replicas.
 
 ## connect_timeout_with_failover_secure_ms {#connect_timeout_with_failover_secure_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "1000"},{"label": "Increase default secure connect timeout because of async connect"}]}]}/>
 
 Connection timeout for selecting first healthy replica (for secure connections).
 
 ## connection_pool_max_wait_ms {#connection_pool_max_wait_ms} 
-
-
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
@@ -2333,15 +1764,11 @@ Possible values:
 
 ## connections_with_failover_max_tries {#connections_with_failover_max_tries} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
 The maximum number of connection attempts with each replica for the Distributed table engine.
 
 ## convert_query_to_cnf {#convert_query_to_cnf} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -2411,19 +1838,13 @@ Possible values: true, false
 
 ## correlated_subqueries_substitute_equivalent_expressions {#correlated_subqueries_substitute_equivalent_expressions} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "1"},{"label": "New setting to correlated subquery planning optimization."}]}]}/>
 
 Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
 
 ## count_distinct_implementation {#count_distinct_implementation} 
-
-
 
 <SettingsInfoBlock type="String" default_value="uniqExact" />
 
@@ -2439,19 +1860,13 @@ Possible values:
 
 ## count_distinct_optimization {#count_distinct_optimization} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Rewrite count distinct to subquery of group by
 
 ## count_matches_stop_at_empty_match {#count_matches_stop_at_empty_match} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -2459,11 +1874,7 @@ Stop counting once a pattern matches zero-length in the `countMatches` function.
 
 ## create_if_not_exists {#create_if_not_exists} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -2471,15 +1882,11 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
 
 ## create_index_ignore_unique {#create_index_ignore_unique} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ignore UNIQUE keyword in CREATE UNIQUE INDEX. Made for SQL compatibility tests.
 
 ## create_replicated_merge_tree_fault_injection_probability {#create_replicated_merge_tree_fault_injection_probability} 
-
-
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -2487,19 +1894,13 @@ The probability of a fault injection during table creation after creating metada
 
 ## create_table_empty_primary_key_by_default {#create_table_empty_primary_key_by_default} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allow to create *MergeTree tables with empty primary key when ORDER BY and PRIMARY KEY not specified
 
 ## cross_join_min_bytes_to_compress {#cross_join_min_bytes_to_compress} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "1073741824"},{"label": "Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached."}]}]}/>
 
@@ -2507,19 +1908,13 @@ Minimal size of block to compress in CROSS JOIN. Zero value means - disable this
 
 ## cross_join_min_rows_to_compress {#cross_join_min_rows_to_compress} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10000000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "10000000"},{"label": "Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached."}]}]}/>
 
 Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 
 ## data_type_default_nullable {#data_type_default_nullable} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -2532,8 +1927,6 @@ Possible values:
 
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Adds a modifier `SYNC` to all `DROP` and `DETACH` queries.
@@ -2545,11 +1938,7 @@ Possible values:
 
 ## database_replicated_allow_explicit_uuid {#database_replicated_allow_explicit_uuid} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "Added a new setting to disallow explicitly specifying table UUID"}]}]}/>
 
@@ -2557,11 +1946,7 @@ Possible values:
 
 ## database_replicated_allow_heavy_create {#database_replicated_allow_heavy_create} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Long-running DDL queries (CREATE AS SELECT and POPULATE) for Replicated database engine was forbidden"}]}]}/>
 
@@ -2569,19 +1954,13 @@ Allow long-running DDL queries (CREATE AS SELECT and POPULATE) in Replicated dat
 
 ## database_replicated_allow_only_replicated_engine {#database_replicated_allow_only_replicated_engine} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allow to create only Replicated tables in database with engine Replicated
 
 ## database_replicated_allow_replicated_engine_arguments {#database_replicated_allow_replicated_engine_arguments} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "Don't allow explicit arguments by default"}]}]}/>
 
@@ -2589,23 +1968,17 @@ Allow to create only Replicated tables in database with engine Replicated
 
 ## database_replicated_always_detach_permanently {#database_replicated_always_detach_permanently} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Execute DETACH TABLE as DETACH TABLE PERMANENTLY if database engine is Replicated
 
 ## database_replicated_enforce_synchronous_settings {#database_replicated_enforce_synchronous_settings} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Enforces synchronous waiting for some queries (see also database_atomic_wait_for_drop_and_detach_synchronously, mutations_sync, alter_sync). Not recommended to enable these settings.
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 
@@ -2618,15 +1991,11 @@ Possible values:
 
 ## decimal_check_overflow {#decimal_check_overflow} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Check overflow of decimal arithmetic/comparison operations
 
 ## deduplicate_blocks_in_dependent_materialized_views {#deduplicate_blocks_in_dependent_materialized_views} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -2646,11 +2015,7 @@ This setting is useful for ensuring that materialized views do not contain dupli
 
 ## default_materialized_view_sql_security {#default_materialized_view_sql_security} 
 
-
-
 <SettingsInfoBlock type="SQLSecurityType" default_value="DEFINER" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "DEFINER"},{"label": "Allows to set a default value for SQL SECURITY option when creating a materialized view"}]}]}/>
 
@@ -2660,19 +2025,13 @@ The default value is `DEFINER`.
 
 ## default_max_bytes_in_join {#default_max_bytes_in_join} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 Maximum size of right-side table if limit is required but `max_bytes_in_join` is not set.
 
 ## default_normal_view_sql_security {#default_normal_view_sql_security} 
 
-
-
 <SettingsInfoBlock type="SQLSecurityType" default_value="INVOKER" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "INVOKER"},{"label": "Allows to set default `SQL SECURITY` option while creating a normal view"}]}]}/>
 
@@ -2682,11 +2041,7 @@ The default value is `INVOKER`.
 
 ## default_table_engine {#default_table_engine} 
 
-
-
 <SettingsInfoBlock type="DefaultTableEngine" default_value="MergeTree" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "MergeTree"},{"label": "Set default table engine to MergeTree for better usability"}]}]}/>
 
@@ -2744,8 +2099,6 @@ ENGINE = Log
 
 ## default_temporary_table_engine {#default_temporary_table_engine} 
 
-
-
 <SettingsInfoBlock type="DefaultTableEngine" default_value="Memory" />
 
 Same as [default_table_engine](#default_table_engine) but for temporary tables.
@@ -2780,11 +2133,7 @@ ENGINE = Log
 
 ## default_view_definer {#default_view_definer} 
 
-
-
 <SettingsInfoBlock type="String" default_value="CURRENT_USER" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "CURRENT_USER"},{"label": "Allows to set default `DEFINER` option while creating a view"}]}]}/>
 
@@ -2794,11 +2143,7 @@ The default value is `CURRENT_USER`.
 
 ## delta_lake_enable_engine_predicate {#delta_lake_enable_engine_predicate} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -2806,11 +2151,7 @@ Enables delta-kernel internal data pruning.
 
 ## delta_lake_enable_expression_visitor_logging {#delta_lake_enable_expression_visitor_logging} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting"}]}]}/>
 
@@ -2818,11 +2159,7 @@ Enables Test level logs of DeltaLake expression visitor. These logs can be too v
 
 ## delta_lake_snapshot_version {#delta_lake_snapshot_version} 
 
-
-
 <SettingsInfoBlock type="Int64" default_value="-1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "-1"},{"label": "New setting"}]}]}/>
 
@@ -2830,11 +2167,7 @@ Version of delta lake snapshot to read. Value -1 means to read latest version (v
 
 ## delta_lake_throw_on_engine_predicate_error {#delta_lake_throw_on_engine_predicate_error} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting"}]}]}/>
 
@@ -2842,23 +2175,17 @@ Enables throwing an exception if there was an error when analyzing scan predicat
 
 ## describe_compact_output {#describe_compact_output} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 If true, include only column names and types into result of DESCRIBE query
 
 ## describe_extend_object_types {#describe_extend_object_types} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Deduce concrete type of columns of type Object in DESCRIBE query
 
 ## describe_include_subcolumns {#describe_include_subcolumns} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -2875,15 +2202,11 @@ See an example for the [DESCRIBE](../../sql-reference/statements/describe-table.
 
 ## describe_include_virtual_columns {#describe_include_virtual_columns} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 If true, virtual columns of table will be included into result of DESCRIBE query
 
 ## dialect {#dialect} 
-
-
 
 <SettingsInfoBlock type="Dialect" default_value="clickhouse" />
 
@@ -2891,19 +2214,13 @@ Which dialect will be used to parse query
 
 ## dictionary_validate_primary_key_type {#dictionary_validate_primary_key_type} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Validate primary key type for dictionaries. By default id type for simple layouts will be implicitly converted to UInt64."}]}]}/>
 
 Validate primary key type for dictionaries. By default id type for simple layouts will be implicitly converted to UInt64.
 
 ## distinct_overflow_mode {#distinct_overflow_mode} 
-
-
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -2916,15 +2233,11 @@ source data ran out.
 
 ## distributed_aggregation_memory_efficient {#distributed_aggregation_memory_efficient} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Is the memory-saving mode of distributed aggregation enabled.
 
 ## distributed_background_insert_batch {#distributed_background_insert_batch} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -2939,8 +2252,6 @@ Possible values:
 
 ## distributed_background_insert_max_sleep_time_ms {#distributed_background_insert_max_sleep_time_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="30000" />
 
 Maximum interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_background_insert_sleep_time_ms](#distributed_background_insert_sleep_time_ms) setting.
@@ -2951,8 +2262,6 @@ Possible values:
 
 ## distributed_background_insert_sleep_time_ms {#distributed_background_insert_sleep_time_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="100" />
 
 Base interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. The actual interval grows exponentially in the event of errors.
@@ -2962,8 +2271,6 @@ Possible values:
 - A positive integer number of milliseconds.
 
 ## distributed_background_insert_split_batch_on_failure {#distributed_background_insert_split_batch_on_failure} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -2988,8 +2295,6 @@ You should not rely on automatic batch splitting, since this may hurt performanc
 
 ## distributed_background_insert_timeout {#distributed_background_insert_timeout} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Timeout for insert query into distributed. Setting is used only with insert_distributed_sync enabled. Zero value means no timeout.
@@ -2998,11 +2303,7 @@ Timeout for insert query into distributed. Setting is used only with insert_dist
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "Rename of distributed_cache_read_alignment"}]}]}/>
 
@@ -3012,11 +2313,7 @@ Only has an effect in ClickHouse Cloud. A setting for testing purposes, do not c
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "A setting for ClickHouse Cloud"}]}]}/>
 
@@ -3026,11 +2323,7 @@ Only has an effect in ClickHouse Cloud. Allow to bypass distributed cache connec
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="50" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "50"},{"label": "New setting"}]}]}/>
 
@@ -3040,11 +2333,7 @@ Only has an effect in ClickHouse Cloud. Maximum backoff milliseconds for distrib
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting"}]}]}/>
 
@@ -3054,11 +2343,7 @@ Only has an effect in ClickHouse Cloud. Minimum backoff milliseconds for distrib
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="5" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "5"},{"label": "Changed setting value"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "20"},{"label": "Cloud only"}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "20"},{"label": "A setting for ClickHouse Cloud"}]}]}/>
 
@@ -3068,11 +2353,7 @@ Only has an effect in ClickHouse Cloud. Number of tries to connect to distribute
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="5" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "5"},{"label": "New private setting"}]}]}/>
 
@@ -3082,11 +2363,7 @@ Only has an effect in ClickHouse Cloud. A period of credentials refresh.
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="5" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "5"},{"label": "A setting for ClickHouse Cloud"}]}]}/>
 
@@ -3096,11 +2373,7 @@ Only has an effect in ClickHouse Cloud. A window for sending ACK for DataPacket 
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "New setting"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -3110,11 +2383,7 @@ Only has an effect in ClickHouse Cloud. Discard connection if some data is unrea
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "A setting for ClickHouse Cloud"}]}]}/>
 
@@ -3124,11 +2393,7 @@ Only has an effect in ClickHouse Cloud. Fetch metrics only from current availabi
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="DistributedCacheLogMode" default_value="on_error" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "on_error"},{"label": "A setting for ClickHouse Cloud"}]}]}/>
 
@@ -3138,11 +2403,7 @@ Only has an effect in ClickHouse Cloud. Mode for writing to system.distributed_c
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "10"},{"label": "A setting for ClickHouse Cloud"}]}]}/>
 
@@ -3152,11 +2413,7 @@ Only has an effect in ClickHouse Cloud. A maximum number of unacknowledged in-fl
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "New private setting."}]}]}/>
 
@@ -3166,11 +2423,7 @@ Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in di
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="DistributedCachePoolBehaviourOnLimit" default_value="wait" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "wait"},{"label": "Cloud only"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "allocate_bypassing_pool"},{"label": "A setting for ClickHouse Cloud"}]}]}/>
 
@@ -3180,11 +2433,7 @@ Only has an effect in ClickHouse Cloud. Identifies behaviour of distributed cach
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -3194,11 +2443,7 @@ Only has an effect in ClickHouse Cloud. Allow to read only from current availabi
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "10"},{"label": "Changed setting value"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "20"},{"label": "New setting"}]}]}/>
 
@@ -3208,11 +2453,7 @@ Only has an effect in ClickHouse Cloud. Number of tries to do distributed cache 
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="60000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "60000"},{"label": "A setting for ClickHouse Cloud"}]}]}/>
 
@@ -3222,11 +2463,7 @@ Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive dat
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "10000"},{"label": "A setting for ClickHouse Cloud"}]}]}/>
 
@@ -3236,11 +2473,7 @@ Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive any
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "A setting for ClickHouse Cloud"}]}]}/>
 
@@ -3250,11 +2483,7 @@ Only has an effect in ClickHouse Cloud. Rethrow exception happened during commun
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="100" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "100"},{"label": "A setting for ClickHouse Cloud"}]}]}/>
 
@@ -3262,23 +2491,17 @@ Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive con
 
 ## distributed_connections_pool_size {#distributed_connections_pool_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
 The maximum number of simultaneous connections with remote servers for distributed processing of all queries to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
 
 ## distributed_ddl_entry_format_version {#distributed_ddl_entry_format_version} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
 Compatibility version of distributed DDL (ON CLUSTER) queries
 
 ## distributed_ddl_output_mode {#distributed_ddl_output_mode} 
-
-
 
 <SettingsInfoBlock type="DistributedDDLOutputMode" default_value="throw" />
 
@@ -3298,8 +2521,6 @@ Cloud default value: `none`.
 
 ## distributed_ddl_task_timeout {#distributed_ddl_task_timeout} 
 
-
-
 <SettingsInfoBlock type="Int64" default_value="180" />
 
 Sets timeout for DDL query responses from all hosts in cluster. If a DDL request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite.
@@ -3311,8 +2532,6 @@ Possible values:
 - Negative integer — infinite timeout.
 
 ## distributed_foreground_insert {#distributed_foreground_insert} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -3333,8 +2552,6 @@ Cloud default value: `1`.
 - [Managing Distributed Tables](/sql-reference/statements/system#managing-distributed-tables)
 
 ## distributed_group_by_no_merge {#distributed_group_by_no_merge} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -3377,11 +2594,7 @@ FORMAT PrettyCompactMonoBlock
 
 ## distributed_insert_skip_read_only_replicas {#distributed_insert_skip_read_only_replicas} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "If true, INSERT into Distributed will skip read-only replicas"}]}]}/>
 
@@ -3396,11 +2609,7 @@ Possible values:
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="8" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "New experimental setting."}]}]}/>
 
@@ -3410,11 +2619,7 @@ Default number of tasks for parallel reading in distributed query. Tasks are spr
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="8" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "New experimental setting."}]}]}/>
 
@@ -3424,11 +2629,7 @@ Default number of buckets for distributed shuffle-hash-join.
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "New experimental setting."}]}]}/>
 
@@ -3437,8 +2638,6 @@ Run all tasks of a distributed query plan locally. Useful for testing and debugg
 ## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind} 
 
 <ExperimentalBadge/>
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": ""},{"label": "New experimental setting."}]}]}/>
 
@@ -3454,11 +2653,7 @@ Possible values:
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "New experimental setting"}]}]}/>
 
@@ -3468,11 +2663,7 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="20000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "20000"},{"label": "New experimental setting."}]}]}/>
 
@@ -3480,19 +2671,13 @@ Maximum rows to use broadcast join instead of shuffle join in distributed query 
 
 ## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "New experimental setting."}]}]}/>
 
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
 
 ## distributed_product_mode {#distributed_product_mode} 
-
-
 
 <SettingsInfoBlock type="DistributedProductMode" default_value="deny" />
 
@@ -3515,8 +2700,6 @@ Possible values:
 - `allow` — Allows the use of these types of subqueries.
 
 ## distributed_push_down_limit {#distributed_push_down_limit} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -3546,8 +2729,6 @@ See also:
 
 ## distributed_replica_error_cap {#distributed_replica_error_cap} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 - Type: unsigned int
@@ -3563,8 +2744,6 @@ See also:
 - [distributed_replica_max_ignored_errors](#distributed_replica_max_ignored_errors)
 
 ## distributed_replica_error_half_life {#distributed_replica_error_half_life} 
-
-
 
 <SettingsInfoBlock type="Seconds" default_value="60" />
 
@@ -3582,8 +2761,6 @@ See also:
 
 ## distributed_replica_max_ignored_errors {#distributed_replica_max_ignored_errors} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 - Type: unsigned int
@@ -3600,23 +2777,17 @@ See also:
 
 ## do_not_merge_across_partitions_select_final {#do_not_merge_across_partitions_select_final} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Merge parts only in one partition in select final
 
 ## empty_result_for_aggregation_by_constant_keys_on_empty_set {#empty_result_for_aggregation_by_constant_keys_on_empty_set} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Return empty result when aggregating by constant keys on empty set.
 
 ## empty_result_for_aggregation_by_empty_set {#empty_result_for_aggregation_by_empty_set} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -3626,11 +2797,7 @@ Return empty result when aggregating without keys on empty set.
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "New setting. Enable spill memory data into external storage adaptively."}]}]}/>
 
@@ -3638,11 +2805,7 @@ Trigger processor to spill data into external storage adpatively. grace join is 
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting to reduce the size of temporary tables transferred for distributed IN subqueries."}]}]}/>
 
@@ -3651,11 +2814,7 @@ However, enabling this setting adds extra merging effort on each node, as dedupl
 
 ## enable_blob_storage_log {#enable_blob_storage_log} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "Write information about blob storage operations to system.blob_storage_log table"}]}]}/>
 
@@ -3663,23 +2822,17 @@ Write information about blob storage operations to system.blob_storage_log table
 
 ## enable_deflate_qpl_codec {#enable_deflate_qpl_codec} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 If turned on, the DEFLATE_QPL codec may be used to compress columns.
 
 ## enable_early_constant_folding {#enable_early_constant_folding} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Enable query optimization where we analyze function and subqueries results and rewrite query if there are constants there
 
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -3713,23 +2866,17 @@ The table below shows the behavior of this setting for various date-time functio
 
 ## enable_filesystem_cache {#enable_filesystem_cache} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
 
 ## enable_filesystem_cache_log {#enable_filesystem_cache_log} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allows to record the filesystem caching log for each query
 
 ## enable_filesystem_cache_on_write_operations {#enable_filesystem_cache_on_write_operations} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -3738,19 +2885,13 @@ See ["Using local cache"](/operations/storing-data#using-local-cache) for more d
 
 ## enable_filesystem_read_prefetches_log {#enable_filesystem_read_prefetches_log} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Log to system.filesystem prefetch_log during query. Should be used only for testing or debugging, not recommended to be turned on by default
 
 ## enable_global_with_statement {#enable_global_with_statement} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.2"},{"label": "1"},{"label": "Propagate WITH statements to UNION queries and all subqueries by default"}]}]}/>
 
@@ -3758,19 +2899,13 @@ Propagate WITH statements to UNION queries and all subqueries
 
 ## enable_hdfs_pread {#enable_hdfs_pread} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "New setting."}]}]}/>
 
 Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.
 
 ## enable_http_compression {#enable_http_compression} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -3785,19 +2920,13 @@ Possible values:
 
 ## enable_job_stack_trace {#enable_job_stack_trace} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "The setting was disabled by default to avoid performance overhead."}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "0"},{"label": "Enables collecting stack traces from job's scheduling. Disabled by default to avoid performance overhead."}]}]}/>
 
 Output stack trace of a job creator when job results in exception. Disabled by default to avoid performance overhead.
 
 ## enable_lightweight_delete {#enable_lightweight_delete} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -3807,11 +2936,7 @@ Enable lightweight DELETE mutations for mergetree tables.
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."}]}]}/>
 
@@ -3819,15 +2944,11 @@ Enable lightweight DELETE mutations for mergetree tables.
 
 ## enable_memory_bound_merging_of_aggregation_results {#enable_memory_bound_merging_of_aggregation_results} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Enable memory bound merging strategy for aggregation.
 
 ## enable_multiple_prewhere_read_steps {#enable_multiple_prewhere_read_steps} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -3835,11 +2956,7 @@ Move more conditions from WHERE to PREWHERE and do reads from disk and filtering
 
 ## enable_named_columns_in_function_tuple {#enable_named_columns_in_function_tuple} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "Disabled pending usability improvements"}]}]}/>
 
@@ -3847,11 +2964,7 @@ Generate named tuples in function tuple() when all names are unique and can be t
 
 ## enable_optimize_predicate_expression {#enable_optimize_predicate_expression} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "18.12.17"},{"label": "1"},{"label": "Optimize predicates to subqueries by default"}]}]}/>
 
@@ -3877,15 +2990,11 @@ If `enable_optimize_predicate_expression = 0`, then the execution time of the se
 
 ## enable_optimize_predicate_expression_to_final_subquery {#enable_optimize_predicate_expression_to_final_subquery} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Allow push predicate to final subquery.
 
 ## enable_order_by_all {#enable_order_by_all} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -3922,11 +3031,7 @@ Result:
 
 ## enable_parallel_blocks_marshalling {#enable_parallel_blocks_marshalling} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "true"},{"label": "A new setting"}]}]}/>
 
@@ -3934,11 +3039,7 @@ Affects only distributed queries. If enabled, blocks will be (de)serialized and 
 
 ## enable_parsing_to_custom_serialization {#enable_parsing_to_custom_serialization} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -3946,11 +3047,7 @@ If true then data can be parsed directly to columns with custom serialization (e
 
 ## enable_positional_arguments {#enable_positional_arguments} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "22.7"},{"label": "1"},{"label": "Enable positional arguments feature by default"}]}]}/>
 
@@ -3985,8 +3082,6 @@ Result:
 
 ## enable_reads_from_query_cache {#enable_reads_from_query_cache} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 If turned on, results of `SELECT` queries are retrieved from the [query cache](../query-cache.md).
@@ -3998,19 +3093,13 @@ Possible values:
 
 ## enable_s3_requests_logging {#enable_s3_requests_logging} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Enable very explicit logging of S3 requests. Makes sense for debug only.
 
 ## enable_scalar_subquery_optimization {#enable_scalar_subquery_optimization} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "19.18"},{"label": "1"},{"label": "Prevent scalar subqueries from (de)serializing large scalar values and possibly avoid running the same subquery more than once"}]}]}/>
 
@@ -4018,11 +3107,7 @@ If it is set to true, prevent scalar subqueries from (de)serializing large scala
 
 ## enable_scopes_for_with_statement {#enable_scopes_for_with_statement} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "1"},{"label": "New setting for backward compatibility with the old analyzer."}]}, {"id": "row-2","items": [{"label": "25.6"},{"label": "1"},{"label": "New setting for backward compatibility with the old analyzer."}]}, {"id": "row-3","items": [{"label": "25.5"},{"label": "1"},{"label": "New setting for backward compatibility with the old analyzer."}]}, {"id": "row-4","items": [{"label": "25.4"},{"label": "1"},{"label": "New setting for backward compatibility with the old analyzer."}]}]}/>
 
@@ -4032,11 +3117,7 @@ Note that this is a compatibility setting for new analyzer to allow running some
 
 ## enable_shared_storage_snapshot_in_query {#enable_shared_storage_snapshot_in_query} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "A new setting to share storage snapshot in query"}]}]}/>
 
@@ -4072,15 +3153,11 @@ Possible values:
 
 ## enable_sharing_sets_for_mutations {#enable_sharing_sets_for_mutations} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumptio
 
 ## enable_software_prefetch_in_aggregation {#enable_software_prefetch_in_aggregation} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -4088,19 +3165,13 @@ Enable use of software prefetch in aggregatio
 
 ## enable_unaligned_array_join {#enable_unaligned_array_join} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allow ARRAY JOIN with multiple arrays that have different sizes. When this settings is enabled, arrays will be resized to the longest one.
 
 ## enable_url_encoding {#enable_url_encoding} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "Changed existing setting's default value"}]}]}/>
 
@@ -4110,19 +3181,13 @@ Disabled by default.
 
 ## enable_vertical_final {#enable_vertical_final} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "Enable vertical final by default again after fixing bug"}]}, {"id": "row-2","items": [{"label": "24.1"},{"label": "1"},{"label": "Use vertical final by default"}]}]}/>
 
 If enable, remove duplicated rows during FINAL by marking rows as deleted and filtering them later instead of merging rows
 
 ## enable_writes_to_query_cache {#enable_writes_to_query_cache} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -4135,11 +3200,7 @@ Possible values:
 
 ## enable_zstd_qat_codec {#enable_zstd_qat_codec} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "Add new ZSTD_QAT codec"}]}]}/>
 
@@ -4147,19 +3208,13 @@ If turned on, the ZSTD_QAT codec may be used to compress columns.
 
 ## enforce_strict_identifier_format {#enforce_strict_identifier_format} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "New setting."}]}]}/>
 
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 
 ## engine_file_allow_create_multiple_files {#engine_file_allow_create_multiple_files} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -4173,8 +3228,6 @@ Possible values:
 
 ## engine_file_empty_if_not_exists {#engine_file_empty_if_not_exists} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allows to select data from a file engine table without file.
@@ -4184,8 +3237,6 @@ Possible values:
 - 1 — `SELECT` returns empty result.
 
 ## engine_file_skip_empty_files {#engine_file_skip_empty_files} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -4197,8 +3248,6 @@ Possible values:
 
 ## engine_file_truncate_on_insert {#engine_file_truncate_on_insert} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Enables or disables truncate before insert in [File](../../engines/table-engines/special/file.md) engine tables.
@@ -4208,8 +3257,6 @@ Possible values:
 - 1 — `INSERT` query replaces existing content of the file with the new data.
 
 ## engine_url_skip_empty_files {#engine_url_skip_empty_files} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -4223,11 +3270,7 @@ Possible values:
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="FloatAuto" default_value="auto" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New experimental setting"}]}]}/>
 
@@ -4235,19 +3278,13 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
 
 ## except_default_mode {#except_default_mode} 
 
-
-
 <SettingsInfoBlock type="SetOperationMode" default_value="ALL" />
 
 Set default mode in EXCEPT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
 
 ## execute_exists_as_scalar_subquery {#execute_exists_as_scalar_subquery} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -4256,15 +3293,11 @@ Execute non-correlated EXISTS subqueries as scalar subqueries. As for scalar sub
 
 ## external_storage_connect_timeout_sec {#external_storage_connect_timeout_sec} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
 Connect timeout in seconds. Now supported only for MySQL
 
 ## external_storage_max_read_bytes {#external_storage_max_read_bytes} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -4272,23 +3305,17 @@ Limit maximum number of bytes when table with external engine should flush histo
 
 ## external_storage_max_read_rows {#external_storage_max_read_rows} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Limit maximum number of rows when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, and dictionary. If equal to 0, this setting is disabled
 
 ## external_storage_rw_timeout_sec {#external_storage_rw_timeout_sec} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="300" />
 
 Read/write timeout in seconds. Now supported only for MySQL
 
 ## external_table_functions_use_nulls {#external_table_functions_use_nulls} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -4305,19 +3332,13 @@ If the setting is set to `0`, the table function does not make Nullable columns 
 
 ## external_table_strict_query {#external_table_strict_query} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 If it is set to true, transforming expression to local filter is forbidden for queries to external tables.
 
 ## extract_key_value_pairs_max_pairs_per_row {#extract_key_value_pairs_max_pairs_per_row} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "Max number of pairs that can be produced by the `extractKeyValuePairs` function. Used as a safeguard against consuming too much memory."}]}]}/>
 
@@ -4325,16 +3346,12 @@ Max number of pairs that can be produced by the `extractKeyValuePairs` function.
 
 ## extremes {#extremes} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section "Extreme values".
 
 ## fallback_to_stale_replicas_for_distributed_queries {#fallback_to_stale_replicas_for_distributed_queries} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -4348,11 +3365,7 @@ By default, 1 (enabled).
 
 ## filesystem_cache_boundary_alignment {#filesystem_cache_boundary_alignment} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "New setting"}]}]}/>
 
@@ -4362,11 +3375,7 @@ Filesystem cache boundary alignment. This setting is applied only for non-disk r
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -4376,11 +3385,7 @@ Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reserv
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -4388,15 +3393,11 @@ Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reserv
 
 ## filesystem_cache_max_download_size {#filesystem_cache_max_download_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="137438953472" />
 
 Max remote filesystem cache size that can be downloaded by a single query
 
 ## filesystem_cache_name {#filesystem_cache_name} 
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": ""},{"label": "Filesystem cache name to use for stateless table engines or data lakes"}]}]}/>
 
@@ -4404,11 +3405,7 @@ Filesystem cache name to use for stateless table engines or data lakes
 
 ## filesystem_cache_prefer_bigger_buffer_size {#filesystem_cache_prefer_bigger_buffer_size} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -4416,11 +3413,7 @@ Prefer bigger buffer size if filesystem cache is enabled to avoid writing small 
 
 ## filesystem_cache_reserve_space_wait_lock_timeout_milliseconds {#filesystem_cache_reserve_space_wait_lock_timeout_milliseconds} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1000"},{"label": "Wait time to lock cache for sapce reservation in filesystem cache"}]}]}/>
 
@@ -4428,19 +3421,13 @@ Wait time to lock cache for space reservation in filesystem cache
 
 ## filesystem_cache_segments_batch_size {#filesystem_cache_segments_batch_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
 Limit on size of a single batch of file segments that a read buffer can request from cache. Too low value will lead to excessive requests to cache, too large may slow down eviction from cache
 
 ## filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit {#filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "Rename of setting skip_download_if_exceeds_query_cache_limit"}]}]}/>
 
@@ -4448,15 +3435,11 @@ Skip download from remote filesystem if exceeds query cache size
 
 ## filesystem_prefetch_max_memory_usage {#filesystem_prefetch_max_memory_usage} 
 
-
-
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1073741824" />
 
 Maximum memory usage for prefetches.
 
 ## filesystem_prefetch_step_bytes {#filesystem_prefetch_step_bytes} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -4464,23 +3447,17 @@ Prefetch step in bytes. Zero means `auto` - approximately the best prefetch step
 
 ## filesystem_prefetch_step_marks {#filesystem_prefetch_step_marks} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Prefetch step in marks. Zero means `auto` - approximately the best prefetch step will be auto deduced, but might not be 100% the best. The actual value might be different because of setting filesystem_prefetch_min_bytes_for_single_read_task
 
 ## filesystem_prefetches_limit {#filesystem_prefetches_limit} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="200" />
 
 Maximum number of prefetches. Zero means unlimited. A setting `filesystem_prefetches_max_memory_usage` is more recommended if you want to limit the number of prefetches
 
 ## final {#final} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -4527,8 +3504,6 @@ SELECT * FROM test;
 ```
 
 ## flatten_nested {#flatten_nested} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -4595,15 +3570,11 @@ SETTINGS index_granularity = 8192 │
 
 ## force_aggregate_partitions_independently {#force_aggregate_partitions_independently} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Force the use of optimization when it is applicable, but heuristics decided not to use it
 
 ## force_aggregation_in_order {#force_aggregation_in_order} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -4638,19 +3609,13 @@ SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS fo
 
 ## force_grouping_standard_compatibility {#force_grouping_standard_compatibility} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "22.9"},{"label": "1"},{"label": "Make GROUPING function output the same as in SQL standard and other DBMS"}]}]}/>
 
 Make GROUPING function to return 1 when argument is not used as an aggregation key
 
 ## force_index_by_date {#force_index_by_date} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -4661,8 +3626,6 @@ Works with tables in the MergeTree family.
 If `force_index_by_date=1`, ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
 ## force_optimize_projection {#force_optimize_projection} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -4683,8 +3646,6 @@ Possible values:
 
 ## force_optimize_skip_unused_shards {#force_optimize_skip_unused_shards} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Enables or disables query execution if [optimize_skip_unused_shards](#optimize_skip_unused_shards) is enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled, an exception will be thrown.
@@ -4696,8 +3657,6 @@ Possible values:
 - 2 — Enabled. Query execution is disabled regardless of whether a sharding key is defined for the table.
 
 ## force_optimize_skip_unused_shards_nesting {#force_optimize_skip_unused_shards_nesting} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -4711,8 +3670,6 @@ Possible values:
 
 ## force_primary_key {#force_primary_key} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Disables query execution if indexing by the primary key is not possible.
@@ -4723,19 +3680,13 @@ If `force_primary_key=1`, ClickHouse checks to see if the query has a primary ke
 
 ## force_remove_data_recursively_on_drop {#force_remove_data_recursively_on_drop} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Recursively remove data on DROP query. Avoids 'Directory not empty' error, but may silently remove detached data
 
 ## formatdatetime_e_with_space_padding {#formatdatetime_e_with_space_padding} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"}]}]}/>
 
@@ -4744,11 +3695,7 @@ Formatter '%e' in function 'formatDateTime' prints single-digit days with a lead
 
 ## formatdatetime_f_prints_scale_number_of_digits {#formatdatetime_f_prints_scale_number_of_digits} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -4756,11 +3703,7 @@ Formatter '%f' in function 'formatDateTime' prints only the scale amount of digi
 
 ## formatdatetime_f_prints_single_zero {#formatdatetime_f_prints_single_zero} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "Improved compatibility with MySQL DATE_FORMAT()/STR_TO_DATE()"}]}]}/>
 
@@ -4768,27 +3711,19 @@ Formatter '%f' in function 'formatDateTime' prints a single zero instead of six 
 
 ## formatdatetime_format_without_leading_zeros {#formatdatetime_format_without_leading_zeros} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Formatters '%c', '%l' and '%k' in function 'formatDateTime' print months and hours without leading zeros.
 
 ## formatdatetime_parsedatetime_m_is_month_name {#formatdatetime_parsedatetime_m_is_month_name} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "1"},{"label": "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"}]}]}/>
 
 Formatter '%M' in functions 'formatDateTime' and 'parseDateTime' print/parse the month name instead of minutes.
 
 ## fsync_metadata {#fsync_metadata} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -4798,11 +3733,7 @@ It makes sense to disable it if the server has millions of tiny tables that are 
 
 ## function_date_trunc_return_type_behavior {#function_date_trunc_return_type_behavior} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "Add new setting to preserve old behaviour of dateTrunc function"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Change the result type for dateTrunc function for DateTime64/Date32 arguments to DateTime64/Date32 regardless of time unit to get correct result for negative values"}]}]}/>
 
@@ -4818,8 +3749,6 @@ Possible values:
 Choose function implementation for specific target or variant (experimental). If empty enable all of them.
 
 ## function_json_value_return_type_allow_complex {#function_json_value_return_type_allow_complex} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -4842,8 +3771,6 @@ Possible values:
 
 ## function_json_value_return_type_allow_nullable {#function_json_value_return_type_allow_nullable} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Control whether allow to return `NULL` when value is not exist for JSON_VALUE function.
@@ -4865,11 +3792,7 @@ Possible values:
 
 ## function_locate_has_mysql_compatible_argument_order {#function_locate_has_mysql_compatible_argument_order} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "Increase compatibility with MySQL's locate function."}]}]}/>
 
@@ -4881,8 +3804,6 @@ Possible values:
 - 1 — Function `locate` accepts arguments `(needle, haystack, [, start_pos])` (MySQL-compatible behavior)
 
 ## function_range_max_elements_in_block {#function_range_max_elements_in_block} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="500000000" />
 
@@ -4899,11 +3820,7 @@ Possible values:
 
 ## function_sleep_max_microseconds_per_block {#function_sleep_max_microseconds_per_block} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="3000000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.7"},{"label": "3000000"},{"label": "In previous versions, the maximum sleep time of 3 seconds was applied only for `sleep`, but not for `sleepEachRow` function. In the new version, we introduce this setting. If you set compatibility with the previous versions, we will disable the limit altogether."}]}]}/>
 
@@ -4911,11 +3828,7 @@ Maximum number of microseconds the function `sleep` is allowed to sleep for each
 
 ## function_visible_width_behavior {#function_visible_width_behavior} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "1"},{"label": "We changed the default behavior of `visibleWidth` to be more precise"}]}]}/>
 
@@ -4923,11 +3836,7 @@ The version of `visibleWidth` behavior. 0 - only count the number of code points
 
 ## geo_distance_returns_float64_on_float64_arguments {#geo_distance_returns_float64_on_float64_arguments} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "Increase the default precision."}]}]}/>
 
@@ -4937,19 +3846,13 @@ If all four arguments to `geoDistance`, `greatCircleDistance`, `greatCircleAngle
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="GeoToH3ArgumentOrder" default_value="lat_lon" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "lat_lon"},{"label": "A new setting for legacy behaviour to set lon and lat argument order"}]}]}/>
 
 Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set to 'lat_lon'.
 
 ## glob_expansion_max_elements {#glob_expansion_max_elements} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -4959,8 +3862,6 @@ Maximum number of allowed addresses (For external storages, table functions, etc
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1" />
 
 Initial number of grace hash join buckets
@@ -4969,15 +3870,11 @@ Initial number of grace hash join buckets
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1024" />
 
 Limit on the number of grace hash join buckets
 
 ## group_by_overflow_mode {#group_by_overflow_mode} 
-
-
 
 <SettingsInfoBlock type="OverflowModeGroupBy" default_value="throw" />
 
@@ -4991,23 +3888,17 @@ this approximation depends on the statistical nature of the data.
 
 ## group_by_two_level_threshold {#group_by_two_level_threshold} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
 From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.
 
 ## group_by_two_level_threshold_bytes {#group_by_two_level_threshold_bytes} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="50000000" />
 
 From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. Two-level aggregation is used when at least one of the thresholds is triggered.
 
 ## group_by_use_nulls {#group_by_use_nulls} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -5026,11 +3917,7 @@ See also:
 
 ## h3togeo_lon_lat_result_order {#h3togeo_lon_lat_result_order} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "A new setting"}]}]}/>
 
@@ -5038,15 +3925,11 @@ Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
 
 ## handshake_timeout_ms {#handshake_timeout_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="10000" />
 
 Timeout in milliseconds for receiving Hello packet from replicas during handshake.
 
 ## hdfs_create_new_file_on_insert {#hdfs_create_new_file_on_insert} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -5060,11 +3943,7 @@ Possible values:
 
 ## hdfs_ignore_file_doesnt_exist {#hdfs_ignore_file_doesnt_exist} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in HDFS table engine"}]}]}/>
 
@@ -5076,15 +3955,11 @@ Possible values:
 
 ## hdfs_replication {#hdfs_replication} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The actual number of replications can be specified when the hdfs file is created.
 
 ## hdfs_skip_empty_files {#hdfs_skip_empty_files} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -5096,11 +3971,7 @@ Possible values:
 
 ## hdfs_throw_on_zero_files_match {#hdfs_throw_on_zero_files_match} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "Allow to throw an error when ListObjects request cannot match any files in HDFS engine instead of empty query result"}]}]}/>
 
@@ -5112,8 +3983,6 @@ Possible values:
 
 ## hdfs_truncate_on_insert {#hdfs_truncate_on_insert} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
@@ -5124,11 +3993,7 @@ Possible values:
 
 ## hedged_connection_timeout_ms {#hedged_connection_timeout_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="50" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "50"},{"label": "Start new connection in hedged requests after 50 ms instead of 100 to correspond with previous connect timeout"}]}]}/>
 
@@ -5136,11 +4001,7 @@ Connection timeout for establishing connection with replica for Hedged requests
 
 ## hnsw_candidate_list_size_for_search {#hnsw_candidate_list_size_for_search} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="256" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "256"},{"label": "New setting. Previously, the value was optionally specified in CREATE INDEX and 64 by default."}]}]}/>
 
@@ -5148,15 +4009,11 @@ The size of the dynamic candidate list when searching the vector similarity inde
 
 ## hsts_max_age {#hsts_max_age} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Expired time for HSTS. 0 means disable HSTS.
 
 ## http_connection_timeout {#http_connection_timeout} 
-
-
 
 <SettingsInfoBlock type="Seconds" default_value="1" />
 
@@ -5169,15 +4026,11 @@ Possible values:
 
 ## http_headers_progress_interval_ms {#http_headers_progress_interval_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Do not send HTTP headers X-ClickHouse-Progress more frequently than at each specified interval.
 
 ## http_make_head_request {#http_make_head_request} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -5185,15 +4038,11 @@ The `http_make_head_request` setting allows the execution of a `HEAD` request wh
 
 ## http_max_field_name_size {#http_max_field_name_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="131072" />
 
 Maximum length of field name in HTTP header
 
 ## http_max_field_value_size {#http_max_field_value_size} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="131072" />
 
@@ -5201,15 +4050,11 @@ Maximum length of field value in HTTP header
 
 ## http_max_fields {#http_max_fields} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
 Maximum number of fields in HTTP header
 
 ## http_max_multipart_form_data_size {#http_max_multipart_form_data_size} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -5217,23 +4062,17 @@ Limit on size of multipart/form-data content. This setting cannot be parsed from
 
 ## http_max_request_param_data_size {#http_max_request_param_data_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
 Limit on size of request data used as a query parameter in predefined HTTP requests.
 
 ## http_max_tries {#http_max_tries} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
 Max attempts to read via http.
 
 ## http_max_uri_size {#http_max_uri_size} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
@@ -5244,8 +4083,6 @@ Possible values:
 - Positive integer.
 
 ## http_native_compression_disable_checksumming_on_decompress {#http_native_compression_disable_checksumming_on_decompress} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -5260,11 +4097,7 @@ Possible values:
 
 ## http_receive_timeout {#http_receive_timeout} 
 
-
-
 <SettingsInfoBlock type="Seconds" default_value="30" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.6"},{"label": "30"},{"label": "See http_send_timeout."}]}]}/>
 
@@ -5277,19 +4110,13 @@ Possible values:
 
 ## http_response_buffer_size {#http_response_buffer_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The number of bytes to buffer in the server memory before sending a HTTP response to the client or flushing to disk (when http_wait_end_of_query is enabled).
 
 ## http_response_headers {#http_response_headers} 
 
-
-
 <SettingsInfoBlock type="Map" default_value="{}" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": ""},{"label": "New setting."}]}]}/>
 
@@ -5310,15 +4137,11 @@ Example: `SET http_response_headers = '{"Content-Type": "image/png"}'`
 
 ## http_retry_initial_backoff_ms {#http_retry_initial_backoff_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Min milliseconds for backoff, when retrying read via http
 
 ## http_retry_max_backoff_ms {#http_retry_max_backoff_ms} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -5326,11 +4149,7 @@ Max milliseconds for backoff, when retrying read via http
 
 ## http_send_timeout {#http_send_timeout} 
 
-
-
 <SettingsInfoBlock type="Seconds" default_value="30" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.6"},{"label": "30"},{"label": "3 minutes seems crazy long. Note that this is timeout for a single network write call, not for the whole upload operation."}]}]}/>
 
@@ -5347,15 +4166,11 @@ It's applicable only to the default profile. A server reboot is required for the
 
 ## http_skip_not_found_url_for_globs {#http_skip_not_found_url_for_globs} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Skip URLs for globs with HTTP_NOT_FOUND error
 
 ## http_wait_end_of_query {#http_wait_end_of_query} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -5363,19 +4178,13 @@ Enable HTTP response buffering on the server-side.
 
 ## http_write_exception_in_output_format {#http_write_exception_in_output_format} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.9"},{"label": "1"},{"label": "Output valid JSON/XML on exception in HTTP streaming."}]}]}/>
 
 Write exception in output format to produce valid output. Works with JSON and XML formats.
 
 ## http_zlib_compression_level {#http_zlib_compression_level} 
-
-
 
 <SettingsInfoBlock type="Int64" default_value="3" />
 
@@ -5387,19 +4196,13 @@ Possible values: Numbers from 1 to 9.
 
 <ExperimentalBadge/>
 
-
-
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": ""},{"label": "New setting"}]}]}/>
 
 Method to compress `.metadata.json` file.
 
 ## iceberg_snapshot_id {#iceberg_snapshot_id} 
 
-
-
 <SettingsInfoBlock type="Int64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -5407,19 +4210,13 @@ Query Iceberg table using the specific snapshot id.
 
 ## iceberg_timestamp_ms {#iceberg_timestamp_ms} 
 
-
-
 <SettingsInfoBlock type="Int64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting."}]}]}/>
 
 Query Iceberg table using the snapshot that was current at a specific timestamp.
 
 ## idle_connection_timeout {#idle_connection_timeout} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="3600" />
 
@@ -5432,8 +4229,6 @@ Possible values:
 ## ignore_cold_parts_seconds {#ignore_cold_parts_seconds} 
 
 <CloudOnlyBadge/>
-
-
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -5526,11 +4321,7 @@ Works with tables in the MergeTree family.
 
 ## ignore_drop_queries_probability {#ignore_drop_queries_probability} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "0"},{"label": "Allow to ignore drop queries in server with specified probability for testing purposes"}]}]}/>
 
@@ -5538,11 +4329,7 @@ If enabled, server will ignore all DROP table queries with specified probability
 
 ## ignore_materialized_views_with_dropped_target_table {#ignore_materialized_views_with_dropped_target_table} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "Add new setting to allow to ignore materialized views with dropped target table"}]}]}/>
 
@@ -5550,19 +4337,13 @@ Ignore MVs with dropped target table during pushing to views
 
 ## ignore_on_cluster_for_replicated_access_entities_queries {#ignore_on_cluster_for_replicated_access_entities_queries} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ignore ON CLUSTER clause for replicated access entities management queries.
 
 ## ignore_on_cluster_for_replicated_named_collections_queries {#ignore_on_cluster_for_replicated_named_collections_queries} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Ignore ON CLUSTER clause for replicated named collections management queries."}]}]}/>
 
@@ -5570,19 +4351,13 @@ Ignore ON CLUSTER clause for replicated named collections management queries.
 
 ## ignore_on_cluster_for_replicated_udf_queries {#ignore_on_cluster_for_replicated_udf_queries} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ignore ON CLUSTER clause for replicated UDF management queries.
 
 ## implicit_select {#implicit_select} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "A new setting."}]}]}/>
 
@@ -5591,8 +4366,6 @@ Allow writing simple SELECT queries without the leading SELECT keyword, which ma
 In `clickhouse-local` it is enabled by default and can be explicitly disabled.
 
 ## implicit_table_at_top_level {#implicit_table_at_top_level} 
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": ""},{"label": "A new setting, used in clickhouse-local"}]}]}/>
 
@@ -5612,15 +4385,11 @@ Both database and table names have to be unquoted - only simple identifiers are 
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
 
 ## input_format_parallel_parsing {#input_format_parallel_parsing} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -5633,15 +4402,11 @@ Possible values:
 
 ## insert_allow_materialized_columns {#insert_allow_materialized_columns} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 If setting is enabled, Allow materialized columns in INSERT.
 
 ## insert_deduplicate {#insert_deduplicate} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -5661,8 +4426,6 @@ For not replicated tables see [non_replicated_deduplication_window](merge-tree-s
 The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
 For example, by providing a unique value for the setting in each INSERT statement,
 user can avoid the same inserted data being deduplicated.
-
-
 Possible values:
 
 - Any string
@@ -5706,15 +4469,11 @@ SELECT * FROM test_table
 
 ## insert_keeper_fault_injection_probability {#insert_keeper_fault_injection_probability} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="0" />
 
 Approximate probability of failure for a keeper request during insert. Valid value is in interval [0.0f, 1.0f]
 
 ## insert_keeper_fault_injection_seed {#insert_keeper_fault_injection_seed} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -5722,11 +4481,7 @@ Approximate probability of failure for a keeper request during insert. Valid val
 
 ## insert_keeper_max_retries {#insert_keeper_max_retries} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="20" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.2"},{"label": "20"},{"label": "Enable reconnections to Keeper on INSERT, improve reliability"}]}]}/>
 
@@ -5751,8 +4506,6 @@ Apart from fault tolerance, the retries aim to provide a better user experience 
 
 ## insert_keeper_retry_initial_backoff_ms {#insert_keeper_retry_initial_backoff_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Initial timeout(in milliseconds) to retry a failed Keeper request during INSERT query execution
@@ -5764,8 +4517,6 @@ Possible values:
 
 ## insert_keeper_retry_max_backoff_ms {#insert_keeper_retry_max_backoff_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 Maximum timeout (in milliseconds) to retry a failed Keeper request during INSERT query execution
@@ -5776,8 +4527,6 @@ Possible values:
 - 0 — Maximum timeout is not limited
 
 ## insert_null_as_default {#insert_null_as_default} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -5792,8 +4541,6 @@ Possible values:
 - 1 — Default column value is inserted instead of `NULL`.
 
 ## insert_quorum {#insert_quorum} 
-
-
 
 <SettingsInfoBlock type="UInt64Auto" default_value="0" />
 
@@ -5826,11 +4573,7 @@ See also:
 
 ## insert_quorum_parallel {#insert_quorum_parallel} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "Use parallel quorum inserts by default. It is significantly more convenient to use than sequential quorum inserts"}]}]}/>
 
@@ -5853,8 +4596,6 @@ See also:
 
 ## insert_quorum_timeout {#insert_quorum_timeout} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="600000" />
 
 Write to a quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
@@ -5866,8 +4607,6 @@ See also:
 - [select_sequential_consistency](#select_sequential_consistency)
 
 ## insert_shard_id {#insert_shard_id} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -5916,15 +4655,11 @@ Result:
 
 ## interactive_delay {#interactive_delay} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
 The interval in microseconds for checking whether request execution has been canceled and sending the progress.
 
 ## intersect_default_mode {#intersect_default_mode} 
-
-
 
 <SettingsInfoBlock type="SetOperationMode" default_value="ALL" />
 
@@ -5932,11 +4667,7 @@ Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DIST
 
 ## join_algorithm {#join_algorithm} 
 
-
-
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"}]}]}/>
 
@@ -5996,11 +4727,7 @@ Possible values:
 
  Legacy value, please don't use anymore.
  Same as `direct,hash`, i.e. try to use direct join and hash join join (in this order).
-
-
 ## join_any_take_last_row {#join_any_take_last_row} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -6023,8 +4750,6 @@ See also:
 
 ## join_default_strictness {#join_default_strictness} 
 
-
-
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
 Sets default strictness for [JOIN clauses](/sql-reference/statements/select/join).
@@ -6038,8 +4763,6 @@ Possible values:
 
 ## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
 Limits the number of files allowed for parallel sorting in MergeJoin operations when they are executed on disk.
@@ -6052,19 +4775,13 @@ Possible values:
 
 ## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="5" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "5"},{"label": "The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join."}]}]}/>
 
 The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join.
 
 ## join_overflow_mode {#join_overflow_mode} 
-
-
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -6089,11 +4806,7 @@ Default value: `THROW`.
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "10000"},{"label": "The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join"}]}]}/>
 
@@ -6103,19 +4816,13 @@ The maximum number of rows in the right table to determine whether to rerange th
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="40" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "40"},{"label": "The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys"}]}]}/>
 
 The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys
 
 ## join_use_nulls {#join_use_nulls} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -6128,23 +4835,17 @@ Possible values:
 
 ## joined_subquery_requires_alias {#joined_subquery_requires_alias} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Force joined subqueries and table functions to have aliases for correct name qualification.
 
 ## kafka_disable_num_consumers_limit {#kafka_disable_num_consumers_limit} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Disable limit on kafka_num_consumers that depends on the number of available CPU cores.
 
 ## kafka_max_wait_ms {#kafka_max_wait_ms} 
-
-
 
 <SettingsInfoBlock type="Milliseconds" default_value="5000" />
 
@@ -6161,19 +4862,13 @@ See also:
 
 ## keeper_map_strict_mode {#keeper_map_strict_mode} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Enforce additional checks during operations on KeeperMap. E.g. throw an exception on an insert for already existing key
 
 ## keeper_max_retries {#keeper_max_retries} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "10"},{"label": "Max retries for general keeper operations"}]}]}/>
 
@@ -6181,11 +4876,7 @@ Max retries for general keeper operations
 
 ## keeper_retry_initial_backoff_ms {#keeper_retry_initial_backoff_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="100" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "100"},{"label": "Initial backoff timeout for general keeper operations"}]}]}/>
 
@@ -6193,11 +4884,7 @@ Initial backoff timeout for general keeper operations
 
 ## keeper_retry_max_backoff_ms {#keeper_retry_max_backoff_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="5000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "5000"},{"label": "Max backoff timeout for general keeper operations"}]}]}/>
 
@@ -6205,11 +4892,7 @@ Max backoff timeout for general keeper operations
 
 ## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting"}]}]}/>
 
@@ -6217,11 +4900,7 @@ If enabled, functions 'least' and 'greatest' return NULL if one of their argumen
 
 ## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.7"},{"label": "0"},{"label": "Add this setting only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher"}]}]}/>
 
@@ -6229,11 +4908,7 @@ List all names of element of large tuple literals in their column names instead 
 
 ## lightweight_delete_mode {#lightweight_delete_mode} 
 
-
-
 <SettingsInfoBlock type="LightweightDeleteMode" default_value="alter_update" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "alter_update"},{"label": "A new setting"}]}]}/>
 
@@ -6246,11 +4921,7 @@ Possible values:
 
 ## lightweight_deletes_sync {#lightweight_deletes_sync} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="2" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "2"},{"label": "The same as 'mutation_sync', but controls only execution of lightweight deletes"}]}]}/>
 
@@ -6272,8 +4943,6 @@ Possible values:
 
 ## limit {#limit} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Sets the maximum number of rows to get from the query result. It adjusts the value set by the [LIMIT](/sql-reference/statements/select/limit) clause, so that the limit, specified in the query, cannot exceed the limit, set by this setting.
@@ -6287,15 +4956,11 @@ Possible values:
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Seconds" default_value="15" />
 
 The heartbeat interval in seconds to indicate live query is alive.
 
 ## load_balancing {#load_balancing} 
-
-
 
 <SettingsInfoBlock type="LoadBalancing" default_value="random" />
 
@@ -6387,23 +5052,17 @@ This algorithm uses a round-robin policy across replicas with the same number of
 
 ## load_balancing_first_offset {#load_balancing_first_offset} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Which replica to preferably send a query when FIRST_OR_RANDOM load balancing strategy is used.
 
 ## load_marks_asynchronously {#load_marks_asynchronously} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Load MergeTree marks asynchronously
 
 ## local_filesystem_read_method {#local_filesystem_read_method} 
-
-
 
 <SettingsInfoBlock type="String" default_value="pread_threadpool" />
 
@@ -6414,15 +5073,11 @@ If you read various articles about 'io_uring' on the Internet, don't be blinded 
 
 ## local_filesystem_read_prefetch {#local_filesystem_read_prefetch} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Should use prefetching when reading data from local filesystem.
 
 ## lock_acquire_timeout {#lock_acquire_timeout} 
-
-
 
 <SettingsInfoBlock type="Seconds" default_value="120" />
 
@@ -6467,8 +5122,6 @@ Result:
 
 ## log_formatted_queries {#log_formatted_queries} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table (populates `formatted_query` column in the [system.query_log](../../operations/system-tables/query_log.md)).
@@ -6480,11 +5133,7 @@ Possible values:
 
 ## log_processors_profiles {#log_processors_profiles} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "Enable by default"}]}]}/>
 
@@ -6497,15 +5146,11 @@ See also:
 
 ## log_profile_events {#log_profile_events} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Log query performance statistics into the query_log, query_thread_log and query_views_log.
 
 ## log_queries {#log_queries} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -6521,15 +5166,11 @@ log_queries=1
 
 ## log_queries_cut_to_length {#log_queries_cut_to_length} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
 If query length is greater than a specified threshold (in bytes), then cut query when writing to query log. Also limit the length of printed query in ordinary text log.
 
 ## log_queries_min_query_duration_ms {#log_queries_min_query_duration_ms} 
-
-
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
@@ -6547,8 +5188,6 @@ Only the queries with the following type will get to the log:
 - Default value: 0 (any query)
 
 ## log_queries_min_type {#log_queries_min_type} 
-
-
 
 <SettingsInfoBlock type="LogQueriesType" default_value="QUERY_START" />
 
@@ -6568,8 +5207,6 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 ## log_queries_probability {#log_queries_probability} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="1" />
 
 Allows a user to write to [query_log](../../operations/system-tables/query_log.md), [query_thread_log](../../operations/system-tables/query_thread_log.md), and [query_views_log](../../operations/system-tables/query_views_log.md) system tables only a sample of queries selected randomly with the specified probability. It helps to reduce the load with a large volume of queries in a second.
@@ -6582,15 +5219,11 @@ Possible values:
 
 ## log_query_settings {#log_query_settings} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Log query settings into the query_log and OpenTelemetry span log.
 
 ## log_query_threads {#log_query_threads} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -6611,8 +5244,6 @@ log_query_threads=1
 
 ## log_query_views {#log_query_views} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Setting up query views logging.
@@ -6626,8 +5257,6 @@ log_query_views=1
 ```
 
 ## low_cardinality_allow_in_native_format {#low_cardinality_allow_in_native_format} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -6644,8 +5273,6 @@ Possible values:
 
 ## low_cardinality_max_dictionary_size {#low_cardinality_max_dictionary_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="8192" />
 
 Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents issues with RAM in case of unlimited dictionary growth. All the data that can't be encoded due to maximum dictionary size limitation ClickHouse writes in an ordinary method.
@@ -6655,8 +5282,6 @@ Possible values:
 - Any positive integer.
 
 ## low_cardinality_use_single_dictionary_for_part {#low_cardinality_use_single_dictionary_for_part} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -6673,11 +5298,7 @@ Possible values:
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1000"},{"label": "New setting."}]}]}/>
 
@@ -6687,11 +5308,7 @@ When the query prioritization mechanism is employed (see setting `priority`), lo
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "New experimental setting."}]}]}/>
 
@@ -6699,11 +5316,7 @@ Make distributed query plan.
 
 ## materialize_skip_indexes_on_insert {#materialize_skip_indexes_on_insert} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "Added new setting to allow to disable materialization of skip indexes on insert"}]}]}/>
 
@@ -6711,11 +5324,7 @@ If INSERTs build and store skip indexes. If disabled, skip indexes will be build
 
 ## materialize_statistics_on_insert {#materialize_statistics_on_insert} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "Added new setting to allow to disable materialization of statistics on insert"}]}]}/>
 
@@ -6723,15 +5332,11 @@ If INSERTs build and insert statistics. If disabled, statistics will be build an
 
 ## materialize_ttl_after_modify {#materialize_ttl_after_modify} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Apply TTL for old data, after ALTER MODIFY TTL query
 
 ## materialized_views_ignore_errors {#materialized_views_ignore_errors} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -6739,15 +5344,11 @@ Allows to ignore errors for MATERIALIZED VIEW, and deliver original block to the
 
 ## max_analyze_depth {#max_analyze_depth} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
 Maximum number of analyses performed by interpreter.
 
 ## max_ast_depth {#max_ast_depth} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -6761,8 +5362,6 @@ but the query will fail.
 
 ## max_ast_elements {#max_ast_elements} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="50000" />
 
 The maximum number of elements in a query syntactic tree. If exceeded, an exception is thrown.
@@ -6775,11 +5374,7 @@ but the query will fail.
 
 ## max_autoincrement_series {#max_autoincrement_series} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1000"},{"label": "A new setting"}]}]}/>
 
@@ -6789,15 +5384,11 @@ As each series represents a node in Keeper, it is recommended to have no more th
 
 ## max_backup_bandwidth {#max_backup_bandwidth} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
 
 ## max_block_size {#max_block_size} 
-
-
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="65409" />
 
@@ -6808,8 +5399,6 @@ The `max_block_size` setting indicates the recommended maximum number of rows to
 The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
 
 ## max_bytes_before_external_group_by {#max_bytes_before_external_group_by} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -6832,8 +5421,6 @@ The recommended value is half of the available system memory.
 
 ## max_bytes_before_external_sort {#max_bytes_before_external_sort} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Cloud default value: half the memory amount per replica.
@@ -6849,15 +5436,11 @@ Possible values:
 
 ## max_bytes_before_remerge_sort {#max_bytes_before_remerge_sort} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
 
 ## max_bytes_in_distinct {#max_bytes_in_distinct} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -6865,8 +5448,6 @@ The maximum number of bytes of the state (in uncompressed bytes) in memory, whic
 is used by a hash table when using DISTINCT.
 
 ## max_bytes_in_join {#max_bytes_in_join} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -6887,8 +5468,6 @@ Possible values:
 
 ## max_bytes_in_set {#max_bytes_in_set} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum number of bytes (of uncompressed data) used by a set in the IN clause
@@ -6896,11 +5475,7 @@ created from a subquery.
 
 ## max_bytes_ratio_before_external_group_by {#max_bytes_ratio_before_external_group_by} 
 
-
-
 <SettingsInfoBlock type="Double" default_value="0.5" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "Enable automatic spilling to disk by default."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -6913,11 +5488,7 @@ start using external aggregation.
 
 ## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort} 
 
-
-
 <SettingsInfoBlock type="Double" default_value="0.5" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0.5"},{"label": "Enable automatic spilling to disk by default."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -6929,8 +5500,6 @@ Note, that `max_bytes_before_external_sort` is still respected, spilling to disk
 
 ## max_bytes_to_read {#max_bytes_to_read} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum number of bytes (of uncompressed data) that can be read from a table when running a query.
@@ -6939,8 +5508,6 @@ deepest table expression and when reading from a remote server, checked only on
 the remote server.
 
 ## max_bytes_to_read_leaf {#max_bytes_to_read_leaf} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -6964,8 +5531,6 @@ This setting is unstable with `prefer_localhost_replica=1`.
 
 ## max_bytes_to_sort {#max_bytes_to_sort} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum number of bytes before sorting. If more than the specified amount of
@@ -6974,16 +5539,12 @@ be determined by the `sort_overflow_mode` which by default is set to `throw`.
 
 ## max_bytes_to_transfer {#max_bytes_to_transfer} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum number of bytes (uncompressed data) that can be passed to a remote
 server or saved in a temporary table when the GLOBAL IN/JOIN section is executed.
 
 ## max_columns_to_read {#max_columns_to_read} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -6999,8 +5560,6 @@ This setting is useful for preventing overly complex queries.
 
 ## max_compress_block_size {#max_compress_block_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying a smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
@@ -7012,8 +5571,6 @@ This is an expert-level setting, and you shouldn't change it if you're just gett
 Don't confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
 
 ## max_concurrent_queries_for_all_users {#max_concurrent_queries_for_all_users} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -7040,8 +5597,6 @@ Possible values:
 
 ## max_concurrent_queries_for_user {#max_concurrent_queries_for_user} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum number of simultaneously processed queries per user.
@@ -7059,8 +5614,6 @@ Possible values:
 
 ## max_distributed_connections {#max_distributed_connections} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
 The maximum number of simultaneous connections with remote servers for distributed processing of a single query to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
@@ -7068,8 +5621,6 @@ The maximum number of simultaneous connections with remote servers for distribut
 The following parameters are only used when creating Distributed tables (and when launching a server), so there is no reason to change them at runtime.
 
 ## max_distributed_depth {#max_distributed_depth} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -7084,15 +5635,11 @@ Possible values:
 
 ## max_download_buffer_size {#max_download_buffer_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10485760" />
 
 The maximal size of buffer for parallel downloading (e.g. for URL engine) per each thread.
 
 ## max_download_threads {#max_download_threads} 
-
-
 
 <SettingsInfoBlock type="MaxThreads" default_value="4" />
 
@@ -7100,11 +5647,7 @@ The maximum number of threads to download data (e.g. for URL engine).
 
 ## max_estimated_execution_time {#max_estimated_execution_time} 
 
-
-
 <SettingsInfoBlock type="Seconds" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "Separate max_execution_time and max_estimated_execution_time"}]}]}/>
 
@@ -7114,8 +5657,6 @@ expires.
 
 ## max_execution_speed {#max_execution_speed} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum number of execution rows per second. Checked on every data block when
@@ -7124,8 +5665,6 @@ expires. If the execution speed is high, the execution speed will be reduced.
 
 ## max_execution_speed_bytes {#max_execution_speed_bytes} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum number of execution bytes per second. Checked on every data block when
@@ -7133,8 +5672,6 @@ The maximum number of execution bytes per second. Checked on every data block wh
 expires. If the execution speed is high, the execution speed will be reduced.
 
 ## max_execution_time {#max_execution_time} 
-
-
 
 <SettingsInfoBlock type="Seconds" default_value="0" />
 
@@ -7163,8 +5700,6 @@ and the actual run time will be higher than the value of this setting.
 
 ## max_execution_time_leaf {#max_execution_time_leaf} 
 
-
-
 <SettingsInfoBlock type="Seconds" default_value="0" />
 
 Similar semantically to [`max_execution_time`](#max_execution_time) but only
@@ -7188,23 +5723,17 @@ FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 
 
 ## max_expanded_ast_elements {#max_expanded_ast_elements} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="500000" />
 
 Maximum size of query syntax tree in number of nodes after expansion of aliases and the asterisk.
 
 ## max_fetch_partition_retries_count {#max_fetch_partition_retries_count} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
 Amount of retries while fetching partition from another host.
 
 ## max_final_threads {#max_final_threads} 
-
-
 
 <SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
 
@@ -7217,15 +5746,11 @@ Possible values:
 
 ## max_http_get_redirects {#max_http_get_redirects} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Max number of HTTP GET redirects hops allowed. Ensures additional security measures are in place to prevent a malicious server from redirecting your requests to unexpected services.\n\nIt is the case when an external server redirects to another address, but that address appears to be internal to the company's infrastructure, and by sending an HTTP request to an internal server, you could request an internal API from the internal network, bypassing the auth, or even query other services, such as Redis or Memcached. When you don't have an internal infrastructure (including something running on your localhost), or you trust the server, it is safe to allow redirects. Although keep in mind, that if the URL uses HTTP instead of HTTPS, and you will have to trust not only the remote server but also your ISP and every network in the middle.
 
 ## max_hyperscan_regexp_length {#max_hyperscan_regexp_length} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -7270,8 +5795,6 @@ Exception: Regexp length too large.
 
 ## max_hyperscan_regexp_total_length {#max_hyperscan_regexp_total_length} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](/sql-reference/functions/string-search-functions#multimatchany).
@@ -7315,8 +5838,6 @@ Exception: Total regexp lengths too large.
 
 ## max_insert_block_size {#max_insert_block_size} 
 
-
-
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048449" />
 
 The size of blocks (in a count of rows) to form for insertion into a table.
@@ -7329,15 +5850,11 @@ The default is slightly more than `max_block_size`. The reason for this is that 
 
 ## max_insert_delayed_streams_for_parallel_write {#max_insert_delayed_streams_for_parallel_write} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum number of streams (columns) to delay final part flush. Default - auto (100 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
 
 ## max_insert_threads {#max_insert_threads} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -7355,11 +5872,7 @@ Higher values will lead to higher memory usage.
 
 ## max_joined_block_size_bytes {#max_joined_block_size_bytes} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "4194304"},{"label": "New setting"}]}]}/>
 
@@ -7367,19 +5880,13 @@ Maximum block size in bytes for JOIN result (if join algorithm supports it). 0 m
 
 ## max_joined_block_size_rows {#max_joined_block_size_rows} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="65409" />
 
 Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
 
 ## max_limit_for_vector_search_queries {#max_limit_for_vector_search_queries} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1000"},{"label": "New setting"}]}]}/>
 
@@ -7389,15 +5896,11 @@ SELECT queries with LIMIT bigger than this setting cannot use vector similarity 
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
 Limit maximum number of inserted blocks after which mergeable blocks are dropped and query is re-executed.
 
 ## max_local_read_bandwidth {#max_local_read_bandwidth} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -7405,15 +5908,11 @@ The maximum speed of local reads in bytes per second.
 
 ## max_local_write_bandwidth {#max_local_write_bandwidth} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum speed of local writes in bytes per second.
 
 ## max_memory_usage {#max_memory_usage} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -7443,8 +5942,6 @@ and [`max_server_memory_usage`](/operations/server-configuration-parameters/sett
 
 ## max_memory_usage_for_user {#max_memory_usage_for_user} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum amount of RAM to use for running a user's queries on a single server. Zero means unlimited.
@@ -7467,8 +5964,6 @@ SELECT getSetting('max_memory_usage_for_user');
 
 ## max_network_bandwidth {#max_network_bandwidth} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
@@ -7479,8 +5974,6 @@ Possible values:
 - 0 — Bandwidth control is disabled.
 
 ## max_network_bandwidth_for_all_users {#max_network_bandwidth_for_all_users} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -7493,8 +5986,6 @@ Possible values:
 
 ## max_network_bandwidth_for_user {#max_network_bandwidth_for_user} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to all concurrently running queries performed by a single user.
@@ -7505,8 +5996,6 @@ Possible values:
 - 0 — Control of the data speed is disabled.
 
 ## max_network_bytes {#max_network_bytes} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -7519,19 +6008,13 @@ Possible values:
 
 ## max_number_of_partitions_for_independent_aggregation {#max_number_of_partitions_for_independent_aggregation} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="128" />
 
 Maximal number of partitions in table to apply optimizatio
 
 ## max_os_cpu_wait_time_ratio_to_throw {#max_os_cpu_wait_time_ratio_to_throw} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "Setting values were changed and backported to 25.4"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting"}]}]}/>
 
@@ -7539,11 +6022,7 @@ Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirt
 
 ## max_parallel_replicas {#max_parallel_replicas} 
 
-
-
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1000"},{"label": "Use up to 1000 parallel replicas by default."}]}]}/>
 
@@ -7576,19 +6055,13 @@ This setting is useful for any replicated table.
 
 ## max_parser_backtracks {#max_parser_backtracks} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1000000"},{"label": "Limiting the complexity of parsing"}]}]}/>
 
 Maximum parser backtracking (how many times it tries different alternatives in the recursive descend parsing process).
 
 ## max_parser_depth {#max_parser_depth} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -7601,19 +6074,13 @@ Possible values:
 
 ## max_parsing_threads {#max_parsing_threads} 
 
-
-
 <SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "0"},{"label": "Add a separate setting to control number of threads in parallel parsing from files"}]}]}/>
 
 The maximum number of threads to parse data in input formats that support parallel parsing. By default, it is determined automatically.
 
 ## max_partition_size_to_drop {#max_partition_size_to_drop} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="50000000000" />
 
@@ -7627,11 +6094,7 @@ This query setting overwrites its server setting equivalent, see [max_partition_
 
 ## max_partitions_per_insert_block {#max_partitions_per_insert_block} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="100" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "19.5"},{"label": "100"},{"label": "Add a limit for the number of partitions in one block"}]}]}/>
 
@@ -7664,8 +6127,6 @@ This setting is a safety threshold because using a large number of partitions is
 
 ## max_partitions_to_read {#max_partitions_to_read} 
 
-
-
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
 Limits the maximum number of partitions that can be accessed in a single query.
@@ -7683,19 +6144,13 @@ You can also specify the MergeTree setting [`max_partitions_to_read`](/operation
 
 ## max_parts_to_move {#max_parts_to_move} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1000"},{"label": "New setting"}]}]}/>
 
 Limit the number of parts that can be moved in one query. Zero means unlimited.
 
 ## max_query_size {#max_query_size} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="262144" />
 
@@ -7708,15 +6163,11 @@ Data in the VALUES clause of INSERT queries is processed by a separate stream pa
 
 ## max_read_buffer_size {#max_read_buffer_size} 
 
-
-
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048576" />
 
 The maximum size of the buffer to read from the filesystem.
 
 ## max_read_buffer_size_local_fs {#max_read_buffer_size_local_fs} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="131072" />
 
@@ -7724,19 +6175,13 @@ The maximum size of the buffer to read from local filesystem. If set to 0 then m
 
 ## max_read_buffer_size_remote_fs {#max_read_buffer_size_remote_fs} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum size of the buffer to read from remote filesystem. If set to 0 then max_read_buffer_size will be used.
 
 ## max_recursive_cte_evaluation_depth {#max_recursive_cte_evaluation_depth} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1000"},{"label": "Maximum limit on recursive CTE evaluation depth"}]}]}/>
 
@@ -7744,23 +6189,17 @@ Maximum limit on recursive CTE evaluation depth
 
 ## max_remote_read_network_bandwidth {#max_remote_read_network_bandwidth} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum speed of data exchange over the network in bytes per second for read.
 
 ## max_remote_write_network_bandwidth {#max_remote_write_network_bandwidth} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum speed of data exchange over the network in bytes per second for write.
 
 ## max_replica_delay_for_distributed_queries {#max_replica_delay_for_distributed_queries} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 
@@ -7778,8 +6217,6 @@ To prevent the use of any replica with a non-zero lag, set this parameter to 1.
 Used when performing `SELECT` from a distributed table that points to replicated tables.
 
 ## max_result_bytes {#max_result_bytes} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -7799,8 +6236,6 @@ The setting is fairly low level and should be used with caution
 
 ## max_result_rows {#max_result_rows} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Cloud default value: `0`.
@@ -7814,15 +6249,11 @@ larger than the threshold.
 
 ## max_rows_in_distinct {#max_rows_in_distinct} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum number of different rows when using DISTINCT.
 
 ## max_rows_in_join {#max_rows_in_join} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -7843,19 +6274,13 @@ Possible values:
 
 ## max_rows_in_set {#max_rows_in_set} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum number of rows for a data set in the IN clause created from a subquery.
 
 ## max_rows_in_set_to_optimize_join {#max_rows_in_set_to_optimize_join} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "Disable join optimization as it prevents from read in order optimization"}]}]}/>
 
@@ -7867,8 +6292,6 @@ Possible values:
 - Any positive integer.
 
 ## max_rows_to_group_by {#max_rows_to_group_by} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -7882,8 +6305,6 @@ to an approximate GROUP BY mode.
 
 ## max_rows_to_read {#max_rows_to_read} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum number of rows that can be read from a table when running a query.
@@ -7892,8 +6313,6 @@ deepest table expression and when reading from a remote server, checked only on
 the remote server.
 
 ## max_rows_to_read_leaf {#max_rows_to_read_leaf} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -7916,8 +6335,6 @@ This setting is unstable with `prefer_localhost_replica=1`.
 
 ## max_rows_to_sort {#max_rows_to_sort} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
@@ -7926,16 +6343,12 @@ the behavior will be determined by the `sort_overflow_mode` which by default is 
 
 ## max_rows_to_transfer {#max_rows_to_transfer} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Maximum size (in rows) that can be passed to a remote server or saved in a
 temporary table when the GLOBAL IN/JOIN section is executed.
 
 ## max_sessions_for_user {#max_sessions_for_user} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -7977,11 +6390,7 @@ Possible values:
 
 ## max_size_to_preallocate_for_aggregation {#max_size_to_preallocate_for_aggregation} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000000000000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1000000000000"},{"label": "Enable optimisation for bigger tables."}]}, {"id": "row-2","items": [{"label": "22.12"},{"label": "100000000"},{"label": "This optimizes performance"}]}]}/>
 
@@ -7989,11 +6398,7 @@ For how many elements it is allowed to preallocate space in all hash tables in t
 
 ## max_size_to_preallocate_for_joins {#max_size_to_preallocate_for_joins} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000000000000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "100000000"},{"label": "New setting."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "1000000000000"},{"label": "Enable optimisation for bigger tables."}]}]}/>
 
@@ -8001,15 +6406,11 @@ For how many elements it is allowed to preallocate space in all hash tables in t
 
 ## max_streams_for_merge_tree_reading {#max_streams_for_merge_tree_reading} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 If is not zero, limit the number of reading streams for MergeTree table.
 
 ## max_streams_multiplier_for_merge_tables {#max_streams_multiplier_for_merge_tables} 
-
-
 
 <SettingsInfoBlock type="Float" default_value="5" />
 
@@ -8017,15 +6418,11 @@ Ask more streams when reading from Merge table. Streams will be spread across ta
 
 ## max_streams_to_max_threads_ratio {#max_streams_to_max_threads_ratio} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="1" />
 
 Allows you to use more sources than the number of threads - to more evenly distribute work across threads. It is assumed that this is a temporary solution since it will be possible in the future to make the number of sources equal to the number of threads, but for each source to dynamically select available work for itself.
 
 ## max_subquery_depth {#max_subquery_depth} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -8039,8 +6436,6 @@ cluster from writing overly complex queries.
 
 ## max_table_size_to_drop {#max_table_size_to_drop} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="50000000000" />
 
 Restriction on deleting tables in query time. The value 0 means that you can delete all tables without any restrictions.
@@ -8052,8 +6447,6 @@ This query setting overwrites its server setting equivalent, see [max_table_size
 :::
 
 ## max_temporary_columns {#max_temporary_columns} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -8070,8 +6463,6 @@ This setting is useful for preventing overly complex queries.
 
 ## max_temporary_data_on_disk_size_for_query {#max_temporary_data_on_disk_size_for_query} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum amount of data consumed by temporary files on disk in bytes for all
@@ -8084,8 +6475,6 @@ Possible values:
 
 ## max_temporary_data_on_disk_size_for_user {#max_temporary_data_on_disk_size_for_user} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum amount of data consumed by temporary files on disk in bytes for all
@@ -8097,8 +6486,6 @@ Possible values:
 - `0` — unlimited (default)
 
 ## max_temporary_non_const_columns {#max_temporary_non_const_columns} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -8113,8 +6500,6 @@ approximately zero computing resources.
 
 ## max_threads {#max_threads} 
 
-
-
 <SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
 
 The maximum number of query processing threads, excluding threads for retrieving data from remote servers (see the 'max_distributed_connections' parameter).
@@ -8128,15 +6513,11 @@ The smaller the `max_threads` value, the less memory is consumed.
 
 ## max_threads_for_indexes {#max_threads_for_indexes} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum number of threads process indices.
 
 ## max_untracked_memory {#max_untracked_memory} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
@@ -8144,11 +6525,7 @@ Small allocations and deallocations are grouped in thread local variable and tra
 
 ## memory_overcommit_ratio_denominator {#memory_overcommit_ratio_denominator} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "22.5"},{"label": "1073741824"},{"label": "Enable memory overcommit feature by default"}]}]}/>
 
@@ -8159,11 +6536,7 @@ Read more about [memory overcommit](memory-overcommit.md).
 
 ## memory_overcommit_ratio_denominator_for_user {#memory_overcommit_ratio_denominator_for_user} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "22.5"},{"label": "1073741824"},{"label": "Enable memory overcommit feature by default"}]}]}/>
 
@@ -8174,15 +6547,11 @@ Read more about [memory overcommit](memory-overcommit.md).
 
 ## memory_profiler_sample_max_allocation_size {#memory_profiler_sample_max_allocation_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Collect random allocations of size less or equal than the specified value with probability equal to `memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold work as expected.
 
 ## memory_profiler_sample_min_allocation_size {#memory_profiler_sample_min_allocation_size} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -8190,15 +6559,11 @@ Collect random allocations of size greater or equal than the specified value wit
 
 ## memory_profiler_sample_probability {#memory_profiler_sample_probability} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="0" />
 
 Collect random allocations and deallocations and write them into system.trace_log with 'MemorySample' trace_type. The probability is for every alloc/free regardless of the size of the allocation (can be changed with `memory_profiler_sample_min_allocation_size` and `memory_profiler_sample_max_allocation_size`). Note that sampling happens only when the amount of untracked memory exceeds 'max_untracked_memory'. You may want to set 'max_untracked_memory' to 0 for extra fine-grained sampling.
 
 ## memory_profiler_step {#memory_profiler_step} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
@@ -8212,15 +6577,11 @@ Possible values:
 
 ## memory_tracker_fault_probability {#memory_tracker_fault_probability} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="0" />
 
 For testing of `exception safety` - throw an exception every time you allocate memory with the specified probability.
 
 ## memory_usage_overcommit_max_wait_microseconds {#memory_usage_overcommit_max_wait_microseconds} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="5000000" />
 
@@ -8230,11 +6591,7 @@ Read more about [memory overcommit](memory-overcommit.md).
 
 ## merge_table_max_tables_to_look_for_schema_inference {#merge_table_max_tables_to_look_for_schema_inference} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1000"},{"label": "A new setting"}]}]}/>
 
@@ -8242,8 +6599,6 @@ When creating a `Merge` table without an explicit schema or when using the `merg
 If there is a larger number of tables, the schema will be inferred from the first specified number of tables.
 
 ## merge_tree_coarse_index_granularity {#merge_tree_coarse_index_granularity} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
@@ -8257,23 +6612,17 @@ Possible values:
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="16" />
 
 Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
 
 ## merge_tree_determine_task_size_by_prewhere_columns {#merge_tree_determine_task_size_by_prewhere_columns} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Whether to use only prewhere columns size to determine reading task size.
 
 ## merge_tree_max_bytes_to_use_cache {#merge_tree_max_bytes_to_use_cache} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="2013265920" />
 
@@ -8287,8 +6636,6 @@ Possible values:
 
 ## merge_tree_max_rows_to_use_cache {#merge_tree_max_rows_to_use_cache} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks.
@@ -8301,8 +6648,6 @@ Possible values:
 
 ## merge_tree_min_bytes_for_concurrent_read {#merge_tree_min_bytes_for_concurrent_read} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="251658240" />
 
 If the number of bytes to read from one file of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file in several threads.
@@ -8313,11 +6658,7 @@ Possible value:
 
 ## merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem {#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "Setting is deprecated"}]}]}/>
 
@@ -8329,8 +6670,6 @@ Possible values:
 
 ## merge_tree_min_bytes_for_seek {#merge_tree_min_bytes_for_seek} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 If the distance between two data blocks to be read in one file is less than `merge_tree_min_bytes_for_seek` bytes, then ClickHouse sequentially reads a range of file that contains both blocks, thus avoiding extra seek.
@@ -8341,11 +6680,7 @@ Possible values:
 
 ## merge_tree_min_bytes_per_task_for_remote_reading {#merge_tree_min_bytes_per_task_for_remote_reading} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="2097152" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "2097152"},{"label": "Value is unified with `filesystem_prefetch_min_bytes_for_single_read_task`"}]}]}/>
 
@@ -8353,19 +6688,13 @@ Min bytes to read per task.
 
 ## merge_tree_min_read_task_size {#merge_tree_min_read_task_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="8" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "8"},{"label": "New setting"}]}]}/>
 
 Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks
 
 ## merge_tree_min_rows_for_concurrent_read {#merge_tree_min_rows_for_concurrent_read} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="163840" />
 
@@ -8377,11 +6706,7 @@ Possible values:
 
 ## merge_tree_min_rows_for_concurrent_read_for_remote_filesystem {#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "Setting is deprecated"}]}]}/>
 
@@ -8393,8 +6718,6 @@ Possible values:
 
 ## merge_tree_min_rows_for_seek {#merge_tree_min_rows_for_seek} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 If the distance between two data blocks to be read in one file is less than `merge_tree_min_rows_for_seek` rows, then ClickHouse does not seek through the file but reads the data sequentially.
@@ -8405,11 +6728,7 @@ Possible values:
 
 ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability {#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "For testing of `PartsSplitter` - split read ranges into intersecting and non intersecting every time you read from MergeTree with the specified probability."}]}]}/>
 
@@ -8417,11 +6736,7 @@ For testing of `PartsSplitter` - split read ranges into intersecting and non int
 
 ## merge_tree_storage_snapshot_sleep_ms {#merge_tree_storage_snapshot_sleep_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "A new setting to debug storage snapshot consistency in query"}]}]}/>
 
@@ -8434,19 +6749,13 @@ Possible values:
 
 ## merge_tree_use_const_size_tasks_for_remote_reading {#merge_tree_use_const_size_tasks_for_remote_reading} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Whether to use constant size tasks for reading from a remote table.
 
 ## merge_tree_use_deserialization_prefixes_cache {#merge_tree_use_deserialization_prefixes_cache} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "A new setting to control the usage of deserialization prefixes cache in MergeTree"}]}]}/>
 
@@ -8454,11 +6763,7 @@ Enables caching of columns metadata from the file prefixes during reading from r
 
 ## merge_tree_use_prefixes_deserialization_thread_pool {#merge_tree_use_prefixes_deserialization_thread_pool} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "A new setting controlling the usage of the thread pool for parallel prefixes deserialization in MergeTree"}]}]}/>
 
@@ -8466,19 +6771,13 @@ Enables usage of the thread pool for parallel prefixes reading in Wide parts in 
 
 ## merge_tree_use_v1_object_and_dynamic_serialization {#merge_tree_use_v1_object_and_dynamic_serialization} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "Add new serialization V2 version for JSON and Dynamic types"}]}]}/>
 
 When enabled, V1 serialization version of JSON and Dynamic types will be used in MergeTree instead of V2. Changing this setting takes affect only after server restart.
 
 ## metrics_perf_events_enabled {#metrics_perf_events_enabled} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -8489,8 +6788,6 @@ If enabled, some of the perf events will be measured throughout queries' executi
 Comma separated list of perf metrics that will be measured throughout queries' execution. Empty means all events. See PerfEventInfo in sources for the available events.
 
 ## min_bytes_to_use_direct_io {#min_bytes_to_use_direct_io} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -8505,8 +6802,6 @@ Possible values:
 
 ## min_bytes_to_use_mmap_io {#min_bytes_to_use_mmap_io} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 This is an experimental setting. Sets the minimum amount of memory for reading large files without copying data from the kernel to userspace. Recommended threshold is about 64 MB, because [mmap/munmap](https://en.wikipedia.org/wiki/Mmap) is slow. It makes sense only for large files and helps only if data reside in the page cache.
@@ -8518,8 +6813,6 @@ Possible values:
 
 ## min_chunk_bytes_for_parallel_parsing {#min_chunk_bytes_for_parallel_parsing} 
 
-
-
 <SettingsInfoBlock type="NonZeroUInt64" default_value="10485760" />
 
 - Type: unsigned int
@@ -8528,8 +6821,6 @@ Possible values:
 The minimum chunk size in bytes, which each thread will parse in parallel.
 
 ## min_compress_block_size {#min_compress_block_size} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="65536" />
 
@@ -8549,8 +6840,6 @@ This is an expert-level setting, and you shouldn't change it if you're just gett
 
 ## min_count_to_compile_aggregate_expression {#min_count_to_compile_aggregate_expression} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
 The minimum number of identical aggregate expressions to start JIT-compilation. Works only if the [compile_aggregate_expressions](#compile_aggregate_expressions) setting is enabled.
@@ -8562,23 +6851,17 @@ Possible values:
 
 ## min_count_to_compile_expression {#min_count_to_compile_expression} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
 Minimum count of executing same expression before it is get compiled.
 
 ## min_count_to_compile_sort_description {#min_count_to_compile_sort_description} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
 The number of identical sort descriptions before they are JIT-compiled
 
 ## min_execution_speed {#min_execution_speed} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -8588,8 +6871,6 @@ expires. If the execution speed is lower, an exception is thrown.
 
 ## min_execution_speed_bytes {#min_execution_speed_bytes} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The minimum number of execution bytes per second. Checked on every data block when
@@ -8598,11 +6879,7 @@ expires. If the execution speed is lower, an exception is thrown.
 
 ## min_external_table_block_size_bytes {#min_external_table_block_size_bytes} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="268402944" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "268402944"},{"label": "Squash blocks passed to external table to specified size in bytes, if blocks are not big enough."}]}]}/>
 
@@ -8610,11 +6887,7 @@ Squash blocks passed to the external table to a specified size in bytes, if bloc
 
 ## min_external_table_block_size_rows {#min_external_table_block_size_rows} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1048449" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1048449"},{"label": "Squash blocks passed to external table to specified size in rows, if blocks are not big enough"}]}]}/>
 
@@ -8622,11 +6895,7 @@ Squash blocks passed to external table to specified size in rows, if blocks are 
 
 ## min_free_disk_bytes_to_perform_insert {#min_free_disk_bytes_to_perform_insert} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "Maintain some free disk space bytes from inserts while still allowing for temporary writing."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -8634,11 +6903,7 @@ Minimum free disk space bytes to perform an insert.
 
 ## min_free_disk_ratio_to_perform_insert {#min_free_disk_ratio_to_perform_insert} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "Maintain some free disk space bytes expressed as ratio to total disk space from inserts while still allowing for temporary writing."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -8646,23 +6911,17 @@ Minimum free disk space ratio to perform an insert.
 
 ## min_free_disk_space_for_temporary_data {#min_free_disk_space_for_temporary_data} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The minimum disk space to keep while writing temporary data used in external sorting and aggregation.
 
 ## min_hit_rate_to_use_consecutive_keys_optimization {#min_hit_rate_to_use_consecutive_keys_optimization} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="0.5" />
 
 Minimal hit rate of a cache which is used for consecutive keys optimization in aggregation to keep it enabled
 
 ## min_insert_block_size_bytes {#min_insert_block_size_bytes} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="268402944" />
 
@@ -8674,8 +6933,6 @@ Possible values:
 - 0 — Squashing disabled.
 
 ## min_insert_block_size_bytes_for_materialized_views {#min_insert_block_size_bytes_for_materialized_views} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -8692,8 +6949,6 @@ Possible values:
 
 ## min_insert_block_size_rows {#min_insert_block_size_rows} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1048449" />
 
 Sets the minimum number of rows in the block that can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
@@ -8704,8 +6959,6 @@ Possible values:
 - 0 — Squashing disabled.
 
 ## min_insert_block_size_rows_for_materialized_views {#min_insert_block_size_rows_for_materialized_views} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -8722,11 +6975,7 @@ Possible values:
 
 ## min_joined_block_size_bytes {#min_joined_block_size_bytes} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="524288" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "524288"},{"label": "New setting."}]}]}/>
 
@@ -8734,11 +6983,7 @@ Minimum block size in bytes for JOIN input and output blocks (if join algorithm 
 
 ## min_joined_block_size_rows {#min_joined_block_size_rows} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="65409" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "65409"},{"label": "New setting."}]}]}/>
 
@@ -8746,11 +6991,7 @@ Minimum block size in rows for JOIN input and output blocks (if join algorithm s
 
 ## min_os_cpu_wait_time_ratio_to_throw {#min_os_cpu_wait_time_ratio_to_throw} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "Setting values were changed and backported to 25.4"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting"}]}]}/>
 
@@ -8758,11 +6999,7 @@ Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirt
 
 ## min_outstreams_per_resize_after_split {#min_outstreams_per_resize_after_split} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="24" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "24"},{"label": "New setting."}]}]}/>
 
@@ -8795,11 +7032,7 @@ To disable the split of `Resize` nodes, set this setting to 0. This will prevent
 
 ## mongodb_throw_on_unsupported_query {#mongodb_throw_on_unsupported_query} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "1"},{"label": "New setting."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "New setting."}]}]}/>
 
@@ -8807,15 +7040,11 @@ If enabled, MongoDB tables will return an error when a MongoDB query cannot be b
 
 ## move_all_conditions_to_prewhere {#move_all_conditions_to_prewhere} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Move all viable conditions from WHERE to PREWHERE
 
 ## move_primary_key_columns_to_end_of_prewhere {#move_primary_key_columns_to_end_of_prewhere} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -8823,15 +7052,11 @@ Move PREWHERE conditions containing primary key columns to the end of AND chain.
 
 ## multiple_joins_try_to_keep_original_names {#multiple_joins_try_to_keep_original_names} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Do not add aliases to top level expression list on multiple joins rewrite
 
 ## mutations_execute_nondeterministic_on_initiator {#mutations_execute_nondeterministic_on_initiator} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -8839,23 +7064,17 @@ If true constant nondeterministic functions (e.g. function `now()`) are executed
 
 ## mutations_execute_subqueries_on_initiator {#mutations_execute_subqueries_on_initiator} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 If true scalar subqueries are executed on initiator and replaced to literals in `UPDATE` and `DELETE` queries. Default value: `false`.
 
 ## mutations_max_literal_size_to_replace {#mutations_max_literal_size_to_replace} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="16384" />
 
 The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELETE` queries. Takes effect only if at least one the two settings above is enabled. Default value: 16384 (16 KiB).
 
 ## mutations_sync {#mutations_sync} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -8880,11 +7099,7 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 
 ## mysql_map_fixed_string_to_text_in_show_columns {#mysql_map_fixed_string_to_text_in_show_columns} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Reduce the configuration effort to connect ClickHouse with BI tools."}]}]}/>
 
@@ -8897,11 +7112,7 @@ Has an effect only when the connection is made through the MySQL wire protocol.
 
 ## mysql_map_string_to_text_in_show_columns {#mysql_map_string_to_text_in_show_columns} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Reduce the configuration effort to connect ClickHouse with BI tools."}]}]}/>
 
@@ -8914,15 +7125,11 @@ Has an effect only when the connection is made through the MySQL wire protocol.
 
 ## mysql_max_rows_to_insert {#mysql_max_rows_to_insert} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="65536" />
 
 The maximum number of rows in MySQL batch insertion of the MySQL storage engine
 
 ## network_compression_method {#network_compression_method} 
-
-
 
 <SettingsInfoBlock type="String" default_value="LZ4" />
 
@@ -8939,8 +7146,6 @@ Possible values:
 
 ## network_zstd_compression_level {#network_zstd_compression_level} 
 
-
-
 <SettingsInfoBlock type="Int64" default_value="1" />
 
 Adjusts the level of ZSTD compression. Used only when [network_compression_method](#network_compression_method) is set to `ZSTD`.
@@ -8951,11 +7156,7 @@ Possible values:
 
 ## normalize_function_names {#normalize_function_names} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.3"},{"label": "1"},{"label": "Normalize function names to their canonical names, this was needed for projection query routing"}]}]}/>
 
@@ -8963,15 +7164,11 @@ Normalize function names to their canonical names
 
 ## number_of_mutations_to_delay {#number_of_mutations_to_delay} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 If the mutated table contains at least that many unfinished mutations, artificially slow down mutations of table. 0 - disabled
 
 ## number_of_mutations_to_throw {#number_of_mutations_to_throw} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -8979,23 +7176,17 @@ If the mutated table contains at least that many unfinished mutations, throw 'To
 
 ## odbc_bridge_connection_pool_size {#odbc_bridge_connection_pool_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="16" />
 
 Connection pool size for each connection settings string in ODBC bridge.
 
 ## odbc_bridge_use_connection_pooling {#odbc_bridge_use_connection_pooling} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Use connection pooling in ODBC bridge. If set to false, a new connection is created every time.
 
 ## offset {#offset} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -9034,8 +7225,6 @@ Result:
 
 ## opentelemetry_start_trace_probability {#opentelemetry_start_trace_probability} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="0" />
 
 Sets the probability that the ClickHouse can start a trace for executed queries (if no parent [trace context](https://www.w3.org/TR/trace-context/) is supplied).
@@ -9048,11 +7237,7 @@ Possible values:
 
 ## opentelemetry_trace_cpu_scheduling {#opentelemetry_trace_cpu_scheduling} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting to trace `cpu_slot_preemption` feature."}]}]}/>
 
@@ -9060,15 +7245,11 @@ Collect OpenTelemetry spans for workload preemptive CPU scheduling.
 
 ## opentelemetry_trace_processors {#opentelemetry_trace_processors} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Collect OpenTelemetry spans for processors.
 
 ## optimize_aggregation_in_order {#optimize_aggregation_in_order} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -9085,27 +7266,19 @@ Possible values:
 
 ## optimize_aggregators_of_group_by_keys {#optimize_aggregators_of_group_by_keys} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT sectio
 
 ## optimize_and_compare_chain {#optimize_and_compare_chain} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "A new setting"}]}]}/>
 
 Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
 
 ## optimize_append_index {#optimize_append_index} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -9117,15 +7290,11 @@ Possible values:
 
 ## optimize_arithmetic_operations_in_aggregate_functions {#optimize_arithmetic_operations_in_aggregate_functions} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Move arithmetic operations out of aggregation functions
 
 ## optimize_count_from_files {#optimize_count_from_files} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -9138,15 +7307,11 @@ Possible values:
 
 ## optimize_distinct_in_order {#optimize_distinct_in_order} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
 
 ## optimize_distributed_group_by_sharding_key {#optimize_distributed_group_by_sharding_key} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -9184,11 +7349,7 @@ Right now it requires `optimize_skip_unused_shards` (the reason behind this is t
 
 ## optimize_extract_common_expressions {#optimize_extract_common_expressions} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "Introduce setting to optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."}]}]}/>
 
@@ -9198,11 +7359,7 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
 
 ## optimize_functions_to_subcolumns {#optimize_functions_to_subcolumns} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "1"},{"label": "Enabled settings by default"}]}]}/>
 
@@ -9226,11 +7383,7 @@ Possible values:
 
 ## optimize_group_by_constant_keys {#optimize_group_by_constant_keys} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.9"},{"label": "1"},{"label": "Optimize group by constant keys by default"}]}]}/>
 
@@ -9238,15 +7391,11 @@ Optimize GROUP BY when all keys in block are constant
 
 ## optimize_group_by_function_keys {#optimize_group_by_function_keys} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Eliminates functions of other keys in GROUP BY sectio
 
 ## optimize_if_chain_to_multiif {#optimize_if_chain_to_multiif} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -9254,19 +7403,13 @@ Replace if(cond1, then1, if(cond2, ...)) chains to multiIf. Currently it's not b
 
 ## optimize_if_transform_strings_to_enum {#optimize_if_transform_strings_to_enum} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Replaces string-type arguments in If and Transform to enum. Disabled by default cause it could make inconsistent change in distributed query that would lead to its fail.
 
 ## optimize_injective_functions_in_group_by {#optimize_injective_functions_in_group_by} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "1"},{"label": "Replace injective functions by it's arguments in GROUP BY section in analyzer"}]}]}/>
 
@@ -9274,15 +7417,11 @@ Replaces injective functions by it's arguments in GROUP BY sectio
 
 ## optimize_injective_functions_inside_uniq {#optimize_injective_functions_inside_uniq} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Delete injective functions of one argument inside uniq*() functions.
 
 ## optimize_min_equality_disjunction_chain_length {#optimize_min_equality_disjunction_chain_length} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
@@ -9290,15 +7429,11 @@ The minimum length of the expression `expr = x1 OR ... expr = xN` for optimizati
 
 ## optimize_min_inequality_conjunction_chain_length {#optimize_min_inequality_conjunction_chain_length} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
 The minimum length of the expression `expr <> x1 AND ... expr <> xN` for optimizatio
 
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -9312,8 +7447,6 @@ Possible values:
 - 1 — Automatic `PREWHERE` optimization is enabled.
 
 ## optimize_move_to_prewhere_if_final {#optimize_move_to_prewhere_if_final} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -9332,19 +7465,13 @@ Possible values:
 
 ## optimize_multiif_to_if {#optimize_multiif_to_if} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Replace 'multiIf' with only one condition to 'if'.
 
 ## optimize_normalize_count_variants {#optimize_normalize_count_variants} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.3"},{"label": "1"},{"label": "Rewrite aggregate functions that semantically equals to count() as count() by default"}]}]}/>
 
@@ -9352,11 +7479,7 @@ Rewrite aggregate functions that semantically equals to count() as count().
 
 ## optimize_on_insert {#optimize_on_insert} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "Enable data optimization on INSERT by default for better user experience"}]}]}/>
 
@@ -9412,15 +7535,11 @@ Note that this setting influences [Materialized view](/sql-reference/statements/
 
 ## optimize_or_like_chain {#optimize_or_like_chain} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Optimize multiple OR LIKE into multiMatchAny. This optimization should not be enabled by default, because it defies index analysis in some cases.
 
 ## optimize_read_in_order {#optimize_read_in_order} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -9437,15 +7556,11 @@ Possible values:
 
 ## optimize_read_in_window_order {#optimize_read_in_window_order} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Enable ORDER BY optimization in window clause for reading data in corresponding order in MergeTree tables.
 
 ## optimize_redundant_functions_in_order_by {#optimize_redundant_functions_in_order_by} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -9453,15 +7568,11 @@ Remove functions from ORDER BY if its argument is also in ORDER BY
 
 ## optimize_respect_aliases {#optimize_respect_aliases} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 If it is set to true, it will respect aliases in WHERE/GROUP BY/ORDER BY, that will help with partition pruning/secondary indexes/optimize_aggregation_in_order/optimize_read_in_order/optimize_trivial_count
 
 ## optimize_rewrite_aggregate_function_with_if {#optimize_rewrite_aggregate_function_with_if} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -9474,19 +7585,13 @@ Supported only with the analyzer (`enable_analyzer = 1`).
 
 ## optimize_rewrite_array_exists_to_has {#optimize_rewrite_array_exists_to_has} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 
 ## optimize_rewrite_regexp_functions {#optimize_rewrite_regexp_functions} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "A new setting"}]}]}/>
 
@@ -9494,19 +7599,13 @@ Rewrite regular expression related functions into simpler and more efficient for
 
 ## optimize_rewrite_sum_if_to_count_if {#optimize_rewrite_sum_if_to_count_if} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1"},{"label": "Only available for the analyzer, where it works correctly"}]}]}/>
 
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 
 ## optimize_skip_merged_partitions {#optimize_skip_merged_partitions} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -9523,8 +7622,6 @@ Possible values:
 
 ## optimize_skip_unused_shards {#optimize_skip_unused_shards} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise a query yields incorrect result).
@@ -9536,8 +7633,6 @@ Possible values:
 
 ## optimize_skip_unused_shards_limit {#optimize_skip_unused_shards_limit} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 Limit for number of sharding key values, turns off `optimize_skip_unused_shards` if the limit is reached.
@@ -9545,8 +7640,6 @@ Limit for number of sharding key values, turns off `optimize_skip_unused_shards`
 Too many values may require significant amount for processing, while the benefit is doubtful, since if you have huge number of values in `IN (...)`, then most likely the query will be sent to all shards anyway.
 
 ## optimize_skip_unused_shards_nesting {#optimize_skip_unused_shards_nesting} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -9560,8 +7653,6 @@ Possible values:
 
 ## optimize_skip_unused_shards_rewrite_in {#optimize_skip_unused_shards_rewrite_in} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Rewrite IN in query for remote shards to exclude values that does not belong to the shard (requires optimize_skip_unused_shards).
@@ -9573,15 +7664,11 @@ Possible values:
 
 ## optimize_sorting_by_input_stream_properties {#optimize_sorting_by_input_stream_properties} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Optimize sorting by sorting properties of input stream
 
 ## optimize_substitute_columns {#optimize_substitute_columns} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -9592,8 +7679,6 @@ Possible values:
 - true, false
 
 ## optimize_syntax_fuse_functions {#optimize_syntax_fuse_functions} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -9627,8 +7712,6 @@ FROM fuse_tbl
 
 ## optimize_throw_if_noop {#optimize_throw_if_noop} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Enables or disables throwing an exception if an [OPTIMIZE](../../sql-reference/statements/optimize.md) query didn't perform a merge.
@@ -9642,19 +7725,13 @@ Possible values:
 
 ## optimize_time_filter_with_preimage {#optimize_time_filter_with_preimage} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Optimize Date and DateTime predicates by converting functions into equivalent comparisons without conversions (e.g. toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31')"}]}]}/>
 
 Optimize Date and DateTime predicates by converting functions into equivalent comparisons without conversions (e.g. `toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31'`)
 
 ## optimize_trivial_approximate_count_query {#optimize_trivial_approximate_count_query} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -9666,8 +7743,6 @@ Possible values:
    - 1 — Optimization enabled.
 
 ## optimize_trivial_count_query {#optimize_trivial_count_query} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -9684,11 +7759,7 @@ See also:
 
 ## optimize_trivial_insert_select {#optimize_trivial_insert_select} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "The optimization does not make sense in many cases."}]}]}/>
 
@@ -9696,15 +7767,11 @@ Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
 
 ## optimize_uniq_to_count {#optimize_uniq_to_count} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Rewrite uniq and its variants(except uniqUpTo) to count if subquery has distinct or group by clause.
 
 ## optimize_use_implicit_projections {#optimize_use_implicit_projections} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -9712,19 +7779,13 @@ Automatically choose implicit projections to perform SELECT query
 
 ## optimize_use_projection_filtering {#optimize_use_projection_filtering} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "1"},{"label": "New setting"}]}]}/>
 
 Enables using projections to filter part ranges even when projections are not selected to perform SELECT query.
 
 ## optimize_use_projections {#optimize_use_projections} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -9737,8 +7798,6 @@ Possible values:
 
 ## optimize_using_constraints {#optimize_using_constraints} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Use [constraints](../../sql-reference/statements/create/table.md/#constraints) for query optimization. The default is `false`.
@@ -9748,8 +7807,6 @@ Possible values:
 - true, false
 
 ## os_thread_priority {#os_thread_priority} 
-
-
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -9767,11 +7824,7 @@ Lower values mean higher priority. Threads with low `nice` priority values are e
 
 ## output_format_compression_level {#output_format_compression_level} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="3" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "Allow to change compression level in the query output"}]}]}/>
 
@@ -9781,11 +7834,7 @@ Possible values: from `1` to `22`
 
 ## output_format_compression_zstd_window_log {#output_format_compression_zstd_window_log} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "Allow to change zstd window log in the query output when zstd compression is used"}]}]}/>
 
@@ -9794,8 +7843,6 @@ Can be used when the output compression method is `zstd`. If greater than `0`, t
 Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw an exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
 
 ## output_format_parallel_formatting {#output_format_parallel_formatting} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -9808,11 +7855,7 @@ Possible values:
 
 ## page_cache_block_size {#page_cache_block_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1048576"},{"label": "Made this setting adjustable on a per-query level."}]}]}/>
 
@@ -9824,11 +7867,7 @@ A higher value, like 1 MiB is good for high-throughput queries, and a lower valu
 
 ## page_cache_inject_eviction {#page_cache_inject_eviction} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Added userspace page cache"}]}]}/>
 
@@ -9836,11 +7875,7 @@ Userspace page cache will sometimes invalidate some pages at random. Intended fo
 
 ## page_cache_lookahead_blocks {#page_cache_lookahead_blocks} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="16" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "16"},{"label": "Made this setting adjustable on a per-query level."}]}]}/>
 
@@ -9850,11 +7885,7 @@ A higher value is good for high-throughput queries, while low-latency point quer
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="2" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "2"},{"label": "Enable parallel distributed insert select by default"}]}]}/>
 
@@ -9872,11 +7903,7 @@ Setting `enable_parallel_replicas = 1` is needed when using this setting.
 
 ## parallel_hash_join_threshold {#parallel_hash_join_threshold} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="100000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "100000"},{"label": "New setting"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-3","items": [{"label": "25.3"},{"label": "0"},{"label": "New setting"}]}]}/>
 
@@ -9887,8 +7914,6 @@ The former is used when we know that the right table size is below the threshold
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. This setting will be automatically set up by the initiator server for distributed queries to the index of the replica participating in query processing among parallel replicas.
@@ -9897,11 +7922,7 @@ This is internal setting that should not be used directly and represents an impl
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "If true, subquery for IN will be executed on every follower replica"}]}]}/>
 
@@ -9911,11 +7932,7 @@ If true, subquery for IN will be executed on every follower replica.
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="300" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "300"},{"label": "Separate connection timeout for parallel replicas queries"}]}]}/>
 
@@ -9924,8 +7941,6 @@ The timeout in milliseconds for connecting to a remote replica during query exec
 ## parallel_replicas_count {#parallel_replicas_count} 
 
 <BetaBadge/>
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -9947,11 +7962,7 @@ Otherwise, it will behave same as for `SAMPLE` key, it will use multiple replica
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "Add settings to control the range filter when using parallel replicas with dynamic shards"}]}]}/>
 
@@ -9965,11 +7976,7 @@ Note: This setting will not cause any additional data to be filtered during quer
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "Add settings to control the range filter when using parallel replicas with dynamic shards. A value of 0 disables the upper limit"}]}]}/>
 
@@ -9981,11 +7988,7 @@ Note: This setting will not cause any additional data to be filtered during quer
 
 ## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "1"},{"label": "New setting."}]}]}/>
 
@@ -9995,8 +7998,6 @@ Replace table function engines with their -Cluster alternatives
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 If true, ClickHouse will use parallel replicas algorithm also for non-replicated MergeTree tables
@@ -10005,11 +8006,7 @@ If true, ClickHouse will use parallel replicas algorithm also for non-replicated
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}]}]}/>
 
@@ -10019,11 +8016,7 @@ Index analysis done only on replica-coordinator and skipped on other replicas. E
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"}]}]}/>
 
@@ -10033,11 +8026,7 @@ Use local pipeline during distributed INSERT SELECT with parallel replicas
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "Use local plan for local replica in a query with parallel replicas"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "Use local plan for local replica in a query with parallel replicas"}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "1"},{"label": "Use local plan for local replica in a query with parallel replicas"}]}]}/>
 
@@ -10047,11 +8036,7 @@ Build local plan for local replica
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "Value for this setting now determined automatically"}]}, {"id": "row-2","items": [{"label": "24.1"},{"label": "128"},{"label": "Add new setting to control segment size in new parallel replicas coordinator implementation"}]}]}/>
 
@@ -10061,8 +8046,6 @@ Parts virtually divided into segments to be distributed between replicas for par
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Limit the number of replicas used in a query to (estimated rows to read / min_number_of_rows_per_replica). The max is still limited by 'max_parallel_replicas'
@@ -10071,11 +8054,7 @@ Limit the number of replicas used in a query to (estimated rows to read / min_nu
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="ParallelReplicasMode" default_value="read_tasks" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "read_tasks"},{"label": "This setting was introduced as a part of making parallel replicas feature Beta"}]}]}/>
 
@@ -10085,11 +8064,7 @@ Type of filter to use with custom key for parallel replicas. default - use modul
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Parallel replicas is supported only with analyzer enabled"}]}]}/>
 
@@ -10099,11 +8074,7 @@ The analyzer should be enabled to use parallel replicas. With disabled analyzer 
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "If true, and JOIN can be executed with parallel replicas algorithm, and all storages of right JOIN part are *MergeTree, local JOIN will be used instead of GLOBAL JOIN."}]}]}/>
 
@@ -10113,11 +8084,7 @@ If true, and JOIN can be executed with parallel replicas algorithm, and all stor
 
 <BetaBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "New setting. Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive."}]}]}/>
 
@@ -10125,19 +8092,13 @@ Optimization of projections can be applied in parallel replicas. Effective only 
 
 ## parallel_view_processing {#parallel_view_processing} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Enables pushing to attached views concurrently instead of sequentially.
 
 ## parallelize_output_from_storages {#parallelize_output_from_storages} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.5"},{"label": "1"},{"label": "Allow parallelism when executing queries that read from file/url/s3/etc. This may reorder rows."}]}]}/>
 
@@ -10145,11 +8106,7 @@ Parallelize output for reading step from storage. It allows parallelization of q
 
 ## parsedatetime_e_requires_space_padding {#parsedatetime_e_requires_space_padding} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"}]}]}/>
 
@@ -10158,11 +8115,7 @@ Formatter '%e' in function 'parseDateTime' expects that single-digit days are sp
 
 ## parsedatetime_parse_without_leading_zeros {#parsedatetime_parse_without_leading_zeros} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.11"},{"label": "1"},{"label": "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"}]}]}/>
 
@@ -10170,15 +8123,11 @@ Formatters '%c', '%l' and '%k' in function 'parseDateTime' parse months and hour
 
 ## partial_merge_join_left_table_buffer_bytes {#partial_merge_join_left_table_buffer_bytes} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 If not 0 group left table blocks in bigger ones for left-side table in partial merge join. It uses up to 2x of specified memory per joining thread.
 
 ## partial_merge_join_rows_in_right_blocks {#partial_merge_join_rows_in_right_blocks} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="65536" />
 
@@ -10196,15 +8145,11 @@ Possible values:
 
 ## partial_result_on_first_cancel {#partial_result_on_first_cancel} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Allows query to return a partial result after cancel.
 
 ## parts_to_delay_insert {#parts_to_delay_insert} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -10212,19 +8157,13 @@ If the destination table contains at least that many active parts in a single pa
 
 ## parts_to_throw_insert {#parts_to_throw_insert} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 If more than this number active parts in a single partition of the destination table, throw 'Too many parts ...' exception.
 
 ## per_part_index_stats {#per_part_index_stats} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -10232,15 +8171,11 @@ If more than this number active parts in a single partition of the destination t
 
 ## periodic_live_view_refresh {#periodic_live_view_refresh} 
 
-
-
 <SettingsInfoBlock type="Seconds" default_value="60" />
 
 Interval after which periodically refreshed live view is forced to refresh.
 
 ## poll_interval {#poll_interval} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -10248,11 +8183,7 @@ Block at the query wait loop on the server for the specified number of seconds.
 
 ## postgresql_connection_attempt_timeout {#postgresql_connection_attempt_timeout} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="2" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "2"},{"label": "Allow to control 'connect_timeout' parameter of PostgreSQL connection."}]}]}/>
 
@@ -10261,19 +8192,13 @@ The value is passed as a `connect_timeout` parameter of the connection URL.
 
 ## postgresql_connection_pool_auto_close_connection {#postgresql_connection_pool_auto_close_connection} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Close connection before returning connection to the pool.
 
 ## postgresql_connection_pool_retries {#postgresql_connection_pool_retries} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="2" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "2"},{"label": "Allow to control the number of retries in PostgreSQL connection pool."}]}]}/>
 
@@ -10281,15 +8206,11 @@ Connection pool push/pop retries number for PostgreSQL table engine and database
 
 ## postgresql_connection_pool_size {#postgresql_connection_pool_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="16" />
 
 Connection pool size for PostgreSQL table engine and database engine.
 
 ## postgresql_connection_pool_wait_timeout {#postgresql_connection_pool_wait_timeout} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
@@ -10297,19 +8218,13 @@ Connection pool push/pop timeout on empty pool for PostgreSQL table engine and d
 
 ## postgresql_fault_injection_probability {#postgresql_fault_injection_probability} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 Approximate probability of failing internal (for replication) PostgreSQL queries. Valid value is in interval [0.0f, 1.0f]
 
 ## prefer_column_name_to_alias {#prefer_column_name_to_alias} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -10355,19 +8270,13 @@ Result:
 
 ## prefer_external_sort_block_bytes {#prefer_external_sort_block_bytes} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "16744704"},{"label": "Prefer maximum block bytes for external sort, reduce the memory usage during merging."}]}]}/>
 
 Prefer maximum block bytes for external sort, reduce the memory usage during merging.
 
 ## prefer_global_in_and_join {#prefer_global_in_and_join} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -10392,8 +8301,6 @@ Another use case of `prefer_global_in_and_join` is accessing tables created by 
 
 ## prefer_localhost_replica {#prefer_localhost_replica} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Enables/disables preferable using the localhost replica when processing distributed queries.
@@ -10413,23 +8320,17 @@ If it's used on a cluster with a single shard and multiple replicas, disabling t
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="Int64" default_value="0" />
 
 Only has an effect in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for Replicated-/SharedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 
 ## preferred_block_size_bytes {#preferred_block_size_bytes} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
 
 ## preferred_max_column_in_block_size_bytes {#preferred_max_column_in_block_size_bytes} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -10438,15 +8339,11 @@ Limit on max column size in block while reading. Helps to decrease cache misses 
 ## preferred_optimize_projection_name {#preferred_optimize_projection_name} 
 
 If it is set to a non-empty string, ClickHouse will try to apply specified projection in query.
-
-
 Possible values:
 
 - string: name of preferred projectio
 
 ## prefetch_buffer_size {#prefetch_buffer_size} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
@@ -10454,11 +8351,7 @@ The maximum size of the prefetch buffer to read from the filesystem.
 
 ## print_pretty_type_names {#print_pretty_type_names} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "1"},{"label": "Better user experience."}]}]}/>
 
@@ -10495,8 +8388,6 @@ a   Tuple(
 
 ## priority {#priority} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Priority of the query. 1 - the highest, higher value - lower priority; 0 - do not use priorities.
@@ -10504,8 +8395,6 @@ Priority of the query. 1 - the highest, higher value - lower priority; 0 - do no
 ## promql_database {#promql_database} 
 
 <ExperimentalBadge/>
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": ""},{"label": "New experimental setting"}]}]}/>
 
@@ -10515,27 +8404,19 @@ Specifies the database name used by the 'promql' dialect. Empty string means the
 
 <ExperimentalBadge/>
 
-
-
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": ""},{"label": "New experimental setting"}]}]}/>
 
 Specifies the name of a TimeSeries table used by the 'promql' dialect.
 
 ## push_external_roles_in_interserver_queries {#push_external_roles_in_interserver_queries} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "New setting."}]}]}/>
 
 Enable pushing user roles from originator to other nodes while performing a query.
 
 ## query_cache_compress_entries {#query_cache_compress_entries} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -10548,8 +8429,6 @@ Possible values:
 
 ## query_cache_max_entries {#query_cache_max_entries} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The maximum number of query results the current user may store in the [query cache](../query-cache.md). 0 means unlimited.
@@ -10559,8 +8438,6 @@ Possible values:
 - Positive integer >= 0.
 
 ## query_cache_max_size_in_bytes {#query_cache_max_size_in_bytes} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -10572,8 +8449,6 @@ Possible values:
 
 ## query_cache_min_query_duration {#query_cache_min_query_duration} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
 Minimum duration in milliseconds a query needs to run for its result to be stored in the [query cache](../query-cache.md).
@@ -10584,8 +8459,6 @@ Possible values:
 
 ## query_cache_min_query_runs {#query_cache_min_query_runs} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Minimum number of times a `SELECT` query must run before its result is stored in the [query cache](../query-cache.md).
@@ -10595,8 +8468,6 @@ Possible values:
 - Positive integer >= 0.
 
 ## query_cache_nondeterministic_function_handling {#query_cache_nondeterministic_function_handling} 
-
-
 
 <SettingsInfoBlock type="QueryResultCacheNondeterministicFunctionHandling" default_value="throw" />
 
@@ -10610,8 +8481,6 @@ Possible values:
 
 ## query_cache_share_between_users {#query_cache_share_between_users} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 If turned on, the result of `SELECT` queries cached in the [query cache](../query-cache.md) can be read by other users.
@@ -10624,8 +8493,6 @@ Possible values:
 
 ## query_cache_squash_partial_results {#query_cache_squash_partial_results} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Squash partial result blocks to blocks of size [max_block_size](#max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
@@ -10637,11 +8504,7 @@ Possible values:
 
 ## query_cache_system_table_handling {#query_cache_system_table_handling} 
 
-
-
 <SettingsInfoBlock type="QueryResultCacheSystemTableHandling" default_value="throw" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "throw"},{"label": "The query cache no longer caches results of queries against system tables"}]}]}/>
 
@@ -10655,8 +8518,6 @@ Possible values:
 
 ## query_cache_tag {#query_cache_tag} 
 
-
-
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": ""},{"label": "New setting for labeling query cache settings."}]}]}/>
 
 A string which acts as a label for [query cache](../query-cache.md) entries.
@@ -10668,8 +8529,6 @@ Possible values:
 
 ## query_cache_ttl {#query_cache_ttl} 
 
-
-
 <SettingsInfoBlock type="Seconds" default_value="60" />
 
 After this time in seconds entries in the [query cache](../query-cache.md) become stale.
@@ -10680,11 +8539,7 @@ Possible values:
 
 ## query_condition_cache_store_conditions_as_plaintext {#query_condition_cache_store_conditions_as_plaintext} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting"}]}]}/>
 
@@ -10699,11 +8554,7 @@ Possible values:
 
 ## query_metric_log_interval {#query_metric_log_interval} 
 
-
-
 <SettingsInfoBlock type="Int64" default_value="-1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "-1"},{"label": "New setting."}]}]}/>
 
@@ -10718,11 +8569,7 @@ Default value: -1
 
 ## query_plan_aggregation_in_order {#query_plan_aggregation_in_order} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "22.12"},{"label": "1"},{"label": "Enable some refactoring around query plan"}]}]}/>
 
@@ -10740,11 +8587,7 @@ Possible values:
 
 ## query_plan_convert_join_to_in {#query_plan_convert_join_to_in} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting"}]}]}/>
 
@@ -10752,11 +8595,7 @@ Allow to convert `JOIN` to subquery with `IN` if output columns tied to only lef
 
 ## query_plan_convert_outer_join_to_inner_join {#query_plan_convert_outer_join_to_inner_join} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1"},{"label": "Allow to convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values"}]}]}/>
 
@@ -10764,15 +8603,11 @@ Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filt
 
 ## query_plan_enable_multithreading_after_window_functions {#query_plan_enable_multithreading_after_window_functions} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Enable multithreading after evaluating window functions to allow parallel stream processing
 
 ## query_plan_enable_optimizations {#query_plan_enable_optimizations} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -10788,8 +8623,6 @@ Possible values:
 - 1 - Enable optimizations at the query plan level (but individual optimizations may still be disabled via their individual settings)
 
 ## query_plan_execute_functions_after_sorting {#query_plan_execute_functions_after_sorting} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -10807,8 +8640,6 @@ Possible values:
 
 ## query_plan_filter_push_down {#query_plan_filter_push_down} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
@@ -10825,11 +8656,7 @@ Possible values:
 
 ## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting"}]}]}/>
 
@@ -10838,11 +8665,7 @@ Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both ta
 
 ## query_plan_join_swap_table {#query_plan_join_swap_table} 
 
-
-
 <SettingsInfoBlock type="BoolAuto" default_value="auto" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "auto"},{"label": "New setting. Right table was always chosen before."}]}]}/>
 
@@ -10852,8 +8675,6 @@ Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both ta
     - 'true': Always swap tables (the left table is the build table).
 
 ## query_plan_lift_up_array_join {#query_plan_lift_up_array_join} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -10871,8 +8692,6 @@ Possible values:
 
 ## query_plan_lift_up_union {#query_plan_lift_up_union} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Toggles a query-plan-level optimization which moves larger subtrees of the query plan into union to enable further optimizations.
@@ -10889,19 +8708,13 @@ Possible values:
 
 ## query_plan_max_limit_for_lazy_materialization {#query_plan_max_limit_for_lazy_materialization} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "10"},{"label": "Added new setting to control maximum limit value that allows to use query plan for lazy materialization optimisation. If zero, there is no limit"}]}]}/>
 
 Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 
 ## query_plan_max_optimizations_to_apply {#query_plan_max_optimizations_to_apply} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -10915,8 +8728,6 @@ This is an expert-level setting which should only be used for debugging by devel
 :::
 
 ## query_plan_merge_expressions {#query_plan_merge_expressions} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -10934,11 +8745,7 @@ Possible values:
 
 ## query_plan_merge_filter_into_join_condition {#query_plan_merge_filter_into_join_condition} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "Added new setting to merge filter into join condition"}]}]}/>
 
@@ -10946,11 +8753,7 @@ Allow to merge filter into `JOIN` condition and convert `CROSS JOIN` to `INNER`.
 
 ## query_plan_merge_filters {#query_plan_merge_filters} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Allow to merge filters in the query plan"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "Allow to merge filters in the query plan. This is required to properly support filter-push-down with a new analyzer."}]}]}/>
 
@@ -10958,11 +8761,7 @@ Allow to merge filters in the query plan.
 
 ## query_plan_optimize_lazy_materialization {#query_plan_optimize_lazy_materialization} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "Added new setting to use query plan for lazy materialization optimisation"}]}]}/>
 
@@ -10970,19 +8769,13 @@ Use query plan for lazy materialization optimization.
 
 ## query_plan_optimize_prewhere {#query_plan_optimize_prewhere} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Allow to push down filter to PREWHERE expression for supported storages"}]}]}/>
 
 Allow to push down filter to PREWHERE expression for supported storages
 
 ## query_plan_push_down_limit {#query_plan_push_down_limit} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -11000,8 +8793,6 @@ Possible values:
 
 ## query_plan_read_in_order {#query_plan_read_in_order} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Toggles the read in-order optimization query-plan-level optimization.
@@ -11018,11 +8809,7 @@ Possible values:
 
 ## query_plan_remove_redundant_distinct {#query_plan_remove_redundant_distinct} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.2"},{"label": "1"},{"label": "Remove redundant Distinct step in query plan"}]}]}/>
 
@@ -11040,11 +8827,7 @@ Possible values:
 
 ## query_plan_remove_redundant_sorting {#query_plan_remove_redundant_sorting} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.1"},{"label": "1"},{"label": "Remove redundant sorting in query plan. For example, sorting steps related to ORDER BY clauses in subqueries"}]}]}/>
 
@@ -11062,8 +8845,6 @@ Possible values:
 
 ## query_plan_reuse_storage_ordering_for_window_functions {#query_plan_reuse_storage_ordering_for_window_functions} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
@@ -11079,8 +8860,6 @@ Possible values:
 - 1 - Enable
 
 ## query_plan_split_filter {#query_plan_split_filter} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -11098,11 +8877,7 @@ Possible values:
 
 ## query_plan_try_use_vector_search {#query_plan_try_use_vector_search} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "New setting."}]}]}/>
 
@@ -11120,19 +8895,13 @@ Possible values:
 
 ## query_plan_use_new_logical_join_step {#query_plan_use_new_logical_join_step} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Enable new step"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "New join step, internal change"}]}]}/>
 
 Use new logical join step in query plan.
 
 ## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
@@ -11157,8 +8926,6 @@ See also:
 
 ## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 Sets the period for a real clock timer of the [query profiler](../../operations/optimizing-performance/sampling-query-profiler.md). Real clock timer counts wall-clock time.
@@ -11182,15 +8949,11 @@ See also:
 
 ## queue_max_wait_ms {#queue_max_wait_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
 The wait time in the request queue, if the number of concurrent requests exceeds the maximum.
 
 ## rabbitmq_max_wait_ms {#rabbitmq_max_wait_ms} 
-
-
 
 <SettingsInfoBlock type="Milliseconds" default_value="5000" />
 
@@ -11198,15 +8961,11 @@ The wait time for reading from RabbitMQ before retry.
 
 ## read_backoff_max_throughput {#read_backoff_max_throughput} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 Settings to reduce the number of threads in case of slow reads. Count events when the read bandwidth is less than that many bytes per second.
 
 ## read_backoff_min_concurrency {#read_backoff_min_concurrency} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -11214,15 +8973,11 @@ Settings to try keeping the minimal number of threads in case of slow reads.
 
 ## read_backoff_min_events {#read_backoff_min_events} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
 Settings to reduce the number of threads in case of slow reads. The number of events after which the number of threads will be reduced.
 
 ## read_backoff_min_interval_between_events_ms {#read_backoff_min_interval_between_events_ms} 
-
-
 
 <SettingsInfoBlock type="Milliseconds" default_value="1000" />
 
@@ -11230,15 +8985,11 @@ Settings to reduce the number of threads in case of slow reads. Do not pay atten
 
 ## read_backoff_min_latency_ms {#read_backoff_min_latency_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="1000" />
 
 Setting to reduce the number of threads in case of slow reads. Pay attention only to reads that took at least that much time.
 
 ## read_from_filesystem_cache_if_exists_otherwise_bypass_cache {#read_from_filesystem_cache_if_exists_otherwise_bypass_cache} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -11246,11 +8997,7 @@ Allow to use the filesystem cache in passive mode - benefit from the existing ca
 
 ## read_from_page_cache_if_exists_otherwise_bypass_cache {#read_from_page_cache_if_exists_otherwise_bypass_cache} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Added userspace page cache"}]}]}/>
 
@@ -11258,19 +9005,13 @@ Use userspace page cache in passive mode, similar to read_from_filesystem_cache_
 
 ## read_in_order_two_level_merge_threshold {#read_in_order_two_level_merge_threshold} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Minimal number of parts to read to run preliminary merge step during multithread reading in order of primary key.
 
 ## read_in_order_use_buffering {#read_in_order_use_buffering} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "1"},{"label": "Use buffering before merging while reading in order of primary key"}]}]}/>
 
@@ -11278,11 +9019,7 @@ Use buffering before merging while reading in order of primary key. It increases
 
 ## read_in_order_use_virtual_row {#read_in_order_use_virtual_row} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched."}]}]}/>
 
@@ -11290,15 +9027,11 @@ Use virtual row while reading in order of primary key or its monotonic function 
 
 ## read_overflow_mode {#read_overflow_mode} 
 
-
-
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
 What to do when the limit is exceeded.
 
 ## read_overflow_mode_leaf {#read_overflow_mode_leaf} 
-
-
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -11310,8 +9043,6 @@ Possible options:
 
 ## read_priority {#read_priority} 
 
-
-
 <SettingsInfoBlock type="Int64" default_value="0" />
 
 Priority to read data from local filesystem or remote filesystem. Only supported for 'pread_threadpool' method for local filesystem and for `threadpool` method for remote filesystem.
@@ -11320,11 +9051,7 @@ Priority to read data from local filesystem or remote filesystem. Only supported
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "A setting for ClickHouse Cloud"}]}]}/>
 
@@ -11332,15 +9059,11 @@ Only has an effect in ClickHouse Cloud. Allow reading from distributed cache
 
 ## readonly {#readonly} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 0 - no read-only restrictions. 1 - only read requests, as well as changing explicitly allowed settings. 2 - only read requests, as well as changing settings, except for the 'readonly' setting.
 
 ## receive_data_timeout_ms {#receive_data_timeout_ms} 
-
-
 
 <SettingsInfoBlock type="Milliseconds" default_value="2000" />
 
@@ -11348,15 +9071,11 @@ Connection timeout for receiving first packet of data or packet with positive pr
 
 ## receive_timeout {#receive_timeout} 
 
-
-
 <SettingsInfoBlock type="Seconds" default_value="300" />
 
 Timeout for receiving data from the network, in seconds. If no bytes were received in this interval, the exception is thrown. If you set this setting on the client, the 'send_timeout' for the socket will also be set on the corresponding connection end on the server.
 
 ## regexp_max_matches_per_row {#regexp_max_matches_per_row} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -11368,15 +9087,11 @@ Possible values:
 
 ## reject_expensive_hyperscan_regexps {#reject_expensive_hyperscan_regexps} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Reject patterns which will likely be expensive to evaluate with hyperscan (due to NFA state explosion)
 
 ## remerge_sort_lowered_memory_bytes_ratio {#remerge_sort_lowered_memory_bytes_ratio} 
-
-
 
 <SettingsInfoBlock type="Float" default_value="2" />
 
@@ -11384,15 +9099,11 @@ If memory usage after remerge does not reduced by this ratio, remerge will be di
 
 ## remote_filesystem_read_method {#remote_filesystem_read_method} 
 
-
-
 <SettingsInfoBlock type="String" default_value="threadpool" />
 
 Method of reading data from remote filesystem, one of: read, threadpool.
 
 ## remote_filesystem_read_prefetch {#remote_filesystem_read_prefetch} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -11400,23 +9111,17 @@ Should use prefetching when reading data from remote filesystem.
 
 ## remote_fs_read_backoff_max_tries {#remote_fs_read_backoff_max_tries} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
 Max attempts to read with backoff
 
 ## remote_fs_read_max_backoff_ms {#remote_fs_read_max_backoff_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 Max wait time when trying to read data for remote disk
 
 ## remote_read_min_bytes_for_seek {#remote_read_min_bytes_for_seek} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
@@ -11442,13 +9147,9 @@ This setting allows to specify renaming pattern for files processed by `file` ta
 - Option: `--rename_files_after_processing="processed_%f_%t%e"`
 
 - Query: `SELECT * FROM file('sample.csv')`
-
-
 If reading `sample.csv` is successful, file will be renamed to `processed_sample_1683473210851438.csv`
 
 ## replace_running_query {#replace_running_query} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -11463,8 +9164,6 @@ Set this parameter to 1 for implementing suggestions for segmentation conditions
 
 ## replace_running_query_max_wait_ms {#replace_running_query_max_wait_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="5000" />
 
 The wait time for running the query with the same `query_id` to finish, when the [replace_running_query](#replace_running_query) setting is active.
@@ -11475,8 +9174,6 @@ Possible values:
 - 0 — Throwing an exception that does not allow to run a new query if the server already executes a query with the same `query_id`.
 
 ## replication_wait_for_inactive_replica_timeout {#replication_wait_for_inactive_replica_timeout} 
-
-
 
 <SettingsInfoBlock type="Int64" default_value="120" />
 
@@ -11490,11 +9187,7 @@ Possible values:
 
 ## restore_replace_external_dictionary_source_to_null {#restore_replace_external_dictionary_source_to_null} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -11502,11 +9195,7 @@ Replace external dictionary sources to Null on restore. Useful for testing purpo
 
 ## restore_replace_external_engines_to_null {#restore_replace_external_engines_to_null} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -11514,11 +9203,7 @@ For testing purposes. Replaces all external engines to Null to not initiate exte
 
 ## restore_replace_external_table_functions_to_null {#restore_replace_external_table_functions_to_null} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -11526,19 +9211,13 @@ For testing purposes. Replaces all external table functions to Null to not initi
 
 ## restore_replicated_merge_tree_to_shared_merge_tree {#restore_replicated_merge_tree_to_shared_merge_tree} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "New setting."}]}]}/>
 
 Replace table engine from Replicated*MergeTree -> Shared*MergeTree during RESTORE.
 
 ## result_overflow_mode {#result_overflow_mode} 
-
-
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -11573,11 +9252,7 @@ FORMAT Null;
 
 ## rewrite_count_distinct_if_with_count_distinct_implementation {#rewrite_count_distinct_if_with_count_distinct_implementation} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.8"},{"label": "1"},{"label": "Rewrite countDistinctIf with count_distinct_implementation configuration"}]}]}/>
 
@@ -11590,11 +9265,7 @@ Possible values:
 
 ## s3_allow_multipart_copy {#s3_allow_multipart_copy} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "New setting."}]}]}/>
 
@@ -11602,15 +9273,11 @@ Allow multipart copy in S3.
 
 ## s3_allow_parallel_part_upload {#s3_allow_parallel_part_upload} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Use multiple threads for s3 multipart upload. It may lead to slightly higher memory usage
 
 ## s3_check_objects_after_upload {#s3_check_objects_after_upload} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -11618,19 +9285,13 @@ Check each uploaded object to s3 with head request to be sure that upload was su
 
 ## s3_connect_timeout_ms {#s3_connect_timeout_ms} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1000"},{"label": "Introduce new dedicated setting for s3 connection timeout"}]}]}/>
 
 Connection timeout for host from s3 disks.
 
 ## s3_create_new_file_on_insert {#s3_create_new_file_on_insert} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -11646,19 +9307,13 @@ See more details [here](/integrations/s3#inserting-data).
 
 ## s3_disable_checksum {#s3_disable_checksum} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Do not calculate a checksum when sending a file to S3. This speeds up writes by avoiding excessive processing passes on a file. It is mostly safe as the data of MergeTree tables is checksummed by ClickHouse anyway, and when S3 is accessed with HTTPS, the TLS layer already provides integrity while transferring through the network. While additional checksums on S3 give defense in depth.
 
 ## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in S3 table engine"}]}]}/>
 
@@ -11670,15 +9325,11 @@ Possible values:
 
 ## s3_list_object_keys_size {#s3_list_object_keys_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 Maximum number of files that could be returned in batch by ListObject request
 
 ## s3_max_connections {#s3_max_connections} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -11686,15 +9337,11 @@ The maximum number of connections per server.
 
 ## s3_max_get_burst {#s3_max_get_burst} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `s3_max_get_rps`
 
 ## s3_max_get_rps {#s3_max_get_rps} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -11702,19 +9349,13 @@ Limit on S3 GET request per second rate before throttling. Zero means unlimited.
 
 ## s3_max_inflight_parts_for_one_file {#s3_max_inflight_parts_for_one_file} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
 The maximum number of a concurrent loaded parts in multipart upload request. 0 means unlimited.
 
 ## s3_max_part_number {#s3_max_part_number} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "10000"},{"label": "Maximum part number number for s3 upload part"}]}]}/>
 
@@ -11722,15 +9363,11 @@ Maximum part number number for s3 upload part.
 
 ## s3_max_put_burst {#s3_max_put_burst} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `s3_max_put_rps`
 
 ## s3_max_put_rps {#s3_max_put_rps} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -11738,19 +9375,13 @@ Limit on S3 PUT request per second rate before throttling. Zero means unlimited.
 
 ## s3_max_redirects {#s3_max_redirects} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
 Max number of S3 redirects hops allowed.
 
 ## s3_max_single_operation_copy_size {#s3_max_single_operation_copy_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="33554432" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "33554432"},{"label": "Maximum size for a single copy operation in s3"}]}]}/>
 
@@ -11758,15 +9389,11 @@ Maximum size for single-operation copy in s3. This setting is used only if s3_al
 
 ## s3_max_single_part_upload_size {#s3_max_single_part_upload_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="33554432" />
 
 The maximum size of object to upload using singlepart upload to S3.
 
 ## s3_max_single_read_retries {#s3_max_single_read_retries} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
@@ -11774,15 +9401,11 @@ The maximum number of retries during single S3 read.
 
 ## s3_max_unexpected_write_error_retries {#s3_max_unexpected_write_error_retries} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
 The maximum number of retries in case of unexpected errors during S3 write.
 
 ## s3_max_upload_part_size {#s3_max_upload_part_size} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" />
 
@@ -11790,15 +9413,11 @@ The maximum size of part to upload during multipart upload to S3.
 
 ## s3_min_upload_part_size {#s3_min_upload_part_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
 
 The minimum size of part to upload during multipart upload to S3.
 
 ## s3_request_timeout_ms {#s3_request_timeout_ms} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />
 
@@ -11806,19 +9425,13 @@ Idleness timeout for sending and receiving data to/from S3. Fail if a single TCP
 
 ## s3_retry_attempts {#s3_retry_attempts} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries
 
 ## s3_skip_empty_files {#s3_skip_empty_files} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "We hope it will provide better UX"}]}]}/>
 
@@ -11830,11 +9443,7 @@ Possible values:
 
 ## s3_slow_all_threads_after_network_error {#s3_slow_all_threads_after_network_error} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -11844,11 +9453,7 @@ When set to `false`, each thread handles S3 request backoff independently of the
 
 ## s3_slow_all_threads_after_retryable_error {#s3_slow_all_threads_after_retryable_error} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1"},{"label": "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "1"},{"label": "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"}]}, {"id": "row-3","items": [{"label": "25.6"},{"label": "1"},{"label": "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"}]}]}/>
 
@@ -11858,23 +9463,17 @@ When set to `false`, each thread handles s3 request backoff independently of the
 
 ## s3_strict_upload_part_size {#s3_strict_upload_part_size} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 The exact size of part to upload during multipart upload to S3 (some implementations does not supports variable size parts).
 
 ## s3_throw_on_zero_files_match {#s3_throw_on_zero_files_match} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Throw an error, when ListObjects request cannot match any files
 
 ## s3_truncate_on_insert {#s3_truncate_on_insert} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -11888,23 +9487,17 @@ See more details [here](/integrations/s3#inserting-data).
 
 ## s3_upload_part_size_multiply_factor {#s3_upload_part_size_multiply_factor} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
 Multiply s3_min_upload_part_size by this factor each time s3_multiply_parts_count_threshold parts were uploaded from a single write to S3.
 
 ## s3_upload_part_size_multiply_parts_count_threshold {#s3_upload_part_size_multiply_parts_count_threshold} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
 Each time this number of parts was uploaded to S3, s3_min_upload_part_size is multiplied by s3_upload_part_size_multiply_factor.
 
 ## s3_use_adaptive_timeouts {#s3_use_adaptive_timeouts} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -11913,11 +9506,7 @@ When set to `false` than all attempts are made with identical timeouts.
 
 ## s3_validate_request_settings {#s3_validate_request_settings} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "Allow to disable S3 request settings validation"}]}]}/>
 
@@ -11928,15 +9517,11 @@ Possible values:
 
 ## s3queue_default_zookeeper_path {#s3queue_default_zookeeper_path} 
 
-
-
 <SettingsInfoBlock type="String" default_value="/clickhouse/s3queue/" />
 
 Default zookeeper path prefix for S3Queue engine
 
 ## s3queue_enable_logging_to_s3queue_log {#s3queue_enable_logging_to_s3queue_log} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -11944,11 +9529,7 @@ Enable writing to system.s3queue_log. The value can be overwritten per table wit
 
 ## s3queue_migrate_old_metadata_to_buckets {#s3queue_migrate_old_metadata_to_buckets} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -11956,15 +9537,11 @@ Migrate old metadata structure of S3Queue table to a new one
 
 ## schema_inference_cache_require_modification_time_for_url {#schema_inference_cache_require_modification_time_for_url} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Use schema from cache for URL with last modification time validation (for URLs with Last-Modified header)
 
 ## schema_inference_use_cache_for_azure {#schema_inference_use_cache_for_azure} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -11972,15 +9549,11 @@ Use cache in schema inference while using azure table functio
 
 ## schema_inference_use_cache_for_file {#schema_inference_use_cache_for_file} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Use cache in schema inference while using file table functio
 
 ## schema_inference_use_cache_for_hdfs {#schema_inference_use_cache_for_hdfs} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -11988,15 +9561,11 @@ Use cache in schema inference while using hdfs table functio
 
 ## schema_inference_use_cache_for_s3 {#schema_inference_use_cache_for_s3} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Use cache in schema inference while using s3 table functio
 
 ## schema_inference_use_cache_for_url {#schema_inference_use_cache_for_url} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -12004,19 +9573,13 @@ Use cache in schema inference while using url table functio
 
 ## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "A new algorithm for filtering by data skipping indices"}]}]}/>
 
 Enable the bulk filtering algorithm for indices. It is expected to be always better, but we have this setting for compatibility and control.
 
 ## select_sequential_consistency {#select_sequential_consistency} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -12045,8 +9608,6 @@ See also:
 
 ## send_logs_level {#send_logs_level} 
 
-
-
 <SettingsInfoBlock type="LogsLevel" default_value="fatal" />
 
 Send server text logs with specified minimum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
@@ -12056,8 +9617,6 @@ Send server text logs with specified minimum level to client. Valid values: 'tra
 Send server text logs with specified regexp to match log source name. Empty means all sources.
 
 ## send_progress_in_http_headers {#send_progress_in_http_headers} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -12072,19 +9631,13 @@ Possible values:
 
 ## send_timeout {#send_timeout} 
 
-
-
 <SettingsInfoBlock type="Seconds" default_value="300" />
 
 Timeout for sending data to the network, in seconds. If a client needs to send some data but is not able to send any bytes in this interval, the exception is thrown. If you set this setting on the client, the 'receive_timeout' for the socket will also be set on the corresponding connection end on the server.
 
 ## serialize_query_plan {#serialize_query_plan} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "NewSetting"}]}]}/>
 
@@ -12155,8 +9708,6 @@ This happens due to different parsing pipelines:
 
 ## set_overflow_mode {#set_overflow_mode} 
 
-
-
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
 Sets what happens when the amount of data exceeds one of the limits.
@@ -12168,19 +9719,13 @@ source data ran out.
 
 ## shared_merge_tree_sync_parts_on_partition_operations {#shared_merge_tree_sync_parts_on_partition_operations} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "New setting. By default parts are always synchronized"}]}]}/>
 
 Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
 
 ## short_circuit_function_evaluation {#short_circuit_function_evaluation} 
-
-
 
 <SettingsInfoBlock type="ShortCircuitFunctionEvaluation" default_value="enable" />
 
@@ -12194,11 +9739,7 @@ Possible values:
 
 ## short_circuit_function_evaluation_for_nulls {#short_circuit_function_evaluation_for_nulls} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Allow to execute functions with Nullable arguments only on rows with non-NULL values in all arguments"}]}]}/>
 
@@ -12206,11 +9747,7 @@ Optimizes evaluation of functions that return NULL when any argument is NULL. Wh
 
 ## short_circuit_function_evaluation_for_nulls_threshold {#short_circuit_function_evaluation_for_nulls_threshold} 
 
-
-
 <SettingsInfoBlock type="Double" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled."}]}]}/>
 
@@ -12219,11 +9756,7 @@ When the ratio of rows containing NULL values to the total number of rows exceed
 
 ## show_data_lake_catalogs_in_system_tables {#show_data_lake_catalogs_in_system_tables} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -12231,11 +9764,7 @@ Enables showing data lake catalogs in system tables.
 
 ## show_table_uuid_in_table_create_query_if_not_nil {#show_table_uuid_in_table_create_query_if_not_nil} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "20.7"},{"label": "0"},{"label": "Stop showing  UID of the table in its CREATE query for Engine=Atomic"}]}]}/>
 
@@ -12248,19 +9777,13 @@ Possible values:
 
 ## single_join_prefer_left_table {#single_join_prefer_left_table} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 For single JOIN in case of identifier ambiguity prefer left table
 
 ## skip_redundant_aliases_in_udf {#skip_redundant_aliases_in_udf} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "When enabled, this allows you to use the same user defined function several times for several materialized columns in the same table."}]}]}/>
 
@@ -12307,8 +9830,6 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 
 ## skip_unavailable_shards {#skip_unavailable_shards} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Enables or disables silently skipping of unavailable shards.
@@ -12339,15 +9860,11 @@ Possible values:
 
 ## sleep_after_receiving_query_ms {#sleep_after_receiving_query_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
 Time to sleep after receiving query in TCPHandler
 
 ## sleep_in_send_data_ms {#sleep_in_send_data_ms} 
-
-
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
@@ -12355,15 +9872,11 @@ Time to sleep in sending data in TCPHandler
 
 ## sleep_in_send_tables_status_ms {#sleep_in_send_tables_status_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
 Time to sleep in sending tables status response in TCPHandler
 
 ## sort_overflow_mode {#sort_overflow_mode} 
-
-
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -12375,11 +9888,7 @@ Possible values:
 
 ## split_intersecting_parts_ranges_into_layers_final {#split_intersecting_parts_ranges_into_layers_final} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Allow to split intersecting parts ranges into layers during FINAL optimization"}]}, {"id": "row-2","items": [{"label": "24.1"},{"label": "1"},{"label": "Allow to split intersecting parts ranges into layers during FINAL optimization"}]}]}/>
 
@@ -12387,19 +9896,13 @@ Split intersecting parts ranges into layers during FINAL optimizatio
 
 ## split_parts_ranges_into_intersecting_and_non_intersecting_final {#split_parts_ranges_into_intersecting_and_non_intersecting_final} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Allow to split parts ranges into intersecting and non intersecting during FINAL optimization"}]}, {"id": "row-2","items": [{"label": "24.1"},{"label": "1"},{"label": "Allow to split parts ranges into intersecting and non intersecting during FINAL optimization"}]}]}/>
 
 Split parts ranges into intersecting and non intersecting during FINAL optimizatio
 
 ## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -12414,15 +9917,11 @@ Possible values:
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 
 ## storage_file_read_method {#storage_file_read_method} 
-
-
 
 <SettingsInfoBlock type="LocalFSReadMethod" default_value="pread" />
 
@@ -12430,15 +9929,11 @@ Method of reading data from storage file, one of: `read`, `pread`, `mmap`. The m
 
 ## storage_system_stack_trace_pipe_read_timeout_ms {#storage_system_stack_trace_pipe_read_timeout_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="100" />
 
 Maximum time to read from a pipe for receiving information from the threads when querying the `system.stack_trace` table. This setting is used for testing purposes and not meant to be changed by users.
 
 ## stream_flush_interval_ms {#stream_flush_interval_ms} 
-
-
 
 <SettingsInfoBlock type="Milliseconds" default_value="7500" />
 
@@ -12450,11 +9945,7 @@ The smaller the value, the more often data is flushed into the table. Setting th
 
 ## stream_like_engine_allow_direct_select {#stream_like_engine_allow_direct_select} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.12"},{"label": "0"},{"label": "Do not allow direct select for Kafka/RabbitMQ/FileLog by default"}]}]}/>
 
@@ -12466,15 +9957,11 @@ When stream-like engine reads from multiple queues, the user will need to select
 
 ## stream_poll_timeout_ms {#stream_poll_timeout_ms} 
 
-
-
 <SettingsInfoBlock type="Milliseconds" default_value="500" />
 
 Timeout for polling data from/to streaming storages.
 
 ## system_events_show_zero_values {#system_events_show_zero_values} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -12519,19 +10006,13 @@ Result
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc)
 
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -12543,27 +10024,19 @@ Possible values:
 
 ## tcp_keep_alive_timeout {#tcp_keep_alive_timeout} 
 
-
-
 <SettingsInfoBlock type="Seconds" default_value="290" />
 
 The time in seconds the connection needs to remain idle before TCP starts sending keepalive probes
 
 ## temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds {#temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="600000" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "600000"},{"label": "Wait time to lock cache for sapce reservation in temporary data in filesystem cache"}]}]}/>
 
 Wait time to lock cache for space reservation for temporary data in filesystem cache
 
 ## temporary_files_codec {#temporary_files_codec} 
-
-
 
 <SettingsInfoBlock type="String" default_value="LZ4" />
 
@@ -12576,11 +10049,7 @@ Possible values:
 
 ## throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert {#throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "Deduplication in dependent materialized view cannot work together with async inserts."}]}]}/>
 
@@ -12588,23 +10057,17 @@ Throw exception on INSERT query when the setting `deduplicate_blocks_in_dependen
 
 ## throw_if_no_data_to_insert {#throw_if_no_data_to_insert} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Allows or forbids empty INSERTs, enabled by default (throws an error on an empty insert). Only applies to INSERTs using [`clickhouse-client`](/interfaces/cli) or using the [gRPC interface](/interfaces/grpc).
 
 ## throw_on_error_from_cache_on_write_operations {#throw_on_error_from_cache_on_write_operations} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ignore error from cache when caching on write operations (INSERT, merges)
 
 ## throw_on_max_partitions_per_insert_block {#throw_on_max_partitions_per_insert_block} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -12622,15 +10085,11 @@ This can be useful if you're trying to understand the impact on users when chang
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Throw exception if unsupported query is used inside transactio
 
 ## timeout_before_checking_execution_speed {#timeout_before_checking_execution_speed} 
-
-
 
 <SettingsInfoBlock type="Seconds" default_value="10" />
 
@@ -12638,8 +10097,6 @@ Checks that execution speed is not too slow (no less than `min_execution_speed`)
 after the specified time in seconds has expired.
 
 ## timeout_overflow_mode {#timeout_overflow_mode} 
-
-
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -12653,8 +10110,6 @@ source data ran out.
 
 ## timeout_overflow_mode_leaf {#timeout_overflow_mode_leaf} 
 
-
-
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
 Sets what happens when the query in leaf node run longer than `max_execution_time_leaf`.
@@ -12666,8 +10121,6 @@ source data ran out.
 
 ## totals_auto_threshold {#totals_auto_threshold} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="0.5" />
 
 The threshold for `totals_mode = 'auto'`.
@@ -12675,16 +10128,12 @@ See the section "WITH TOTALS modifier".
 
 ## totals_mode {#totals_mode} 
 
-
-
 <SettingsInfoBlock type="TotalsMode" default_value="after_having_exclusive" />
 
 How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.
 See the section "WITH TOTALS modifier".
 
 ## trace_profile_events {#trace_profile_events} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -12697,8 +10146,6 @@ Possible values:
 
 ## transfer_overflow_mode {#transfer_overflow_mode} 
 
-
-
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
 Sets what happens when the amount of data exceeds one of the limits.
@@ -12709,8 +10156,6 @@ Possible values:
 source data ran out.
 
 ## transform_null_in {#transform_null_in} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -12770,11 +10215,7 @@ Result:
 
 ## traverse_shadow_remote_data_paths {#traverse_shadow_remote_data_paths} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Traverse shadow directory when query system.remote_data_paths."}]}]}/>
 
@@ -12794,19 +10235,13 @@ See examples in [UNION](../../sql-reference/statements/select/union.md).
 
 ## unknown_packet_in_send_data {#unknown_packet_in_send_data} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Send unknown packet instead of data Nth data packet
 
 ## update_parallel_mode {#update_parallel_mode} 
 
-
-
 <SettingsInfoBlock type="UpdateParallelMode" default_value="auto" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "auto"},{"label": "A new setting"}]}]}/>
 
@@ -12819,11 +10254,7 @@ Possible values:
 
 ## update_sequential_consistency {#update_sequential_consistency} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "A new setting"}]}]}/>
 
@@ -12831,19 +10262,13 @@ If true set of parts is updated to the latest version before execution of update
 
 ## use_async_executor_for_materialized_views {#use_async_executor_for_materialized_views} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting."}]}]}/>
 
 Use async and potentially multithreaded execution of materialized view query, can speedup views processing during INSERT, but also consume more memory.
 
 ## use_cache_for_count_from_files {#use_cache_for_count_from_files} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -12853,19 +10278,13 @@ Enabled by default.
 
 ## use_client_time_zone {#use_client_time_zone} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Use client timezone for interpreting DateTime string values, instead of adopting server timezone.
 
 ## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "Use compact format for async INSERT into Distributed tables by default"}]}]}/>
 
@@ -12883,11 +10302,7 @@ Possible values:
 
 ## use_concurrency_control {#use_concurrency_control} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "Enable concurrency control by default"}]}]}/>
 
@@ -12895,11 +10310,7 @@ Respect the server's concurrency control (see the `concurrent_threads_soft_limit
 
 ## use_hedged_requests {#use_hedged_requests} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.9"},{"label": "1"},{"label": "Enable Hedged Requests feature by default"}]}]}/>
 
@@ -12914,11 +10325,7 @@ Disabled by default on Cloud.
 
 ## use_hive_partitioning {#use_hive_partitioning} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Enabled the setting by default."}]}, {"id": "row-2","items": [{"label": "24.8"},{"label": "0"},{"label": "Allows to use hive partitioning for File, URL, S3, AzureBlobStorage and HDFS engines."}]}]}/>
 
@@ -12926,11 +10333,7 @@ When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=val
 
 ## use_iceberg_metadata_files_cache {#use_iceberg_metadata_files_cache} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "New setting"}]}]}/>
 
@@ -12943,11 +10346,7 @@ Possible values:
 
 ## use_iceberg_partition_pruning {#use_iceberg_partition_pruning} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "1"},{"label": "Enable Iceberg partition pruning by default."}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "New setting for Iceberg partition pruning."}]}]}/>
 
@@ -12955,15 +10354,11 @@ Use Iceberg partition pruning for Iceberg tables
 
 ## use_index_for_in_with_subqueries {#use_index_for_in_with_subqueries} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Try using an index if there is a subquery or a table expression on the right side of the IN operator.
 
 ## use_index_for_in_with_subqueries_max_values {#use_index_for_in_with_subqueries_max_values} 
-
-
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -12971,11 +10366,7 @@ The maximum size of the set in the right-hand side of the IN operator to use tab
 
 ## use_json_alias_for_old_object_type {#use_json_alias_for_old_object_type} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Use JSON type alias to create new JSON type"}]}]}/>
 
@@ -12983,11 +10374,7 @@ When enabled, `JSON` data type alias will be used to create an old [Object('json
 
 ## use_legacy_to_time {#use_legacy_to_time} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "1"},{"label": "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."}]}]}/>
 
@@ -12997,11 +10384,7 @@ The old legacy function is also unconditionally accessible as toTimeWithFixedDat
 
 ## use_page_cache_for_disks_without_file_cache {#use_page_cache_for_disks_without_file_cache} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Added userspace page cache"}]}]}/>
 
@@ -13009,19 +10392,13 @@ Use userspace page cache for remote disks that don't have filesystem cache enabl
 
 ## use_page_cache_with_distributed_cache {#use_page_cache_with_distributed_cache} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 Use userspace page cache when distributed cache is used.
 
 ## use_query_cache {#use_query_cache} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -13035,11 +10412,7 @@ Possible values:
 
 ## use_query_condition_cache {#use_query_condition_cache} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "1"},{"label": "A new optimization"}]}, {"id": "row-2","items": [{"label": "25.3"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -13053,19 +10426,13 @@ Possible values:
 
 ## use_roaring_bitmap_iceberg_positional_deletes {#use_roaring_bitmap_iceberg_positional_deletes} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 Use roaring bitmap for iceberg positional deletes.
 
 ## use_skip_indexes {#use_skip_indexes} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -13078,11 +10445,7 @@ Possible values:
 
 ## use_skip_indexes_if_final {#use_skip_indexes_if_final} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "1"},{"label": "Change in default value of setting"}]}]}/>
 
@@ -13097,11 +10460,7 @@ Possible values:
 
 ## use_skip_indexes_if_final_exact_mode {#use_skip_indexes_if_final_exact_mode} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "1"},{"label": "Change in default value of setting"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "This setting was introduced to help FINAL query return correct results with skip indexes"}]}]}/>
 
@@ -13114,21 +10473,30 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 
+## use_skip_indexes_on_data_read {#use_skip_indexes_on_data_read} 
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1"},{"label": "New setting"}]}]}/>
+
+Enable using data skipping indexes during data reading.
+
+When enabled, skip indexes are evaluated dynamically at the time each data granule is being read, rather than being analyzed in advance before query execution begins. This can reduce query startup latency.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
 ## use_structure_from_insertion_table_in_table_functions {#use_structure_from_insertion_table_in_table_functions} 
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="2" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "22.11"},{"label": "2"},{"label": "Improve using structure from insertion table in table functions"}]}]}/>
 
 Use structure from insertion table instead of schema inference from data. Possible values: 0 - disabled, 1 - enabled, 2 - auto
 
 ## use_uncompressed_cache {#use_uncompressed_cache} 
-
-
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -13139,11 +10507,7 @@ For queries that read at least a somewhat large volume of data (one million rows
 
 ## use_variant_as_common_type {#use_variant_as_common_type} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "Allow to use Variant in if/multiIf if there is no common type"}]}]}/>
 
@@ -13227,11 +10591,7 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
 
 ## use_with_fill_by_sorting_prefix {#use_with_fill_by_sorting_prefix} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.5"},{"label": "1"},{"label": "Columns preceding WITH FILL columns in ORDER BY clause form sorting prefix. Rows with different values in sorting prefix are filled independently"}]}]}/>
 
@@ -13239,11 +10599,7 @@ Columns preceding WITH FILL columns in ORDER BY clause form sorting prefix. Rows
 
 ## validate_enum_literals_in_operators {#validate_enum_literals_in_operators} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "A new setting"}]}]}/>
 
@@ -13251,11 +10607,7 @@ If enabled, validate enum literals in operators like `IN`, `NOT IN`, `==`, `!=` 
 
 ## validate_mutation_query {#validate_mutation_query} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "New setting to validate mutation queries by default."}]}]}/>
 
@@ -13265,11 +10617,7 @@ Only change this setting if you encounter a backward-incompatible bug.
 
 ## validate_polygons {#validate_polygons} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "20.4"},{"label": "1"},{"label": "Throw exception if polygon is invalid in function pointInPolygon by default instead of returning possibly wrong results"}]}]}/>
 
@@ -13282,11 +10630,7 @@ Possible values:
 
 ## vector_search_filter_strategy {#vector_search_filter_strategy} 
 
-
-
 <SettingsInfoBlock type="VectorSearchFilterStrategy" default_value="auto" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "auto"},{"label": "New setting"}]}]}/>
 
@@ -13297,11 +10641,7 @@ If a vector search query has a WHERE clause, this setting determines if it is ev
 
 ## vector_search_index_fetch_multiplier {#vector_search_index_fetch_multiplier} 
 
-
-
 <SettingsInfoBlock type="Float" default_value="1" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Alias for setting 'vector_search_postfilter_multiplier'"}]}]}/>
 
@@ -13309,11 +10649,7 @@ Multiply the number of fetched nearest neighbors from the vector similarity inde
 
 ## vector_search_with_rescoring {#vector_search_with_rescoring} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -13327,23 +10663,17 @@ Note: A query run without rescoring and with parallel replicas enabled may fall 
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="TransactionsWaitCSNMode" default_value="wait_unknown" />
 
 Wait for committed changes to become actually visible in the latest snapshot
 
 ## wait_for_async_insert {#wait_for_async_insert} 
 
-
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 If true wait for processing of asynchronous insertio
 
 ## wait_for_async_insert_timeout {#wait_for_async_insert_timeout} 
-
-
 
 <SettingsInfoBlock type="Seconds" default_value="120" />
 
@@ -13353,8 +10683,6 @@ Timeout for waiting for processing asynchronous insertio
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Seconds" default_value="10" />
 
 Timeout for waiting for window view fire signal in event time processing
@@ -13362,8 +10690,6 @@ Timeout for waiting for window view fire signal in event time processing
 ## window_view_clean_interval {#window_view_clean_interval} 
 
 <ExperimentalBadge/>
-
-
 
 <SettingsInfoBlock type="Seconds" default_value="60" />
 
@@ -13373,15 +10699,11 @@ The clean interval of window view in seconds to free outdated data.
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Seconds" default_value="15" />
 
 The heartbeat interval in seconds to indicate watch query is alive.
 
 ## workload {#workload} 
-
-
 
 <SettingsInfoBlock type="String" default_value="default" />
 
@@ -13391,11 +10713,7 @@ Name of workload to be used to access resources
 
 <ExperimentalBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting."}]}]}/>
 
@@ -13405,11 +10723,7 @@ Write full paths (including s3://) into iceberg metadata files.
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="Bool" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "A setting for ClickHouse Cloud"}]}]}/>
 
@@ -13419,11 +10733,7 @@ Only has an effect in ClickHouse Cloud. Allow writing to distributed cache (writ
 
 <CloudOnlyBadge/>
 
-
-
 <SettingsInfoBlock type="UInt64" default_value="0" />
-
-
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "New cloud setting"}]}]}/>
 
@@ -13431,10 +10741,6 @@ Only has an effect in ClickHouse Cloud. Set buffer size for write-through distri
 
 ## zstd_window_log_max {#zstd_window_log_max} 
 
-
-
 <SettingsInfoBlock type="Int64" default_value="0" />
 
 Allows you to select the max window log of ZSTD (it will not be used for MergeTree family)
-
-

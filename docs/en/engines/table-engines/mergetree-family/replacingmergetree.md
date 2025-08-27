@@ -74,8 +74,6 @@ SELECT * FROM myFirstReplacingMT FINAL;
 ┌─key─┬─someCol─┬───────────eventTime─┐
 │   1 │ second  │ 2020-01-01 00:00:00 │
 └─────┴─────────┴─────────────────────┘
-
-
 -- with ver - the row with the biggest ver 'wins'
 CREATE TABLE mySecondReplacingMT
 (

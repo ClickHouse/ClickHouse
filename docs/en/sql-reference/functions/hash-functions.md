@@ -802,8 +802,6 @@ Result:
 │ 12384823029245979431 │ 1188926775431157506 │
 └──────────────────────┴─────────────────────┘
 ```
-
-
 ## kafkaMurmurHash {#kafkamurmurhash}
 
 Calculates a 32-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [Kafka](https://github.com/apache/kafka/blob/461c5cfe056db0951d9b74f5adc45973670404d7/clients/src/main/java/org/apache/kafka/common/utils/Utils.java#L482) and without the highest bit to be compatible with [Default Partitioner](https://github.com/apache/kafka/blob/139f7709bd3f5926901a21e55043388728ccca78/clients/src/main/java/org/apache/kafka/clients/producer/internals/BuiltInPartitioner.java#L328).

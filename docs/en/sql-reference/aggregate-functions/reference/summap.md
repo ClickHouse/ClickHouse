@@ -5,7 +5,7 @@ description: 'Totals a `value` array according to the keys specified in the `key
 sidebar_position: 198
 slug: /sql-reference/aggregate-functions/reference/summap
 title: 'sumMap'
-doc_type: 'reference'
+doc_type: 'how-to'
 ---
 
 # sumMap
