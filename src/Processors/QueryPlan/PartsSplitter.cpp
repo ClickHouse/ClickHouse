@@ -947,6 +947,14 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
         const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
+
+        /// The optimization's logic needs the final mark to get the primary key upper bound of this part.
+        /// The final mark may not be written under some situations e.g index_granularity_bytes = 0.
+        if (!index_granularity->hasFinalMark())
+        {
+            return skip_and_return_all_part_ranges();
+        }
+
         for (const auto & range : ranges_in_data_parts[part_index].ranges)
         {
             const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
