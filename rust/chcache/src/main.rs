@@ -1,5 +1,6 @@
 use log::{error, info, trace, warn};
 use std::error::Error;
+use std::path::PathBuf;
 
 mod compilers;
 mod config;
@@ -40,23 +41,41 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
         _ => {}
     }
 
-    let compiler_path = compiler_path_or_command;
+    let compiler_path: PathBuf = PathBuf::from(compiler_path_or_command);
 
-    trace!("Compiler: {}", compiler_path);
+    trace!("Compiler: {}", compiler_path.display());
     trace!("Args: {:?}", rest_of_args);
 
-    let just_compiler_name = compiler_path
-        .split('/')
-        .last()
-        .unwrap_or(&compiler_path)
+    let mut compiler_binary_name = compiler_path.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap()
         .to_string();
 
-    let compiler = match just_compiler_name.as_str() {
-        RustC::NAME => RustC::from_args(compiler_path.clone(), rest_of_args.clone()),
-        Clang::NAME => Clang::from_args(compiler_path.clone(), rest_of_args.clone()),
-        ClangXX::NAME => ClangXX::from_args(compiler_path.clone(), rest_of_args.clone()),
+    if compiler_binary_name.starts_with(RustC::NAME) {
+        compiler_binary_name = RustC::NAME.to_string();
+    } else if compiler_binary_name.starts_with(ClangXX::NAME) {
+        compiler_binary_name = ClangXX::NAME.to_string();
+    } else if compiler_binary_name.starts_with(Clang::NAME) {
+        compiler_binary_name = Clang::NAME.to_string();
+    } else {
+        panic!("Unknown compiler: {}", compiler_binary_name);
+    }
+
+    let compiler = match compiler_binary_name.as_str() {
+        RustC::NAME => RustC::from_args(
+            compiler_path.as_path(),
+            rest_of_args.clone(),
+        ),
+        Clang::NAME => Clang::from_args(
+            compiler_path.as_path(),
+            rest_of_args.clone(),
+        ),
+        ClangXX::NAME => ClangXX::from_args(
+            compiler_path.as_path(),
+            rest_of_args.clone(),
+        ),
         _ => {
-            panic!("Unknown compiler: {}", compiler_path);
+            panic!("Unknown compiler: {}", compiler_path.display());
         }
     };
 
@@ -137,7 +156,7 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
         }
     };
 
-    if !did_load_from_local_cache {
+    if config.use_local_store && !did_load_from_local_cache {
         local_disk
             .write(&total_hash, &compiled_bytes)
             .await
