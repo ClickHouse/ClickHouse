@@ -147,7 +147,7 @@ void MergingSortedAlgorithm::insertRow(const SortCursorImpl & current)
         }
     };
 
-    UInt64 current_row = current.getRow();
+    size_t current_row = current.getRow();
 
     if (hasFilter())
     {
@@ -161,7 +161,7 @@ void MergingSortedAlgorithm::insertRow(const SortCursorImpl & current)
     }
     else
     {
-        merged_data.insertRow(current.all_columns, current.getRow(), current.rows);
+        merged_data.insertRow(current.all_columns, current_row, current.rows);
         write_row_source(false);
     }
 }

@@ -1164,6 +1164,9 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
     size_t part_starting_offset = 0;
+    /// Do not apply mask for lightweight delete in vertical merge, because it is applied in merging algorithm
+    bool apply_deleted_mask = !global_ctx->vertical_lightweight_delete;
+
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
         auto plan_for_part = std::make_unique<QueryPlan>();
@@ -1177,8 +1180,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             global_ctx->merged_part_offsets,
             Names{column_name},
             global_ctx->input_rows_filtered,
-            /// Mask will be applied in merging algorithm
-            !global_ctx->vertical_lightweight_delete,
+            apply_deleted_mask,
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
             ctx->use_prefetch,
@@ -1936,6 +1938,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     }
 
     global_ctx->vertical_lightweight_delete = isVerticalLightweightDelete(*global_ctx);
+    /// Do not apply mask for lightweight delete in vertical merge, because it is applied in merging algorithm
+    bool apply_deleted_mask = !global_ctx->vertical_lightweight_delete;
 
     if (global_ctx->vertical_lightweight_delete)
     {
@@ -1951,7 +1955,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             LOG_TRACE(ctx->log, "Part {} is empty", global_ctx->future_part->parts[i]->name);
 
         auto plan_for_part = std::make_unique<QueryPlan>();
-
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Merge,
             *plan_for_part,
@@ -1962,8 +1965,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->merged_part_offsets,
             merging_column_names,
             global_ctx->input_rows_filtered,
-            /// Mask is applied in merging algorithm
-            !global_ctx->vertical_lightweight_delete,
+            apply_deleted_mask,
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
             /*prefetch=*/ false,
