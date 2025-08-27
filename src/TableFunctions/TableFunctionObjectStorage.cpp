@@ -173,6 +173,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
 
     StoragePtr storage;
     const auto & query_settings = context->getSettingsRef();
+    const auto & client_info = context->getClientInfo();
 
     const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
     const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
