@@ -167,7 +167,7 @@ def generate_changelog_entry(
         return f"Error generating changelog entry: {e}"
 
 def format_description_or_changelog(type: str, content: str, model: str):
-    if type is "description":
+    if type == "description":
         try:
             with open("user_pr_description.txt", "w", encoding="utf-8") as f:
                 f.write(content)
@@ -185,7 +185,7 @@ def format_description_or_changelog(type: str, content: str, model: str):
             print(f"Error running claude command: {e}")
             return f"Error formatting user description: {e}"
 
-    elif type is "changelog":
+    elif type == "changelog":
         try:
             with open("user_changelog_entry.txt", "w", encoding="utf-8") as f:
                 f.write(content)
@@ -275,12 +275,10 @@ if __name__ == "__main__":
         print("Skipping PR changelog entry. Either no tags were found, or the tags have body text but format=false")
 
     if should_process_description or should_process_changelog:
-    try:
+        try:
             # Update the PR body directly
             GH.update_pr_body(updated_pr_body)
             print("Successfully updated PR body with generated content")
         except Exception as e:
             print(f"Error: Could not update PR body: {e}")
             sys.exit(1)
-
-
