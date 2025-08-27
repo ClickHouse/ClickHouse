@@ -152,7 +152,7 @@
       </tr>
       <tr>
         <th class="hth no-sort">Build Report</th>
-        <td>{% for job_name, link in build_report_links.items() %}<a href="{{ link }}">{{ job_name }} </a>{% endfor %}</td>
+        <td>{% for job_name, link in build_report_links.items() %}<a href="{{ link }}">[{{ job_name }}]</a> {% endfor %}</td>
       </tr>
       <tr>
         <th class="hth no-sort">Date</th>

@@ -558,11 +558,15 @@ def get_build_report_links(
     """
     Get the build report links for the given PR number, branch, and commit SHA.
 
-    First checks if a build job submitted a success status.
-    If not available, it checks for cached build results.
+    First checks if a build job submitted a success or skipped status.
     If not available, it guesses the links.
     """
-    build_job_names = ["Build (amd_release)", "Build (arm_release)"]
+    build_job_names = [
+        "Build (amd_release)",
+        "Build (arm_release)",
+        "Docker server image",
+        "Docker keeper image",
+    ]
     build_report_links = {}
 
     for job in job_statuses.itertuples():
@@ -588,25 +592,6 @@ def get_build_report_links(
     else:
         ref_param = f"PR={pr_number}"
         workflow_name = "PR"
-
-    status_file = f"result_{workflow_name.lower()}.json"
-    s3_path = f"https://{S3_BUCKET}.s3.amazonaws.com/{ref_param.replace('=', 's/')}/{commit_sha}/{status_file}"
-    response = requests.get(s3_path)
-
-    if response.status_code == 200:
-        # Cache exists, get the status data
-        status_data = response.json()
-        for job in status_data["results"]:
-            if (
-                job["name"] in build_job_names
-                and job["status"] == "skipped"
-                and len(job["links"]) > 0
-            ):
-                build_report_links[job["name"]] = job["links"][0]
-
-    if len(build_report_links) > 0:
-        # We have the build report links, return them
-        return build_report_links
 
     # No cache or build result was found, guess the links
     build_report_link_base = f"https://{S3_BUCKET}.s3.amazonaws.com/json.html?{ref_param}&sha={commit_sha}&name_0={urllib.parse.quote(workflow_name, safe='')}"
