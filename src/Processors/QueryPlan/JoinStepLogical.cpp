@@ -311,18 +311,23 @@ IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(N
             right_required_outputs.insert(post_join_input->result_name);
     }
 
-    const auto remove_unused_actions_from_pre_join_actions
-        = [remove_inputs](ActionsDAG & pre_join_actions, NameSet & pre_join_required_outputs)
+    const auto add_one_column_from_outputs_if_no_required
+        = [](NameSet & required_names, const ActionsDAG::NodeRawConstPtrs & previous_outputs)
     {
-        // Pre-join actions should keep at least one of the outputs
-        if (pre_join_required_outputs.empty() && !pre_join_actions.getInputs().empty())
-            pre_join_required_outputs.insert(pre_join_actions.getInputs().front()->result_name);
+        if (!required_names.empty())
+            return;
 
-        return pre_join_actions.removeUnusedActions(pre_join_required_outputs, remove_inputs);
+        chassert(!previous_outputs.empty());
+        required_names.insert(previous_outputs.front()->result_name);
     };
 
-    removed_any_actions |= remove_unused_actions_from_pre_join_actions(*expression_actions.left_pre_join_actions, left_required_outputs);
-    removed_any_actions |= remove_unused_actions_from_pre_join_actions(*expression_actions.right_pre_join_actions, right_required_outputs);
+    add_one_column_from_outputs_if_no_required(left_required_outputs, expression_actions.left_pre_join_actions->getOutputs());
+    add_one_column_from_outputs_if_no_required(right_required_outputs, expression_actions.right_pre_join_actions->getOutputs());
+    chassert(!left_required_outputs.empty());
+    chassert(!right_required_outputs.empty());
+
+    removed_any_actions |= expression_actions.left_pre_join_actions->removeUnusedActions(left_required_outputs, remove_inputs);
+    removed_any_actions |= expression_actions.right_pre_join_actions->removeUnusedActions(right_required_outputs, remove_inputs);
 
     if (!removed_any_actions)
         return UnusedColumnRemovalResult{false, false};
