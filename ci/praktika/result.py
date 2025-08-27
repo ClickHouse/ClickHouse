@@ -177,6 +177,9 @@ class Result(MetaClasses.Serializable):
             Result.StatusExtended.SKIPPED,
         )
 
+    def is_failure(self):
+        return self.status in (Result.Status.FAILED)
+
     def is_error(self):
         return self.status in (Result.Status.ERROR,)
 
@@ -555,8 +558,8 @@ class Result(MetaClasses.Serializable):
             ),
         )
 
-    def skip_dependee_jobs_dropping(self):
-        return self.ext.get("skip_dependee_jobs_dropping", False)
+    def do_not_block_pipeline_on_failure(self):
+        return self.ext.get("do_not_block_pipeline_on_failure", False)
 
     def complete_job(
         self, with_job_summary_in_info=True, do_not_block_pipeline_on_failure=False
@@ -564,8 +567,7 @@ class Result(MetaClasses.Serializable):
         if with_job_summary_in_info:
             self._add_job_summary_to_info()
         if do_not_block_pipeline_on_failure and not self.is_ok():
-            self.ext["skip_dependee_jobs_dropping"] = True
-            self.ext["pipeline_status"] = Result.Status.SUCCESS
+            self.ext["do_not_block_pipeline_on_failure"] = True
         self.dump()
         print(self.to_stdout_formatted())
         if not self.is_ok():

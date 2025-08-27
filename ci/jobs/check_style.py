@@ -391,7 +391,4 @@ if __name__ == "__main__":
     #             command=check_mypy,
     #         )
     #     )
-
-    r = Result.create_from(results=results)
-    r.status = Result.Status.FAILED
-    r.complete_job(do_not_block_pipeline_on_failure=True)
+    Result.create_from(results=results).complete_job()
