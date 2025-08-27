@@ -558,16 +558,6 @@ def test_nats_mv_combo(nats_cluster):
             break
         time.sleep(1)
 
-    for mv_id in range(NUM_MV):
-        instance.query(
-            """
-            DROP TABLE test.combo_{0}_mv;
-            DROP TABLE test.combo_{0};
-        """.format(
-                mv_id
-            )
-        )
-
     if int(result) == expected_result:
         return
 
@@ -601,15 +591,8 @@ def test_nats_insert(nats_cluster):
         values.append("({i}, {i})".format(i=i))
     values = ",".join(values)
 
-    while True:
-        try:
-            instance.query("INSERT INTO test.nats VALUES {}".format(values))
-            break
-        except QueryRuntimeException as e:
-            if "Local: Timed out." in str(e):
-                continue
-            else:
-                raise
+    instance.query_with_retry("INSERT INTO test.nats VALUES {}".format(values))
+
     insert_messages = asyncio.run(receive_messages(nats_cluster, "test_stream", "test_consumer", "test_subject"))
 
     result = "\n".join(insert_messages)
@@ -637,15 +620,7 @@ def test_fetching_messages_without_mv(nats_cluster):
         values.append("({i}, {i})".format(i=i))
     values = ",".join(values)
 
-    while True:
-        try:
-            instance.query("INSERT INTO test.nats VALUES {}".format(values))
-            break
-        except QueryRuntimeException as e:
-            if "Local: Timed out." in str(e):
-                continue
-            else:
-                raise
+    instance.query_with_retry("INSERT INTO test.nats VALUES {}".format(values))
     
     insert_messages = asyncio.run(receive_messages(nats_cluster, "test_stream", "test_consumer", "test_subject"))
     result = "\n".join(insert_messages)
@@ -724,19 +699,7 @@ def test_nats_many_subjects_insert_right(nats_cluster):
         values.append("({i}, {i})".format(i=i))
     values = ",".join(values)
 
-    while True:
-        try:
-            instance.query(
-                "INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='right_insert1' VALUES {}".format(
-                    values
-                )
-            )
-            break
-        except QueryRuntimeException as e:
-            if "Local: Timed out." in str(e):
-                continue
-            else:
-                raise
+    instance.query_with_retry("INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='right_insert1' VALUES {}".format(values))
 
     insert_messages = asyncio.run(receive_messages(nats_cluster, "test_stream", "test_consumer", "right_insert1"))
     result = "\n".join(insert_messages)
@@ -778,21 +741,10 @@ def test_nats_many_inserts(nats_cluster):
         values.append("({i}, {i})".format(i=i))
     values = ",".join(values)
 
-    def insert():
-        while True:
-            try:
-                instance.query("INSERT INTO test.nats_many VALUES {}".format(values))
-                break
-            except QueryRuntimeException as e:
-                if "Local: Timed out." in str(e):
-                    continue
-                else:
-                    raise
-
     threads = []
     threads_num = 10
     for _ in range(threads_num):
-        threads.append(threading.Thread(target=insert))
+        threads.append(threading.Thread(target = lambda: instance.query_with_retry("INSERT INTO test.nats_many VALUES {}".format(values))))
     for thread in threads:
         time.sleep(random.uniform(0, 1))
         thread.start()
@@ -800,15 +752,11 @@ def test_nats_many_inserts(nats_cluster):
     for thread in threads:
         thread.join()
 
-    time_limit_sec = 300
-    deadline = time.monotonic() + time_limit_sec
-
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.view_many")
-        logging.debug(result, messages_num * threads_num)
-        if int(result) >= messages_num * threads_num:
-            break
-        time.sleep(1)
+    result = instance.query_with_retry(
+        "SELECT count() FROM test.view_many",
+        retry_count = 300,
+        sleep_time = 1,
+        check_callback = lambda query_result: int(query_result) >= messages_num * threads_num)
 
     assert (
         int(result) == messages_num * threads_num
@@ -858,17 +806,7 @@ def test_nats_overloaded_insert(nats_cluster):
             values.append("({i}, {i})".format(i=i))
         values = ",".join(values)
 
-        while True:
-            try:
-                instance.query(
-                    "INSERT INTO test.nats_overload VALUES {}".format(values)
-                )
-                break
-            except QueryRuntimeException as e:
-                if "Local: Timed out." in str(e):
-                    continue
-                else:
-                    raise
+        instance.query_with_retry("INSERT INTO test.nats_overload VALUES {}".format(values))
 
     threads = []
     threads_num = 5
@@ -878,14 +816,11 @@ def test_nats_overloaded_insert(nats_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    time_limit_sec = 300
-    deadline = time.monotonic() + time_limit_sec
-
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count() FROM test.view_overload")
-        time.sleep(1)
-        if int(result) >= messages_num * threads_num:
-            break
+    result = instance.query_with_retry(
+        "SELECT count() FROM test.view_overload",
+        retry_count = 300,
+        sleep_time = 1,
+        check_callback = lambda num_rows: int(num_rows) >= messages_num * threads_num)
 
     for thread in threads:
         thread.join()
@@ -1051,22 +986,6 @@ def test_nats_many_consumers_to_each_queue(nats_cluster):
 
     nats_helpers.wait_query_result(instance, "SELECT count() FROM test.destination", messages_num * threads_num * num_tables)
 
-    for consumer_id in range(num_tables):
-        instance.query(
-            """
-            DROP TABLE test.many_consumers_{0};
-            DROP TABLE test.many_consumers_{0}_mv;
-        """.format(
-                consumer_id
-            )
-        )
-
-    instance.query(
-        """
-        DROP TABLE test.destination;
-    """
-    )
-
 
 def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
     
@@ -1104,37 +1023,21 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
         values.append("({i}, {i})".format(i=i))
     values = ",".join(values)
 
-    while True:
-        try:
-            instance.query(
-                "INSERT INTO test.producer_reconnect VALUES {}".format(values)
-            )
-            break
-        except QueryRuntimeException as e:
-            if "Local: Timed out." in str(e):
-                continue
-            else:
-                raise
-
-    while int(instance.query("SELECT count() FROM test.view")) == 0:
-        time.sleep(0.1)
+    instance.query_with_retry("INSERT INTO test.producer_reconnect VALUES {}".format(values))
+    
+    result = instance.query_with_retry("SELECT count() FROM test.view", sleep_time = 0.1, check_callback = lambda num_rows: int(num_rows) != 0)
+    assert(int(result) != 0)
 
     nats_helpers.kill_nats(nats_cluster)
     time.sleep(4)
     nats_helpers.revive_nats(nats_cluster)
 
-    time_limit_sec = 300
-    deadline = time.monotonic() + time_limit_sec
-
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count(DISTINCT key) FROM test.view")
-        time.sleep(1)
-        if int(result) == messages_num:
-            break
-
-    assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(
-        result
-    )
+    result = instance.query_with_retry(
+        "SELECT count(DISTINCT key) FROM test.view",
+        retry_count = 300,
+        sleep_time = 1,
+        check_callback = lambda num_rows: int(num_rows) == messages_num)
+    assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(result)
 
 
 def test_nats_no_connection_at_startup_1(nats_cluster):
@@ -1209,15 +1112,12 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
         messages.append(json.dumps({"key": i, "value": i}))
     asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
 
-    for _ in range(20):
-        result = instance.query("SELECT count() FROM test.view")
-        if int(result) == messages_num:
-            break
-        time.sleep(1)
-
-    assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(
-        result
-    )
+    result = instance.query_with_retry(
+        "SELECT count() FROM test.view",
+        retry_count = 20,
+        sleep_time = 1,
+        check_callback = lambda num_rows: int(num_rows) == messages_num)
+    assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(result)
 
 
 def test_nats_format_factory_settings(nats_cluster):
@@ -1247,12 +1147,9 @@ def test_nats_format_factory_settings(nats_cluster):
     expected = instance.query(
         """SELECT parseDateTimeBestEffort(CAST('2021-01-19T14:42:33.1829214Z', 'String'))"""
     )
-
     asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [message]))
-    while True:
-        result = instance.query("SELECT date FROM test.view")
-        if result == expected:
-            break
+    
+    result = instance.query_with_retry("SELECT date FROM test.view", check_callback = lambda result: result == expected)
 
     assert result == expected
 
@@ -1362,15 +1259,10 @@ def test_nats_predefined_configuration(nats_cluster):
 
     asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 1, "value": 2})]))
 
-    time_limit_sec = 60
-    deadline = time.monotonic() + time_limit_sec
-
-    while time.monotonic() < deadline:
-        result = instance.query(
-            "SELECT * FROM test.view ORDER BY key", ignore_error=True
-        )
-        if result == "1\t2\n":
-            break
+    result = instance.query_with_retry(
+        "SELECT * FROM test.view ORDER BY key", 
+        ignore_error = True,
+        check_callback = lambda query_result: query_result == "1\t2\n")
 
     assert result == "1\t2\n"
         
@@ -1435,15 +1327,8 @@ def test_max_rows_per_message(nats_cluster):
         == "<prefix>\n0\t0\n10\t100\n20\t200\n<suffix>\n<prefix>\n30\t300\n40\t400\n<suffix>\n"
     )
 
-    attempt = 0
-    rows = 0
-    while attempt < 100:
-        rows = int(instance.query("SELECT count() FROM test.view"))
-        if rows == num_rows:
-            break
-        attempt += 1
-
-    assert rows == num_rows
+    result = instance.query_with_retry("SELECT count() FROM test.view", retry_count = 100, check_callback = lambda result: int(result) == num_rows)
+    assert int(result) == num_rows
 
     result = instance.query("SELECT * FROM test.view ORDER BY key")
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
@@ -1500,15 +1385,8 @@ def test_row_based_formats(nats_cluster):
         insert_messages = asyncio.run(receive_messages(nats_cluster, "test_stream", "external_consumer", 'test_subject', decode_data=False))
         assert len(insert_messages) == num_rows
 
-        attempt = 0
-        rows = 0
-        while attempt < 100:
-            rows = int(instance.query("SELECT count() FROM test.view"))
-            if rows == num_rows:
-                break
-            attempt += 1
-
-        assert rows == num_rows
+        rows = instance.query_with_retry("SELECT count() FROM test.view", retry_count = 100, check_callback = lambda result: int(result) == num_rows)
+        assert int(rows) == num_rows
 
         expected = ""
         for i in range(num_rows):
@@ -1534,17 +1412,9 @@ def test_block_based_formats_1(nats_cluster):
         """
     )
 
-    attempt = 0
-    while attempt < 100:
-        try:
-            instance.query(
-                "INSERT INTO test.nats SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0;"
-            )
-            break
-        except Exception:
-            logging.debug("Table test.nats is not yet ready")
-            time.sleep(0.5)
-            attempt += 1
+    instance.query_with_retry(
+        "INSERT INTO test.nats SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0;",
+        retry_count=100)
     
     data = []
     for message in asyncio.run(receive_messages(nats_cluster, "test_stream", "test_consumer", "test_subject")):
@@ -1610,15 +1480,8 @@ def test_block_based_formats_2(nats_cluster):
         insert_messages = asyncio.run(receive_messages(nats_cluster, "test_stream", "external_consumer", "test_subject", decode_data=False))
         assert len(insert_messages) == 9
 
-        attempt = 0
-        rows = 0
-        while attempt < 100:
-            rows = int(instance.query("SELECT count() FROM test.view"))
-            if rows == num_rows:
-                break
-            attempt += 1
-
-        assert rows == num_rows
+        rows = instance.query_with_retry("SELECT count() FROM test.view", retry_count = 100, check_callback = lambda result: int(result) == num_rows)
+        assert int(rows) == num_rows
 
         result = instance.query("SELECT * FROM test.view ORDER by key")
         expected = ""
