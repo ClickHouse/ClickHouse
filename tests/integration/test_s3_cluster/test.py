@@ -509,3 +509,14 @@ def test_cluster_default_expression(started_cluster):
     )
 
     assert result == expected_result
+
+
+def test_dead_cluster(started_cluster):
+    node = started_cluster.instances["s0_1_0"]
+
+    with started_cluster.pause_container("s0_0_0"):
+        with started_cluster.pause_container("s0_0_1"):
+            result = node.query_and_get_error(
+                f"SELECT * FROM s3Cluster(first_shard, 'http://minio1:9001/root/data/clickhouse/part1.csv', 'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') order by name"
+            )
+            assert "Can't find active replicas in cluster" in result
