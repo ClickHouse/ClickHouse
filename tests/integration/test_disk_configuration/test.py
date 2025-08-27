@@ -526,7 +526,7 @@ def test_merge_tree_setting_override(start_cluster):
     node.query(f"DROP TABLE {TABLE_NAME} SYNC")
 
 @pytest.mark.parametrize("use_node", ["node1", "node2"])
-def test_merge_tree_custom_encrypted_disk_include(use_node):
+def test_merge_tree_custom_encrypted_disk_include(start_cluster, use_node):
     """Test that encrypted disk configuration works with include parameter.
 
     This test creates an encrypted disk using the include parameter to reference
