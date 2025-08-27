@@ -156,7 +156,7 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
         }
     };
 
-    if !did_load_from_local_cache {
+    if config.use_local_store && !did_load_from_local_cache {
         local_disk
             .write(&total_hash, &compiled_bytes)
             .await

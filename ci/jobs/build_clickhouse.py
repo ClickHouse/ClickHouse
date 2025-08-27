@@ -119,8 +119,9 @@ def main():
         os.environ["CTCACHE_S3_FOLDER"] = "ccache/clang-tidy-cache"
 
         os.environ["CH_HOSTNAME"] = "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
-        os.environ["CH_USER"] = 'ci_builder'
+        os.environ["CH_USER"] = "ci_builder"
         os.environ["CH_PASSWORD"] = chcache_secret.get_value()
+        os.environ["CH_USE_LOCAL_CACHE"] = "false"
 
     if info.pr_number == 0:
         cmake_cmd += " -DCLICKHOUSE_OFFICIAL_BUILD=1"

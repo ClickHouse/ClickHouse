@@ -144,8 +144,9 @@ def main():
         Shell.check(f"chmod +x {clickhouse_bin_path}")
     else:
         os.environ["CH_HOSTNAME"] = "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
-        os.environ["CH_USER"] = 'ci_builder'
+        os.environ["CH_USER"] = "ci_builder"
         os.environ["CH_PASSWORD"] = chcache_secret.get_value()
+        os.environ["CH_USE_LOCAL_CACHE"] = "false"
 
         os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
         os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
