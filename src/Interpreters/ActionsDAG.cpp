@@ -3609,49 +3609,10 @@ std::unordered_map<const ActionsDAG::Node *, size_t> ActionsDAG::getNodeToIdMap(
     return node_to_id;
 }
 
-std::unordered_map<size_t, const ActionsDAG::Node *> ActionsDAG::getIdToNodeMap() const
+std::vector<const ActionsDAG::Node *> ActionsDAG::getIdToNode() const
 {
-    std::unordered_map<size_t, const Node *> id_to_node;
-    for (const auto & node : nodes)
-        id_to_node.emplace(id_to_node.size(), &node);
-
-    return id_to_node;
+    return std::ranges::to<std::vector>(nodes | std::views::transform([](const auto & node) { return &node; }));
 }
-
-void ActionsDAG::serializeNodeList(WriteBuffer & out, const std::unordered_map<const Node *, size_t> & node_to_id, const NodeRawConstPtrs & nodes)
-{
-    writeVarUInt(nodes.size(), out);
-    for (const auto * node : nodes)
-    {
-        if (auto it = node_to_id.find(node); it != node_to_id.end())
-            writeVarUInt(it->second, out);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find node '{}' in node map", node->result_name);
-    }
-}
-
-ActionsDAG::NodeRawConstPtrs ActionsDAG::deserializeNodeList(ReadBuffer & in, const std::unordered_map<size_t, const Node *> & node_map)
-{
-    size_t num_nodes;
-    readVarUInt(num_nodes, in);
-    if (num_nodes > node_map.size())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Number of nodes {} is greater than number of nodes in node map {}", num_nodes, node_map.size());
-
-    NodeRawConstPtrs nodes(num_nodes);
-
-    for (size_t i = 0; i < num_nodes; ++i)
-    {
-        size_t node_id;
-        readVarUInt(node_id, in);
-        if (auto it = node_map.find(node_id); it != node_map.end())
-            nodes[i] = it->second;
-        else
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot find node with id {} in node map", node_id);
-    }
-
-    return nodes;
-}
-
 
 void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
 {

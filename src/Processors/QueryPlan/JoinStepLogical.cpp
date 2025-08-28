@@ -1232,6 +1232,21 @@ void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & setting
     sorting_settings.updatePlanSettings(settings);
 }
 
+static void serializeNodeList(
+    WriteBuffer & out,
+    const std::unordered_map<const ActionsDAG::Node *, size_t> & node_to_id,
+    const ActionsDAG::NodeRawConstPtrs & nodes)
+{
+    writeVarUInt(nodes.size(), out);
+    for (const auto * node : nodes)
+    {
+        if (auto it = node_to_id.find(node); it != node_to_id.end())
+            writeVarUInt(it->second, out);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find node '{}' in node map", node->result_name);
+    }
+}
+
 void JoinStepLogical::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
@@ -1242,8 +1257,27 @@ void JoinStepLogical::serialize(Serialization & ctx) const
     actions_dag->serialize(ctx.out, ctx.registry);
 
     join_operator.serialize(ctx.out, actions_dag.get());
+    serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
+}
 
-    ActionsDAG::serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
+static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node)
+{
+    size_t num_nodes;
+    readVarUInt(num_nodes, in);
+
+    size_t max_node_id = id_to_node.size();
+
+    ActionsDAG::NodeRawConstPtrs nodes(num_nodes);
+    for (size_t i = 0; i < num_nodes; ++i)
+    {
+        size_t node_id;
+        readVarUInt(node_id, in);
+        if (node_id >= max_node_id)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Node id {} is out of range, must be less than {}", node_id, max_node_id);
+
+        nodes[i] = id_to_node[node_id];
+    }
+    return nodes;
 }
 
 std::unique_ptr<IQueryPlanStep> JoinStepLogical::deserialize(Deserialization & ctx)
@@ -1264,15 +1298,14 @@ std::unique_ptr<IQueryPlanStep> JoinStepLogical::deserialize(Deserialization & c
 
         actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
     }
+    auto id_to_node = actions_dag.getIdToNode();
 
     auto left_header = ctx.input_headers.front();
     auto right_header = ctx.input_headers.back();
-    auto id_to_node_map = actions_dag.getIdToNodeMap();
     JoinExpressionActions expression_actions(*left_header, *right_header, std::move(actions_dag));
 
     auto join_operator = JoinOperator::deserialize(ctx.in, expression_actions);
-
-    auto actions_after_join = ActionsDAG::deserializeNodeList(ctx.in, id_to_node_map);
+    auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
 
     SortingStep::Settings sort_settings(ctx.settings);
     JoinSettings join_settings(ctx.settings);

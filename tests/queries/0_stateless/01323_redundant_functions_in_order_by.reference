@@ -164,7 +164,7 @@ QUERY id: 0
     c Float64
   PROJECTION
     LIST id: 1, nodes: 4
-      FUNCTION id: 2, alias: key, function_name: firstNotDefault, function_type: ordinary, result_type: UInt64
+      FUNCTION id: 2, alias: key, function_name: firstNonDefault, function_type: ordinary, result_type: UInt64
         ARGUMENTS
           LIST id: 3, nodes: 2
             COLUMN id: 4, column_name: key, result_type: UInt64, source_id: 5

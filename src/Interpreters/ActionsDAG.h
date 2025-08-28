@@ -1,6 +1,7 @@
 #pragma once
 
 #include <utility>
+#include <vector>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
@@ -135,11 +136,8 @@ public:
     std::string dumpNames() const;
     std::string dumpDAG() const;
 
-    std::unordered_map<size_t, const Node *> getIdToNodeMap() const;
+    std::vector<const Node *> getIdToNode() const;
     std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
-
-    static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const Node *, size_t> & node_to_id, const NodeRawConstPtrs & nodes);
-    static NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const std::unordered_map<size_t, const Node *> & node_map);
 
     void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
     static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context);

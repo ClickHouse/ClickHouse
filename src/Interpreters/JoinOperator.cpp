@@ -1,3 +1,4 @@
+#include <vector>
 #include <Interpreters/JoinOperator.h>
 
 #include <Columns/IColumn.h>
@@ -14,6 +15,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+}
 
 namespace Setting
 {
@@ -221,39 +228,57 @@ String toString(const JoinActionRef & node)
     return out.str();
 }
 
-static void serializeJoinActions(WriteBuffer & out, const std::vector<JoinActionRef> & actions, const ActionsDAG * actions_dag)
+static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const ActionsDAG::Node *, size_t> & node_to_id, const std::vector<JoinActionRef> & nodes)
 {
-    auto nodes = std::ranges::to<std::vector>(actions | std::views::transform([] (const auto & action) { return action.getNode(); }));
-    ActionsDAG::serializeNodeList(out, actions_dag->getNodeToIdMap(), nodes);
-}
-
-static std::vector<JoinActionRef> deserializeJoinActions(ReadBuffer & in, JoinExpressionActions & expression_actions)
-{
-    auto node_map = expression_actions.getActionsDAG()->getIdToNodeMap();
-    auto nodes = ActionsDAG::deserializeNodeList(in, node_map);
-
-    std::vector<JoinActionRef> actions;
-    actions.reserve(nodes.size());
-    for (const auto * node : nodes)
-        actions.emplace_back(node, expression_actions);
-
-    return actions;
+    writeVarUInt(nodes.size(), out);
+    for (const auto & action : nodes)
+    {
+        const auto * node = action.getNode();
+        if (auto it = node_to_id.find(node); it != node_to_id.end())
+            writeVarUInt(it->second, out);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find node '{}' in node map", node->result_name);
+    }
 }
 
 void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) const
 {
-    serializeJoinActions(out, expression, actions_dag);
-    serializeJoinActions(out, residual_filter, actions_dag);
+    auto node_to_id = actions_dag->getNodeToIdMap();
+    serializeNodeList(out, node_to_id, expression);
+    serializeNodeList(out, node_to_id, residual_filter);
 
     serializeJoinKind(kind, out);
     serializeJoinStrictness(strictness, out);
     serializeJoinLocality(locality, out);
 }
 
+static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node, JoinExpressionActions & expression_actions)
+{
+    size_t num_nodes;
+    readVarUInt(num_nodes, in);
+
+    size_t max_node_id = id_to_node.size();
+
+    std::vector<JoinActionRef> result;
+    result.reserve(num_nodes);
+
+    for (size_t i = 0; i < num_nodes; ++i)
+    {
+        size_t node_id;
+        readVarUInt(node_id, in);
+        if (node_id >= max_node_id)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Node id {} is out of range, must be less than {}", node_id, max_node_id);
+
+        result.emplace_back(id_to_node[node_id], expression_actions);
+    }
+    return result;
+}
+
 JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions)
 {
-    auto actions = deserializeJoinActions(in, expression_actions);
-    auto residual_filter = deserializeJoinActions(in, expression_actions);
+    auto id_to_node = expression_actions.getActionsDAG()->getIdToNode();
+    auto actions = deserializeNodeList(in, id_to_node, expression_actions);
+    auto residual_filter = deserializeNodeList(in, id_to_node, expression_actions);
 
     auto kind = deserializeJoinKind(in);
     auto strictness = deserializeJoinStrictness(in);

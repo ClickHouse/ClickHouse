@@ -1,7 +1,7 @@
 SET query_plan_join_swap_table = false;
 SET allow_experimental_analyzer = 1;
 SET enable_parallel_replicas=0;
-SET query_plan_optimize_join_order = 0;
+SET query_plan_optimize_join_order_limit = 0;
 
 -- Test that with default join_algorithm setting, we are doing a parallel hash join
 
