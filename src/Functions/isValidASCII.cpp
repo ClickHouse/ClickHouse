@@ -137,8 +137,8 @@ REGISTER_FUNCTION(IsValidASCII)
     factory.registerFunction<DB::FunctionIsValidASCII>(DB::FunctionDocumentation{
         .description = R"(Returns 1 if the input String or FixedString contains only ASCII bytes (0x00–0x7F), otherwise 0.)",
         .examples = {{"isValidASCII", "SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii", ""}},
-        .introduced_in = {25, 8},
-        .category = DB::FunctionDocumentation::Category::Conditional,
+        .introduced_in = {25, 9},
+        .category = DB::FunctionDocumentation::Category::String,
     });
     factory.registerAlias("isASCII", "isValidASCII", DB::FunctionFactory::Case::Sensitive);
 }

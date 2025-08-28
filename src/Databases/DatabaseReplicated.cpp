@@ -83,7 +83,7 @@ namespace DatabaseReplicatedSetting
     extern const DatabaseReplicatedSettingsString collection_name;
     extern const DatabaseReplicatedSettingsFloat max_broken_tables_ratio;
     extern const DatabaseReplicatedSettingsUInt64 max_replication_lag_to_enqueue;
-    extern const DatabaseReplicatedSettingsUInt32 logs_to_keep;
+    extern const DatabaseReplicatedSettingsNonZeroUInt64 logs_to_keep;
 }
 
 namespace ErrorCodes
