@@ -166,37 +166,42 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// so we want it to be verified that chunk contains all the requested columns.
     for (const auto & column_name : non_virtual_requested_columns)
     {
+        auto name_and_type = table_schema.tryGetByName(column_name);
+        if (!name_and_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found column in schema: {}", column_name);
+
+        auto expected_type = info.source_header.getByName(column_name).type;
+
+        /// Convert for compatibility, because it used to work this way.
+        if (name_and_type->type->isNullable() && !expected_type->isNullable())
+            name_and_type->type = removeNullable(name_and_type->type);
+
+        checkTypesAndNestedTypesEqual(name_and_type->type, expected_type, column_name);
+
         auto physical_name = DeltaLake::getPhysicalName(column_name, physical_names_map);
-        auto name_and_type = read_schema.tryGetByName(physical_name);
+        auto physical_name_and_type = read_schema.tryGetByName(physical_name);
 
         LOG_TEST(
             log, "Name: {}, physical name: {}, contained in read schema: {}",
-            column_name, physical_name, name_and_type.has_value());
+            column_name, physical_name, physical_name_and_type.has_value());
 
-        auto expected_type = info.source_header.getByName(column_name).type;
-        if (name_and_type.has_value())
+        if (physical_name_and_type.has_value())
         {
             /// Convert for compatibility, because it used to work this way.
-            if (name_and_type->type->isNullable() && !expected_type->isNullable())
-                name_and_type->type = assert_cast<const DataTypeNullable *>(name_and_type->type.get())->getNestedType();
+            /// Note: however, we do not convert nested types.
+            if (physical_name_and_type->type->isNullable() && !expected_type->isNullable())
+                physical_name_and_type->type = removeNullable(physical_name_and_type->type);
 
-            checkTypesAndNestedTypesEqual(name_and_type->type, expected_type, column_name);
-            info.requested_columns.push_back(name_and_type.value());
-            ColumnWithTypeAndName result_column(name_and_type->type->createColumn(), name_and_type->type, name_and_type->name);
-            info.format_header.insert(std::move(result_column));
-        }
-        else if (name_and_type = table_schema.tryGetByName(column_name);
-                 name_and_type.has_value())
-        {
-            /// Convert for compatibility, because it used to work this way.
-            if (name_and_type->type->isNullable() && !expected_type->isNullable())
-                name_and_type->type = assert_cast<const DataTypeNullable *>(name_and_type->type.get())->getNestedType();
-
-            checkTypesAndNestedTypesEqual(name_and_type->type, expected_type, column_name);
-            info.requested_columns.emplace_back(physical_name, name_and_type->type);
+            info.requested_columns.push_back(physical_name_and_type.value());
+            info.format_header.insert(ColumnWithTypeAndName{
+                physical_name_and_type->type->createColumn(),
+                physical_name_and_type->type,
+                physical_name_and_type->name});
         }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found column in schema: {}", column_name);
+        {
+            info.requested_columns.emplace_back(physical_name, name_and_type->type);
+        }
     }
 
     /// If only virtual columns were requested, just read the smallest column.
