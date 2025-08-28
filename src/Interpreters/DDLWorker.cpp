@@ -9,7 +9,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
-#include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
@@ -26,9 +25,11 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/WithRetries.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperLock.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
@@ -57,6 +58,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool implicit_transaction;
+    extern const SettingsFloat keeper_fault_injection_probability;
+    extern const SettingsUInt64 keeper_fault_injection_seed;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }
@@ -169,26 +172,39 @@ DDLWorker::~DDLWorker()
 }
 
 
-ZooKeeperPtr DDLWorker::getZooKeeper() const
+ZooKeeperWithFaultInjectionPtr DDLWorker::getZooKeeper() const
 {
     std::lock_guard lock(zookeeper_mutex);
     if (!current_zookeeper)
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "Unable to get zookeeper");
-    return current_zookeeper;
+
+    const auto & settings = context->getSettingsRef();
+    return ZooKeeperWithFaultInjection::createInstance(
+        settings[Setting::keeper_fault_injection_probability],
+        settings[Setting::keeper_fault_injection_seed],
+        current_zookeeper,
+        "DDLWorker",
+        nullptr);
 }
 
-ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
+ZooKeeperWithFaultInjectionPtr DDLWorker::getAndSetZooKeeper()
 {
     std::lock_guard lock(zookeeper_mutex);
 
     if (!current_zookeeper || current_zookeeper->expired())
         current_zookeeper = context->getZooKeeper();
 
-    return current_zookeeper;
+    const auto & settings = context->getSettingsRef();
+    return ZooKeeperWithFaultInjection::createInstance(
+        settings[Setting::keeper_fault_injection_probability],
+        settings[Setting::keeper_fault_injection_seed],
+        current_zookeeper,
+        "DDLWorker",
+        nullptr);
 }
 
 
-DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool /*dry_run*/)
+DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperWithFaultInjectionPtr & zookeeper, bool /*dry_run*/)
 {
     if (entries_to_skip.contains(entry_name))
         return {};
@@ -483,7 +499,7 @@ DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
     return *current_tasks.back();
 }
 
-bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal)
+bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperWithFaultInjectionPtr & zookeeper, bool internal)
 {
     /// Add special comment at the start of query to easily identify DDL-produced queries in query_log
     String query_prefix = "/* ddl_entry=" + task.entry_name + " */ ";
@@ -495,7 +511,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
 
     try
     {
-        auto query_context = task.makeQueryContext(context, zookeeper);
+        auto query_context = task.makeQueryContext(context, zookeeper->getKeeper());
 
         chassert(!query_context->getCurrentTransaction());
         if (query_context->getSettingsRef()[Setting::implicit_transaction])
@@ -578,7 +594,7 @@ void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
     }
 }
 
-void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal_query)
+void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperWithFaultInjectionPtr & zookeeper, bool internal_query)
 {
     LOG_DEBUG(log, "Processing task {} (query: {}, backup restore: {})", task.entry_name, task.query_for_logging, task.entry.is_backup_restore);
     chassert(!task.completely_processed);
@@ -597,7 +613,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, 
     /// and protects from concurrent deletion or the task.
 
     /// It will tryRemove(...) on exception
-    auto active_node = zkutil::EphemeralNodeHolder::existing(active_node_path, *zookeeper);
+    auto active_node = zkutil::EphemeralNodeHolder::existing(active_node_path, *zookeeper->getKeeper());
 
     /// Try fast path
     const String canary_value = Field(ServerUUID::get()).dump();
@@ -762,7 +778,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     DDLTaskBase & task,
     StoragePtr storage,
     const String & /*node_path*/,
-    const ZooKeeperPtr & zookeeper,
+    const ZooKeeperWithFaultInjectionPtr & zookeeper,
     std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock)
 {
     StorageReplicatedMergeTree * replicated_storage = dynamic_cast<StorageReplicatedMergeTree *>(storage.get());
@@ -803,7 +819,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
     pcg64 rng(randomSeed());
 
-    execute_on_leader_lock = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str);
+    execute_on_leader_lock = createSimpleZooKeeperLock(zookeeper->getKeeper(), shard_path, "lock", task.host_id_str);
 
     Stopwatch stopwatch;
 
@@ -935,7 +951,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 }
 
 
-void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
+void DDLWorker::cleanupQueue(Int64, const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
     LOG_DEBUG(log, "Cleaning queue");
 
@@ -1027,7 +1043,7 @@ bool DDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordinatio
 }
 
 /// Try to create nonexisting "status" dirs for a node
-void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper)
+void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(fs::path(node_path) / "active", {}, zkutil::CreateMode::Persistent));
@@ -1070,56 +1086,57 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &
     if (entry.hosts.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty host list in a distributed DDL task");
 
-    String node_path;
-    if (retries_info.max_retries > 0)
-    {
-        ZooKeeperRetriesControl retries_ctl{"DDLWorker::enqueueQuery", log, retries_info};
-        retries_ctl.retryLoop([&]{
-            node_path = enqueueQueryAttempt(entry);
-        });
-    }
-    else
-    {
-        node_path = enqueueQueryAttempt(entry);
-    }
-    return node_path;
+    const Settings & settings = context->getSettingsRef();
+    auto with_retries = WithRetries(
+            log,
+            [&] { return context->getZooKeeper(); },
+            retries_info,
+            settings[Setting::keeper_fault_injection_probability],
+            settings[Setting::keeper_fault_injection_seed]
+        );
+    return enqueueQueryAttempt(entry, with_retries);
 }
 
 
-String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
+String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry, const WithRetries & with_retries)
 {
-    auto zookeeper = context->getZooKeeper();
-
-    String query_path_prefix = fs::path(queue_dir) / "query-";
-    zookeeper->createAncestors(query_path_prefix);
-
-    NameSet host_ids;
-    for (const HostID & host : entry.hosts)
-        host_ids.emplace(host.toString());
-    createReplicaDirs(zookeeper, host_ids);
-
-    String node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
-    if (max_pushed_entry_metric)
+    String node_path;
+    auto holder = with_retries.createRetriesControlHolderForOperations("enqueueQueryAttempt");
+    holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        String str_buf = node_path.substr(query_path_prefix.length());
-        DB::ReadBufferFromString in(str_buf);
-        CurrentMetrics::Value pushed_entry;
-        readText(pushed_entry, in);
-        pushed_entry = std::max(CurrentMetrics::get(*max_pushed_entry_metric), pushed_entry);
-        CurrentMetrics::set(*max_pushed_entry_metric, pushed_entry);
-    }
+        with_retries.renewZooKeeper(zookeeper);
 
-    /// We cannot create status dirs in a single transaction with previous request,
-    /// because we don't know node_path until previous request is executed.
-    /// Se we try to create status dirs here or later when we will execute entry.
-    try
-    {
-        createStatusDirs(node_path, zookeeper);
-    }
-    catch (...)
-    {
-        LOG_INFO(log, "An error occurred while creating auxiliary ZooKeeper directories in {} . They will be created later. Error : {}", node_path, getCurrentExceptionMessage(true));
-    }
+        String query_path_prefix = fs::path(queue_dir) / "query-";
+        zookeeper->createAncestors(query_path_prefix);
+
+        NameSet host_ids;
+        for (const HostID & host : entry.hosts)
+            host_ids.emplace(host.toString());
+        createReplicaDirs(zookeeper, host_ids);
+
+        node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
+        if (max_pushed_entry_metric)
+        {
+            String str_buf = node_path.substr(query_path_prefix.length());
+            DB::ReadBufferFromString in(str_buf);
+            CurrentMetrics::Value pushed_entry;
+            readText(pushed_entry, in);
+            pushed_entry = std::max(CurrentMetrics::get(*max_pushed_entry_metric), pushed_entry);
+            CurrentMetrics::set(*max_pushed_entry_metric, pushed_entry);
+        }
+
+        /// We cannot create status dirs in a single transaction with previous request,
+        /// because we don't know node_path until previous request is executed.
+        /// Se we try to create status dirs here or later when we will execute entry.
+        try
+        {
+            createStatusDirs(node_path, zookeeper);
+        }
+        catch (...)
+        {
+            LOG_INFO(log, "An error occurred while creating auxiliary ZooKeeper directories in {} . They will be created later. Error : {}", node_path, getCurrentExceptionMessage(true));
+        }
+    });
 
     return node_path;
 }
@@ -1290,7 +1307,7 @@ void DDLWorker::initializeReplication()
     createReplicaDirs(zookeeper, host_id_set);
 }
 
-void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids)
+void DDLWorker::createReplicaDirs(const ZooKeeperWithFaultInjectionPtr & zookeeper, const NameSet & host_ids)
 {
     for (const auto & host_id : host_ids)
         zookeeper->createAncestors(fs::path(replicas_dir) / host_id / "");
@@ -1378,7 +1395,7 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
 
         zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
-        auto active_node_holder_zookeeper = zookeeper;
+        auto active_node_holder_zookeeper = zookeeper->getKeeper();
         auto active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
         active_node_holders[host_id] = {active_node_holder_zookeeper, active_node_holder};
     }

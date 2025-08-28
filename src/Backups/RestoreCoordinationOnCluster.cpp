@@ -53,7 +53,7 @@ void RestoreCoordinationOnCluster::startup()
 
 void RestoreCoordinationOnCluster::createRootNodes()
 {
-    auto holder = with_retries.createRetriesControlHolder("createRootNodes", WithRetries::kInitialization);
+    auto holder = with_retries.createRetriesControlHolderForBackup("createRootNodes", WithRetries::kInitialization);
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
@@ -136,7 +136,7 @@ ZooKeeperRetriesInfo RestoreCoordinationOnCluster::getOnClusterInitializationKee
 bool RestoreCoordinationOnCluster::acquireCreatingSharedDatabase(const String & database_name)
 {
     bool result = false;
-    auto holder = with_retries.createRetriesControlHolder("acquireCreatingTableInReplicatedDatabase");
+    auto holder = with_retries.createRetriesControlHolderForBackup("acquireCreatingTableInReplicatedDatabase");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
@@ -162,7 +162,7 @@ bool RestoreCoordinationOnCluster::acquireCreatingSharedDatabase(const String & 
 bool RestoreCoordinationOnCluster::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)
 {
     bool result = false;
-    auto holder = with_retries.createRetriesControlHolder("acquireCreatingTableInReplicatedDatabase");
+    auto holder = with_retries.createRetriesControlHolderForBackup("acquireCreatingTableInReplicatedDatabase");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
@@ -191,7 +191,7 @@ bool RestoreCoordinationOnCluster::acquireCreatingTableInReplicatedDatabase(cons
 bool RestoreCoordinationOnCluster::acquireInsertingDataIntoReplicatedTable(const String & table_zk_path)
 {
     bool result = false;
-    auto holder = with_retries.createRetriesControlHolder("acquireInsertingDataIntoReplicatedTable");
+    auto holder = with_retries.createRetriesControlHolderForBackup("acquireInsertingDataIntoReplicatedTable");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
@@ -217,7 +217,7 @@ bool RestoreCoordinationOnCluster::acquireInsertingDataIntoReplicatedTable(const
 bool RestoreCoordinationOnCluster::acquireReplicatedAccessStorage(const String & access_storage_zk_path)
 {
     bool result = false;
-    auto holder = with_retries.createRetriesControlHolder("acquireReplicatedAccessStorage");
+    auto holder = with_retries.createRetriesControlHolderForBackup("acquireReplicatedAccessStorage");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
@@ -243,7 +243,7 @@ bool RestoreCoordinationOnCluster::acquireReplicatedAccessStorage(const String &
 bool RestoreCoordinationOnCluster::acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type)
 {
     bool result = false;
-    auto holder = with_retries.createRetriesControlHolder("acquireReplicatedSQLObjects");
+    auto holder = with_retries.createRetriesControlHolderForBackup("acquireReplicatedSQLObjects");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
@@ -279,7 +279,7 @@ bool RestoreCoordinationOnCluster::acquireReplicatedSQLObjects(const String & lo
 bool RestoreCoordinationOnCluster::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id)
 {
     bool lock_acquired = false;
-    auto holder = with_retries.createRetriesControlHolder("acquireInsertingDataForKeeperMap");
+    auto holder = with_retries.createRetriesControlHolderForBackup("acquireInsertingDataForKeeperMap");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
@@ -311,7 +311,7 @@ void RestoreCoordinationOnCluster::generateUUIDForTable(ASTCreateQuery & create_
     CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* force_random= */ true};
     String new_uuids_str = new_uuids.toString();
 
-    auto holder = with_retries.createRetriesControlHolder("generateUUIDForTable");
+    auto holder = with_retries.createRetriesControlHolderForBackup("generateUUIDForTable");
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {

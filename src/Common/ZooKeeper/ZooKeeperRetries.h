@@ -33,8 +33,10 @@ struct ZooKeeperRetriesInfo
 class ZooKeeperRetriesControl
 {
 public:
-    ZooKeeperRetriesControl(std::string name_, LoggerPtr logger_, ZooKeeperRetriesInfo retries_info_)
-        : name(std::move(name_)), logger(logger_), retries_info(retries_info_)
+    ZooKeeperRetriesControl(std::string name_, LoggerPtr logger_, const ZooKeeperRetriesInfo & retries_info_)
+        : name(std::move(name_))
+        , logger(logger_)
+        , retries_info(retries_info_)
     {
     }
 
