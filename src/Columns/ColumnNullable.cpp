@@ -963,6 +963,12 @@ void ColumnNullable::takeDynamicStructureFromSourceColumns(const Columns & sourc
     nested_column->takeDynamicStructureFromSourceColumns(nested_source_columns);
 }
 
+bool ColumnNullable::dynamicStructureEquals(const IColumn & rhs) const
+{
+    const auto & rhs_nested_column = assert_cast<const ColumnNullable &>(rhs).getNestedColumn();
+    return nested_column->dynamicStructureEquals(rhs_nested_column);
+}
+
 ColumnPtr makeNullable(const ColumnPtr & column)
 {
     if (isColumnNullable(*column))
