@@ -322,6 +322,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         {
             object_info->addEqualityDeleteObject(equality_delete);
         }
+        object_info->schema_id_relevant_to_iterator = table_state_snapshot->schema_id;
         return object_info;
     }
     return nullptr;

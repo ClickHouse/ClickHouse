@@ -58,13 +58,6 @@ std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTable
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
 }
 
-std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTableStructureFromMetadataAfterUpdate() const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadataAfterUpdate is not implemented for basic configuration");
-}
-
-
 void StorageObjectStorageConfiguration::initialize(
     StorageObjectStorageConfiguration & configuration_to_initialize,
     ASTs & engine_args,

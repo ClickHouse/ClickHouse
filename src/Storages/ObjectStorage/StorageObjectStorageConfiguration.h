@@ -158,7 +158,6 @@ public:
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
-    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadataAfterUpdate() const;
 
     virtual bool supportsFileIterator() const { return false; }
     virtual bool supportsWrites() const { return true; }
@@ -175,7 +174,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual void releaseSpecificMetadataToStorageSnapshot(StorageSnapshotPtr /*storage_snapshot*/) const noexcept { }
+    virtual void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr /*storage_snapshot*/) const noexcept { }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
     virtual bool update(
@@ -207,6 +206,9 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write() is not implemented for configuration type {}", getTypeName());
     }
+
+    virtual bool needUpdateOnReadWrite() const { return true; }
+    virtual void releaseTemporaryState() noexcept { }
 
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(const MutationCommands & /*commands*/,

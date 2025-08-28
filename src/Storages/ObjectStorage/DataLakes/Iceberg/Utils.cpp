@@ -786,8 +786,6 @@ template <NothrowMovable T>
 void OneThreadProtecting<T>::set(T value_)
 {
     std::lock_guard lock(mutex);
-    if (current_thread_id != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Another thread is using the object protected by OneThreadProtecting");
     this->value = std::move(value_);
     current_thread_id = getThreadId();
 }
@@ -802,19 +800,13 @@ T & OneThreadProtecting<T>::get()
 }
 
 template <NothrowMovable T>
-T OneThreadProtecting<T>::release() noexcept
+const T & OneThreadProtecting<T>::get() const
 {
     std::lock_guard lock(mutex);
-    // In this moment we consider class invariants as fully broken
-    if (current_thread_id != getThreadId()) {
-        std::terminate();
-    }
-    current_thread_id = 0;
-    auto saved_value = std::move(value.value());
-    value = std::nullopt;
-    return saved_value;
+    if (current_thread_id != getThreadId())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Another thread is using the object protected by OneThreadProtecting");
+    return value.value();
 }
-
 
 template class OneThreadProtecting<IcebergTableStateSnapshot>;
 }

@@ -67,6 +67,8 @@ public:
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
 
+    virtual bool needUpdateOnReadWrite() const { return true; }
+
     /// Whether current metadata object is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
     virtual bool supportsUpdate() const { return false; }
@@ -78,7 +80,10 @@ public:
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
-    virtual void releaseSpecificMetadataToStorageSnapshot(StorageSnapshotPtr /**/) const noexcept { }
+    virtual void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr /**/) { }
+
+    virtual void releaseTemporaryState() noexcept { }
+
 
     virtual std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr) const { return {}; }
     virtual std::optional<size_t> updateConfigurationAndGetTotalBytes(ContextPtr) const { return {}; }

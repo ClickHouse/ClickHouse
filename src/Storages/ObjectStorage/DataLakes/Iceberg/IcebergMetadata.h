@@ -14,7 +14,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
-#include <Common/SharedMutex.h>
 #include <tuple>
 #include <optional>
 #include <base/defines.h>
@@ -110,16 +109,24 @@ public:
 
     void checkMutationIsPossible(const MutationCommands & commands) override;
 
+    bool needUpdateOnReadWrite() const override { return false; }
+
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override;
     void checkAlterIsPossible(const AlterCommands & commands) override;
     void alter(const AlterCommands & params, ContextPtr context) override;
 
-    void releaseSpecificMetadataToStorageSnapshot(StorageSnapshotPtr storage_snapshot) const noexcept override
+    void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr storage_snapshot) override
     {
-        LOG_DEBUG(log, "Releasing, stacktrace: {}", StackTrace().toString());
-        Iceberg::IcebergTableStateSnapshot snapshot_data = last_table_state_snapshot.release();
+        LOG_DEBUG(log, "Releasing to snapshot, stacktrace: {}", StackTrace().toString());
+        std::optional<Iceberg::IcebergTableStateSnapshot> snapshot_data = last_table_state_snapshot.get();
         if (storage_snapshot)
-            storage_snapshot->data = std::make_unique<Iceberg::IcebergSpecificSnapshotData>(std::move(snapshot_data));
+        {
+            if (!snapshot_data)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg state should be initialized when creating a storage snapshot");
+            }
+            storage_snapshot->data = std::make_unique<Iceberg::IcebergSpecificSnapshotData>(std::move(snapshot_data.value()));
+        }
     }
 
     ObjectIterator iterate(
@@ -136,9 +143,8 @@ private:
 
     DB::Iceberg::PersistentTableComponents persistent_components;
 
-    mutable SharedMutex mutex;
 
-    mutable Iceberg::OneThreadProtecting<Iceberg::IcebergTableStateSnapshot> last_table_state_snapshot;
+    Iceberg::OneThreadProtecting<Iceberg::IcebergTableStateSnapshot> last_table_state_snapshot;
 
     Iceberg::PersistentTableComponents initializePersistentTableComponents(Poco::JSON::Object::Ptr metadata_object);
 
@@ -150,7 +156,6 @@ private:
     getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::IcebergTableStateSnapshot>
     getState(const ContextPtr & local_context, String metadata_path, Int32 metadata_version) const;
-    void updateImpl(const ContextPtr & local_context) TSA_REQUIRES(mutex);
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::IcebergTableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
 };

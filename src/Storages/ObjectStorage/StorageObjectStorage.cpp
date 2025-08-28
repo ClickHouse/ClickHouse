@@ -119,6 +119,7 @@ StorageObjectStorage::StorageObjectStorage(
     , catalog(catalog_)
     , storage_id(table_id_)
 {
+    BasicScopeGuard<std::function<void()>> guard([this]() -> void { configuration->releaseTemporaryState(); });
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
 
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
@@ -127,19 +128,10 @@ StorageObjectStorage::StorageObjectStorage(
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
-    BasicScopeGuard<std::function<void()>> internal_state_wiper;
     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
     {
         configuration->create(
-            object_storage,
-            context,
-            columns_in_table_or_function_definition,
-            partition_by_,
-            if_not_exists_,
-            catalog,
-            storage_id
-        );
-        internal_state_wiper = [&] { configuration->releaseSpecificMetadataToStorageSnapshot(nullptr); };
+            object_storage, context, columns_in_table_or_function_definition, partition_by_, if_not_exists_, catalog, storage_id);
     }
 
     bool updated_configuration = false;
@@ -170,12 +162,12 @@ StorageObjectStorage::StorageObjectStorage(
     /// but this is not needed for table function,
     /// which exists only for the duration of a single query
     /// (e.g. read always follows constructor immediately).
-    update_configuration_on_read_write = !is_table_function || !updated_configuration;
+    update_configuration_on_read_write = (!is_table_function && configuration->needUpdateOnReadWrite()) || !updated_configuration;
 
     std::string sample_path;
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
-    if (need_resolve_columns_or_format)
+    if (need_resolve_columns_or_format && updated_configuration)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     else
         validateSupportedColumns(columns, *configuration);
@@ -305,7 +297,7 @@ bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
             /* check_consistent_with_previous_metadata */false);
     }
 
-    auto columns = configuration->tryGetTableStructureFromMetadataAfterUpdate();
+    auto columns = configuration->tryGetTableStructureFromMetadata();
     if (!columns.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No schema in table metadata");
 
@@ -318,30 +310,18 @@ bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
 StorageSnapshotPtr StorageObjectStorage::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const
 {
     auto snapshot = IStorage::getStorageSnapshot(metadata_snapshot, context);
-    configuration->releaseSpecificMetadataToStorageSnapshot(snapshot);
+    configuration->sendTemporaryStateToStorageSnapshot(snapshot);
     return snapshot;
 }
 
 
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
-
     return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
-
     return configuration->totalBytes(query_context);
 }
 

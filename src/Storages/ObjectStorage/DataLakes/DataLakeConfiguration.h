@@ -169,6 +169,12 @@ public:
         return current_metadata->updateConfigurationAndGetTotalRows(local_context);
     }
 
+    bool needUpdateOnReadWrite() const override
+    {
+        assertInitialized();
+        return current_metadata->needUpdateOnReadWrite();
+    }
+
     std::optional<size_t> totalBytes(ContextPtr local_context) override
     {
         assertInitialized();
@@ -218,13 +224,22 @@ public:
         return current_metadata->iterate(filter_dag, callback, list_batch_size, storage_snapshot, context);
     }
 
-    void releaseSpecificMetadataToStorageSnapshot(StorageSnapshotPtr storage_snapshot) const noexcept override
+    void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr storage_snapshot) const noexcept override
     {
         if (current_metadata)
         {
-            current_metadata->releaseSpecificMetadataToStorageSnapshot(storage_snapshot);
+            current_metadata->sendTemporaryStateToStorageSnapshot(storage_snapshot);
         }
     }
+
+    void releaseTemporaryState() noexcept override
+    {
+        if (current_metadata)
+        {
+            current_metadata->releaseTemporaryState();
+        }
+    }
+
 
     /// This is an awful temporary crutch,
     /// which will be removed once DeltaKernel is used by default for DeltaLake.
