@@ -24,6 +24,8 @@ public:
     StorageInMemoryMetadata getInMemoryMetadata() const override;
     StorageMetadataPtr getInMemoryMetadataPtr() const override;
     void alter(const AlterCommands &, ContextPtr, AlterLockHolder &) override;
+
+    static void modifyContextByQueryAST(ASTPtr query, ContextMutablePtr context);
 private:
     ContextPtr getContext() const;
     /// Store ddatabase.table or UUID of the reference table.

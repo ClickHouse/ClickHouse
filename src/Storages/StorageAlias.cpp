@@ -8,6 +8,11 @@
 #include <Common/CurrentThread.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTShowTablesQuery.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 
 namespace DB
 {
@@ -110,6 +115,31 @@ StorageMetadataPtr StorageAlias::getInMemoryMetadataPtr() const
 void StorageAlias::alter(const AlterCommands &, ContextPtr, AlterLockHolder &)
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "StorageAlias::alter() is not supported");
+}
+
+void StorageAlias::modifyContextByQueryAST(ASTPtr query, ContextMutablePtr context)
+{
+    if (query->as<ASTRenameQuery>()
+        || query->as<ASTShowTablesQuery>()
+        || query->as<ASTShowCreateTableQuery>()
+        || query->as<ASTShowCreateViewQuery>()
+        || query->as<ASTShowCreateDatabaseQuery>()
+        || query->as<ASTExistsDatabaseQuery>()
+        || query->as<ASTExistsTableQuery>()
+        || query->as<ASTExistsViewQuery>()
+        || query->as<ASTExistsDictionaryQuery>())
+    {
+        context->setStorageAliasBehaviour(static_cast<uint8_t>(StorageAliasBehaviourKind::USE_ALIAS_TABLE));
+    }
+    else if (auto * drop_query = query->as<ASTDropQuery>())
+    {
+        if (drop_query->kind != ASTDropQuery::Truncate)
+            context->setStorageAliasBehaviour(static_cast<uint8_t>(StorageAliasBehaviourKind::USE_ALIAS_TABLE));
+        else
+            context->setStorageAliasBehaviour(static_cast<uint8_t>(StorageAliasBehaviourKind::EXCEPTION));
+    }
+    else if (query->as<ASTAlterQuery>())
+            context->setStorageAliasBehaviour(static_cast<uint8_t>(StorageAliasBehaviourKind::EXCEPTION));
 }
 
 }

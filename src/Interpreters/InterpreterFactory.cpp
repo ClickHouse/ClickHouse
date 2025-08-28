@@ -130,15 +130,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     String interpreter_name;
 
-    auto operate_on_alias_storage = [&context]()
-    {
-        context->setStorageAliasBehaviour(static_cast<uint8_t>(StorageAliasBehaviourKind::USE_ALIAS_TABLE));
-    };
-    auto throw_exception_on_alias_storage = [&context]()
-    {
-        context->setStorageAliasBehaviour(static_cast<uint8_t>(StorageAliasBehaviourKind::EXCEPTION));
-    };
-
+    StorageAlias::modifyContextByQueryAST(query, context);
     if (query->as<ASTSelectQuery>())
     {
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -172,12 +164,8 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterCreateQuery";
     }
-    else if (auto * drop_query = query->as<ASTDropQuery>())
+    else if (query->as<ASTDropQuery>())
     {
-        if (drop_query->kind != ASTDropQuery::Truncate)
-            operate_on_alias_storage();
-        else
-            throw_exception_on_alias_storage();
         interpreter_name = "InterpreterDropQuery";
     }
     else if (query->as<ASTUndropQuery>())
@@ -186,12 +174,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTRenameQuery>())
     {
-        operate_on_alias_storage();
         interpreter_name = "InterpreterRenameQuery";
     }
     else if (query->as<ASTShowTablesQuery>())
     {
-        operate_on_alias_storage();
         interpreter_name = "InterpreterShowTablesQuery";
     }
     else if (query->as<ASTShowColumnsQuery>())
@@ -233,12 +219,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTExistsDatabaseQuery>() || query->as<ASTExistsTableQuery>() || query->as<ASTExistsViewQuery>() || query->as<ASTExistsDictionaryQuery>())
     {
-        operate_on_alias_storage();
         interpreter_name = "InterpreterExistsQuery";
     }
     else if (query->as<ASTShowCreateTableQuery>() || query->as<ASTShowCreateViewQuery>() || query->as<ASTShowCreateDatabaseQuery>() || query->as<ASTShowCreateDictionaryQuery>())
     {
-        operate_on_alias_storage();
         interpreter_name = "InterpreterShowCreateQuery";
     }
     else if (query->as<ASTDescribeQuery>())
@@ -264,7 +248,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTAlterQuery>())
     {
         interpreter_name = "InterpreterAlterQuery";
-        throw_exception_on_alias_storage();
     }
     else if (query->as<ASTAlterNamedCollectionQuery>())
     {
