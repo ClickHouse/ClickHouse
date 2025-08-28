@@ -29,8 +29,14 @@ server_exit_code=$?
 
 function dump_stacktraces_on_shutdown()
 {
-    # 1m should be enough to finish the server
-    sleep 1m
+    # 60 sec should be enough to finish the server
+    for _ in {1..60}; do
+        if ! kill -0 "$PID" 2>/dev/null; then
+            return
+        fi
+        sleep 1
+    done
+
     if kill -0 "$PID"; then
         echo "Attaching gdb to obtain thread stacktraces"
         gdb -batch -ex 'thread apply all bt full' -p "$PID" > /var/log/clickhouse-server/stdout.log
