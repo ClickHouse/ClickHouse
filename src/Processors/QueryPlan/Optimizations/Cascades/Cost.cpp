@@ -6,6 +6,7 @@
 #include "Processors/QueryPlan/IQueryPlanStep.h"
 #include "Processors/QueryPlan/JoinStepLogical.h"
 #include "Processors/QueryPlan/ReadFromMergeTree.h"
+#include "base/types.h"
 
 namespace DB
 {
@@ -54,8 +55,29 @@ ExpressionCost CostEstimator::estimateHashJoinCost(const JoinStepLogical & join_
     if (join_step.areInputsSwapped())
         std::swap(left_cost, right_cost);
 
-    double join_selectivity = 0.01; /// TODO: calculate from join predicates and statistics
+    double join_selectivity = 1.0;
+    for (const auto & predicate : join_step.getJoinInfo().expression.condition.predicates)
+    {
+        const auto & left_column = predicate.left_node.getColumnName();
+        const auto & right_column = predicate.right_node.getColumnName();
+        auto left_number_of_distinct_values = statistics.getNumberOfDistinctValues(left_column);
+        auto right_number_of_distinct_values = statistics.getNumberOfDistinctValues(right_column);
 
+        UInt64 max_number_of_distinct_values = 1;
+        if (left_number_of_distinct_values.has_value())
+            max_number_of_distinct_values = left_number_of_distinct_values.value();
+        if (right_number_of_distinct_values.has_value())
+            max_number_of_distinct_values = std::max(max_number_of_distinct_values, right_number_of_distinct_values.value());
+
+        /// Estimate JOIN equality predicate selectivity as 1 / max(NDV(A), NDV(B)) base on assumption that distinct values have equal probabilities
+        Float64 predicate_selectivity = 1.0 / max_number_of_distinct_values;
+
+        LOG_TEST(log, "Predicate '{} = {}' selectivity: 1 / max({}, {})",
+            left_column, right_column, left_number_of_distinct_values.value_or(1), right_number_of_distinct_values.value_or(1));
+
+        /// Multiply selectivities of predicates assuming they are independent
+        join_selectivity *= predicate_selectivity;
+    }
     ExpressionCost join_cost;
     join_cost.number_of_rows = Float64(left_cost.number_of_rows * right_cost.number_of_rows * join_selectivity);
     join_cost.subtree_cost =
