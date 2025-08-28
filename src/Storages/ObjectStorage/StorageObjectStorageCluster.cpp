@@ -112,21 +112,11 @@ std::string StorageObjectStorageCluster::getName() const
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
     return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
     return configuration->totalBytes(query_context);
 }
 
@@ -195,13 +185,14 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     const ActionsDAG::Node * predicate,
     const ActionsDAG * filter,
     const ContextPtr & local_context,
-    ClusterPtr cluster) const
+    ClusterPtr cluster,
+    StorageSnapshotPtr storage_snapshot) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         configuration->getQuerySettings(local_context),
         object_storage,
-        nullptr,
+        storage_snapshot,
         /* distributed_processing */ false,
         local_context,
         predicate,
@@ -243,4 +234,10 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 
+StorageSnapshotPtr StorageObjectStorageCluster::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const
+{
+    auto snapshot = IStorage::getStorageSnapshot(metadata_snapshot, context);
+    configuration->sendTemporaryStateToStorageSnapshot(snapshot);
+    return snapshot;
+}
 }

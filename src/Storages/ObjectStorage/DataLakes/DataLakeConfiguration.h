@@ -169,11 +169,8 @@ public:
         return current_metadata->updateConfigurationAndGetTotalRows(local_context);
     }
 
-    bool needUpdateOnReadWrite() const override
-    {
-        assertInitialized();
-        return current_metadata->needUpdateOnReadWrite();
-    }
+    // This method should work even if metadata is not initialized
+    bool needUpdateOnReadWrite() const override { return !std::is_same_v<IcebergMetadata, DataLakeMetadata>; }
 
     std::optional<size_t> totalBytes(ContextPtr local_context) override
     {
@@ -268,10 +265,10 @@ public:
         assertInitialized();
         return current_metadata->getColumnMapperForObject(object_info);
     }
-    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr storage_snapshot) const override
+    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr storage_snapshot, ContextPtr context) const override
     {
         assertInitialized();
-        return current_metadata->getColumnMapperForCurrentSchema(storage_snapshot);
+        return current_metadata->getColumnMapperForCurrentSchema(storage_snapshot, context);
     }
 
     SinkToStoragePtr write(

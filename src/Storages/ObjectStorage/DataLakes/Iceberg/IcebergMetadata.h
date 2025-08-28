@@ -86,7 +86,7 @@ public:
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
-    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr storage_snapshot) const override;
+    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr storage_snapshot, ContextPtr context) const override;
     SinkToStoragePtr write(
         SharedHeader sample_block,
         const StorageID & table_id,

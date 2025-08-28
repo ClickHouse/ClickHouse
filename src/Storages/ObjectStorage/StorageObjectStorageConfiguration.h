@@ -229,7 +229,7 @@ public:
 
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
 
-    virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr /**/) const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr /**/, ContextPtr /**/) const { return nullptr; }
 
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }

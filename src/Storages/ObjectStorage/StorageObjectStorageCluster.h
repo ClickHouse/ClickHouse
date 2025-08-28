@@ -26,12 +26,15 @@ public:
         const ActionsDAG::Node * predicate,
         const ActionsDAG * filter,
         const ContextPtr & context,
-        ClusterPtr cluster) const override;
+        ClusterPtr cluster,
+        StorageSnapshotPtr storage_snapshot) const override;
 
     String getPathSample(ContextPtr context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const override;
 
 private:
     void updateQueryToSendIfNeeded(

@@ -18,6 +18,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <base/getThreadId.h>
 #include <base/types.h>
 #include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Array.h>
@@ -25,6 +26,7 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+
 
 #if USE_AVRO
 

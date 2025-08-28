@@ -162,7 +162,7 @@ StorageObjectStorage::StorageObjectStorage(
     /// but this is not needed for table function,
     /// which exists only for the duration of a single query
     /// (e.g. read always follows constructor immediately).
-    update_configuration_on_read_write = (!is_table_function && configuration->needUpdateOnReadWrite()) || !updated_configuration;
+    update_configuration_on_read_write = !is_table_function || !updated_configuration;
 
     std::string sample_path;
 
@@ -337,7 +337,7 @@ void StorageObjectStorage::read(
 {
     /// We did configuration->update() in constructor,
     /// so in case of table function there is no need to do the same here again.
-    if (update_configuration_on_read_write)
+    if (update_configuration_on_read_write && configuration->needUpdateOnReadWrite())
     {
         configuration->update(
             object_storage,
@@ -397,7 +397,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    if (update_configuration_on_read_write)
+    if (update_configuration_on_read_write && configuration->needUpdateOnReadWrite())
     {
         configuration->update(
             object_storage,

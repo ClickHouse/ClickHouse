@@ -973,10 +973,23 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->underlying_format_read_schema_id);
 }
 
-ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageSnapshotPtr storage_snapshot) const
+ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageSnapshotPtr storage_snapshot, ContextPtr context) const
 {
     auto iceberg_table_state = extractIcebergSnapshotIdFromMetadataObject(storage_snapshot);
-    chassert(iceberg_table_state != nullptr);
+    // This is a temporary cludge for cluster functions because now the state on replicas is not synchronized with the primary state on the coordinator
+    if (!iceberg_table_state)
+    {
+        auto configuration_ptr = configuration.lock();
+        if (!configuration_ptr)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Iceberg storage configuration is expired, table location: {}",
+                persistent_components.table_location);
+        const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+            object_storage, configuration_ptr, persistent_components.metadata_cache, context, log.get());
+        auto [actual_data_snapshot, actual_table_state_snapshot] = getState(context, metadata_file_path, metadata_version);
+        iceberg_table_state = std::make_shared<IcebergTableStateSnapshot>(actual_table_state_snapshot);
+    }
     auto configuration_ptr = configuration.lock();
     if (Poco::toLower(configuration_ptr->format) != "parquet")
         return nullptr;
