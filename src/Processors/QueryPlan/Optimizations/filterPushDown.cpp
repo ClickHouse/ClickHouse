@@ -380,7 +380,10 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     /// 3. push filter/expression out of JOIN (from pre-filter)
     auto fix_predicate_for_join_logical_step = [&](ActionsDAG filter_dag, const ActionsDAG & side_dag)
     {
-        filter_dag = ActionsDAG::merge(side_dag.clone(), std::move(filter_dag));
+        auto cloned_side_dag = side_dag.clone();
+        for (const auto * input : filter_dag.getInputs())
+            cloned_side_dag.tryRestoreColumn(input->result_name);
+        filter_dag = ActionsDAG::merge(std::move(cloned_side_dag), std::move(filter_dag));
         auto & outputs = filter_dag.getOutputs();
         outputs.resize(1);
         outputs.insert(outputs.end(), filter_dag.getInputs().begin(), filter_dag.getInputs().end());
@@ -392,7 +395,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     {
         if (logical_join)
         {
-
             join_filter_push_down_actions.left_stream_filter_to_push_down = fix_predicate_for_join_logical_step(
                 std::move(*join_filter_push_down_actions.left_stream_filter_to_push_down),
                 *logical_join->getExpressionActions().left_pre_join_actions
