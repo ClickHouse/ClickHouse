@@ -1268,25 +1268,10 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
     return std::make_tuple(new IntType(32, false), Integers::Int32);
 }
 
-std::tuple<SQLType *, FloatingPoints> StatementGenerator::randomFloatType(RandomGenerator & rg, const uint64_t allowed_types)
+std::tuple<SQLType *, FloatingPoints> StatementGenerator::randomFloatType(RandomGenerator & rg) const
 {
-    chassert(this->ids.empty());
-
-    if ((allowed_types & allow_bfloat16))
-    {
-        this->ids.emplace_back(1);
-    }
-    if ((allowed_types & allow_float32))
-    {
-        this->ids.emplace_back(2);
-    }
-    if ((allowed_types & allow_float64))
-    {
-        this->ids.emplace_back(3);
-    }
-    const uint32_t nopt = rg.pickRandomly(this->ids);
-    this->ids.clear();
-    return std::make_tuple(new FloatType(1 << (3 + nopt)), static_cast<FloatingPoints>(nopt));
+    const uint32_t nopt = (rg.nextSmallNumber() % 3) + 1;
+    return std::make_tuple(new FloatType(1 << (nopt + 3)), static_cast<FloatingPoints>(nopt));
 }
 
 std::tuple<SQLType *, Dates> StatementGenerator::randomDateType(RandomGenerator & rg, const uint64_t allowed_types) const
@@ -1413,8 +1398,8 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
     SQLType * res = nullptr;
 
     const uint32_t int_type = 40;
-    const uint32_t floating_point_type = 10
-        * static_cast<uint32_t>((allowed_types & (allow_bfloat16 | allow_float32 | allow_float64)) != 0 && this->fc.fuzz_floating_points);
+    const uint32_t floating_point_type
+        = 10 * static_cast<uint32_t>((allowed_types & allow_floating_points) != 0 && this->fc.fuzz_floating_points);
     const uint32_t date_type = 15 * static_cast<uint32_t>((allowed_types & allow_dates) != 0);
     const uint32_t datetime_type = 15 * static_cast<uint32_t>((allowed_types & allow_datetimes) != 0);
     const uint32_t string_type = 30 * static_cast<uint32_t>((allowed_types & allow_strings) != 0);
@@ -1446,7 +1431,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
     {
         FloatingPoints nflo;
 
-        std::tie(res, nflo) = randomFloatType(rg, allowed_types);
+        std::tie(res, nflo) = randomFloatType(rg);
         if (tp)
         {
             tp->set_floats(nflo);

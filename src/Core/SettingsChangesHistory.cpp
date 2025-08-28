@@ -39,12 +39,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "25.9",
-        {
-            {"use_skip_indexes_on_data_read", false, true, "New setting"},
-            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
-            {"allow_experimental_delta_lake_writes", false, false, "New setting."},
-        });
         addSettingsChanges(settings_changes_history, "25.8",
         {
             {"output_format_json_quote_64bit_integers", true, false, "Disable quoting of the 64 bit integers in JSON by default"},
@@ -855,11 +849,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "25.9",
-        {
-            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, false, "New setting"},
-            {"shared_merge_tree_empty_partition_lifetime", 86400, 86400, "New setting"},
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
             {"object_serialization_version", "v2", "v2", "Add a setting to control JSON serialization versions"},

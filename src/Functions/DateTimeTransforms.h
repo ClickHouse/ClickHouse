@@ -2485,14 +2485,10 @@ struct DateTimeTransformImpl
             auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
 
             WhichDataType result_data_type(result_type);
-            if (result_data_type.isDateTime() || result_data_type.isDateTime64())
+            if (result_data_type.isDateTime() || result_data_type.isDateTime64() || result_data_type.isTime() || result_data_type.isTime64())
             {
                 const auto & time_zone = dynamic_cast<const TimezoneMixin &>(*result_type).getTimeZone();
                 Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to, input_rows_count);
-            }
-            else if (result_data_type.isTime() || result_data_type.isTime64())
-            {
-                Op::vector(sources->getData(), col_to->getData(), DateLUT::instance(), transform, vec_null_map_to, input_rows_count);
             }
             else
             {

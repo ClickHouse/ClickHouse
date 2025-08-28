@@ -503,7 +503,6 @@ class ClickHouseCluster:
         custom_keeper_configs=[],
         enable_thread_fuzzer=False,
         thread_fuzzer_settings={},
-        azurite_default_port=0,
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -662,13 +661,7 @@ class ClickHouseCluster:
         self.with_azurite = False
         self.azurite_container = "azurite-container"
         self.blob_service_client = None
-        # When using plugins for Spark, it expects Azurite to run on port 10000
-        self._azurite_port = azurite_default_port
-        self.azurite_host = "azurite1"
-        self.azurite_ip = None
-        self.azurite_account = "devstoreaccount1"
-        self.azurite_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
-        self.azure_container_name = "cont"
+        self._azurite_port = 0
 
         # available when with_kafka == True
         self.kafka_host = "kafka1"
@@ -2987,7 +2980,6 @@ class ClickHouseCluster:
     def wait_azurite_to_start(self, timeout=180):
         from azure.storage.blob import BlobServiceClient
 
-        self.azurite_ip = self.get_instance_ip(self.azurite_host)
         connection_string = (
             f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
             f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"

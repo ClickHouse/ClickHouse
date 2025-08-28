@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
+from .info import Info
 from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
@@ -716,16 +717,7 @@ class _ResultS3:
         if not _uploaded_file_link:
             _uploaded_file_link = {}
 
-        # Deduplicate files by normalizing paths to absolute strings
-        unique_files = {}
         for file in result.files:
-            # Convert to Path and resolve to absolute path
-            file_path = Path(file).resolve()
-            file_str = str(file_path)
-            if file_str not in unique_files:
-                unique_files[file_str] = file  # Keep original file reference
-
-        for file_str, file in unique_files.items():
             if not Path(file).is_file():
                 print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
                 result.set_info(f"WARNING: File [{file}] was not found")

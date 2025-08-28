@@ -44,7 +44,6 @@ public:
     virtual String MySQLtypeName(RandomGenerator & rg, bool escape) const = 0;
     virtual String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const = 0;
     virtual String SQLitetypeName(RandomGenerator & rg, bool escape) const = 0;
-    String ToSparkTypeName(bool escape) const { return typeName(escape); }
     virtual SQLType * typeDeepCopy() const = 0;
     virtual String appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const = 0;
     virtual bool isNullable() const = 0;
@@ -125,7 +124,6 @@ public:
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
-    String ToSparkTypeName(bool) const { return "Date"; }
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
@@ -150,7 +148,6 @@ public:
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
-    String ToSparkTypeName(bool) const { return "Time"; }
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
@@ -177,7 +174,6 @@ public:
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
-    String ToSparkTypeName(bool) const { return "DateTime"; }
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
@@ -276,7 +272,6 @@ public:
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
-    String ToSparkTypeName(bool) const { return "String"; }
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
