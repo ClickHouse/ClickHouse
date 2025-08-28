@@ -3,13 +3,14 @@
 #include "Processors/QueryPlan/Optimizations/Cascades/Group.h"
 #include "Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h"
 #include "Processors/QueryPlan/Optimizations/Cascades/Rule.h"
+#include "Processors/QueryPlan/Optimizations/Cascades/Statistics.h"
 #include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
 
-OptimizerContext::OptimizerContext()
-    : cost_estimator(memo)
+OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics)
+    : cost_estimator(memo, statistics)
 {
 //    addRule(std::make_shared<JoinAssociativity>());
     addRule(std::make_shared<JoinCommutativity>());
