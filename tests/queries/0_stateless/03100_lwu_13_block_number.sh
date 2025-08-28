@@ -33,7 +33,7 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT $failpoint_name;
 "
 
-$CLICKHOUSE_CLIENT --query "UPDATE t_lwu_block_number SET s = 'foo' WHERE id >= 500" --allow_experimental_lightweight_update 1 &
+$CLICKHOUSE_CLIENT --query "UPDATE t_lwu_block_number SET s = 'foo' WHERE id >= 500" --enable_lightweight_update 1 &
 
 wait_for_block_allocated "/zookeeper/$CLICKHOUSE_DATABASE/t_lwu_block_number/block_numbers/all" "block-0000000001"
 
