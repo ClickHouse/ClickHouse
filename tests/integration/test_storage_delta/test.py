@@ -3364,12 +3364,9 @@ def test_write_limits(started_cluster, partitioned, limit_enabled):
         f"INSERT INTO {table_name} SELECT number % {partitions_num}, randomString(10) FROM numbers({num_rows}) SETTINGS delta_lake_insert_max_rows_in_data_file = {limit_rows}, max_insert_block_size = 1000, min_chunk_bytes_for_parallel_parsing = 1000"
     )
 
-    LocalDownloader(instance).download_directory(f"/{result_file}/", f"/{result_file}/")
-    data_files = (
-        instance.exec_in_container(["bash", "-c", f"ls -R /{result_file} | grep '.parquet'"])
-        .strip()
-        .split("\n")
-    )
+    files = LocalDownloader(instance).download_directory(f"/{result_file}/", f"/{result_file}/")
+    data_files = [file for file in files if file.endswith(".parquet")]
+    assert len(data_files) > 0, f"No data files: {files}"
 
     if partitioned:
         if limit_enabled:

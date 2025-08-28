@@ -210,7 +210,10 @@ void DeltaLakePartitionedSink::onFinish()
         for (const auto & [sink, written_bytes, written_rows] : data_files)
         {
             sink->onFinish();
-            files.emplace_back(sink->getPath().substr(data_prefix.size()), written_bytes, partition_values);
+            files.emplace_back(
+                sink->getPath().substr(data_prefix.size()),
+                sink->getFileSize(),
+                partition_values);
         }
     }
 
