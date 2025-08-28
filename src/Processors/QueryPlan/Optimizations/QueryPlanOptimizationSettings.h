@@ -58,12 +58,12 @@ struct QueryPlanOptimizationSettings
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
 
-    bool optimize_joins;
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
     /// nullopt - swap if it's beneficial
     std::optional<bool> join_swap_table;
-    bool optimize_join_order;
+    /// Maximum number of tables in query graph to reorder
+    UInt64 query_plan_optimize_join_order_limit;
 
     /// --- Second-pass optimizations
     bool optimize_prewhere;

@@ -32,7 +32,7 @@ struct JoinOperator
     explicit JoinOperator(
         JoinKind kind_ = JoinKind::Cross,
         JoinStrictness strictness_ = JoinStrictness::All,
-        JoinLocality locality_ = JoinLocality::Local,
+        JoinLocality locality_ = JoinLocality::Unspecified,
         std::vector<JoinActionRef> expression_ = {})
         : kind(kind_)
         , strictness(strictness_)
@@ -42,6 +42,8 @@ struct JoinOperator
 
     void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_) const;
     static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions);
+
+    String dump() const;
 };
 
 

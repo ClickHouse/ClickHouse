@@ -2094,17 +2094,15 @@ See also:
 For single JOIN in case of identifier ambiguity prefer left table
 )", IMPORTANT) \
     \
-DECLARE(Bool, query_plan_optimize_joins, true, R"(
-Apply query plan optimizations for joins.
-)", 0) \
 DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
-Determine which side of the join should be the build table (also called inner, the one inserted into the hash table for a hash join) in the query plan. This setting is supported only for `ALL` join strictness with the `JOIN ON` clause. Possible values are:
+    Determine which side of the join should be the build table (also called inner, the one inserted into the hash table for a hash join) in the query plan. This setting is supported only for `ALL` join strictness with the `JOIN ON` clause. Possible values are:
     - 'auto': Let the planner decide which table to use as the build table.
     - 'false': Never swap tables (the right table is the build table).
     - 'true': Always swap tables (the left table is the build table).
 )", 0) \
-DECLARE(Bool, query_plan_optimize_join_order, true, R"(
+DECLARE(UInt64, query_plan_optimize_join_order_limit, 1, R"(
     Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
+    Value is the maximum number of tables to optimize.
 )", 0) \
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(

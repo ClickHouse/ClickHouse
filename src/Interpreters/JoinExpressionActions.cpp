@@ -330,6 +330,13 @@ JoinActionRef JoinExpressionActions::findNode(const String & column_name, bool i
     return JoinActionRef(nullptr);
 }
 
+JoinActionRef JoinExpressionActions::addInput(const String & column_name, const DataTypePtr & type, size_t source_relation)
+{
+    const auto * actions_dag_node = &data->actions_dag.addInput(column_name, type);
+    data->expression_sources[actions_dag_node].set(source_relation);
+    return JoinActionRef(actions_dag_node, data);
+}
+
 ActionsDAG JoinExpressionActions::getSubDAG(JoinActionRef action)
 {
     return getSubDAG(std::views::single(action));

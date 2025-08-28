@@ -111,6 +111,15 @@ public:
     void addConditions(ActionsDAG actions_dag);
     std::optional<ActionsDAG::ActionsForFilterPushDown> getFilterActions(JoinTableSide side, const SharedHeader & stream_header);
 
+    struct ActionsDAGWithKeys
+    {
+        ActionsDAG actions_dag;
+        ActionsDAG::NodeRawConstPtrs keys;
+    };
+
+    std::optional<std::pair<ActionsDAGWithKeys, ActionsDAGWithKeys>>
+    preCalculateKeys(const SharedHeader & left_header, const SharedHeader & right_header);
+
     static void buildPhysicalJoin(
         QueryPlan::Node & node,
         const QueryPlanOptimizationSettings & optimization_settings,

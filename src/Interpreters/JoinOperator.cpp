@@ -266,4 +266,12 @@ JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & 
     return result;
 }
 
+String JoinOperator::dump() const
+{
+    return fmt::format("JoinOperator(kind={}, strictness={}, locality={}, expression=[{}], residual_filter=[{}])",
+        toString(kind), toString(strictness), toString(locality),
+        fmt::join(expression | std::views::transform(&JoinActionRef::dump), ", "),
+        fmt::join(residual_filter | std::views::transform(&JoinActionRef::dump), ", "));
+}
+
 }

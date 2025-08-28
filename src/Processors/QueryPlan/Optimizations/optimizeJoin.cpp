@@ -1023,7 +1023,7 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     auto strictness = join_step->getJoinOperator().strictness;
     auto kind = join_step->getJoinOperator().kind;
     auto locality = join_step->getJoinOperator().locality;
-    if (!optimization_settings.optimize_joins ||
+    if (!optimization_settings.query_plan_optimize_join_order_limit ||
         (strictness != JoinStrictness::All && strictness != JoinStrictness::Any) ||
         locality != JoinLocality::Unspecified ||
         kind == JoinKind::Paste ||
@@ -1035,10 +1035,10 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
 
-    int query_graph_size_limit = optimization_settings.optimize_join_order ? 64 : 1;
+    int query_graph_size_limit = safe_cast<int>(optimization_settings.query_plan_optimize_join_order_limit);
     if (strictness == JoinStrictness::Any)
         /// Do not reorder ANY joins, only allow swap
-        query_graph_size_limit = 1;
+        query_graph_size_limit = 2;
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);

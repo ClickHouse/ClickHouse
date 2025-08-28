@@ -42,8 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.9",
         {
             {"use_skip_indexes_on_data_read", false, true, "New setting"},
-            {"query_plan_optimize_join_order", false, false, "New setting"},
-            {"query_plan_optimize_joins", true, true, "New setting"},
+            {"query_plan_optimize_join_order_limit", 1, 1, "New setting"},
             {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
         });

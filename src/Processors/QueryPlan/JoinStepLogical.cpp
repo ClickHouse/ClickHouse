@@ -1136,6 +1136,96 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterAc
     return {};
 }
 
+void remapNodes(ActionsDAG::NodeRawConstPtrs & keys, const ActionsDAG::NodeMapping & node_map)
+{
+    for (const auto *& key : keys)
+    {
+        if (auto it = node_map.find(key); it != node_map.end())
+            key = it->second;
+    }
+}
+
+ActionsDAG cloneSubdagWithInputs(const SharedHeader & stream_header, ActionsDAG::NodeRawConstPtrs & keys)
+{
+    ActionsDAG dag(stream_header->getColumnsWithTypeAndName());
+
+    ActionsDAG::NodeMapping node_map;
+    auto second_dag = ActionsDAG::cloneSubDAG(keys, node_map, false);
+
+    remapNodes(keys, node_map);
+    node_map.clear();
+
+    dag.mergeInplace(std::move(second_dag), node_map, true);
+    remapNodes(keys, node_map);
+
+    dag.getOutputs() = dag.getInputs();
+    dag.getOutputs().append_range(keys | std::views::filter([&](const auto * node) { return node->type != ActionsDAG::ActionType::INPUT; }));
+
+    return dag;
+}
+
+std::optional<std::pair<JoinStepLogical::ActionsDAGWithKeys, JoinStepLogical::ActionsDAGWithKeys>>
+JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const SharedHeader & right_header)
+{
+    auto & join_expression = join_operator.expression;
+
+    ActionsDAG::NodeRawConstPtrs left_keys;
+    ActionsDAG::NodeRawConstPtrs right_keys;
+
+    for (size_t i = 0; i < join_expression.size(); ++i)
+    {
+        auto & expr = join_expression[i];
+        auto [predicate_op, lhs, rhs] = expr.asBinaryPredicate();
+        if (predicate_op != JoinConditionOperator::Equals)
+            continue;
+
+        const auto * left_node = lhs.getNode();
+        const auto * right_node = rhs.getNode();
+        if (lhs.fromLeft() && rhs.fromRight())
+        {
+            left_keys.push_back(left_node);
+            right_keys.push_back(right_node);
+        }
+        else if (lhs.fromRight() && rhs.fromLeft())
+        {
+            left_keys.push_back(right_node);
+            right_keys.push_back(left_node);
+        }
+        else
+        {
+            continue;
+        }
+
+        /// Replace keys expression with calculated inputs
+        /// We also could possibly remove some nodes from dag,
+        /// but they will simply remain unused when converting to a physical step
+        if (left_node->type != ActionsDAG::ActionType::INPUT ||
+            right_node->type != ActionsDAG::ActionType::INPUT)
+        {
+            if (left_node->type != ActionsDAG::ActionType::INPUT)
+                lhs = expression_actions.addInput(left_node->result_name, left_node->result_type, lhs.fromLeft() ? 0 : 1);
+            if (right_node->type != ActionsDAG::ActionType::INPUT)
+                rhs = expression_actions.addInput(right_node->result_name, right_node->result_type, rhs.fromRight() ? 0 : 1);
+            expr = JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(predicate_op));
+        }
+    }
+
+    if (left_keys.empty() || right_keys.empty())
+        return {};
+
+    auto left_dag = cloneSubdagWithInputs(left_header, left_keys);
+    updateInputHeader(std::make_shared<Block>(left_dag.getResultColumns()), 0);
+
+    auto right_dag = cloneSubdagWithInputs(right_header, right_keys);
+    updateInputHeader(std::make_shared<Block>(right_dag.getResultColumns()), 1);
+
+    return std::make_optional(std::pair{
+        ActionsDAGWithKeys{std::move(left_dag), std::move(left_keys)},
+        ActionsDAGWithKeys{std::move(right_dag), std::move(right_keys)},
+    });
+}
+
+
 void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
     join_settings.updatePlanSettings(settings);

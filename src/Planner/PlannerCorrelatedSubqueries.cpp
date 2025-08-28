@@ -546,7 +546,7 @@ QueryPlan buildLogicalJoin(
     auto result_join = std::make_unique<JoinStepLogical>(
         lhs_plan_header,
         rhs_plan_header,
-        JoinOperator(JoinKind::Left, JoinStrictness::Any, JoinLocality::Local, std::move(predicates)),
+        JoinOperator(JoinKind::Left, JoinStrictness::Any, JoinLocality::Unspecified, std::move(predicates)),
         std::move(join_expression_actions),
         output_columns,
         std::unordered_map<String, const ActionsDAG::Node *>{},
