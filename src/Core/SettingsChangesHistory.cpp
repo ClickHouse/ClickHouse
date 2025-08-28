@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_skip_indexes_on_data_read", false, true, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
+            {"enable_cascades_optimizer", false, false, "New experimental setting."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
