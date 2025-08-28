@@ -2022,7 +2022,7 @@ jobs:
 
   stateless_tests_amd_coverage_1_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsMS82KQ==') }}
     name: "Stateless tests (amd_coverage,1/6)"
     outputs:
@@ -2067,7 +2067,7 @@ jobs:
 
   stateless_tests_amd_coverage_2_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsMi82KQ==') }}
     name: "Stateless tests (amd_coverage,2/6)"
     outputs:
@@ -2112,7 +2112,7 @@ jobs:
 
   stateless_tests_amd_coverage_3_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsMy82KQ==') }}
     name: "Stateless tests (amd_coverage,3/6)"
     outputs:
@@ -2157,7 +2157,7 @@ jobs:
 
   stateless_tests_amd_coverage_4_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsNC82KQ==') }}
     name: "Stateless tests (amd_coverage,4/6)"
     outputs:
@@ -2202,7 +2202,7 @@ jobs:
 
   stateless_tests_amd_coverage_5_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsNS82KQ==') }}
     name: "Stateless tests (amd_coverage,5/6)"
     outputs:
@@ -2247,7 +2247,7 @@ jobs:
 
   stateless_tests_amd_coverage_6_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsNi82KQ==') }}
     name: "Stateless tests (amd_coverage,6/6)"
     outputs:
