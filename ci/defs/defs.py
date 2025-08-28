@@ -70,6 +70,7 @@ SECRETS = [
         name="clickhouse-test-stat-password",
         type=Secret.Type.AWS_SSM_VAR,
     ),
+    Secret.Config(name="ANTHROPIC_API_KEY", type=Secret.Type.AWS_SSM_VAR),
     azure_secret,
     chcache_secret,
     Secret.Config(
@@ -321,7 +322,9 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
 class JobNames:
     DOCKER_BUILDS_ARM = "Dockers build (arm)"
     DOCKER_BUILDS_AMD = "Dockers build (amd)"
+    CLAUDE = "CI agent"
     STYLE_CHECK = "Style check"
+    CHANGE_LOG = "Change log"
     FAST_TEST = "Fast test"
     BUILD = "Build"
     UNITTEST = "Unit tests"
@@ -332,7 +335,7 @@ class JobNames:
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
-    Docs = "Docs check"
+    DOCS = "Docs check"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"
