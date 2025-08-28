@@ -120,7 +120,7 @@ class ITokenExtractorHelper : public ITokenExtractor
         query_string.setQueryString({data, length});
         const auto & tokens = getTokensView(data, length);
         for (const auto & token : tokens)
-            query_string.addTerm(token);
+            query_string.addToken(token);
     }
 
     void stringPaddedToGinFilter(const char * data, size_t length, GinQueryString & query_string) const override
@@ -132,7 +132,7 @@ class ITokenExtractorHelper : public ITokenExtractor
         size_t token_len = 0;
 
         while (cur < length && static_cast<const Derived *>(this)->nextInStringPadded(data, length, &cur, &token_start, &token_len))
-            query_string.addTerm({data + token_start, token_len});
+            query_string.addToken({data + token_start, token_len});
     }
 
     void stringLikeToGinFilter(const char * data, size_t length, GinQueryString & query_string) const override
@@ -143,7 +143,7 @@ class ITokenExtractorHelper : public ITokenExtractor
         String token;
 
         while (cur < length && static_cast<const Derived *>(this)->nextInStringLike(data, length, &cur, token))
-            query_string.addTerm(token);
+            query_string.addToken(token);
     }
 };
 
