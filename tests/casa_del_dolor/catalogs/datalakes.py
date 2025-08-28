@@ -122,7 +122,7 @@ def get_spark(
         "org.apache.spark:spark-hadoop-cloud_2.12:3.5.6",
         "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2",
         "org.apache.iceberg:iceberg-spark-extensions-3.5_2.12:1.9.2",
-        "org.apache.iceberg:iceberg-aws:1.9.2",
+        "org.apache.iceberg:iceberg-aws-bundle:1.9.2",
         "org.apache.iceberg:iceberg-azure-bundle:1.9.2",
         "io.delta:delta-spark_2.12:3.3.2",
         "io.unitycatalog:unitycatalog-spark_2.12:0.2.0",
@@ -177,6 +177,11 @@ def get_spark(
             builder.config(
                 "spark.hadoop.hive.metastore.client.factory.class",
                 "com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory",
+            )
+        if storage == TableStorage.S3:
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.io-impl",
+                "org.apache.iceberg.aws.s3.S3FileIO",
             )
     elif catalog == LakeCatalogs.Hive:
         # Enable Hive support
