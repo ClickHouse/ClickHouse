@@ -654,34 +654,4 @@ void ReadFromSystemNumbersStep::checkLimits(size_t rows)
     }
 }
 
-UInt64 ReadFromSystemNumbersStep::getNumberOfRows() const
-{
-    auto & numbers_storage = storage->as<StorageSystemNumbers &>();
-    UInt64 estimated_rows = 0;
-
-    if (numbers_storage.limit.has_value())
-    {
-        estimated_rows = itemCountInRange(
-            numbers_storage.offset,
-            numbers_storage.offset + numbers_storage.limit.value(),
-            numbers_storage.step);
-    }
-
-    if (limit.has_value() && (estimated_rows == 0 || limit.value() < estimated_rows))
-        estimated_rows = limit.value();
-
-    return estimated_rows;
-}
-
-String ReadFromSystemNumbersStep::getColumnName() const
-{
-    auto & numbers_storage = storage->as<StorageSystemNumbers &>();
-    return numbers_storage.column_name;
-}
-
-StorageID ReadFromSystemNumbersStep::getStorageID() const
-{
-    return storage->getStorageID();
-}
-
 }

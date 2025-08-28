@@ -10,7 +10,6 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
-#include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/StorageMemory.h>
@@ -220,19 +219,6 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filt
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_diplay_name = reading->getStorage()->getName();
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_diplay_name};
-    }
-
-    if (const auto * reading = typeid_cast<const ReadFromSystemNumbersStep *>(step))
-    {
-        RelationStats relation_stats;
-        UInt64 estimated_rows = reading->getNumberOfRows();
-        relation_stats.estimated_rows = estimated_rows;
-
-        auto column_name = reading->getColumnName();
-        relation_stats.column_stats[column_name].num_distinct_values = estimated_rows;
-        relation_stats.table_name = reading->getStorageID().getTableName();
-
-        return relation_stats;
     }
 
     if (node.children.size() != 1)
