@@ -710,7 +710,7 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
                 first ? "" : ", ",
                 entry.getBottomName(),
                 entry.path.size() > 1 ? "Array(" : "",
-                entry.getBottomType()->typeName(false),
+                entry.getBottomType()->typeName(false, false),
                 entry.path.size() > 1 ? ")" : "");
             first = false;
         }
@@ -950,7 +950,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
                     first ? "" : ", ",
                     bottomName,
                     entry.path.size() > 1 ? "Array(" : "",
-                    entry.getBottomType()->typeName(false),
+                    entry.getBottomType()->typeName(false, false),
                     entry.path.size() > 1 ? ")" : "");
                 ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path()->mutable_col()->set_column(bottomName);
                 first = false;

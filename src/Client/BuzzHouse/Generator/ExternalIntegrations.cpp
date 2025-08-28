@@ -1668,7 +1668,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, 
     for (const auto & entry : entries)
     {
         buf += fmt::format(
-            R"({}{{"name":"{}","type":"{}"}})", first ? "" : ",", entry.getBottomName(), entry.getBottomType()->ToSparkTypeName(false));
+            R"({}{{"name":"{}","type":"{}"}})", first ? "" : ",", entry.getBottomName(), entry.getBottomType()->typeName(false, true));
         first = false;
     }
     buf += "]}";

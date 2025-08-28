@@ -1023,7 +1023,7 @@ String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTabl
             "{}{} {}{}",
             first ? "" : ", ",
             entry.getBottomName(),
-            entry.getBottomType()->typeName(escape),
+            entry.getBottomType()->typeName(escape, false),
             entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
         first = false;
     }

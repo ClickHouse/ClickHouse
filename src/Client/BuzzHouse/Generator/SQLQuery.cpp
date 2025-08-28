@@ -562,7 +562,7 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
             const uint32_t ncame = col_counter++;
             auto tp = std::unique_ptr<SQLType>(randomNextType(rg, this->next_type_mask, col_counter, nullptr));
 
-            buf += fmt::format("{}c{} {}", first ? "" : ", ", ncame, tp->typeName(false));
+            buf += fmt::format("{}c{} {}", first ? "" : ", ", ncame, tp->typeName(false, false));
             first = false;
             centries[ncame] = std::move(tp);
         }
@@ -1071,7 +1071,7 @@ bool StatementGenerator::joinedTableOrFunction(
             const String & bottomName = entry.getBottomName();
 
             url += fmt::format("{}{}", first ? "" : ",", bottomName);
-            buf += fmt::format("{}{} {}", first ? "" : ", ", bottomName, entry.getBottomType()->typeName(false));
+            buf += fmt::format("{}{} {}", first ? "" : ", ", bottomName, entry.getBottomType()->typeName(false, false));
             first = false;
         }
         this->remote_entries.clear();

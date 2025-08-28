@@ -251,7 +251,7 @@ void QueryOracle::generateExportQuery(
                 first ? "" : ", ",
                 entry.columnPathRef(),
                 entry.path.size() > 1 ? "Array(" : "",
-                entry.getBottomType()->typeName(false),
+                entry.getBottomType()->typeName(false, false),
                 entry.path.size() > 1 ? ")" : "",
                 (entry.path.size() == 1 && entry.nullable.has_value()) ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
             first = false;
