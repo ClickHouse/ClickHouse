@@ -188,12 +188,12 @@ class ClickHouseSparkTypeMapper:
         # Handle Decimal types
         decimal_match = re.match(r"Decimal(?:\d+)?\((\d+)(?:,\s*(\d+))?\)", ch_type)
         if decimal_match:
-            precision = decimal_match.group(1)
-            scale = decimal_match.group(2) if decimal_match.group(2) else "0"
+            nprecision = decimal_match.group(1)
+            nscale = decimal_match.group(2) if decimal_match.group(2) else "0"
             return (
-                f"DECIMAL({precision}, {scale})",
+                f"DECIMAL({nprecision}, {nscale})",
                 inside_nullable,
-                DecimalType(precision, scale),
+                DecimalType(precision=int(nprecision), scale=int(nscale)),
             )
 
         # Handle FixedString with length
