@@ -92,7 +92,10 @@ def started_cluster():
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
             ],
-            user_configs=["configs/users.d/users.xml"],
+            user_configs=[
+                "configs/users.d/users.xml",
+                "configs/users.d/enable_writes.xml",
+            ],
             with_minio=True,
             with_azurite=True,
             stay_alive=True,
@@ -105,7 +108,10 @@ def started_cluster():
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/remote_servers.xml",
             ],
-            user_configs=["configs/users.d/users.xml"],
+            user_configs=[
+                "configs/users.d/users.xml",
+                "configs/users.d/enable_writes.xml",
+            ],
             with_minio=True,
             stay_alive=True,
             with_zookeeper=True,
@@ -2920,6 +2926,53 @@ def test_delta_kernel_internal_pruning(started_cluster):
     )
 
 
+def test_count_from_cache(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_empty_format_header")
+    result_file = f"{TABLE_NAME}"
+
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), True),
+            StructField("name", StringType(), True),
+        ]
+    )
+    df = spark.createDataFrame([(1, "keko"), (2, "puka"), (3, "mora")]).toDF(
+        "id", "name"
+    )
+    df.write.format("delta").partitionBy("id").save(f"/{result_file}")
+    upload_directory(minio_client, bucket, f"/{result_file}", "")
+
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    time.sleep(1)
+    assert 3 == int(instance.query(f"SELECT count() FROM {table_function}"))
+    assert 3 == int(instance.query(f"SELECT count() FROM {table_function}"))
+    query_id = f"{TABLE_NAME}_query"
+    assert 3 == int(
+        instance.query(f"SELECT count() FROM {table_function}", query_id=query_id)
+    )
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 3 == int(
+        instance.query(
+            f"SELECT ProfileEvents['SchemaInferenceCacheNumRowsHits'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
+        )
+    )
+    assert (
+        "3\t3"
+        == instance.query(f"SELECT count(), count() FROM {table_function}").strip()
+    )
+    assert (
+        "3\t6\t3"
+        == instance.query(
+            f"SELECT count(), sum(id), uniqExact(_path) FROM {table_function}"
+        ).strip()
+    )
+
+
 def test_writes(started_cluster):
     instance = started_cluster.instances["node1"]
     instance_disabled_kernel = cluster.instances["node_with_disabled_delta_kernel"]
@@ -3269,4 +3322,7 @@ def test_writes_spark_compatibility(started_cluster):
     assert len(files) == 3
 
     df = spark.read.format("delta").load(f"/{result_file}").collect()
-    assert "[Row(id=10, name='10'), Row(id=11, name='11'), Row(id=12, name='12'), Row(id=13, name='13'), Row(id=14, name='14'), Row(id=15, name='15'), Row(id=16, name='16'), Row(id=17, name='17'), Row(id=18, name='18'), Row(id=19, name='19'), Row(id=0, name='0'), Row(id=1, name='1'), Row(id=2, name='2'), Row(id=3, name='3'), Row(id=4, name='4'), Row(id=5, name='5'), Row(id=6, name='6'), Row(id=7, name='7'), Row(id=8, name='8'), Row(id=9, name='9')]" == str(df)
+    assert (
+        "[Row(id=10, name='10'), Row(id=11, name='11'), Row(id=12, name='12'), Row(id=13, name='13'), Row(id=14, name='14'), Row(id=15, name='15'), Row(id=16, name='16'), Row(id=17, name='17'), Row(id=18, name='18'), Row(id=19, name='19'), Row(id=0, name='0'), Row(id=1, name='1'), Row(id=2, name='2'), Row(id=3, name='3'), Row(id=4, name='4'), Row(id=5, name='5'), Row(id=6, name='6'), Row(id=7, name='7'), Row(id=8, name='8'), Row(id=9, name='9')]"
+        == str(df)
+    )

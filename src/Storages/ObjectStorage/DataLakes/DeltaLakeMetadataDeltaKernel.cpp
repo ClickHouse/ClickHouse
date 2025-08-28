@@ -7,10 +7,22 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_delta_lake_writes;
+}
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 [[maybe_unused]] static void tracingCallback(struct ffi::Event event)
 {
@@ -69,7 +81,8 @@ DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
 bool DeltaLakeMetadataDeltaKernel::operator ==(const IDataLakeMetadata & metadata) const
 {
     const auto & delta_lake_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel &>(metadata);
-    std::lock_guard lock(table_snapshot_mutex);
+    std::lock_guard lk1(table_snapshot_mutex);
+    std::lock_guard lk2(delta_lake_metadata.table_snapshot_mutex);
     return table_snapshot->getVersion() == delta_lake_metadata.table_snapshot->getVersion();
 }
 
@@ -106,9 +119,10 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    bool supports_subset_of_columns)
+    bool supports_subset_of_columns,
+    bool supports_tuple_elements)
 {
-    auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns);
+    auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns, supports_tuple_elements);
 
     /// Read schema is different from table schema in case:
     /// 1. we have partition columns (they are not stored in the actual data)
@@ -157,6 +171,13 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> /* catalog */)
 {
+    if (!context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "To enable delta lake writes, use allow_experimental_delta_lake_writes = 1");
+    }
+
     Names partition_columns;
     {
         std::lock_guard lock(table_snapshot_mutex);
