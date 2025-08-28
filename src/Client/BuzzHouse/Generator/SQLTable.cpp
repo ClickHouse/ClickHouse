@@ -653,7 +653,9 @@ void StatementGenerator::colRefOrExpression(
         /// Use any one arg function
         SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
-        func_call->mutable_func()->set_catalog_func(static_cast<SQLFunc>(rg.pickRandomly(this->one_arg_funcs).fnum));
+        func_call->mutable_func()->set_catalog_func(
+            (b.isAnyIcebergEngine() && rg.nextBool()) ? SQLFunc::FUNCidentity
+                                                      : static_cast<SQLFunc>(rg.pickRandomly(this->one_arg_funcs).fnum));
         columnPathRef(entry, func_call->add_args()->mutable_expr());
     }
     else if (hash_func && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + 1))

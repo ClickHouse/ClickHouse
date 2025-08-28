@@ -238,6 +238,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_query_condition_cache", trueOrFalseSetting},
        {"use_skip_indexes", trueOrFalseSetting},
        {"use_skip_indexes_if_final", trueOrFalseSetting},
+       {"use_skip_indexes_on_data_read", trueOrFalseSetting},
        {"use_uncompressed_cache", trueOrFalseSetting}};
 
 std::unordered_map<String, CHSetting> serverSettings = {
@@ -1100,6 +1101,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "join_output_by_rowlist_perkey_rows_threshold",
           "join_to_sort_maximum_table_rows",
           "join_to_sort_minimum_perkey_rows",
+          "max_iceberg_data_file_rows",
           "max_joined_block_size_rows",
           "max_limit_for_vector_search_queries",
           "max_number_of_partitions_for_independent_aggregation",
@@ -1155,6 +1157,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "max_bytes_before_external_sort",
           "max_bytes_before_remerge_sort",
           "max_download_buffer_size",
+          "max_iceberg_data_file_bytes",
           "max_joined_block_size_bytes",
           "max_read_buffer_size",
           "max_read_buffer_size_local_fs",
