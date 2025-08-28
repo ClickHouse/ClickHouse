@@ -47,7 +47,7 @@ class SettingsChanges;
 
 #define DATA_LAKE_STORAGE_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(Bool, allow_dynamic_metadata_for_data_lakes, true, R"(
-If enabled, indicates that metadata is taken from iceberg specification that is pulled from cloud before each query.
+Deprecated. Iceberg schema is always refreshed before each query.
 )", 0) \
     DECLARE(String, iceberg_metadata_file_path, "", R"(
 Explicit path to desired Iceberg metadata file, should be relative to path in object storage. Make sense for table function use case only.
