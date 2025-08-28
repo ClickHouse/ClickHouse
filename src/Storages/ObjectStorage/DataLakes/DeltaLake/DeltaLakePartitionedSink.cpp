@@ -214,7 +214,7 @@ void DeltaLakePartitionedSink::onFinish()
         }
     }
 
-    LOG_TEST(log, "Written to {} sinks", partitions_data.size());
+    LOG_TEST(log, "Written {} data files", total_data_files_count);
 
     try
     {
