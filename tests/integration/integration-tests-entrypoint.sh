@@ -29,7 +29,7 @@ server_exit_code=$?
 
 function dump_stacktraces_on_shutdown()
 {
-    # Half of timeout of the stop_grace_period for clickhouse service
+    # 1m should be enough to finish the server
     sleep 1m
     if kill -0 "$PID"; then
         echo "Attaching gdb to obtain thread stacktraces"
