@@ -209,6 +209,7 @@ public:
 
     bool hasDynamicStructure() const override { return nested_column->hasDynamicStructure(); }
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
+    bool dynamicStructureEquals(const IColumn & rhs) const override;
 
 private:
     WrappedPtr nested_column;
