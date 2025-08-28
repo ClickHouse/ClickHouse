@@ -2836,8 +2836,6 @@ studentttest
 studentTTest
 studentTTestOneSample
 studentttestonesample
-subBitmap
-subDate
 subarray
 subarrays
 subBitmap
