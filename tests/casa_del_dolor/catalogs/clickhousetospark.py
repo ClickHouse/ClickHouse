@@ -31,16 +31,21 @@ class ClickHouseSparkTypeMapper:
         # Basic type mappings from ClickHouse to Spark SQL strings
         self.clickhouse_to_spark_map: Dict[str, tuple[str, DataType]] = {
             # Numeric types
-            # "UInt8": "SMALLINT",  # or 'SHORT'
-            # "UInt16": "INT",  # or 'INTEGER'
-            # "UInt32": "BIGINT",  # or 'LONG'
-            # "UInt64": "BIGINT",  # May overflow - consider DECIMAL(20,0)
+            "UInt8": ("SMALLINT", ShortType()),  # or 'SHORT'
+            "UInt16": ("INT", IntegerType()),  # or 'INTEGER'
+            "UInt32": ("BIGINT", LongType()),  # or 'LONG'
+            "UInt64": ("BIGINT", LongType()),  # May overflow - consider DECIMAL(20,0)
+            "UInt128": ("BIGINT", LongType()),  # May overflow - consider DECIMAL(20,0)
+            "UInt256": ("BIGINT", LongType()),  # May overflow - consider DECIMAL(20,0)
             "Int8": ("TINYINT", ByteType()),  # or 'BYTE'
             "Int16": ("SMALLINT", ShortType()),  # or 'SHORT'
             "Int32": ("INT", IntegerType()),  # or 'INTEGER'
             "Int64": ("BIGINT", LongType()),  # or 'LONG'
+            "Int128": ("BIGINT", LongType()),  # May overflow - consider DECIMAL(20,0)
+            "Int256": ("BIGINT", LongType()),  # May overflow - consider DECIMAL(20,0)
             "Float32": ("FLOAT", FloatType()),  # or 'REAL'
             "Float64": ("DOUBLE", DoubleType()),  # or 'DOUBLE PRECISION'
+            "BFloat16": ("FLOAT", FloatType()),
             # String types
             "String": ("STRING", StringType()),
             "FixedString": ("STRING", StringType()),
@@ -201,30 +206,36 @@ class ClickHouseSparkTypeMapper:
                 StringType(),
             )
 
-        # Handle Enum and String types
-        if ch_type.startswith("String") or ch_type.startswith("Enum"):
-            is_text = random.randint(1, 2) == 1
-            return (
-                "STRING" if is_text else "BINARY",
-                inside_nullable,
-                StringType() if is_text else BinaryType(),
-            )
-
         # Handle DateTime and Time
-        if ch_type.startswith("DateTime"):
-            return ("TIMESTAMP", inside_nullable, TimestampType())
+        for val in ["DateTime", "Time"]:
+            if ch_type.startswith(val):
+                return ("TIMESTAMP", inside_nullable, TimestampType())
 
         # Handle LowCardinality wrapper
         if ch_type.startswith("LowCardinality("):
             inner_type = self._extract_nested_content(ch_type, "LowCardinality")
             return self.clickhouse_to_spark(inner_type, inside_nullable)
 
+        # Handle types not covered by Spark
+        # Spark 4.0.0 has Variant type, maybe worth to try
+        for val in ["Enum", "Variant", "JSON", "Dynamic"]:
+            if ch_type.startswith(val):
+                is_text = random.randint(1, 2) == 1
+                return (
+                    "STRING" if is_text else "BINARY",
+                    inside_nullable,
+                    StringType() if is_text else BinaryType(),
+                )
+
         # Handle AggregateFunction
-        if ch_type.startswith("AggregateFunction("):
-            return ("BINARY", inside_nullable, BinaryType())
+        for val in ["AggregateFunction", "SimpleAggregateFunction"]:
+            if ch_type.startswith(val):
+                return ("BINARY", inside_nullable, BinaryType())
 
         # Basic type lookup
-        str_type, spark_type = self.clickhouse_to_spark_map.get(ch_type, "STRING")
+        str_type, spark_type = self.clickhouse_to_spark_map.get(
+            ch_type, ("STRING", StringType())
+        )
         return (str_type, inside_nullable, spark_type)
 
     def _extract_nested_content(self, type_str: str, prefix: str) -> str:
