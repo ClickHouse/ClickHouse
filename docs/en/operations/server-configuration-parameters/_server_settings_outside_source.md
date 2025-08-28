@@ -827,6 +827,8 @@ The location and format of log messages.
 | `syslog_level`         | Log level for logging to syslog.                                                                                                                                   |
 | `async`                | When `true` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG           |
 | `async_queue_max_size` | When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped                       |
+| `startupLevel`         | Startup level is used to set the root logger level at server startup. After startup log level is reverted to the `level` setting                                   |
+| `shutdownLevel`        | Shutdown level is used to set the root logger level at server Shutdown.                                                                                            |
 
 **Log format specifiers**
 
