@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <string.h>
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 #include <malloc.h>
@@ -16,8 +15,6 @@
 #include <base/bit_cast.h>
 #include <base/extended_types.h>
 #include <base/sort.h>
-#include <Core/Defines.h>
-
 
 /** Radix sort, has the following functionality:
   *
@@ -225,7 +222,7 @@ private:
     static constexpr size_t PART_BITMASK = HISTOGRAM_SIZE - 1;
     static constexpr size_t KEY_BITS = sizeof(Key) * 8;
     static constexpr size_t NUM_PASSES = (KEY_BITS + (Traits::PART_SIZE_BITS - 1)) / Traits::PART_SIZE_BITS;
-
+    static constexpr size_t UNROLL_DISTANCE = 512 / (8 * sizeof(Element));
 
     static KeyBits keyToBits(Key x) { return bit_cast<KeyBits>(x); }
     static Key bitsToKey(KeyBits x) { return bit_cast<Key>(x); }
@@ -304,7 +301,7 @@ private:
         }
 
         {
-            /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions minus one.
+            /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions.
             CountType sums[NUM_PASSES] = {0};
 
             for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
@@ -312,7 +309,7 @@ private:
                 for (size_t pass = 0; pass < NUM_PASSES; ++pass)
                 {
                     CountType tmp = histograms[pass * HISTOGRAM_SIZE + i] + sums[pass];
-                    histograms[pass * HISTOGRAM_SIZE + i] = sums[pass] - 1;
+                    histograms[pass * HISTOGRAM_SIZE + i] = sums[pass];
                     sums[pass] = tmp;
                 }
             }
@@ -324,17 +321,47 @@ private:
             Element * writer = pass % 2 ? arr : swap_buffer;
             Element * reader = pass % 2 ? swap_buffer : arr;
 
-            for (size_t i = 0; i < size; ++i)
+            size_t unrolled_end = (size / UNROLL_DISTANCE * UNROLL_DISTANCE);
+
+            size_t i = 0;
+            if constexpr (UNROLL_DISTANCE >= 2)
             {
-                size_t pos = extractPart(pass, reader[i]);
+                for (; i < unrolled_end; i += UNROLL_DISTANCE)
+                {
+                    size_t positions[UNROLL_DISTANCE];
+
+                    for (size_t p = 0; p < UNROLL_DISTANCE; p++)
+                        positions[p] = extractPart(pass, reader[i + p]);
+
+                    for (size_t p = 0; p < UNROLL_DISTANCE; p++)
+                    {
+                        auto element = reader[i + p];
+
+                        /// Place the element on the next free position.
+                        auto & dest = writer[histograms[pass * HISTOGRAM_SIZE + positions[p]]];
+                        ++histograms[pass * HISTOGRAM_SIZE + positions[p]];
+                        dest = element;
+
+                        /// On the last pass, we do the reverse transformation.
+                        if (!Traits::Transform::transform_is_simple && pass == NUM_PASSES - 1)
+                            Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(element))));
+                    }
+                }
+            }
+
+            for (; i < size; i++)
+            {
+                auto element = reader[i];
+                size_t pos = extractPart(pass, element);
 
                 /// Place the element on the next free position.
-                auto & dest = writer[++histograms[pass * HISTOGRAM_SIZE + pos]];
-                dest = reader[i];
+                auto & dest = writer[histograms[pass * HISTOGRAM_SIZE + pos]];
+                ++histograms[pass * HISTOGRAM_SIZE + pos];
+                dest = element;
 
                 /// On the last pass, we do the reverse transformation.
                 if (!Traits::Transform::transform_is_simple && pass == NUM_PASSES - 1)
-                    Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(reader[i]))));
+                    Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(element))));
             }
         }
 
@@ -348,16 +375,18 @@ private:
             {
                 for (size_t i = 0; i < size; ++i)
                 {
-                    size_t pos = extractPart(pass, reader[i]);
-                    writer[size - 1 - (++histograms[pass * HISTOGRAM_SIZE + pos])] = Traits::extractResult(reader[i]);
+                    auto element = reader[i];
+                    size_t pos = extractPart(pass, element);
+                    writer[size - 1 - (histograms[pass * HISTOGRAM_SIZE + pos]++)] = Traits::extractResult(element);
                 }
             }
             else
             {
                 for (size_t i = 0; i < size; ++i)
                 {
-                    size_t pos = extractPart(pass, reader[i]);
-                    writer[++histograms[pass * HISTOGRAM_SIZE + pos]] = Traits::extractResult(reader[i]);
+                    auto element = reader[i];
+                    size_t pos = extractPart(pass, element);
+                    writer[histograms[pass * HISTOGRAM_SIZE + pos]++] = Traits::extractResult(element);
                 }
             }
         }
