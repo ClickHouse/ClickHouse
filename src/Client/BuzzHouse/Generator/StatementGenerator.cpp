@@ -52,6 +52,14 @@ const std::unordered_map<OutFormat, InFormat> StatementGenerator::outIn
        {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
        {OutFormat::OUT_Values, InFormat::IN_Values}};
 
+const std::unordered_map<JoinType, std::vector<JoinConst>> StatementGenerator::joinMappings
+    = {{J_LEFT, {J_ANY, J_ALL, J_SEMI, J_ANTI, J_ASOF}},
+       {J_INNER, {J_ANY, J_ALL, J_ASOF}},
+       {J_RIGHT, {J_ANY, J_ALL, J_SEMI, J_ANTI}},
+       {J_FULL, {J_ANY, J_ALL}},
+       {J_PASTE, {}},
+       {J_CROSS, {}}};
+
 StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool supports_cloud_features_)
     : fc(fuzzc)
     , next_type_mask(fc.type_mask)

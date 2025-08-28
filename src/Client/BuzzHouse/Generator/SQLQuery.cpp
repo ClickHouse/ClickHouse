@@ -1647,25 +1647,10 @@ uint32_t StatementGenerator::generateFromStatement(RandomGenerator & rg, const u
             }
             core->set_global(rg.nextSmallNumber() < 3);
             core->set_join_op(jt);
-            if (rg.nextSmallNumber() < 4)
+            const auto & maps = StatementGenerator::joinMappings.at(jt);
+            if (!maps.empty() && rg.nextSmallNumber() < 4)
             {
-                switch (jt)
-                {
-                    case JoinType::J_LEFT:
-                    case JoinType::J_INNER: {
-                        std::uniform_int_distribution<uint32_t> join_constr_range(1, static_cast<uint32_t>(JoinConst_MAX));
-                        core->set_join_const(static_cast<JoinConst>(join_constr_range(rg.generator)));
-                    }
-                    break;
-                    case JoinType::J_RIGHT:
-                    case JoinType::J_FULL: {
-                        std::uniform_int_distribution<uint32_t> join_constr_range(1, static_cast<uint32_t>(JoinConst::J_ANTI));
-                        core->set_join_const(static_cast<JoinConst>(join_constr_range(rg.generator)));
-                    }
-                    break;
-                    default:
-                        break;
-                }
+                core->set_join_const(rg.pickRandomly(maps));
                 core->set_const_on_right(rg.nextBool());
             }
             generateFromElement(rg, allowed_clauses, core->mutable_tos());

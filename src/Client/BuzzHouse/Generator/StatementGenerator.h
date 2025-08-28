@@ -128,6 +128,7 @@ class StatementGenerator
 {
 public:
     static const std::unordered_map<OutFormat, InFormat> outIn;
+    static const std::unordered_map<JoinType, std::vector<JoinConst>> joinMappings;
 
     FuzzConfig & fc;
     uint64_t next_type_mask = std::numeric_limits<uint64_t>::max();

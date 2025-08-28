@@ -1073,26 +1073,8 @@ void StatementGenerator::generateEngineDetails(
         const size_t ncols = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(3))) + 1;
         std::uniform_int_distribution<uint32_t> join_type_range(1, static_cast<uint32_t>(J_FULL));
         const JoinType jt = static_cast<JoinType>(join_type_range(rg.generator));
-        TableEngineParam * tep = te->add_params();
 
-        switch (jt)
-        {
-            case JoinType::J_LEFT:
-            case JoinType::J_INNER: {
-                std::uniform_int_distribution<uint32_t> join_constr_range(1, static_cast<uint32_t>(JoinConst_MAX));
-                tep->set_join_const(static_cast<JoinConst>(join_constr_range(rg.generator)));
-            }
-            break;
-            case JoinType::J_RIGHT:
-            case JoinType::J_FULL: {
-                std::uniform_int_distribution<uint32_t> join_constr_range(1, static_cast<uint32_t>(JoinConst::J_ANTI));
-                tep->set_join_const(static_cast<JoinConst>(join_constr_range(rg.generator)));
-            }
-            break;
-            default:
-                chassert(0);
-                break;
-        }
+        te->add_params()->set_join_const(rg.pickRandomly(StatementGenerator::joinMappings.at(jt)));
         te->add_params()->set_join_op(jt);
 
         std::shuffle(entries.begin(), entries.end(), rg.generator);
