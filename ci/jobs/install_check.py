@@ -87,8 +87,8 @@ for i in {1..5}; do
 done
 exec 13>&-"""
     preserve_logs = r"""#!/bin/bash
-journalctl -u clickhouse-server > /packages/clickhouse-server.service || :
-journalctl -u clickhouse-keeper > /packages/clickhouse-keeper.service || :
+journalctl -u clickhouse-server > /packages/clickhouse-server.service.log || :
+journalctl -u clickhouse-keeper > /packages/clickhouse-keeper.service.log || :
 cp /var/log/clickhouse-server/clickhouse-server.* /packages/ || :
 cp /var/log/clickhouse-keeper/clickhouse-keeper.* /packages/ || :
 chmod a+rw -R /packages
@@ -248,6 +248,9 @@ def main():
     Result.create_from(
         results=test_results,
         stopwatch=stopwatch,
+        files=[
+            f for f in TEMP_PATH.iterdir() if f.is_file() and f.name.endswith(".log")
+        ],
     ).complete_job()
 
 

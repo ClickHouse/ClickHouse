@@ -30,20 +30,20 @@ GinFilter::Parameters::Parameters(
 {
 }
 
-GinQueryString::GinQueryString(std::string_view query_string_, const std::vector<String> & search_terms_)
+GinQueryString::GinQueryString(std::string_view query_string_, const std::vector<String> & tokens_)
     : query_string(query_string_)
-    , terms(search_terms_)
+    , tokens(tokens_)
 {
 }
 
-void GinFilter::add(const String & term, UInt32 row_id, GinIndexStorePtr & store) const
+void GinFilter::add(const String & token, UInt32 row_id, GinIndexStorePtr & store) const
 {
-    if (term.length() > FST::MAX_TERM_LENGTH)
+    if (token.length() > FST::MAX_TOKEN_LENGTH)
         return;
 
-    auto it = store->getPostingsListBuilder().find(term);
+    auto it = store->getTokenPostingsLists().find(token);
 
-    if (it != store->getPostingsListBuilder().end())
+    if (it != store->getTokenPostingsLists().end())
     {
         if (!it->second->contains(row_id))
             it->second->add(row_id);
@@ -53,7 +53,7 @@ void GinFilter::add(const String & term, UInt32 row_id, GinIndexStorePtr & store
         auto postings_list_builder = std::make_shared<GinPostingsListBuilder>();
         postings_list_builder->add(row_id);
 
-        store->setPostingsListBuilder(term, postings_list_builder);
+        store->setPostingsListBuilder(token, postings_list_builder);
     }
 }
 
@@ -88,26 +88,26 @@ bool hasEmptyPostingsList(const GinPostingsListsCache & postings_lists_cache)
     if (postings_lists_cache.empty())
         return true;
 
-    for (const auto & term_postings : postings_lists_cache)
+    for (const auto & cache_entry : postings_lists_cache)
     {
-        const GinSegmentPostingsLists & segment_postings_lists = term_postings.second;
+        const GinSegmentPostingsLists & segment_postings_lists = cache_entry.second;
         if (segment_postings_lists.empty())
             return true;
     }
     return false;
 }
 
-/// Helper method to check if all terms in postings list cache has intersection with given row ID range
+/// Helper method to check if all tokens in postings list cache has intersection with given row ID range
 bool matchAllInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 segment_id, UInt32 range_rowid_start, UInt32 range_rowid_end)
 {
-    /// Check for each term
+    /// Check for each tokens
     GinPostingsList range_bitset;
     range_bitset.addRange(range_rowid_start, range_rowid_end + 1);
 
-    for (const auto & term_postings : postings_lists_cache)
+    for (const auto & cache_entry : postings_lists_cache)
     {
         /// Check if it is in the same segment by searching for segment_id
-        const GinSegmentPostingsLists & segment_postings_lists = term_postings.second;
+        const GinSegmentPostingsLists & segment_postings_lists = cache_entry.second;
         auto container_it = segment_postings_lists.find(segment_id);
         if (container_it == segment_postings_lists.end())
             return false;
@@ -126,15 +126,15 @@ bool matchAllInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 
     return true;
 }
 
-/// Helper method to check if any term in postings list cache has intersection with given row ID range
+/// Helper method to check if any token in postings list cache has intersection with given row ID range
 bool matchAnyInRange(const GinPostingsListsCache & postings_lists_cache, UInt32 segment_id, UInt32 range_rowid_start, UInt32 range_rowid_end)
 {
-    /// Check for each term
+    /// Check for each token
     GinPostingsList postings_bitset;
-    for (const auto & term_postings : postings_lists_cache)
+    for (const auto & cache_entry : postings_lists_cache)
     {
         /// Check if it is in the same segment by searching for segment_id
-        const GinSegmentPostingsLists & segment_postings_lists = term_postings.second;
+        const GinSegmentPostingsLists & segment_postings_lists = cache_entry.second;
         if (auto container_it = segment_postings_lists.find(segment_id); container_it != segment_postings_lists.end())
             postings_bitset |= *container_it->second;
     }
@@ -149,17 +149,19 @@ template <GinSearchMode search_mode>
 bool matchInRange(const GinSegmentsWithRowIdRange & segments_with_rowid_range, const GinPostingsListsCache & postings_lists_cache)
 {
     if (hasEmptyPostingsList(postings_lists_cache))
+    {
         switch (search_mode)
         {
             case GinSearchMode::Any: {
                 if (postings_lists_cache.size() == 1)
-                    /// Definitely no match when there is a single term in ANY search mode and the term does not exists in FST.
+                    /// Definitely no match when there is a single token in ANY search mode and the token does not exists in FST.
                     return false;
                 break;
             }
             case GinSearchMode::All:
                 return false;
         }
+    }
 
     /// Check for each row ID ranges
     for (const auto & segment_with_rowid_range : segments_with_rowid_range)
@@ -185,14 +187,14 @@ bool matchInRange(const GinSegmentsWithRowIdRange & segments_with_rowid_range, c
 
 bool GinFilter::contains(const GinQueryString & query_string, GinPostingsListsCacheForStore & postings_lists_cache_for_store, GinSearchMode search_mode) const
 {
-    if (query_string.getTerms().empty())
+    if (query_string.getTokens().empty())
         return true;
 
     GinPostingsListsCachePtr postings_lists_cache = postings_lists_cache_for_store.getPostingsLists(query_string.getQueryString());
     if (postings_lists_cache == nullptr)
     {
         GinIndexStoreDeserializer deserializer(postings_lists_cache_for_store.store);
-        postings_lists_cache = deserializer.createPostingsListsCacheFromTerms(query_string.getTerms());
+        postings_lists_cache = deserializer.createPostingsListsCacheFromTokens(query_string.getTokens());
         postings_lists_cache_for_store.cache[query_string.getQueryString()] = postings_lists_cache;
     }
 
