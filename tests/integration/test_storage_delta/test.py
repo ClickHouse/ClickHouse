@@ -265,14 +265,8 @@ def create_delta_table(
     table_name,
     cluster,
     format="Parquet",
-    allow_dynamic_metadata_for_data_lakes=False,
     **kwargs,
 ):
-    allow_dynamic_metadata_for_datalakes_suffix = (
-        " SETTINGS allow_dynamic_metadata_for_data_lakes = 1"
-        if allow_dynamic_metadata_for_data_lakes
-        else ""
-    )
 
     if storage_type == "s3":
         if "bucket" in kwargs:
@@ -286,7 +280,6 @@ def create_delta_table(
             CREATE TABLE {table_name}
             ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
             """
-            + allow_dynamic_metadata_for_datalakes_suffix
         )
 
     elif storage_type == "azure":
