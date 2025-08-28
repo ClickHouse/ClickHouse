@@ -10,15 +10,14 @@ if [[ ! -v MALLOC_CONF ]]; then
 fi
 
 PID=0
-if [[ $JEMALLOC_PROFILER -eq 1 ]]; then
-    function handle_term()
-    {
-        echo "Sending TERM to $PID"
-        ps aux
-        kill -TERM "$PID"
-    }
-    trap handle_term TERM
-fi
+
+function handle_term()
+{
+    echo "Sending TERM to $PID"
+    ps aux
+    kill -TERM "$PID"
+}
+trap handle_term TERM
 
 echo "Runnig: $*"
 "$@" &
