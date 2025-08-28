@@ -1,13 +1,13 @@
-#include <memory>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
-#include "Core/Names.h"
-#include "Interpreters/JoinInfo.h"
-#include "Processors/QueryPlan/JoinStepLogical.h"
-#include "Processors/QueryPlan/Optimizations/Cascades/Group.h"
-#include "Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h"
+#include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
-#include "Common/logger_useful.h"
-#include "Common/typeid_cast.h"
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Interpreters/JoinInfo.h>
+#include <Core/Names.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
+#include <memory>
 
 namespace DB
 {

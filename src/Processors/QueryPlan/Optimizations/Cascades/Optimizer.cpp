@@ -4,18 +4,18 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
-#include "Processors/QueryPlan/ExpressionStep.h"
-#include "Processors/QueryPlan/FilterStep.h"
-#include "Processors/QueryPlan/JoinStepLogical.h"
-#include "Processors/QueryPlan/QueryPlan.h"
-#include "Interpreters/Context.h"
-#include "Interpreters/Context_fwd.h"
-#include "Common/CurrentThread.h"
-#include "Common/Exception.h"
-#include "Common/logger_useful.h"
-#include "Core/Block_fwd.h"
-#include "Core/Settings.h"
-#include "IO/WriteBufferFromString.h"
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
+#include <Core/Block_fwd.h>
+#include <Core/Settings.h>
+#include <IO/WriteBufferFromString.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <algorithm>
@@ -26,6 +26,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace Setting
 {

@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 void JoinGraph::addRelation(String name, QueryPlan::Node & node)

@@ -2,11 +2,11 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
-#include "Processors/QueryPlan/ExpressionStep.h"
-#include "Processors/QueryPlan/IQueryPlanStep.h"
-#include "Processors/QueryPlan/JoinStepLogical.h"
-#include "Processors/QueryPlan/ReadFromMergeTree.h"
-#include "base/types.h"
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -83,7 +83,7 @@ ExpressionCost CostEstimator::estimateHashJoinCost(const JoinStepLogical & join_
     join_cost.subtree_cost =
         left_cost.subtree_cost + right_cost.subtree_cost + /// Cost of inputs
         left_cost.number_of_rows +      /// Scan of left table
-        2 * right_cost.number_of_rows + /// Right table contributes more because we build hash table from it 
+        2 * right_cost.number_of_rows + /// Right table contributes more because we build hash table from it
         join_cost.number_of_rows;       /// Number of output rows
 
     return join_cost;

@@ -1,5 +1,5 @@
 #include <Common/Exception.h>
-#include "Processors/QueryPlan/Optimizations/Cascades/Optimizer.h"
+#include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
