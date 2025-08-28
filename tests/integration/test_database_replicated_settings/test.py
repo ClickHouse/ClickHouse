@@ -65,12 +65,17 @@ def convert_setting(key : str, value: str):
         case "max_broken_tables_ratio":
             value = float(value)
             return key, value
-        case "max_replication_lag_to_enqueue" | "wait_entry_commited_timeout_sec" | "max_retries_before_automatic_recovery":
+        case (
+            "max_replication_lag_to_enqueue"
+            | "wait_entry_commited_timeout_sec"
+            | "max_retries_before_automatic_recovery"
+            | "logs_to_keep"
+        ):
             value = int(value)
             return key, value
         case "collection_name":
             return key, value
-    
+
     raise Exception(f"Unknown settings {key}: {value}")
 
 def get_settings_from_logs(node, db_name) ->Dict[str, Any]:
@@ -80,7 +85,7 @@ def get_settings_from_logs(node, db_name) ->Dict[str, Any]:
     ).strip())
     assert result.startswith("DatabaseReplicatedSettings")
     settings = result.removeprefix("DatabaseReplicatedSettings").strip()
-    
+
     if settings == "":
         return {}
 
@@ -93,12 +98,13 @@ def get_settings_from_logs(node, db_name) ->Dict[str, Any]:
         value = value.strip()
         if(value.startswith(r"\'")):
             value = value.strip(r"\'")
-        
+
         key, value = convert_setting(key, value)
         config_dict[key] = value
-        
+
     return config_dict
-    
+
+
 @pytest.mark.parametrize("node_with_database_replicated_settings", [True, False])
 @pytest.mark.parametrize("max_broken_tables_ratio", [None, 0.5])
 @pytest.mark.parametrize("max_replication_lag_to_enqueue", [None, 10])
@@ -106,20 +112,22 @@ def get_settings_from_logs(node, db_name) ->Dict[str, Any]:
 @pytest.mark.parametrize("collection_name", [None, "postgres2"])
 @pytest.mark.parametrize("check_consistency", [None, True, False])
 @pytest.mark.parametrize("max_retries_before_automatic_recovery", [None, 1])
+@pytest.mark.parametrize("logs_to_keep", [None, 100])
 def test_database_replicated_settings(
     started_cluster,
-    node_with_database_replicated_settings: bool, # default config from database_replicated_settings.xml
+    node_with_database_replicated_settings: bool,  # default config from database_replicated_settings.xml
     max_broken_tables_ratio,
     max_replication_lag_to_enqueue,
     wait_entry_commited_timeout_sec,
     collection_name,
     check_consistency,
     max_retries_before_automatic_recovery,
+    logs_to_keep,
 ):
     db_name = "test_" + get_random_string()
 
     node = node1 if node_with_database_replicated_settings else node2
-    
+
     node.query(f"DROP DATABASE IF EXISTS {db_name}")
 
     settings_in_query = ""
@@ -133,9 +141,9 @@ def test_database_replicated_settings(
             if node_with_database_replicated_settings:
                 setting_dict[key] = default
             return
-        
+
         setting_dict[key] = val
-        
+
         if isinstance(val, str):
             val = f"'{val}'"
         if settings_in_query != "":
@@ -151,6 +159,11 @@ def test_database_replicated_settings(
     add_setting(
         "max_retries_before_automatic_recovery", max_retries_before_automatic_recovery, int(5) if node_with_database_replicated_settings else int(10)
     )
+    add_setting(
+        "logs_to_keep",
+        logs_to_keep,
+        int(200) if node_with_database_replicated_settings else int(1000),
+    )
 
     if settings_in_query != "":
         settings_in_query = f"SETTINGS {settings_in_query}"
@@ -159,8 +172,17 @@ def test_database_replicated_settings(
         + r"'{shard}', '{replica}') "
         + settings_in_query
     )
-    
+
     settings_dict_from_logs = get_settings_from_logs(node, db_name)
     assert setting_dict == settings_dict_from_logs
     node.query(f"DROP DATABASE IF EXISTS {db_name}")
 
+
+def test_database_replicated_settings_zero_logs_to_keep(started_cluster):
+    db_name = "test_" + get_random_string()
+
+    assert "A setting's value has to be greater than 0" in node1.query_and_get_error(
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/test/{db_name}', "
+        + r"'{shard}', '{replica}') "
+        + "SETTINGS logs_to_keep=0"
+    )
