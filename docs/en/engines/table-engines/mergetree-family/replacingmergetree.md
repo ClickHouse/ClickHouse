@@ -5,6 +5,7 @@ sidebar_label: 'ReplacingMergeTree'
 sidebar_position: 40
 slug: /engines/table-engines/mergetree-family/replacingmergetree
 title: 'ReplacingMergeTree'
+doc_type: 'reference'
 ---
 
 # ReplacingMergeTree
@@ -73,8 +74,6 @@ SELECT * FROM myFirstReplacingMT FINAL;
 ┌─key─┬─someCol─┬───────────eventTime─┐
 │   1 │ second  │ 2020-01-01 00:00:00 │
 └─────┴─────────┴─────────────────────┘
-
-
 -- with ver - the row with the biggest ver 'wins'
 CREATE TABLE mySecondReplacingMT
 (

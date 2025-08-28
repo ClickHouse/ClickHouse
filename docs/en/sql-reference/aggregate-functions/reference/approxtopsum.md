@@ -4,6 +4,7 @@ description: 'Returns an array of the approximately most frequent values and the
 sidebar_position: 108
 slug: /sql-reference/aggregate-functions/reference/approxtopsum
 title: 'approx_top_sum'
+doc_type: 'reference'
 ---
 
 # approx_top_sum

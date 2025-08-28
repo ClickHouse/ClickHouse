@@ -3,6 +3,7 @@ description: 'Documentation for Introspection Functions'
 sidebar_label: 'Introspection'
 slug: /sql-reference/functions/introspection
 title: 'Introspection Functions'
+doc_type: 'reference'
 ---
 
 # Introspection functions
@@ -212,8 +213,6 @@ The [arrayJoin](/sql-reference/functions/array-join) functions will split array 
 └───────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 ```
-
-
 ## addressToSymbol {#addresstosymbol}
 
 Converts virtual memory address inside ClickHouse server process to the symbol from ClickHouse object files.

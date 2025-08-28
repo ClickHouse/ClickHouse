@@ -3,6 +3,7 @@ description: 'Documentation for Encoding Functions'
 sidebar_label: 'Encoding'
 slug: /sql-reference/functions/encoding-functions
 title: 'Encoding Functions'
+doc_type: 'reference'
 ---
 
 # Encoding functions
@@ -160,8 +161,6 @@ Result:
 │ 61f0c4045cb311e7907ba6006ad3dba0 │
 └──────────────────────────────────┘
 ```
-
-
 ## unhex {#unhex}
 
 Performs the opposite operation of [hex](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts it to the byte represented by the number. The return value is a binary string (BLOB).
@@ -307,8 +306,6 @@ Result:
 │ 01100001111100001100010000000100010111001011001100010001111001111001000001111011101001100000000001101010110100111101101110100000 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-
-
 ## unbin {#unbin}
 
 Interprets each pair of binary digits (in the argument) as a number and converts it to the byte represented by the number. The functions performs the opposite operation to [bin](#bin).
@@ -488,8 +485,6 @@ Note: when using columns for `args` the provided `range_mask` tuple should still
 **Returned value**
 
 - A UInt64 code. [UInt64](../data-types/int-uint.md)
-
-
 **Example**
 
 Range expansion can be beneficial when you need a similar distribution for arguments with wildly different ranges (or cardinality)
@@ -766,8 +761,6 @@ Note: when using columns for `args` the provided `range_mask` tuple should still
 - A UInt64 code
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md)
-
-
 **Example**
 
 Range expansion can be beneficial when you need a similar distribution for arguments with wildly different ranges (or cardinality)

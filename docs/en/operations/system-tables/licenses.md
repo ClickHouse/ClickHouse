@@ -4,6 +4,7 @@ description: 'System table containing licenses of third-party libraries that are
 keywords: ['system table', 'licenses']
 slug: /operations/system-tables/licenses
 title: 'system.licenses'
+doc_type: 'reference'
 ---
 
 # system.licenses

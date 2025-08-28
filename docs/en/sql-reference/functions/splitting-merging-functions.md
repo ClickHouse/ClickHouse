@@ -3,6 +3,7 @@ description: 'Documentation for Functions for Splitting Strings'
 sidebar_label: 'String splitting'
 slug: /sql-reference/functions/splitting-merging-functions
 title: 'Functions for Splitting Strings'
+doc_type: 'reference'
 ---
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
@@ -132,13 +133,9 @@ splitByRegexp(regexp, s[, max_substrings]))
 - `regexp` — Regular expression. Constant. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 - `s` — The string to split. [String](../data-types/string.md).
 - `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
-
-
 **Returned value(s)**
 
 - An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
-
-
 Empty substrings may be selected when:
 
 - A non-empty regular expression match occurs at the beginning or end of the string;
@@ -190,8 +187,6 @@ splitByWhitespace(s[, max_substrings]))
 
 - `s` — The string to split. [String](../data-types/string.md).
 - `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
-
-
 **Returned value(s)**
 
 - An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
@@ -229,8 +224,6 @@ splitByNonAlpha(s[, max_substrings]))
 
 - `s` — The string to split. [String](../data-types/string.md).
 - `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
-
-
 **Returned value(s)**
 
 - An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).

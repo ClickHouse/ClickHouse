@@ -7,6 +7,7 @@ sidebar_position: 110
 slug: /engines/table-engines/integrations/kafka
 title: 'Kafka table engine'
 keywords: ['Kafka', 'table engine']
+doc_type: 'how-to'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

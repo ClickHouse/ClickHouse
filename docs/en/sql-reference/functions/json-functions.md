@@ -3,6 +3,7 @@ description: 'Documentation for Json Functions'
 sidebar_label: 'JSON'
 slug: /sql-reference/functions/json-functions
 title: 'JSON Functions'
+doc_type: 'reference'
 ---
 
 There are two sets of functions to parse JSON:
@@ -36,8 +37,6 @@ Alias: `visitParamHas`.
 
 - `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
 - `field_name` — The name of the field to search for. [String literal](/sql-reference/syntax#string)
-
-
 **Returned value**
 
 - Returns `1` if the field exists, `0` otherwise. [UInt8](../data-types/int-uint.md).
@@ -745,8 +744,6 @@ Result:
 │ {'d':[1,2,3],'e':[1,3,7]} │ Map(String, Array(UInt8)) │ [1,2,3]                │
 └───────────────────────────┴───────────────────────────┴────────────────────────┘
 ```
-
-
 ### JSONExtractKeysAndValues {#jsonextractkeysandvalues}
 
 Parses key-value pairs from JSON where the values are of the given ClickHouse data type.
@@ -1294,8 +1291,6 @@ Result:
 
 - [output_format_json_quote_64bit_integers](/operations/settings/formats#output_format_json_quote_64bit_integers)
 - [output_format_json_quote_denormals](/operations/settings/formats#output_format_json_quote_denormals)
-
-
 ### JSONArrayLength {#jsonarraylength}
 
 Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid.
@@ -1327,8 +1322,6 @@ SELECT
 │                ᴺᵁᴸᴸ │                          3 │
 └─────────────────────┴────────────────────────────┘
 ```
-
-
 ### jsonMergePatch {#jsonmergepatch}
 
 Returns the merged JSON object string which is formed by merging multiple JSON objects.

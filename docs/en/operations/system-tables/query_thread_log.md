@@ -4,6 +4,7 @@ description: 'System table containing information about threads that execute que
 keywords: ['system table', 'query_thread_log']
 slug: /operations/system-tables/query_thread_log
 title: 'system.query_thread_log'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

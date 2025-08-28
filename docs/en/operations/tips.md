@@ -4,6 +4,7 @@ sidebar_label: 'Usage Recommendations'
 sidebar_position: 58
 slug: /operations/tips
 title: 'Usage Recommendations'
+doc_type: 'reference'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';
@@ -206,8 +207,6 @@ dataLogDir=/opt/zookeeper/{{ '{{' }} cluster['name'] {{ '}}' }}/logs
 
 autopurge.snapRetainCount=10
 autopurge.purgeInterval=1
-
-
 # To avoid seeks ZooKeeper allocates space in the transaction log file in
 # blocks of preAllocSize kilobytes. The default block size is 64M. One reason
 # for changing the size of the blocks is to reduce the block size if snapshots
