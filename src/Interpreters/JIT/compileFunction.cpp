@@ -620,12 +620,12 @@ static void compileSortDescription(llvm::Module & module,
         {
             auto * string_ref_type = buildStringRefType(b);
             auto * nullable_uninitialized = llvm::Constant::getNullValue(toNullableType(b, string_ref_type));
-            
+
             auto * column = b.CreateLoad(column_data_type, b.CreateConstInBoundsGEP1_64(column_data_type, column_arg, i));
             auto * column_data = b.CreateExtractValue(column, {0});
             auto * column_null_data = is_nullable ? b.CreateExtractValue(column, {1}) : nullptr;
             auto * column_offset_data = b.CreateExtractValue(column, {2});
-            
+
             /// build struct : {chars ptr, offset ptr, index}
             /// The string comparison logic is relatively complex, so here we only pass the raw memory pointer. The specific
             /// implementation will be completed in ColumnString::compileComparator
@@ -712,7 +712,7 @@ static void compileSortDescription(llvm::Module & module,
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supported type for column type {}", column_type->getName());
-    
+
         llvm::Value * direction = llvm::ConstantInt::getSigned(b.getInt8Ty(), sort_description.direction);
         llvm::Value * nan_direction_hint = llvm::ConstantInt::getSigned(b.getInt8Ty(), sort_description.nulls_direction);
         llvm::Value * compare_result = dummy_column->compileComparator(b, lhs_value, rhs_value, nan_direction_hint);
