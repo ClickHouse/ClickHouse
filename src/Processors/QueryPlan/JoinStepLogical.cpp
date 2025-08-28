@@ -23,6 +23,7 @@
 #include <Interpreters/JoinUtils.h>
 #include <Planner/PlannerJoins.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDynamic.h>
 
 #include <Functions/FunctionsLogical.h>
 #include <Functions/FunctionsComparison.h>
@@ -360,6 +361,18 @@ void predicateOperandsToCommonType(JoinPredicate & predicate, JoinExpressionActi
     auto & right_node = predicate.right_node;
     const auto & left_type = left_node.getType();
     const auto & right_type = right_node.getType();
+
+    bool is_left_key_dynamic = hasDynamicType(left_type);
+    bool is_right_key_dynamic = hasDynamicType(right_type);
+
+    if (is_left_key_dynamic || is_right_key_dynamic)
+    {
+        throw DB::Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "JOIN on keys with Dynamic type is not supported: key {} has type {}. In order to use this key in JOIN you should cast it to any other type",
+            is_left_key_dynamic ? left_node.getColumnName() : right_node.getColumnName(),
+            is_left_key_dynamic ? left_type->getName() : right_type->getName());
+    }
 
     if (left_type->equals(*right_type))
         return;

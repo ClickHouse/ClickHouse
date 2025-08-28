@@ -8,6 +8,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDynamic.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
@@ -77,6 +78,7 @@ namespace ErrorCodes
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_COLUMN;
 }
 
 void JoinClause::dump(WriteBuffer & buffer) const
@@ -845,6 +847,18 @@ JoinClausesAndActions buildJoinClausesAndActions(
         {
             auto & left_key_node = join_clause.getLeftKeyNodes()[i];
             auto & right_key_node = join_clause.getRightKeyNodes()[i];
+
+            bool is_left_key_dynamic = hasDynamicType(left_key_node->result_type);
+            bool is_right_key_dynamic = hasDynamicType(right_key_node->result_type);
+
+            if (is_left_key_dynamic || is_right_key_dynamic)
+            {
+                throw DB::Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "JOIN on keys with Dynamic type is not supported: key {} has type {}. In order to use this key in JOIN you should cast it to any other type",
+                    is_left_key_dynamic ? left_key_node->result_name : right_key_node->result_name,
+                    is_left_key_dynamic ? left_key_node->result_type->getName() : right_key_node->result_type->getName());
+            }
 
             if (!left_key_node->result_type->equals(*right_key_node->result_type))
             {
