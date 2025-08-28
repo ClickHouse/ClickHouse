@@ -183,6 +183,9 @@ def get_spark(
                 f"spark.sql.catalog.{catalog_name}.io-impl",
                 "org.apache.iceberg.aws.s3.S3FileIO",
             )
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.client.region", "us-east-1"
+            )
     elif catalog == LakeCatalogs.Hive:
         # Enable Hive support
         if lake == LakeFormat.Iceberg:
@@ -282,30 +285,14 @@ def get_spark(
             "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
         )
         builder.config("spark.hadoop.fs.s3a.endpoint.region", "us-east-1")
-        if catalog == LakeCatalogs.Glue:
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.endpoint", "http://localhost:3000"
-            )
-            builder.config(f"spark.sql.catalog.{catalog_name}.region", "us-east-1")
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.access-key-id", minio_access_key
-            )
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.secret-access-key", minio_secret_key
-            )
-
-        # S3 optimizations
-        # builder.config("spark.hadoop.fs.s3a.fast.upload", "true")
-        # builder.config("spark.hadoop.fs.s3a.fast.upload.buffer", "disk")
-        # builder.config("spark.hadoop.fs.s3a.multipart.size", "104857600")
-        # builder.config("spark.hadoop.fs.s3a.multipart.threshold", "2147483647")
 
         builder.config(
-            "spark.sql.warehouse.dir", f"s3a://{cluster.minio_bucket}/{catalog_name}"
+            "spark.sql.warehouse.dir",
+            f"s3a://{cluster.minio_bucket}/{catalog_name}",
         )
         builder.config(
             f"spark.sql.catalog.{catalog_name}.warehouse",
-            f"s3a://{cluster.minio_bucket}/{catalog_name}",
+            f"s3{"" if catalog == LakeCatalogs.Glue else "a"}://{cluster.minio_bucket}/{catalog_name}",
         )
     elif storage == TableStorage.Azure:
         # For Azurite local emulation
@@ -605,7 +592,6 @@ logger.jetty.level = warn
                     warehouse=next_warehouse,
                     **kwargs,
                 )
-                next_catalog_impl.create_namespace("test")
             else:
                 raise Exception("REST catalog not avaiable outside Iceberg")
         elif next_catalog == LakeCatalogs.Glue:
@@ -626,7 +612,6 @@ logger.jetty.level = warn
                             "s3.path-style-access": "true",
                         },
                     )
-                    next_catalog_impl.create_namespace("test")
             else:
                 raise Exception("Glue catalog not available outside AWS at the moment")
         elif next_catalog == LakeCatalogs.Hive:
@@ -644,7 +629,6 @@ logger.jetty.level = warn
                             "s3.path-style-access": "true",
                         },
                     )
-                    next_catalog_impl.create_namespace("test")
             else:
                 raise Exception("Hive catalog not available outside AWS at the moment")
         elif next_catalog == LakeCatalogs.Unity:
