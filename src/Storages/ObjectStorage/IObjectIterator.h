@@ -1,8 +1,10 @@
 #pragma once
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Processors/ISimpleTransform.h>
 
 namespace DB
 {
+
 using ObjectInfo = RelativePathWithMetadata;
 using ObjectInfoPtr = std::shared_ptr<RelativePathWithMetadata>;
 class ExpressionActions;
@@ -12,6 +14,7 @@ struct IObjectIterator
     virtual ~IObjectIterator() = default;
     virtual ObjectInfoPtr next(size_t) = 0;
     virtual size_t estimatedKeysCount() = 0;
+    virtual std::optional<UInt64> getSnapshotVersion() const { return std::nullopt; }
 };
 
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
@@ -29,6 +32,7 @@ public:
 
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
+    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
 private:
     const ObjectIterator iterator;
@@ -37,5 +41,4 @@ private:
     const NamesAndTypesList hive_partition_columns;
     const std::shared_ptr<ExpressionActions> filter_actions;
 };
-
 }

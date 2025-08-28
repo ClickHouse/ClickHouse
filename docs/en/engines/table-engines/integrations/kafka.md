@@ -5,13 +5,14 @@ description: 'The Kafka Table Engine can be used to publish works with Apache Ka
 sidebar_label: 'Kafka'
 sidebar_position: 110
 slug: /engines/table-engines/integrations/kafka
-title: 'Kafka'
+title: 'Kafka table engine'
+keywords: ['Kafka', 'table engine']
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# Kafka
+# Kafka table engine
 
 :::note
 If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/clickpipes) instead. ClickPipes natively supports private network connections, scaling ingestion and cluster resources independently, and comprehensive monitoring for streaming Kafka data into ClickHouse.
@@ -135,6 +136,8 @@ The Kafka table engine doesn't support columns with [default value](/sql-referen
 The delivered messages are tracked automatically, so each message in a group is only counted once. If you want to get the data twice, then create a copy of the table with another group name.
 
 Groups are flexible and synced on the cluster. For instance, if you have 10 topics and 5 copies of a table in a cluster, then each copy gets 2 topics. If the number of copies changes, the topics are redistributed across the copies automatically. Read more about this at http://kafka.apache.org/intro.
+
+It is recommended that each Kafka topic have its own dedicated consumer group, ensuring exclusive pairing between the topic and the group, especially in environments where topics may be created and deleted dynamically (e.g., in testing or staging).
 
 `SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using materialized views. To do this:
 
