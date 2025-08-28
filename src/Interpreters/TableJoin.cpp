@@ -62,6 +62,7 @@ namespace Setting
     extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const SettingsString temporary_files_codec;
+    extern const SettingsBool allow_dynamic_type_in_join_keys;
 }
 
 namespace ErrorCodes
@@ -155,6 +156,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , sort_right_minimum_perkey_rows(settings[Setting::join_to_sort_minimum_perkey_rows])
     , sort_right_maximum_table_rows(settings[Setting::join_to_sort_maximum_table_rows])
     , allow_join_sorting(settings[Setting::allow_experimental_join_right_table_sorting])
+    , allow_dynamic_type_in_join_keys(settings[Setting::allow_dynamic_type_in_join_keys])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -179,6 +181,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , sort_right_minimum_perkey_rows(settings.join_to_sort_minimum_perkey_rows)
     , sort_right_maximum_table_rows(settings.join_to_sort_maximum_table_rows)
     , allow_join_sorting(settings.allow_experimental_join_right_table_sorting)
+    , allow_dynamic_type_in_join_keys(settings.allow_dynamic_type_in_join_keys)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -820,7 +823,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
         bool is_left_key_dynamic = hasDynamicType(ltype);
         bool is_right_key_dynamic = hasDynamicType(rtype);
 
-        if (is_left_key_dynamic || is_right_key_dynamic)
+        if (allow_dynamic_type_in_join_keys && (is_left_key_dynamic || is_right_key_dynamic))
         {
             throw DB::Exception(
                 ErrorCodes::ILLEGAL_COLUMN,

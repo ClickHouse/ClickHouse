@@ -65,6 +65,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
+    extern const SettingsBool allow_dynamic_type_in_join_keys;
 }
 
 namespace ServerSetting
@@ -851,7 +852,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
             bool is_left_key_dynamic = hasDynamicType(left_key_node->result_type);
             bool is_right_key_dynamic = hasDynamicType(right_key_node->result_type);
 
-            if (is_left_key_dynamic || is_right_key_dynamic)
+            if (!planner_context->getQueryContext()->getSettingsRef()[Setting::allow_dynamic_type_in_join_keys] && (is_left_key_dynamic || is_right_key_dynamic))
             {
                 throw DB::Exception(
                     ErrorCodes::ILLEGAL_COLUMN,

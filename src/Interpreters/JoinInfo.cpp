@@ -54,6 +54,8 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
 
     extern const SettingsUInt64 default_max_bytes_in_join;
+
+    extern const SettingsBool allow_dynamic_type_in_join_keys;
 }
 
 namespace QueryPlanSerializationSetting
@@ -90,6 +92,8 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 min_joined_block_size_bytes;
 
     extern const QueryPlanSerializationSettingsUInt64 default_max_bytes_in_join;
+
+    extern const QueryPlanSerializationSettingsBool allow_dynamic_type_in_join_keys;
 }
 
 JoinSettings::JoinSettings(const Settings & query_settings)
@@ -131,6 +135,8 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     join_to_sort_minimum_perkey_rows = query_settings[Setting::join_to_sort_minimum_perkey_rows];
     join_to_sort_maximum_table_rows = query_settings[Setting::join_to_sort_maximum_table_rows];
     allow_experimental_join_right_table_sorting = query_settings[Setting::allow_experimental_join_right_table_sorting];
+
+    allow_dynamic_type_in_join_keys = query_settings[Setting::allow_dynamic_type_in_join_keys];
 }
 
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
@@ -171,6 +177,8 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     min_joined_block_size_bytes = settings[QueryPlanSerializationSetting::min_joined_block_size_bytes];
 
     default_max_bytes_in_join = settings[QueryPlanSerializationSetting::default_max_bytes_in_join];
+
+    allow_dynamic_type_in_join_keys = settings[QueryPlanSerializationSetting::allow_dynamic_type_in_join_keys];
 }
 
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -211,6 +219,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::min_joined_block_size_bytes] = min_joined_block_size_bytes;
 
     settings[QueryPlanSerializationSetting::default_max_bytes_in_join] = default_max_bytes_in_join;
+
+    settings[QueryPlanSerializationSetting::allow_dynamic_type_in_join_keys] = allow_dynamic_type_in_join_keys;
 }
 
 std::string_view toString(PredicateOperator op)
