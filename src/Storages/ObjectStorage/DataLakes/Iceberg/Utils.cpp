@@ -438,15 +438,15 @@ Poco::JSON::Object::Ptr getPartitionField(
     {
         const auto * ast_identifier = partition_by_element->as<ASTIdentifier>();
         if (!ast_identifier)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown expression for partitioning.");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown expression for partitioning: {}", partition_by_element->formatForLogging());
 
         Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
         auto field = ast_identifier->name();
-        result->set(Iceberg::f_name, field);
-
-        if (!column_name_to_source_id.contains(field))
+        auto it = column_name_to_source_id.find(field);
+        if (it == column_name_to_source_id.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown field to partition {}", field);
-        result->set(Iceberg::f_source_id, column_name_to_source_id.at(field));
+        result->set(Iceberg::f_name, field);
+        result->set(Iceberg::f_source_id, it->second);
         result->set(Iceberg::f_field_id, ++partition_iter);
         result->set(Iceberg::f_transform, "identity");
         return result;
