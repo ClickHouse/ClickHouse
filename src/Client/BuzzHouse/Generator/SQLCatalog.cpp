@@ -119,7 +119,7 @@ String SQLBase::getSparkCatalogName() const
         /// DeltaLake tables on Spark must be on the `spark_catalog` :(
         return isAnyIcebergEngine() ? getTableName(false) : "spark_catalog";
     }
-    return getDatabaseName();
+    return db->getSparkCatalogName();
 }
 
 static const constexpr String PARTITION_STR = "{_partition_id}";
