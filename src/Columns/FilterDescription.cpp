@@ -18,32 +18,33 @@ namespace ErrorCodes
 }
 
 template <typename T>
-bool tryConvertColumnToBool(const IColumn * column, IColumnFilter & res)
+bool tryConvertColumnToBool(const IColumn & column, IColumnFilter & res)
 {
-    const auto column_typed = checkAndGetColumn<ColumnVector<T>>(column);
+    const auto * column_typed = checkAndGetColumn<ColumnVector<T>>(&column);
     if (!column_typed)
         return false;
 
+
     auto & data = column_typed->getData();
     size_t data_size = data.size();
+    res.resize(data_size);
     for (size_t i = 0; i < data_size; ++i)
         res[i] = static_cast<bool>(data[i]);
 
     return true;
 }
 
-void convertAnyColumnToBool(const IColumn * column, IColumnFilter & res, int error_code)
+bool tryConvertAnyColumnToBool(const IColumn & column, IColumnFilter & res)
 {
-    if (!tryConvertColumnToBool<Int8>(column, res) &&
-        !tryConvertColumnToBool<Int16>(column, res) &&
-        !tryConvertColumnToBool<Int32>(column, res) &&
-        !tryConvertColumnToBool<Int64>(column, res) &&
-        !tryConvertColumnToBool<UInt16>(column, res) &&
-        !tryConvertColumnToBool<UInt32>(column, res) &&
-        !tryConvertColumnToBool<UInt64>(column, res) &&
-        !tryConvertColumnToBool<Float32>(column, res) &&
-        !tryConvertColumnToBool<Float64>(column, res))
-        throw Exception(error_code, "Unexpected type of column: {}", column->getName());
+    return tryConvertColumnToBool<Int8>(column, res) ||
+        tryConvertColumnToBool<Int16>(column, res) ||
+        tryConvertColumnToBool<Int32>(column, res) ||
+        tryConvertColumnToBool<Int64>(column, res) ||
+        tryConvertColumnToBool<UInt16>(column, res) ||
+        tryConvertColumnToBool<UInt32>(column, res) ||
+        tryConvertColumnToBool<UInt64>(column, res) ||
+        tryConvertColumnToBool<Float32>(column, res) ||
+        tryConvertColumnToBool<Float64>(column, res);
 }
 
 ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
@@ -57,24 +58,10 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
     if (isColumnConst(column))
     {
         const ColumnConst & column_const = assert_cast<const ColumnConst &>(column);
-        ColumnPtr column_nested = column_const.getDataColumnPtr()->convertToFullColumnIfLowCardinality();
-
-        if (!typeid_cast<const ColumnUInt8 *>(column_nested.get()))
-        {
-            const ColumnNullable * column_nested_nullable = checkAndGetColumn<ColumnNullable>(&*column_nested);
-            if (!column_nested_nullable || !typeid_cast<const ColumnUInt8 *>(&column_nested_nullable->getNestedColumn()))
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                                "Illegal type {} of column for constant filter. Must be UInt8 or Nullable(UInt8).",
-                                column_nested->getName());
-            }
-        }
-
-        if (column_const.getValue<UInt64>())
-            always_true = true;
+        if (column_const.isNullAt(0) || column_const.isDefaultAt(0))
+            always_false = true;
         else
             always_false = true;
-        return;
     }
 }
 
@@ -102,7 +89,9 @@ FilterDescription::FilterDescription(const IColumn & column_)
     {
         auto col = ColumnUInt8::create();
         col->getData().resize(column->size());
-        convertAnyColumnToBool(column, col->getData(), ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+        if (!tryConvertAnyColumnToBool(*column, col->getData()))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                "Illegal type {} of column for filter. Must be Number or Nullable(Number).", column->getName());
         filter_column = col.get();
         data_holder = std::move(col);
     }
