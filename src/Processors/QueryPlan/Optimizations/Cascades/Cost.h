@@ -1,7 +1,9 @@
 #pragma once
 
-#include <memory>
+#include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Common/Logger.h>
 #include <base/types.h>
+#include <memory>
 
 namespace DB
 {
@@ -28,8 +30,9 @@ class ReadFromMergeTree;
 class CostEstimator
 {
 public:
-    explicit CostEstimator(const Memo & memo_)
+    CostEstimator(const Memo & memo_, const IOptimizerStatistics & statistics_)
         : memo(memo_)
+        , statistics(statistics_)
     {}
 
     ExpressionCost estimateCost(GroupExpressionPtr expression);
@@ -39,6 +42,8 @@ private:
     ExpressionCost estimateReadCost(const ReadFromMergeTree & read_step);
 
     const Memo & memo;
+    const IOptimizerStatistics & statistics;
+    LoggerPtr log = getLogger("CostEstimator");
 };
 
 }

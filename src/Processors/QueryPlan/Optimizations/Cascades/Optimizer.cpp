@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/JoinGraph.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include "Processors/QueryPlan/ExpressionStep.h"
 #include "Processors/QueryPlan/FilterStep.h"
 #include "Processors/QueryPlan/JoinStepLogical.h"
@@ -313,7 +314,14 @@ GroupId CascadesOptimizer::populateMemoFromJoinGraph(const JoinGraph & join_grap
 
 void CascadesOptimizer::optimize()
 {
-    OptimizerContext optimizer_context;
+    OptimizerStatisticsPtr statistics;
+    /// FIXME: statistics stub for testing
+    if (CurrentThread::get().getQueryContext()->getCurrentDatabase().starts_with("tpch100"))
+        statistics = createTPCH100Statistics();
+    else
+        statistics = createEmptyStatistics();
+
+    OptimizerContext optimizer_context(*statistics);
 
     auto root_group_id = fillMemoFromQueryPlan(optimizer_context);
 

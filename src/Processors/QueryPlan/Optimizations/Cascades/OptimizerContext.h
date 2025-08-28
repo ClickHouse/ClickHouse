@@ -8,6 +8,7 @@
 #include "Processors/QueryPlan/Optimizations/Cascades/Group.h"
 #include "Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h"
 #include "Processors/QueryPlan/Optimizations/Cascades/Optimizer.h"
+#include "Processors/QueryPlan/Optimizations/Cascades/Statistics.h"
 #include <stack>
 
 
@@ -19,7 +20,7 @@ class OptimizerContext
     friend class CascadesOptimizer;
 
 public:
-    OptimizerContext();
+    explicit OptimizerContext(IOptimizerStatistics & statistics);
 
     GroupId addGroup(QueryPlan::Node & node);
     void pushTask(OptimizationTaskPtr task);
