@@ -92,7 +92,10 @@ def started_cluster():
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
             ],
-            user_configs=["configs/users.d/users.xml"],
+            user_configs=[
+                "configs/users.d/users.xml",
+                "configs/users.d/enable_writes.xml",
+            ],
             with_minio=True,
             with_azurite=True,
             stay_alive=True,
@@ -105,7 +108,10 @@ def started_cluster():
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/remote_servers.xml",
             ],
-            user_configs=["configs/users.d/users.xml"],
+            user_configs=[
+                "configs/users.d/users.xml",
+                "configs/users.d/enable_writes.xml",
+            ],
             with_minio=True,
             stay_alive=True,
             with_zookeeper=True,
