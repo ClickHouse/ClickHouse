@@ -37,7 +37,7 @@ public:
     String dump() const;
 
     GroupId group_id = INVALID_GROUP_ID;
-    QueryPlanStepPtr plan_step;         /// Step for expression that was not in the original plan bu was created by transformations
+    QueryPlanStepPtr plan_step;         /// Step for expression that was not in the original plan but was created by transformations
     QueryPlan::Node * original_node;    /// Node form the original query plan if the expression was directly created from it
     std::vector<GroupId> inputs;
 
