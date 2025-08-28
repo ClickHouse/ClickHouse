@@ -376,11 +376,13 @@ class DolorCatalog:
         _storage_type: TableStorage,
         _lake_type: LakeFormat,
         _catalog_type: LakeCatalogs,
+        _catalog_impl,
     ):
         self.catalog_name = _catalog_name
         self.storage_type = _storage_type
         self.lake_type = _lake_type
         self.catalog_type = _catalog_type
+        self.catalog_impl = _catalog_impl
         self.session = get_spark(
             cluster,
             spark_log_config,
@@ -561,6 +563,7 @@ logger.jetty.level = warn
         next_storage = TableStorage.storage_from_str(data["storage"])
         next_lake = LakeFormat.lakeformat_from_str(data["lake"])
         next_catalog = LakeCatalogs.catalog_from_str(catalog)
+        next_catalog_impl = None
 
         # Load catalog if needed
         if next_catalog == LakeCatalogs.REST:
@@ -591,19 +594,19 @@ logger.jetty.level = warn
                     next_warehouse = (
                         f"file://{get_local_base_path(cluster, catalog_name)}"
                     )
-                rest_catalog = RestCatalog(
+                next_catalog_impl = RestCatalog(
                     catalog_name,
                     uri="http://localhost:8182",
                     warehouse=next_warehouse,
                     **kwargs,
                 )
-                rest_catalog.create_namespace("test")
+                next_catalog_impl.create_namespace("test")
             else:
                 raise Exception("REST catalog not avaiable outside Iceberg")
         elif next_catalog == LakeCatalogs.Glue:
             if next_storage == TableStorage.S3:
                 if next_lake == LakeFormat.Iceberg:
-                    glue_catalog = load_catalog(
+                    next_catalog_impl = load_catalog(
                         catalog,
                         **{
                             "type": "glue",
@@ -618,13 +621,13 @@ logger.jetty.level = warn
                             "s3.path-style-access": "true",
                         },
                     )
-                    glue_catalog.create_namespace("test")
+                    next_catalog_impl.create_namespace("test")
             else:
                 raise Exception("Glue catalog not available outside AWS at the moment")
         elif next_catalog == LakeCatalogs.Hive:
             if next_storage == TableStorage.S3:
                 if next_lake == LakeFormat.Iceberg:
-                    hive_catalog = load_catalog(
+                    next_catalog_impl = load_catalog(
                         catalog,
                         **{
                             "uri": "thrift://0.0.0.0:9083",
@@ -636,7 +639,7 @@ logger.jetty.level = warn
                             "s3.path-style-access": "true",
                         },
                     )
-                    hive_catalog.create_namespace("test")
+                    next_catalog_impl.create_namespace("test")
             else:
                 raise Exception("Hive catalog not available outside AWS at the moment")
         elif next_catalog == LakeCatalogs.Unity:
@@ -652,6 +655,7 @@ logger.jetty.level = warn
             next_storage,
             next_lake,
             next_catalog,
+            next_catalog_impl,
         )
         self.create_database(self.catalogs[catalog_name].session, catalog_name)
 
@@ -673,6 +677,7 @@ logger.jetty.level = warn
                 next_storage,
                 next_lake,
                 LakeCatalogs.NoCatalog,
+                None,
             )
             self.create_database(self.catalogs[catalog_name].session, catalog_name)
         next_session = self.catalogs[catalog_name].session
