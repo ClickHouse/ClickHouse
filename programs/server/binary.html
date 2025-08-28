@@ -182,7 +182,6 @@
         layer.addTo(map);
 
         map.attributionControl.setPrefix('<a href="https://github.com/Altinity/ClickHouse/">About</a>');
-
         function latLngToPixel(latlng) {
             return { x: ((latlng.lng / 1024) * 32768)|0, y: ((-latlng.lat / 1024) * 32768)|0 };
         }
