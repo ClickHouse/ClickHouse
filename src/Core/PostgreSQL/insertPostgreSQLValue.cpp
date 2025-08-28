@@ -117,7 +117,8 @@ void insertPostgreSQLValue(
         case ExternalResultDescription::ValueType::vtDecimal32: [[fallthrough]];
         case ExternalResultDescription::ValueType::vtDecimal64: [[fallthrough]];
         case ExternalResultDescription::ValueType::vtDecimal128: [[fallthrough]];
-        case ExternalResultDescription::ValueType::vtDecimal256:
+        case ExternalResultDescription::ValueType::vtDecimal256: [[fallthrough]];
+        case ExternalResultDescription::ValueType::vtDecimal512:
         {
             ReadBufferFromString istr(value);
             data_type->getDefaultSerialization()->deserializeWholeText(column, istr, FormatSettings{});
@@ -259,6 +260,13 @@ void preparePostgreSQLArrayInfo(
         {
             const auto & type = typeid_cast<const DataTypeDecimal<Decimal256> *>(nested.get());
             DataTypeDecimal<Decimal256> res(getDecimalPrecision(*type), getDecimalScale(*type));
+            return convertFieldToType(field, res);
+        };
+    else if (which.isDecimal512())
+        parser = [nested](std::string & field) -> Field
+        {
+            const auto & type = typeid_cast<const DataTypeDecimal<Decimal512> *>(nested.get());
+            DataTypeDecimal<Decimal512> res(getDecimalPrecision(*type), getDecimalScale(*type));
             return convertFieldToType(field, res);
         };
     else

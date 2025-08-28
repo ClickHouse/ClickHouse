@@ -97,6 +97,7 @@ static IAggregateFunction * createWithUnsignedIntegerType(const IDataType & argu
     if (which.idx == TypeIndex::UInt64) return new AggregateFunctionTemplate<UInt64, Data<UInt64>>(args...);
     if (which.idx == TypeIndex::UInt128) return new AggregateFunctionTemplate<UInt128, Data<UInt128>>(args...);
     if (which.idx == TypeIndex::UInt256) return new AggregateFunctionTemplate<UInt256, Data<UInt256>>(args...);
+    if (which.idx == TypeIndex::UInt512) return new AggregateFunctionTemplate<UInt512, Data<UInt512>>(args...);
     return nullptr;
 }
 
@@ -110,6 +111,7 @@ static IAggregateFunction * createWithSignedIntegerType(const IDataType & argume
     if (which.idx == TypeIndex::Int64) return new AggregateFunctionTemplate<Int64, Data<Int64>>(args...);
     if (which.idx == TypeIndex::Int128) return new AggregateFunctionTemplate<Int128, Data<Int128>>(args...);
     if (which.idx == TypeIndex::Int256) return new AggregateFunctionTemplate<Int256, Data<Int256>>(args...);
+    if (which.idx == TypeIndex::Int512) return new AggregateFunctionTemplate<Int512, Data<Int512>>(args...);
     return nullptr;
 }
 
@@ -165,6 +167,7 @@ static IAggregateFunction * createWithDecimalType(const IDataType & argument_typ
     if (which.idx == TypeIndex::Decimal64) return new AggregateFunctionTemplate<Decimal64>(args...);
     if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128>(args...);
     if (which.idx == TypeIndex::Decimal256) return new AggregateFunctionTemplate<Decimal256>(args...);
+    if (which.idx == TypeIndex::Decimal512) return new AggregateFunctionTemplate<Decimal512>(args...);
     if constexpr (AggregateFunctionTemplate<DateTime64>::DateTime64Supported)
         if (which.idx == TypeIndex::DateTime64) return new AggregateFunctionTemplate<DateTime64>(args...);
     return nullptr;
@@ -178,6 +181,7 @@ static IAggregateFunction * createWithDecimalType(const IDataType & argument_typ
     if (which.idx == TypeIndex::Decimal64) return new AggregateFunctionTemplate<Decimal64, Data>(args...);
     if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128, Data>(args...);
     if (which.idx == TypeIndex::Decimal256) return new AggregateFunctionTemplate<Decimal256, Data>(args...);
+    if (which.idx == TypeIndex::Decimal512) return new AggregateFunctionTemplate<Decimal512, Data>(args...);
     if constexpr (AggregateFunctionTemplate<DateTime64, Data>::DateTime64Supported)
         if (which.idx == TypeIndex::DateTime64) return new AggregateFunctionTemplate<DateTime64, Data>(args...);
     return nullptr;

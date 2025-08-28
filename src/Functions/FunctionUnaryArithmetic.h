@@ -213,6 +213,7 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeDecimal<Decimal64>,
             DataTypeDecimal<Decimal128>,
             DataTypeDecimal<Decimal256>,
+            DataTypeDecimal<Decimal512>,
             DataTypeFixedString,
             DataTypeString,
             DataTypeInterval>(type, std::forward<F>(f));

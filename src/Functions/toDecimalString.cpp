@@ -209,6 +209,7 @@ public:
             case TypeIndex::Decimal64:  return executeType<Decimal64>(arguments, input_rows_count);
             case TypeIndex::Decimal128: return executeType<Decimal128>(arguments, input_rows_count);
             case TypeIndex::Decimal256: return executeType<Decimal256>(arguments, input_rows_count);
+            case TypeIndex::Decimal512: return executeType<Decimal512>(arguments, input_rows_count);
             default:
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                                 arguments[0].column->getName(), getName());

@@ -1164,6 +1164,7 @@ inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary
 inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writePODBinary(x.value, buf); }
+inline void writeBinary(const Decimal512 & x, WriteBuffer & buf) { writePODBinary(x.value, buf); }
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }

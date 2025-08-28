@@ -835,7 +835,8 @@ public:
             && !executeDecimal<Decimal32>(in, out, boundaries)
             && !executeDecimal<Decimal64>(in, out, boundaries)
             && !executeDecimal<Decimal128>(in, out, boundaries)
-            && !executeDecimal<Decimal256>(in, out, boundaries))
+            && !executeDecimal<Decimal256>(in, out, boundaries)
+            && !executeDecimal<Decimal512>(in, out, boundaries))
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
         }

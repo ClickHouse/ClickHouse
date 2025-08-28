@@ -44,10 +44,13 @@ String FieldVisitorToJSONElement::operator() (const DecimalField<Decimal32> & x)
 String FieldVisitorToJSONElement::operator() (const DecimalField<Decimal64> & x) const { return formatNumber(x); }
 String FieldVisitorToJSONElement::operator() (const DecimalField<Decimal128> & x) const { return formatNumber(x); }
 String FieldVisitorToJSONElement::operator() (const DecimalField<Decimal256> & x) const { return formatNumber(x); }
+String FieldVisitorToJSONElement::operator() (const DecimalField<Decimal512> & x) const { return formatNumber(x); }
 String FieldVisitorToJSONElement::operator() (const Int128 & x) const { return formatAsString(x); }
 String FieldVisitorToJSONElement::operator() (const UInt128 & x) const { return formatAsString(x); }
 String FieldVisitorToJSONElement::operator() (const UInt256 & x) const { return formatAsString(x); }
 String FieldVisitorToJSONElement::operator() (const Int256 & x) const { return formatAsString(x); }
+String FieldVisitorToJSONElement::operator() (const UInt512 & x) const { return formatAsString(x); }
+String FieldVisitorToJSONElement::operator() (const Int512 & x) const { return formatAsString(x); }
 String FieldVisitorToJSONElement::operator() (const UUID & x) const { return formatAsString(x); }
 String FieldVisitorToJSONElement::operator() (const IPv4 & x) const { return formatAsString(x); }
 String FieldVisitorToJSONElement::operator() (const IPv6 & x) const { return formatAsString(x); }

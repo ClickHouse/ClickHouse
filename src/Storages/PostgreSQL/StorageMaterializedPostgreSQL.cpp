@@ -356,6 +356,9 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
 
         if (which.isDecimal256())
             return make_decimal_expression("Decimal256");
+
+        if (which.isDecimal512())
+            return make_decimal_expression("Decimal512");
     }
 
     if (which.isDateTime64())

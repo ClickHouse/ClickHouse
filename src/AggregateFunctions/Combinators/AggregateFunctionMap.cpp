@@ -410,6 +410,8 @@ public:
                     return std::make_shared<AggregateFunctionMap<Int128>>(nested_function, arguments);
                 case TypeIndex::Int256:
                     return std::make_shared<AggregateFunctionMap<Int256>>(nested_function, arguments);
+                case TypeIndex::Int512:
+                    return std::make_shared<AggregateFunctionMap<Int512>>(nested_function, arguments);
                 case TypeIndex::UInt8:
                     return std::make_shared<AggregateFunctionMap<UInt8>>(nested_function, arguments);
                 case TypeIndex::Date:
@@ -424,6 +426,8 @@ public:
                     return std::make_shared<AggregateFunctionMap<UInt128>>(nested_function, arguments);
                 case TypeIndex::UInt256:
                     return std::make_shared<AggregateFunctionMap<UInt256>>(nested_function, arguments);
+                case TypeIndex::UInt512:
+                    return std::make_shared<AggregateFunctionMap<UInt512>>(nested_function, arguments);
                 case TypeIndex::UUID:
                     return std::make_shared<AggregateFunctionMap<UUID>>(nested_function, arguments);
                 case TypeIndex::IPv4:

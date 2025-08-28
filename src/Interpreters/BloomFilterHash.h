@@ -87,6 +87,8 @@ struct BloomFilterHash
             return build_hash_column(getNumberTypeHash<UInt128, UInt256>(field));
         if (which.isUInt256())
             return build_hash_column(getNumberTypeHash<UInt256, UInt256>(field));
+        if (which.isUInt512())
+            return build_hash_column(getNumberTypeHash<UInt512, UInt512>(field));
         if (which.isInt8())
             return build_hash_column(getNumberTypeHash<Int64, Int8>(field));
         if (which.isInt16())
@@ -99,6 +101,8 @@ struct BloomFilterHash
             return build_hash_column(getNumberTypeHash<Int128, Int128>(field));
         if (which.isInt256())
             return build_hash_column(getNumberTypeHash<Int256, Int256>(field));
+        if (which.isInt512())
+            return build_hash_column(getNumberTypeHash<Int512, Int512>(field));
         if (which.isEnum8())
             return build_hash_column(getNumberTypeHash<Int64, Int8>(field));
         if (which.isEnum16())
@@ -172,12 +176,14 @@ struct BloomFilterHash
         else if (which.isUInt64()) getNumberTypeHash<UInt64, is_first>(column, vec, pos);
         else if (which.isUInt128()) getNumberTypeHash<UInt128, is_first>(column, vec, pos);
         else if (which.isUInt256()) getNumberTypeHash<UInt256, is_first>(column, vec, pos);
+        else if (which.isUInt512()) getNumberTypeHash<UInt512, is_first>(column, vec, pos);
         else if (which.isInt8()) getNumberTypeHash<Int8, is_first>(column, vec, pos);
         else if (which.isInt16()) getNumberTypeHash<Int16, is_first>(column, vec, pos);
         else if (which.isInt32()) getNumberTypeHash<Int32, is_first>(column, vec, pos);
         else if (which.isInt64()) getNumberTypeHash<Int64, is_first>(column, vec, pos);
         else if (which.isInt128()) getNumberTypeHash<Int128, is_first>(column, vec, pos);
         else if (which.isInt256()) getNumberTypeHash<Int256, is_first>(column, vec, pos);
+        else if (which.isInt512()) getNumberTypeHash<Int512, is_first>(column, vec, pos);
         else if (which.isEnum8()) getNumberTypeHash<Int8, is_first>(column, vec, pos);
         else if (which.isEnum16()) getNumberTypeHash<Int16, is_first>(column, vec, pos);
         else if (which.isDate()) getNumberTypeHash<UInt16, is_first>(column, vec, pos);

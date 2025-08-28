@@ -112,8 +112,10 @@ struct AggregatedDataVariants : private boost::noncopyable
 
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128, true>>             nullable_keys128;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256, true>>             nullable_keys256;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys512, true>>             nullable_keys512;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, true>>     nullable_keys128_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, true>>     nullable_keys256_two_level;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys512TwoLevel, true>>     nullable_keys512_two_level;
 
     /// Support for low cardinality.
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false>>> low_cardinality_key8;
@@ -183,8 +185,10 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_key_fixed_string_two_level, true) \
         M(nullable_keys128,           false) \
         M(nullable_keys256,           false) \
+        M(nullable_keys512,           false) \
         M(nullable_keys128_two_level, true) \
         M(nullable_keys256_two_level, true) \
+        M(nullable_keys512_two_level, true) \
         M(low_cardinality_key8, false) \
         M(low_cardinality_key16, false) \
         M(low_cardinality_key32, false) \
@@ -219,6 +223,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_key_fixed_string) \
         M(nullable_keys128) \
         M(nullable_keys256) \
+        M(nullable_keys512) \
         M(low_cardinality_key32) \
         M(low_cardinality_key64) \
         M(low_cardinality_keys128) \
@@ -270,6 +275,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_key_fixed_string_two_level) \
         M(nullable_keys128_two_level) \
         M(nullable_keys256_two_level) \
+        M(nullable_keys512_two_level) \
         M(low_cardinality_key32_two_level) \
         M(low_cardinality_key64_two_level) \
         M(low_cardinality_keys128_two_level) \

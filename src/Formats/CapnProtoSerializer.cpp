@@ -1437,6 +1437,10 @@ namespace
                 return std::make_unique<CapnProtoFixedSizeRawDataSerializer<Int256>>(type, name, capnp_type);
             case TypeIndex::UInt256:
                 return std::make_unique<CapnProtoFixedSizeRawDataSerializer<UInt256>>(type, name, capnp_type);
+            case TypeIndex::Int512:
+                return std::make_unique<CapnProtoFixedSizeRawDataSerializer<Int512>>(type, name, capnp_type);
+            case TypeIndex::UInt512:
+                return std::make_unique<CapnProtoFixedSizeRawDataSerializer<UInt512>>(type, name, capnp_type);
             case TypeIndex::Float32:
                 return createFloatSerializer<Float32>(type, name, capnp_type);
             case TypeIndex::Float64:
@@ -1457,6 +1461,8 @@ namespace
                 return std::make_unique<CapnProtoFixedSizeRawDataSerializer<Decimal128>>(type, name, capnp_type);
             case TypeIndex::Decimal256:
                 return std::make_unique<CapnProtoFixedSizeRawDataSerializer<Decimal256>>(type, name, capnp_type);
+            case TypeIndex::Decimal512:
+                return std::make_unique<CapnProtoFixedSizeRawDataSerializer<Decimal512>>(type, name, capnp_type);
             case TypeIndex::IPv4:
                 return std::make_unique<CapnProtoIPv4Serializer>(type, name, capnp_type);
             case TypeIndex::IPv6:

@@ -11,9 +11,13 @@ using Int128 = wide::integer<128, signed>;
 using UInt128 = wide::integer<128, unsigned>;
 using Int256 = wide::integer<256, signed>;
 using UInt256 = wide::integer<256, unsigned>;
+using Int512 = wide::integer<512, signed>;
+using UInt512 = wide::integer<512, unsigned>;
 
 static_assert(sizeof(Int256) == 32);
 static_assert(sizeof(UInt256) == 32);
+static_assert(sizeof(Int512) == 64);
+static_assert(sizeof(UInt512) == 64);
 
 /// The standard library type traits, such as std::is_arithmetic, with one exception
 /// (std::common_type), are "set in stone". Attempting to specialize them causes undefined behavior.
@@ -26,6 +30,7 @@ struct is_signed // NOLINT(readability-identifier-naming)
 
 template <> struct is_signed<Int128> { static constexpr bool value = true; };
 template <> struct is_signed<Int256> { static constexpr bool value = true; };
+template <> struct is_signed<Int512> { static constexpr bool value = true; };
 template <> struct is_signed<BFloat16> { static constexpr bool value = true; };
 
 template <typename T>
@@ -39,6 +44,7 @@ struct is_unsigned // NOLINT(readability-identifier-naming)
 
 template <> struct is_unsigned<UInt128> { static constexpr bool value = true; };
 template <> struct is_unsigned<UInt256> { static constexpr bool value = true; };
+template <> struct is_unsigned<UInt512> { static constexpr bool value = true; };
 
 template <typename T>
 inline constexpr bool is_unsigned_v = is_unsigned<T>::value;
@@ -48,7 +54,9 @@ template <typename T> concept is_integer =
     || std::is_same_v<T, Int128>
     || std::is_same_v<T, UInt128>
     || std::is_same_v<T, Int256>
-    || std::is_same_v<T, UInt256>;
+    || std::is_same_v<T, UInt256>
+    || std::is_same_v<T, Int512>
+    || std::is_same_v<T, UInt512>;
 
 template <typename T>
 struct is_arithmetic // NOLINT(readability-identifier-naming)
@@ -60,6 +68,8 @@ template <> struct is_arithmetic<Int128> { static constexpr bool value = true; }
 template <> struct is_arithmetic<UInt128> { static constexpr bool value = true; };
 template <> struct is_arithmetic<Int256> { static constexpr bool value = true; };
 template <> struct is_arithmetic<UInt256> { static constexpr bool value = true; };
+template <> struct is_arithmetic<Int512> { static constexpr bool value = true; };
+template <> struct is_arithmetic<UInt512> { static constexpr bool value = true; };
 template <> struct is_arithmetic<BFloat16> { static constexpr bool value = true; };
 
 template <typename T>
@@ -87,6 +97,8 @@ template <typename T> concept is_floating_point =
     M(DataTypeUInt128) \
     M(DataTypeInt256) \
     M(DataTypeUInt256) \
+    M(DataTypeInt512) \
+    M(DataTypeUInt512) \
     M(DataTypeBFloat16) \
     M(DataTypeFloat32) \
     M(DataTypeFloat64)
@@ -108,6 +120,8 @@ template <typename T> concept is_floating_point =
     M(DataTypeUInt128, X) \
     M(DataTypeInt256, X) \
     M(DataTypeUInt256, X) \
+    M(DataTypeInt512, X) \
+    M(DataTypeUInt512, X) \
     M(DataTypeBFloat16, X) \
     M(DataTypeFloat32, X) \
     M(DataTypeFloat64, X)
@@ -130,6 +144,8 @@ template <> struct make_unsigned<Int128> { using type = UInt128; };
 template <> struct make_unsigned<UInt128> { using type = UInt128; };
 template <> struct make_unsigned<Int256>  { using type = UInt256; };
 template <> struct make_unsigned<UInt256> { using type = UInt256; };
+template <> struct make_unsigned<Int512>  { using type = UInt512; };
+template <> struct make_unsigned<UInt512> { using type = UInt512; };
 
 template <typename T> using make_unsigned_t = typename make_unsigned<T>::type;
 
@@ -151,6 +167,8 @@ template <> struct make_signed<Int128>  { using type = Int128; };
 template <> struct make_signed<UInt128> { using type = Int128; };
 template <> struct make_signed<Int256>  { using type = Int256; };
 template <> struct make_signed<UInt256> { using type = Int256; };
+template <> struct make_signed<Int512>  { using type = Int512; };
+template <> struct make_signed<UInt512> { using type = Int512; };
 
 template <typename T> using make_signed_t = typename make_signed<T>::type;
 
@@ -164,6 +182,8 @@ template <> struct is_big_int<Int128> { static constexpr bool value = true; };
 template <> struct is_big_int<UInt128> { static constexpr bool value = true; };
 template <> struct is_big_int<Int256> { static constexpr bool value = true; };
 template <> struct is_big_int<UInt256> { static constexpr bool value = true; };
+template <> struct is_big_int<Int512> { static constexpr bool value = true; };
+template <> struct is_big_int<UInt512> { static constexpr bool value = true; };
 
 template <typename T>
 inline constexpr bool is_big_int_v = is_big_int<T>::value;

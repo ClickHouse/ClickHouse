@@ -27,8 +27,10 @@ template <typename T> constexpr bool DecimalOrExtendedInt =
     is_decimal<T>
     || std::is_same_v<T, Int128>
     || std::is_same_v<T, Int256>
+    || std::is_same_v<T, Int512>
     || std::is_same_v<T, UInt128>
-    || std::is_same_v<T, UInt256>;
+    || std::is_same_v<T, UInt256>
+    || std::is_same_v<T, UInt512>;
 
 /**
  * Helper class to encapsulate values conversion for avg and avgWeighted.

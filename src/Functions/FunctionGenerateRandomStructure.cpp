@@ -37,9 +37,10 @@ namespace
     const size_t MAX_DECIMAL64_PRECISION = 18;
     const size_t MAX_DECIMAL128_PRECISION = 38;
     const size_t MAX_DECIMAL256_PRECISION = 76;
+    const size_t MAX_DECIMAL512_PRECISION = 153;
     const size_t MAX_DEPTH = 16;
 
-    constexpr std::array<TypeIndex, 29> simple_types
+    constexpr std::array<TypeIndex, 30> simple_types
     {
         TypeIndex::Int8,
         TypeIndex::UInt8,
@@ -59,6 +60,7 @@ namespace
         TypeIndex::Decimal64,
         TypeIndex::Decimal128,
         TypeIndex::Decimal256,
+        TypeIndex::Decimal512,
         TypeIndex::Date,
         TypeIndex::Date32,
         TypeIndex::DateTime,
@@ -274,6 +276,9 @@ namespace
                 return;
             case TypeIndex::Decimal256:
                 writeString("Decimal256(" + std::to_string(rng() % MAX_DECIMAL256_PRECISION + 1) + ")", buf);
+                return;
+            case TypeIndex::Decimal512:
+                writeString("Decimal512(" + std::to_string(rng() % MAX_DECIMAL512_PRECISION + 1) + ")", buf);
                 return;
             case TypeIndex::Enum8:
                 writeCString("Enum8(", buf);

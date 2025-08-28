@@ -16,18 +16,21 @@ class Time64;
     M(Int32) \
     M(Int64) \
     M(Int128) \
-    M(Int256)
+    M(Int256) \
+    M(Int512)
 
 #define FOR_EACH_UNDERLYING_DECIMAL_TYPE_PASS(M, X) \
     M(Int32,  X) \
     M(Int64,  X) \
     M(Int128, X) \
-    M(Int256, X)
+    M(Int256, X) \
+    M(Int512, X)
 
 using Decimal32 = Decimal<Int32>;
 using Decimal64 = Decimal<Int64>;
 using Decimal128 = Decimal<Int128>;
 using Decimal256 = Decimal<Int256>;
+using Decimal512 = Decimal<Int512>;
 
 template <class T> struct NativeTypeT { using Type = T; };
 template <is_decimal T> struct NativeTypeT<T> { using Type = typename T::NativeType; };
@@ -54,6 +57,8 @@ struct Decimal
     constexpr Decimal<T> & operator = (const Decimal<T> &) = default;
 
     constexpr operator T () const { return value; } // NOLINT(google-explicit-constructor)
+    
+    const T & getValue() const { return value; }
 
     template <typename U>
     constexpr U convertTo() const
@@ -203,6 +208,22 @@ namespace std
             // FIXME temp solution
             return std::hash<Int64>()(static_cast<Int64>(x.value >> 64 & max_uint_mask))
                 ^ std::hash<Int64>()(static_cast<Int64>(x.value & max_uint_mask));
+        }
+    };
+
+    template <>
+    struct hash<DB::Decimal512>
+    {
+        size_t operator()(const DB::Decimal512 & x) const
+        {
+            const UInt64 * p = reinterpret_cast<const UInt64 *>(&x.value);
+            size_t seed = 0;
+            std::hash<UInt64> hasher;
+            for (size_t i = 0; i < 8; ++i)
+            {
+                seed ^= hasher(p[i]) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            }
+            return seed;
         }
     };
 }

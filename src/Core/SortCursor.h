@@ -748,6 +748,7 @@ private:
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt64>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt128>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt256>>, strategy>,
+        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt512>>, strategy>,
 
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int8>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int16>>, strategy>,
@@ -755,6 +756,7 @@ private:
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int64>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int128>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int256>>, strategy>,
+        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int512>>, strategy>,
 
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<BFloat16>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Float32>>, strategy>,
@@ -764,6 +766,7 @@ private:
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal64>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal128>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal256>>, strategy>,
+        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal512>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Time64>>, strategy>,
 
@@ -780,12 +783,14 @@ private:
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt64>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt128>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt256>>, strategy>,
+        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt512>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int8>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int16>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int32>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int64>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int128>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int256>>, strategy>,
+        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int512>>, strategy>,
 
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<BFloat16>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Float32>>, strategy>,
@@ -795,6 +800,7 @@ private:
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal64>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal128>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal256>>, strategy>,
+        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal512>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Time64>>, strategy>,
 

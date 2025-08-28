@@ -124,6 +124,7 @@ private:
             || executeNumber<Decimal64>(columns, out_data, input_rows_count)
             || executeNumber<Decimal128>(columns, out_data, input_rows_count)
             || executeNumber<Decimal256>(columns, out_data, input_rows_count)
+            || executeNumber<Decimal512>(columns, out_data, input_rows_count)
             || executeNumber<DateTime64>(columns, out_data, input_rows_count) || executeString(columns, out_data, input_rows_count)
             || executeNullable(columns, out_data, input_rows_count) || executeTuple(columns, out_data, input_rows_count)
             || executeFixedString(columns, out_data, input_rows_count) || executeGeneric(columns, out_data, input_rows_count);

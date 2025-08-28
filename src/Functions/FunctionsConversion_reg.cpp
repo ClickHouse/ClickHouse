@@ -11,12 +11,14 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<detail::FunctionToUInt64>();
     factory.registerFunction<detail::FunctionToUInt128>();
     factory.registerFunction<detail::FunctionToUInt256>();
+    factory.registerFunction<detail::FunctionToUInt512>();
     factory.registerFunction<detail::FunctionToInt8>();
     factory.registerFunction<detail::FunctionToInt16>();
     factory.registerFunction<detail::FunctionToInt32>();
     factory.registerFunction<detail::FunctionToInt64>();
     factory.registerFunction<detail::FunctionToInt128>();
     factory.registerFunction<detail::FunctionToInt256>();
+    factory.registerFunction<detail::FunctionToInt512>();
 
     factory.registerFunction<detail::FunctionToBFloat16>(FunctionDocumentation{.description=R"(
 Converts Float32 to BFloat16 with losing the precision.
@@ -35,6 +37,7 @@ Example:
     factory.registerFunction<detail::FunctionToDecimal64>();
     factory.registerFunction<detail::FunctionToDecimal128>();
     factory.registerFunction<detail::FunctionToDecimal256>();
+    factory.registerFunction<detail::FunctionToDecimal512>();
 
     factory.registerFunction<detail::FunctionToDate>();
 
@@ -107,12 +110,14 @@ from_date32:     1509840000
     factory.registerFunction<detail::FunctionToUInt64OrZero>();
     factory.registerFunction<detail::FunctionToUInt128OrZero>();
     factory.registerFunction<detail::FunctionToUInt256OrZero>();
+    factory.registerFunction<detail::FunctionToUInt512OrZero>();
     factory.registerFunction<detail::FunctionToInt8OrZero>();
     factory.registerFunction<detail::FunctionToInt16OrZero>();
     factory.registerFunction<detail::FunctionToInt32OrZero>();
     factory.registerFunction<detail::FunctionToInt64OrZero>();
     factory.registerFunction<detail::FunctionToInt128OrZero>();
     factory.registerFunction<detail::FunctionToInt256OrZero>();
+    factory.registerFunction<detail::FunctionToInt512OrZero>();
 
     factory.registerFunction<detail::FunctionToBFloat16OrZero>(FunctionDocumentation{.description=R"(
 Converts String to BFloat16.
@@ -151,6 +156,7 @@ Example of a loss of precision:
     factory.registerFunction<detail::FunctionToDecimal64OrZero>();
     factory.registerFunction<detail::FunctionToDecimal128OrZero>();
     factory.registerFunction<detail::FunctionToDecimal256OrZero>();
+    factory.registerFunction<detail::FunctionToDecimal512OrZero>();
 
     factory.registerFunction<detail::FunctionToUUIDOrZero>();
     factory.registerFunction<detail::FunctionToIPv4OrZero>();
@@ -162,12 +168,14 @@ Example of a loss of precision:
     factory.registerFunction<detail::FunctionToUInt64OrNull>();
     factory.registerFunction<detail::FunctionToUInt128OrNull>();
     factory.registerFunction<detail::FunctionToUInt256OrNull>();
+    factory.registerFunction<detail::FunctionToUInt512OrNull>();
     factory.registerFunction<detail::FunctionToInt8OrNull>();
     factory.registerFunction<detail::FunctionToInt16OrNull>();
     factory.registerFunction<detail::FunctionToInt32OrNull>();
     factory.registerFunction<detail::FunctionToInt64OrNull>();
     factory.registerFunction<detail::FunctionToInt128OrNull>();
     factory.registerFunction<detail::FunctionToInt256OrNull>();
+    factory.registerFunction<detail::FunctionToInt512OrNull>();
 
     factory.registerFunction<detail::FunctionToBFloat16OrNull>(FunctionDocumentation{.description=R"(
 Converts String to Nullable(BFloat16).
@@ -206,6 +214,7 @@ Example of a loss of precision:
     factory.registerFunction<detail::FunctionToDecimal64OrNull>();
     factory.registerFunction<detail::FunctionToDecimal128OrNull>();
     factory.registerFunction<detail::FunctionToDecimal256OrNull>();
+    factory.registerFunction<detail::FunctionToDecimal512OrNull>();
 
     factory.registerFunction<detail::FunctionToUUIDOrNull>();
     factory.registerFunction<detail::FunctionToIPv4OrNull>();

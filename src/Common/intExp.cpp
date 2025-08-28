@@ -150,5 +150,19 @@ const Int256 exp10_i256_table[] = {
     i10e18 * 100000000000000000ll * 100000000000000000ll * 100000000000000000ll * 10000000ll,
 };
 
+Int512 exp10_i512(int x)
+{
+    if (x < 0)
+        return 0;
+    // Max precision for Decimal512 is 153
+    if (x > 153)
+        return std::numeric_limits<Int512>::max();
+
+    Int512 res = 1;
+    for (int i = 0; i < x; ++i)
+        res *= 10;
+    return res;
+}
+
 
 }

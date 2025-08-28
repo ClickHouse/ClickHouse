@@ -136,6 +136,10 @@ template <typename DataType> constexpr bool IsIPv4 = false;
 template <> inline constexpr bool IsIPv4<DataTypeIPv4> = true;
 
 template <typename T0, typename T1> constexpr bool UseLeftDecimal = false;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal512>, DataTypeDecimal<Decimal256>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal512>, DataTypeDecimal<Decimal128>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal512>, DataTypeDecimal<Decimal64>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal512>, DataTypeDecimal<Decimal32>> = true;
 template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal128>> = true;
 template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal64>> = true;
 template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal32>> = true;
@@ -832,7 +836,7 @@ class FunctionBinaryArithmetic : public IFunction
         using Types = TypeList<
             DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
             DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
-            DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256,
+            DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256, DataTypeDecimal512,
             DataTypeDate, DataTypeDateTime, DataTypeTime,
             DataTypeFixedString, DataTypeString,
             DataTypeInterval>;

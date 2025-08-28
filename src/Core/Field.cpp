@@ -98,9 +98,11 @@ bool Field::operator< (const Field & rhs) const
         case Types::UInt64:  return get<UInt64>()  < rhs.get<UInt64>();
         case Types::UInt128: return get<UInt128>() < rhs.get<UInt128>();
         case Types::UInt256: return get<UInt256>() < rhs.get<UInt256>();
+        case Types::UInt512: return get<UInt512>() < rhs.get<UInt512>();
         case Types::Int64:   return get<Int64>()   < rhs.get<Int64>();
         case Types::Int128:  return get<Int128>()  < rhs.get<Int128>();
         case Types::Int256:  return get<Int256>()  < rhs.get<Int256>();
+        case Types::Int512:  return get<Int512>()  < rhs.get<Int512>();
         case Types::UUID:    return get<UUID>()    < rhs.get<UUID>();
         case Types::IPv4:    return get<IPv4>()    < rhs.get<IPv4>();
         case Types::IPv6:    return get<IPv6>()    < rhs.get<IPv6>();
@@ -116,6 +118,7 @@ bool Field::operator< (const Field & rhs) const
         case Types::Decimal64:  return get<DecimalField<Decimal64>>()  < rhs.get<DecimalField<Decimal64>>();
         case Types::Decimal128: return get<DecimalField<Decimal128>>() < rhs.get<DecimalField<Decimal128>>();
         case Types::Decimal256: return get<DecimalField<Decimal256>>() < rhs.get<DecimalField<Decimal256>>();
+        case Types::Decimal512: return get<DecimalField<Decimal512>>() < rhs.get<DecimalField<Decimal512>>();
         case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() < rhs.get<AggregateFunctionStateData>();
         case Types::CustomType:  return get<CustomType>() < rhs.get<CustomType>();
     }
@@ -137,9 +140,11 @@ bool Field::operator<= (const Field & rhs) const
         case Types::UInt64:  return get<UInt64>()  <= rhs.get<UInt64>();
         case Types::UInt128: return get<UInt128>() <= rhs.get<UInt128>();
         case Types::UInt256: return get<UInt256>() <= rhs.get<UInt256>();
+        case Types::UInt512: return get<UInt512>() <= rhs.get<UInt512>();
         case Types::Int64:   return get<Int64>()   <= rhs.get<Int64>();
         case Types::Int128:  return get<Int128>()  <= rhs.get<Int128>();
         case Types::Int256:  return get<Int256>()  <= rhs.get<Int256>();
+        case Types::Int512:  return get<Int512>()  <= rhs.get<Int512>();
         case Types::UUID:    return get<UUID>().toUnderType() <= rhs.get<UUID>().toUnderType();
         case Types::IPv4:    return get<IPv4>()    <= rhs.get<IPv4>();
         case Types::IPv6:    return get<IPv6>()    <= rhs.get<IPv6>();
@@ -160,6 +165,7 @@ bool Field::operator<= (const Field & rhs) const
         case Types::Decimal64:  return get<DecimalField<Decimal64>>()  <= rhs.get<DecimalField<Decimal64>>();
         case Types::Decimal128: return get<DecimalField<Decimal128>>() <= rhs.get<DecimalField<Decimal128>>();
         case Types::Decimal256: return get<DecimalField<Decimal256>>() <= rhs.get<DecimalField<Decimal256>>();
+        case Types::Decimal512: return get<DecimalField<Decimal512>>() <= rhs.get<DecimalField<Decimal512>>();
         case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() <= rhs.get<AggregateFunctionStateData>();
         case Types::CustomType:  return get<CustomType>() <= rhs.get<CustomType>();
     }
@@ -191,12 +197,15 @@ bool Field::operator== (const Field & rhs) const
         case Types::Object:  return get<Object>()  == rhs.get<Object>();
         case Types::UInt128: return get<UInt128>() == rhs.get<UInt128>();
         case Types::UInt256: return get<UInt256>() == rhs.get<UInt256>();
+        case Types::UInt512: return get<UInt512>() == rhs.get<UInt512>();
         case Types::Int128:  return get<Int128>()  == rhs.get<Int128>();
         case Types::Int256:  return get<Int256>()  == rhs.get<Int256>();
+        case Types::Int512:  return get<Int512>()  == rhs.get<Int512>();
         case Types::Decimal32:  return get<DecimalField<Decimal32>>()  == rhs.get<DecimalField<Decimal32>>();
         case Types::Decimal64:  return get<DecimalField<Decimal64>>()  == rhs.get<DecimalField<Decimal64>>();
         case Types::Decimal128: return get<DecimalField<Decimal128>>() == rhs.get<DecimalField<Decimal128>>();
         case Types::Decimal256: return get<DecimalField<Decimal256>>() == rhs.get<DecimalField<Decimal256>>();
+        case Types::Decimal512: return get<DecimalField<Decimal512>>() == rhs.get<DecimalField<Decimal512>>();
         case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() == rhs.get<AggregateFunctionStateData>();
         case Types::CustomType:  return get<CustomType>() == rhs.get<CustomType>();
     }
@@ -227,6 +236,12 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::UInt256:
         {
             UInt256 value;
+            readBinary(value, buf);
+            return value;
+        }
+        case Field::Types::UInt512:
+        {
+            UInt512 value;
             readBinary(value, buf);
             return value;
         }
@@ -263,6 +278,12 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::Int256:
         {
             Int256 value;
+            readBinary(value, buf);
+            return value;
+        }
+        case Field::Types::Int512:
+        {
+            Int512 value;
             readBinary(value, buf);
             return value;
         }
@@ -346,6 +367,14 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
             UInt32 scale = 0;
             readBinary(scale, buf);
             return DecimalField<Decimal256>(value, scale);
+        }
+        case Field::Types::Decimal512:
+        {
+            Decimal<Int512> value;
+            readBinary(value, buf);
+            UInt32 scale = 0;
+            readBinary(scale, buf);
+            return DecimalField<Decimal512>(value, scale);
         }
         case Field::Types::CustomType:
             return Field();
@@ -513,6 +542,7 @@ template void readQuoted<Decimal32>(DecimalField<Decimal32> & x, ReadBuffer & bu
 template void readQuoted<Decimal64>(DecimalField<Decimal64> & x, ReadBuffer & buf);
 template void readQuoted<Decimal128>(DecimalField<Decimal128> & x, ReadBuffer & buf);
 template void readQuoted<Decimal256>(DecimalField<Decimal256> & x, ReadBuffer & buf);
+template void readQuoted<Decimal512>(DecimalField<Decimal512> & x, ReadBuffer & buf);
 
 void writeFieldText(const Field & x, WriteBuffer & buf)
 {
@@ -594,6 +624,20 @@ Field Field::restoreFromDump(std::string_view dump_)
         return value;
     }
 
+    prefix = std::string_view{"UInt512_"};
+    if (dump.starts_with(prefix))
+    {
+        UInt512 value = parseFromString<UInt512>(dump.substr(prefix.length()));
+        return value;
+    }
+
+    prefix = std::string_view{"Int512_"};
+    if (dump.starts_with(prefix))
+    {
+        Int512 value = parseFromString<Int512>(dump.substr(prefix.length()));
+        return value;
+    }
+
     prefix = std::string_view{"Float64_"};
     if (dump.starts_with(prefix))
     {
@@ -632,6 +676,15 @@ Field Field::restoreFromDump(std::string_view dump_)
     if (dump_.starts_with(prefix))
     {
         DecimalField<Decimal256> decimal;
+        ReadBufferFromString buf{dump.substr(prefix.length())};
+        readQuoted(decimal, buf);
+        return decimal;
+    }
+
+    prefix = std::string_view{"Decimal512_"};
+    if (dump_.starts_with(prefix))
+    {
+        DecimalField<Decimal512> decimal;
         ReadBufferFromString buf{dump.substr(prefix.length())};
         readQuoted(decimal, buf);
         return decimal;
@@ -778,6 +831,7 @@ template bool decimalEqual<Decimal32>(Decimal32 x, Decimal32 y, UInt32 x_scale, 
 template bool decimalEqual<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalEqual<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalEqual<Decimal512>(Decimal512 x, Decimal512 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalEqual<Time64>(Time64 x, Time64 y, UInt32 x_scale, UInt32 y_scale);
 
@@ -785,6 +839,7 @@ template bool decimalLess<Decimal32>(Decimal32 x, Decimal32 y, UInt32 x_scale, U
 template bool decimalLess<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLess<Decimal512>(Decimal512 x, Decimal512 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<Time64>(Time64 x, Time64 y, UInt32 x_scale, UInt32 y_scale);
 
@@ -792,6 +847,7 @@ template bool decimalLessOrEqual<Decimal32>(Decimal32 x, Decimal32 y, UInt32 x_s
 template bool decimalLessOrEqual<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLessOrEqual<Decimal512>(Decimal512 x, Decimal512 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<Time64>(Time64 x, Time64 y, UInt32 x_scale, UInt32 y_scale);
 
@@ -834,13 +890,16 @@ std::string_view fieldTypeToString(Field::Types::Which type)
         case Field::Types::Which::Decimal64: return "Decimal64"sv;
         case Field::Types::Which::Decimal128: return "Decimal128"sv;
         case Field::Types::Which::Decimal256: return "Decimal256"sv;
+        case Field::Types::Which::Decimal512: return "Decimal512"sv;
         case Field::Types::Which::Float64: return "Float64"sv;
         case Field::Types::Which::Int64: return "Int64"sv;
         case Field::Types::Which::Int128: return "Int128"sv;
         case Field::Types::Which::Int256: return "Int256"sv;
+        case Field::Types::Which::Int512: return "Int512"sv;
         case Field::Types::Which::UInt64: return "UInt64"sv;
         case Field::Types::Which::UInt128: return "UInt128"sv;
         case Field::Types::Which::UInt256: return "UInt256"sv;
+        case Field::Types::Which::UInt512: return "UInt512"sv;
         case Field::Types::Which::UUID: return "UUID"sv;
         case Field::Types::Which::IPv4: return "IPv4"sv;
         case Field::Types::Which::IPv6: return "IPv6"sv;
@@ -858,6 +917,7 @@ template class DecimalField<Decimal32>;
 template class DecimalField<Decimal64>;
 template class DecimalField<Decimal128>;
 template class DecimalField<Decimal256>;
+template class DecimalField<Decimal512>;
 template class DecimalField<DateTime64>;
 template class DecimalField<Time64>;
 
@@ -883,12 +943,14 @@ template NearestFieldType<std::decay_t<UInt32>> & Field::safeGet<UInt32>() &;
 template NearestFieldType<std::decay_t<UInt64>> & Field::safeGet<UInt64>() &;
 template NearestFieldType<std::decay_t<UInt128>> & Field::safeGet<UInt128>() &;
 template NearestFieldType<std::decay_t<UInt256>> & Field::safeGet<UInt256>() &;
+template NearestFieldType<std::decay_t<UInt512>> & Field::safeGet<UInt512>() &;
 template NearestFieldType<std::decay_t<Int8>> & Field::safeGet<Int8>() &;
 template NearestFieldType<std::decay_t<Int16>> & Field::safeGet<Int16>() &;
 template NearestFieldType<std::decay_t<Int32>> & Field::safeGet<Int32>() &;
 template NearestFieldType<std::decay_t<Int64>> & Field::safeGet<Int64>() &;
 template NearestFieldType<std::decay_t<Int128>> & Field::safeGet<Int128>() &;
 template NearestFieldType<std::decay_t<Int256>> & Field::safeGet<Int256>() &;
+template NearestFieldType<std::decay_t<Int512>> & Field::safeGet<Int512>() &;
 template NearestFieldType<std::decay_t<BFloat16>> & Field::safeGet<BFloat16>() &;
 template NearestFieldType<std::decay_t<Float32>> & Field::safeGet<Float32>() &;
 template NearestFieldType<std::decay_t<Float64>> & Field::safeGet<Float64>() &;
@@ -900,12 +962,14 @@ template NearestFieldType<std::decay_t<Decimal32>> & Field::safeGet<Decimal32>()
 template NearestFieldType<std::decay_t<Decimal64>> & Field::safeGet<Decimal64>() &;
 template NearestFieldType<std::decay_t<Decimal128>> & Field::safeGet<Decimal128>() &;
 template NearestFieldType<std::decay_t<Decimal256>> & Field::safeGet<Decimal256>() &;
+template NearestFieldType<std::decay_t<Decimal512>> & Field::safeGet<Decimal512>() &;
 template NearestFieldType<std::decay_t<DateTime64>> & Field::safeGet<DateTime64>() &;
 template NearestFieldType<std::decay_t<Time64>> & Field::safeGet<Time64>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal32>>> & Field::safeGet<DecimalField<Decimal32>>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal64>>> & Field::safeGet<DecimalField<Decimal64>>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal128>>> & Field::safeGet<DecimalField<Decimal128>>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal256>>> & Field::safeGet<DecimalField<Decimal256>>() &;
+template NearestFieldType<std::decay_t<DecimalField<Decimal512>>> & Field::safeGet<DecimalField<Decimal512>>() &;
 template NearestFieldType<std::decay_t<DecimalField<DateTime64>>> & Field::safeGet<DecimalField<DateTime64>>() &;
 template NearestFieldType<std::decay_t<DecimalField<Time64>>> & Field::safeGet<DecimalField<Time64>>() &;
 template NearestFieldType<std::decay_t<AggregateFunctionStateData>> & Field::safeGet<AggregateFunctionStateData>() &;

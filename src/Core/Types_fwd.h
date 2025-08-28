@@ -20,6 +20,8 @@ using Int128 = wide::integer<128, signed>;
 using UInt128 = wide::integer<128, unsigned>;
 using Int256 = wide::integer<256, signed>;
 using UInt256 = wide::integer<256, unsigned>;
+using Int512 = wide::integer<512, signed>;
+using UInt512 = wide::integer<512, unsigned>;
 class BFloat16;
 
 namespace DB

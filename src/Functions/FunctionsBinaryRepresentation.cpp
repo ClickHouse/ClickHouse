@@ -304,6 +304,7 @@ public:
             tryExecuteDecimal<Decimal64>(column, res_column) ||
             tryExecuteDecimal<Decimal128>(column, res_column) ||
             tryExecuteDecimal<Decimal256>(column, res_column) ||
+            tryExecuteDecimal<Decimal512>(column, res_column) ||
             tryExecuteUUID(column, res_column) ||
             tryExecuteIPv4(column, res_column) ||
             tryExecuteIPv6(column, res_column))

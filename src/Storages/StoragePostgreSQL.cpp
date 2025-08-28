@@ -412,6 +412,11 @@ public:
             const auto & type = typeid_cast<const DataTypeDecimal<Decimal256> *>(nested.get());
             nested_column = ColumnDecimal<Decimal256>::create(0, type->getScale());
         }
+        else if (which.isDecimal512())
+        {
+            const auto & type = typeid_cast<const DataTypeDecimal<Decimal512> *>(nested.get());
+            nested_column = ColumnDecimal<Decimal512>::create(0, type->getScale());
+        }
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type conversion not supported");
 

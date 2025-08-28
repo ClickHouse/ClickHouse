@@ -133,5 +133,6 @@ template class SerializationDecimal<Decimal32>;
 template class SerializationDecimal<Decimal64>;
 template class SerializationDecimal<Decimal128>;
 template class SerializationDecimal<Decimal256>;
+template class SerializationDecimal<Decimal512>;
 
 }

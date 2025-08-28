@@ -514,6 +514,12 @@ CONV_FN(SpecialVal, val)
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT256:
             ret += "57896044618658097711785492504343953926634992332820282019728792003956564819967";
             break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT512:
+            ret += "-7136238463529799405291429847247475681323014433183167124443703603444504102912";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT512:
+            ret += "7136238463529799405291429847247475681323014433183167124443703603444504102911";
+            break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT32:
             ret += std::to_string(std::numeric_limits<uint32_t>::max());
             break;
@@ -525,6 +531,9 @@ CONV_FN(SpecialVal, val)
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT256:
             ret += "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT512:
+            ret += "14272476927059598810582859694494951362646028866366334248887407206889008205823";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATE:
             ret += "'1970-01-01'";

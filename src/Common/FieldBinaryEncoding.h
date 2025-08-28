@@ -31,6 +31,7 @@ Binary encoding for Fields:
 | `UUID`                   | `0x12<uuid_value>`                                                                                                             |
 | `Bool`                   | `0x13<bool_value>`                                                                                                             |
 | `Object`                 | `0x14<var_uint_size><var_uint_key_size_1><key_data_1><value_encoding_1>...<var_uint_key_size_N><key_data_N><value_encoding_N>` |
+| `Decimal512`             | `0x16<var_uint_scale><int512_little_endian_value>`                                                                             |
 | `AggregateFunctionState` | `0x15<var_uint_name_size><name_data><var_uint_data_size><data>`                                                                |
 | `Negative infinity`      | `0xFE`                                                                                                                         |
 | `Positive infinity`      | `0xFF`                                                                                                                         |

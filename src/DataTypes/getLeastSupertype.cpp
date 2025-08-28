@@ -97,6 +97,8 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
             maximize(max_bits_of_unsigned_integer, 128);
         else if (type == TypeIndex::UInt256)
             maximize(max_bits_of_unsigned_integer, 256);
+        else if (type == TypeIndex::UInt512)
+            maximize(max_bits_of_unsigned_integer, 512);
         else if (type == TypeIndex::Int8 || type == TypeIndex::Enum8)
             maximize(max_bits_of_signed_integer, 8);
         else if (type == TypeIndex::Int16 || type == TypeIndex::Enum16)
@@ -109,6 +111,8 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
             maximize(max_bits_of_signed_integer, 128);
         else if (type == TypeIndex::Int256)
             maximize(max_bits_of_signed_integer, 256);
+        else if (type == TypeIndex::Int512)
+            maximize(max_bits_of_signed_integer, 512);
         else if (type == TypeIndex::BFloat16)
             maximize(max_mantissa_bits_of_floating, 8);
         else if (type == TypeIndex::Float32)
@@ -641,10 +645,11 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         size_t have_decimal64 = type_ids.count(TypeIndex::Decimal64);
         size_t have_decimal128 = type_ids.count(TypeIndex::Decimal128);
         size_t have_decimal256 = type_ids.count(TypeIndex::Decimal256);
+        size_t have_decimal512 = type_ids.count(TypeIndex::Decimal512);
 
-        if (have_decimal32 || have_decimal64 || have_decimal128 || have_decimal256)
+        if (have_decimal32 || have_decimal64 || have_decimal128 || have_decimal256 || have_decimal512)
         {
-            size_t num_supported = have_decimal32 + have_decimal64 + have_decimal128 + have_decimal256;
+            size_t num_supported = have_decimal32 + have_decimal64 + have_decimal128 + have_decimal256 + have_decimal512;
 
             std::array<TypeIndex, 8> int_ids = {TypeIndex::Int8, TypeIndex::UInt8, TypeIndex::Int16, TypeIndex::UInt16,
                                                 TypeIndex::Int32, TypeIndex::UInt32, TypeIndex::Int64, TypeIndex::UInt64};
@@ -668,7 +673,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 if (type_id != TypeIndex::Decimal32
                     && type_id != TypeIndex::Decimal64
                     && type_id != TypeIndex::Decimal128
-                    && type_id != TypeIndex::Decimal256)
+                    && type_id != TypeIndex::Decimal256
+                    && type_id != TypeIndex::Decimal512)
                 {
                     continue;
                 }
@@ -687,11 +693,13 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     min_precision = DataTypeDecimal<Decimal64>::maxPrecision();
             }
 
-            if (min_precision > DataTypeDecimal<Decimal256>::maxPrecision())
+            if (min_precision > DataTypeDecimal<Decimal512>::maxPrecision())
                 return throwOrReturn<on_error>(types, "because the least supertype is Decimal("
                                 + toString(min_precision) + ',' + toString(max_scale) + ')',
                                 ErrorCodes::NO_COMMON_TYPE);
 
+            if (have_decimal512 || min_precision > DataTypeDecimal<Decimal256>::maxPrecision())
+                return std::make_shared<DataTypeDecimal<Decimal512>>(DataTypeDecimal<Decimal512>::maxPrecision(), max_scale);
             if (have_decimal256 || min_precision > DataTypeDecimal<Decimal128>::maxPrecision())
                 return std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), max_scale);
             if (have_decimal128 || min_precision > DataTypeDecimal<Decimal64>::maxPrecision())

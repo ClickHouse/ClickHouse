@@ -30,6 +30,7 @@ static bool callOnBasicType(TypeIndex number, F && f)
             case TypeIndex::UInt64:       return f(TypePair<T, UInt64>());
             case TypeIndex::UInt128:      return f(TypePair<T, UInt128>());
             case TypeIndex::UInt256:      return f(TypePair<T, UInt256>());
+            case TypeIndex::UInt512:      return f(TypePair<T, UInt512>());
 
             case TypeIndex::Int8:         return f(TypePair<T, Int8>());
             case TypeIndex::Int16:        return f(TypePair<T, Int16>());
@@ -37,6 +38,7 @@ static bool callOnBasicType(TypeIndex number, F && f)
             case TypeIndex::Int64:        return f(TypePair<T, Int64>());
             case TypeIndex::Int128:       return f(TypePair<T, Int128>());
             case TypeIndex::Int256:       return f(TypePair<T, Int256>());
+            case TypeIndex::Int512:       return f(TypePair<T, Int512>());
 
             case TypeIndex::Enum8:        return f(TypePair<T, Int8>());
             case TypeIndex::Enum16:       return f(TypePair<T, Int16>());
@@ -54,6 +56,7 @@ static bool callOnBasicType(TypeIndex number, F && f)
             case TypeIndex::Decimal64:    return f(TypePair<T, Decimal64>());
             case TypeIndex::Decimal128:   return f(TypePair<T, Decimal128>());
             case TypeIndex::Decimal256:   return f(TypePair<T, Decimal256>());
+            case TypeIndex::Decimal512:   return f(TypePair<T, Decimal512>());
             default:
                 break;
         }
@@ -103,6 +106,7 @@ static bool callOnBasicTypeSecondArg(TypeIndex number, F && f)
             case TypeIndex::UInt64:       return f(TypePair<UInt64, T>());
             case TypeIndex::UInt128:      return f(TypePair<UInt128, T>());
             case TypeIndex::UInt256:      return f(TypePair<UInt256, T>());
+            case TypeIndex::UInt512:      return f(TypePair<UInt512, T>());
 
             case TypeIndex::Int8:         return f(TypePair<Int8, T>());
             case TypeIndex::Int16:        return f(TypePair<Int16, T>());
@@ -110,6 +114,7 @@ static bool callOnBasicTypeSecondArg(TypeIndex number, F && f)
             case TypeIndex::Int64:        return f(TypePair<Int64, T>());
             case TypeIndex::Int128:       return f(TypePair<Int128, T>());
             case TypeIndex::Int256:       return f(TypePair<Int256, T>());
+            case TypeIndex::Int512:       return f(TypePair<Int512, T>());
 
             case TypeIndex::Enum8:        return f(TypePair<Int8, T>());
             case TypeIndex::Enum16:       return f(TypePair<Int16, T>());
@@ -127,6 +132,7 @@ static bool callOnBasicTypeSecondArg(TypeIndex number, F && f)
             case TypeIndex::Decimal64:    return f(TypePair<Decimal64, T>());
             case TypeIndex::Decimal128:   return f(TypePair<Decimal128, T>());
             case TypeIndex::Decimal256:   return f(TypePair<Decimal256, T>());
+            case TypeIndex::Decimal512:   return f(TypePair<Decimal512, T>());
             default:
                 break;
         }
@@ -176,6 +182,7 @@ static inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F 
             case TypeIndex::UInt64: return callOnBasicType<UInt64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::UInt128: return callOnBasicType<UInt128, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::UInt256: return callOnBasicType<UInt256, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+            case TypeIndex::UInt512: return callOnBasicType<UInt512, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
 
             case TypeIndex::Int8: return callOnBasicType<Int8, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Int16: return callOnBasicType<Int16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
@@ -183,6 +190,7 @@ static inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F 
             case TypeIndex::Int64: return callOnBasicType<Int64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Int128: return callOnBasicType<Int128, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Int256: return callOnBasicType<Int256, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+            case TypeIndex::Int512: return callOnBasicType<Int512, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
 
             case TypeIndex::Enum8: return callOnBasicType<Int8, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Enum16: return callOnBasicType<Int16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
@@ -200,6 +208,7 @@ static inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F 
             case TypeIndex::Decimal64: return callOnBasicType<Decimal64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Decimal128: return callOnBasicType<Decimal128, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Decimal256: return callOnBasicType<Decimal256, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+            case TypeIndex::Decimal512: return callOnBasicType<Decimal512, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             default:
                 break;
         }
@@ -263,6 +272,7 @@ static bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... ar
         case TypeIndex::UInt64:         return f(TypePair<DataTypeNumber<UInt64>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::UInt128:        return f(TypePair<DataTypeNumber<UInt128>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::UInt256:        return f(TypePair<DataTypeNumber<UInt256>, T>(), std::forward<ExtraArgs>(args)...);
+        case TypeIndex::UInt512:        return f(TypePair<DataTypeNumber<UInt512>, T>(), std::forward<ExtraArgs>(args)...);
 
         case TypeIndex::Int8:           return f(TypePair<DataTypeNumber<Int8>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::Int16:          return f(TypePair<DataTypeNumber<Int16>, T>(), std::forward<ExtraArgs>(args)...);
@@ -270,6 +280,7 @@ static bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... ar
         case TypeIndex::Int64:          return f(TypePair<DataTypeNumber<Int64>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::Int128:         return f(TypePair<DataTypeNumber<Int128>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::Int256:         return f(TypePair<DataTypeNumber<Int256>, T>(), std::forward<ExtraArgs>(args)...);
+        case TypeIndex::Int512:         return f(TypePair<DataTypeNumber<Int512>, T>(), std::forward<ExtraArgs>(args)...);
 
         case TypeIndex::BFloat16:        return f(TypePair<DataTypeNumber<BFloat16>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::Float32:        return f(TypePair<DataTypeNumber<Float32>, T>(), std::forward<ExtraArgs>(args)...);
@@ -279,6 +290,7 @@ static bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... ar
         case TypeIndex::Decimal64:      return f(TypePair<DataTypeDecimal<Decimal64>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::Decimal128:     return f(TypePair<DataTypeDecimal<Decimal128>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::Decimal256:     return f(TypePair<DataTypeDecimal<Decimal256>, T>(), std::forward<ExtraArgs>(args)...);
+        case TypeIndex::Decimal512:     return f(TypePair<DataTypeDecimal<Decimal512>, T>(), std::forward<ExtraArgs>(args)...);
 
         case TypeIndex::Date:           return f(TypePair<DataTypeDate, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::Date32:         return f(TypePair<DataTypeDate32, T>(), std::forward<ExtraArgs>(args)...);

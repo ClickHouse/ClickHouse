@@ -391,8 +391,9 @@ struct WhichDataType
     constexpr bool isUInt64() const { return idx == TypeIndex::UInt64; }
     constexpr bool isUInt128() const { return idx == TypeIndex::UInt128; }
     constexpr bool isUInt256() const { return idx == TypeIndex::UInt256; }
+    constexpr bool isUInt512() const { return idx == TypeIndex::UInt512; }
     constexpr bool isNativeUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64(); }
-    constexpr bool isUInt() const { return isNativeUInt() || isUInt128() || isUInt256(); }
+    constexpr bool isUInt() const { return isNativeUInt() || isUInt128() || isUInt256() || isUInt512(); }
 
     constexpr bool isInt8() const { return idx == TypeIndex::Int8; }
     constexpr bool isInt16() const { return idx == TypeIndex::Int16; }
@@ -400,8 +401,9 @@ struct WhichDataType
     constexpr bool isInt64() const { return idx == TypeIndex::Int64; }
     constexpr bool isInt128() const { return idx == TypeIndex::Int128; }
     constexpr bool isInt256() const { return idx == TypeIndex::Int256; }
+    constexpr bool isInt512() const { return idx == TypeIndex::Int512; }
     constexpr bool isNativeInt() const { return isInt8() || isInt16() || isInt32() || isInt64(); }
-    constexpr bool isInt() const { return isNativeInt() || isInt128() || isInt256(); }
+    constexpr bool isInt() const { return isNativeInt() || isInt128() || isInt256() || isInt512(); }
 
     constexpr bool isNativeInteger() const { return isNativeInt() || isNativeUInt(); }
     constexpr bool isInteger() const { return isInt() || isUInt(); }
@@ -410,7 +412,8 @@ struct WhichDataType
     constexpr bool isDecimal64() const { return idx == TypeIndex::Decimal64; }
     constexpr bool isDecimal128() const { return idx == TypeIndex::Decimal128; }
     constexpr bool isDecimal256() const { return idx == TypeIndex::Decimal256; }
-    constexpr bool isDecimal() const { return isDecimal32() || isDecimal64() || isDecimal128() || isDecimal256(); }
+    constexpr bool isDecimal512() const { return idx == TypeIndex::Decimal512; }
+    constexpr bool isDecimal() const { return isDecimal32() || isDecimal64() || isDecimal128() || isDecimal256() || isDecimal512(); }
 
     constexpr bool isBFloat16() const { return idx == TypeIndex::BFloat16; }
     constexpr bool isFloat32() const { return idx == TypeIndex::Float32; }
@@ -479,6 +482,7 @@ bool isUInt32(TYPE data_type); \
 bool isUInt64(TYPE data_type);\
 bool isUInt128(TYPE data_type);\
 bool isUInt256(TYPE data_type); \
+bool isUInt512(TYPE data_type); \
 bool isNativeUInt(TYPE data_type); \
 bool isUInt(TYPE data_type); \
 \
@@ -488,6 +492,7 @@ bool isInt32(TYPE data_type); \
 bool isInt64(TYPE data_type); \
 bool isInt128(TYPE data_type); \
 bool isInt256(TYPE data_type); \
+bool isInt512(TYPE data_type); \
 bool isNativeInt(TYPE data_type); \
 bool isInt(TYPE data_type); \
 \
@@ -640,12 +645,14 @@ template <typename T> inline constexpr bool IsDataTypeEnum<DataTypeEnum<T>> = tr
     M(UInt64) \
     M(UInt128) \
     M(UInt256) \
+    M(UInt512) \
     M(Int8) \
     M(Int16) \
     M(Int32) \
     M(Int64) \
     M(Int128) \
     M(Int256) \
+    M(Int512) \
     M(BFloat16) \
     M(Float32) \
     M(Float64)

@@ -142,7 +142,7 @@ public:
 private:
 
     template <typename RangeStorageType>
-    using IntervalMap = IntervalMap<Interval<RangeStorageType>, size_t>;
+    using IntervalMap = IntervalMap<Interval<RangeStorageType>, size_t>;//todo:test me
 
     template <typename RangeStorageType>
     using KeyAttributeContainerType = std::conditional_t<
@@ -164,16 +164,19 @@ private:
             AttributeContainerType<UInt64>,
             AttributeContainerType<UInt128>,
             AttributeContainerType<UInt256>,
+            AttributeContainerType<UInt512>,
             AttributeContainerType<Int8>,
             AttributeContainerType<Int16>,
             AttributeContainerType<Int32>,
             AttributeContainerType<Int64>,
             AttributeContainerType<Int128>,
             AttributeContainerType<Int256>,
+            AttributeContainerType<Int512>,
             AttributeContainerType<Decimal32>,
             AttributeContainerType<Decimal64>,
             AttributeContainerType<Decimal128>,
             AttributeContainerType<Decimal256>,
+            AttributeContainerType<Decimal512>,
             AttributeContainerType<DateTime64>,
             AttributeContainerType<Time64>,
             AttributeContainerType<Float32>,
@@ -207,16 +210,19 @@ private:
         ContainerType<UInt64>,
         ContainerType<UInt128>,
         ContainerType<UInt256>,
+        ContainerType<UInt512>,
         ContainerType<Int8>,
         ContainerType<Int16>,
         ContainerType<Int32>,
         ContainerType<Int64>,
         ContainerType<Int128>,
         ContainerType<Int256>,
+        ContainerType<Int512>,
         ContainerType<Decimal32>,
         ContainerType<Decimal64>,
         ContainerType<Decimal128>,
         ContainerType<Decimal256>,
+        ContainerType<Decimal512>,
         ContainerType<DateTime64>,
         ContainerType<Time64>,
         ContainerType<Float32>,

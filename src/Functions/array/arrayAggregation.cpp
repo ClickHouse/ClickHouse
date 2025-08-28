@@ -79,14 +79,17 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::sum>
         std::conditional_t<std::is_same_v<ArrayElement, UInt128>, UInt128,
         std::conditional_t<std::is_same_v<ArrayElement, Int256>, Int256,
         std::conditional_t<std::is_same_v<ArrayElement, UInt256>, UInt256,
+        std::conditional_t<std::is_same_v<ArrayElement, Int512>, Int512,
+        std::conditional_t<std::is_same_v<ArrayElement, UInt512>, UInt512,
         std::conditional_t<std::is_same_v<ArrayElement, Decimal32>, Decimal128,
         std::conditional_t<std::is_same_v<ArrayElement, Decimal64>, Decimal128,
         std::conditional_t<std::is_same_v<ArrayElement, Decimal128>, Decimal128,
         std::conditional_t<std::is_same_v<ArrayElement, Decimal256>, Decimal256,
+        std::conditional_t<std::is_same_v<ArrayElement, Decimal512>, Decimal512,
         std::conditional_t<std::is_same_v<ArrayElement, DateTime64>, Decimal128,
         std::conditional_t<is_floating_point<ArrayElement>, Float64,
         std::conditional_t<std::is_signed_v<ArrayElement>, Int64,
-            UInt64>>>>>>>>>>>;
+            UInt64>>>>>>>>>>>>>>;
 };
 
 template <typename ArrayElement, AggregateOperation operation>
@@ -407,18 +410,21 @@ struct ArrayAggregateImpl
                 executeType<UInt64>(mapped, offsets, res) ||
                 executeType<UInt128>(mapped, offsets, res) ||
                 executeType<UInt256>(mapped, offsets, res) ||
+                executeType<UInt512>(mapped, offsets, res) ||
                 executeType<Int8>(mapped, offsets, res) ||
                 executeType<Int16>(mapped, offsets, res) ||
                 executeType<Int32>(mapped, offsets, res) ||
                 executeType<Int64>(mapped, offsets, res) ||
                 executeType<Int128>(mapped, offsets, res) ||
                 executeType<Int256>(mapped, offsets, res) ||
+                executeType<Int512>(mapped, offsets, res) ||
                 executeType<Float32>(mapped, offsets, res) ||
                 executeType<Float64>(mapped, offsets, res) ||
                 executeType<Decimal32>(mapped, offsets, res) ||
                 executeType<Decimal64>(mapped, offsets, res) ||
                 executeType<Decimal128>(mapped, offsets, res) ||
                 executeType<Decimal256>(mapped, offsets, res) ||
+                executeType<Decimal512>(mapped, offsets, res) ||
                 executeType<DateTime64>(mapped, offsets, res))
             {
                 return res;

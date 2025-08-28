@@ -272,7 +272,8 @@ namespace
             case ValueType::vtDecimal32: [[fallthrough]];
             case ValueType::vtDecimal64: [[fallthrough]];
             case ValueType::vtDecimal128:[[fallthrough]];
-            case ValueType::vtDecimal256:
+            case ValueType::vtDecimal256: [[fallthrough]];
+            case ValueType::vtDecimal512:
             {
                 ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
                 data_type.getDefaultSerialization()->deserializeWholeText(column, buffer, FormatSettings{});

@@ -19,9 +19,11 @@ public:
     void operator() (const UInt64 & x) const;
     void operator() (const UInt128 & x) const;
     void operator() (const UInt256 & x) const;
+    void operator() (const UInt512 & x) const;
     void operator() (const Int64 & x) const;
     void operator() (const Int128 & x) const;
     void operator() (const Int256 & x) const;
+    void operator() (const Int512 & x) const;
     void operator() (const UUID & x) const;
     void operator() (const IPv4 & x) const;
     void operator() (const IPv6 & x) const;
@@ -35,6 +37,7 @@ public:
     void operator() (const DecimalField<Decimal64> & x) const;
     void operator() (const DecimalField<Decimal128> & x) const;
     void operator() (const DecimalField<Decimal256> & x) const;
+    void operator() (const DecimalField<Decimal512> & x) const;
     void operator() (const AggregateFunctionStateData & x) const;
     void operator() (const CustomType & x) const;
     void operator() (const bool & x) const;

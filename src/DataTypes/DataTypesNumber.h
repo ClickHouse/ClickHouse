@@ -71,6 +71,8 @@ extern template class DataTypeNumber<UInt128>;
 extern template class DataTypeNumber<Int128>;
 extern template class DataTypeNumber<UInt256>;
 extern template class DataTypeNumber<Int256>;
+extern template class DataTypeNumber<UInt512>;
+extern template class DataTypeNumber<Int512>;
 
 using DataTypeUInt8 = DataTypeNumber<UInt8>;
 using DataTypeUInt16 = DataTypeNumber<UInt16>;
@@ -88,6 +90,9 @@ using DataTypeUInt128 = DataTypeNumber<UInt128>;
 using DataTypeInt128 = DataTypeNumber<Int128>;
 using DataTypeUInt256 = DataTypeNumber<UInt256>;
 using DataTypeInt256 = DataTypeNumber<Int256>;
+
+using DataTypeUInt512 = DataTypeNumber<UInt512>;
+using DataTypeInt512 = DataTypeNumber<Int512>;
 
 bool isUInt64ThatCanBeInt64(const DataTypePtr & type);
 

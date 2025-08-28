@@ -3,6 +3,7 @@
 #include <Core/Defines.h>
 #include <IO/WriteBuffer.h>
 #include <base/itoa.h>
+#include <base/wide_integer_to_string.h>
 
 
 template <typename T> constexpr size_t max_int_width = 20;
@@ -18,6 +19,8 @@ template <> inline constexpr size_t max_int_width<UInt128> = 39; /// 34028236692
 template <> inline constexpr size_t max_int_width<Int128> = 40;  /// -170141183460469231731687303715884105728
 template <> inline constexpr size_t max_int_width<UInt256> = 78; /// 115792089237316195423570985008687907853269984665640564039457584007913129639935
 template <> inline constexpr size_t max_int_width<Int256> = 78;  /// -57896044618658097711785492504343953926634992332820282019728792003956564819968
+template <> inline constexpr size_t max_int_width<UInt512> = 155; /// 512-bit decimal digits
+template <> inline constexpr size_t max_int_width<Int512> = 155;  /// 512-bit decimal digits
 
 
 namespace DB
@@ -25,6 +28,26 @@ namespace DB
 
 namespace detail
 {
+    template <typename T>
+    char * writeUIntText(T x, char * pos)
+    {
+        if (x == 0)
+        {
+            *pos = '0';
+            return pos + 1;
+        }
+
+        char tmp[max_int_width<T>];
+        char * end = tmp + max_int_width<T>;
+        while (x != 0)
+        {
+            *--end = '0' + x % 10;
+            x /= 10;
+        }
+        memcpy(pos, end, tmp + max_int_width<T> - end);
+        return pos + (tmp + max_int_width<T> - end);
+    }
+
     template <typename T>
     void NO_INLINE writeUIntTextFallback(T x, WriteBuffer & buf)
     {
@@ -37,10 +60,21 @@ namespace detail
 template <typename T>
 void writeIntText(T x, WriteBuffer & buf)
 {
-    if (likely(reinterpret_cast<uintptr_t>(buf.position()) + max_int_width<T> < reinterpret_cast<uintptr_t>(buf.buffer().end())))
-        buf.position() = itoa(x, buf.position());
+    if constexpr (is_big_int_v<T>)
+    {
+        writeString(wide::to_string(x), buf);
+    }
     else
-        detail::writeUIntTextFallback(x, buf);
+    {
+        if (likely(buf.available() >= 64))
+        {
+            buf.position() = detail::writeUIntText(x, buf.position());
+        }
+        else
+        {
+            detail::writeUIntTextFallback(x, buf);
+        }
+    }
 }
 
 }

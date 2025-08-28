@@ -142,6 +142,8 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         case TypeIndex::UInt128: [[fallthrough]];
         case TypeIndex::Int256: [[fallthrough]];
         case TypeIndex::UInt256: [[fallthrough]];
+        case TypeIndex::Int512: [[fallthrough]];
+        case TypeIndex::UInt512: [[fallthrough]];
         case TypeIndex::Decimal256:
             return orc::createPrimitiveType(orc::TypeKind::BINARY);
         case TypeIndex::FixedString: [[fallthrough]];
@@ -378,6 +380,16 @@ void ORCBlockOutputFormat::writeColumn(
         case TypeIndex::UInt256:
         {
             writeStrings<ColumnUInt256>(orc_column, column, null_bytemap);
+            break;
+        }
+        case TypeIndex::Int512:
+        {
+            writeStrings<ColumnInt512>(orc_column, column, null_bytemap);
+            break;
+        }
+        case TypeIndex::UInt512:
+        {
+            writeStrings<ColumnUInt512>(orc_column, column, null_bytemap);
             break;
         }
         case TypeIndex::Float32:

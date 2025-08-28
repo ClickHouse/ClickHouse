@@ -1719,6 +1719,7 @@ inline void readBinary(Decimal32 & x, ReadBuffer & buf) { readPODBinary(x, buf);
 inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
+inline void readBinary(Decimal512 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(IPv4 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(IPv6 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
@@ -2010,8 +2011,14 @@ inline bool tryReadCSV(Int128 & x, ReadBuffer & buf) { return readCSVSimple<Int1
 inline void readCSV(UInt256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(UInt256 & x, ReadBuffer & buf) { return readCSVSimple<UInt256, bool>(x, buf); }
 
+inline void readCSV(UInt512 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline bool tryReadCSV(UInt512 & x, ReadBuffer & buf) { return readCSVSimple<UInt512, bool>(x, buf); }
+
 inline void readCSV(Int256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(Int256 & x, ReadBuffer & buf) { return readCSVSimple<Int256, bool>(x, buf); }
+
+inline void readCSV(Int512 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline bool tryReadCSV(Int512 & x, ReadBuffer & buf) { return readCSVSimple<Int512, bool>(x, buf); }
 
 template <typename T>
 void readBinary(std::vector<T> & x, ReadBuffer & buf)

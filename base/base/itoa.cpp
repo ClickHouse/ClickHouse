@@ -402,6 +402,81 @@ ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
     return highest_part_print;
 }
 
+ALWAYS_INLINE inline char * writeUIntText(UInt512 _x, char * p)
+{
+    /// If possible, treat it as a smaller integer as they are much faster to print
+    if (_x.items[UInt512::_impl::little(7)] == 0 && _x.items[UInt512::_impl::little(6)] == 0 
+        && _x.items[UInt512::_impl::little(5)] == 0 && _x.items[UInt512::_impl::little(4)] == 0)
+    {
+        return writeUIntText(UInt256{_x.items[UInt512::_impl::little(0)], _x.items[UInt512::_impl::little(1)], 
+                                   _x.items[UInt512::_impl::little(2)], _x.items[UInt512::_impl::little(3)]}, p);
+    }
+
+    /// If available (x86) we transform from our custom class to _BitInt(512) which has better support in the compiler
+    /// and produces better code
+    using T =
+#if defined(__x86_64__)
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wbit-int-extension"
+        unsigned _BitInt(512)
+#    pragma clang diagnostic pop
+#else
+        UInt512
+#endif
+        ;
+
+#if defined(__x86_64__)
+    T x = (T(_x.items[UInt512::_impl::little(7)]) << 448) + (T(_x.items[UInt512::_impl::little(6)]) << 384)
+        + (T(_x.items[UInt512::_impl::little(5)]) << 320) + (T(_x.items[UInt512::_impl::little(4)]) << 256)
+        + (T(_x.items[UInt512::_impl::little(3)]) << 192) + (T(_x.items[UInt512::_impl::little(2)]) << 128)
+        + (T(_x.items[UInt512::_impl::little(1)]) << 64) + T(_x.items[UInt512::_impl::little(0)]);
+#else
+    T x = _x;
+#endif
+
+    /// Similar to writeUIntText(UInt256) only that in this case we will stop as soon as we reach the largest u256
+    /// and switch to that function
+    uint8_t two_values[78] = {0}; // 155 Max characters / 2 (rounded up)
+    int current_pos = 0;
+
+    static const T large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
+    static const T largest_uint256 = (T(std::numeric_limits<uint64_t>::max()) << 192) 
+        | (T(std::numeric_limits<uint64_t>::max()) << 128) 
+        | (T(std::numeric_limits<uint64_t>::max()) << 64) 
+        | T(std::numeric_limits<uint64_t>::max());
+
+    while (x > largest_uint256)
+    {
+        uint64_t u64_remainder = uint64_t(x % large_divisor);
+        x /= large_divisor;
+
+        int pos = current_pos;
+        while (u64_remainder)
+        {
+            two_values[pos] = uint8_t(u64_remainder % 100);
+            pos++;
+            u64_remainder /= 100;
+        }
+        current_pos += max_multiple_of_hundred_blocks;
+    }
+
+#if defined(__x86_64__)
+    UInt256 pending{uint64_t(x), uint64_t(x >> 64), uint64_t(x >> 128), uint64_t(x >> 192)};
+#else
+    UInt256 pending{x.items[UInt512::_impl::little(0)], x.items[UInt512::_impl::little(1)], 
+                    x.items[UInt512::_impl::little(2)], x.items[UInt512::_impl::little(3)]};
+#endif
+
+    char * highest_part_print = writeUIntText(pending, p);
+    for (int i = 0; i < current_pos; i++)
+    {
+        outTwoDigits(highest_part_print, two_values[current_pos - 1 - i]);
+        highest_part_print += 2;
+    }
+
+    return highest_part_print;
+}
+
 ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
 {
     *pos = '-';
@@ -411,7 +486,7 @@ ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
 template <typename T>
 ALWAYS_INLINE inline char * writeSIntText(T x, char * pos)
 {
-    static_assert(std::is_same_v<T, Int128> || std::is_same_v<T, Int256>);
+    static_assert(std::is_same_v<T, Int128> || std::is_same_v<T, Int256> || std::is_same_v<T, Int512>);
 
     using UnsignedT = make_unsigned_t<T>;
     static constexpr T min_int = UnsignedT(1) << (sizeof(T) * 8 - 1);
@@ -427,6 +502,12 @@ ALWAYS_INLINE inline char * writeSIntText(T x, char * pos)
         else if constexpr (std::is_same_v<T, Int256>)
         {
             const char * res = "-57896044618658097711785492504343953926634992332820282019728792003956564819968";
+            memcpy(pos, res, strlen(res)); /// NOLINT(bugprone-not-null-terminated-result)
+            return pos + strlen(res);
+        }
+        else if constexpr (std::is_same_v<T, Int512>)
+        {
+            const char * res = "-6703903964971298549787012499102923063739682910296196688861780721860882015036773488400937149083451713845015929093243025426876941405973284973216824503042048";
             memcpy(pos, res, strlen(res)); /// NOLINT(bugprone-not-null-terminated-result)
             return pos + strlen(res);
         }
@@ -467,6 +548,16 @@ char * itoa(UInt256 i, char * p)
 }
 
 char * itoa(Int256 i, char * p)
+{
+    return writeSIntText(i, p);
+}
+
+char * itoa(UInt512 i, char * p)
+{
+    return writeUIntText(i, p);
+}
+
+char * itoa(Int512 i, char * p)
 {
     return writeSIntText(i, p);
 }

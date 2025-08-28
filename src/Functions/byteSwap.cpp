@@ -19,7 +19,7 @@ T byteSwap(T x)
 }
 
 template <typename T>
-requires std::is_same_v<T, UInt128> || std::is_same_v<T, Int128> || std::is_same_v<T, UInt256> || std::is_same_v<T, Int256>
+requires std::is_same_v<T, UInt128> || std::is_same_v<T, Int128> || std::is_same_v<T, UInt256> || std::is_same_v<T, Int256> || std::is_same_v<T, UInt512> || std::is_same_v<T, Int512>
 T byteSwap(T x)
 {
     T dest;

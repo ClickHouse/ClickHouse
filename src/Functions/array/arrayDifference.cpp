@@ -44,6 +44,9 @@ struct ArrayDifferenceImpl
         if (which.isUInt256() || which.isInt256())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt256>());
 
+        if (which.isUInt512() || which.isInt512())
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt512>());
+
         if (which.isFloat32() || which.isFloat64())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
 
@@ -149,6 +152,7 @@ struct ArrayDifferenceImpl
             || executeType<Int32, Int64>(mapped, array, res) || executeType<Int64, Int64>(mapped, array, res)
             || executeType<UInt128, Int128>(mapped, array, res) || executeType<Int128, Int128>(mapped, array, res)
             || executeType<UInt256, Int256>(mapped, array, res) || executeType<Int256, Int256>(mapped, array, res)
+            || executeType<UInt512, Int512>(mapped, array, res) || executeType<Int512, Int512>(mapped, array, res)
             || executeType<Float32, Float64>(mapped, array, res) || executeType<Float64, Float64>(mapped, array, res)
             || executeType<Decimal32, Decimal32>(mapped, array, res) || executeType<Decimal64, Decimal64>(mapped, array, res)
             || executeType<Decimal128, Decimal128>(mapped, array, res) || executeType<Decimal256, Decimal256>(mapped, array, res)

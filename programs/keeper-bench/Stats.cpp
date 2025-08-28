@@ -1,10 +1,10 @@
-#include <Stats.h>
 #include <iostream>
+#include <Stats.h>
 
 #include <rapidjson/document.h>
 #include <rapidjson/rapidjson.h>
-#include <rapidjson/writer.h>
 #include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 
 void Stats::StatsCollector::add(uint64_t microseconds, size_t requests_inc, size_t bytes_inc)
 {
@@ -65,15 +65,14 @@ void Stats::report(size_t concurrency)
     auto [read_rps, read_bps] = read_collector.getThroughput(concurrency);
     auto [write_rps, write_bps] = write_collector.getThroughput(concurrency);
 
-    std::cerr << "read requests " << read_requests << ", write requests " << write_requests << ", ";
+    std::cerr << "read requests " << read_requests.load() << ", write requests " << write_requests.load() << ", ";
     if (errors)
         std::cerr << "errors " << errors << ", ";
 
     if (0 != read_requests)
     {
-        std::cerr
-            << "Read RPS: " << read_rps << ", "
-            << "Read MiB/s: " << read_bps / 1048576;
+        std::cerr << "Read RPS: " << read_rps << ", "
+                  << "Read MiB/s: " << read_bps / 1048576;
 
         if (0 != write_requests)
             std::cerr << ", ";
@@ -81,10 +80,9 @@ void Stats::report(size_t concurrency)
 
     if (0 != write_requests)
     {
-        std::cerr
-            << "Write RPS: " << write_rps << ", "
-            << "Write MiB/s: " << write_bps / 1048576 << ". "
-            << "\n";
+        std::cerr << "Write RPS: " << write_rps << ", "
+                  << "Write MiB/s: " << write_bps / 1048576 << ". "
+                  << "\n";
     }
     std::cerr << "\n";
 

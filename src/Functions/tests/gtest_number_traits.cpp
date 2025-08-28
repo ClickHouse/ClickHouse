@@ -182,13 +182,16 @@ static std::string getTypeString(UInt8) { return "UInt8"; }
 static std::string getTypeString(UInt16) { return "UInt16"; }
 static std::string getTypeString(UInt32) { return "UInt32"; }
 static std::string getTypeString(UInt64) { return "UInt64"; }
+static std::string getTypeString(UInt128) { return "UInt128"; }
 static std::string getTypeString(UInt256) { return "UInt256"; }
+static std::string getTypeString(UInt512) { return "UInt512"; }
 static std::string getTypeString(Int8) { return "Int8"; }
 static std::string getTypeString(Int16) { return "Int16"; }
 static std::string getTypeString(Int32) { return "Int32"; }
 static std::string getTypeString(Int64) { return "Int64"; }
 static std::string getTypeString(Int128) { return "Int128"; }
 static std::string getTypeString(Int256) { return "Int256"; }
+static std::string getTypeString(Int512) { return "Int512"; }
 static std::string getTypeString(Float32) { return "Float32"; }
 static std::string getTypeString(Float64) { return "Float64"; }
 static std::string getTypeString(DB::NumberTraits::Error) { return "Error"; }
@@ -223,13 +226,16 @@ void ifLeftType()
     ifRightType<T0, UInt16>();
     ifRightType<T0, UInt32>();
     ifRightType<T0, UInt64>();
+    ifRightType<T0, UInt128>();
     ifRightType<T0, UInt256>();
+    ifRightType<T0, UInt512>();
     ifRightType<T0, Int8>();
     ifRightType<T0, Int16>();
     ifRightType<T0, Int32>();
     ifRightType<T0, Int64>();
     ifRightType<T0, Int128>();
     ifRightType<T0, Int256>();
+    ifRightType<T0, Int512>();
     ifRightType<T0, Float32>();
     ifRightType<T0, Float64>();
 }
@@ -266,13 +272,16 @@ TEST(NumberTraits, FunctionIf)
     ifLeftType<UInt16>();
     ifLeftType<UInt32>();
     ifLeftType<UInt64>();
+    ifLeftType<UInt128>();
     ifLeftType<UInt256>();
+    ifLeftType<UInt512>();
     ifLeftType<Int8>();
     ifLeftType<Int16>();
     ifLeftType<Int32>();
     ifLeftType<Int64>();
     ifLeftType<Int128>();
     ifLeftType<Int256>();
+    ifLeftType<Int512>();
     ifLeftType<Float32>();
     ifLeftType<Float64>();
 }

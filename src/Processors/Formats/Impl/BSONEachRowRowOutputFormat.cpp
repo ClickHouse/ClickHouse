@@ -164,6 +164,10 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         {
             return size + sizeof(BSONSizeT) + 1 + sizeof(UInt256); // Size of a binary + binary subtype + 32 bytes of value
         }
+        case TypeIndex::Decimal512:
+        {
+            return size + sizeof(BSONSizeT) + 1 + 64; // Size of a binary + binary subtype + 64 bytes of value for Decimal512
+        }
         case TypeIndex::String:
         {
             const auto & string_column = assert_cast<const ColumnString &>(column);
@@ -379,6 +383,11 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
         case TypeIndex::Decimal256:
         {
             writeBSONBigInteger<ColumnDecimal<Decimal256>>(column, row_num, name, out);
+            break;
+        }
+        case TypeIndex::Decimal512:
+        {
+            writeBSONBigInteger<ColumnDecimal<Decimal512>>(column, row_num, name, out);
             break;
         }
         case TypeIndex::String:

@@ -27,8 +27,9 @@ namespace ErrorCodes
 /// Int64   18
 /// Int128  38
 /// Int256  76
+/// Int512  154
 /// Operation between two decimals leads to Decimal(P, S), where
-///     P is one of (9, 18, 38, 76); equals to the maximum precision for the biggest underlying type of operands.
+///     P is one of (9, 18, 38, 76, 154); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands. The allowed valuas are [0, precision]
 template <is_decimal T>
 class DataTypeDecimal final : public DataTypeDecimalBase<T>
@@ -58,6 +59,7 @@ using DataTypeDecimal32 = DataTypeDecimal<Decimal32>;
 using DataTypeDecimal64 = DataTypeDecimal<Decimal64>;
 using DataTypeDecimal128 = DataTypeDecimal<Decimal128>;
 using DataTypeDecimal256 = DataTypeDecimal<Decimal256>;
+using DataTypeDecimal512 = DataTypeDecimal<Decimal512>;
 
 template <typename T>
 inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
@@ -74,6 +76,8 @@ inline UInt32 getDecimalScale(const IDataType & data_type)
     if (const auto * decimal_type = checkDecimal<Decimal128>(data_type))
         return decimal_type->getScale();
     if (const auto * decimal_type = checkDecimal<Decimal256>(data_type))
+        return decimal_type->getScale();
+    if (const auto * decimal_type = checkDecimal<Decimal512>(data_type))
         return decimal_type->getScale();
     if (const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(&data_type))
         return date_time_type->getScale();
@@ -92,6 +96,8 @@ inline UInt32 getDecimalPrecision(const IDataType & data_type)
     if (const auto * decimal_type = checkDecimal<Decimal128>(data_type))
         return decimal_type->getPrecision();
     if (const auto * decimal_type = checkDecimal<Decimal256>(data_type))
+        return decimal_type->getPrecision();
+    if (const auto * decimal_type = checkDecimal<Decimal512>(data_type))
         return decimal_type->getPrecision();
     if (const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(&data_type))
         return date_time_type->getPrecision();
@@ -115,7 +121,8 @@ inline UInt32 getDecimalScale(const DataTypeDecimal<T> & data_type)
     M(DataTypeDecimal32) \
     M(DataTypeDecimal64) \
     M(DataTypeDecimal128) \
-    M(DataTypeDecimal256)
+    M(DataTypeDecimal256) \
+    M(DataTypeDecimal512)
 
 #define FOR_EACH_DECIMAL_TYPE_PASS(M, X) \
     M(DataTypeDecimal<DateTime64>, X) \
@@ -125,7 +132,8 @@ inline UInt32 getDecimalScale(const DataTypeDecimal<T> & data_type)
     M(DataTypeDecimal32, X) \
     M(DataTypeDecimal64, X) \
     M(DataTypeDecimal128, X) \
-    M(DataTypeDecimal256, X)
+    M(DataTypeDecimal256, X) \
+    M(DataTypeDecimal512, X)
 
 
 template <typename FromDataType, typename ToDataType, typename ReturnType = void>
@@ -245,10 +253,12 @@ extern template DataTypePtr createDecimalMaxPrecision<Decimal32>(UInt64 scale);
 extern template DataTypePtr createDecimalMaxPrecision<Decimal64>(UInt64 scale);
 extern template DataTypePtr createDecimalMaxPrecision<Decimal128>(UInt64 scale);
 extern template DataTypePtr createDecimalMaxPrecision<Decimal256>(UInt64 scale);
+extern template DataTypePtr createDecimalMaxPrecision<Decimal512>(UInt64 scale);
 
 extern template class DataTypeDecimal<Decimal32>;
 extern template class DataTypeDecimal<Decimal64>;
 extern template class DataTypeDecimal<Decimal128>;
 extern template class DataTypeDecimal<Decimal256>;
+extern template class DataTypeDecimal<Decimal512>;
 
 }

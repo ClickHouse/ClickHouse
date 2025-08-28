@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -79,6 +80,19 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Int256 &) const
 }
 
 template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const UInt512 &) const
+{
+    return std::make_shared<DataTypeUInt512>();
+}
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const Int512 &) const
+{
+    return std::make_shared<DataTypeInt512>();
+}
+
+
+template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const UUID &) const
 {
     return std::make_shared<DataTypeUUID>();
@@ -131,6 +145,13 @@ DataTypePtr FieldToDataType<on_error>::operator() (const DecimalField<Decimal256
 }
 
 template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const DecimalField<Decimal512> & x) const
+{
+    using Type = DataTypeDecimal<Decimal512>;
+    return std::make_shared<Type>(Type::maxPrecision(), x.getScale());
+}
+
+template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Decimal32 &, UInt32 scale) const
 {
     using Type = DataTypeDecimal<Decimal32>;
@@ -155,6 +176,13 @@ template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Decimal256 &, UInt32 scale) const
 {
     using Type = DataTypeDecimal<Decimal256>;
+    return std::make_shared<Type>(Type::maxPrecision(), scale);
+}
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const Decimal512 &, UInt32 scale) const
+{
+    using Type = DataTypeDecimal<Decimal512>;
     return std::make_shared<Type>(Type::maxPrecision(), scale);
 }
 

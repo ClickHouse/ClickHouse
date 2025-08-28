@@ -326,6 +326,12 @@ static Array BSONArrayAsArray(
                     case TypeIndex::UInt256:
                         arr.emplace_back(BSONElementAsNumber<UInt256, bsoncxx::array::element>(value, name));
                         break;
+                    case TypeIndex::Int512:
+                        arr.emplace_back(BSONElementAsNumber<Int512, bsoncxx::array::element>(value, name));
+                        break;
+                    case TypeIndex::UInt512:
+                        arr.emplace_back(BSONElementAsNumber<UInt512, bsoncxx::array::element>(value, name));
+                        break;
                     case TypeIndex::Float32:
                         arr.emplace_back(BSONElementAsNumber<Float32, bsoncxx::array::element>(value, name));
                         break;

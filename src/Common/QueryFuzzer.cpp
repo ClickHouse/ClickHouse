@@ -162,7 +162,7 @@ Field QueryFuzzer::fuzzField(Field field)
     }
     else if (
         type == Field::Types::Decimal32 || type == Field::Types::Decimal64 || type == Field::Types::Decimal128
-        || type == Field::Types::Decimal256)
+        || type == Field::Types::Decimal256 || type == Field::Types::Decimal512)
     {
         type_index = 2;
     }
@@ -713,11 +713,12 @@ DataTypePtr QueryFuzzer::getRandomType()
 
     static const std::vector<TypeIndex> & random_types
         = {TypeIndex::UInt8,       TypeIndex::UInt16,         TypeIndex::UInt32,   TypeIndex::UInt64,     TypeIndex::UInt128,
-           TypeIndex::UInt256,     TypeIndex::Int8,           TypeIndex::Int16,    TypeIndex::Int32,      TypeIndex::Int64,
-           TypeIndex::Int128,      TypeIndex::Int256,         TypeIndex::BFloat16, TypeIndex::Float32,    TypeIndex::Float64,
+           TypeIndex::UInt256,     TypeIndex::UInt512,        TypeIndex::Int8,     TypeIndex::Int16,      TypeIndex::Int32,
+           TypeIndex::Int64,       TypeIndex::Int128,         TypeIndex::Int256,   TypeIndex::Int512,     TypeIndex::BFloat16,
+           TypeIndex::Float32,     TypeIndex::Float64,
            TypeIndex::Date,        TypeIndex::Date32,         TypeIndex::DateTime, TypeIndex::DateTime64, TypeIndex::String,
            TypeIndex::FixedString, TypeIndex::Enum8,          TypeIndex::Enum16,   TypeIndex::Decimal32,  TypeIndex::Decimal64,
-           TypeIndex::Decimal128,  TypeIndex::Decimal256,     TypeIndex::UUID,     TypeIndex::Array,      TypeIndex::Tuple,
+           TypeIndex::Decimal128,  TypeIndex::Decimal256,     TypeIndex::Decimal512, TypeIndex::UUID,     TypeIndex::Array,      TypeIndex::Tuple,
            TypeIndex::Nullable,    TypeIndex::LowCardinality, TypeIndex::Map,      TypeIndex::IPv4,       TypeIndex::IPv6,
            TypeIndex::Variant,     TypeIndex::Dynamic,        TypeIndex::Time,     TypeIndex::Time64};
     const auto type_id = pickRandomly(fuzz_rand, random_types);
@@ -756,6 +757,7 @@ DataTypePtr QueryFuzzer::getRandomType()
             DISPATCH(Decimal64)
             DISPATCH(Decimal128)
             DISPATCH(Decimal256)
+            DISPATCH(Decimal512)
         case TypeIndex::FixedString:
             return std::make_shared<DataTypeFixedString>(fuzz_rand() % 20);
         case TypeIndex::Enum8:
@@ -960,15 +962,19 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
     }
     else if (type == Field::Types::Which::UInt64 && fuzz_rand() % 7 == 0)
     {
-        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toUInt128" : "toUInt256", std::make_shared<ASTLiteral>(l->value.safeGet<UInt64>()));
+        const int choice = fuzz_rand() % 3;
+        const char* func = (choice == 0) ? "toUInt128" : (choice == 1) ? "toUInt256" : "toUInt512";
+        child = makeASTFunction(func, std::make_shared<ASTLiteral>(l->value.safeGet<UInt64>()));
     }
     else if (type == Field::Types::Which::Int64 && fuzz_rand() % 7 == 0)
     {
-        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toInt128" : "toInt256", std::make_shared<ASTLiteral>(l->value.safeGet<Int64>()));
+        const int choice = fuzz_rand() % 3;
+        const char* func = (choice == 0) ? "toInt128" : (choice == 1) ? "toInt256" : "toInt512";
+        child = makeASTFunction(func, std::make_shared<ASTLiteral>(l->value.safeGet<Int64>()));
     }
     else if (type == Field::Types::Which::Float64 && fuzz_rand() % 7 == 0)
     {
-        const int decimal = fuzz_rand() % 4;
+        const int decimal = fuzz_rand() % 5;
         if (decimal == 0)
             child = makeASTFunction(
                 "toDecimal32",
@@ -984,11 +990,16 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
                 "toDecimal128",
                 std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
                 std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 38)));
-        else
+        else if (decimal == 3)
             child = makeASTFunction(
                 "toDecimal256",
                 std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
                 std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 76)));
+        else
+            child = makeASTFunction(
+                "toDecimal512",
+                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
+                std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 153)));
     }
 
     if (fuzz_rand() % 7 == 0)
@@ -1015,13 +1026,16 @@ ASTPtr QueryFuzzer::reverseLiteralFuzzing(ASTPtr child)
             "toDecimal64",
             "toDecimal128",
             "toDecimal256",
+            "toDecimal512",
             "toFixedString", /// Same as toDecimal
             "toInt128",
             "toInt256",
+            "toInt512",
             "toLowCardinality",
             "toNullable",
             "toUInt128",
-            "toUInt256"};
+            "toUInt256",
+            "toUInt512"};
         if (can_be_reverted.contains(function->name) && function->children.size() == 1)
         {
             if (fuzz_rand() % 7 == 0)

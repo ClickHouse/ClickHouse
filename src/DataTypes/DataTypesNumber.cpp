@@ -63,6 +63,8 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
 
     factory.registerSimpleDataType("Int128", [] { return DataTypePtr(std::make_shared<DataTypeInt128>()); });
     factory.registerSimpleDataType("Int256", [] { return DataTypePtr(std::make_shared<DataTypeInt256>()); });
+    factory.registerSimpleDataType("UInt512", [] { return DataTypePtr(std::make_shared<DataTypeUInt512>()); });
+    factory.registerSimpleDataType("Int512", [] { return DataTypePtr(std::make_shared<DataTypeInt512>()); });
 
     /// These synonyms are added for compatibility.
 
@@ -119,5 +121,8 @@ template class DataTypeNumber<UInt128>;
 template class DataTypeNumber<Int128>;
 template class DataTypeNumber<UInt256>;
 template class DataTypeNumber<Int256>;
+
+template class DataTypeNumber<UInt512>;
+template class DataTypeNumber<Int512>;
 
 }

@@ -64,8 +64,8 @@ FunctionBasePtr createFunctionBaseCast(
     {
     }
     else if (castTypeToEither<
-        DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
-        DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
+        DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256, DataTypeUInt512,
+        DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256, DataTypeInt512,
         DataTypeFloat32, DataTypeFloat64,
         DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64,
         DataTypeString>(recursiveRemoveLowCardinality(return_type).get(), [&](auto & type)

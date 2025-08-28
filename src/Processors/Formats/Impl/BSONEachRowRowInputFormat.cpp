@@ -610,6 +610,11 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             readAndInsertBigInteger<ColumnDecimal<Decimal256>>(*in, column, data_type, bson_type);
             return true;
         }
+        case TypeIndex::Decimal512:
+        {
+            readAndInsertBigInteger<ColumnDecimal<Decimal512>>(*in, column, data_type, bson_type);
+            return true;
+        }
         case TypeIndex::DateTime64:
         {
             readAndInsertDateTime64(*in, column, bson_type);

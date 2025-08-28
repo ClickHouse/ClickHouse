@@ -723,6 +723,8 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
                 return AggregatedDataVariants::Type::nullable_keys128;
             if (std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes <= 32)
                 return AggregatedDataVariants::Type::nullable_keys256;
+            if (std::tuple_size<KeysNullMap<UInt512>>::value + keys_bytes <= 64)
+                return AggregatedDataVariants::Type::nullable_keys512;
         }
 
         if (has_low_cardinality && params.keys_size == 1)

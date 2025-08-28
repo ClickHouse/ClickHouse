@@ -156,6 +156,12 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(Decimal256));
             return;
         }
+        case TypeIndex::Decimal512:
+        {
+            packer.pack_bin(static_cast<unsigned>(sizeof(Decimal512)));
+            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(Decimal512));
+            return;
+        }
         case TypeIndex::String:
         {
             const std::string_view & string = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();

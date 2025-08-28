@@ -197,6 +197,9 @@ UInt32 CompressionCodecGCD::doCompressData(const char * source, UInt32 source_si
     case 32:
         compressDataForType<UInt256>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
+    case 64:
+        compressDataForType<UInt512>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
+        break;
     }
     return 2 + gcd_bytes_size + source_size;
 }
@@ -245,6 +248,9 @@ void CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_si
         break;
     case 32:
         decompressDataForType<UInt256>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
+        break;
+    case 64:
+        decompressDataForType<UInt512>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
         break;
     }
 }

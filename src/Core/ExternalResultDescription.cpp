@@ -101,6 +101,8 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.emplace_back(ValueType::vtDecimal128, is_nullable);
         else if (which.isDecimal256())
             types.emplace_back(ValueType::vtDecimal256, is_nullable);
+        else if (which.isDecimal512())
+            types.emplace_back(ValueType::vtDecimal512, is_nullable);
         else if (which.isArray())
             types.emplace_back(ValueType::vtArray, is_nullable);
         else if (which.isFixedString())

@@ -134,8 +134,8 @@ bool allowTypes(const DataTypePtr& left, const DataTypePtr& right) noexcept
 #define AT_SWITCH(LINE) \
     switch (which.idx) \
     { \
-        LINE(Int8); LINE(Int16); LINE(Int32); LINE(Int64); LINE(Int128); LINE(Int256); \
-        LINE(UInt8); LINE(UInt16); LINE(UInt32); LINE(UInt64); LINE(UInt128); LINE(UInt256); \
+        LINE(Int8); LINE(Int16); LINE(Int32); LINE(Int64); LINE(Int128); LINE(Int256); LINE(Int512); \
+        LINE(UInt8); LINE(UInt16); LINE(UInt32); LINE(UInt64); LINE(UInt128); LINE(UInt256); LINE(UInt512); \
         LINE(Float32); LINE(Float64); \
         default: return nullptr; \
     }

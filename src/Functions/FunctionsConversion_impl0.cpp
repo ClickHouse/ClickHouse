@@ -12,12 +12,14 @@ template class FunctionConvert<DataTypeUInt32, NameToUInt32, ToNumberMonotonicit
 template class FunctionConvert<DataTypeUInt64, NameToUInt64, ToNumberMonotonicity<UInt64>>;
 template class FunctionConvert<DataTypeUInt128, NameToUInt128, ToNumberMonotonicity<UInt128>>;
 template class FunctionConvert<DataTypeUInt256, NameToUInt256, ToNumberMonotonicity<UInt256>>;
+template class FunctionConvert<DataTypeUInt512, NameToUInt512, ToNumberMonotonicity<UInt512>>;
 template class FunctionConvert<DataTypeInt8, NameToInt8, ToNumberMonotonicity<Int8>>;
 template class FunctionConvert<DataTypeInt16, NameToInt16, ToNumberMonotonicity<Int16>>;
 template class FunctionConvert<DataTypeInt32, NameToInt32, ToNumberMonotonicity<Int32>>;
 template class FunctionConvert<DataTypeInt64, NameToInt64, ToNumberMonotonicity<Int64>>;
 template class FunctionConvert<DataTypeInt128, NameToInt128, ToNumberMonotonicity<Int128>>;
 template class FunctionConvert<DataTypeInt256, NameToInt256, ToNumberMonotonicity<Int256>>;
+template class FunctionConvert<DataTypeInt512, NameToInt512, ToNumberMonotonicity<Int512>>;
 template class FunctionConvert<DataTypeBFloat16, NameToBFloat16, ToNumberMonotonicity<BFloat16>>;
 template class FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 template class FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;

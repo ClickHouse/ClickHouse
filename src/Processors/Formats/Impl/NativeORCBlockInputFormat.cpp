@@ -1735,6 +1735,10 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                         return readColumnWithBigNumberFromBinaryData<ColumnInt256>(orc_column, orc_type, column_name, type_hint);
                     case TypeIndex::UInt256:
                         return readColumnWithBigNumberFromBinaryData<ColumnUInt256>(orc_column, orc_type, column_name, type_hint);
+                    case TypeIndex::Int512:
+                        return readColumnWithBigNumberFromBinaryData<ColumnInt512>(orc_column, orc_type, column_name, type_hint);
+                    case TypeIndex::UInt512:
+                        return readColumnWithBigNumberFromBinaryData<ColumnUInt512>(orc_column, orc_type, column_name, type_hint);
                     /// ORC doesn't support Decimal256 as separate type. We read and write it as binary data.
                     case TypeIndex::Decimal256:
                         return readColumnWithBigNumberFromBinaryData<ColumnDecimal<Decimal256>>(
@@ -1764,6 +1768,10 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                         return readColumnWithBigNumberFromBinaryData<ColumnInt256>(orc_column, orc_type, column_name, type_hint);
                     case TypeIndex::UInt256:
                         return readColumnWithBigNumberFromBinaryData<ColumnUInt256>(orc_column, orc_type, column_name, type_hint);
+                    case TypeIndex::Int512:
+                        return readColumnWithBigNumberFromBinaryData<ColumnInt512>(orc_column, orc_type, column_name, type_hint);
+                    case TypeIndex::UInt512:
+                        return readColumnWithBigNumberFromBinaryData<ColumnUInt512>(orc_column, orc_type, column_name, type_hint);
                     default:;
                 }
             }

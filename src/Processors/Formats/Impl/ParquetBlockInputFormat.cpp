@@ -157,7 +157,9 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
             return narrow(Decimal64(0));
         if (size <= 16)
             return narrow(Decimal128(0));
-        return narrow(Decimal256(0));
+        if (size <= 32)
+            return narrow(Decimal256(0));
+        return narrow(Decimal512(0));
     }
     while (false);
 
@@ -250,8 +252,10 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
         {
             case TypeIndex::UInt128:
             case TypeIndex::UInt256:
+            case TypeIndex::UInt512:
             case TypeIndex::Int128:
             case TypeIndex::Int256:
+            case TypeIndex::Int512:
             case TypeIndex::IPv6:
                 return Field();
             default: break;

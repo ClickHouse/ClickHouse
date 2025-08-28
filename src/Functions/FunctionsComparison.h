@@ -79,6 +79,8 @@ static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex ty
             return callOnBasicType<Decimal128, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
         case TypeIndex::Decimal256:
             return callOnBasicType<Decimal256, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+        case TypeIndex::Decimal512:
+            return callOnBasicType<Decimal512, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
         default:
             break;
     }
@@ -97,6 +99,8 @@ static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex ty
             return callOnBasicTypeSecondArg<Decimal128, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
         case TypeIndex::Decimal256:
             return callOnBasicTypeSecondArg<Decimal256, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
+        case TypeIndex::Decimal512:
+            return callOnBasicTypeSecondArg<Decimal512, _int, _float, _decimal, _datetime>(type_num1, std::forward<F>(f));
         default:
             break;
     }
@@ -742,12 +746,14 @@ private:
                 || (res = executeNumRightType<T0, UInt64>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, UInt128>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, UInt256>(col_left, col_right_untyped))
+                || (res = executeNumRightType<T0, UInt512>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, Int8>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, Int16>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, Int32>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, Int64>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, Int128>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, Int256>(col_left, col_right_untyped))
+                || (res = executeNumRightType<T0, Int512>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, BFloat16>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, Float32>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, Float64>(col_left, col_right_untyped)))
@@ -763,12 +769,14 @@ private:
                 || (res = executeNumConstRightType<T0, UInt64>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, UInt128>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, UInt256>(col_left_const, col_right_untyped))
+                || (res = executeNumConstRightType<T0, UInt512>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, Int8>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, Int16>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, Int32>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, Int64>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, Int128>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, Int256>(col_left_const, col_right_untyped))
+                || (res = executeNumConstRightType<T0, Int512>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, BFloat16>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, Float32>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, Float64>(col_left_const, col_right_untyped)))
@@ -1347,12 +1355,14 @@ public:
                 || (res = executeNumLeftType<UInt64>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<UInt128>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<UInt256>(col_left_untyped, col_right_untyped))
+                || (res = executeNumLeftType<UInt512>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Int8>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Int16>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Int32>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Int64>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Int128>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Int256>(col_left_untyped, col_right_untyped))
+                || (res = executeNumLeftType<Int512>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<BFloat16>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Float32>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Float64>(col_left_untyped, col_right_untyped))))

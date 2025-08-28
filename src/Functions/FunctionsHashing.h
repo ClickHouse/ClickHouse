@@ -1306,12 +1306,14 @@ private:
         else if (which.isUInt64()) executeIntType<UInt64, first>(key_cols, icolumn, vec_to);
         else if (which.isUInt128()) executeBigIntType<UInt128, first>(key_cols, icolumn, vec_to);
         else if (which.isUInt256()) executeBigIntType<UInt256, first>(key_cols, icolumn, vec_to);
+        else if (which.isUInt512()) executeBigIntType<UInt512, first>(key_cols, icolumn, vec_to);
         else if (which.isInt8()) executeIntType<Int8, first>(key_cols, icolumn, vec_to);
         else if (which.isInt16()) executeIntType<Int16, first>(key_cols, icolumn, vec_to);
         else if (which.isInt32()) executeIntType<Int32, first>(key_cols, icolumn, vec_to);
         else if (which.isInt64()) executeIntType<Int64, first>(key_cols, icolumn, vec_to);
         else if (which.isInt128()) executeBigIntType<Int128, first>(key_cols, icolumn, vec_to);
         else if (which.isInt256()) executeBigIntType<Int256, first>(key_cols, icolumn, vec_to);
+        else if (which.isInt512()) executeBigIntType<Int512, first>(key_cols, icolumn, vec_to);
         else if (which.isUUID()) executeBigIntType<UUID, first>(key_cols, icolumn, vec_to);
         else if (which.isIPv4()) executeIntType<IPv4, first>(key_cols, icolumn, vec_to);
         else if (which.isIPv6()) executeBigIntType<IPv6, first>(key_cols, icolumn, vec_to);
@@ -1325,6 +1327,7 @@ private:
         else if (which.isDecimal64()) executeBigIntType<Decimal64, first>(key_cols, icolumn, vec_to);
         else if (which.isDecimal128()) executeBigIntType<Decimal128, first>(key_cols, icolumn, vec_to);
         else if (which.isDecimal256()) executeBigIntType<Decimal256, first>(key_cols, icolumn, vec_to);
+        else if (which.isDecimal512()) executeBigIntType<Decimal512, first>(key_cols, icolumn, vec_to);
         else if (which.isFloat32()) executeIntType<Float32, first>(key_cols, icolumn, vec_to);
         else if (which.isFloat64()) executeIntType<Float64, first>(key_cols, icolumn, vec_to);
         else if (which.isString()) executeString<first>(key_cols, icolumn, vec_to);

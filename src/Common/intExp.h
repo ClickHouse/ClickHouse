@@ -42,6 +42,8 @@ inline Int256 exp10_i256(int x)
     return exp10_i256_table[x];
 }
 
+Int512 exp10_i512(int x);
+
 }
 
 
@@ -55,6 +57,8 @@ T intExp10OfSize(int x)
         return common::exp10_i64(x);
     else if constexpr (sizeof(T) <= 16)
         return common::exp10_i128(x);
-    else
+    else if constexpr (sizeof(T) <= 32)
         return common::exp10_i256(x);
+    else
+        return common::exp10_i512(x);
 }

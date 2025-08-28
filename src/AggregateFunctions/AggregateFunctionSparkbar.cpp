@@ -336,6 +336,7 @@ IAggregateFunction * createWithUIntegerOrTimeType(const std::string & name, cons
     if (which.idx == TypeIndex::UInt64) return new AggregateFunctionTemplate<UInt64, Data>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UInt128) return new AggregateFunctionTemplate<UInt128, Data>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UInt256) return new AggregateFunctionTemplate<UInt256, Data>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::UInt512) return new AggregateFunctionTemplate<UInt512, Data>(std::forward<TArgs>(args)...);
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "The first argument type must be UInt or Date or DateTime for aggregate function {}", name);
 }

@@ -670,6 +670,8 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
         return filterNumber<UInt128>(filt, result_size_hint);
     if (typeid_cast<const ColumnUInt256 *>(data.get()))
         return filterNumber<UInt256>(filt, result_size_hint);
+    if (typeid_cast<const ColumnUInt512 *>(data.get()))
+        return filterNumber<UInt512>(filt, result_size_hint);
     if (typeid_cast<const ColumnInt8 *>(data.get()))
         return filterNumber<Int8>(filt, result_size_hint);
     if (typeid_cast<const ColumnInt16 *>(data.get()))
@@ -682,6 +684,8 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
         return filterNumber<Int128>(filt, result_size_hint);
     if (typeid_cast<const ColumnInt256 *>(data.get()))
         return filterNumber<Int256>(filt, result_size_hint);
+    if (typeid_cast<const ColumnInt512 *>(data.get()))
+        return filterNumber<Int512>(filt, result_size_hint);
     if (typeid_cast<const ColumnBFloat16 *>(data.get()))
         return filterNumber<BFloat16>(filt, result_size_hint);
     if (typeid_cast<const ColumnFloat32 *>(data.get()))
@@ -696,6 +700,8 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
         return filterNumber<Decimal128>(filt, result_size_hint);
     if (typeid_cast<const ColumnDecimal<Decimal256> *>(data.get()))
         return filterNumber<Decimal256>(filt, result_size_hint);
+    if (typeid_cast<const ColumnDecimal<Decimal512> *>(data.get()))
+        return filterNumber<Decimal512>(filt, result_size_hint);
     if (typeid_cast<const ColumnString *>(data.get()))
         return filterString(filt, result_size_hint);
     if (typeid_cast<const ColumnTuple *>(data.get()))
@@ -1075,6 +1081,8 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
         return replicateNumber<UInt128>(replicate_offsets);
     if (typeid_cast<const ColumnUInt256 *>(data.get()))
         return replicateNumber<UInt256>(replicate_offsets);
+    if (typeid_cast<const ColumnUInt512 *>(data.get()))
+        return replicateNumber<UInt512>(replicate_offsets);
     if (typeid_cast<const ColumnInt8 *>(data.get()))
         return replicateNumber<Int8>(replicate_offsets);
     if (typeid_cast<const ColumnInt16 *>(data.get()))
@@ -1087,6 +1095,8 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
         return replicateNumber<Int128>(replicate_offsets);
     if (typeid_cast<const ColumnInt256 *>(data.get()))
         return replicateNumber<Int256>(replicate_offsets);
+    if (typeid_cast<const ColumnInt512 *>(data.get()))
+        return replicateNumber<Int512>(replicate_offsets);
     if (typeid_cast<const ColumnBFloat16 *>(data.get()))
         return replicateNumber<BFloat16>(replicate_offsets);
     if (typeid_cast<const ColumnFloat32 *>(data.get()))
@@ -1101,6 +1111,8 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
         return replicateNumber<Decimal128>(replicate_offsets);
     if (typeid_cast<const ColumnDecimal<Decimal256> *>(data.get()))
         return replicateNumber<Decimal256>(replicate_offsets);
+    if (typeid_cast<const ColumnDecimal<Decimal512> *>(data.get()))
+        return replicateNumber<Decimal512>(replicate_offsets);
     if (typeid_cast<const ColumnString *>(data.get()))
         return replicateString(replicate_offsets);
     if (typeid_cast<const ColumnConst *>(data.get()))

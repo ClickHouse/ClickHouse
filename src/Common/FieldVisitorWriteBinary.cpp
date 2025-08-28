@@ -14,7 +14,9 @@ void FieldVisitorWriteBinary::operator() (const String & x, WriteBuffer & buf) c
 void FieldVisitorWriteBinary::operator() (const UInt128 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const Int128 & x, WriteBuffer & buf) const { writeVarInt(x, buf); }
 void FieldVisitorWriteBinary::operator() (const UInt256 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const UInt512 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const Int256 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const Int512 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const UUID & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const IPv4 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
 void FieldVisitorWriteBinary::operator() (const IPv6 & x, WriteBuffer & buf) const { writeBinary(x, buf); }
@@ -23,6 +25,7 @@ void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal32> & x, Wri
 void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal64> & x, WriteBuffer & buf) const { writeBinary(x.getValue(), buf); writeBinary(x.getScale(), buf); }
 void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal128> & x, WriteBuffer & buf) const { writeBinary(x.getValue(), buf); writeBinary(x.getScale(), buf); }
 void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal256> & x, WriteBuffer & buf) const { writeBinary(x.getValue(), buf); writeBinary(x.getScale(), buf); }
+void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal512> & x, WriteBuffer & buf) const { writeBinary(x.getValue(), buf); writeBinary(x.getScale(), buf); }
 void FieldVisitorWriteBinary::operator() (const AggregateFunctionStateData & x, WriteBuffer & buf) const
 {
     writeStringBinary(x.name, buf);

@@ -11,13 +11,15 @@ namespace DB
     M(Int32)  \
     M(Int64)  \
     M(Int128) \
-    M(Int256)
+    M(Int256) \
+    M(Int512)
 
 #define FOR_EACH_UNDERLYING_DECIMAL_TYPE_PASS(M, X) \
     M(Int32, X) \
     M(Int64, X) \
     M(Int128, X) \
-    M(Int256, X)
+    M(Int256, X) \
+    M(Int512, X)
 
 template <typename T> const Decimal<T> & Decimal<T>::operator += (const T & x) { value += x; return *this; }
 template <typename T> const Decimal<T> & Decimal<T>::operator -= (const T & x) { value -= x; return *this; }

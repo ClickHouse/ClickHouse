@@ -39,7 +39,17 @@ template <> struct ConstructDecInt<2> { using Type = Int32; };
 template <> struct ConstructDecInt<4> { using Type = Int32; };
 template <> struct ConstructDecInt<8> { using Type = Int64; };
 template <> struct ConstructDecInt<16> { using Type = Int128; };
-template <> struct ConstructDecInt<32> { using Type = Int256; };
+template <>
+struct ConstructDecInt<32>
+{
+    using Type = Int256;
+};
+
+template <>
+struct ConstructDecInt<64>
+{
+    using Type = Int512;
+};
 
 template <typename T, typename U>
 struct DecCompareInt
@@ -74,7 +84,7 @@ public:
 
     static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b, bool check_overflow)
     {
-        static const UInt32 max_scale = DecimalUtils::max_precision<Decimal256>;
+        static const UInt32 max_scale = std::max(DecimalUtils::max_precision<Decimal256>, DecimalUtils::max_precision<Decimal512>);
         if (scale_a > max_scale || scale_b > max_scale)
             throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Bad scale of decimal field");
 

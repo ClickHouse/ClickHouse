@@ -46,6 +46,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
     if (which.idx == TypeIndex::Decimal64) return std::make_shared<Function<Decimal64, false>>(argument_types, params);
     if (which.idx == TypeIndex::Decimal128) return std::make_shared<Function<Decimal128, false>>(argument_types, params);
     if (which.idx == TypeIndex::Decimal256) return std::make_shared<Function<Decimal256, false>>(argument_types, params);
+    if (which.idx == TypeIndex::Decimal512) return std::make_shared<Function<Decimal512, false>>(argument_types, params);
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
                     argument_type->getName(), name);

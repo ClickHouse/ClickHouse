@@ -51,8 +51,9 @@ inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 /// Int64   18
 /// Int128  38
 /// Int256  76
+/// Int512  154
 /// Operation between two decimals leads to Decimal(P, S), where
-///     P is one of (9, 18, 38, 76); equals to the maximum precision for the biggest underlying type of operands.
+///     P is one of (9, 18, 38, 76, 154); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands. The allowed valuas are [0, precision]
 template <is_decimal T>
 class DataTypeDecimalBase : public IDataType
@@ -167,6 +168,7 @@ template <> constexpr size_t DataTypeDecimalBase<DateTime64>::maxPrecision() { r
 template <> constexpr size_t DataTypeDecimalBase<Time64>::maxPrecision() { return 18; };
 template <> constexpr size_t DataTypeDecimalBase<Decimal128>::maxPrecision() { return 38; };
 template <> constexpr size_t DataTypeDecimalBase<Decimal256>::maxPrecision() { return 76; };
+template <> constexpr size_t DataTypeDecimalBase<Decimal512>::maxPrecision() { return 153; };
 
 extern template class DataTypeDecimalBase<Decimal32>;
 extern template class DataTypeDecimalBase<Decimal64>;
@@ -174,13 +176,14 @@ extern template class DataTypeDecimalBase<DateTime64>;
 extern template class DataTypeDecimalBase<Time64>;
 extern template class DataTypeDecimalBase<Decimal128>;
 extern template class DataTypeDecimalBase<Decimal256>;
+extern template class DataTypeDecimalBase<Decimal512>;
 
 template <template <typename> typename DecimalType>
 inline DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
 {
-    if (precision_value < 1 || precision_value > DataTypeDecimalBase<Decimal256>::maxPrecision())
+    if (precision_value < 1 || precision_value > DataTypeDecimalBase<Decimal512>::maxPrecision())
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Wrong precision: it must be between {} and {}, got {}",
-                        1, DataTypeDecimalBase<Decimal256>::maxPrecision(), precision_value);
+                        1, DataTypeDecimalBase<Decimal512>::maxPrecision(), precision_value);
 
     if (scale_value > precision_value)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Negative scales and scales larger than precision are not supported");
@@ -191,7 +194,10 @@ inline DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
         return std::make_shared<DecimalType<Decimal64>>(precision_value, scale_value);
     if (precision_value <= DataTypeDecimalBase<Decimal128>::maxPrecision())
         return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value);
-    return std::make_shared<DecimalType<Decimal256>>(precision_value, scale_value);
+    if (precision_value <= DataTypeDecimalBase<Decimal256>::maxPrecision())
+        return std::make_shared<DecimalType<Decimal256>>(precision_value, scale_value);
+    /// no need to check for precision_value <= DataTypeDecimalBase<Decimal512>::maxPrecision() due to the check at the beginning of the function
+    return std::make_shared<DecimalType<Decimal512>>(precision_value, scale_value);
 }
 
 }

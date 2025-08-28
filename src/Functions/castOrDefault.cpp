@@ -264,6 +264,8 @@ private:
             cast_type = createDecimalMaxPrecision<Decimal128>(scale);
         else if (which.isDecimal256())
             cast_type = createDecimalMaxPrecision<Decimal256>(scale);
+        else if (which.isDecimal512())
+            cast_type = createDecimalMaxPrecision<Decimal512>(scale);
         else
             cast_type = type;
 
@@ -347,6 +349,9 @@ If the default value is not provided in the second argument, it is assumed to be
     factory.registerFunction("toUInt256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt256OrDefault", std::make_shared<DataTypeUInt256>()); });
 
+    factory.registerFunction("toUInt512OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt512OrDefault", std::make_shared<DataTypeUInt512>()); });
+
     factory.registerFunction("toInt8OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt8OrDefault", std::make_shared<DataTypeInt8>()); });
     factory.registerFunction("toInt16OrDefault", [](ContextPtr context)
@@ -359,6 +364,9 @@ If the default value is not provided in the second argument, it is assumed to be
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt128OrDefault", std::make_shared<DataTypeInt128>()); });
     factory.registerFunction("toInt256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt256OrDefault", std::make_shared<DataTypeInt256>()); });
+
+    factory.registerFunction("toInt512OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt512OrDefault", std::make_shared<DataTypeInt512>()); });
 
     factory.registerFunction("toFloat32OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toFloat32OrDefault", std::make_shared<DataTypeFloat32>()); });
@@ -382,6 +390,8 @@ If the default value is not provided in the second argument, it is assumed to be
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal128OrDefault", createDecimalMaxPrecision<Decimal128>(0)); });
     factory.registerFunction("toDecimal256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal256OrDefault", createDecimalMaxPrecision<Decimal256>(0)); });
+    factory.registerFunction("toDecimal512OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal512OrDefault", createDecimalMaxPrecision<Decimal512>(0)); });
 
     factory.registerFunction("toUUIDOrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUUIDOrDefault", std::make_shared<DataTypeUUID>()); });

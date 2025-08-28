@@ -190,7 +190,10 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         huge->set_lower(rg.nextRandomUInt64());
         if (complex && rg.nextSmallNumber() < 9)
         {
-            il->set_integers(rg.nextBool() ? Integers::Int128 : Integers::Int256);
+            const uint32_t choice = rg.nextRandomUInt32() % 3;
+            if (choice == 0) il->set_integers(Integers::Int128);
+            else if (choice == 1) il->set_integers(Integers::Int256);
+            else il->set_integers(Integers::Int512);
         }
     }
     else if (uhugeint_lit && (noption < hugeint_lit + uhugeint_lit + 1))
@@ -202,7 +205,10 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         uhuge->set_lower(rg.nextRandomUInt64());
         if (complex && rg.nextSmallNumber() < 9)
         {
-            il->set_integers(rg.nextBool() ? Integers::UInt128 : Integers::UInt256);
+            const uint32_t choice = rg.nextRandomUInt32() % 3;
+            if (choice == 0) il->set_integers(Integers::UInt128);
+            else if (choice == 1) il->set_integers(Integers::UInt256);
+            else il->set_integers(Integers::UInt512);
         }
     }
     else if (int_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + 1))
@@ -214,7 +220,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         {
             il->set_integers(
                 static_cast<Integers>(
-                    (rg.nextRandomUInt32() % static_cast<uint32_t>(Integers::Int - Integers::UInt256))
+                    (rg.nextRandomUInt32() % static_cast<uint32_t>(Integers::Int - Integers::UInt512))
                     + static_cast<uint32_t>(Integers::Int8)));
         }
     }

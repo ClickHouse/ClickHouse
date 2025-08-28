@@ -22,7 +22,7 @@ struct SingleValueDataBase
     /// Any subclass (numeric, string, generic) must be smaller than MAX_STORAGE_SIZE
     /// We use this knowledge to create composite data classes that use them directly by reserving a 'memory_block'
     /// For example argMin holds 1 of these (for the result), while keeping a template for the value
-    static constexpr UInt32 MAX_STORAGE_SIZE = 64;
+    static constexpr UInt32 MAX_STORAGE_SIZE = 96;
 
     virtual ~SingleValueDataBase() = default;
     virtual bool has() const = 0;
@@ -65,18 +65,21 @@ struct SingleValueDataBase
     M(UInt64) \
     M(UInt128) \
     M(UInt256) \
+    M(UInt512) \
     M(Int8) \
     M(Int16) \
     M(Int32) \
     M(Int64) \
     M(Int128) \
     M(Int256) \
+    M(Int512) \
     M(Float32) \
     M(Float64) \
     M(Decimal32) \
     M(Decimal64) \
     M(Decimal128) \
     M(Decimal256) \
+    M(Decimal512) \
     M(DateTime64)
 
 /// For numeric values (without inheritance, for performance sensitive functions and JIT)
@@ -187,8 +190,8 @@ struct SingleValueDataNumeric final : public SingleValueDataBase
     using Base = SingleValueDataFixed<T>;
 
 private:
-    /// 32 bytes for types of 256 bits, + 8 bytes for the virtual table pointer.
-    static constexpr size_t base_memory_reserved_size = 40;
+    /// 64 bytes for types of 512 bits, + 8 bytes for the virtual table pointer.
+    static constexpr size_t base_memory_reserved_size = 72;
     struct alignas(alignof(Base)) PrivateMemory
     {
         char memory[base_memory_reserved_size];
