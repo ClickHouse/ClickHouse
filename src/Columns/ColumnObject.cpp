@@ -8,7 +8,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
