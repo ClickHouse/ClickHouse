@@ -797,7 +797,7 @@ bool QueryOracle::findTablesWithPeersAndReplace(
 
             if ((!est.has_database() || est.database().database() != "system") && est.table().table().at(0) == 't')
             {
-                const uint32_t tname = static_cast<uint32_t>(std::stoul(est.table().table().substr(1)));
+                const uint32_t tname = gen.getIdentifierFromString(est.table().table());
 
                 if (gen.tables.find(tname) != gen.tables.end())
                 {

@@ -1248,6 +1248,12 @@ void StatementGenerator::generateNextExchange(RandomGenerator & rg, Exchange * e
     }
 }
 
+uint32_t StatementGenerator::getIdentifierFromString(const String & tname) const
+{
+    const uint32_t offset = startsWith(tname, "test.") ? 6 : 1;
+    return static_cast<uint32_t>(std::stoul(tname.substr(offset)));
+}
+
 void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
 {
     SQLObjectName * sot = at->mutable_object();
@@ -1556,7 +1562,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                     flatTableColumnPath(flat_nested, nested_cols, [](const SQLColumn &) { return true; });
                     const auto & entry = rg.pickRandomly(this->entries);
                     columnPathRef(entry, def->mutable_col());
-                    const uint32_t refcol = static_cast<uint32_t>(std::stoul(entry.getBottomName().substr(1)));
+                    const uint32_t refcol = getIdentifierFromString(entry.getBottomName());
                     this->entries.clear();
                     t.staged_cols[refcol] = std::move(t.staged_cols[ncol]);
                     t.staged_cols.erase(ncol);
@@ -4217,7 +4223,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 
     if (ssq.has_explain() && query.has_create_table())
     {
-        const uint32_t tname = static_cast<uint32_t>(std::stoul(query.create_table().est().table().table().substr(1)));
+        const uint32_t tname = getIdentifierFromString(query.create_table().est().table().table());
 
         if (!ssq.explain().is_explain() && success)
         {
@@ -4231,7 +4237,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     }
     else if (ssq.has_explain() && query.has_create_view())
     {
-        const uint32_t tname = static_cast<uint32_t>(std::stoul(query.create_view().est().table().table().substr(1)));
+        const uint32_t tname = getIdentifierFromString(query.create_view().est().table().table());
 
         if (!ssq.explain().is_explain() && success)
         {
@@ -4245,7 +4251,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     }
     else if (ssq.has_explain() && query.has_create_dictionary())
     {
-        const uint32_t dname = static_cast<uint32_t>(std::stoul(query.create_dictionary().est().table().table().substr(1)));
+        const uint32_t dname = getIdentifierFromString(query.create_dictionary().est().table().table());
 
         if (!ssq.explain().is_explain() && success)
         {
@@ -4268,23 +4274,23 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 
         if (istable)
         {
-            dropTable(false, true, static_cast<uint32_t>(std::stoul(drp.object().est().table().table().substr(1))));
+            dropTable(false, true, getIdentifierFromString(drp.object().est().table().table()));
         }
         else if (isview)
         {
-            this->views.erase(static_cast<uint32_t>(std::stoul(drp.object().est().table().table().substr(1))));
+            this->views.erase(getIdentifierFromString(drp.object().est().table().table()));
         }
         else if (isdictionary)
         {
-            this->dictionaries.erase(static_cast<uint32_t>(std::stoul(drp.object().est().table().table().substr(1))));
+            this->dictionaries.erase(getIdentifierFromString(drp.object().est().table().table()));
         }
         else if (isdatabase)
         {
-            dropDatabase(static_cast<uint32_t>(std::stoul(drp.object().database().database().substr(1))));
+            dropDatabase(getIdentifierFromString(drp.object().database().database()));
         }
         else if (isfunction)
         {
-            this->functions.erase(static_cast<uint32_t>(std::stoul(drp.object().function().function().substr(1))));
+            this->functions.erase(getIdentifierFromString(drp.object().function().function()));
         }
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_exchange() && success)
@@ -4294,8 +4300,8 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         const bool istable = obj1.has_est() && obj1.est().table().table()[0] == 't';
         const bool isview = obj1.has_est() && obj1.est().table().table()[0] == 'v';
         const bool isdictionary = obj1.has_est() && obj1.est().table().table()[0] == 'd';
-        const uint32_t tname1 = static_cast<uint32_t>(std::stoul(obj1.est().table().table().substr(1)));
-        const uint32_t tname2 = static_cast<uint32_t>(std::stoul(query.exchange().object2().est().table().table().substr(1)));
+        const uint32_t tname1 = getIdentifierFromString(obj1.est().table().table());
+        const uint32_t tname2 = getIdentifierFromString(query.exchange().object2().est().table().table());
 
         if (istable)
         {
@@ -4319,15 +4325,13 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         const bool isview = oobj.has_est() && oobj.est().table().table()[0] == 'v';
         const bool isdictionary = oobj.has_est() && oobj.est().table().table()[0] == 'd';
         const bool isdatabase = oobj.has_database();
-        const uint32_t old_tname
-            = static_cast<uint32_t>(std::stoul(isdatabase ? oobj.database().database().substr(1) : oobj.est().table().table().substr(1)));
-        const uint32_t new_tname
-            = static_cast<uint32_t>(std::stoul(isdatabase ? nobj.database().database().substr(1) : nobj.est().table().table().substr(1)));
+        const uint32_t old_tname = getIdentifierFromString(isdatabase ? oobj.database().database() : oobj.est().table().table());
+        const uint32_t new_tname = getIdentifierFromString(isdatabase ? nobj.database().database() : nobj.est().table().table());
         std::optional<uint32_t> new_db;
 
         if (!isdatabase && nobj.est().database().database() != "default")
         {
-            new_db = static_cast<uint32_t>(std::stoul(nobj.est().database().database().substr(1)));
+            new_db = getIdentifierFromString(nobj.est().database().database());
         }
         if (istable)
         {
@@ -4354,7 +4358,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 
         if (isview)
         {
-            SQLView & v = this->views[static_cast<uint32_t>(std::stoul(at.object().est().table().table().substr(1)))];
+            SQLView & v = this->views[getIdentifierFromString(at.object().est().table().table())];
 
             for (int i = 0; i < at.other_alters_size() + 1; i++)
             {
@@ -4372,7 +4376,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         }
         else if (istable)
         {
-            SQLTable & t = this->tables[static_cast<uint32_t>(std::stoul(at.object().est().table().table().substr(1)))];
+            SQLTable & t = this->tables[getIdentifierFromString(at.object().est().table().table())];
 
             for (int i = 0; i < at.other_alters_size() + 1; i++)
             {
@@ -4385,12 +4389,11 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     const Column & cstr = is_nested
                         ? ati.add_column().new_col().col().sub_cols(ati.add_column().new_col().col().sub_cols_size() - 1)
                         : ati.add_column().new_col().col().col();
-                    const uint32_t cname = static_cast<uint32_t>(std::stoul(cstr.column().substr(1)));
+                    const uint32_t cname = getIdentifierFromString(cstr.column());
 
                     if (is_nested && !success)
                     {
-                        const uint32_t top_col
-                            = static_cast<uint32_t>(std::stoul(ati.add_column().new_col().col().col().column().substr(1)));
+                        const uint32_t top_col = getIdentifierFromString(ati.add_column().new_col().col().col().column());
                         NestedType * ntp = dynamic_cast<NestedType *>(t.cols.at(top_col).tp);
 
                         ntp->subtypes.pop_back();
@@ -4407,7 +4410,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 else if (ati.has_drop_column() && success)
                 {
                     const ColumnPath & path = ati.drop_column();
-                    const uint32_t cname = static_cast<uint32_t>(std::stoul(path.col().column().substr(1)));
+                    const uint32_t cname = getIdentifierFromString(path.col().column());
 
                     if (path.sub_cols_size() == 0)
                     {
@@ -4421,7 +4424,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                         chassert(path.sub_cols_size() == 1);
                         if ((ntp = dynamic_cast<NestedType *>(col.tp)))
                         {
-                            const uint32_t ncname = static_cast<uint32_t>(std::stoul(path.sub_cols(0).column().substr(1)));
+                            const uint32_t ncname = getIdentifierFromString(path.sub_cols(0).column());
 
                             for (auto it = ntp->subtypes.cbegin(), next_it = it; it != ntp->subtypes.cend(); it = next_it)
                             {
@@ -4442,12 +4445,11 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 else if (ati.has_rename_column() && success)
                 {
                     const ColumnPath & path = ati.rename_column().old_name();
-                    const uint32_t old_cname = static_cast<uint32_t>(std::stoul(path.col().column().substr(1)));
+                    const uint32_t old_cname = getIdentifierFromString(path.col().column());
 
                     if (path.sub_cols_size() == 0)
                     {
-                        const uint32_t new_cname
-                            = static_cast<uint32_t>(std::stoul(ati.rename_column().new_name().col().column().substr(1)));
+                        const uint32_t new_cname = getIdentifierFromString(ati.rename_column().new_name().col().column());
 
                         t.cols[new_cname] = std::move(t.cols[old_cname]);
                         t.cols[new_cname].cname = new_cname;
@@ -4461,15 +4463,14 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                         chassert(path.sub_cols_size() == 1);
                         if ((ntp = dynamic_cast<NestedType *>(col.tp)))
                         {
-                            const uint32_t nocname = static_cast<uint32_t>(std::stoul(path.sub_cols(0).column().substr(1)));
+                            const uint32_t nocname = getIdentifierFromString(path.sub_cols(0).column());
 
                             for (auto it = ntp->subtypes.begin(), next_it = it; it != ntp->subtypes.end(); it = next_it)
                             {
                                 ++next_it;
                                 if (it->cname == nocname)
                                 {
-                                    it->cname
-                                        = static_cast<uint32_t>(std::stoul(ati.rename_column().new_name().sub_cols(0).column().substr(1)));
+                                    it->cname = getIdentifierFromString(ati.rename_column().new_name().sub_cols(0).column());
                                     break;
                                 }
                             }
@@ -4482,12 +4483,11 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     const Column & cstr = is_nested
                         ? ati.modify_column().new_col().col().sub_cols(ati.modify_column().new_col().col().sub_cols_size() - 1)
                         : ati.modify_column().new_col().col().col();
-                    const uint32_t cname = static_cast<uint32_t>(std::stoul(cstr.column().substr(1)));
+                    const uint32_t cname = getIdentifierFromString(cstr.column());
 
                     if (is_nested)
                     {
-                        const uint32_t top_col
-                            = static_cast<uint32_t>(std::stoul(ati.modify_column().new_col().col().col().column().substr(1)));
+                        const uint32_t top_col = getIdentifierFromString(ati.modify_column().new_col().col().col().column());
 
                         if (success)
                         {
@@ -4521,7 +4521,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     && ati.column_remove_property().property() < RemoveColumnProperty_ColumnProperties_CODEC)
                 {
                     const ColumnPath & path = ati.column_remove_property().col();
-                    const uint32_t cname = static_cast<uint32_t>(std::stoul(path.col().column().substr(1)));
+                    const uint32_t cname = getIdentifierFromString(path.col().column());
 
                     if (path.sub_cols_size() == 0)
                     {
@@ -4530,7 +4530,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 }
                 else if (ati.has_add_index())
                 {
-                    const uint32_t iname = static_cast<uint32_t>(std::stoul(ati.add_index().new_idx().idx().index().substr(1)));
+                    const uint32_t iname = getIdentifierFromString(ati.add_index().new_idx().idx().index());
 
                     if (success)
                     {
@@ -4540,13 +4540,13 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 }
                 else if (ati.has_drop_index() && success)
                 {
-                    const uint32_t iname = static_cast<uint32_t>(std::stoul(ati.drop_index().index().substr(1)));
+                    const uint32_t iname = getIdentifierFromString(ati.drop_index().index());
 
                     t.idxs.erase(iname);
                 }
                 else if (ati.has_add_projection())
                 {
-                    const uint32_t pname = static_cast<uint32_t>(std::stoul(ati.add_projection().proj().projection().substr(1)));
+                    const uint32_t pname = getIdentifierFromString(ati.add_projection().proj().projection());
 
                     if (success)
                     {
@@ -4556,13 +4556,13 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 }
                 else if (ati.has_remove_projection() && success)
                 {
-                    const uint32_t pname = static_cast<uint32_t>(std::stoul(ati.remove_projection().projection().substr(1)));
+                    const uint32_t pname = getIdentifierFromString(ati.remove_projection().projection());
 
                     t.projs.erase(pname);
                 }
                 else if (ati.has_add_constraint())
                 {
-                    const uint32_t pname = static_cast<uint32_t>(std::stoul(ati.add_constraint().constr().constraint().substr(1)));
+                    const uint32_t pname = getIdentifierFromString(ati.add_constraint().constr().constraint());
 
                     if (success)
                     {
@@ -4572,7 +4572,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 }
                 else if (ati.has_remove_constraint() && success)
                 {
-                    const uint32_t pname = static_cast<uint32_t>(std::stoul(ati.remove_constraint().constraint().substr(1)));
+                    const uint32_t pname = getIdentifierFromString(ati.remove_constraint().constraint());
 
                     t.constrs.erase(pname);
                 }
@@ -4596,8 +4596,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         const bool isview = oobj.has_est() && oobj.est().table().table()[0] == 'v';
         const bool isdictionary = oobj.has_est() && oobj.est().table().table()[0] == 'd';
         const bool isdatabase = oobj.has_database();
-        const uint32_t tname
-            = static_cast<uint32_t>(std::stoul(isdatabase ? oobj.database().database().substr(1) : oobj.est().table().table().substr(1)));
+        const uint32_t tname = getIdentifierFromString(isdatabase ? oobj.database().database() : oobj.est().table().table());
         const DetachStatus status = query.has_attach()
             ? DetachStatus::ATTACHED
             : (query.detach().permanently() ? DetachStatus::PERM_DETACHED : DetachStatus::DETACHED);
@@ -4621,7 +4620,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     }
     else if (ssq.has_explain() && query.has_create_database())
     {
-        const uint32_t dname = static_cast<uint32_t>(std::stoul(query.create_database().database().database().substr(1)));
+        const uint32_t dname = getIdentifierFromString(query.create_database().database().database());
 
         if (!ssq.explain().is_explain() && success)
         {
@@ -4631,7 +4630,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     }
     else if (ssq.has_explain() && query.has_create_function())
     {
-        const uint32_t fname = static_cast<uint32_t>(std::stoul(query.create_function().function().function().substr(1)));
+        const uint32_t fname = getIdentifierFromString(query.create_function().function().function());
 
         if (!ssq.explain().is_explain() && success)
         {
@@ -4641,7 +4640,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_trunc() && query.trunc().has_database())
     {
-        dropDatabase(static_cast<uint32_t>(std::stoul(query.trunc().database().database().substr(1))));
+        dropDatabase(getIdentifierFromString(query.trunc().database().database()));
     }
     else if (ssq.has_explain() && query.has_backup_restore() && !ssq.explain().is_explain() && success)
     {
@@ -4673,7 +4672,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 
                 if (!bro.object().est().has_database() || bro.object().est().database().database() != "system")
                 {
-                    const uint32_t tname = static_cast<uint32_t>(std::stoul(bro.object().est().table().table().substr(1)));
+                    const uint32_t tname = getIdentifierFromString(bro.object().est().table().table());
 
                     newb.tables[tname] = this->tables[tname];
                     if (bro.partitions_size())
@@ -4688,19 +4687,19 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             }
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::VIEW)
             {
-                const uint32_t vname = static_cast<uint32_t>(std::stoul(bre.bobject().object().est().table().table().substr(1)));
+                const uint32_t vname = getIdentifierFromString(bre.bobject().object().est().table().table());
 
                 newb.views[vname] = this->views[vname];
             }
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::DICTIONARY)
             {
-                const uint32_t dname = static_cast<uint32_t>(std::stoul(bre.bobject().object().est().table().table().substr(1)));
+                const uint32_t dname = getIdentifierFromString(bre.bobject().object().est().table().table());
 
                 newb.dictionaries[dname] = this->dictionaries[dname];
             }
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::DATABASE)
             {
-                const uint32_t dname = static_cast<uint32_t>(std::stoul(bre.bobject().object().database().database().substr(1)));
+                const uint32_t dname = getIdentifierFromString(bre.bobject().object().database().database());
 
                 for (const auto & [key, val] : this->tables)
                 {
