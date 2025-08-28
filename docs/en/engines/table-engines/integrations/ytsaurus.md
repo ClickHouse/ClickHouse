@@ -15,7 +15,7 @@ import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-The YTSaurus table engine allows you to import data from a YTsaurus cluster.
+The YTsaurus table engine allows you to import data from a YTsaurus cluster.
 
 ## Creating a table {#creating-a-table}
 
