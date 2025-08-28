@@ -1314,7 +1314,7 @@ def test_persistent_processing(started_cluster):
 
 def test_persistent_processing_failed_commit_retries(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = "max_persistent_processing_failed_commit_retries"
+    table_name = f"max_persistent_processing_failed_commit_retries_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     mv_name = f"{table_name}_mv"
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
