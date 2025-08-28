@@ -158,6 +158,7 @@ public:
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
+    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadataAfterUpdate() const;
 
     virtual bool supportsFileIterator() const { return false; }
     virtual bool supportsWrites() const { return true; }
@@ -174,7 +175,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual void addDataToStorageSnapshot(StorageSnapshotPtr /*storage_snapshot*/) const { }
+    virtual void releaseSpecificMetadataToStorageSnapshot(StorageSnapshotPtr /*storage_snapshot*/) const noexcept { }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
     virtual bool update(
@@ -192,12 +193,9 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr, StorageSnapshotPtr) const
-    {
-        return nullptr;
-    }
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return nullptr; }
 
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr, StorageSnapshotPtr) const { return nullptr; }
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return nullptr; }
 
     virtual SinkToStoragePtr write(
         SharedHeader /* sample_block */,

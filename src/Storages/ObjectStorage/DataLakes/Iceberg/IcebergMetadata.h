@@ -26,8 +26,10 @@
 #include <IO/CompressionMethod.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 namespace DB
 {
@@ -80,8 +82,8 @@ public:
     std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr Local_context) const override;
     std::optional<size_t> updateConfigurationAndGetTotalBytes(ContextPtr Local_context) const override;
 
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info, StorageSnapshotPtr storage_snapshot) const override;
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info, StorageSnapshotPtr storage_snapshot) const override;
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override;
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
@@ -112,10 +114,12 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands) override;
     void alter(const AlterCommands & params, ContextPtr context) override;
 
-    void addDataToStorageSnapshot(StorageSnapshotPtr storage_snapshot) const override
+    void releaseSpecificMetadataToStorageSnapshot(StorageSnapshotPtr storage_snapshot) const noexcept override
     {
-        storage_snapshot->data = std::make_unique<Iceberg::IcebergSpecificSnapshotData>(last_table_state_snapshot.value());
-        last_table_state_snapshot = std::nullopt;
+        LOG_DEBUG(log, "Releasing, stacktrace: {}", StackTrace().toString());
+        Iceberg::IcebergTableStateSnapshot snapshot_data = last_table_state_snapshot.release();
+        if (storage_snapshot)
+            storage_snapshot->data = std::make_unique<Iceberg::IcebergSpecificSnapshotData>(std::move(snapshot_data));
     }
 
     ObjectIterator iterate(
@@ -130,13 +134,11 @@ private:
     const StorageObjectStorageConfigurationWeakPtr configuration;
     LoggerPtr log;
 
-
     DB::Iceberg::PersistentTableComponents persistent_components;
-
 
     mutable SharedMutex mutex;
 
-    mutable std::optional<Iceberg::IcebergTableStateSnapshot> last_table_state_snapshot;
+    mutable Iceberg::OneThreadProtecting<Iceberg::IcebergTableStateSnapshot> last_table_state_snapshot;
 
     Iceberg::PersistentTableComponents initializePersistentTableComponents(Poco::JSON::Object::Ptr metadata_object);
 
@@ -148,7 +150,6 @@ private:
     getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::IcebergTableStateSnapshot>
     getState(const ContextPtr & local_context, String metadata_path, Int32 metadata_version) const;
-    std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const TSA_REQUIRES_SHARED(mutex);
     void updateImpl(const ContextPtr & local_context) TSA_REQUIRES(mutex);
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::IcebergTableStateSnapshot table_state_snapshot, ContextPtr local_context) const;

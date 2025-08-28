@@ -18,8 +18,8 @@ struct IcebergTableStateSnapshot
 
 struct IcebergSpecificSnapshotData : StorageSnapshot::Data {
     IcebergTableStateSnapshot iceberg_table_state;
-    explicit IcebergSpecificSnapshotData(const IcebergTableStateSnapshot & iceberg_table_state_)
-        : iceberg_table_state(iceberg_table_state_)
+    explicit IcebergSpecificSnapshotData(IcebergTableStateSnapshot && iceberg_table_state_)
+        : iceberg_table_state(std::move(iceberg_table_state_))
     {}
 };
 

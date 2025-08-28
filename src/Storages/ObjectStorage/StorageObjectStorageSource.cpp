@@ -415,7 +415,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         0,
         file_iterator,
         configuration,
-        storage_snapshot,
         object_storage,
         read_from_format_info,
         format_settings,
@@ -432,7 +431,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     size_t processor,
     const std::shared_ptr<IObjectIterator> & file_iterator,
     const StorageObjectStorageConfigurationPtr & configuration,
-    StorageSnapshotPtr storage_snapshot,
     const ObjectStoragePtr & object_storage,
     ReadFromFormatInfo & read_from_format_info,
     const std::optional<FormatSettings> & format_settings,
@@ -532,7 +530,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         Block initial_header = read_from_format_info.format_header;
         bool schema_changed = false;
 
-        if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info, storage_snapshot))
+        if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info))
         {
             Block sample_header;
             for (const auto & [name, type] : *initial_schema)
@@ -585,7 +583,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
         if (!transformer)
         {
-            if (auto schema_transformer = configuration->getSchemaTransformer(context_, object_info, storage_snapshot))
+            if (auto schema_transformer = configuration->getSchemaTransformer(context_, object_info))
                 transformer = schema_transformer->clone();
         }
 

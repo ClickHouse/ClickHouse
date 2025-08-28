@@ -129,7 +129,6 @@ protected:
         size_t processor,
         const std::shared_ptr<IObjectIterator> & file_iterator,
         const StorageObjectStorageConfigurationPtr & configuration,
-        StorageSnapshotPtr storage_snapshot,
         const ObjectStoragePtr & object_storage,
         ReadFromFormatInfo & read_from_format_info,
         const std::optional<FormatSettings> & format_settings,

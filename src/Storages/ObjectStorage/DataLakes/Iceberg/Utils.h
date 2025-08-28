@@ -73,6 +73,25 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ContextPtr & local_context,
     Poco::Logger * log);
 
+template<typename T>
+concept NothrowMovable = std::is_nothrow_move_constructible_v<T> && 
+                          std::is_nothrow_move_assignable_v<T>;
+
+template <NothrowMovable T>
+class OneThreadProtecting
+{
+public:
+    OneThreadProtecting();
+
+    void set(T value_);
+    T & get();
+    T release() noexcept;
+
+private:
+    std::optional<T> value = std::nullopt;
+    std::mutex mutex;
+    uint64_t current_thread_id = 0;
+};
 }
 
 #endif

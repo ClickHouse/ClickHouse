@@ -127,6 +127,7 @@ StorageObjectStorage::StorageObjectStorage(
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
+    BasicScopeGuard<std::function<void()>> internal_state_wiper;
     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
     {
         configuration->create(
@@ -138,6 +139,7 @@ StorageObjectStorage::StorageObjectStorage(
             catalog,
             storage_id
         );
+        internal_state_wiper = [&] { configuration->releaseSpecificMetadataToStorageSnapshot(nullptr); };
     }
 
     bool updated_configuration = false;
@@ -303,7 +305,7 @@ bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
             /* check_consistent_with_previous_metadata */false);
     }
 
-    auto columns = configuration->tryGetTableStructureFromMetadata();
+    auto columns = configuration->tryGetTableStructureFromMetadataAfterUpdate();
     if (!columns.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No schema in table metadata");
 
@@ -316,7 +318,7 @@ bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
 StorageSnapshotPtr StorageObjectStorage::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const
 {
     auto snapshot = IStorage::getStorageSnapshot(metadata_snapshot, context);
-    configuration->addDataToStorageSnapshot(snapshot);
+    configuration->releaseSpecificMetadataToStorageSnapshot(snapshot);
     return snapshot;
 }
 

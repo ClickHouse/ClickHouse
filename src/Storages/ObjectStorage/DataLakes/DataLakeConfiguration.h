@@ -196,17 +196,15 @@ public:
         return current_metadata->supportsWrites();
     }
 
-    std::shared_ptr<NamesAndTypesList>
-    getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info, StorageSnapshotPtr storage_snapshot) const override
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override
     {
         assertInitialized();
-        return current_metadata->getInitialSchemaByPath(local_context, object_info, storage_snapshot);
+        return current_metadata->getInitialSchemaByPath(local_context, object_info);
     }
-    std::shared_ptr<const ActionsDAG>
-    getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info, StorageSnapshotPtr storage_snapshot) const override
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override
     {
         assertInitialized();
-        return current_metadata->getSchemaTransformer(local_context, object_info, storage_snapshot);
+        return current_metadata->getSchemaTransformer(local_context, object_info);
     }
 
     ObjectIterator iterate(
@@ -220,10 +218,12 @@ public:
         return current_metadata->iterate(filter_dag, callback, list_batch_size, storage_snapshot, context);
     }
 
-    void addDataToStorageSnapshot(StorageSnapshotPtr storage_snapshot) const override
+    void releaseSpecificMetadataToStorageSnapshot(StorageSnapshotPtr storage_snapshot) const noexcept override
     {
-        assertInitialized();
-        current_metadata->addDataToStorageSnapshot(storage_snapshot);
+        if (current_metadata)
+        {
+            current_metadata->releaseSpecificMetadataToStorageSnapshot(storage_snapshot);
+        }
     }
 
     /// This is an awful temporary crutch,

@@ -78,15 +78,7 @@ public:
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr, StorageSnapshotPtr) const
-    {
-        return nullptr;
-    }
-
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr, StorageSnapshotPtr) const { return nullptr; }
-
-
-    virtual void addDataToStorageSnapshot(StorageSnapshotPtr /**/) const { }
+    virtual void releaseSpecificMetadataToStorageSnapshot(StorageSnapshotPtr /**/) const noexcept { }
 
     virtual std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr) const { return {}; }
     virtual std::optional<size_t> updateConfigurationAndGetTotalBytes(ContextPtr) const { return {}; }
