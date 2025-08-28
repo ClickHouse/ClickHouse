@@ -702,33 +702,38 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     if (sequence.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join tree is empty");
 
+    /// Mapping from node to maximal step position where it is used
+    /// It's used to drop unused expressions
     std::unordered_map<const ActionsDAG::Node *, size_t> usage_level_map;
-
-    for (size_t i = 0; i < sequence.size(); ++i)
     {
-        const auto & entry = sequence[i];
-        for (const auto & action : entry->join_operator.expression)
-            usage_level_map[action.getNode()] = i;
-        for (const auto & action : entry->join_operator.residual_filter)
-            usage_level_map[action.getNode()] = i;
-    }
+        std::deque<std::pair<const ActionsDAG::Node *, size_t>> stack;
 
-    for (const auto & out : global_actions_dag->getOutputs())
-        usage_level_map[out] = sequence.size();
-
-    {
-        std::stack<std::pair<const ActionsDAG::Node *, size_t>> stack;
-        for (const auto & entry : usage_level_map)
-            stack.push(std::make_pair(entry.first, entry.second));
+        /// Join expressions used by i-th join step
+        for (size_t i = 0; i < sequence.size(); ++i)
+        {
+            const auto & entry = sequence[i];
+            for (const auto & action : entry->join_operator.expression)
+                stack.emplace_back(action.getNode(), i);
+            for (const auto & action : entry->join_operator.residual_filter)
+                stack.emplace_back(action.getNode(), i);
+        }
+        /// Outputs at the end
+        for (const auto & out : global_actions_dag->getOutputs())
+            stack.emplace_back(out, sequence.size());
 
         while (!stack.empty())
         {
-            auto [node, level] = stack.top();
-            stack.pop();
+            auto [node, level] = stack.back();
+            stack.pop_back();
+
+            /// Stack is sorted accroding to level
+            /// If we processed node it means that it and its children used by higher level
+            auto [_, inserted] = usage_level_map.try_emplace(node, level);
+            if (!inserted)
+                continue;
+
             for (const auto * child : node->children)
-                stack.push(std::make_pair(child, level));
-            auto & map_level = usage_level_map[node];
-            map_level = std::max(map_level, level);
+                stack.push_back(std::make_pair(child, level));
         }
     }
 

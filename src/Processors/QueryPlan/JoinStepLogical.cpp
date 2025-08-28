@@ -1172,9 +1172,8 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
     ActionsDAG::NodeRawConstPtrs left_keys;
     ActionsDAG::NodeRawConstPtrs right_keys;
 
-    for (size_t i = 0; i < join_expression.size(); ++i)
+    for (auto & expr : join_expression)
     {
-        auto & expr = join_expression[i];
         auto [predicate_op, lhs, rhs] = expr.asBinaryPredicate();
         if (predicate_op != JoinConditionOperator::Equals)
             continue;
