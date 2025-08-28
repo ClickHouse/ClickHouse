@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
