@@ -309,7 +309,7 @@ def get_spark(
             cluster.azurite_account,
         )
         builder.config(
-            f"spark.hadoop.fs.azure.account.key.{cluster.azurite_account}.blob.core.windows.net",
+            f"spark.hadoop.fs.azure.account.key.{cluster.azurite_account}",
             cluster.azurite_key,
         )
         # WASB implementation, ABFS is not compatible with Azurite?
@@ -586,7 +586,7 @@ logger.jetty.level = warn
                             "azure.blob-endpoint": f"http://{cluster.azurite_ip}:{cluster.azurite_port}/{cluster.azurite_account}",
                         }
                     )
-                    next_warehouse = f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}"
+                    next_warehouse = f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}"
                 elif next_storage == TableStorage.Local:
                     next_warehouse = (
                         f"file://{get_local_base_path(cluster, catalog_name)}"
