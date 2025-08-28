@@ -22,6 +22,15 @@
             [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114
         -->
         <level>trace</level>
+
+        <!-- Startup level is used to set the root logger level at server startup.
+             It is useful for debugging startup issues.
+             The root logger level will be reset to the default level after the server is fully initialized -->
+        <!-- <startupLevel>trace</startupLevel> -->
+       <!-- Shutdown level is used to set the root logger level at server Shutdown.
+             It is useful for debugging shutdown issues -->
+        <!-- <shutdownLevel>trace</shutdownLevel> -->
+
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
         <!-- Rotation policy
@@ -1580,7 +1589,7 @@
         <max_replicated_fetches_network_bandwidth>1000000000</max_replicated_fetches_network_bandwidth>
     </replicated_merge_tree>
     -->
-    
+
     <!-- Settings to fine-tune DatabaseReplicatedSettings. See documentation in source code, in DatabaseReplicatedSettings.h -->
     <!--
     <database_replicated>
