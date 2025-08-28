@@ -339,16 +339,20 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
         ///   2 : FUNCTION (0, 1) (no column) UInt64 multiply(__table5.number, 2_UInt8) [multiply]
         ///   Output nodes: 2
         /// Result:
-        ///   0 (0x7e085c6340b0): INPUT () (no column) UInt64 __table6.number
-        ///   1 (0x7e085c70f130): COLUMN () Const(UInt8) UInt8 2_UInt8
-        ///   2 (0x7e085c70f090): FUNCTION (0, 1) (no column) UInt64 multiply(__table5.number, 2_UInt8) [multiply]
+        ///   0 : INPUT () (no column) UInt64 __table6.number
+        ///   1 : COLUMN () Const(UInt8) UInt8 2_UInt8
+        ///   2 : FUNCTION (0, 1) (no column) UInt64 multiply(__table5.number, 2_UInt8) [multiply]
         ///   Output nodes: 2
         ///
         /// In this case __table6.number can be used by the post join actions
+        /// Furthermore, after merge it is possible that DAG contains an INPUT action that is not in the list of inputs,
+        /// so removeUnusedActions(false) can get rid of them.
         const auto previous_left_pre_join_outputs = join_expressions.left_pre_join_actions->getNames();
         const auto previous_right_pre_join_outputs = join_expressions.right_pre_join_actions->getNames();
         join_expressions.left_pre_join_actions->mergeInplace(std::move(predicate.left));
+        join_expressions.left_pre_join_actions->removeUnusedActions(false);
         join_expressions.right_pre_join_actions->mergeInplace(std::move(predicate.right));
+        join_expressions.right_pre_join_actions->removeUnusedActions(false);
 
         const auto try_restore_columns = [](ActionsDAG & dag, const Names & previous_outputs, const std::string_view side)
         {

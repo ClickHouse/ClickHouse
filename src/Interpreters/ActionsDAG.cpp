@@ -1890,11 +1890,6 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
         first.outputs.swap(second.outputs);
     }
 
-    second.nodes.remove_if([inputs_map](const Node & node)
-    {
-        return inputs_map.contains(&node);
-    });
-
     first.nodes.splice(first.nodes.end(), std::move(second.nodes));
 }
 
