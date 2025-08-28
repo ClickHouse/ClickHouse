@@ -713,7 +713,7 @@ ColumnPtr ColumnString::compress(bool force_compression) const
 #if USE_EMBEDDED_COMPILER
 bool ColumnString::isComparatorCompilable() const
 {
-    return true;
+    return false;
 }
 
 llvm::Value * ColumnString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const
