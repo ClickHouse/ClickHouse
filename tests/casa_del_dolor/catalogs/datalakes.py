@@ -215,18 +215,11 @@ def get_spark(
 
         if storage == TableStorage.S3:
             builder.config(
-                f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                f"http://{cluster.minio_ip}:{cluster.minio_port}",
+                f"spark.sql.catalog.{catalog_name}.io-impl",
+                "org.apache.iceberg.aws.s3.S3FileIO",
             )
             builder.config(
-                f"spark.sql.catalog.{catalog_name}.s3.access-key-id", "minio"
-            )
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.s3.secret-access-key",
-                minio_access_key,
-            )
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.s3.path-style-access", "true"
+                f"spark.sql.catalog.{catalog_name}.client.region", "us-east-1"
             )
     elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
         builder.config(f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8081")
@@ -292,7 +285,7 @@ def get_spark(
         )
         builder.config(
             f"spark.sql.catalog.{catalog_name}.warehouse",
-            f"s3{"" if catalog == LakeCatalogs.Glue else "a"}://{cluster.minio_bucket}/{catalog_name}",
+            f"s3{"" if catalog in (LakeCatalogs.Glue, LakeCatalogs.REST) else "a"}://{cluster.minio_bucket}/{catalog_name}",
         )
     elif storage == TableStorage.Azure:
         # For Azurite local emulation
@@ -572,7 +565,7 @@ logger.jetty.level = warn
                             "s3.path-style-access": "true",
                         }
                     )
-                    next_warehouse = f"s3a://{cluster.minio_bucket}/{catalog_name}"
+                    next_warehouse = f"s3://{cluster.minio_bucket}/{catalog_name}"
                 elif next_storage == TableStorage.Azure:
                     kwargs.update(
                         {
