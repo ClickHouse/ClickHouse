@@ -3915,7 +3915,7 @@ services:
             {krb5_conf}
         entrypoint: /integration-tests-entrypoint.sh {entrypoint_cmd}
         # increase it to allow jeprof to dump the profile report
-        stop_grace_period: 2m
+        stop_grace_period: 5m
         tmpfs: {tmpfs}
         {mem_limit}
         cap_add:
