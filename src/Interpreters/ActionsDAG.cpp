@@ -25,6 +25,8 @@
 
 #include <stack>
 #include <base/sort.h>
+#include "Common/StackTrace.h"
+#include "Common/logger_useful.h"
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeSet.h>
@@ -2381,6 +2383,30 @@ struct DisjunctionNodes
     std::vector<const ActionsDAG::Node *> rejected;
 };
 
+bool dependsOnAnyInput(const ActionsDAG::Node * n)
+{
+    if (!n) return false;
+    std::stack<const ActionsDAG::Node *> st;
+    std::unordered_set<const ActionsDAG::Node *> vis;
+    st.push(n);
+    while (!st.empty())
+    {
+        const auto * cur = st.top(); st.pop();
+        if (!vis.insert(cur).second)
+            continue;
+        if (cur->type == ActionsDAG::ActionType::INPUT)
+            return true;
+        for (const auto * ch : cur->children)
+            st.push(ch);
+    }
+    return false;
+}
+
+inline bool isConstNode(const ActionsDAG::Node * n)
+{
+    return n->type == ActionsDAG::ActionType::COLUMN && n->column && isColumnConst(*n->column);
+}
+
 /// Take a node which result is a predicate.
 /// Assuming predicate is a conjunction (probably, trivial).
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
@@ -2531,6 +2557,7 @@ DisjunctionNodes getDisjunctionNodes(
             if (f.ok == f.node->children.size()
                 && f.node->type != ActionsDAG::ActionType::ARRAY_JOIN
                 && f.node->type != ActionsDAG::ActionType::INPUT
+                && !(f.node->type == ActionsDAG::ActionType::FUNCTION && !allow_non_deterministic_functions && !f.node->function_base->isDeterministicInScopeOfQuery())
                 && !nondet)
             {
                 allowed_nodes.emplace(f.node);
@@ -2572,6 +2599,8 @@ DisjunctionNodes getDisjunctionNodes(
             }
             else if (under_or)
             {
+                if (isConstNode(n))
+                    continue;
                 atoms_under_or.insert(n);
             }
         }
@@ -2593,6 +2622,8 @@ DisjunctionNodes getDisjunctionNodes(
                 disjunction.rejected.push_back(a);
         }
     }
+
+    std::erase_if(disjunction.allowed, [](const ActionsDAG::Node * n){ return isConstNode(n); });
 
     return disjunction;
 }
@@ -2745,6 +2776,17 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
     return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
 }
 
+/// Bail if the built predicate does not depend on any real INPUTs of the side we push to.
+/// This prevents pushing down pure constants (or predicates built only from constants/aliases).
+static inline std::optional<ActionsDAG::ActionsForFilterPushDown>
+returnEmptyIfConstPredicate(const ActionsDAG::Node * final_node,
+                            std::optional<ActionsDAG::ActionsForFilterPushDown> built)
+{
+    if (built && !dependsOnAnyInput(final_node))
+        return {};
+    return built;
+}
+
 std::optional<ActionsDAG::ActionsForFilterPushDown>
 ActionsDAG::createActionsForDisjunction(NodeRawConstPtrs disjunction, const ColumnsWithTypeAndName & all_inputs)
 {
@@ -2876,7 +2918,8 @@ ActionsDAG::createActionsForDisjunction(NodeRawConstPtrs disjunction, const Colu
     if (remove_filter)
         actions.outputs.insert(actions.outputs.begin(), result_predicate);
 
-    return ActionsDAG::ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
+    auto res = ActionsDAG::ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
+    return returnEmptyIfConstPredicate(result_predicate, std::optional<ActionsDAG::ActionsForFilterPushDown>{std::move(res)});
 }
 
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForFilterPushDown(
@@ -2945,7 +2988,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
         return {};
 
     /// Now, when actions are created, update the current DAG.
-    if (!conjunction.rejected.empty())
+    if (disjunction.allowed.empty() || !conjunction.rejected.empty())
         removeUnusedConjunctions(std::move(conjunction.rejected), predicate, removes_filter);
 
     return actions;
@@ -2954,6 +2997,8 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForMixed(
     NodeRawConstPtrs conjunction_nodes, NodeRawConstPtrs disjunction_nodes, const ColumnsWithTypeAndName & all_inputs)
 {
+    StackTrace stack_trace;
+    LOG_TRACE(getLogger("ActionsDAG"), "createActionsForMixed: {}", stack_trace.toString());
     if (disjunction_nodes.empty())
         return createActionsForConjunction(conjunction_nodes, all_inputs);
     if (conjunction_nodes.empty())
@@ -3026,6 +3071,10 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
         ? and_args.front()
         : &actions.addFunction(std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>()), and_args, {});
 
+    /// Do not push if the predicate is constant / does not depend on child inputs.
+    if (!dependsOnAnyInput(final))
+        return {};
+
     for (const auto & col : all_inputs)
     {
         const Node * in;
@@ -3053,7 +3102,8 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
 
     size_t filter_pos = remove_filter ? 0 : std::find(actions.outputs.begin(), actions.outputs.end(), final) - actions.outputs.begin();
 
-    return ActionsDAG::ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
+    auto res = ActionsDAG::ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
+    return std::optional<ActionsDAG::ActionsForFilterPushDown>{std::move(res)};
 }
 
 ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPushDown(
@@ -3067,6 +3117,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column)
 {
+    StackTrace stack_trace;
+    LOG_DEBUG(&Poco::Logger::get("ActionsDAG"), "splitActionsForJOINFilterPushDown: {}", stack_trace.toString());
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
