@@ -289,7 +289,6 @@ def create_delta_table(
             CREATE TABLE {table_name}
             ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
             """
-            + allow_dynamic_metadata_for_datalakes_suffix
         )
     elif storage_type == "local":
         # For local storage, we need to use the absolute path
