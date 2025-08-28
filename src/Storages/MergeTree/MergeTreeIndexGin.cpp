@@ -727,7 +727,7 @@ MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokenizer {} not supported", tokenizer);
 
     UInt64 segment_digestion_threshold_bytes
-        = getOption<UInt64>(options, ARGUMENT_SEGMENT_DIGESTION_THRESHOLD_BYTES).value_or(UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES);
+        = getOption<UInt64>(options, ARGUMENT_SEGMENT_DIGESTION_THRESHOLD_BYTES).value_or(DEFAULT_SEGMENT_DIGESTION_THRESHOLD_BYTES);
 
     double bloom_filter_false_positive_rate
         = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
@@ -783,7 +783,7 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     }
 
     UInt64 segment_digestion_threshold_bytes
-        = getOption<UInt64>(options, ARGUMENT_SEGMENT_DIGESTION_THRESHOLD_BYTES).value_or(UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES);
+        = getOption<UInt64>(options, ARGUMENT_SEGMENT_DIGESTION_THRESHOLD_BYTES).value_or(DEFAULT_SEGMENT_DIGESTION_THRESHOLD_BYTES);
 
     double bloom_filter_false_positive_rate
         = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
