@@ -422,6 +422,7 @@ void updateInputsAfterChildAppliesRequest(
     if (index == node_to_update->children.size())
         return;
 
+    NodeToNameMap & column_input_names = request->input_column_candidate->node_to_input_name;
     NodeToNameMap & column_output_names = request->input_column_candidate->node_to_output_name;
     ExpressionStep * as_expression_step = typeid_cast<ExpressionStep *>(node_to_update->step.get());
     FilterStep * as_filter_step = typeid_cast<FilterStep *>(node_to_update->step.get());
@@ -430,12 +431,20 @@ void updateInputsAfterChildAppliesRequest(
     if (as_expression_step || as_filter_step)
         new_dag = as_expression_step ? as_expression_step->getExpression().clone() : as_filter_step->getExpression().clone();
 
+    bool column_in_dag = column_input_names.find(node_to_update) != column_input_names.end();
 
     for (const ColumnCandidatePtr & function_candidate : request->function_column_candidates)
     {
+        // before proceeding, the input column must be already in the DAG OR the function node must be already in the DAG
+        // if not, skip the function candidate
         const ActionsDAG::Node * new_function_node = nullptr;
         NodeToNameMap & function_output_names = function_candidate->node_to_output_name;
         NodeToNameMap & function_input_names = function_candidate->node_to_input_name;
+
+        bool function_in_dag = function_input_names.find(node_to_update) != function_input_names.end();
+
+        if (!column_in_dag && !function_in_dag)
+            continue;
 
         if (as_expression_step || as_filter_step)
         {
