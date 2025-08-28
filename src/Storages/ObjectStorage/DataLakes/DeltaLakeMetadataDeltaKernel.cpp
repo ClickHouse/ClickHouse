@@ -205,10 +205,12 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
                 physical_name_and_type->type = removeNullable(physical_name_and_type->type);
 
             info.requested_columns.push_back(physical_name_and_type.value());
-            info.format_header.insert(ColumnWithTypeAndName{
+            info.format_header.insert(ColumnWithTypeAndName
+            {
                 physical_name_and_type->type->createColumn(),
                 physical_name_and_type->type,
-                physical_name_and_type->name});
+                physical_name_and_type->name
+            });
         }
         else
         {
