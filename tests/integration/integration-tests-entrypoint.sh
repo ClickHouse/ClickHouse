@@ -39,7 +39,7 @@ function dump_stacktraces_on_shutdown()
 
     if kill -0 "$PID"; then
         echo "Attaching gdb to obtain thread stacktraces"
-        gdb -batch -ex 'thread apply all bt full' -p "$PID" > /var/log/clickhouse-server/stdout.log
+        gdb -batch -ex 'thread apply all bt' -p "$PID" > /var/log/clickhouse-server/stdout.log
     fi
 }
 dump_stacktraces_on_shutdown &
