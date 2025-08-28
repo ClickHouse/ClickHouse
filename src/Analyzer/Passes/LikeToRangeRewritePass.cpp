@@ -26,7 +26,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<LikeToRangeRewriteVisitor>;
     using Base::Base;
 
-    void enterImpl(QueryTreeNodePtr & node) 
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings()[Setting::optimize_rewrite_like_to_range])
             return;
@@ -74,26 +74,20 @@ public:
 
         /// Create range expression
         FunctionNodePtr new_node = nullptr;
-        auto column_node = case_insensitive
-            ? operation("lower", args[0]) 
-            : args[0]; /// The column being compared
+        auto column_node = case_insensitive ? operation("lower", args[0]) : args[0]; /// The column being compared
         chassert(column_node != nullptr, "Column node should be non-null");
 
         if (is_like || is_ilike)
         {
             auto left = operation("greaterOrEquals", column_node, prefix_constant);
-            new_node = no_right_bound 
-                ? left 
-                : operation("and", left,
-                    operation("less", column_node, right_bound_constant));
-        } 
+            new_node = no_right_bound ? left : operation(
+                "and", left, operation("less", column_node, right_bound_constant));
+        }
         else if (is_not_like || is_not_ilike)
         {
             auto left = operation("less", column_node, prefix_constant);
-            new_node = no_right_bound
-                ? left
-                : operation("or", left,
-                    operation("greaterOrEquals", column_node, right_bound_constant));
+            new_node = no_right_bound ? left : operation(
+                "or", left, operation("greaterOrEquals", column_node, right_bound_constant));
         }
         else
             chassert(false, "shouldn't be here");
@@ -117,7 +111,7 @@ private:
 
 }
 
-void LikeToRangeRewritePass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context) 
+void LikeToRangeRewritePass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     LikeToRangeRewriteVisitor visitor(context);
     visitor.visit(query_tree_node);
