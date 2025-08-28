@@ -73,6 +73,9 @@
         "reason": "INVESTIGATE - ClickHouse timeout",
         "message": "Timeout exceeded (180 s) while flushing system log"
     },
+    "00090_thread_pool_deadlock": {
+        "reason": "INVESTIGATE - Unstable?"
+    },
     "01810_max_part_removal_threads_long": {
         "reason": "INVESTIGATE - ClickHouse timeout",
         "message": "Timeout exceeded (180 s) while flushing system log"
