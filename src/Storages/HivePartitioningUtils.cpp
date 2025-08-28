@@ -1,6 +1,7 @@
 #include <Storages/HivePartitioningUtils.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -61,6 +62,7 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
 
     return key_values;
 }
+
 NamesAndTypesList extractHivePartitionColumnsFromPath(
     const ColumnsDescription & storage_columns,
     const std::string & sample_path,
