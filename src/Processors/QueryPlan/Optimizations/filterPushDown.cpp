@@ -668,7 +668,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto updated_steps = simplePushDownOverStep<ExpressionStep>(parent_node, false, nodes, child))
         return updated_steps;
 
-    if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child))
+    if (auto updated_steps = tryPushDownOverJoinStepImpl(parent_node, nodes, child))
         return updated_steps;
 
     /// TODO.
