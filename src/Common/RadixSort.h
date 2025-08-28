@@ -377,7 +377,8 @@ private:
                 {
                     auto element = reader[i];
                     size_t pos = extractPart(pass, element);
-                    writer[size - 1 - (histograms[pass * HISTOGRAM_SIZE + pos]++)] = Traits::extractResult(element);
+                    writer[size - 1 - (histograms[pass * HISTOGRAM_SIZE + pos])] = Traits::extractResult(element);
+                    ++histograms[pass * HISTOGRAM_SIZE + pos];
                 }
             }
             else
@@ -386,7 +387,8 @@ private:
                 {
                     auto element = reader[i];
                     size_t pos = extractPart(pass, element);
-                    writer[histograms[pass * HISTOGRAM_SIZE + pos]++] = Traits::extractResult(element);
+                    writer[histograms[pass * HISTOGRAM_SIZE + pos]] = Traits::extractResult(element);
+                    ++histograms[pass * HISTOGRAM_SIZE + pos];
                 }
             }
         }
