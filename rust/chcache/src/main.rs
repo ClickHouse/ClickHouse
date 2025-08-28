@@ -32,7 +32,7 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
 
     let compiler_path_or_command: String = std::env::args().nth(1).unwrap();
     let rest_of_args: Vec<String> = std::env::args().skip(2).collect();
-    let compiler_cmdline = rest_of_args.join(" ");
+    let compiler_cmdline = rest_of_args.clone();
 
     match compiler_path_or_command.as_str() {
         "stats" => {
@@ -170,8 +170,8 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
             let upload_result = clickhouse_disk
                 .write(
                     &compiler_version,
-                    &compiler_cmdline,
-                    &compiler.get_args(),
+                    compiler_cmdline.clone(),
+                    compiler.get_args(),
                     compiler.get_compile_duration(),
                     &total_hash,
                     &compiled_bytes,

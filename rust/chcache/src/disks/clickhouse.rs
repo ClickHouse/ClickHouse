@@ -16,8 +16,9 @@ struct CacheLine {
     blob: Vec<u8>,
     hash: String,
     compiler_version: String,
-    compiler_args: String,
-    postprocessed_compiler_args: String,
+
+    compiler_args: Vec<String>,
+    postprocessed_compiler_args: Vec<String>,
 
     #[serde(rename = "elapsed_compilation_time")]
     elapsed_compilation_time_ms: u128,
@@ -79,8 +80,8 @@ impl ClickHouseDisk {
     pub async fn write(
         &self,
         compiler_version: &str,
-        compiler_args: &str,
-        postprocessed_compiler_args: &str,
+        compiler_args: Vec<String>,
+        postprocessed_compiler_args: Vec<String>,
         elapsed_compilation_time_ms: u128,
         hash: &str,
         data: &Vec<u8>,
@@ -91,8 +92,8 @@ impl ClickHouseDisk {
             blob: data.clone(),
             hash: hash.to_string(),
             compiler_version: compiler_version.to_string(),
-            compiler_args: compiler_args.to_string(),
-            postprocessed_compiler_args: postprocessed_compiler_args.to_string(),
+            compiler_args,
+            postprocessed_compiler_args,
             elapsed_compilation_time_ms,
         };
 

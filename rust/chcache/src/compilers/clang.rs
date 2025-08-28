@@ -296,8 +296,8 @@ impl Compiler for ClangLike {
         true
     }
 
-    fn get_args(&self) -> String {
-        self.stripped_args.join(" ")
+    fn get_args(&self) -> Vec<String> {
+        self.stripped_args.to_vec()
     }
 
     fn get_compile_duration(&self) -> u128 {
@@ -329,7 +329,7 @@ impl Compiler for ClangXX {
         self.0.version()
     }
 
-    fn get_args(&self) -> String {
+    fn get_args(&self) -> Vec<String> {
         self.0.get_args()
     }
 
@@ -359,7 +359,7 @@ impl Compiler for Clang {
         self.0.version()
     }
 
-    fn get_args(&self) -> String {
+    fn get_args(&self) -> Vec<String> {
         self.0.get_args()
     }
 

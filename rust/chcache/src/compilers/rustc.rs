@@ -279,8 +279,8 @@ impl Compiler for RustC {
         Ok(buffer)
     }
 
-    fn get_args(&self) -> String {
-        self.args.join(" ")
+    fn get_args(&self) -> Vec<String> {
+        self.args.to_vec()
     }
 
     fn get_compile_duration(&self) -> u128 {
