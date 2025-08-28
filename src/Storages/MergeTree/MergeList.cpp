@@ -118,9 +118,6 @@ const MemoryTracker & MergeListElement::getMemoryTracker() const
     return thread_group->memory_tracker;
 }
 
-MergeListElement::~MergeListElement()
-{
-    background_memory_tracker.adjustOnBackgroundTaskEnd(&getMemoryTracker());
-}
+MergeListElement::~MergeListElement() = default;
 
 }
