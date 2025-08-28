@@ -190,7 +190,7 @@ llvm::Value * ColumnFixedString::compileComparator(llvm::IRBuilderBase & b, llvm
         module->getOrInsertFunction("memcmpSmallCharsAllowOverflow15", memcmp_func_type).getCallee()
     );
     auto * compare_result = b.CreateCall(memcmp_func, {lhs_current_ptr, n_value, rhs_current_ptr, n_value});
-    
+
     auto * lhs_greater_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 1);
     auto * lhs_less_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), -1);
     auto * lhs_equals_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 0);
