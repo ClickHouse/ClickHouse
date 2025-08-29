@@ -8,20 +8,14 @@
 namespace DB
 {
 
-struct MergeTreeIndexTextSparseIndex
+struct DictionaryBlock
 {
-    ColumnPtr terms;
-    PaddedPODArray<MarkInCompressedFile> marks_to_blocks;
+    DictionaryBlock(ColumnPtr tokens_, ColumnPtr marks_);
 
-    bool empty() const { return terms->empty(); }
-};
+    ColumnPtr tokens;
+    ColumnPtr marks;
 
-struct MergeTreeIndexTextDictionaryBlock
-{
-    ColumnPtr terms;
-    PaddedPODArray<MarkInCompressedFile> marks_to_posting_lists;
-
-    bool empty() const { return terms->empty(); }
+    bool empty() const;
 };
 
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
@@ -36,15 +30,15 @@ struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
     size_t memoryUsageBytes() const override { return 0; }
 
     BloomFilter bloom_filter;
-    MergeTreeIndexTextSparseIndex sparse_index;
-    std::vector<MergeTreeIndexTextDictionaryBlock> dictionary_blocks;
+    DictionaryBlock sparse_index;
+    std::vector<DictionaryBlock> dictionary_blocks;
 };
 
 struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleTextWritable(
         BloomFilter bloom_filter_,
-        std::vector<StringRef> terms_,
+        std::vector<StringRef> tokens_,
         std::vector<roaring::Roaring> posting_lists_,
         std::unique_ptr<Arena> arena_);
 
@@ -53,11 +47,11 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return terms.empty(); }
+    bool empty() const override { return tokens.empty(); }
     size_t memoryUsageBytes() const override { return 0; }
 
     BloomFilter bloom_filter;
-    std::vector<StringRef> terms;
+    std::vector<StringRef> tokens;
     std::vector<roaring::Roaring> posting_lists;
     std::unique_ptr<Arena> arena;
 };

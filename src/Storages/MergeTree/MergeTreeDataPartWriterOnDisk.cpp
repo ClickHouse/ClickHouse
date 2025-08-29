@@ -164,6 +164,15 @@ void MergeTreeDataPartWriterOnDisk::Stream<only_plain_file>::addToChecksums(Merg
     }
 }
 
+template<bool only_plain_file>
+MarkInCompressedFile MergeTreeDataPartWriterOnDisk::Stream<only_plain_file>::getCurrentMark() const
+{
+    return MarkInCompressedFile
+    {
+        .offset_in_compressed_file = plain_hashing.count(),
+        .offset_in_decompressed_block = compressed_hashing.offset()
+    };
+}
 
 MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const String & data_part_name_,

@@ -104,6 +104,7 @@ public:
         void sync() const;
 
         void addToChecksums(MergeTreeDataPartChecksums & checksums);
+        MarkInCompressedFile getCurrentMark() const;
     };
 
     using StreamPtr = std::unique_ptr<Stream<false>>;
