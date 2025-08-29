@@ -64,3 +64,34 @@ ADD NOT IDENTIFIED should result in syntax error
 SYNTAX_ERROR
 RESET AUTHENTICATION METHODS TO NEW cannot be used along with [ADD] IDENTIFIED clauses
 SYNTAX_ERROR
+=== Testing Config-Based Multiple Plaintext Passwords ===
+Testing first password:
+auth_success_1
+SUCCESS
+Testing second password:
+auth_success_2
+SUCCESS
+Testing wrong password:
+EXPECTED_FAILURE
+=== Testing Config-Based Multiple Double SHA1 Passwords ===
+Testing first double SHA1 password:
+double_sha1_success_1
+SUCCESS
+Testing second double SHA1 password:
+double_sha1_success_2
+SUCCESS
+Testing wrong double SHA1 password:
+EXPECTED_FAILURE
+=== Testing Config-Based Mixed Authentication Methods ===
+Testing mixed auth plaintext password 1:
+mixed_plain_success_1
+SUCCESS
+Testing mixed auth plaintext password 2:
+mixed_plain_success_2
+SUCCESS
+Testing mixed auth double SHA1 password 1:
+mixed_double_sha1_success_1
+SUCCESS
+Testing mixed auth double SHA1 password 2:
+mixed_double_sha1_success_2
+SUCCESS

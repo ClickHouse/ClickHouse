@@ -57,6 +57,9 @@ struct Settings;
 class AccessControl : public MultipleAccessStorage
 {
 public:
+    /// Default maximum number of authentication methods per user (0 = unlimited)
+    static constexpr size_t DEFAULT_MAX_AUTHENTICATION_METHODS_PER_USER = 100;
+
     AccessControl();
     ~AccessControl() override;
 
@@ -201,6 +204,9 @@ public:
     void setTableEnginesRequireGrant(bool enable) { table_engines_require_grant = enable; }
     bool doesTableEnginesRequireGrant() const { return table_engines_require_grant; }
 
+    void setMaxAuthenticationMethodsAllowed(size_t max_authentication_methods) { max_authentication_methods_per_user = max_authentication_methods; }
+    size_t getMaxAuthenticationMethodsAllowed() const { return max_authentication_methods_per_user; }
+
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
@@ -292,6 +298,7 @@ private:
     std::atomic_bool allow_beta_tier_settings = true;
     std::atomic_bool enable_user_name_access_type = true;
     std::atomic_bool enable_read_write_grants = false;
+    std::atomic_size_t max_authentication_methods_per_user = DEFAULT_MAX_AUTHENTICATION_METHODS_PER_USER;
 };
 
 }

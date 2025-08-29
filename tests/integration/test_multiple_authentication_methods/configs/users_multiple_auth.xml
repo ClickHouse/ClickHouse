@@ -1,0 +1,96 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <tcp_port>9000</tcp_port>
+    <mysql_port>9004</mysql_port>   
+    <profiles>
+        <default/>
+    </profiles>
+
+    <quotas>
+        <default/>
+    </quotas>
+    <users>
+        <default>
+            <password/>
+
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+
+            <profile>default</profile>
+            <quota>default</quota>
+
+            <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
+        </default>
+        
+        <!-- User with multiple plaintext passwords -->
+        <multi_plaintext>
+            <password>
+                <pass1>pass1</pass1>
+                <pass2>pass2</pass2>
+                <pass3>pass3</pass3>
+            </password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </multi_plaintext>
+
+        <!-- User with multiple SHA256 passwords -->
+        <multi_sha256>
+            <password_sha256_hex>
+                <!-- Hash of "sha256_pass_1" -->
+                <hash1>9dfac01df9d7d3cc3d6843deb5d9adbf4c8d58f717e804779f4765d96b6213ac</hash1>
+                <!-- Hash of "sha256_pass_2" -->
+                <hash2>fc8155c356bc956050cacb75e7c40b1cf93aa896305f687f421eaf65c839fa2d</hash2>
+            </password_sha256_hex>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </multi_sha256>
+
+        <!-- User with mixed authentication methods (plaintext + SHA256) -->
+        <mixed_auth>
+            <password>plain_pass</password>
+            <password_double_sha1_hex>
+                <!-- Hash of "double_sha1_pass_1" -->
+                <hash1>eafbd9c4b3c8b40d509308e767b41671ee5bac68</hash1>
+                <!-- Hash of "double_sha1_pass_2" -->
+                <hash2>7e4ca4bb0df85c1106f39516a0753013b79b32ff</hash2>
+            </password_double_sha1_hex>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </mixed_auth>
+
+        <!-- User with single password for backward compatibility testing -->
+        <single_password>
+            <password>single_pass</password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </single_password>
+
+        <multi_double_sha1>
+            <password_double_sha1_hex>
+                <!-- Hash of "double_sha1_pass_1" -->
+                <hash1>eafbd9c4b3c8b40d509308e767b41671ee5bac68</hash1>
+                <!-- Hash of "double_sha1_pass_2" -->
+                <hash2>7e4ca4bb0df85c1106f39516a0753013b79b32ff</hash2>
+            </password_double_sha1_hex>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </multi_double_sha1>
+    </users>
+</clickhouse>

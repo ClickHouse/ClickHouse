@@ -294,6 +294,7 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
     setDefaultPasswordTypeFromConfig(config_.getString("default_password_type", "sha256_password"));
     setPasswordComplexityRulesFromConfig(config_);
+    setMaxAuthenticationMethodsAllowed(config_.getUInt("max_authentication_methods_per_user", DEFAULT_MAX_AUTHENTICATION_METHODS_PER_USER));
 
     setBcryptWorkfactor(config_.getInt("bcrypt_workfactor", 12));
 
