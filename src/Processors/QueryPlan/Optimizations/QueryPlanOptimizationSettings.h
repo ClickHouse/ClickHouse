@@ -125,8 +125,8 @@ struct QueryPlanOptimizationSettings
 
     /// JOIN runtime filter settings
     bool enable_join_runtime_filters = false; /// Filter left side by set of JOIN keys collected from the right side at runtime
-    UInt64 join_runtime_bloom_filter_bytes = 512 * 1024;
-    UInt64 join_runtime_bloom_filter_hash_functions = 3;
+    UInt64 join_runtime_bloom_filter_bytes = 0;
+    UInt64 join_runtime_bloom_filter_hash_functions = 0;
 
     /// Please, avoid using this
     ///
