@@ -146,6 +146,7 @@ public:
     String shard;
     String replica_zk_path;
     bool is_drop_whole_replica{};
+    bool restore_and_drop_database{false};
     String storage_policy;
     String volume;
     String disk;
