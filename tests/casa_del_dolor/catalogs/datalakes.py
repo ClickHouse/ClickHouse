@@ -154,29 +154,23 @@ def get_spark(
     # ============================================================
     catalog_extension = ""
     catalog_format = ""
-    all_jars = ["org.apache.spark:spark-hadoop-cloud_2.12:3.5.6"]
-    if storage == TableStorage.S3:
-        all_jars.extend(["org.apache.iceberg:iceberg-aws-bundle:1.9.2"])
-    elif storage == TableStorage.Azure:
-        all_jars.extend(
-            [
-                "org.apache.iceberg:iceberg-azure-bundle:1.9.2",
-                "com.microsoft.azure:azure-storage:8.6.6",
-                "org.apache.hadoop:hadoop-azure:3.3.6",
-            ]
-        )
+    all_jars = [
+        "com.microsoft.azure:azure-storage:8.6.6",
+        "io.delta:delta-spark_2.12:3.3.2",
+        "io.unitycatalog:unitycatalog-spark_2.12:0.2.0",
+        "org.apache.hadoop:hadoop-azure:3.3.6",
+        "org.apache.iceberg:iceberg-aws-bundle:1.9.2",
+        "org.apache.iceberg:iceberg-azure-bundle:1.9.2",
+        "org.apache.iceberg:iceberg-spark-extensions-3.5_2.12:1.9.2",
+        "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2",
+        "org.apache.spark:spark-hadoop-cloud_2.12:3.5.6",
+    ]
 
     if lake == LakeFormat.Iceberg:
         catalog_extension = (
             "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
         )
         catalog_format = "org.apache.iceberg.spark.SparkCatalog"
-        all_jars.extend(
-            [
-                "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2",
-                "org.apache.iceberg:iceberg-spark-extensions-3.5_2.12:1.9.2",
-            ]
-        )
     elif lake == LakeFormat.DeltaLake:
         catalog_extension = "io.delta.sql.DeltaSparkSessionExtension"
         catalog_format = (
@@ -184,13 +178,8 @@ def get_spark(
             if catalog == LakeCatalogs.Unity
             else "org.apache.spark.sql.delta.catalog.DeltaCatalog"
         )
-        all_jars.extend(["io.delta:delta-spark_2.12:3.3.2"])
     else:
         raise Exception("Unknown lake format")
-    if catalog == LakeCatalogs.Unity:
-        all_jars.extend(["io.unitycatalog:unitycatalog-spark_2.12:0.2.0"])
-    elif catalog == LakeCatalogs.Glue:
-        all_jars.extend(["com.amazonaws:aws-glue-datacatalog-spark-client_2.12:4.0.0"])
 
     os.environ["PYSPARK_SUBMIT_ARGS"] = f"--packages {",".join(all_jars)} pyspark-shell"
 
@@ -235,16 +224,23 @@ def get_spark(
                 f"spark.sql.catalog.{catalog_name}.io-impl",
                 "org.apache.iceberg.aws.s3.S3FileIO",
             )
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.s3.access-key-id", minio_access_key
+            )
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.s3.secret-access-key",
+                minio_secret_key,
+            )
+            builder.config(f"spark.sql.catalog.{catalog_name}.s3.region", "us-east-1")
 
             builder.config(
                 "spark.sql.warehouse.dir",
-                f"s3a://{cluster.minio_bucket}/{catalog_name}",
+                "s3://warehouse-glue/data",
             )
-            if lake == LakeFormat.Iceberg:
-                builder.config(
-                    f"spark.sql.catalog.{catalog_name}.warehouse",
-                    f"s3://iceberg_data/{catalog_name}",
-                )
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.warehouse",
+                "s3://warehouse-glue/data",
+            )
     elif catalog == LakeCatalogs.Hive:
         builder.config(
             "spark.sql.catalog.hive.catalog-impl", "org.apache.iceberg.hive.HiveCatalog"
@@ -254,11 +250,11 @@ def get_spark(
         if storage == TableStorage.S3:
             builder.config(
                 "spark.sql.warehouse.dir",
-                "s3a://warehouse-hms/data/",
+                "s3a://warehouse-hms/data",
             )
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.warehouse",
-                "s3a://warehouse-hms/data/",
+                "s3a://warehouse-hms/data",
             )
     elif catalog == LakeCatalogs.REST or (
         catalog == LakeCatalogs.Unity and lake == LakeFormat.Iceberg
@@ -276,15 +272,20 @@ def get_spark(
                 f"spark.sql.catalog.{catalog_name}.io-impl",
                 "org.apache.iceberg.aws.s3.S3FileIO",
             )
-            if catalog == LakeCatalogs.REST:
-                builder.config(
-                    "spark.sql.warehouse.dir",
-                    f"s3a://{cluster.minio_bucket}/{catalog_name}",
-                )
-                builder.config(
-                    f"spark.sql.catalog.{catalog_name}.warehouse",
-                    f"s3://iceberg_data/{catalog_name}",
-                )
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.s3.access-key-id", minio_access_key
+            )
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.s3.secret-access-key",
+                minio_secret_key,
+            )
+            builder.config(f"spark.sql.catalog.{catalog_name}.s3.region", "us-east-1")
+
+            builder.config("spark.sql.warehouse.dir", "s3://warehouse-rest/data")
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.warehouse",
+                "s3://warehouse-rest/data",
+            )
     elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
         builder.config(f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8081")
         builder.config(f"spark.sql.catalog.{catalog_name}.token", "")
@@ -297,29 +298,28 @@ def get_spark(
     # STORAGE CONFIGURATIONS
     # ============================================================
     if storage == TableStorage.S3:
-        # S3A filesystem implementation
-        builder.config(
-            "spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem"
-        )
-        # MinIO endpoint and credentials
-        builder.config(
-            "spark.hadoop.fs.s3a.endpoint",
-            f"http://{cluster.minio_ip}:{cluster.minio_port}",
-        )
-        builder.config("spark.hadoop.fs.s3a.path.style.access", "true")
-        builder.config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
-        builder.config("spark.hadoop.fs.s3a.access.key", minio_access_key)
-        builder.config("spark.hadoop.fs.s3a.secret.key", minio_secret_key)
-        builder.config(
-            "spark.hadoop.fs.s3a.aws.credentials.provider",
-            (
-                "com.amazonaws.auth.DefaultAWSCredentialsProviderChain"
-                if catalog == LakeCatalogs.Glue
-                else "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider"
-            ),
-        )
-        builder.config("spark.hadoop.fs.s3a.endpoint.region", "us-east-1")
-        builder.config(f"spark.sql.catalog.{catalog_name}.client.region", "us-east-1")
+        if catalog not in (LakeCatalogs.Glue, LakeCatalogs.REST):
+            # S3A filesystem implementation
+            builder.config(
+                "spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem"
+            )
+            # MinIO endpoint and credentials
+            builder.config(
+                "spark.hadoop.fs.s3a.endpoint",
+                f"http://{cluster.minio_ip}:{cluster.minio_port}",
+            )
+            builder.config("spark.hadoop.fs.s3a.path.style.access", "true")
+            builder.config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
+            builder.config("spark.hadoop.fs.s3a.access.key", minio_access_key)
+            builder.config("spark.hadoop.fs.s3a.secret.key", minio_secret_key)
+            builder.config(
+                "spark.hadoop.fs.s3a.aws.credentials.provider",
+                "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
+            )
+            builder.config("spark.hadoop.fs.s3a.endpoint.region", "us-east-1")
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.client.region", "us-east-1"
+            )
         # For Glue
         builder.config("spark.executorEnv.AWS_REGION", "us-east-1")
         builder.config("spark.executorEnv.AWS_ACCESS_KEY_ID", minio_access_key)
@@ -400,6 +400,7 @@ def get_spark(
 
 
 class DolorCatalog:
+
     def __init__(
         self,
         cluster,
