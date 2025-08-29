@@ -3481,7 +3481,7 @@ def test_write_column_order(started_cluster):
     bucket = started_cluster.minio_bucket
     table_name = randomize_table_name("test_write_issue_1")
     result_file = f"{table_name}_data"
-    schema = pa.schema([("c0", pa.int32()), ("c1", pa.string())])
+    schema = pa.schema([("c0", pa.string()), ("c1", pa.string())])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
     write_deltalake(
         f"file:///{result_file}",
