@@ -43,7 +43,6 @@ namespace Setting
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsUInt64 query_plan_optimize_join_order_limit;
     extern const SettingsBoolAuto query_plan_join_swap_table;
-    extern const SettingsBool query_plan_optimize_join_order;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsSeconds lock_acquire_timeout;

@@ -736,7 +736,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             auto [node, level] = stack.back();
             stack.pop_back();
 
-            /// Stack is sorted accroding to level
+            /// Stack is sorted with respect to level
             /// If we processed node it means that it and its children used by higher level
             auto [_, inserted] = usage_level_map.try_emplace(node, level);
             if (!inserted)
