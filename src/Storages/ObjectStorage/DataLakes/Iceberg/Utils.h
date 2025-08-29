@@ -73,12 +73,8 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ContextPtr & local_context,
     Poco::Logger * log);
 
-template<typename T>
-concept NothrowMovable = std::is_nothrow_move_constructible_v<T> && 
-                          std::is_nothrow_move_assignable_v<T>;
 
-
-template <NothrowMovable T>
+template <typename T>
 class OneThreadProtecting : public boost::noncopyable
 {
 

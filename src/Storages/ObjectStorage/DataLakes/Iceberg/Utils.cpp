@@ -781,10 +781,10 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
 }
 
 
-template <NothrowMovable T>
+template <typename T>
 OneThreadProtecting<T>::OneThreadProtecting() = default;
 
-template <NothrowMovable T>
+template <typename T>
 void OneThreadProtecting<T>::set(T value_)
 {
     std::lock_guard lock(mutex);
@@ -792,7 +792,7 @@ void OneThreadProtecting<T>::set(T value_)
     current_thread_id = getThreadId();
 }
 
-template <NothrowMovable T>
+template <typename T>
 T & OneThreadProtecting<T>::get()
 {
     std::lock_guard lock(mutex);
@@ -801,7 +801,7 @@ T & OneThreadProtecting<T>::get()
     return value.value();
 }
 
-template <NothrowMovable T>
+template <typename T>
 const T & OneThreadProtecting<T>::get() const
 {
     std::lock_guard lock(mutex);
