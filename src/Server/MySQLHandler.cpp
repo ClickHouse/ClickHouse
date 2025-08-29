@@ -659,12 +659,14 @@ void MySQLHandler::erasePreparedStatement(UInt32 statement_id)
     prepared_statements.erase(statement_id);
 }
 
-[[noreturn]] static void throwSSLAuthNotSupported() {
+[[noreturn]] static void throwSSLAuthNotSupported()
+{
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ClickHouse was built without SSL support. Try specifying password using double SHA1 in users.xml.");
 }
 
-[[noreturn]] static void throwSSLHandshakeNotSupported() {
+[[noreturn]] static void throwSSLHandshakeNotSupported()
+{
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Client requested SSL, while it is disabled.");
 }
 

@@ -77,7 +77,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
-
+    extern const int NOT_IMPLEMENTED;
 }
 
 #if defined(OS_LINUX)

@@ -59,77 +59,94 @@ IDatabase::~IDatabase()
     CurrentMetrics::sub(CurrentMetrics::AttachedDatabase, 1);
 }
 
-[[noreturn]] static void throwAlterDatabaseCommentNotSupported(const std::string & engine) {
+[[noreturn]] static void throwAlterDatabaseCommentNotSupported(const std::string & engine)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: ALTER DATABASE COMMENT is not supported", engine);
 }
 
-[[noreturn]] static void throwBackupTablesNotSupported(const std::string & engine, const std::string & db) {
+[[noreturn]] static void throwBackupTablesNotSupported(const std::string & engine, const std::string & db)
+{
     throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE,
                     "Database engine {} does not support backups, cannot backup tables in database {}",
                     engine, db);
 }
 
-[[noreturn]] static void throwRestoreTablesNotSupported(const std::string & engine, const std::string & db, const std::string & table) {
+[[noreturn]] static void throwRestoreTablesNotSupported(const std::string & engine, const std::string & db, const std::string & table)
+{
     throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
                     "Database engine {} does not support restoring tables, cannot restore table {}.{}",
                     engine, db, table);
 }
 
-[[noreturn]] static void throwNotImplemented() {
+[[noreturn]] static void throwNotImplemented()
+{
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
 }
 
-[[noreturn]] static void throwGetDetachedTablesNotSupported(const std::string & engine) {
+[[noreturn]] static void throwGetDetachedTablesNotSupported(const std::string & engine)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get detached tables for Database{}", engine);
 }
 
-[[noreturn]] static void throwCreateTableNotSupported(const std::string & engine) {
+[[noreturn]] static void throwCreateTableNotSupported(const std::string & engine)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no CREATE TABLE query for Database{}", engine);
 }
 
-[[noreturn]] static void throwDropTableNotSupported(const std::string & engine) {
+[[noreturn]] static void throwDropTableNotSupported(const std::string & engine)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP TABLE query for Database{}", engine);
 }
 
-[[noreturn]] static void throwAttachTableNotSupported(const std::string & engine) {
+[[noreturn]] static void throwAttachTableNotSupported(const std::string & engine)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", engine);
 }
 
-[[noreturn]] static void throwDetachTableNotSupported(const std::string & engine) {
+[[noreturn]] static void throwDetachTableNotSupported(const std::string & engine)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DETACH TABLE query for Database{}", engine);
 }
 
-[[noreturn]] static void throwDetachTablePermanentlyNotSupported(const std::string & engine) {
+[[noreturn]] static void throwDetachTablePermanentlyNotSupported(const std::string & engine)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DETACH TABLE PERMANENTLY query for Database{}", engine);
 }
 
-[[noreturn]] static void throwGetNamesOfPermanentlyDetachedTablesNotSupported(const std::string & engine) {
+[[noreturn]] static void throwGetNamesOfPermanentlyDetachedTablesNotSupported(const std::string & engine)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get names of permanently detached tables for Database{}", engine);
 }
 
-[[noreturn]] static void throwRenameTableNotSupported(const std::string & engine) {
+[[noreturn]] static void throwRenameTableNotSupported(const std::string & engine)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: renameTable() is not supported", engine);
 }
 
-[[noreturn]] static void throwAlterTableNotSupported(const std::string & engine) {
+[[noreturn]] static void throwAlterTableNotSupported(const std::string & engine)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTable() is not supported", engine);
 }
 
-[[noreturn]] static void throwRenameDatabaseNotSupported(const std::string & engine) {
+[[noreturn]] static void throwRenameDatabaseNotSupported(const std::string & engine)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: RENAME DATABASE is not supported", engine);
 }
 
-[[noreturn]] static void throwApplySettingsChangesNotSupported(const std::string & engine) {
+[[noreturn]] static void throwApplySettingsChangesNotSupported(const std::string & engine)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Database engine {} either does not support settings, or does not support altering settings",
                     engine);
 }
 
-[[noreturn]] static void throwStopReplicationNotSupported(const std::string & engine) {
+[[noreturn]] static void throwStopReplicationNotSupported(const std::string & engine)
+{
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread", engine);
 }
 
-[[noreturn]] static void throwReplicatedDDLNotSupported(const std::string & engine) {
+[[noreturn]] static void throwReplicatedDDLNotSupported(const std::string & engine)
+{
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not have replicated DDL queue", engine);
 }
 

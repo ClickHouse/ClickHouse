@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class FormatWithNamesAndTypesReader;
 
 /// Base class for input formats with -WithNames and -WithNamesAndTypes suffixes.

@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 ColumnFunction::ColumnFunction(
@@ -398,102 +399,122 @@ const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column)
     return nullptr;
 }
 
-[[noreturn]] static void throwCompareColumnNotImplemented(const std::string & name) {
+[[noreturn]] static void throwCompareColumnNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "compareColumn is not implemented for {}", name);
 }
 
-[[noreturn]] static void throwHasEqualValuesNotImplemented(const std::string & name) {
+[[noreturn]] static void throwHasEqualValuesNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "hasEqualValues is not implemented for {}", name);
 }
 
-[[noreturn]] static void throwGetPermutationNotImplemented(const std::string & name) {
+[[noreturn]] static void throwGetPermutationNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "getPermutation is not implemented for {}", name);
 }
 
-[[noreturn]] static void throwUpdatePermutationNotImplemented(const std::string & name) {
+[[noreturn]] static void throwUpdatePermutationNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "updatePermutation is not implemented for {}", name);
 }
 
-[[noreturn]] static void throwGatherNotSupported(const std::string & name) {
+[[noreturn]] static void throwGatherNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method gather is not supported for {}", name);
 }
 
-[[noreturn]] static void throwGetRatioOfDefaultRowsNotSupported(const std::string & name) {
+[[noreturn]] static void throwGetRatioOfDefaultRowsNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method getRatioOfDefaultRows is not supported for {}", name);
 }
 
-[[noreturn]] static void throwGetNumberOfDefaultRowsNotSupported(const std::string & name) {
+[[noreturn]] static void throwGetNumberOfDefaultRowsNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method getNumberOfDefaultRows is not supported for {}", name);
 }
 
-[[noreturn]] static void throwGetIndicesOfNonDefaultRowsNotSupported(const std::string & name) {
+[[noreturn]] static void throwGetIndicesOfNonDefaultRowsNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method getIndicesOfNonDefaultRows is not supported for {}", name);
 }
 
-[[noreturn]] static void throwInsertDataNotImplemented(const std::string & name) {
+[[noreturn]] static void throwInsertDataNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot insert into {}", name);
 }
 
-[[noreturn]] static void throwSerializeValueIntoArenaNotImplemented(const std::string & name) {
+[[noreturn]] static void throwSerializeValueIntoArenaNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot serialize from {}", name);
 }
 
-[[noreturn]] static void throwDeserializeAndInsertFromArenaNotImplemented(const std::string & name) {
+[[noreturn]] static void throwDeserializeAndInsertFromArenaNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot deserialize to {}", name);
 }
 
-[[noreturn]] static void throwSkipSerializedInArenaNotImplemented(const std::string & name) {
+[[noreturn]] static void throwSkipSerializedInArenaNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot skip serialized {}", name);
 }
 
-[[noreturn]] static void throwUpdateHashWithValueNotImplemented(const std::string & name) {
+[[noreturn]] static void throwUpdateHashWithValueNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "updateHashWithValue is not implemented for {}", name);
 }
 
-[[noreturn]] static void throwGetWeakHash32NotImplemented(const std::string & name) {
+[[noreturn]] static void throwGetWeakHash32NotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "getWeakHash32 is not implemented for {}", name);
 }
 
-[[noreturn]] static void throwUpdateHashFastNotImplemented(const std::string & name) {
+[[noreturn]] static void throwUpdateHashFastNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "updateHashFast is not implemented for {}", name);
 }
 
-[[noreturn]] static void throwPopBackNotImplemented(const std::string & name) {
+[[noreturn]] static void throwPopBackNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "popBack is not implemented for {}", name);
 }
 
-[[noreturn]] static void throwGetDataAtNotImplemented(const std::string & name) {
+[[noreturn]] static void throwGetDataAtNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot get value from {}", name);
 }
 
-[[noreturn]] static void throwIsDefaultAtNotImplemented(const std::string & name) {
+[[noreturn]] static void throwIsDefaultAtNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "isDefaultAt is not implemented for {}", name);
 }
 
-[[noreturn]] static void throwInsertNotImplemented(const std::string & name) {
+[[noreturn]] static void throwInsertNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot insert into {}", name);
 }
 
-[[noreturn]] static void throwInsertDefaultNotImplemented(const std::string & name) {
+[[noreturn]] static void throwInsertDefaultNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot insert into {}", name);
 }
@@ -600,7 +621,8 @@ void ColumnFunction::getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const
     throwGetIndicesOfNonDefaultRowsNotSupported(getName());
 }
 
-[[noreturn]] inline void throwCompareAtNotImplemented(const std::string & name)
+[[noreturn]] inline void throwCompareAtNotImplemented(const std::string & name
+                                                      )
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "compareAt is not implemented for {}", name);
 }

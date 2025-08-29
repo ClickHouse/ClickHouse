@@ -264,11 +264,13 @@ Chunk IRowInputFormat::read()
     return chunk;
 }
 
-[[noreturn]] static void throwSyncAfterErrorNotImplemented(const std::string & name) {
+[[noreturn]] static void throwSyncAfterErrorNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method syncAfterError is not implemented for input format {}", name);
 }
 
-[[noreturn]] static void throwCountRowsNotImplementedForInputFormat(const std::string & name) {
+[[noreturn]] static void throwCountRowsNotImplementedForInputFormat(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method countRows is not implemented for input format {}", name);
 }
 

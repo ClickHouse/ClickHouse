@@ -783,7 +783,8 @@ private:
         return res;
     }
 
-    [[noreturn]] static void throwBinaryOperatorNotImplemented(const std::string & op_name) {
+    [[noreturn]] static void throwBinaryOperatorNotImplemented(const std::string & op_name)
+    {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary operator {} is not implemented", op_name);
     }
 

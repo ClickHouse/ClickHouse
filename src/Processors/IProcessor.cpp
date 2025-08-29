@@ -43,19 +43,23 @@ void IProcessor::setQueryPlanStep(IQueryPlanStep * step, size_t group)
     }
 }
 
-[[noreturn]] static void throwPrepareNotImplemented(const std::string & name) {
+[[noreturn]] static void throwPrepareNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'prepare' is not implemented for {} processor", name);
 }
 
-[[noreturn]] static void throwWorkNotImplemented(const std::string & name) {
+[[noreturn]] static void throwWorkNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'work' is not implemented for {} processor", name);
 }
 
-[[noreturn]] static void throwScheduleNotImplemented(const std::string & name) {
+[[noreturn]] static void throwScheduleNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", name);
 }
 
-[[noreturn]] static void throwExpandPipelineNotImplemented(const std::string & name) {
+[[noreturn]] static void throwExpandPipelineNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", name);
 }
 

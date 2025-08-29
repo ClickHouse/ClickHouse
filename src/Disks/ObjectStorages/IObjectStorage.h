@@ -90,7 +90,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -109,7 +108,8 @@ struct ObjectMetadata
 
 struct DataLakeObjectMetadata;
 
-[[noreturn]] inline void throwNotArchive() {
+[[noreturn]] inline void throwNotArchive()
+{
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive");
 }
 

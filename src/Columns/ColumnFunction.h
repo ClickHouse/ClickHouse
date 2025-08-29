@@ -8,10 +8,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;

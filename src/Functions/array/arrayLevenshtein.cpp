@@ -104,7 +104,8 @@ public:
         return execute(columns);
     }
 private:
-    [[noreturn]] static void throwUnknownArrayFunction(const std::string & function_name) {
+    [[noreturn]] static void throwUnknownArrayFunction(const std::string & function_name)
+    {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Unknown function {}. "

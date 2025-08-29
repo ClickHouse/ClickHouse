@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -547,11 +548,13 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     }
 }
 
-[[noreturn]] static void throwBucketsNotSupported() {
+[[noreturn]] static void throwBucketsNotSupported()
+{
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets are not supported");
 }
 
-[[noreturn]] static void throwPrepareProcessingRequestsImplNotImplemented() {
+[[noreturn]] static void throwPrepareProcessingRequestsImplNotImplemented()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method prepareProcesingRequestsImpl is not implemented");
 }
 

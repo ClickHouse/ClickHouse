@@ -6145,15 +6145,18 @@ void MergeTreeData::movePartitionToTable(const PartitionCommand & command, Conte
     movePartitionToTable(dest_storage, command.partition, query_context);
 }
 
-[[noreturn]] static void throwMovePartitionToShardNotSupported(const std::string & name) {
+[[noreturn]] static void throwMovePartitionToShardNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MOVE PARTITION TO SHARD is not supported by storage {}", name);
 }
 
-[[noreturn]] static void throwFetchPartitionNotSupported(const std::string & name) {
+[[noreturn]] static void throwFetchPartitionNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FETCH PARTITION is not supported by storage {}", name);
 }
 
-[[noreturn]] static void throwForgetPartitionNotSupported(const std::string & name) {
+[[noreturn]] static void throwForgetPartitionNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FORGET PARTITION is not supported by storage {}", name);
 }
 

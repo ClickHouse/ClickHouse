@@ -18,12 +18,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-[[noreturn]] static void throwGetMetadataStorageMetricsNotImplemented() {
+[[noreturn]] static void throwGetMetadataStorageMetricsNotImplemented()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method 'getMetadataStorageMetrics' is not implemented");
 }
 
-[[noreturn]] static void throwListObjectsNotSupported() {
+[[noreturn]] static void throwListObjectsNotSupported()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "listObjects() is not supported");
 }

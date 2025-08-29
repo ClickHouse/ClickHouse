@@ -53,7 +53,8 @@ ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
     return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements, hive_parameters);
 }
 
-[[noreturn]] static void throwTryGetTableStructureFromMetadataNotImplemented() {
+[[noreturn]] static void throwTryGetTableStructureFromMetadataNotImplemented()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
 }
@@ -196,7 +197,8 @@ bool StorageObjectStorageConfiguration::isPathInArchiveWithGlobs() const
     return getPathInArchive().find_first_of("*?{") != std::string::npos;
 }
 
-[[noreturn]] static void throwGetPathInArchiveLogicalError(const std::string & path) {
+[[noreturn]] static void throwGetPathInArchiveLogicalError(const std::string & path)
+{
     throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Path {} is not archive", path);
 }
@@ -222,15 +224,18 @@ void StorageObjectStorageConfiguration::addDeleteTransformers(
 {
 }
 
-[[noreturn]] static void throwIterateNotImplemented(const std::string & type_name) {
+[[noreturn]] static void throwIterateNotImplemented(const std::string & type_name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", type_name);
 }
 
-[[noreturn]] static void throwWriteNotImplemented(const std::string & type_name) {
+[[noreturn]] static void throwWriteNotImplemented(const std::string & type_name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write() is not implemented for configuration type {}", type_name);
 }
 
-[[noreturn]] static void throwGetDataLakeSettingsNotImplemented(const std::string & type_name) {
+[[noreturn]] static void throwGetDataLakeSettingsNotImplemented(const std::string & type_name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", type_name);
 }
 

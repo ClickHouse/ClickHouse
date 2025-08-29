@@ -776,22 +776,26 @@ MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
     return cloned_col;
 }
 
-[[noreturn]] static void throwIsDefaultAtNotSupportedColumnAggregateFunction() {
+[[noreturn]] static void throwIsDefaultAtNotSupportedColumnAggregateFunction()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method isDefaultAt is not supported for ColumnAggregateFunction");
 }
 
-[[noreturn]] static void throwCompareColumnNotSupportedColumnAggregateFunction() {
+[[noreturn]] static void throwCompareColumnNotSupportedColumnAggregateFunction()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method compareColumn is not supported for ColumnAggregateFunction");
 }
 
-[[noreturn]] static void throwHasEqualValuesNotSupportedColumnAggregateFunction() {
+[[noreturn]] static void throwHasEqualValuesNotSupportedColumnAggregateFunction()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method hasEqualValues is not supported for ColumnAggregateFunction");
 }
 
-[[noreturn]] static void throwGetIndicesOfNonDefaultRowsNotSupportedColumnAggregateFunction() {
+[[noreturn]] static void throwGetIndicesOfNonDefaultRowsNotSupportedColumnAggregateFunction()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method getIndicesOfNonDefaultRows is not supported for ColumnAggregateFunction");
 }

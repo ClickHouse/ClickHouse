@@ -169,12 +169,14 @@ protected:
     std::mutex mutex;
 
 private:
-    [[noreturn]] static void throwLoadFileMinMaxIndexImplNotSupported(const std::string & format) {
+    [[noreturn]] static void throwLoadFileMinMaxIndexImplNotSupported(const std::string & format)
+    {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Method loadFileMinMaxIndexImpl is not supported by hive file:{}", format);
     }
 
-    [[noreturn]] static void throwLoadSplitMinMaxIndexesImplNotSupported(const std::string & format) {
+    [[noreturn]] static void throwLoadSplitMinMaxIndexesImplNotSupported(const std::string & format)
+    {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Method loadSplitMinMaxIndexesImpl is not supported by hive file:{}", format);
     }

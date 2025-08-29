@@ -4,11 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /// Step which has single input and single output data stream.
 /// It doesn't mean that pipeline has single port before or after such step.
 class ITransformingStep : public IQueryPlanStep

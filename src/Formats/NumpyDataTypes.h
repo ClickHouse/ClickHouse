@@ -57,15 +57,18 @@ protected:
     Endianness endianness;
 
 private:
-    [[noreturn]] static void throwGetSizeNotImplemented() {
+    [[noreturn]] static void throwGetSizeNotImplemented()
+    {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function getSize is not implemented");
     }
 
-    [[noreturn]] static void throwSetSizeNotImplemented() {
+    [[noreturn]] static void throwSetSizeNotImplemented()
+    {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function setSize is not implemented");
     }
 
-    [[noreturn]] static void throwStrNotImplemented() {
+    [[noreturn]] static void throwStrNotImplemented()
+    {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function str is not implemented");
     }
 };

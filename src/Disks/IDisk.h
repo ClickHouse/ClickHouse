@@ -45,11 +45,6 @@ class Client;
 }
 #endif
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 using DisksMap = std::map<String, DiskPtr>;

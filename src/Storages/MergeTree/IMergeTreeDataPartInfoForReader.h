@@ -109,11 +109,13 @@ public:
     }
 
 private:
-    [[noreturn]] static void throwSetReadHintsNotImplemented() {
+    [[noreturn]] static void throwSetReadHintsNotImplemented()
+    {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setReadHints not implemented for this reader");
     }
 
-    [[noreturn]] static void throwGetReadHintsNotImplemented() {
+    [[noreturn]] static void throwGetReadHintsNotImplemented()
+    {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReadHints not implemented for this reader");
     }
 };

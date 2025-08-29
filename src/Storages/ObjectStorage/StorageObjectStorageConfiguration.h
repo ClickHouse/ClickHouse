@@ -21,11 +21,6 @@ class NamedCollection;
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 
 struct StorageObjectStorageQuerySettings
 {

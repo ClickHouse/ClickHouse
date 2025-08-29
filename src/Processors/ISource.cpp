@@ -134,7 +134,8 @@ void ISource::work()
     }
 }
 
-[[noreturn]] static void throwGenerateNotImplemented(const std::string & name) {
+[[noreturn]] static void throwGenerateNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "generate is not implemented for {}", name);
 }
 

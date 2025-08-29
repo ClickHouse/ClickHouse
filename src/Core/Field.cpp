@@ -31,19 +31,23 @@ extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-[[noreturn]] static void throwOperatorLessNotImplemented() {
+[[noreturn]] static void throwOperatorLessNotImplemented()
+{
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator < is not implemented for AggregateFunctionStateData.");
 }
 
-[[noreturn]] static void throwOperatorLessEqualNotImplemented() {
+[[noreturn]] static void throwOperatorLessEqualNotImplemented()
+{
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator <= is not implemented for AggregateFunctionStateData.");
 }
 
-[[noreturn]] static void throwOperatorGreaterNotImplemented() {
+[[noreturn]] static void throwOperatorGreaterNotImplemented()
+{
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator > is not implemented for AggregateFunctionStateData.");
 }
 
-[[noreturn]] static void throwOperatorGreaterEqualNotImplemented() {
+[[noreturn]] static void throwOperatorGreaterEqualNotImplemented()
+{
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator >= is not implemented for AggregateFunctionStateData.");
 }
 

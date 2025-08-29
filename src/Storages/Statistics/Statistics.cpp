@@ -91,19 +91,23 @@ void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
     }
 }
 
-[[noreturn]] static void throwCardinalityEstimationNotImplemented() {
+[[noreturn]] static void throwCardinalityEstimationNotImplemented()
+{
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cardinality estimation is not implemented for this type of statistics");
 }
 
-[[noreturn]] static void throwEqualityEstimationNotImplemented() {
+[[noreturn]] static void throwEqualityEstimationNotImplemented()
+{
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Equality estimation is not implemented for this type of statistics");
 }
 
-[[noreturn]] static void throwLessThanEstimationNotImplemented() {
+[[noreturn]] static void throwLessThanEstimationNotImplemented()
+{
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Less-than estimation is not implemented for this type of statistics");
 }
 
-[[noreturn]] static void throwRangeEstimationNotImplemented() {
+[[noreturn]] static void throwRangeEstimationNotImplemented()
+{
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Range estimation is not implemented for this type of statistics");
 }
 

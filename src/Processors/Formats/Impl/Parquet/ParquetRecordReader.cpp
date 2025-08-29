@@ -121,7 +121,8 @@ private:
     [[noreturn]] static void throwParquetUnsupported(const std::string & logical,
                                                      const parquet::Type::type & physical,
                                                      const std::string & field,
-                                                     const std::string & msg) {
+                                                     const std::string & msg)
+    {
         throw Exception(
             ErrorCodes::PARQUET_EXCEPTION,
             "Unsupported logical type: {} and physical type: {} for field `{}`{}",

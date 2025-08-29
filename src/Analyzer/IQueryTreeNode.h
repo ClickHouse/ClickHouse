@@ -301,11 +301,13 @@ private:
     String original_alias;
     ASTPtr original_ast;
 
-    [[noreturn]] static void throwGetResultTypeNotSupported(const std::string & node_type) {
+    [[noreturn]] static void throwGetResultTypeNotSupported(const std::string & node_type)
+    {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query tree node", node_type);
     }
 
-    [[noreturn]] static void throwConvertToNullableNotSupported(const std::string & node_type) {
+    [[noreturn]] static void throwConvertToNullableNotSupported(const std::string & node_type)
+    {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query tree node", node_type);
     }
 };

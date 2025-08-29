@@ -136,35 +136,43 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
     return result;
 }
 
-[[noreturn]] static void throwWatchNotSupported(const std::string & name) {
+[[noreturn]] static void throwWatchNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method watch is not supported by storage {}", name);
 }
 
-[[noreturn]] static void throwReadNotSupported(const std::string & name) {
+[[noreturn]] static void throwReadNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method read is not supported by storage {}", name);
 }
 
-[[noreturn]] static void throwWriteNotSupported(const std::string & name) {
+[[noreturn]] static void throwWriteNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", name);
 }
 
-[[noreturn]] static void throwTruncateNotSupported(const std::string & name) {
+[[noreturn]] static void throwTruncateNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported by storage {}", name);
 }
 
-[[noreturn]] static void throwAlterPartitionNotSupported(const std::string & name) {
+[[noreturn]] static void throwAlterPartitionNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition operations are not supported by storage {}", name);
 }
 
-[[noreturn]] static void throwMutationsNotSupported(const std::string & name) {
+[[noreturn]] static void throwMutationsNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", name);
 }
 
-[[noreturn]] static void throwPartitioningNotSupported(const std::string & name) {
+[[noreturn]] static void throwPartitioningNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitioning", name);
 }
 
-[[noreturn]] static void throwOptimizeNotSupported(const std::string & name) {
+[[noreturn]] static void throwOptimizeNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", name);
 }
 
@@ -318,11 +326,13 @@ bool IStorage::optimize(
     throwOptimizeNotSupported(getName());
 }
 
-[[noreturn]] static void throwLightweightUpdatesNotSupported(const std::string & name) {
+[[noreturn]] static void throwLightweightUpdatesNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported by storage {}", name);
 }
 
-[[noreturn]] static void throwPartMovesBetweenShardsNotSupported(const std::string & name) {
+[[noreturn]] static void throwPartMovesBetweenShardsNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Part moves between shards are not supported by storage {}", name);
 }
 
@@ -418,7 +428,8 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
-[[noreturn]] static void throwCheckQueryNotSupported(const std::string & name) {
+[[noreturn]] static void throwCheckQueryNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Check query is not supported for {} storage", name);
 }
 

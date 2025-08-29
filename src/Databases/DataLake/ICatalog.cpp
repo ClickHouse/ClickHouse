@@ -234,15 +234,18 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     return changes;
 }
 
-[[noreturn]] static void throwCreateTableNotImplemented() {
+[[noreturn]] static void throwCreateTableNotImplemented()
+{
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
 }
 
-[[noreturn]] static void throwUpdateMetadataNotImplemented() {
+[[noreturn]] static void throwUpdateMetadataNotImplemented()
+{
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
 }
 
-[[noreturn]] static void throwDropTableNotImplemented() {
+[[noreturn]] static void throwDropTableNotImplemented()
+{
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");
 }
 

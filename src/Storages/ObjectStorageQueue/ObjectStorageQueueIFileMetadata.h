@@ -5,11 +5,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
-}
 
 /// A base class to work with single file metadata in keeper.
 /// Metadata can have type Ordered or Unordered.

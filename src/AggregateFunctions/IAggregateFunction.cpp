@@ -100,12 +100,14 @@ bool IAggregateFunction::haveSameStateRepresentationImpl(const IAggregateFunctio
     return getStateType()->equals(*rhs.getStateType());
 }
 
-[[noreturn]] static void throwParallelizeMergePrepareNotImplemented(const std::string & name) {
+[[noreturn]] static void throwParallelizeMergePrepareNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", name);
 }
 
-[[noreturn]] static void throwMergeNotImplemented(const std::string & name) {
+[[noreturn]] static void throwMergeNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "merge() with thread pool parameter isn't implemented for {} ", name);
 }
@@ -135,12 +137,14 @@ void IAggregateFunction::insertMergeResultInto(AggregateDataPtr __restrict place
     insertResultInto(place, to, arena);
 }
 
-[[noreturn]] static void throwPredictValuesNotSupported(const std::string & name) {
+[[noreturn]] static void throwPredictValuesNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method predictValues is not supported for {}", name);
 }
 
-[[noreturn]] static void throwNotJITCompilable(const std::string & name) {
+[[noreturn]] static void throwNotJITCompilable(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "{} is not JIT-compilable", name);
 }

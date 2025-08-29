@@ -15,10 +15,6 @@ namespace Poco { class Logger; }
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 class Exception;
 

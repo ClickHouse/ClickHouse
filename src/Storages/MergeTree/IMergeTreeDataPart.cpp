@@ -2355,7 +2355,8 @@ void IMergeTreeDataPart::checkConsistency(bool require_part_metadata) const
     }
 }
 
-[[noreturn]] static void throwCheckConsistencyNotImplemented(const std::string & type) {
+[[noreturn]] static void throwCheckConsistencyNotImplemented(const std::string & type)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'checkConsistency' is not implemented for part with type {}", type);
 }
 

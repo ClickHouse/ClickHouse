@@ -3774,16 +3774,19 @@ void ClientBase::showClientVersion()
     output_stream << VERSION_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
 }
 
-[[noreturn]] static void throwReconnectionNotImplemented() {
+[[noreturn]] static void throwReconnectionNotImplemented()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reconnection is not implemented");
 }
 
-[[noreturn]] static void throwProcessWithASTFuzzerNotImplemented() {
+[[noreturn]] static void throwProcessWithASTFuzzerNotImplemented()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
 }
 
-[[noreturn]] static void throwBuzzHouseNotEnabled() {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
+[[noreturn]] static void throwBuzzHouseNotEnabled()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse was compiled without BuzzHouse enabled");
 }
 
 bool ClientBase::processWithASTFuzzer(std::string_view)

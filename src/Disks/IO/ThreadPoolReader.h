@@ -8,10 +8,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 /** Perform reads from separate thread pool of specified size.
   *

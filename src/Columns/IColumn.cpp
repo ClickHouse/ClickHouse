@@ -101,112 +101,134 @@ size_t IColumn::estimateCardinalityInPermutedRange(const IColumn::Permutation & 
     return equal_range.size();
 }
 
-[[noreturn]] static void throwCloneResizedNotImplemented(const std::string & name) {
+[[noreturn]] static void throwCloneResizedNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot cloneResized() column {}", name);
 }
 
-[[noreturn]] static void throwGet64NotSupported(const std::string & name) {
+[[noreturn]] static void throwGet64NotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method get64 is not supported for {}", name);
 }
 
-[[noreturn]] static void throwGetFloat64NotSupported(const std::string & name) {
+[[noreturn]] static void throwGetFloat64NotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method getFloat64 is not supported for {}", name);
 }
 
-[[noreturn]] static void throwGetFloat32NotSupported(const std::string & name) {
+[[noreturn]] static void throwGetFloat32NotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method getFloat32 is not supported for {}", name);
 }
 
-[[noreturn]] static void throwGetUIntNotSupported(const std::string & name) {
+[[noreturn]] static void throwGetUIntNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method getUInt is not supported for {}", name);
 }
 
-[[noreturn]] static void throwGetIntNotSupported(const std::string & name) {
+[[noreturn]] static void throwGetIntNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method getInt is not supported for {}", name);
 }
 
-[[noreturn]] static void throwGetBoolNotSupported(const std::string & name) {
+[[noreturn]] static void throwGetBoolNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method getBool is not supported for {}", name);
 }
 
-[[noreturn]] static void throwSerializeValueIntoArenaNotSupported(const std::string & name) {
+[[noreturn]] static void throwSerializeValueIntoArenaNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method serializeValueIntoArena is not supported for {}", name);
 }
 
-[[noreturn]] static void throwSerializeValueIntoMemoryNotSupported(const std::string & name) {
+[[noreturn]] static void throwSerializeValueIntoMemoryNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method serializeValueIntoMemory is not supported for {}", name);
 }
 
-[[noreturn]] static void throwBatchSerializeValueIntoMemoryNotSupported(const std::string & name) {
+[[noreturn]] static void throwBatchSerializeValueIntoMemoryNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method batchSerializeValueIntoMemory is not supported for {}", name);
 }
 
-[[noreturn]] static void throwSerializeValueIntoArenaWithNullNotSupported(const std::string & name) {
+[[noreturn]] static void throwSerializeValueIntoArenaWithNullNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method serializeValueIntoArenaWithNull is not supported for {}", name);
 }
 
-[[noreturn]] static void throwSerializeValueIntoMemoryWithNullNotSupported(const std::string & name) {
+[[noreturn]] static void throwSerializeValueIntoMemoryWithNullNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method serializeValueIntoMemoryWithNull is not supported for {}", name);
 }
 
-[[noreturn]] static void throwBatchSerializeValueIntoMemoryWithNullNotSupported(const std::string & name) {
+[[noreturn]] static void throwBatchSerializeValueIntoMemoryWithNullNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method batchSerializeValueIntoMemoryWithNull is not supported for {}", name);
 }
 
-[[noreturn]] static void throwCollectSerializedValueSizesNotSupported(const std::string & name) {
+[[noreturn]] static void throwCollectSerializedValueSizesNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method collectSerializedValueSizes is not supported for {}", name);
 }
 
-[[noreturn]] static void throwUpdateAtNotSupported(const std::string & name) {
+[[noreturn]] static void throwUpdateAtNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method updateAt is not supported for {}", name);
 }
 
-[[noreturn]] static void throwCompareAtWithCollationNotSupported() {
+[[noreturn]] static void throwCompareAtWithCollationNotSupported()
+{
     throw Exception(ErrorCodes::BAD_COLLATION,
                     "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
                     "or for Array or Tuple, containing it.");
 }
 
-[[noreturn]] static void throwGetPermutationWithCollationNotSupported() {
+[[noreturn]] static void throwGetPermutationWithCollationNotSupported()
+{
     throw Exception(ErrorCodes::BAD_COLLATION,
                     "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
                     "or for Array or Tuple, containing them.");
 }
 
-[[noreturn]] static void throwUpdatePermutationWithCollationNotSupported() {
+[[noreturn]] static void throwUpdatePermutationWithCollationNotSupported()
+{
     throw Exception(ErrorCodes::BAD_COLLATION,
                     "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
                     "or for Array or Tuple, containing them.");
 }
 
-[[noreturn]] static void throwStructureEqualsNotSupported(const std::string & name) {
+[[noreturn]] static void throwStructureEqualsNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method structureEquals is not supported for {}", name);
 }
 
-[[noreturn]] static void throwGetRawDataNotSupported(const std::string & name) {
+[[noreturn]] static void throwGetRawDataNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Column {} is not a contiguous block of memory", name);
 }
 
-[[noreturn]] static void throwSizeOfValueIfFixedNotSupported(const std::string & name) {
+[[noreturn]] static void throwSizeOfValueIfFixedNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::CANNOT_GET_SIZE_OF_FIELD, "Values of column {} are not fixed size.", name);
 }
 
-[[noreturn]] static void throwInsertRawUninitializedNotSupported(const std::string & name) {
+[[noreturn]] static void throwInsertRawUninitializedNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertRawUninitialized is not supported for {}.", name);
 }
 
@@ -287,7 +309,8 @@ void IColumn::updateAt(const IColumn &, size_t, size_t)
 }
 
 #if USE_EMBEDDED_COMPILER
-[[noreturn]] static void throwCompileComparatorNotSupported(const std::string & name) {
+[[noreturn]] static void throwCompileComparatorNotSupported(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compileComparator is not supported for {}", name);
 }
 

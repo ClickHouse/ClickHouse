@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -626,33 +627,40 @@ std::vector<String> FormatWithNamesAndTypesSchemaReader::readNamesFromFields(con
     return names;
 }
 
-[[noreturn]] static void throwReadRowForHeaderDetectionNotImplemented() {
+[[noreturn]] static void throwReadRowForHeaderDetectionNotImplemented()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetFieldsAndDataTypes is not implemented for format reader");
 }
 
-[[noreturn]] static void throwCountRowsNotImplemented() {
+[[noreturn]] static void throwCountRowsNotImplemented()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method countRows is not implemented for format reader");
 }
 
-[[noreturn]] static void throwSkipRowNotImplemented() {
+[[noreturn]] static void throwSkipRowNotImplemented()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipRow is not implemented for format reader");
 }
 
-[[noreturn]] static void throwEscapingRuleNotImplemented() {
+[[noreturn]] static void throwEscapingRuleNotImplemented()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Format reader doesn't have an escaping rule");
 }
 
-[[noreturn]] static void throwReadRowAndGetDataTypesImplNotImplemented() {
+[[noreturn]] static void throwReadRowAndGetDataTypesImplNotImplemented()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method readRowAndGetDataTypesImpl is not implemented");
 }
 
-[[noreturn]] static void throwReadRowAndGetFieldsAndDataTypesNotImplemented() {
+[[noreturn]] static void throwReadRowAndGetFieldsAndDataTypesNotImplemented()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Method readRowAndGetFieldsAndDataTypes is not implemented");
 }
 
-[[noreturn]] static void throwCheckForEndOfRowNotImplemented() {
+[[noreturn]] static void throwCheckForEndOfRowNotImplemented()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method checkForEndOfRow is not implemented");
 }
 

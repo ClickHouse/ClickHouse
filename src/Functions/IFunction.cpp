@@ -512,17 +512,20 @@ ColumnPtr IFunctionBase::execute(const DB::ColumnsWithTypeAndName& arguments, co
     return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
 }
 
-[[noreturn]] void throwNoParameters() {
+[[noreturn]] void throwNoParameters()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "IFunctionBase doesn't support getParameters method");
 }
 
-[[noreturn]] void throwNoMonotonicity(const std::string & name) {
+[[noreturn]] void throwNoMonotonicity(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Function {} has no information about its monotonicity", name);
 }
 
-[[noreturn]] void throwNoPreimage(const std::string & name) {
+[[noreturn]] void throwNoPreimage(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Function {} has no information about its preimage", name);
 }
@@ -659,27 +662,32 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
     return getReturnTypeImpl(arguments);
 }
 
-[[noreturn]] static void throwLambdaArgsForbiddenOverloadResolver(const std::string & name) {
+[[noreturn]] static void throwLambdaArgsForbiddenOverloadResolver(const std::string & name)
+{
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Function {} can't have lambda-expressions as arguments", name);
 }
 
-[[noreturn]] static void throwBuildImplNotImplemented(const std::string & name) {
+[[noreturn]] static void throwBuildImplNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "buildImpl is not implemented for {}", name);
 }
 
-[[noreturn]] static void throwReturnTypeNotImplementedOverloadResolver(const std::string & name) {
+[[noreturn]] static void throwReturnTypeNotImplementedOverloadResolver(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "getReturnType is not implemented for {}", name);
 }
 
-[[noreturn]] static void throwReturnTypeNotImplementedFunction(const std::string & name) {
+[[noreturn]] static void throwReturnTypeNotImplementedFunction(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "getReturnType is not implemented for {}", name);
 }
 
-[[noreturn]] static void throwLambdaArgsForbiddenFunction(const std::string & name) {
+[[noreturn]] static void throwLambdaArgsForbiddenFunction(const std::string & name)
+{
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Function {} can't have lambda-expressions as arguments", name);
 }

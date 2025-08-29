@@ -15,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
@@ -118,12 +119,14 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
     it->second(index, attach);
 }
 
-[[noreturn]] static void throwBulkIndexFilteringNotSupported() {
+[[noreturn]] static void throwBulkIndexFilteringNotSupported()
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Index does not support filtering in bulk");
 }
 
-[[noreturn]] static void throwCalculateApproximateNearestNeighborsNotImplemented() {
+[[noreturn]] static void throwCalculateApproximateNearestNeighborsNotImplemented()
+{
     throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
 }
@@ -138,12 +141,14 @@ NearestNeighbours IMergeTreeIndexCondition::calculateApproximateNearestNeighbors
     throwCalculateApproximateNearestNeighborsNotImplemented();
 }
 
-[[noreturn]] static void throwCreateIndexConditionNotImplemented(const std::string & type) {
+[[noreturn]] static void throwCreateIndexConditionNotImplemented(const std::string & type)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "createIndexCondition with vector search parameters is not implemented for index of type {}", type);
 }
 
-[[noreturn]] static void throwCreateIndexMergedConditionNotImplemented(const std::string & type) {
+[[noreturn]] static void throwCreateIndexMergedConditionNotImplemented(const std::string & type)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "MergedCondition is not implemented for index of type {}", type);
 }

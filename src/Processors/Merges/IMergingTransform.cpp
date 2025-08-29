@@ -51,7 +51,8 @@ IMergingTransformBase::IMergingTransformBase(
 {
 }
 
-[[noreturn]] static void throwOnNewInputNotImplemented(const std::string & name) {
+[[noreturn]] static void throwOnNewInputNotImplemented(const std::string & name)
+{
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "onNewInput is not implemented for {}", name);
 }
 
