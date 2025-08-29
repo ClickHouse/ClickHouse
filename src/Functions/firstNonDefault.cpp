@@ -23,7 +23,7 @@ namespace
 
 /// Implements the function which takes a set of arguments and
 /// returns the value of the leftmost non-falsey argument.
-/// If all arguments are falsey, returns the last argument.
+/// If all arguments are falsey, returns the default value for the result type.
 /// Result type is the supertype of all arguments.
 class FunctionFirstNonDefault : public IFunction
 {
@@ -111,7 +111,7 @@ public:
                 /// - for numeric types, the default is 0
                 /// - for strings, the default is ''
                 /// - for arrays, the default is []
-                if (!arguments[arg_idx].column->isNullAt(row) && !arguments[arg_idx].column->isDefaultAt(row))
+                if (!arguments[arg_idx].column->isDefaultAt(row))
                 {
                     /// Found a truthy value, insert it into the result
                     result_col->insertFrom(*casted_columns[arg_idx], row);
@@ -119,12 +119,8 @@ public:
                 }
             }
 
-            /// If no truthy value was found, use the last argument
             if (!found)
-            {
-                const auto & last_column = casted_columns.back();
-                result_col->insertFrom(*last_column, row);
-            }
+                result_col->insertDefault();
         }
         return result_col;
     }
