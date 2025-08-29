@@ -169,7 +169,7 @@ void ColumnFixedString::updateHashFast(SipHash & hash) const
 }
 
 #if USE_EMBEDDED_COMPILER
-bool ColumnFixedString::isComparatorCompilable() const { return true; }
+bool ColumnFixedString::isComparatorCompilable() const { return false; }
 llvm::Value * ColumnFixedString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const
 {
     llvm::Value * lhs_chars_ptr = b.CreateExtractValue(lhs, {0});
