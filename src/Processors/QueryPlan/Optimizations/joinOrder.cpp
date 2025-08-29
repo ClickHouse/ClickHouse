@@ -103,7 +103,8 @@ private:
 size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_name)
 {
     const auto & relation_stats = query_graph.relation_stats;
-    if (rels.count() != 1)
+    auto rel_id = rels.getSingleBit();
+    if (!rel_id.has_value())
     {
         /// Assume all keys are distinct
         if (auto it = dp_table.find(rels); it != dp_table.end())
@@ -111,11 +112,7 @@ size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_nam
         return 0;
     }
 
-    auto rel_id = rels.findFirstSet();
-    if (rel_id < 0 || relation_stats.size() <= static_cast<size_t>(rel_id))
-        return 0;
-
-    const auto & relation_stat = relation_stats.at(rel_id);
+    const auto & relation_stat = relation_stats.at(rel_id.value());
     const auto & column_stats = relation_stat.column_stats;
     if (auto it = column_stats.find(column_name); it != column_stats.end())
         return it->second.num_distinct_values;
@@ -365,9 +362,10 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
 {
     auto check = [&](const auto & lhs, const auto & rhs) -> std::optional<JoinKind>
     {
-        if (lhs.count() == 1)
+        auto rel_id = lhs.getSingleBit();
+        if (rel_id.has_value())
         {
-            auto it = query_graph.join_kinds.find(safe_cast<size_t>(lhs.findFirstSet()));
+            auto it = query_graph.join_kinds.find(rel_id.value());
             if (it != query_graph.join_kinds.end())
             {
                 if (isSubsetOf(it->second.first, rhs))

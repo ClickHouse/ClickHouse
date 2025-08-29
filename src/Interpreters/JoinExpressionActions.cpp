@@ -53,24 +53,11 @@ String toString(const BitSet & bitset)
     return str;
 }
 
-int BitSet::findFirstSet() const
+std::optional<size_t> BitSet::getSingleBit() const
 {
-    if (bitset.none())
-        return -1;
-
-    size_t pos = bitset.find_first();
-    size_t maxPos = pos;
-
-    while (pos != Base::npos)
-    {
-        maxPos = pos;
-        pos = bitset.find_next(pos);
-    }
-
-    if (maxPos > std::numeric_limits<int>::max())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "BitSet is too large");
-
-    return static_cast<int>(maxPos);
+    if (bitset.count() == 1)
+        return bitset.find_first();
+    return {};
 }
 
 size_t BitSet::hashImpl() const

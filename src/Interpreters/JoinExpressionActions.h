@@ -48,7 +48,7 @@ public:
         return *this;
     }
 
-    int findFirstSet() const;
+    std::optional<size_t> getSingleBit() const;
 
     size_t count() const { return bitset.count(); }
     bool any() const { return bitset.any(); }

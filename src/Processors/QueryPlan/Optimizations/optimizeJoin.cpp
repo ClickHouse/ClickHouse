@@ -569,10 +569,11 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
             continue;
 
         auto source = JoinActionRef(out_node, query_graph.expression_actions).getSourceRelations();
-        if (source.count() != 1)
+        auto rel_id = source.getSingleBit();
+        if (!rel_id.has_value())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot determine source relations for node {}", out_node->result_name);
-        auto id = source.findFirstSet();
-        if (id == 0)
+
+        if (rel_id == 0)
             left_changes_types.push_back(out_node);
         else
             right_changes_types.push_back(out_node);
@@ -654,6 +655,15 @@ static const ActionsDAG::Node * trackInputColumn(const ActionsDAG::Node * node)
 {
     while (!node->children.empty())
     {
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const auto & function_name = node->function_base->getName();
+            if (function_name != "toNullable" && function_name != "_CAST" && function_name != "CAST")
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} is a function '{}', expected toNullable or CAST",
+                    node->result_name, function_name);
+        }
+
         size_t non_const_children = 0;
         for (const auto * child_node : node->children)
         {
@@ -761,10 +771,11 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     {
         const auto * input = global_inputs[input_idx];
         auto src_rels = JoinActionRef(input, global_expression_actions).getSourceRelations();
-        if (src_rels.count() != 1)
+        auto rel_idx = src_rels.getSingleBit();
+        if (!rel_idx.has_value())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Input node {} has {} source relations, expected 1", input->result_name, toString(src_rels));
-        auto rel_idx = src_rels.findFirstSet();
-        current_input_nodes.emplace_back(safe_cast<size_t>(rel_idx), input);
+
+        current_input_nodes.emplace_back(rel_idx.value(), input);
         input_node_map[input] = input_idx;
     }
 
@@ -841,23 +852,23 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
             /// input pos -> new input node
             std::unordered_map<size_t, const ActionsDAG::Node *> current_step_type_changes;
-            auto joined_mask = entry->relations;
-            for (const auto & [source_id, new_inputs] : query_graph_builder.type_changes)
+
+            for (auto rel_id : {left_rels.getSingleBit(), right_rels.getSingleBit()})
             {
-                if ((left_rels.count() == 1 && left_rels.test(source_id)) ||
-                    (right_rels.count() == 1 && right_rels.test(source_id)))
+                if (!rel_id.has_value())
+                    continue;
+                const auto & new_inputs = query_graph_builder.type_changes[rel_id.value()];
+                for (const auto * new_input : new_inputs)
                 {
-                    for (const auto * new_input : new_inputs)
-                    {
-                        const auto * input_node = trackInputColumn(new_input);
-                        auto it = input_node_map.find(input_node);
-                        if (it == input_node_map.end())
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in inputs of dag {}", input_node->result_name, global_actions_dag->dumpDAG());
-                        current_step_type_changes[it->second] = new_input;
-                    }
+                    const auto * input_node = trackInputColumn(new_input);
+                    auto it = input_node_map.find(input_node);
+                    if (it == input_node_map.end())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in inputs of dag {}", input_node->result_name, global_actions_dag->dumpDAG());
+                    current_step_type_changes[it->second] = new_input;
                 }
             }
 
+            auto joined_mask = entry->relations;
             ActionsDAG::NodeMapping current_inputs;
             for (size_t input_pos = 0; input_pos < current_input_nodes.size(); ++input_pos)
             {
