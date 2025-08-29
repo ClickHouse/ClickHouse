@@ -75,6 +75,8 @@ def get_spark():
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
+        .config("spark.driver.memory", "8g")
+        .config("spark.executor.memory", "8g")
         .master("local")
     )
 
