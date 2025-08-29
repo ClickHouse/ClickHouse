@@ -91,6 +91,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
+    extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_local_plan;
@@ -680,7 +681,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     ReadFromMergeTree::IndexStats & index_stats,
     bool use_skip_indexes,
     bool find_exact_ranges,
-    bool is_final_query)
+    bool is_final_query,
+    bool is_parallel_reading_from_replicas)
 {
 
     const auto original_num_parts = parts_with_ranges.size();
@@ -764,6 +766,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     {
         num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
     }
+
+    const bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
 
     /// Let's find what range to read from each part.
     {
@@ -876,31 +880,35 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     continue;
                 }
 
-                std::shared_ptr<GinPostingsListsCacheForStore> cache_in_store;
-
-                std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
-                    index_and_condition.index,
-                    index_and_condition.condition,
-                    ranges.data_part,
-                    ranges.ranges,
-                    ranges.read_hints,
-                    settings,
-                    reader_settings,
-                    mark_cache.get(),
-                    uncompressed_cache.get(),
-                    vector_similarity_index_cache.get(),
-                    log,
-                    cache_in_store);
-
-                /// At the moment we store information about all the text indices. This is a weak condition because if a table has multiple
-                /// indices and we are only using one of them in the query; this will store potentially a lot of unneeded information.
-                /// We need some trick to detect which are the exact indices needed for this query and store only those in
-                /// postings_cache_for_store_part.
-                if (!ranges.ranges.empty() && context_needs_index_info && cache_in_store != nullptr)
+                /// Vector similarity indexes are not applicable on data reads.
+                if (!use_skip_indexes_on_data_read || index_and_condition.index->isVectorSimilarityIndex())
                 {
-                    chassert(index_and_condition.index->index.type == "text");
-                    /// Remember this function takes a lock, don't abuse of it.
-                    postings_cache_for_store_part.emplace(index_and_condition.index->index.name, cache_in_store);
+                    std::shared_ptr<GinPostingsListsCacheForStore> cache_in_store;
+
+                    std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
+                        index_and_condition.index,
+                        index_and_condition.condition,
+                        ranges.data_part,
+                        ranges.ranges,
+                        ranges.read_hints,
+                        reader_settings,
+                        mark_cache.get(),
+                        uncompressed_cache.get(),
+                        vector_similarity_index_cache.get(),
+                        log,
+                        cache_in_store);
+
+                    /// At the moment we store information about all the text indices. This is a weak condition because if a table has
+                    /// multiple indices and we are only using one of them in the query; this will store potentially a lot of unneeded
+                    /// information.
+                    /// We need some trick to detect which are the exact indices needed for this query and store only those in
+                    /// postings_cache_for_store_part.
+                    if (!ranges.ranges.empty() && context_needs_index_info && cache_in_store != nullptr)
+                    {
+                        chassert(index_and_condition.index->index.type == "text");
+                        /// Remember this function takes a lock, don't abuse of it.
+                        postings_cache_for_store_part.emplace(index_and_condition.index->index.name, cache_in_store);
+                    }
                 }
 
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -915,6 +923,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 if (ranges.ranges.empty())
                     break;
 
+                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
+
                 const auto & indices_and_condition = skip_indexes->merged_indices[idx];
                 auto & stat = merged_indices_stat[idx];
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
@@ -926,11 +936,19 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 }
 
                 size_t total_granules = ranges.ranges.getNumberOfMarks();
-                ranges.ranges = filterMarksUsingMergedIndex(
-                    indices_and_condition.indices, indices_and_condition.condition,
-                    ranges.data_part, ranges.ranges,
-                    settings, reader_settings,
-                    mark_cache.get(), uncompressed_cache.get(), vector_similarity_index_cache.get(), log);
+                if (!use_skip_indexes_on_data_read)
+                {
+                    ranges.ranges = filterMarksUsingMergedIndex(
+                        indices_and_condition.indices,
+                        indices_and_condition.condition,
+                        ranges.data_part,
+                        ranges.ranges,
+                        reader_settings,
+                        mark_cache.get(),
+                        uncompressed_cache.get(),
+                        vector_similarity_index_cache.get(),
+                        log);
+                }
 
                 stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -1260,8 +1278,9 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
 {
     const auto & settings = context->getSettingsRef();
     const auto data_settings = data.getSettings();
-    auto max_partitions_to_read
-        = settings[Setting::max_partitions_to_read].changed ? settings[Setting::max_partitions_to_read].value : (*data_settings)[MergeTreeSetting::max_partitions_to_read].value;
+    auto max_partitions_to_read = settings[Setting::max_partitions_to_read].changed
+        ? settings[Setting::max_partitions_to_read].value
+        : (*data_settings)[MergeTreeSetting::max_partitions_to_read].value;
     if (max_partitions_to_read > 0)
     {
         std::set<String> partitions;
@@ -1275,7 +1294,8 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
                 max_partitions_to_read);
     }
 
-    if ((*data_settings)[MergeTreeSetting::max_concurrent_queries] > 0 && (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0
+    if ((*data_settings)[MergeTreeSetting::max_concurrent_queries] > 0
+        && (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0
         && result.selected_marks >= (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries])
     {
         auto query_id = context->getCurrentQueryId();
@@ -1313,7 +1333,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         column_names_to_return,
         log,
         indexes,
-        /*find_exact_ranges*/false);
+        /*find_exact_ranges*/false,
+        /*is_parallel_reading_from_replicas*/false);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
@@ -1333,7 +1354,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     /// If merge_tree_select_result_ptr != nullptr, we use analyzed result so parts will always be empty.
     if (merge_tree_select_result_ptr)
     {
-        if (merge_tree_select_result_ptr->selected_marks == 0)
+        if (merge_tree_select_result_ptr->parts_with_ranges.empty())
             return {};
     }
     else if (parts.empty())
@@ -1770,7 +1791,6 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
     const RangesInDataPartReadHints & in_read_hints,
-    const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
@@ -1786,13 +1806,13 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     }
 
     /// Whether we should use a more optimal filtering.
-    bool bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering] && index_helper->supportsBulkFiltering();
+    bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering();
 
     auto index_granularity = index_helper->index.granularity;
 
     const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
-        settings[Setting::merge_tree_min_rows_for_seek],
-        settings[Setting::merge_tree_min_bytes_for_seek],
+        reader_settings.merge_tree_min_rows_for_seek,
+        reader_settings.merge_tree_min_bytes_for_seek,
         part->index_granularity_info.fixed_index_granularity,
         part->index_granularity_info.index_granularity_bytes);
 
@@ -1971,7 +1991,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     MergeTreeIndexMergedConditionPtr condition,
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
-    const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
@@ -1990,8 +2009,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     auto index_granularity = indices.front()->index.granularity;
 
     const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
-        settings[Setting::merge_tree_min_rows_for_seek],
-        settings[Setting::merge_tree_min_bytes_for_seek],
+        reader_settings.merge_tree_min_rows_for_seek,
+        reader_settings.merge_tree_min_bytes_for_seek,
         part->index_granularity_info.fixed_index_granularity,
         part->index_granularity_info.index_granularity_bytes);
 
@@ -2091,7 +2110,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
         });
 
         const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-        if (part_values && part_values->find(part->name) == part_values->end())
+        if (part_values && !part_values->contains(part->name))
             continue;
 
         if (part->isEmpty())
@@ -2155,7 +2174,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
         {
             const auto & part_or_projection = prev_part.data_part;
             const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-            if (part_values && part_values->find(part->name) == part_values->end())
+            if (part_values && !part_values->contains(part->name))
                 continue;
 
             if (part->isEmpty())
