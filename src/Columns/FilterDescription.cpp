@@ -61,7 +61,7 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
         if (column_const.isNullAt(0) || column_const.isDefaultAt(0))
             always_false = true;
         else
-            always_false = true;
+            always_true = true;
     }
 }
 
