@@ -25,10 +25,6 @@ bool makeExpressionNodeOnTopOfImpl(
     if (!header && !actions_dag.getInputs().empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create ExpressionStep on top of node without header, dag: {}", actions_dag.dumpDAG());
 
-    // if (isPassthroughActions(actions_dag))
-    //     return false;
-    UNUSED(isPassthroughActions);
-
     QueryPlanStepPtr step = std::make_unique<Step>(header, std::move(actions_dag), std::forward<Args>(args)...);
 
     if (!step_description.empty())

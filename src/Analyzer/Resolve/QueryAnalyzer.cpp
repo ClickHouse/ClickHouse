@@ -1857,7 +1857,6 @@ bool hasTableExpressionInJoinTree(const QueryTreeNodePtr & join_tree_node, const
 /// But in planner we do not distinguish such cases.
 void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     QueryTreeNodesWithNames & result_matched_column_nodes_with_names,
-    const QueryTreeNodePtr & source_table_expression,
     IdentifierResolveScope & scope)
 {
     auto * nearest_query_scope = scope.getNearestQueryScope();
@@ -1897,17 +1896,6 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                 const auto & join_using_column_nodes = join_using_column_nodes_list.getNodes();
 
                 auto it = node_to_projection_name.find(matched_column_node);
-
-                UNUSED(source_table_expression);
-                // if (hasTableExpressionInJoinTree(join_node->getLeftTableExpression(), source_table_expression))
-                //     matched_column_node = join_using_column_nodes.at(0);
-                // else if (hasTableExpressionInJoinTree(join_node->getRightTableExpression(), source_table_expression))
-                //     matched_column_node = join_using_column_nodes.at(1);
-                // else
-                //     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                //         "Cannot find column {} in JOIN USING section {}",
-                //         matched_column_node->dumpTree(), join_node->dumpTree());
-
                 matched_column_node = matched_column_node->clone();
                 if (it != node_to_projection_name.end())
                     node_to_projection_name.emplace(matched_column_node, it->second);
@@ -2038,7 +2026,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         matched_columns,
         scope);
 
-    updateMatchedColumnsFromJoinUsing(result_matched_column_nodes_with_names, table_expression_node, scope);
+    updateMatchedColumnsFromJoinUsing(result_matched_column_nodes_with_names, scope);
 
     return result_matched_column_nodes_with_names;
 }
@@ -2227,9 +2215,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                     QueryTreeNodePtr matched_column_node = createProjectionForUsing(join_using_column_node, join_node->getKind(), scope);
                     matched_column_node->setAlias(join_using_column_name);
 
-                    // if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
-                    //     scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
-
                     table_expression_column_names_to_skip.insert(join_using_column_name);
                     matched_expression_nodes_with_column_names.emplace_back(std::move(matched_column_node), join_using_column_name);
                 }
@@ -2293,7 +2278,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             table_expression_columns,
             scope);
 
-        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, table_expression, scope);
+        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, scope);
 
         table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_column_nodes_with_names));
     }
@@ -5606,7 +5591,6 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     auto is_column_node = [](const auto & argument) { return argument->getNodeType() == QueryTreeNodeType::COLUMN; };
                     if (function_node.getFunctionName() == "firstNonDefault" && std::ranges::all_of(function_node.getArguments().getNodes(), is_column_node))
                     {
-                        // result_table_expressions.push_back(result_left_table_expression);
                         for (const auto & argument : function_node.getArguments().getNodes())
                         {
                             result_table_expressions.push_back(argument);

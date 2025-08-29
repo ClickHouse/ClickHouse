@@ -25,6 +25,8 @@ enum class JoinConditionOperator : UInt8
 
 std::string_view toString(JoinConditionOperator op);
 
+/// BitSet is wrapper on top of boost::dynamic_bitset
+/// which allows operations on bitsets of different sizes
 class BitSet
 {
 private:
@@ -187,7 +189,7 @@ public:
     JoinActionRef(std::nullptr_t) : node_ptr(nullptr) {} /// NOLINT
 
     explicit JoinActionRef(NodeRawPtr node_, const JoinExpressionActions & expression_actions_);
-    explicit JoinActionRef(NodeRawPtr node_, std::shared_ptr<JoinExpressionActions::Data> data_);
+    explicit JoinActionRef(NodeRawPtr node_, std::weak_ptr<JoinExpressionActions::Data> data_);
 
     class AddFunction
     {

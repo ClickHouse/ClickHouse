@@ -66,7 +66,6 @@ size_t BitSet::hashImpl() const
         /// false positive clang-tidy warning for code in boost::dynamic_bitset
         return std::hash<uint64_t>()(bitset.to_ulong()); /// NOLINT
 
-
     UInt64 hash = 0;
     auto pos = bitset.find_first();
     while (pos != Base::npos)
@@ -82,12 +81,11 @@ struct JoinExpressionActions::Data : boost::noncopyable
     using NodeToSourceMapping = std::unordered_map<NodeRawPtr, BitSet>;
 
     Data(ActionsDAG && actions_dag_, NodeToSourceMapping && expression_sources_)
-        : actions_dag(std::move(actions_dag_)), expression_sources(std::move(expression_sources_))
+        : actions_dag(std::move(actions_dag_))
+        , expression_sources(std::move(expression_sources_))
     {
     }
 
-    BitSet lhs_rels;
-    BitSet rhs_rels;
     ActionsDAG actions_dag;
     NodeToSourceMapping expression_sources;
 };
@@ -152,7 +150,6 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
     data = std::make_shared<Data>(std::move(actions_dag_), std::move(expression_sources));
 }
 
-
 using NodeRawPtr = JoinExpressionActions::NodeRawPtr;
 
 BitSet getExpressionSourcesImpl(std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
@@ -216,45 +213,18 @@ std::pair<ActionsDAG, JoinExpressionActions::NodeToSourceMapping> JoinExpression
     return std::make_pair(std::move(actions_dag), std::move(expression_sources));
 }
 
-// size_t JoinExpressionActions::getRelationsCount() const
-// {
-//     return std::max(data->lhs_rels.getMaxSetPosition(), data->rhs_rels.getMaxSetPosition()) + 1;
-// }
-
-// JoinExpressionActions JoinExpressionActions::unite(JoinExpressionActions && lhs, JoinExpressionActions && rhs)
-// {
-//     JoinExpressionActions::Data::NodeToSourceMapping expression_sources;
-//     ActionsDAG actions_dag;
-//     actions_dag.unite(std::move(lhs.data->actions_dag));
-//     actions_dag.unite(std::move(rhs.data->actions_dag));
-
-//     int shift = lhs.getRelationsCount();
-
-//     expression_sources = std::move(lhs.data->expression_sources);
-//     for (auto [node, sources] : rhs.data->expression_sources)
-//     {
-//         sources.shift(shift);
-//         expression_sources[node] = sources;
-//     }
-
-//     auto data = std::make_shared<Data>(std::move(actions_dag), std::move(expression_sources));
-
-//     data->lhs_rels = lhs.data->lhs_rels;
-//     data->rhs_rels = rhs.data->rhs_rels;
-//     data->rhs_rels.shift(shift);
-
-//     return JoinExpressionActions(std::move(data));
-// }
-
-JoinActionRef::JoinActionRef(NodeRawPtr node_, std::shared_ptr<JoinExpressionActions::Data> data_)
+JoinActionRef::JoinActionRef(NodeRawPtr node_, std::weak_ptr<JoinExpressionActions::Data> data_)
     : node_ptr(node_)
     , data(data_)
 {
+#ifndef NDEBUG
+    /// TODO: once we have map with sources initialized in advance we may do lookup there instead
     if (node_ptr)
     {
-        if (!data_)
+        auto data_ptr = data.lock();
+        if (!data_ptr)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create JoinActionRef nullptr data");
-        auto raw_nodes = data_->actions_dag.getNodes() | std::views::transform([](const ActionsDAG::Node & node) { return &node; });
+        auto raw_nodes = data_ptr->actions_dag.getNodes() | std::views::transform([](const ActionsDAG::Node & node) { return &node; });
         if (!std::ranges::contains(raw_nodes, node_ptr))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Cannot create JoinActionRef for node {} not in actions DAG: [{}] <- {}",
@@ -262,6 +232,7 @@ JoinActionRef::JoinActionRef(NodeRawPtr node_, std::shared_ptr<JoinExpressionAct
                     fmt::join(raw_nodes | std::views::transform([](const ActionsDAG::Node * node) { return fmt::ptr(node); }), ", "),
                     fmt::ptr(node_ptr));
     }
+#endif
 }
 
 JoinActionRef::JoinActionRef(NodeRawPtr node_, const JoinExpressionActions & expression_actions_)

@@ -72,7 +72,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (arguments.size() == 1)
-            return castColumn(arguments[0], result_type);
+            return arguments[0].column;
 
         size_t num_columns = arguments.size();
 

@@ -179,12 +179,8 @@ static std::optional<UInt64> estimateJoinCardinality(
 static double computeJoinCost(
     const std::shared_ptr<DPJoinEntry> & left,
     const std::shared_ptr<DPJoinEntry> & right,
-    double selectivity,
-    JoinKind join_kind = JoinKind::Inner)
+    double selectivity)
 {
-    UNUSED(join_kind);
-    UNUSED(selectivity);
-    // return left->cost + right->cost + std::min(left->estimated_rows, right->estimated_rows);
     return left->cost + right->cost + selectivity * left->estimated_rows.value_or(1) * right->estimated_rows.value_or(1);
 }
 
@@ -193,14 +189,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinReorderMicroseconds);
 
     std::shared_ptr<DPJoinEntry> best_plan;
-    // if (query_graph.relation_stats.size() <= APPLY_DP_THRESHOLD)
-    // {
-    //     LOG_TRACE(log, "Solving join order using dynamic programming");
-    //     best_plan = solveDP();
-    //     if (!best_plan)
-    //         LOG_TRACE(log, "Dynamic programming failed to find a valid join order");
-    // }
-
     if (!best_plan)
     {
         LOG_TRACE(log, "Solving join order using greedy algorithm");
@@ -277,7 +265,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     continue;
 
                 auto selectivity = computeSelectivity(edge);
-                auto current_cost = computeJoinCost(left, right, selectivity, join_kind.value());
+                auto current_cost = computeJoinCost(left, right, selectivity);
                 if (!best_plan || current_cost < best_plan->cost)
                 {
                     auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());

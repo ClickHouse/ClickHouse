@@ -1027,10 +1027,6 @@ static QueryPlanNode buildPhysicalJoinImpl(
     SharedHeader left_sample_block = blockWithActionsDAGOutput(left_dag);
     SharedHeader right_sample_block = blockWithActionsDAGOutput(right_dag);
 
-    // std::cerr << left_sample_block.dumpStructure() << std::endl;
-    // std::cerr << right_sample_block.dumpStructure() << std::endl;
-    // std::cerr << table_join->isJoinWithConstant() << std::endl;
-
     auto join_algorithm_ptr = chooseJoinAlgorithm(
         table_join,
         prepared_join_storage,

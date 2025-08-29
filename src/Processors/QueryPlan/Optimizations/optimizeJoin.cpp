@@ -964,8 +964,8 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 current_input_nodes.at(first_dropped_node_pos).second = first_dropped_node;
             }
 
-            /// FIXME:
-            join_operator.residual_filter.clear();
+            if (!join_operator.residual_filter.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Residual filter is not supported in join reorder");
 
             auto join_step = std::make_unique<JoinStepLogical>(
                 left_header_ptr,
@@ -1001,23 +1001,6 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     auto result = std::move(nodes.back());
     nodes.pop_back();
 
-    // {
-    //     ActionsDAG::NodeMapping current_inputs;
-    //     auto all_outputs = global_actions_dag->getOutputs();
-    //     size_t outputs_num = all_outputs.size();
-    //     for (size_t input_pos = 0; input_pos < current_input_nodes.size(); ++input_pos)
-    //     {
-    //         auto [rel_idx, input_node] = current_input_nodes[input_pos];
-    //         current_inputs[input_node] = input_node;
-    //         /// Add all inputs to outputs to make sure all of them are used in this dag
-    //         all_outputs.push_back(input_node);
-    //     }
-    //     auto final_dag = ActionsDAG::foldActionsByProjection(current_inputs, all_outputs);
-    //     /// Keep only original outputs
-    //     final_dag.getOutputs().resize(outputs_num);
-    //     makeExpressionNodeOnTopOf(result, std::move(final_dag), nodes, "Actions After Join Reorder");
-    // }
-
     return result;
 }
 
@@ -1036,14 +1019,16 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
             lookup_step->optimize(optimization_settings);
     }
 
-    auto strictness = join_step->getJoinOperator().strictness;
-    auto kind = join_step->getJoinOperator().kind;
-    auto locality = join_step->getJoinOperator().locality;
+    const auto & join_operator = join_step->getJoinOperator();
+    auto strictness = join_operator.strictness;
+    auto kind = join_operator.kind;
+    auto locality = join_operator.locality;
     if (!optimization_settings.query_plan_optimize_join_order_limit ||
         (strictness != JoinStrictness::All && strictness != JoinStrictness::Any) ||
         locality != JoinLocality::Unspecified ||
         kind == JoinKind::Paste ||
-        kind == JoinKind::Full)
+        kind == JoinKind::Full ||
+        !join_operator.residual_filter.empty())
     {
         join_step->setOptimized();
         return;

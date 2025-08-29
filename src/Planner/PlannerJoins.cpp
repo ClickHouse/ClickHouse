@@ -1060,10 +1060,6 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
     Block right_table_expression_header_with_storage_column_names;
 
     Block right_table_expression_header_ = *right_table_expression_header;
-    // if (table_join->joinUseNulls() && isLeftOrFull(table_join->kind()))
-    // {
-    //     JoinCommon::convertColumnsToNullable(right_table_expression_header_);
-    // }
 
     for (const auto & right_table_expression_column : right_table_expression_header_)
     {
@@ -1254,7 +1250,6 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
                     "JOIN with 'Join' table engine should be performed by storage keys [{}], but column '{}' was found",
                     fmt::join(storage->getKeyNames(), ", "), result_column.name);
 
-            // std::cerr << "Rename " << source_column_name_it->second << " -> " << result_column.name << std::endl;
             table_join->setRename(source_column_name_it->second, result_column.name);
             if (required_column_names_set.insert(source_column_name_it->second).second)
                 required_column_names.push_back(source_column_name_it->second);

@@ -180,11 +180,6 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         {
             /// Transform right to IN
         }
-        // else if (isInnerOrRight(join_operator.kind) && !hasAnyInSet(left_input_header, join_output_header))
-        // {
-        //     /// Transform left to IN
-        //     build_set_from_left_part = true;
-        // }
         else
             return 0;
     }

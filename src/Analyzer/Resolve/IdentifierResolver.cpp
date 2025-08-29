@@ -927,6 +927,22 @@ bool resolvedIdenfiersFromJoinAreEquals(
     return left_resolved_to_compare->isEqual(*right_resolved_to_compare, IQueryTreeNode::CompareOptions{.compare_aliases = false});
 }
 
+/* Creates a projection expression for columns specified in JOIN USING clause.
+ *
+ * In SQL, when joining tables with USING(column_name), the result should contain only one
+ * column with that name, not separate columns from each table. This function creates the
+ * appropriate expression to merge/select the correct column value based on the join type.
+ *
+ * The USING column node contains a list of expressions - one from each joined table that
+ * matches the USING column name. This function determines which expression(s) to use:
+ *
+ * - For RIGHT JOIN: Uses only the column from the right table (last in the list)
+ * - For LEFT JOIN/INNER JOIN: Uses column(s) from the left table(s), ignoring the right
+ * - For FULL JOIN: Combines all columns using firstNonDefault() to get the first non-NULL value
+ *
+ * Example, for "SELECT id FROM t1 FULL JOIN t2 USING (id)"
+ * this creates "SELECT firstNonDefault(t1.id, t2.id) AS id FROM ..." to coalesce the values appropriately.
+ */
 QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope)
 {
     const auto & using_expression = using_column_node.getExpression();

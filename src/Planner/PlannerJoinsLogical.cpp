@@ -208,7 +208,6 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
     {
         auto & using_column_node = using_nodes[i]->as<ColumnNode &>();
         auto & inner_columns_list = using_column_node.getExpressionOrThrow()->as<ListNode &>();
-        // chassert(inner_columns_list.getNodes().size() == 2);
 
         std::vector<JoinActionRef> args;
         const auto & inner_columns = inner_columns_list.getNodes();
@@ -216,15 +215,6 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Using column {} expected to have at least 2 inner columns, in query tree {}",
                 using_column_node.getColumnName(), node->dumpTree());
-
-        // for (const auto & inner_node : inner_columns)
-        // {
-        //     const auto & inner_column = inner_node->as<ColumnNode &>();
-
-        //     const auto & table_expression_data = builder_context.planner_context->getTableExpressionDataOrThrow(inner_column.getColumnSource());
-        //     const auto & column_identifier = table_expression_data.getColumnIdentifierOrThrow(inner_column.getColumnName());
-        //     changed_types[column_identifier] = using_column_node.getResultType();
-        // }
 
         const auto & result_type = using_column_node.getResultType();
         auto cast_to_super = [&result_type, &changed_types](auto & dag, const auto & nodes)
@@ -241,10 +231,7 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             auto & arg = args.emplace_back(builder_context.addExpression(inner_column));
             if (!arg.getType()->equals(*result_type))
             {
-                // String input_column_name = arg.getColumnName();
-                auto casted_arg = JoinActionRef::transform({arg}, cast_to_super);
-                // changed_types[input_column_name] = casted_arg.getNode();
-                arg = casted_arg;
+                arg = JoinActionRef::transform({arg}, cast_to_super);
             }
 
             if (arg.fromNone())
