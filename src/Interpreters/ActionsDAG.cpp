@@ -2878,6 +2878,71 @@ ActionsDAG::createActionsForDisjunction(NodeRawConstPtrs disjunction, const Colu
     return ActionsDAG::ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
 }
 
+static inline bool isAnd(const ActionsDAG::Node * n)
+{
+    return n->type == ActionsDAG::ActionType::FUNCTION
+        && n->function_base
+        && n->function_base->getName() == "and";
+}
+
+static inline bool isOr(const ActionsDAG::Node * n)
+{
+    return n->type == ActionsDAG::ActionType::FUNCTION
+        && n->function_base
+        && n->function_base->getName() == "or";
+}
+
+static void flattenAnd(const ActionsDAG::Node * n, std::vector<const ActionsDAG::Node *> & out)
+{
+    if (n->type == ActionsDAG::ActionType::ALIAS) { flattenAnd(n->children.front(), out); return; }
+    if (!isAnd(n)) { out.push_back(n); return; }
+    for (const auto * ch : n->children) flattenAnd(ch, out);
+}
+
+static void flattenOr(const ActionsDAG::Node * n, std::vector<const ActionsDAG::Node *> & out)
+{
+    if (n->type == ActionsDAG::ActionType::ALIAS) { flattenOr(n->children.front(), out); return; }
+    if (!isOr(n)) { out.push_back(n); return; }
+    for (const auto * ch : n->children) flattenOr(ch, out);
+}
+
+/// If `predicate` = AND(..., OR(term1, term2, ...), ...),
+/// return the vector of terms, each term flattened into AND-atoms.
+/// Otherwise return std::nullopt (don’t try OR pushdown).
+static std::optional<std::vector<std::vector<const ActionsDAG::Node *>>>
+extractTopLevelOrOfAndTerms(const ActionsDAG::Node * predicate)
+{
+    std::vector<const ActionsDAG::Node *> and_children;
+    flattenAnd(predicate, and_children);
+
+    const ActionsDAG::Node * or_node = nullptr;
+    for (const auto * ch : and_children)
+    {
+        if (isOr(ch))
+        {
+            if (or_node) return std::nullopt; // more than one OR on the top-level AND → skip
+            or_node = ch;
+        }
+    }
+    if (!or_node) return std::nullopt; // no OR → nothing to do
+
+    std::vector<const ActionsDAG::Node *> terms_nodes;
+    flattenOr(or_node, terms_nodes);
+
+    std::vector<std::vector<const ActionsDAG::Node *>> terms;
+    terms.reserve(terms_nodes.size());
+    for (const auto * term : terms_nodes)
+    {
+        std::vector<const ActionsDAG::Node *> atoms;
+        flattenAnd(term, atoms);
+        // If a term still contains an OR somewhere inside, it’s not a pure AND — skip all.
+        for (const auto * a : atoms) if (isOr(a)) return std::nullopt;
+        terms.push_back(std::move(atoms));
+    }
+    return terms;
+}
+
+
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForFilterPushDown(
     const std::string & filter_name,
     bool removes_filter,
@@ -3106,6 +3171,55 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto left_stream_allowed_nodes = get_input_nodes(left_stream_available_columns_to_push_down);
     auto right_stream_allowed_nodes = get_input_nodes(right_stream_available_columns_to_push_down);
     auto both_streams_allowed_nodes = get_input_nodes(equivalent_columns_to_push_down);
+
+    // Try to extract OR-of-AND terms from the full predicate.
+    auto maybe_terms = extractTopLevelOrOfAndTerms(predicate);
+
+    NodeRawConstPtrs left_or_projection;   // atoms to OR for the left input
+    NodeRawConstPtrs right_or_projection;  // atoms to OR for the right input
+
+    if (maybe_terms)
+    {
+        const auto & terms = *maybe_terms;
+
+        // ----- LEFT SIDE -----
+        bool every_term_has_left = true;
+        std::unordered_set<const Node *> seen_left;
+        for (const auto & atoms : terms)
+        {
+            bool found = false;
+            for (const auto * a : atoms)
+            {
+                if (left_stream_allowed_nodes.contains(a))
+                {
+                    found = true;
+                    if (seen_left.insert(a).second) left_or_projection.push_back(a);
+                }
+            }
+            if (!found) { every_term_has_left = false; break; }
+        }
+        if (!every_term_has_left)
+            left_or_projection.clear();  // don’t push any OR to the left if some term has no left atom
+
+        // ----- RIGHT SIDE -----
+        bool every_term_has_right = true;
+        std::unordered_set<const Node *> seen_right;
+        for (const auto & atoms : terms)
+        {
+            bool found = false;
+            for (const auto * a : atoms)
+            {
+                if (right_stream_allowed_nodes.contains(a))
+                {
+                    found = true;
+                    if (seen_right.insert(a).second) right_or_projection.push_back(a);
+                }
+            }
+            if (!found) { every_term_has_right = false; break; }
+        }
+        if (!every_term_has_right)
+            right_or_projection.clear();  // don’t push any OR to the right if some term has no right atom
+    }
 
     auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes, false);
     auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
