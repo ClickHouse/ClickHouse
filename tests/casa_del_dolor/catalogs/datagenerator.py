@@ -15,6 +15,8 @@ from pyspark.sql.types import (
     FloatType,
     DoubleType,
     DecimalType,
+    CharType,
+    VarcharType,
     StringType,
     BinaryType,
     DateType,
@@ -54,14 +56,12 @@ class LakeDataGenerator:
         # otherwise finite, keep ranges reasonable to avoid overflow when casting to FloatType
         return float(lo) + (float(hi) - float(lo)) * random.random()
 
-    def _rand_string(self):
-        n = random.randint(self._min_str_len, self._max_str_len)
+    def _rand_string(self, nlen):
         alphabet = string.ascii_letters + string.digits + " _-"
-        return "".join(random.choice(alphabet) for _ in range(n))
+        return "".join(random.choice(alphabet) for _ in range(nlen))
 
-    def _rand_binary(self):
-        n = random.randint(self._min_str_len, self._max_str_len)
-        return bytes(random.getrandbits(8) for _ in range(n))
+    def _rand_binary(self, nlen):
+        return bytes(random.getrandbits(8) for _ in range(nlen))
 
     def _rand_date(self):
         start = date(1900, 1, 1).toordinal()
@@ -112,9 +112,20 @@ class LakeDataGenerator:
         if isinstance(dtype, DecimalType):
             return self._rand_decimal(dtype.precision, dtype.scale)
         if isinstance(dtype, StringType):
-            return self._rand_string()
+            return self._rand_string(
+                random.randint(self._min_str_len, self._max_str_len)
+            )
+        if isinstance(dtype, CharType) or isinstance(dtype, VarcharType):
+            return self._rand_string(
+                random.randint(
+                    min(dtype.length, self._min_str_len),
+                    min(dtype.length, self._max_str_len),
+                )
+            )
         if isinstance(dtype, BinaryType):
-            return self._rand_binary()
+            return self._rand_binary(
+                random.randint(self._min_str_len, self._max_str_len)
+            )
         if isinstance(dtype, DateType):
             return self._rand_date()
         if isinstance(dtype, TimestampType):
@@ -151,7 +162,37 @@ class LakeDataGenerator:
                 nr = null_rate if f.nullable else 0.0
                 obj[f.name] = self._random_value_for_type(f.dataType, nr)
             return Row(**obj)
-        return self._rand_string()
+        return self._rand_string(random.randint(self._min_str_len, self._max_str_len))
+
+    def _map_type_to_insert(self, dtype):
+        # Char and Varchar have to be Strings
+        if isinstance(dtype, CharType) or isinstance(dtype, VarcharType):
+            return StringType()
+        if isinstance(dtype, ArrayType):
+            return ArrayType(
+                self._map_type_to_insert(dtype.elementType),
+                containsNull=dtype.containsNull,
+            )
+        if isinstance(dtype, MapType):
+            return (
+                MapType(
+                    dtype.keyType,
+                    dtype.valueType,
+                    valueContainsNull=dtype.valueContainsNull,
+                ),
+            )
+        if isinstance(dtype, StructType):
+            struct_fields = []
+            for f in dtype.fields:
+                struct_fields.append(
+                    StructField(
+                        name=f.name,
+                        dataType=self._map_type_to_insert(f.dataType),
+                        nullable=f.nullable,
+                    )
+                )
+            return StructType(struct_fields)
+        return dtype
 
     def insert_random_data(
         self, spark: SparkSession, catalog_name: str, table: SparkTable
@@ -168,19 +209,33 @@ class LakeDataGenerator:
         n_rows = random.randint(0, 100)
         null_rate: float = 0.05 if random.randint(1, 2) == 1 else 0.0
 
-        struct = StructType(
+        struct1 = StructType(
             [
-                StructField(name=cname, dataType=val.spark_type, nullable=val.nullable)
+                StructField(
+                    name=cname,
+                    dataType=val.spark_type,
+                    nullable=val.nullable,
+                )
+                for cname, val in table.columns.items()
+            ]
+        )
+        struct2 = StructType(
+            [
+                StructField(
+                    name=cname,
+                    dataType=self._map_type_to_insert(val.spark_type),
+                    nullable=val.nullable,
+                )
                 for cname, val in table.columns.items()
             ]
         )
         rows = []
         for _ in range(n_rows):
             rec = {}
-            for f in struct.fields:
+            for f in struct1.fields:
                 nr = null_rate if f.nullable else 0.0
                 rec[f.name] = self._random_value_for_type(f.dataType, nr)
             rows.append(Row(**rec))
         # Use explicit schema so types match exactly
-        df = spark.createDataFrame(rows, schema=struct)
+        df = spark.createDataFrame(rows, schema=struct2)
         df.writeTo(f"{catalog_name}.test.{table.table_name}").append()

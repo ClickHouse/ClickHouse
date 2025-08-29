@@ -14,6 +14,8 @@ from pyspark.sql.types import (
     FloatType,
     DoubleType,
     DecimalType,
+    CharType,
+    VarcharType,
     StringType,
     BinaryType,
     DateType,
@@ -199,11 +201,15 @@ class ClickHouseSparkTypeMapper:
         # Handle FixedString with length
         fixed_string_match = re.match(r"FixedString\((\d+)\)", ch_type)
         if fixed_string_match:
-            length = fixed_string_match.group(1)
+            nlength = fixed_string_match.group(1)
             return (
-                f"VARCHAR({length})",
-                inside_nullable,
-                StringType(),
+                (f"CHAR({nlength})", inside_nullable, CharType(length=int(nlength)))
+                if random.randint(1, 2) == 1
+                else (
+                    f"VARCHAR({nlength})",
+                    inside_nullable,
+                    VarcharType(length=int(nlength)),
+                )
             )
 
         # Handle DateTime and Time
