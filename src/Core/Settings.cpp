@@ -6821,13 +6821,13 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
     DECLARE(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
+    DECLARE(Bool, allow_experimental_database_iceberg, true, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_database_unity_catalog, false, R"(
+    DECLARE(Bool, allow_experimental_database_unity_catalog, true, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_database_glue_catalog, false, R"(
+    DECLARE(Bool, allow_experimental_database_glue_catalog, true, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
