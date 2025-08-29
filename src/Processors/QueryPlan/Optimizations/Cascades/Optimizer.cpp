@@ -114,7 +114,7 @@ GroupId CascadesOptimizer::fillMemoFromQueryPlan(OptimizerContext & optimizer_co
 
     JoinGraph join_graph;
     if (!collectJoins(node, join_graph))
-        join_graph.addRelation({}, *query_plan.getRootNode());
+        join_graph.addRelation({}, *node);
 
     LOG_TRACE(optimizer_context.log, "JOIN Graph:\n{}", join_graph.dump());
 
