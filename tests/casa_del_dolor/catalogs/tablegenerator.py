@@ -93,7 +93,7 @@ class LakeTableGenerator:
         ddl += f" USING {self.get_format()}"
 
         # Add Partition by, can't partition by all columns
-        if random.randint(1, 4) == 1:
+        if random.randint(1, 5) == 1:
             partition_clauses = self.add_partition_clauses(columns_spark)
             random.shuffle(partition_clauses)
             random_subset = random.sample(
@@ -158,15 +158,15 @@ class IcebergTableGenerator(LakeTableGenerator):
         flattened_columns = self.flat_columns(columns_spark)
         for k, val in flattened_columns.items():
             res.append(k)
-            # if (
-            #    isinstance(val, TimestampType)
-            #    or isinstance(val, DateType)
-            #    or random.randint(0, 9) == 0
-            # ):
-            #    res.append(f"year({k})")
-            #    res.append(f"month({k})")
-            #    res.append(f"day({k})")
-            #    res.append(f"hour({k})")
+            if (
+                isinstance(val, TimestampType)
+                or isinstance(val, DateType)
+                or random.randint(0, 9) == 0
+            ):
+                res.append(f"year({k})")
+                res.append(f"month({k})")
+                res.append(f"day({k})")
+                res.append(f"hour({k})")
             res.append(f"bucket({random.randint(0, 1000)}, {k})")
             res.append(f"truncate({random.randint(0, 1000)}, {k})")
         return res
@@ -683,7 +683,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         properties = {}
 
         # Column mapping mode
-        mapping_mode = random.choice(["none", "id"])
+        mapping_mode = random.choice(["none", "name", "id"])
         properties["delta.columnMapping.mode"] = mapping_mode
 
         # Min reader/writer version based on features
