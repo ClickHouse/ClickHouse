@@ -1,5 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+#include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -128,21 +128,25 @@ template <typename Stream>
 void serializeSparseIndex(const DictionaryBlock & sparse_index, Stream & stream)
 {
     SerializationString serialization_string;
-    SerializationNumber<UInt32> serialization_number;
+    SerializationNumber<UInt64> serialization_number;
 
     serialization_string.serializeBinaryBulk(*sparse_index.tokens, stream.compressed_hashing, 0, sparse_index.tokens->size());
     serialization_number.serializeBinaryBulk(*sparse_index.marks, stream.compressed_hashing, 0, sparse_index.marks->size());
 }
 
-void MergeTreeIndexGranuleTextWritable::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranuleTextWritable::serializeBinary(WriteBuffer &) const
 {
-    UNUSED(ostr);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings");
+}
 
-    using Stream = MergeTreeDataPartWriterOnDisk::Stream<false>;
+void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(IndexOutputStreams & streams) const
+{
+    auto * index_stream = streams.at(IndexSubstream::Type::Regular);
+    auto * dictionary_stream = streams.at(IndexSubstream::Type::TextIndexDictionary);
+    auto * postings_stream = streams.at(IndexSubstream::Type::TextIndexPostings);
 
-    Stream * index_stream = nullptr;
-    Stream * dictionary_stream = nullptr;
-    Stream * postings_stream = nullptr;
+    if (!index_stream || !dictionary_stream || !postings_stream)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
     auto marks_to_postings = serializePostings(posting_lists, *postings_stream);
     auto sparse_index_block = serializeDictionary(tokens, *dictionary_stream, 256);
@@ -265,6 +269,16 @@ MergeTreeIndexText::MergeTreeIndexText(
     , params(std::move(params_))
     , token_extractor(std::move(token_extractor_))
 {
+}
+
+IndexSubstreams MergeTreeIndexText::getSubstreams() const
+{
+    return
+    {
+        {IndexSubstream::Type::Regular, "", ".idx"},
+        {IndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
+        {IndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
+    };
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const

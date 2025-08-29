@@ -3,6 +3,7 @@
 
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 
 #include <memory>
 #include <string>
@@ -120,11 +121,6 @@ struct NearestNeighbours
 
 /// ---------------------------------------------
 
-struct SerializeIndexSettings
-{
-    Index
-}
-
 /// Stores some info about a single block of data.
 struct IMergeTreeIndexGranule
 {
@@ -132,6 +128,9 @@ struct IMergeTreeIndexGranule
 
     /// Serialize always last version.
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
+
+    /// Serialize with multiple streams.
+    virtual void serializeBinaryWithMultipleStreams(IndexOutputStreams & streams) const;
 
     /// Version of the index to deserialize:
     ///
@@ -313,11 +312,11 @@ struct IMergeTreeIndex
     /// Returns extension for serialization.
     /// Reimplement if you want new index format.
     ///
-    /// NOTE: In case getSerializedFileExtension() is reimplemented,
+    /// NOTE: In case getSubstreams() is reimplemented,
     /// getDeserializedFormat() should be reimplemented too,
     /// and check all previous extensions too
     /// (to avoid breaking backward compatibility).
-    virtual const char* getSerializedFileExtension() const { return ".idx"; }
+    virtual IndexSubstreams getSubstreams() const { return {{IndexSubstream::Type::Regular, "", ".idx"}}; }
 
     /// Returns extension for deserialization.
     ///

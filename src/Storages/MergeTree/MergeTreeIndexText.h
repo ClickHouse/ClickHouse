@@ -55,6 +55,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     ~MergeTreeIndexGranuleTextWritable() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
+    void serializeBinaryWithMultipleStreams(IndexOutputStreams & streams) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return tokens.empty(); }
@@ -112,6 +113,7 @@ public:
 
     ~MergeTreeIndexText() override = default;
 
+    IndexSubstreams getSubstreams() const override;
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;

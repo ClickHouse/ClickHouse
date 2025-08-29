@@ -22,12 +22,17 @@ Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
     return index.expression->getRequiredColumns();
 }
 
-MergeTreeIndexFormat
-IMergeTreeIndex::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
 {
     if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
         return {1, ".idx"};
     return {0 /*unknown*/, ""};
+}
+
+void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(IndexOutputStreams & streams) const
+{
+    auto * stream = streams.at(IndexSubstream::Type::Regular);
+    serializeBinary(stream->compressed_hashing);
 }
 
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
