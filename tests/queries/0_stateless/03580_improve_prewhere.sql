@@ -1,3 +1,4 @@
+-- Tags: no-parallel-replicas
 -- Default settings
 set optimize_move_to_prewhere = 1;
 set move_all_conditions_to_prewhere = 1;
