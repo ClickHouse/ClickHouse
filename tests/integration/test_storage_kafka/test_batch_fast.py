@@ -859,33 +859,46 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
 
     k.kafka_check_result(result, True)
 
+
+def test_kafka_protobuf_transaction_oneof(kafka_cluster):
     instance.query(
         """
-    CREATE TABLE test.kafka_writer (key UInt64, value String)
-        ENGINE = Kafka
-        SETTINGS kafka_broker_list = 'kafka1:19092',
-                    kafka_topic_list = 'pb_no_delimiter',
-                    kafka_group_name = 'pb_no_delimiter',
-                    kafka_format = 'ProtobufSingle',
-                    kafka_commit_on_select = 1,
-                    kafka_schema = 'kafka.proto:KeyValuePair';
-    """
+        CREATE TABLE test.kafka (
+                date String,
+                buy_payment_cash_value Float64,
+                buy_payment_card_value Float64,
+                buy_vendor_name String,
+                buy_items_bought Int32,
+                sell_payment_cash_value Float64,
+                sell_payment_card_value Float64,
+                sell_customer_name String,
+                sell_items_sold Int32,
+                payment_details Enum8('omitted' = 0, 'buy' = 2, 'sell' = 3),
+                buy_payment_value Enum8('omitted' = 0, 'cash_value' = 1, 'card_value' = 2),
+                sell_payment_value Enum8('omitted' = 0, 'cash_value' = 1, 'card_value' = 2),
+            )
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'pb_transaction_oneof',
+                     kafka_group_name = 'pb_transaction_oneof',
+                     kafka_format = 'Protobuf',
+                     kafka_commit_on_select = 1,
+                     kafka_schema = 'oneof_transaction.proto:Transaction';
+        """
     )
 
-    instance.query(
-        "INSERT INTO test.kafka_writer VALUES (13,'Friday'),(42,'Answer to the Ultimate Question of Life, the Universe, and Everything'), (110, 'just a number')"
+    k.kafka_produce_protobuf_transaction_oneof(
+        kafka_cluster, "pb_transaction_oneof", 0, 1
     )
 
-    time.sleep(1)
+    expected="1000000	10	0	dell	1	0	0		0	buy	cash_value	omitted\n"
+    result = ""
+    while True:
+        result += instance.query("SELECT * FROM test.kafka", ignore_error=True)
+        if k.kafka_check_result(result,  ref_string=expected):
+            break
 
-    result = instance.query("SELECT * FROM test.kafka ORDER BY key", ignore_error=True)
-
-    expected = """\
-13	Friday
-42	Answer to the Ultimate Question of Life, the Universe, and Everything
-110	just a number
-"""
-    assert TSV(result) == TSV(expected)
+    k.kafka_check_result(result, True,  ref_string=expected)
 
 
 @pytest.mark.parametrize(

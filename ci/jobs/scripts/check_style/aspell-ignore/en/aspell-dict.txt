@@ -2025,6 +2025,7 @@ OKLCH
 OLAP
 OLTP
 omclickhouse
+oneof
 onstraints
 ontime
 OnTime
