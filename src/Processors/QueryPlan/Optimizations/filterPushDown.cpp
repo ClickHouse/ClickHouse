@@ -142,29 +142,11 @@ static size_t addNewFilterStepOrThrow(
             filter_column_name,
             expression.dumpDAG());
 
-    /// De-dup BEFORE inserting anything:
-    {
-        QueryPlan::Node * downstream = child_node->children[child_idx];
-        if (auto * existing = typeid_cast<FilterStep *>(downstream->step.get()))
-        {
-            const String new_sig  = split_filter.dag.dumpDAG();
-            const String curr_sig = existing->getExpression().dumpDAG();
-            const String new_name = split_filter.dag.getOutputs()[split_filter.filter_pos]->result_name;
-            const String curr_name = existing->getFilterColumnName();
-            if (new_sig == curr_sig
-                && new_name == curr_name
-                && existing->removesFilterColumn() == split_filter.remove_filter)
-            {
-                return 0; // identical filter already present
-            }
-            LOG_TRACE(getLogger("QueryPlanOptimizations"), "Skip duplicate filter at child {} (sig={})", child_idx, curr_sig);
-        }
-    }
-
-    /// Insert a new Filter step between child_node and its downstream at child_idx:
+      /// Add new Filter step before Child.
+    /// Expression/Filter -> Child -> Something
     auto & node = nodes.emplace_back();
-    node.children.push_back(child_node->children[child_idx]); // keep previous downstream
-    child_node->children[child_idx] = &node;                  // JOIN/child now points to the new node
+    node.children.emplace_back(&node);
+    std::swap(node.children[0], child_node->children[child_idx]);
 
     /// Set up the filter step
     String split_filter_column_name = split_filter.dag.getOutputs()[split_filter.filter_pos]->result_name;

@@ -2383,25 +2383,6 @@ struct DisjunctionNodes
     std::vector<const ActionsDAG::Node *> rejected;
 };
 
-bool dependsOnAnyInput(const ActionsDAG::Node * n)
-{
-    if (!n) return false;
-    std::stack<const ActionsDAG::Node *> st;
-    std::unordered_set<const ActionsDAG::Node *> vis;
-    st.push(n);
-    while (!st.empty())
-    {
-        const auto * cur = st.top(); st.pop();
-        if (!vis.insert(cur).second)
-            continue;
-        if (cur->type == ActionsDAG::ActionType::INPUT)
-            return true;
-        for (const auto * ch : cur->children)
-            st.push(ch);
-    }
-    return false;
-}
-
 inline bool isConstNode(const ActionsDAG::Node * n)
 {
     return n->type == ActionsDAG::ActionType::COLUMN && n->column && isColumnConst(*n->column);
@@ -2557,7 +2538,6 @@ DisjunctionNodes getDisjunctionNodes(
             if (f.ok == f.node->children.size()
                 && f.node->type != ActionsDAG::ActionType::ARRAY_JOIN
                 && f.node->type != ActionsDAG::ActionType::INPUT
-                && !(f.node->type == ActionsDAG::ActionType::FUNCTION && !allow_non_deterministic_functions && !f.node->function_base->isDeterministicInScopeOfQuery())
                 && !nondet)
             {
                 allowed_nodes.emplace(f.node);
@@ -2622,8 +2602,6 @@ DisjunctionNodes getDisjunctionNodes(
                 disjunction.rejected.push_back(a);
         }
     }
-
-    std::erase_if(disjunction.allowed, [](const ActionsDAG::Node * n){ return isConstNode(n); });
 
     return disjunction;
 }
@@ -2776,17 +2754,6 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
     return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
 }
 
-/// Bail if the built predicate does not depend on any real INPUTs of the side we push to.
-/// This prevents pushing down pure constants (or predicates built only from constants/aliases).
-static inline std::optional<ActionsDAG::ActionsForFilterPushDown>
-returnEmptyIfConstPredicate(const ActionsDAG::Node * final_node,
-                            std::optional<ActionsDAG::ActionsForFilterPushDown> built)
-{
-    if (built && !dependsOnAnyInput(final_node))
-        return {};
-    return built;
-}
-
 std::optional<ActionsDAG::ActionsForFilterPushDown>
 ActionsDAG::createActionsForDisjunction(NodeRawConstPtrs disjunction, const ColumnsWithTypeAndName & all_inputs)
 {
@@ -2918,8 +2885,7 @@ ActionsDAG::createActionsForDisjunction(NodeRawConstPtrs disjunction, const Colu
     if (remove_filter)
         actions.outputs.insert(actions.outputs.begin(), result_predicate);
 
-    auto res = ActionsDAG::ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
-    return returnEmptyIfConstPredicate(result_predicate, std::optional<ActionsDAG::ActionsForFilterPushDown>{std::move(res)});
+    return ActionsDAG::ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
 }
 
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForFilterPushDown(
@@ -3071,10 +3037,6 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
         ? and_args.front()
         : &actions.addFunction(std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>()), and_args, {});
 
-    /// Do not push if the predicate is constant / does not depend on child inputs.
-    if (!dependsOnAnyInput(final))
-        return {};
-
     for (const auto & col : all_inputs)
     {
         const Node * in;
@@ -3102,8 +3064,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
 
     size_t filter_pos = remove_filter ? 0 : std::find(actions.outputs.begin(), actions.outputs.end(), final) - actions.outputs.begin();
 
-    auto res = ActionsDAG::ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
-    return std::optional<ActionsDAG::ActionsForFilterPushDown>{std::move(res)};
+    return ActionsDAG::ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
 }
 
 ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPushDown(
