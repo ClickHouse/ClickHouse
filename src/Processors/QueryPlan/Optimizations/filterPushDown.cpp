@@ -139,8 +139,9 @@ static size_t addNewFilterStepOrThrow(
     node.children.emplace_back(&node);
 
     std::swap(node.children[0], child_node->children[child_idx]);
+    /// Expression/Filter -> Child -> Filter -> Something
 
-    /// Set up the filter step
+    /// New filter column is the first one.
     String split_filter_column_name = split_filter.dag.getOutputs()[split_filter.filter_pos]->result_name;
     node.step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter.dag), std::move(split_filter_column_name), split_filter.remove_filter);
@@ -629,9 +630,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     }
 
     if (auto updated_steps = simplePushDownOverStep<DistinctStep>(parent_node, true, nodes, child))
-        return updated_steps;
-
-    if (auto updated_steps = simplePushDownOverStep<ExpressionStep>(parent_node, false, nodes, child))
         return updated_steps;
 
     if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child))
