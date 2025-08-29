@@ -36,7 +36,7 @@ instance = cluster.add_instance(
 
 # Helpers
 
-async def publich_messages(cluster_inst, subject, messages=(), bytes=None):
+async def publish_messages(cluster_inst, subject, messages=(), bytes=None):
     nc = await nats_helpers.nats_connect_ssl(cluster_inst)
     logging.debug("NATS connection status: " + str(nc.is_connected))
 
