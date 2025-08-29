@@ -117,6 +117,8 @@ public:
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
+    /// NOTE: The caller should call background_memory_tracker.adjustOnBackgroundTaskEnd() at the end (see existing callers),
+    /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
     static ThreadGroupPtr createForBackgroundProcess(ContextPtr storage_context);
 
     static ThreadGroupPtr createForMaterializedView();
