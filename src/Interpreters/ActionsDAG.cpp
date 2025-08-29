@@ -3577,6 +3577,19 @@ static MutableColumnPtr deserializeConstant(
     return ColumnConst::create(std::move(column), 0);
 }
 
+/// Reorder DAG nodes so that the whole subgraph of the inputs is listed before the node itself
+static void addChildrenBeforeNode(std::vector<const ActionsDAG::Node *> & reordered_nodes, std::unordered_set<const ActionsDAG::Node *> & already_added_nodes, const ActionsDAG::Node * node)
+{
+    if (already_added_nodes.contains(node))
+        return;
+
+    for (const auto * child : node->children)
+        addChildrenBeforeNode(reordered_nodes, already_added_nodes, child);
+
+    reordered_nodes.push_back(node);
+    already_added_nodes.insert(node);
+};
+
 void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
 {
     size_t nodes_size = nodes.size();
@@ -3586,21 +3599,8 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
     std::vector<const Node *> reordered_nodes;
     {
         std::unordered_set<const Node *> already_added_nodes;
-
-        auto add_node = [&reordered_nodes, &already_added_nodes](const Node * node)
-        {
-            if (already_added_nodes.contains(node))
-                return;
-            reordered_nodes.push_back(node);
-            already_added_nodes.insert(node);
-        };
-
         for (const auto & node : nodes)
-        {
-            for (const auto * child : node.children)
-                add_node(child);
-            add_node(&node);
-        }
+            addChildrenBeforeNode(reordered_nodes, already_added_nodes, &node);
     }
 
     std::unordered_map<const Node *, size_t> node_to_id;
