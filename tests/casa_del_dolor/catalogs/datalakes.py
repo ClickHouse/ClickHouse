@@ -122,18 +122,24 @@ def get_spark(
         "org.apache.spark:spark-hadoop-cloud_2.12:3.5.6",
         "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2",
         "org.apache.iceberg:iceberg-spark-extensions-3.5_2.12:1.9.2",
-        "org.apache.iceberg:iceberg-aws-bundle:1.9.2",
-        "org.apache.iceberg:iceberg-azure-bundle:1.9.2",
         "io.delta:delta-spark_2.12:3.3.2",
         "io.unitycatalog:unitycatalog-spark_2.12:0.2.0",
-        "com.microsoft.azure:azure-storage:8.6.6",
-        "org.apache.hadoop:hadoop-azure:3.3.6",
     ]
-
-    nessie_jars = [
-        "org.projectnessie.nessie-integrations:nessie-spark-extensions-3.4_2.12:0.76.0",
-        "org.projectnessie:nessie-spark-runtime-3.4_2.12:0.76.0",
-    ]
+    if storage == TableStorage.S3:
+        all_jars.extend(
+            [
+                "org.apache.iceberg:iceberg-aws-bundle:1.9.2",
+                "com.amazonaws:aws-glue-datacatalog-spark-client-3_2.12:3.5.6",
+            ]
+        )
+    elif storage == TableStorage.Azure:
+        all_jars.extend(
+            [
+                "org.apache.iceberg:iceberg-azure-bundle:1.9.2",
+                "com.microsoft.azure:azure-storage:8.6.6",
+                "org.apache.hadoop:hadoop-azure:3.3.6",
+            ]
+        )
 
     if lake == LakeFormat.Iceberg:
         catalog_extension = (
@@ -163,6 +169,14 @@ def get_spark(
     builder.config(
         "spark.executor.extraJavaOptions", f"-Dlog4j.configurationFile=file:{logfile}"
     )
+    builder.config(
+        "spark.hadoop.javax.jdo.option.ConnectionURL",
+        "jdbc:derby:memory:metastore_db;create=true",
+    )
+    builder.config(
+        "spark.hadoop.javax.jdo.option.ConnectionDriverName",
+        "org.apache.derby.jdbc.EmbeddedDriver",
+    )
 
     # ============================================================
     # CATALOG CONFIGURATIONS
@@ -178,29 +192,38 @@ def get_spark(
                 "spark.hadoop.hive.metastore.client.factory.class",
                 "com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory",
             )
+            builder.enableHiveSupport()
+
         if storage == TableStorage.S3:
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.warehouse",
-                f"s3://{cluster.minio_bucket}/{catalog_name}",
-            )
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.client.region", "us-east-1"
-            )
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.io-impl",
                 "org.apache.iceberg.aws.s3.S3FileIO",
             )
-    elif catalog == LakeCatalogs.Hive:
-        # Enable Hive support
-        if lake == LakeFormat.Iceberg:
-            builder.config(f"spark.sql.catalog.{catalog_name}.type", "hive")
+
             builder.config(
-                f"spark.sql.catalog.{catalog_name}.uri", "thrift://0.0.0.0:9083"
+                "spark.sql.warehouse.dir",
+                f"s3a://{cluster.minio_bucket}/{catalog_name}",
             )
-        # Hive metastore version
-        builder.config("spark.sql.hive.metastore.version", "3.1.3")
-        builder.config("spark.sql.hive.metastore.jars", "maven")
+            if lake == LakeFormat.Iceberg:
+                builder.config(
+                    f"spark.sql.catalog.{catalog_name}.warehouse",
+                    f"s3://iceberg_data/{catalog_name}",
+                )
+    elif catalog == LakeCatalogs.Hive:
+        builder.config(
+            "spark.sql.catalog.hive.catalog-impl", "org.apache.iceberg.hive.HiveCatalog"
+        )
+        builder.config(f"spark.sql.catalog.{catalog_name}.uri", "thrift://0.0.0.0:9083")
         builder.enableHiveSupport()
+        if storage == TableStorage.S3:
+            builder.config(
+                "spark.sql.warehouse.dir",
+                "s3a://warehouse-hms/data/",
+            )
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.warehouse",
+                "s3a://warehouse-hms/data/",
+            )
     elif catalog == LakeCatalogs.REST or (
         catalog == LakeCatalogs.Unity and lake == LakeFormat.Iceberg
     ):
@@ -214,27 +237,22 @@ def get_spark(
         )
         if storage == TableStorage.S3:
             builder.config(
-                f"spark.sql.catalog.{catalog_name}.warehouse",
-                f"s3://{"iceberg_data" if catalog == LakeCatalogs.REST else f"{cluster.minio_bucket}/{catalog_name}"}/",
-            )
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.client.region", "us-east-1"
-            )
-            builder.config(
                 f"spark.sql.catalog.{catalog_name}.io-impl",
                 "org.apache.iceberg.aws.s3.S3FileIO",
             )
+            if catalog == LakeCatalogs.REST:
+                builder.config(
+                    "spark.sql.warehouse.dir",
+                    f"s3a://{cluster.minio_bucket}/{catalog_name}",
+                )
+                builder.config(
+                    f"spark.sql.catalog.{catalog_name}.warehouse",
+                    f"s3://iceberg_data/{catalog_name}",
+                )
     elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
         builder.config(f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8081")
         builder.config(f"spark.sql.catalog.{catalog_name}.token", "")
         builder.config("spark.sql.defaultCatalog", f"{catalog_name}")
-    elif catalog == LakeCatalogs.Nessie:
-        builder.config(
-            f"spark.sql.catalog.{catalog_name}.catalog-impl",
-            "org.apache.iceberg.nessie.NessieCatalog",
-        )
-        # builder.config(f"spark.sql.catalog.{catalog_name}.uri", "uri")
-        # builder.config(f"spark.sql.catalog.{catalog_name}.ref", "ref")
     elif lake == LakeFormat.Iceberg:
         # Something as default for iceberg, nothing needed for delta
         builder.config(f"spark.sql.catalog.{catalog_name}.type", "hadoop")
@@ -242,27 +260,7 @@ def get_spark(
     # ============================================================
     # STORAGE CONFIGURATIONS
     # ============================================================
-    if catalog == LakeCatalogs.Unity and lake == LakeFormat.Iceberg:
-        # It has to point to unity
-        builder.config("spark.sql.warehouse.dir", "unity")
-        builder.config(f"spark.sql.catalog.{catalog_name}.warehouse", "unity")
-
-        if storage == TableStorage.S3:
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.warehouse",
-                f"s3a://{cluster.minio_bucket}/{catalog_name}",
-            )
-        elif storage == TableStorage.Azure:
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.warehouse",
-                f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}",
-            )
-        elif storage == TableStorage.Local:
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.warehouse",
-                f"file://{get_local_base_path(cluster, catalog_name)}",
-            )
-    elif storage == TableStorage.S3:
+    if storage == TableStorage.S3:
         # S3A filesystem implementation
         builder.config(
             "spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem"
@@ -278,16 +276,28 @@ def get_spark(
         builder.config("spark.hadoop.fs.s3a.secret.key", minio_secret_key)
         builder.config(
             "spark.hadoop.fs.s3a.aws.credentials.provider",
-            "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
+            (
+                "com.amazonaws.auth.DefaultAWSCredentialsProviderChain"
+                if catalog == LakeCatalogs.Glue
+                else "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider"
+            ),
         )
         builder.config("spark.hadoop.fs.s3a.endpoint.region", "us-east-1")
+        builder.config(f"spark.sql.catalog.{catalog_name}.client.region", "us-east-1")
+        # For Glue
+        builder.config("spark.executorEnv.AWS_REGION", "us-east-1")
+        builder.config("spark.executorEnv.AWS_ACCESS_KEY_ID", minio_access_key)
+        builder.config("spark.executorEnv.AWS_SECRET_ACCESS_KEY", minio_secret_key)
 
-        builder.config(
-            "spark.sql.warehouse.dir",
-            f"s3a://{cluster.minio_bucket}/{catalog_name}",
-        )
-        if catalog not in (LakeCatalogs.Glue, LakeCatalogs.REST):
-            builder.config(f"spark.sql.catalog.{catalog_name}.warehouse", f"s3a://{cluster.minio_bucket}/{catalog_name}")
+        if catalog == LakeCatalogs.NoCatalog:
+            builder.config(
+                "spark.sql.warehouse.dir",
+                f"s3a://{cluster.minio_bucket}/{catalog_name}",
+            )
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.warehouse",
+                f"s3a://{cluster.minio_bucket}/{catalog_name}",
+            )
     elif storage == TableStorage.Azure:
         # For Azurite local emulation
         builder.config(

@@ -183,4 +183,4 @@ class LakeDataGenerator:
             rows.append(Row(**rec))
         # Use explicit schema so types match exactly
         df = spark.createDataFrame(rows, schema=struct)
-        df.writeTo(f"{catalog_name}.test.{table.table_name}")
+        df.writeTo(f"{catalog_name}.test.{table.table_name}").append()

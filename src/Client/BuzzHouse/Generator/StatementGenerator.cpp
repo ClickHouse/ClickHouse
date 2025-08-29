@@ -1457,6 +1457,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                     SQLColumn & nested_col = t.cols.at(rg.pickRandomly(nested_ids));
                     NestedType * ntp = dynamic_cast<NestedType *>(nested_col.tp);
 
+                    chassert(nested_col.tp && ncol.tp);
                     ntp->subtypes.emplace_back(NestedSubType(ncname, ncol.tp));
                     nested_cols[nested_col.cname] = nested_col;
                     flatTableColumnPath(flat_nested, nested_cols, [](const SQLColumn &) { return true; });
