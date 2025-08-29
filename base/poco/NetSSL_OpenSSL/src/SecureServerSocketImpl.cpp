@@ -86,9 +86,11 @@ void SecureServerSocketImpl::close()
 	_impl.close();
 }
 
-[[noreturn]] void throwInvalidAccess(const char * what)
-{
-    throw Poco::InvalidAccessException(what);
+namespace {
+    [[noreturn]] void throwInvalidAccess(const char * what)
+    {
+        throw Poco::InvalidAccessException(what);
+    }
 }
 
 int SecureServerSocketImpl::sendBytes(const void* buffer, int length, int flags)

@@ -75,9 +75,11 @@ void SecureStreamSocketImpl::setReceiveThrottler(const Poco::Net::ThrottlerPtr& 
 	underlying_socket->setReceiveThrottler(throttler);
 }
 
-[[noreturn]] void throwInvalidAccess(const char * what)
-{
-    throw Poco::InvalidAccessException(what);
+namespace {
+    [[noreturn]] void throwInvalidAccess(const char * what)
+    {
+        throw Poco::InvalidAccessException(what);
+    }
 }
 
 SocketImpl* SecureStreamSocketImpl::acceptConnection(SocketAddress& clientAddr)

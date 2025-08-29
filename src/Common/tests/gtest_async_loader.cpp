@@ -440,7 +440,7 @@ TEST(AsyncLoader, JobFailure)
 
     std::string error_message = "test job failure";
 
-    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+    auto job_func = [&][[noreturn]] (AsyncLoader &, const LoadJobPtr &) {
         throw std::runtime_error(error_message);
     };
 
@@ -470,7 +470,7 @@ TEST(AsyncLoader, ScheduleJobWithFailedDependencies)
 
     std::string_view error_message = "test job failure";
 
-    auto failed_job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+    auto failed_job_func = [&][[noreturn]] (AsyncLoader &, const LoadJobPtr &) {
         throw Exception(ErrorCodes::ASYNC_LOAD_FAILED, "{}", error_message);
     };
 
@@ -563,7 +563,7 @@ TEST(AsyncLoader, IgnoreDependencyFailure)
 
     std::string_view error_message = "test job failure";
 
-    auto failed_job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+    auto failed_job_func = [&][[noreturn]] (AsyncLoader &, const LoadJobPtr &) {
         throw Exception(ErrorCodes::ASYNC_LOAD_FAILED, "{}", error_message);
     };
     auto dependent_job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
@@ -592,7 +592,7 @@ TEST(AsyncLoader, CustomDependencyFailure)
 
     std::string_view error_message = "test job failure";
 
-    auto evil_dep_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+    auto evil_dep_func = [&][[noreturn]] (AsyncLoader &, const LoadJobPtr &) {
         throw Exception(ErrorCodes::ASYNC_LOAD_FAILED, "{}", error_message);
     };
     auto good_dep_func = [&] (AsyncLoader &, const LoadJobPtr &) {
