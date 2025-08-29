@@ -47,7 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_iceberg_data_file_bytes", 100000000, 100000000, "New setting."},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
             {"enable_join_runtime_filters", false, false, "New setting"},
-            {"join_runtime_bloom_filter_bytes", 512 * 1024, 512 * 1024, "New setting"},
+            {"join_runtime_bloom_filter_bytes", 512_KiB, 512_KiB, "New setting"},
             {"join_runtime_bloom_filter_hash_functions", 3, 3, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.8",

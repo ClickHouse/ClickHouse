@@ -7032,7 +7032,7 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
     DECLARE(Bool, enable_join_runtime_filters, false, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512 * 1024, R"(
+    DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512_KiB, R"(
 Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, R"(
