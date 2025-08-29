@@ -180,11 +180,15 @@ def get_spark(
             )
         if storage == TableStorage.S3:
             builder.config(
-                f"spark.sql.catalog.{catalog_name}.io-impl",
-                "org.apache.iceberg.aws.s3.S3FileIO",
+                f"spark.sql.catalog.{catalog_name}.warehouse",
+                f"s3://{cluster.minio_bucket}/{catalog_name}",
             )
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.client.region", "us-east-1"
+            )
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.io-impl",
+                "org.apache.iceberg.aws.s3.S3FileIO",
             )
     elif catalog == LakeCatalogs.Hive:
         # Enable Hive support
@@ -208,18 +212,17 @@ def get_spark(
             f"spark.sql.catalog.{catalog_name}.uri",
             f"http://localhost:{"8081/api/2.1/unity-catalog/iceberg" if catalog == LakeCatalogs.Unity else "8182"}",
         )
-        builder.config(
-            f"spark.sql.catalog.{catalog_name}.cache-enabled",
-            random.choice(["true", "false"]),
-        )
-
         if storage == TableStorage.S3:
             builder.config(
-                f"spark.sql.catalog.{catalog_name}.io-impl",
-                "org.apache.iceberg.aws.s3.S3FileIO",
+                f"spark.sql.catalog.{catalog_name}.warehouse",
+                f"s3://{"iceberg_data" if catalog == LakeCatalogs.REST else f"{cluster.minio_bucket}/{catalog_name}"}/",
             )
             builder.config(
                 f"spark.sql.catalog.{catalog_name}.client.region", "us-east-1"
+            )
+            builder.config(
+                f"spark.sql.catalog.{catalog_name}.io-impl",
+                "org.apache.iceberg.aws.s3.S3FileIO",
             )
     elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
         builder.config(f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8081")
@@ -283,10 +286,8 @@ def get_spark(
             "spark.sql.warehouse.dir",
             f"s3a://{cluster.minio_bucket}/{catalog_name}",
         )
-        builder.config(
-            f"spark.sql.catalog.{catalog_name}.warehouse",
-            f"s3{"" if catalog in (LakeCatalogs.Glue, LakeCatalogs.REST) else "a"}://{cluster.minio_bucket}/{catalog_name}",
-        )
+        if catalog not in (LakeCatalogs.Glue, LakeCatalogs.REST):
+            builder.config(f"spark.sql.catalog.{catalog_name}.warehouse", f"s3a://{cluster.minio_bucket}/{catalog_name}")
     elif storage == TableStorage.Azure:
         # For Azurite local emulation
         builder.config(
@@ -563,6 +564,7 @@ logger.jetty.level = warn
                             "s3.secret-access-key": minio_secret_key,
                             "s3.region": "us-east-1",
                             "s3.path-style-access": "true",
+                            "s3.connection-ssl.enabled": "false",
                         }
                     )
                     next_warehouse = f"s3://{cluster.minio_bucket}/{catalog_name}"
@@ -603,6 +605,7 @@ logger.jetty.level = warn
                             "s3.secret-access-key": minio_secret_key,
                             "s3.region": "us-east-1",
                             "s3.path-style-access": "true",
+                            "s3.connection-ssl.enabled": "false",
                         },
                     )
             else:
@@ -620,6 +623,7 @@ logger.jetty.level = warn
                             "s3.secret-access-key": minio_secret_key,
                             "s3.region": "us-east-1",
                             "s3.path-style-access": "true",
+                            "s3.connection-ssl.enabled": "false",
                         },
                     )
             else:
