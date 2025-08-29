@@ -1129,7 +1129,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::calculateBytesAllocate
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
-Pipe HashedArrayDictionary<dictionary_key_type, sharded>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe HashedArrayDictionary<dictionary_key_type, sharded>::read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     PaddedPODArray<HashedArrayDictionary::KeyType> keys;
     keys.reserve(total_element_count);

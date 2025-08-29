@@ -743,7 +743,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
     callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
-Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe FlatDictionary::read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     const auto keys_count = loaded_keys.size();
 

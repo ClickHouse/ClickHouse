@@ -127,22 +127,22 @@ BlockIO ClickHouseDictionarySource::loadAll(ContextMutablePtr query_context)
     return createStreamForQuery(std::move(query_context), load_all_query);
 }
 
-QueryPipeline ClickHouseDictionarySource::loadUpdatedAll(ContextMutablePtr query_context)
+BlockIO ClickHouseDictionarySource::loadUpdatedAll(ContextMutablePtr query_context)
 {
     String load_update_query = getUpdateFieldAndDate();
-    return createStreamForQuery(std::move(query_context), load_update_query).pipeline;
+    return createStreamForQuery(std::move(query_context), load_update_query);
 }
 
-QueryPipeline ClickHouseDictionarySource::loadIds(ContextMutablePtr query_context, const std::vector<UInt64> & ids)
+BlockIO ClickHouseDictionarySource::loadIds(ContextMutablePtr query_context, const std::vector<UInt64> & ids)
 {
-    return createStreamForQuery(std::move(query_context), query_builder->composeLoadIdsQuery(ids)).pipeline;
+    return createStreamForQuery(std::move(query_context), query_builder->composeLoadIdsQuery(ids));
 }
 
 
-QueryPipeline ClickHouseDictionarySource::loadKeys(ContextMutablePtr query_context, const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO ClickHouseDictionarySource::loadKeys(ContextMutablePtr query_context, const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     String query = query_builder->composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
-    return createStreamForQuery(std::move(query_context), query).pipeline;
+    return createStreamForQuery(std::move(query_context), query);
 }
 
 bool ClickHouseDictionarySource::isModified() const

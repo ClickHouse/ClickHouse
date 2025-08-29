@@ -119,7 +119,7 @@ BlockIO ExecutableDictionarySource::loadAll(ContextMutablePtr)
     return io;
 }
 
-QueryPipeline ExecutableDictionarySource::loadUpdatedAll(ContextMutablePtr)
+BlockIO ExecutableDictionarySource::loadUpdatedAll(ContextMutablePtr)
 {
     if (configuration.implicit_key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadUpdatedAll method");
@@ -151,23 +151,29 @@ QueryPipeline ExecutableDictionarySource::loadUpdatedAll(ContextMutablePtr)
 
     LOG_TRACE(log, "loadUpdatedAll {}", command);
 
-    return QueryPipeline(coordinator->createPipe(command, command_arguments, {}, sample_block, context));
+    BlockIO io;
+    io.pipeline = QueryPipeline(coordinator->createPipe(command, command_arguments, {}, sample_block, context));
+    return io;
 }
 
-QueryPipeline ExecutableDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
+BlockIO ExecutableDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
     auto block = blockForIds(dict_struct, ids);
-    return getStreamForBlock(block);
+    BlockIO io;
+    io.pipeline = getStreamForBlock(block);
+    return io;
 }
 
-QueryPipeline ExecutableDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO ExecutableDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-    return getStreamForBlock(block);
+    BlockIO io;
+    io.pipeline = getStreamForBlock(block);
+    return io;
 }
 
 QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)

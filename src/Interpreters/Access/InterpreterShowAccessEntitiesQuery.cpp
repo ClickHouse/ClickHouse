@@ -23,6 +23,7 @@ InterpreterShowAccessEntitiesQuery::InterpreterShowAccessEntitiesQuery(const AST
 
 BlockIO InterpreterShowAccessEntitiesQuery::execute()
 {
+    /// FIXME(mstetsyuk)
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");

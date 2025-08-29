@@ -41,9 +41,9 @@ public:
     PostgreSQLDictionarySource & operator=(const PostgreSQLDictionarySource &) = delete;
 
     BlockIO loadAll(ContextMutablePtr) override;
-    QueryPipeline loadUpdatedAll(ContextMutablePtr) override;
-    QueryPipeline loadIds(ContextMutablePtr, const std::vector<UInt64> & ids) override;
-    QueryPipeline loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadUpdatedAll(ContextMutablePtr) override;
+    BlockIO loadIds(ContextMutablePtr, const std::vector<UInt64> & ids) override;
+    BlockIO loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override;

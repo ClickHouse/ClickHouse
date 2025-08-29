@@ -43,6 +43,7 @@ namespace ErrorCodes
 
 template <DictionaryKeyType dictionary_key_type>
 CacheDictionary<dictionary_key_type>::CacheDictionary(
+    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -62,6 +63,7 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
         })
     , configuration(configuration_)
     , log(getLogger("ExternalDictionaries"))
+    , context(std::move(context_))
     , rnd_engine(randomSeed())
 {
     if (!source_ptr->supportsSelectiveLoad())
@@ -541,7 +543,7 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe CacheDictionary<dictionary_key_type>::read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     ColumnsWithTypeAndName key_columns;
 
@@ -628,27 +630,27 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
     const auto now = std::chrono::system_clock::now();
 
+    auto [query_scope, query_context] = createLoadQueryScope(context);
+    auto current_source_ptr = getSourceAndUpdateIfNeeded();
+    BlockIO io;
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+        io = current_source_ptr->loadIds(query_context, requested_keys_vector);
+    else
+        io = current_source_ptr->loadKeys(query_context, update_unit_ptr->key_columns, requested_complex_key_rows);
+
     if (now > backoff_end_time.load())
     {
         try
         {
-            auto current_source_ptr = getSourceAndUpdateIfNeeded();
-
             Stopwatch watch;
-            QueryPipeline pipeline;
-
-            if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-                pipeline = QueryPipeline(current_source_ptr->loadIds(requested_keys_vector));
-            else
-                pipeline = QueryPipeline(current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows));
 
             size_t skip_keys_size_offset = dict_struct.getKeysSize();
             PaddedPODArray<KeyType> found_keys_in_source;
 
             Columns fetched_columns_during_update = fetch_request.makeAttributesResultColumnsNonMutable();
 
-            DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-            pipeline.setConcurrencyControl(false);
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
             Block block;
             while (executor.pull(block))
             {
@@ -707,6 +709,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             }
 
             ProfileEvents::increment(ProfileEvents::DictCacheRequestTimeNs, watch.elapsed());
+            io.onFinish();
         }
         catch (...)
         {
@@ -715,6 +718,8 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             ++error_count;
             last_exception = std::current_exception();
             backoff_end_time = now + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
+
+            io.onException();
 
             tryLogException(last_exception, log,
                             "Could not update cache dictionary '" + getDictionaryID().getNameForLogs() +

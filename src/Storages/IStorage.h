@@ -409,15 +409,6 @@ private:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
-    virtual Pipe read(
-        const Names & /*column_names*/,
-        const StorageSnapshotPtr & /*storage_snapshot*/,
-        SelectQueryInfo & /*query_info*/,
-        ContextMutablePtr /*context*/,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        size_t /*max_block_size*/,
-        size_t /*num_streams*/);
-
     /// Should we process blocks of data returned by the storage in parallel
     /// even when the storage returned only one stream of data for reading?
     /// It is beneficial, for example, when you read from a file quickly,

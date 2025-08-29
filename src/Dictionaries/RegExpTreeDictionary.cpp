@@ -877,7 +877,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
     return result;
 }
 
-Pipe RegExpTreeDictionary::read(const Names & , size_t max_block_size, size_t) const
+Pipe RegExpTreeDictionary::read(ContextMutablePtr /* query_context */, const Names & , size_t max_block_size, size_t) const
 {
 
     auto it = regex_nodes.begin();

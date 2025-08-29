@@ -115,18 +115,22 @@ BlockIO LibraryDictionarySource::loadAll(ContextMutablePtr)
 }
 
 
-QueryPipeline LibraryDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
+BlockIO LibraryDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
-    return bridge_helper->loadIds(ids);
+    BlockIO io;
+    io.pipeline = bridge_helper->loadIds(ids);
+    return io;
 }
 
 
-QueryPipeline LibraryDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
+BlockIO LibraryDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-    return bridge_helper->loadKeys(block);
+    BlockIO io;
+    io.pipeline = bridge_helper->loadKeys(block);
+    return io;
 }
 
 

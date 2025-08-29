@@ -64,11 +64,11 @@ public:
         return std::make_shared<CassandraDictionarySource>(dict_struct, configuration, *sample_block);
     }
 
-    QueryPipeline loadIds(ContextMutablePtr, const std::vector<UInt64> & ids) override;
+    BlockIO loadIds(ContextMutablePtr, const std::vector<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
-    QueryPipeline loadUpdatedAll(ContextMutablePtr) override;
+    BlockIO loadUpdatedAll(ContextMutablePtr) override;
 
     String toString() const override;
 

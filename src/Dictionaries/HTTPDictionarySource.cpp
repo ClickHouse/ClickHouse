@@ -104,7 +104,7 @@ BlockIO HTTPDictionarySource::loadAll(ContextMutablePtr)
     return io;
 }
 
-QueryPipeline HTTPDictionarySource::loadUpdatedAll(ContextMutablePtr)
+BlockIO HTTPDictionarySource::loadUpdatedAll(ContextMutablePtr)
 {
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
@@ -118,10 +118,12 @@ QueryPipeline HTTPDictionarySource::loadUpdatedAll(ContextMutablePtr)
                    .withDelayInit(false)
                    .create(credentials);
 
-    return createWrappedBuffer(std::move(buf));
+    BlockIO io;
+    io.pipeline = createWrappedBuffer(std::move(buf));
+    return io;
 }
 
-QueryPipeline HTTPDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
+BlockIO HTTPDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -147,10 +149,12 @@ QueryPipeline HTTPDictionarySource::loadIds(ContextMutablePtr, const std::vector
                    .withDelayInit(false)
                    .create(credentials);
 
-    return createWrappedBuffer(std::move(buf));
+    BlockIO io;
+    io.pipeline = createWrappedBuffer(std::move(buf));
+    return io;
 }
 
-QueryPipeline HTTPDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO HTTPDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -175,8 +179,10 @@ QueryPipeline HTTPDictionarySource::loadKeys(ContextMutablePtr, const Columns & 
                    .withOutCallback(std::move(out_stream_callback))
                    .withDelayInit(false)
                    .create(credentials);
-
-    return createWrappedBuffer(std::move(buf));
+    
+    BlockIO io;
+    io.pipeline = createWrappedBuffer(std::move(buf));
+    return io;
 }
 
 bool HTTPDictionarySource::isModified() const

@@ -243,25 +243,31 @@ BlockIO MySQLDictionarySource::loadAll(ContextMutablePtr)
     return io;
 }
 
-QueryPipeline MySQLDictionarySource::loadUpdatedAll(ContextMutablePtr)
+BlockIO MySQLDictionarySource::loadUpdatedAll(ContextMutablePtr)
 {
     std::string load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, fmt::runtime(load_update_query));
-    return loadFromQuery(load_update_query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(load_update_query);
+    return io;
 }
 
-QueryPipeline MySQLDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
+BlockIO MySQLDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    return loadFromQuery(query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(query);
+    return io;
 }
 
-QueryPipeline MySQLDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO MySQLDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    return loadFromQuery(query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(query);
+    return io;
 }
 
 bool MySQLDictionarySource::isModified() const

@@ -169,7 +169,7 @@ public:
         size_t level,
         DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    Pipe read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
     template <typename Value>
@@ -1280,7 +1280,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
-Pipe HashedDictionary<dictionary_key_type, sparse, sharded>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe HashedDictionary<dictionary_key_type, sparse, sharded>::read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     PaddedPODArray<HashedDictionary::KeyType> keys;
 

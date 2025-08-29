@@ -14,6 +14,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/SharedMutex.h>
 #include <Common/CurrentMetrics.h>
+#include "Interpreters/Context_fwd.h"
 
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
@@ -61,6 +62,7 @@ public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     CacheDictionary(
+        ContextPtr context_,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -141,7 +143,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    Pipe read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
     std::exception_ptr getLastException() const override;
 
@@ -205,6 +207,8 @@ private:
     const CacheDictionaryConfiguration configuration;
 
     LoggerPtr log;
+
+    ContextPtr context;
 
     mutable pcg64 rnd_engine;
 

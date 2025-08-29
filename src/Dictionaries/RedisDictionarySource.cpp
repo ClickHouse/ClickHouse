@@ -129,7 +129,7 @@ namespace DB
         return io;
     }
 
-    QueryPipeline RedisDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
+    BlockIO RedisDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
     {
         auto connection = getRedisConnection(pool, configuration);
 
@@ -144,12 +144,14 @@ namespace DB
         for (UInt64 id : ids)
             keys << DB::toString(id);
 
-        return QueryPipeline(std::make_shared<RedisSource>(
+        BlockIO io;
+        io.pipeline = QueryPipeline(std::make_shared<RedisSource>(
             std::move(connection), std::move(keys),
             configuration.storage_type, sample_block, REDIS_MAX_BLOCK_SIZE));
+        return io;
     }
 
-    QueryPipeline RedisDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
+    BlockIO RedisDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
     {
         auto connection = getRedisConnection(pool, configuration);
 
@@ -174,9 +176,11 @@ namespace DB
             keys.add(key);
         }
 
-        return QueryPipeline(std::make_shared<RedisSource>(
+        BlockIO io;
+        io.pipeline = QueryPipeline(std::make_shared<RedisSource>(
             std::move(connection), std::move(keys),
             configuration.storage_type, sample_block, REDIS_MAX_BLOCK_SIZE));
+        return io;
     }
 
     String RedisDictionarySource::toString() const

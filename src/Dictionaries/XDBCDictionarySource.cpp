@@ -136,26 +136,32 @@ BlockIO XDBCDictionarySource::loadAll(ContextMutablePtr)
 }
 
 
-QueryPipeline XDBCDictionarySource::loadUpdatedAll(ContextMutablePtr)
+BlockIO XDBCDictionarySource::loadUpdatedAll(ContextMutablePtr)
 {
     std::string load_query_update = getUpdateFieldAndDate();
 
     LOG_TRACE(log, fmt::runtime(load_query_update));
-    return loadFromQuery(bridge_url, sample_block, load_query_update);
+    BlockIO io;
+    io.pipeline = loadFromQuery(bridge_url, sample_block, load_query_update);
+    return io;
 }
 
 
-QueryPipeline XDBCDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
+BlockIO XDBCDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    return loadFromQuery(bridge_url, sample_block, query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(bridge_url, sample_block, query);
+    return io;
 }
 
 
-QueryPipeline XDBCDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO XDBCDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    return loadFromQuery(bridge_url, sample_block, query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(bridge_url, sample_block, query);
+    return io;
 }
 
 

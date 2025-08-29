@@ -149,18 +149,6 @@ Pipe IStorage::watch(
 }
 
 Pipe IStorage::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextMutablePtr context,
-    QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
-    size_t num_streams)
-{
-    return read(column_names, storage_snapshot, query_info, ContextPtr(std::move(context)), processed_stage, max_block_size, num_streams);
-}
-
-Pipe IStorage::read(
     const Names & /*column_names*/,
     const StorageSnapshotPtr & /*storage_snapshot*/,
     SelectQueryInfo & /*query_info*/,

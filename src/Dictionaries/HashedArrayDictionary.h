@@ -129,7 +129,7 @@ public:
         size_t level,
         DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    Pipe read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
 

@@ -51,11 +51,11 @@ public:
 
     BlockIO loadAll(ContextMutablePtr query_context) override;
 
-    QueryPipeline loadUpdatedAll(ContextMutablePtr query_context) override;
+    BlockIO loadUpdatedAll(ContextMutablePtr query_context) override;
 
-    QueryPipeline loadIds(ContextMutablePtr query_context, const std::vector<UInt64> & ids) override;
+    BlockIO loadIds(ContextMutablePtr query_context, const std::vector<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(ContextMutablePtr query_context, const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadKeys(ContextMutablePtr query_context, const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override { return true; }

@@ -139,7 +139,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    Pipe read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
 
@@ -954,7 +954,7 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
 }
 
 template <DictionaryKeyType dictionary_key_type>
-Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe RangeHashedDictionary<dictionary_key_type>::read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     auto key_to_index_column = ColumnUInt64::create();
     auto range_min_column = dict_struct.range_min->type->createColumn();

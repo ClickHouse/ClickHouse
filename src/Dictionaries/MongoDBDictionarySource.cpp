@@ -147,7 +147,7 @@ BlockIO MongoDBDictionarySource::loadAll(ContextMutablePtr)
     return io;
 }
 
-QueryPipeline MongoDBDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
+BlockIO MongoDBDictionarySource::loadIds(ContextMutablePtr, const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -156,11 +156,13 @@ QueryPipeline MongoDBDictionarySource::loadIds(ContextMutablePtr, const std::vec
     for (const auto & id : ids)
         ids_array.append(static_cast<Int64>(id));
 
-    return QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(kvp(dict_struct.id->name, make_document(kvp("$in", ids_array)))), mongocxx::options::find(), sample_block, max_block_size));
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(kvp(dict_struct.id->name, make_document(kvp("$in", ids_array)))), mongocxx::options::find(), sample_block, max_block_size));
+    return io;
 }
 
 
-QueryPipeline MongoDBDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO MongoDBDictionarySource::loadKeys(ContextMutablePtr, const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");
@@ -193,7 +195,9 @@ QueryPipeline MongoDBDictionarySource::loadKeys(ContextMutablePtr, const Columns
         keys.append(make_document(kvp("$and", key)));
     }
 
-    return QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(kvp("$or", keys)), mongocxx::options::find(), sample_block, max_block_size));
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<MongoDBSource>(*configuration->uri, configuration->collection, make_document(kvp("$or", keys)), mongocxx::options::find(), sample_block, max_block_size));
+    return io;
 }
 
 std::string MongoDBDictionarySource::toString() const

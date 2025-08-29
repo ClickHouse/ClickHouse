@@ -24,17 +24,17 @@ public:
 
     BlockIO loadAll(ContextMutablePtr) override;
 
-    QueryPipeline loadUpdatedAll(ContextMutablePtr) override
+    BlockIO loadUpdatedAll(ContextMutablePtr) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for FileDictionarySource");
     }
 
-    QueryPipeline loadIds(ContextMutablePtr, const std::vector<UInt64> & /*ids*/) override
+    BlockIO loadIds(ContextMutablePtr, const std::vector<UInt64> & /*ids*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadIds is unsupported for FileDictionarySource");
     }
 
-    QueryPipeline loadKeys(ContextMutablePtr, const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
+    BlockIO loadKeys(ContextMutablePtr, const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for FileDictionarySource");
     }
