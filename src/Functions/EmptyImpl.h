@@ -33,7 +33,7 @@ struct EmptyImpl
     }
 
     /// Only make sense if is_fixed_to_constant.
-    static void vectorFixedToConstant(const ColumnString::Chars &, size_t, UInt8 &, size_t)
+    [[noreturn]] static void vectorFixedToConstant(const ColumnString::Chars &, size_t, UInt8 &, size_t)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "'vectorFixedToConstant method' is called");
     }

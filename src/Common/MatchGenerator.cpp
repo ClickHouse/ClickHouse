@@ -298,7 +298,7 @@ private:
         {
         }
 
-        size_t operator () (char *, size_t) override
+        [[noreturn]] size_t operator () (char *, size_t) override
         {
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS,
@@ -352,7 +352,7 @@ private:
         return result;
     }
 
-    Regexp * ShortVisit(Regexp* /*re*/, Regexp * /*parent_arg*/) override
+    [[noreturn]] Regexp * ShortVisit(Regexp* /*re*/, Regexp * /*parent_arg*/) override
     {
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "ShortVisit should not be called");
     }

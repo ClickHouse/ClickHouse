@@ -32,22 +32,22 @@ public:
 
     bool shouldBeEmptyOnDetach() const override { return false; }
 
-    void createTable(
+    [[noreturn]] void createTable(
         ContextPtr context,
         const String & table_name,
         const StoragePtr & table,
         const ASTPtr & query) override;
 
-    StoragePtr detachTable(ContextPtr context, const String & name) override;
+    [[noreturn]] StoragePtr detachTable(ContextPtr context, const String & name) override;
 
-    void detachTablePermanently(ContextPtr context, const String & table_name) override;
+    [[noreturn]] void detachTablePermanently(ContextPtr context, const String & table_name) override;
 
-    void dropTable(
+    [[noreturn]] void dropTable(
         ContextPtr context,
         const String & table_name,
         bool sync) override;
 
-    void renameTable(
+    [[noreturn]] void renameTable(
         ContextPtr context,
         const String & table_name,
         IDatabase & to_database,
@@ -55,7 +55,7 @@ public:
         bool exchange,
         bool dictionary) override;
 
-    void alterTable(ContextPtr context, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
+    [[noreturn]] void alterTable(ContextPtr context, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
 
     bool isReadOnly() const override { return true; }
 

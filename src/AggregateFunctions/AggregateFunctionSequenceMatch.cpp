@@ -228,7 +228,7 @@ private:
         const char * begin = pos;
         const char * end = pos + pattern.size();
 
-        auto throw_exception = [&](const std::string & msg)
+        auto throw_exception = [&][[noreturn]] (const std::string & msg)
         {
             throw Exception(ErrorCodes::SYNTAX_ERROR, "{} '{}' at position {}", msg, std::string(pos, end), toString(pos - begin));
         };

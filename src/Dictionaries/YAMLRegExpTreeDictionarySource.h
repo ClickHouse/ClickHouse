@@ -32,17 +32,17 @@ public:
 
     QueryPipeline loadAll() override;
 
-    QueryPipeline loadUpdatedAll() override
+    [[noreturn]] QueryPipeline loadUpdatedAll() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for YAMLRegExpTreeDictionarySource");
     }
 
-    QueryPipeline loadIds(const std::vector<UInt64> &) override
+    [[noreturn]] QueryPipeline loadIds(const std::vector<UInt64> &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadIds is unsupported for YAMLRegExpTreeDictionarySource");
     }
 
-    QueryPipeline loadKeys(const Columns &, const std::vector<size_t> &) override
+    [[noreturn]] QueryPipeline loadKeys(const Columns &, const std::vector<size_t> &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for YAMLRegExpTreeDictionarySource");
     }

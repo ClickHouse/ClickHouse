@@ -106,12 +106,12 @@ public:
       */
     virtual DataTypePtr getResultType() const
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query tree node", getNodeTypeName());
+        throwGetResultTypeNotSupported(getNodeTypeName());
     }
 
     virtual void convertToNullable()
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query tree node", getNodeTypeName());
+        throwConvertToNullableNotSupported(getNodeTypeName());
     }
 
     struct CompareOptions
@@ -300,6 +300,14 @@ private:
     /// but we need to keep the original one to support additional_table_filters.
     String original_alias;
     ASTPtr original_ast;
+
+    [[noreturn]] static void throwGetResultTypeNotSupported(const std::string & node_type) {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query tree node", node_type);
+    }
+
+    [[noreturn]] static void throwConvertToNullableNotSupported(const std::string & node_type) {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query tree node", node_type);
+    }
 };
 
 }

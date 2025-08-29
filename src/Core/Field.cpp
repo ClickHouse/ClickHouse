@@ -31,24 +31,40 @@ extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+[[noreturn]] static void throwOperatorLessNotImplemented() {
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator < is not implemented for AggregateFunctionStateData.");
+}
+
+[[noreturn]] static void throwOperatorLessEqualNotImplemented() {
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator <= is not implemented for AggregateFunctionStateData.");
+}
+
+[[noreturn]] static void throwOperatorGreaterNotImplemented() {
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator > is not implemented for AggregateFunctionStateData.");
+}
+
+[[noreturn]] static void throwOperatorGreaterEqualNotImplemented() {
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator >= is not implemented for AggregateFunctionStateData.");
+}
+
 bool AggregateFunctionStateData::operator < (const AggregateFunctionStateData &) const
 {
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator < is not implemented for AggregateFunctionStateData.");
+    throwOperatorLessNotImplemented();
 }
 
 bool AggregateFunctionStateData::operator <= (const AggregateFunctionStateData &) const
 {
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator <= is not implemented for AggregateFunctionStateData.");
+    throwOperatorLessEqualNotImplemented();
 }
 
 bool AggregateFunctionStateData::operator > (const AggregateFunctionStateData &) const
 {
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator > is not implemented for AggregateFunctionStateData.");
+    throwOperatorGreaterNotImplemented();
 }
 
 bool AggregateFunctionStateData::operator >= (const AggregateFunctionStateData &) const
 {
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator >= is not implemented for AggregateFunctionStateData.");
+    throwOperatorGreaterEqualNotImplemented();
 }
 
 bool AggregateFunctionStateData::operator == (const AggregateFunctionStateData & rhs) const
@@ -541,7 +557,7 @@ String Field::dump() const
 
 Field Field::restoreFromDump(std::string_view dump_)
 {
-    auto show_error = [&dump_]
+    auto show_error = [&dump_] [[noreturn]]
     {
         throw Exception(ErrorCodes::CANNOT_RESTORE_FROM_FIELD_DUMP, "Couldn't restore Field from dump: {}", String{dump_});
     };

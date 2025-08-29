@@ -279,7 +279,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 
 void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const String & /*name*/,
+    auto create_table_source = [=][[noreturn]](const String & /*name*/,
                                  const DictionaryStructure & /* dict_struct */,
                                  const Poco::Util::AbstractConfiguration & /* config */,
                                  const std::string & /* config_prefix */,

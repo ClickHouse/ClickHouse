@@ -25,12 +25,12 @@ public:
         const StreamCallback & callback,
         const SubstreamData & data) const override;
 
-    void serializeBinaryBulkStatePrefix(
+    [[noreturn]] void serializeBinaryBulkStatePrefix(
         const IColumn & column,
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinaryBulkStateSuffix(
+    [[noreturn]] void serializeBinaryBulkStateSuffix(
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const override;
 
@@ -39,7 +39,7 @@ public:
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsDeserializeStatesCache * cache) const override;
 
-    void serializeBinaryBulkWithMultipleStreams(
+    [[noreturn]] void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
         size_t offset,
         size_t limit,

@@ -253,7 +253,6 @@ std::vector<String> Client::loadWarningMessages()
 
             case Protocol::Server::Exception:
                 packet.exception->rethrow();
-                return messages;
 
             case Protocol::Server::EndOfStream:
                 return messages;

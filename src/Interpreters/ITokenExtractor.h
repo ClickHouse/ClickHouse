@@ -192,7 +192,7 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
     static const char * getExternalName() { return getName(); }
 
     bool nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
-    bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
+    [[noreturn]] bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
 
     bool supportsStringLike() const override { return false; }
 private:
@@ -207,7 +207,7 @@ struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtracto
 
     std::vector<std::string_view> getTokensView(const char * data, size_t length) const override;
     bool nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
-    bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
+    [[noreturn]] bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
 
     bool supportsStringLike() const override { return false; }
 };

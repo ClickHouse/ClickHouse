@@ -147,7 +147,7 @@ public:
         assert(false); // queue cannot have children
     }
 
-    void attachChild(const SchedulerNodePtr &) override
+    [[noreturn]] void attachChild(const SchedulerNodePtr &) override
     {
         throw Exception(
             ErrorCodes::INVALID_SCHEDULER_NODE,

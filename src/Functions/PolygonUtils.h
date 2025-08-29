@@ -696,13 +696,13 @@ template <>
 struct CallPointInPolygon<>
 {
     template <typename T, typename PointInPolygonImpl>
-    static ColumnPtr call(const ColumnVector<T> &, const IColumn & y, PointInPolygonImpl &&)
+    [[noreturn]] static ColumnPtr call(const ColumnVector<T> &, const IColumn & y, PointInPolygonImpl &&)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column type: {}", demangle(typeid(y).name()));
     }
 
     template <typename PointInPolygonImpl>
-    static ColumnPtr call(const IColumn & x, const IColumn &, PointInPolygonImpl &&)
+    [[noreturn]] static ColumnPtr call(const IColumn & x, const IColumn &, PointInPolygonImpl &&)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column type: {}", demangle(typeid(x).name()));
     }

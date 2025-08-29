@@ -89,7 +89,7 @@ public:
 
     String getName() const override { return "grouping"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t) const override
+    [[noreturn]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t) const override
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Method executeImpl is not supported for 'grouping' function");

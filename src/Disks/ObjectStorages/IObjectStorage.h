@@ -109,6 +109,10 @@ struct ObjectMetadata
 
 struct DataLakeObjectMetadata;
 
+[[noreturn]] inline void throwNotArchive() {
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive");
+}
+
 struct RelativePathWithMetadata
 {
     String relative_path;
@@ -131,8 +135,8 @@ struct RelativePathWithMetadata
     virtual std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
     virtual std::string getPath() const { return relative_path; }
     virtual bool isArchive() const { return false; }
-    virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
-    virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    virtual std::string getPathToArchive() const { throwNotArchive(); }
+    virtual size_t fileSizeInArchive() const { throwNotArchive(); }
     virtual std::string getPathOrPathToArchiveIfArchive() const;
 };
 
@@ -279,10 +283,7 @@ public:
 
     /// Object key prefix for local paths in the directory 'path'.
     virtual ObjectStorageKey
-    generateObjectKeyPrefixForDirectoryPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'generateObjectKeyPrefixForDirectoryPath' is not implemented");
-    }
+    generateObjectKeyPrefixForDirectoryPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const;
 
     /// Returns whether this object storage generates a random blob name for each object.
     /// This function returns false if this object storage just adds some constant string to a passed path to generate a blob name.
@@ -309,22 +310,12 @@ public:
     virtual void setKeysGenerator(ObjectStorageKeysGeneratorPtr) { }
 
 #if USE_AZURE_BLOB_STORAGE
-    virtual std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
-    }
-
-    virtual AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
-    }
+    virtual std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const;
+    virtual AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const;
 #endif
 
 #if USE_AWS_S3
-    virtual std::shared_ptr<const S3::Client> getS3StorageClient()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for S3ObjectStorage");
-    }
+    virtual std::shared_ptr<const S3::Client> getS3StorageClient();
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
 #endif
 };

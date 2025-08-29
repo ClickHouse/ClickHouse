@@ -467,7 +467,7 @@ namespace
             return ZIP_OK;
         }
 
-        static unsigned long writeFileFunc(void *, void *, const void *, unsigned long) // NOLINT(google-runtime-int)
+        [[noreturn]] static unsigned long writeFileFunc(void *, void *, const void *, unsigned long) // NOLINT(google-runtime-int)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "StreamFromReadBuffer::writeFile must not be called");
         }

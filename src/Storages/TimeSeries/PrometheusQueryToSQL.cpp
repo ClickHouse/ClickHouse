@@ -548,7 +548,8 @@ private:
                 return buildPieceForFunction(typeid_cast<const PrometheusQueryTree::Function *>(node));
 
             case NodeType::BinaryOperator:
-                return buildPieceForBinaryOperator(typeid_cast<const PrometheusQueryTree::BinaryOperator *>(node));
+                buildPieceForBinaryOperator(typeid_cast<const PrometheusQueryTree::BinaryOperator *>(node));
+                [[fallthrough]];
 
             default:
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Prometheus query tree node type {} is not implemented", node_type);
@@ -782,10 +783,14 @@ private:
         return res;
     }
 
+    [[noreturn]] static void throwBinaryOperatorNotImplemented(const std::string & op_name) {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary operator {} is not implemented", op_name);
+    }
+
     /// Builds a piece to evaluate a binary operator.
     Piece buildPieceForBinaryOperator(const PrometheusQueryTree::BinaryOperator * binary_operator)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Binary operator {} is not implemented", binary_operator->operator_name);
+        throwBinaryOperatorNotImplemented(binary_operator->operator_name);
     }
 
     /// Builds a piece splitting the "time_series" column into two columns "timestamp" and "value", both of them are arrays.

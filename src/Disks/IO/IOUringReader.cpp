@@ -349,5 +349,8 @@ IOUringReader::~IOUringReader()
     io_uring_queue_exit(&ring);
 }
 
+[[noreturn]] inline void throwExecuteNotSupported() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `execute` not implemented for IOUringReader"); }
+IOUringReader::Result IOUringReader::execute(Request /* request */) { throwExecuteNotSupported(); }
+
 }
 #endif

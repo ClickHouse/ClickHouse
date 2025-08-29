@@ -43,7 +43,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt8>(); }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr &, size_t /* rows_count */) const override
+    [[noreturn]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr &, size_t /* rows_count */) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} can be used only in the JOIN ON section", getName());
     }

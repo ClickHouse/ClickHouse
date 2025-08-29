@@ -53,9 +53,14 @@ ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
     return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements, hive_parameters);
 }
 
+[[noreturn]] static void throwTryGetTableStructureFromMetadataNotImplemented() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
+}
+
 std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTableStructureFromMetadata() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
+    throwTryGetTableStructureFromMetadataNotImplemented();
 }
 
 void StorageObjectStorageConfiguration::initialize(
@@ -191,9 +196,14 @@ bool StorageObjectStorageConfiguration::isPathInArchiveWithGlobs() const
     return getPathInArchive().find_first_of("*?{") != std::string::npos;
 }
 
+[[noreturn]] static void throwGetPathInArchiveLogicalError(const std::string & path) {
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Path {} is not archive", path);
+}
+
 std::string StorageObjectStorageConfiguration::getPathInArchive() const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not archive", getRawPath().path);
+    throwGetPathInArchiveLogicalError(getRawPath().path);
 }
 
 void StorageObjectStorageConfiguration::assertInitialized() const
@@ -210,6 +220,43 @@ void StorageObjectStorageConfiguration::addDeleteTransformers(
     const std::optional<FormatSettings> &,
     ContextPtr) const
 {
+}
+
+[[noreturn]] static void throwIterateNotImplemented(const std::string & type_name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", type_name);
+}
+
+[[noreturn]] static void throwWriteNotImplemented(const std::string & type_name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write() is not implemented for configuration type {}", type_name);
+}
+
+[[noreturn]] static void throwGetDataLakeSettingsNotImplemented(const std::string & type_name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", type_name);
+}
+
+const DataLakeStorageSettings & StorageObjectStorageConfiguration::getDataLakeSettings() const
+{
+    throwGetDataLakeSettingsNotImplemented(getTypeName());
+}
+
+ObjectIterator StorageObjectStorageConfiguration::iterate(
+    const ActionsDAG * /* filter_dag */,
+    std::function<void(FileProgress)> /* callback */,
+    size_t /* list_batch_size */,
+    ContextPtr /*context*/)
+{
+    throwIterateNotImplemented(getTypeName());
+}
+
+SinkToStoragePtr StorageObjectStorageConfiguration::write(
+    SharedHeader /* sample_block */,
+    const StorageID & /* table_id */,
+    ObjectStoragePtr /* object_storage */,
+    const std::optional<FormatSettings> & /* format_settings */,
+    ContextPtr /* context */,
+    std::shared_ptr<DataLake::ICatalog> /* catalog */)
+{
+    throwWriteNotImplemented(getTypeName());
 }
 
 }

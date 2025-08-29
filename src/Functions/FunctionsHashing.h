@@ -548,7 +548,7 @@ struct JavaHashImpl
         return static_cast<Int32>(h);
     }
 
-    static ReturnType combineHashes(Int32, Int32)
+    [[noreturn]] static ReturnType combineHashes(Int32, Int32)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Java hash is not combineable for multiple arguments");
     }
@@ -583,7 +583,7 @@ struct JavaHashUTF16LEImpl
         return static_cast<Int32>(h);
     }
 
-    static Int32 combineHashes(Int32, Int32)
+    [[noreturn]] static Int32 combineHashes(Int32, Int32)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Java hash is not combineable for multiple arguments");
     }
@@ -604,7 +604,7 @@ struct HiveHashImpl
         return static_cast<Int32>(0x7FFFFFFF & static_cast<UInt32>(JavaHashImpl::apply(data, size)));
     }
 
-    static Int32 combineHashes(Int32, Int32)
+    [[noreturn]] static Int32 combineHashes(Int32, Int32)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Hive hash is not combineable for multiple arguments");
     }

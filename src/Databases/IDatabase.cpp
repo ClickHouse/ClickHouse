@@ -59,31 +59,98 @@ IDatabase::~IDatabase()
     CurrentMetrics::sub(CurrentMetrics::AttachedDatabase, 1);
 }
 
+[[noreturn]] static void throwAlterDatabaseCommentNotSupported(const std::string & engine) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: ALTER DATABASE COMMENT is not supported", engine);
+}
+
+[[noreturn]] static void throwBackupTablesNotSupported(const std::string & engine, const std::string & db) {
+    throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE,
+                    "Database engine {} does not support backups, cannot backup tables in database {}",
+                    engine, db);
+}
+
+[[noreturn]] static void throwRestoreTablesNotSupported(const std::string & engine, const std::string & db, const std::string & table) {
+    throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Database engine {} does not support restoring tables, cannot restore table {}.{}",
+                    engine, db, table);
+}
+
+[[noreturn]] static void throwNotImplemented() {
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+}
+
+[[noreturn]] static void throwGetDetachedTablesNotSupported(const std::string & engine) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get detached tables for Database{}", engine);
+}
+
+[[noreturn]] static void throwCreateTableNotSupported(const std::string & engine) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no CREATE TABLE query for Database{}", engine);
+}
+
+[[noreturn]] static void throwDropTableNotSupported(const std::string & engine) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP TABLE query for Database{}", engine);
+}
+
+[[noreturn]] static void throwAttachTableNotSupported(const std::string & engine) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", engine);
+}
+
+[[noreturn]] static void throwDetachTableNotSupported(const std::string & engine) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DETACH TABLE query for Database{}", engine);
+}
+
+[[noreturn]] static void throwDetachTablePermanentlyNotSupported(const std::string & engine) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DETACH TABLE PERMANENTLY query for Database{}", engine);
+}
+
+[[noreturn]] static void throwGetNamesOfPermanentlyDetachedTablesNotSupported(const std::string & engine) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get names of permanently detached tables for Database{}", engine);
+}
+
+[[noreturn]] static void throwRenameTableNotSupported(const std::string & engine) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: renameTable() is not supported", engine);
+}
+
+[[noreturn]] static void throwAlterTableNotSupported(const std::string & engine) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTable() is not supported", engine);
+}
+
+[[noreturn]] static void throwRenameDatabaseNotSupported(const std::string & engine) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: RENAME DATABASE is not supported", engine);
+}
+
+[[noreturn]] static void throwApplySettingsChangesNotSupported(const std::string & engine) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Database engine {} either does not support settings, or does not support altering settings",
+                    engine);
+}
+
+[[noreturn]] static void throwStopReplicationNotSupported(const std::string & engine) {
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread", engine);
+}
+
+[[noreturn]] static void throwReplicatedDDLNotSupported(const std::string & engine) {
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not have replicated DDL queue", engine);
+}
+
 void IDatabase::alterDatabaseComment(const AlterCommand & /*command*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: ALTER DATABASE COMMENT is not supported", getEngineName());
+    throwAlterDatabaseCommentNotSupported(getEngineName());
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>> IDatabase::getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const
 {
-    /// Cannot backup any table because IDatabase doesn't own any tables.
-    throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE,
-                    "Database engine {} does not support backups, cannot backup tables in database {}",
-                    getEngineName(), backQuoteIfNeed(getDatabaseName()));
+    throwBackupTablesNotSupported(getEngineName(), backQuoteIfNeed(getDatabaseName()));
 }
 
 void IDatabase::createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr, std::shared_ptr<IRestoreCoordination>, UInt64)
 {
-    /// Cannot restore any table because IDatabase doesn't own any tables.
-    throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
-                    "Database engine {} does not support restoring tables, cannot restore table {}.{}",
-                    getEngineName(), backQuoteIfNeed(getDatabaseName()),
-                    backQuoteIfNeed(create_table_query->as<const ASTCreateQuery &>().getTable()));
+    throwRestoreTablesNotSupported(getEngineName(), backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(create_table_query->as<const ASTCreateQuery &>().getTable()));
 }
 
 void IDatabase::loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/, bool /*is_startup*/)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    throwNotImplemented();
 }
 
 void IDatabase::loadTableFromMetadata(
@@ -93,7 +160,7 @@ void IDatabase::loadTableFromMetadata(
     const ASTPtr & /*ast*/,
     LoadingStrictnessLevel /*mode*/)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    throwNotImplemented();
 }
 
 LoadTaskPtr IDatabase::loadTableFromMetadataAsync(
@@ -105,7 +172,7 @@ LoadTaskPtr IDatabase::loadTableFromMetadataAsync(
     const ASTPtr & /*ast*/,
     LoadingStrictnessLevel /*mode*/)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    throwNotImplemented();
 }
 
 LoadTaskPtr IDatabase::startupTableAsync(
@@ -114,7 +181,7 @@ LoadTaskPtr IDatabase::startupTableAsync(
     const QualifiedTableName & /*name*/,
     LoadingStrictnessLevel /*mode*/)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    throwNotImplemented();
 }
 
 LoadTaskPtr IDatabase::startupDatabaseAsync(
@@ -122,13 +189,13 @@ LoadTaskPtr IDatabase::startupDatabaseAsync(
     LoadJobSet /*startup_after*/,
     LoadingStrictnessLevel /*mode*/)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    throwNotImplemented();
 }
 
 DatabaseDetachedTablesSnapshotIteratorPtr IDatabase::getDetachedTablesIterator(
     ContextPtr /*context*/, const FilterByNameFunction & /*filter_by_table_name = {}*/, bool /*skip_not_loaded = false*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get detached tables for Database{}", getEngineName());
+    throwGetDetachedTablesNotSupported(getEngineName());
 }
 
 void IDatabase::createTable(
@@ -137,7 +204,7 @@ void IDatabase::createTable(
     const StoragePtr & /*table*/,
     const ASTPtr & /*query*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no CREATE TABLE query for Database{}", getEngineName());
+    throwCreateTableNotSupported(getEngineName());
 }
 
 void IDatabase::dropTable( /// NOLINT
@@ -145,27 +212,27 @@ void IDatabase::dropTable( /// NOLINT
     const String & /*name*/,
     [[maybe_unused]] bool sync)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP TABLE query for Database{}", getEngineName());
+    throwDropTableNotSupported(getEngineName());
 }
 
 void IDatabase::attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path) /// NOLINT
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", getEngineName());
+    throwAttachTableNotSupported(getEngineName());
 }
 
 StoragePtr IDatabase::detachTable(ContextPtr /* context */, const String & /*name*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DETACH TABLE query for Database{}", getEngineName());
+    throwDetachTableNotSupported(getEngineName());
 }
 
 void IDatabase::detachTablePermanently(ContextPtr /*context*/, const String & /*name*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DETACH TABLE PERMANENTLY query for Database{}", getEngineName());
+    throwDetachTablePermanentlyNotSupported(getEngineName());
 }
 
 Strings IDatabase::getNamesOfPermanentlyDetachedTables() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get names of permanently detached tables for Database{}", getEngineName());
+    throwGetNamesOfPermanentlyDetachedTablesNotSupported(getEngineName());
 }
 
 void IDatabase::renameTable(
@@ -176,7 +243,7 @@ void IDatabase::renameTable(
     bool /*exchange*/,
     bool /*dictionary*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: renameTable() is not supported", getEngineName());
+    throwRenameTableNotSupported(getEngineName());
 }
 
 void IDatabase::alterTable(
@@ -184,29 +251,27 @@ void IDatabase::alterTable(
     const StorageID & /*table_id*/,
     const StorageInMemoryMetadata & /*metadata*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTable() is not supported", getEngineName());
+    throwAlterTableNotSupported(getEngineName());
 }
 
 void IDatabase::renameDatabase(ContextPtr, const String & /*new_name*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: RENAME DATABASE is not supported", getEngineName());
+    throwRenameDatabaseNotSupported(getEngineName());
 }
 
 void IDatabase::applySettingsChanges(const SettingsChanges &, ContextPtr)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Database engine {} either does not support settings, or does not support altering settings",
-                    getEngineName());
+    throwApplySettingsChangesNotSupported(getEngineName());
 }
 
 void IDatabase::stopReplication()
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread", getEngineName());
+    throwStopReplicationNotSupported(getEngineName());
 }
 
 BlockIO IDatabase::tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags) /// NOLINT
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not have replicated DDL queue", getEngineName());
+    throwReplicatedDDLNotSupported(getEngineName());
 }
 
 ASTPtr IDatabase::getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const

@@ -193,7 +193,6 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
 
             case Protocol::Server::Exception:
                 packet.exception->rethrow();
-                return;
 
             case Protocol::Server::EndOfStream:
                 last_error = ErrorCodes::OK;

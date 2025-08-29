@@ -205,12 +205,12 @@ private:
         return pos;
     }
 
-    static long seekFunc(void *, void *, ZPOS64_T, int) // NOLINT(google-runtime-int)
+    [[noreturn]] static long seekFunc(void *, void *, ZPOS64_T, int) // NOLINT(google-runtime-int)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::seek is not implemented");
     }
 
-    static unsigned long readFileFunc(void *, void *, void *, unsigned long) // NOLINT(google-runtime-int)
+    [[noreturn]] static unsigned long readFileFunc(void *, void *, void *, unsigned long) // NOLINT(google-runtime-int)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::readFile is not implemented");
     }

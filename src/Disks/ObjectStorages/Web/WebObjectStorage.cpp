@@ -279,9 +279,14 @@ void WebObjectStorage::startup()
 {
 }
 
+[[noreturn]] inline void throwMetadataIsNotSupported(const std::string & name)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", name);
+}
+
 ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & /* path */) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", getName());
+    throwMetadataIsNotSupported(getName());
 }
 
 ObjectStorageConnectionInfoPtr WebObjectStorage::getConnectionInfo() const

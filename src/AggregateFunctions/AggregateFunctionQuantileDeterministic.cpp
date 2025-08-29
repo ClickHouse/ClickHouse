@@ -36,7 +36,7 @@ struct QuantileReservoirSamplerDeterministic
     using Data = ReservoirSamplerDeterministic<Value, ReservoirSamplerDeterministicOnEmpty::RETURN_NAN_OR_ZERO>;
     Data data;
 
-    void add(const Value &)
+    [[noreturn]] void add(const Value &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method add without determinator is not implemented for ReservoirSamplerDeterministic");
     }

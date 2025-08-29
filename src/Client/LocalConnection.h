@@ -105,7 +105,7 @@ public:
 
     void setDefaultDatabase(const String & database) override;
 
-    void getServerVersion(const ConnectionTimeouts & timeouts,
+    [[noreturn]] void getServerVersion(const ConnectionTimeouts & timeouts,
                           String & name,
                           UInt64 & version_major,
                           UInt64 & version_minor,
@@ -113,8 +113,8 @@ public:
                           UInt64 & revision) override;
 
     UInt64 getServerRevision(const ConnectionTimeouts & timeouts) override;
-    const String & getServerTimezone(const ConnectionTimeouts & timeouts) override;
-    const String & getServerDisplayName(const ConnectionTimeouts & timeouts) override;
+    [[noreturn]] const String & getServerTimezone(const ConnectionTimeouts & timeouts) override;
+    [[noreturn]] const String & getServerDisplayName(const ConnectionTimeouts & timeouts) override;
 
     const String & getDescription([[maybe_unused]] bool with_extra = false) const override { return description; }  /// NOLINT
 
@@ -132,7 +132,7 @@ public:
         const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) override;
 
-    void sendQueryPlan(const QueryPlan &) override;
+    [[noreturn]] void sendQueryPlan(const QueryPlan &) override;
 
     void sendCancel() override;
 
@@ -140,9 +140,9 @@ public:
 
     bool isSendDataNeeded() const override;
 
-    void sendExternalTablesData(ExternalTablesData &) override;
+    [[noreturn]] void sendExternalTablesData(ExternalTablesData &) override;
 
-    void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
+    [[noreturn]] void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 
@@ -151,7 +151,7 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds/* = 0*/) override;
 
     Packet receivePacket() override;
-    UInt64 receivePacketType() override;
+    [[noreturn]] UInt64 receivePacketType() override;
 
     void forceConnected(const ConnectionTimeouts &) override {}
 

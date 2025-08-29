@@ -1520,7 +1520,7 @@ bool KeeperStorage<Container>::checkACL(StringRef path, int32_t permission, int6
 
 /// Default implementations ///
 template <std::derived_from<Coordination::ZooKeeperRequest> T, typename Storage>
-Coordination::ZooKeeperResponsePtr
+[[noreturn]] Coordination::ZooKeeperResponsePtr
 processLocal(const T & zk_request, Storage & /*storage*/, KeeperStorageBase::DeltaRange /*deltas*/)
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Local processing not supported for request with type {}", zk_request.getOpNum());
@@ -2879,7 +2879,7 @@ process(const Coordination::ZooKeeperAuthRequest & /*zk_request*/, Storage & sto
 
 /// CLOSE Request ///
 template <typename Storage>
-Coordination::ZooKeeperResponsePtr
+[[noreturn]] Coordination::ZooKeeperResponsePtr
 process(const Coordination::ZooKeeperCloseRequest & /* zk_request */, Storage &, KeeperStorageBase::DeltaRange /* deltas */)
 {
     throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Called process on close request");

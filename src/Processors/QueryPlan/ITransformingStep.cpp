@@ -32,4 +32,11 @@ void ITransformingStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
+[[noreturn]] inline void throwNotImplemented()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+}
+
+void ITransformingStep::adjustSettingsToEnforceSortingPropertiesInDistributedQuery(ContextMutablePtr) const { throwNotImplemented(); }
+
 }

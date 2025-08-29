@@ -38,8 +38,8 @@ set(_ANTLR4_CPP_RUNTIME_PRIVATE_INCLUDE_DIRS
 add_library(_ch_contrib_antlr4_cpp_runtime ${_ANTLR4_CPP_RUNTIME_SRC})
 
 target_include_directories(_ch_contrib_antlr4_cpp_runtime
-    PUBLIC "${_ANTLR4_CPP_RUNTIME_INCLUDE_DIRS}"
-    PRIVATE "${_ANTLR4_CPP_RUNTIME_PRIVATE_INCLUDE_DIRS}"
+    SYSTEM PUBLIC "${_ANTLR4_CPP_RUNTIME_INCLUDE_DIRS}"
+    SYSTEM PRIVATE "${_ANTLR4_CPP_RUNTIME_PRIVATE_INCLUDE_DIRS}"
 )
 
 add_library(ch_contrib::antlr4_cpp_runtime ALIAS _ch_contrib_antlr4_cpp_runtime)

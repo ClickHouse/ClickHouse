@@ -6145,9 +6145,21 @@ void MergeTreeData::movePartitionToTable(const PartitionCommand & command, Conte
     movePartitionToTable(dest_storage, command.partition, query_context);
 }
 
+[[noreturn]] static void throwMovePartitionToShardNotSupported(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MOVE PARTITION TO SHARD is not supported by storage {}", name);
+}
+
+[[noreturn]] static void throwFetchPartitionNotSupported(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FETCH PARTITION is not supported by storage {}", name);
+}
+
+[[noreturn]] static void throwForgetPartitionNotSupported(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FORGET PARTITION is not supported by storage {}", name);
+}
+
 void MergeTreeData::movePartitionToShard(const ASTPtr & /*partition*/, bool /*move_part*/, const String & /*to*/, ContextPtr /*query_context*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MOVE PARTITION TO SHARD is not supported by storage {}", getName());
+    throwMovePartitionToShardNotSupported(getName());
 }
 
 void MergeTreeData::fetchPartition(
@@ -6157,12 +6169,12 @@ void MergeTreeData::fetchPartition(
     bool /*fetch_part*/,
     ContextPtr /*query_context*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FETCH PARTITION is not supported by storage {}", getName());
+    throwFetchPartitionNotSupported(getName());
 }
 
 void MergeTreeData::forgetPartition(const ASTPtr & /*partition*/, ContextPtr /*query_context*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FORGET PARTITION is not supported by storage {}", getName());
+    throwForgetPartitionNotSupported(getName());
 }
 
 Pipe MergeTreeData::alterPartition(
@@ -9152,7 +9164,7 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
     if (!command.isDropOrRename() || unfinished_mutations.empty())
         return;
 
-    auto throw_exception = [] (
+    auto throw_exception = [][[noreturn]] (
         const std::string & mutation_name,
         const std::string & action_name,
         const std::string & entity_name,

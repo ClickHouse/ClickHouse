@@ -1871,7 +1871,7 @@ bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const Fo
   * Some additional message could be appended to exception (example: you could add information about from where it was received).
   */
 Exception readException(ReadBuffer & buf, const String & additional_message = "", bool remote_exception = false);
-void readAndThrowException(ReadBuffer & buf, const String & additional_message = "");
+[[noreturn]] void readAndThrowException(ReadBuffer & buf, const String & additional_message = "");
 
 
 /** Helper function for implementation.

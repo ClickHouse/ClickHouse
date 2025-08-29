@@ -75,9 +75,14 @@ void SecureStreamSocketImpl::setReceiveThrottler(const Poco::Net::ThrottlerPtr& 
 	underlying_socket->setReceiveThrottler(throttler);
 }
 
+[[noreturn]] void throwInvalidAccess(const char * what)
+{
+    throw Poco::InvalidAccessException(what);
+}
+
 SocketImpl* SecureStreamSocketImpl::acceptConnection(SocketAddress& clientAddr)
 {
-	throw Poco::InvalidAccessException("Cannot acceptConnection() on a SecureStreamSocketImpl");
+	throwInvalidAccess("Cannot acceptConnection() on a SecureStreamSocketImpl");
 }
 
 
@@ -123,7 +128,7 @@ void SecureStreamSocketImpl::bind(const SocketAddress& address, bool reuseAddres
 
 void SecureStreamSocketImpl::listen(int backlog)
 {
-	throw Poco::InvalidAccessException("Cannot listen() on a SecureStreamSocketImpl");
+	throwInvalidAccess("Cannot listen() on a SecureStreamSocketImpl");
 }
 
 
@@ -155,19 +160,19 @@ int SecureStreamSocketImpl::receiveBytes(void* buffer, int length, int flags)
 
 int SecureStreamSocketImpl::sendTo(const void* buffer, int length, const SocketAddress& address, int flags)
 {
-	throw Poco::InvalidAccessException("Cannot sendTo() on a SecureStreamSocketImpl");
+	throwInvalidAccess("Cannot sendTo() on a SecureStreamSocketImpl");
 }
 
 
 int SecureStreamSocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, int flags)
 {
-	throw Poco::InvalidAccessException("Cannot receiveFrom() on a SecureStreamSocketImpl");
+	throwInvalidAccess("Cannot receiveFrom() on a SecureStreamSocketImpl");
 }
 
 
 void SecureStreamSocketImpl::sendUrgent(unsigned char data)
 {
-	throw Poco::InvalidAccessException("Cannot sendUrgent() on a SecureStreamSocketImpl");
+	throwInvalidAccess("Cannot sendUrgent() on a SecureStreamSocketImpl");
 }
 
 

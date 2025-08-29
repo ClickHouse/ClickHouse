@@ -85,7 +85,7 @@ bool SystemConfiguration::getRaw(const std::string& key, std::string& value) con
 			Poco::Environment::NodeId id;
 			Poco::Environment::nodeId(id);
 			char result[13];
-			std::snprintf(result, 
+			std::snprintf(result,
                 sizeof(result),
                 "%02x%02x%02x%02x%02x%02x",
 				id[0],
@@ -151,11 +151,16 @@ bool SystemConfiguration::getRaw(const std::string& key, std::string& value) con
 	return true;
 }
 
-
-void SystemConfiguration::setRaw(const std::string& key, const std::string& value)
+[[noreturn]] inline void throwAttemptToModifySystemProperty(const std::string& key)
 {
 	throw Poco::InvalidAccessException("Attempt to modify a system property", key);
 }
+
+void SystemConfiguration::setRaw(const std::string& key, const std::string& value)
+{
+    throwAttemptToModifySystemProperty(key);
+}
+
 
 
 void SystemConfiguration::enumerate(const std::string& key, Keys& range) const
@@ -185,10 +190,14 @@ void SystemConfiguration::enumerate(const std::string& key, Keys& range) const
 	}
 }
 
+[[noreturn]] inline void throwRemovingKeyInSystemConfiguration()
+{
+	throw Poco::NotImplementedException("Removing a key in a SystemConfiguration");
+}
 
 void SystemConfiguration::removeRaw(const std::string& key)
 {
-	throw Poco::NotImplementedException("Removing a key in a SystemConfiguration");
+    throwRemovingKeyInSystemConfiguration();
 }
 
 

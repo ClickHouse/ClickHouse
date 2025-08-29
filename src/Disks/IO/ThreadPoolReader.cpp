@@ -254,4 +254,7 @@ void ThreadPoolReader::wait()
     pool->wait();
 }
 
+[[noreturn]] inline void throwExecuteNotImplemented() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `execute` not implemented for ThreadpoolReader"); }
+ThreadPoolReader::Result ThreadPoolReader::execute(Request /* request */) { throwExecuteNotImplemented(); }
+
 }

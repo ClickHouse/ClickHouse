@@ -120,7 +120,7 @@ public:
 
     size_t getRightOffset(size_t right_mark_non_included) override;
     std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
-    void seekToMark(size_t row_index) override;
+    [[noreturn]] void seekToMark(size_t row_index) override;
 };
 
 /// Base class for reading from file that contains multiple columns.

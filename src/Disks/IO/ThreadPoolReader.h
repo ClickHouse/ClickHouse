@@ -40,7 +40,7 @@ public:
 
     std::future<Result> submit(Request request) override;
 
-    Result execute(Request /* request */) override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `execute` not implemented for ThreadpoolReader"); }
+    Result execute(Request /* request */) override;
 
     void wait() override;
 

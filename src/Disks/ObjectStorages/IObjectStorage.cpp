@@ -18,9 +18,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+[[noreturn]] static void throwGetMetadataStorageMetricsNotImplemented() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method 'getMetadataStorageMetrics' is not implemented");
+}
+
+[[noreturn]] static void throwListObjectsNotSupported() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "listObjects() is not supported");
+}
+
 const MetadataStorageMetrics & IObjectStorage::getMetadataStorageMetrics() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getMetadataStorageMetrics' is not implemented");
+    throwGetMetadataStorageMetricsNotImplemented();
 }
 
 bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
@@ -32,7 +42,7 @@ bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
 
 void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata &, size_t) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjects() is not supported");
+    throwListObjectsNotSupported();
 }
 
 
@@ -82,9 +92,14 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     out->finalize();
 }
 
-const std::string & IObjectStorage::getCacheName() const
+[[noreturn]] inline void throwGetCacheNameNotImplemented()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName is not implemented for object storage");
+}
+
+const std::string & IObjectStorage::getCacheName() const
+{
+    throwGetCacheNameNotImplemented();
 }
 
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
@@ -103,5 +118,45 @@ std::string RelativePathWithMetadata::getPathOrPathToArchiveIfArchive() const
         return getPathToArchive();
     return getPath();
 }
+
+[[noreturn]] inline void throwGenerateObjectKeyPrefixForDirectoryPathNotImplemented()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'generateObjectKeyPrefixForDirectoryPath' is not implemented");
+}
+
+ObjectStorageKey
+IObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
+{
+    throwGenerateObjectKeyPrefixForDirectoryPathNotImplemented();
+}
+
+#if USE_AZURE_BLOB_STORAGE
+    [[noreturn]] void throwImplementedOnlyForAzureBlobStorage()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
+    }
+
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> IObjectStorage::getAzureBlobStorageClient() const
+    {
+        throwImplementedOnlyForAzureBlobStorage();
+    }
+
+    AzureBlobStorage::AuthMethod IObjectStorage::getAzureBlobStorageAuthMethod() const
+    {
+        throwImplementedOnlyForAzureBlobStorage();
+    }
+#endif
+
+#if USE_AWS_S3
+    [[noreturn]] void throwImplementedOnlyForS3ObjectStorage()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for S3ObjectStorage");
+    }
+
+    std::shared_ptr<const S3::Client> IObjectStorage::getS3StorageClient()
+    {
+        throwImplementedOnlyForS3ObjectStorage();
+    }
+#endif
 
 }

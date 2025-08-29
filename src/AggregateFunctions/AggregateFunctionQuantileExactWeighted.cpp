@@ -245,14 +245,14 @@ private:
     }
 
     /// getFloat implementation without interpolation
-    Float64 getFloatImpl(Float64) const
+    [[noreturn]] Float64 getFloatImpl(Float64) const
     requires(!interpolated)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat is not implemented for QuantileExact");
     }
 
     /// getManyFloat implementation without interpolation
-    void getManyFloatImpl(const Float64 *, const size_t *, size_t, Float64 *) const
+    [[noreturn]] void getManyFloatImpl(const Float64 *, const size_t *, size_t, Float64 *) const
     requires(!interpolated)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getManyFloat is not implemented for QuantileExact");

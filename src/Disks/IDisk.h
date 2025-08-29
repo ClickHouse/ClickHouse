@@ -186,19 +186,9 @@ public:
     /// If a file with `to_path` path already exists, it will be replaced.
     virtual void replaceFile(const String & from_path, const String & to_path) = 0;
 
-    virtual void renameExchange(const std::string &, const std::string &)
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method `renameExchange()` not implemented for disk: {}", getDataSourceDescription().toString());
-    }
+    virtual void renameExchange(const std::string &, const std::string &);
 
-    virtual bool renameExchangeIfSupported(const std::string &, const std::string &)
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method `renameExchangeIfSupported()` not implemented for disk: {}",
-            getDataSourceDescription().toString());
-    }
+    virtual bool renameExchangeIfSupported(const std::string &, const std::string &);
 
     /// Recursively copy files from from_dir to to_dir. Create to_dir if not exists.
     virtual void copyDirectoryContent(
@@ -253,13 +243,7 @@ public:
     /// Remove directory. Throws exception if it's not a directory or if directory is not empty.
     virtual void removeDirectory(const String & path) = 0;
 
-    virtual void removeDirectoryIfExists(const String &)
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method `removeDirectoryIfExists()` is not implemented for disk: {}",
-            getDataSourceDescription().toString());
-    }
+    virtual void removeDirectoryIfExists(const String &);
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const String & path) = 0;
@@ -316,26 +300,16 @@ public:
     /// Returns IV of an encrypted file (only for encrypted disks).
     virtual UInt128 getEncryptedFileIV(const String & path) const;
 
-    virtual const String & getCacheName() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache"); }
+    virtual const String & getCacheName() const;
 
     virtual bool supportsCache() const { return false; }
 
-    virtual NameSet getCacheLayersNames() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Method `getCacheLayersNames()` is not implemented for disk: {}",
-            getDataSourceDescription().toString());
-    }
+    virtual NameSet getCacheLayersNames() const;
 
     /// Returns a list of storage objects (contains path, size, ...).
     /// (A list is returned because for Log family engines there might
     /// be multiple files in remote fs for single clickhouse file.
-    virtual StoredObjects getStorageObjects(const String &) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Method `getStorageObjects()` not implemented for disk: {}",
-            getDataSourceDescription().toString());
-    }
+    virtual StoredObjects getStorageObjects(const String &) const;
 
     virtual std::optional<StoredObjects> getStorageObjectsIfExist(const String & path) const
     {
@@ -381,47 +355,17 @@ public:
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
 
     virtual bool isSymlinkSupported() const { return false; }
-    virtual bool isSymlink(const String &) const
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method isSymlink is not implemented for disk type: {}", getDataSourceDescription().toString());
-    }
+    virtual bool isSymlink(const String &) const;
 
-    virtual bool isSymlinkNoThrow(const String &) const
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method isSymlinkNothrow is not implemented for disk type: {}",
-            getDataSourceDescription().toString());
-    }
+    virtual bool isSymlinkNoThrow(const String &) const;
 
-    virtual void createDirectorySymlink(const String &, const String &)
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method createDirectorySymlink is not implemented for disk type: {}",
-            getDataSourceDescription().toString());
-    }
+    virtual void createDirectorySymlink(const String &, const String &);
 
-    virtual String readSymlink(const fs::path &) const
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method readSymlink is not implemented for disk type: {}",
-            getDataSourceDescription().toString());
-    }
+    virtual String readSymlink(const fs::path &) const;
 
-    virtual bool equivalent(const String &, const String &) const
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent is not implemented for disk type: {}", getDataSourceDescription().toString());
-    }
+    virtual bool equivalent(const String &, const String &) const;
 
-    virtual bool equivalentNoThrow(const String &, const String &) const
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent is not implemented for disk type: {}", getDataSourceDescription().toString());
-    }
+    virtual bool equivalentNoThrow(const String &, const String &) const;
 
     /// Truncate file to specified size.
     virtual void truncateFile(const String & path, size_t size);
@@ -494,13 +438,7 @@ public:
     /// Actually it's a part of IDiskRemote implementation but we have so
     /// complex hierarchy of disks (with decorators), so we cannot even
     /// dynamic_cast some pointer to IDisk to pointer to IDiskRemote.
-    virtual MetadataStoragePtr getMetadataStorage()
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method getMetadataStorage is not implemented for disk type: {}",
-            getDataSourceDescription().toString());
-    }
+    virtual MetadataStoragePtr getMetadataStorage();
 
     /// Very similar case as for getMetadataDiskIfExistsOrSelf(). If disk has "metadata"
     /// it will return mapping for each required path: path -> metadata as string.
@@ -528,30 +466,18 @@ public:
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
 
-    virtual ObjectStoragePtr getObjectStorage()
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method getObjectStorage is not implemented for disk type: {}",
-            getDataSourceDescription().toString());
-    }
+    virtual ObjectStoragePtr getObjectStorage();
 
     /// Create disk object storage according to disk type.
     /// For example for DiskLocal create DiskObjectStorage(LocalObjectStorage),
     /// for DiskObjectStorage create just a copy.
-    virtual DiskObjectStoragePtr createDiskObjectStorage()
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method createDiskObjectStorage is not implemented for disk type: {}",
-            getDataSourceDescription().toString());
-    }
+    virtual DiskObjectStoragePtr createDiskObjectStorage();
 
     virtual bool supportsStat() const { return false; }
-    virtual struct stat stat(const String & /*path*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support stat"); }
+    virtual struct stat stat(const String & /*path*/) const;
 
     virtual bool supportsChmod() const { return false; }
-    virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
+    virtual void chmod(const String & /*path*/, mode_t /*mode*/);
 
     /// Was disk created to be used without storage configuration?
     bool isCustomDisk() const { return custom_disk_settings_hash != 0; }
@@ -561,13 +487,7 @@ public:
     virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
 
 #if USE_AWS_S3
-    virtual std::shared_ptr<const S3::Client> getS3StorageClient() const
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method getS3StorageClient is not implemented for disk type: {}",
-            getDataSourceDescription().toString());
-    }
+    virtual std::shared_ptr<const S3::Client> getS3StorageClient() const;
 
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() const { return nullptr; }
 #endif

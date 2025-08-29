@@ -1,3 +1,4 @@
+#include <Disks/DiskType.h>
 #include <Disks/IDisk.h>
 #include <Core/Field.h>
 #include <Core/ServerUUID.h>
@@ -102,29 +103,34 @@ void IDisk::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_ba
     }
 }
 
+[[noreturn]] static void throwFileEncryptionNotImplemented(const DataSourceType & type)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", type);
+}
+
 std::unique_ptr<ReadBufferFromFileBase> IDisk::readEncryptedFile(const String &, const ReadSettings &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
+    throwFileEncryptionNotImplemented(getDataSourceDescription().type);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> IDisk::writeEncryptedFile(const String &, size_t, WriteMode, const WriteSettings &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
+    throwFileEncryptionNotImplemented(getDataSourceDescription().type);
 }
 
 size_t IDisk::getEncryptedFileSize(const String &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
+    throwFileEncryptionNotImplemented(getDataSourceDescription().type);
 }
 
 size_t IDisk::getEncryptedFileSize(size_t) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
+    throwFileEncryptionNotImplemented(getDataSourceDescription().type);
 }
 
 UInt128 IDisk::getEncryptedFileIV(const String &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
+    throwFileEncryptionNotImplemented(getDataSourceDescription().type);
 }
 
 void asyncCopy(
@@ -187,9 +193,14 @@ void IDisk::copyDirectoryContent(
     copyThroughBuffers(from_dir, to_disk, to_dir, read_settings, write_settings, cancellation_hook);
 }
 
+[[noreturn]] inline void throwTruncateFileNotImplemented(const DataSourceType & type)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", type);
+}
+
 void IDisk::truncateFile(const String &, size_t)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getDataSourceDescription().type);
+    throwTruncateFileNotImplemented(getDataSourceDescription().type);
 }
 
 bool IDisk::supportsPartitionCommand(const PartitionCommand & /*command*/) const
@@ -290,5 +301,178 @@ void IDisk::applyNewSettings(const Poco::Util::AbstractConfiguration & config, C
 {
     copying_thread_pool->setMaxThreads(config.getInt(config_prefix + ".thread_pool_size", 16));
 }
+
+[[noreturn]] static void throwRenameExchangeNotImplemented(const std::string & desc) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method `renameExchange()` not implemented for disk: {}", desc);
+}
+
+[[noreturn]] static void throwRenameExchangeIfSupportedNotImplemented(const std::string & desc) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method `renameExchangeIfSupported()` not implemented for disk: {}", desc);
+}
+
+[[noreturn]] static void throwRemoveDirectoryIfExistsNotImplemented(const std::string & desc) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method `removeDirectoryIfExists()` is not implemented for disk: {}", desc);
+}
+
+[[noreturn]] static void throwGetCacheLayersNamesNotImplemented(const std::string & desc) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method `getCacheLayersNames()` is not implemented for disk: {}", desc);
+}
+
+[[noreturn]] static void throwGetStorageObjectsNotImplemented(const std::string & desc) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method `getStorageObjects()` not implemented for disk: {}", desc);
+}
+
+[[noreturn]] static void throwIsSymlinkNotImplemented(const std::string & desc) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method isSymlink is not implemented for disk type: {}", desc);
+}
+
+[[noreturn]] static void throwIsSymlinkNoThrowNotImplemented(const std::string & desc) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method isSymlinkNothrow is not implemented for disk type: {}", desc);
+}
+
+[[noreturn]] static void throwCreateDirectorySymlinkNotImplemented(const std::string & desc) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method createDirectorySymlink is not implemented for disk type: {}", desc);
+}
+
+[[noreturn]] static void throwReadSymlinkNotImplemented(const std::string & desc) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method readSymlink is not implemented for disk type: {}", desc);
+}
+
+[[noreturn]] static void throwEquivalentNotImplemented(const std::string & desc) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method equivalent is not implemented for disk type: {}", desc);
+}
+
+[[noreturn]] static void throwEquivalentNoThrowNotImplemented(const std::string & desc) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method equivalent is not implemented for disk type: {}", desc);
+}
+
+[[noreturn]] static void throwGetMetadataStorageNotImplemented(const std::string & desc) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method getMetadataStorage is not implemented for disk type: {}", desc);
+}
+
+[[noreturn]] static void throwGetObjectStorageNotImplemented(const std::string & desc) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method getObjectStorage is not implemented for disk type: {}", desc);
+}
+
+[[noreturn]] static void throwGetS3StorageClientNotImplemented(const std::string & desc) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method getS3StorageClient is not implemented for disk type: {}", desc);
+}
+
+[[noreturn]] static void throwStatNotSupported() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support stat");
+}
+
+[[noreturn]] static void throwChmodNotSupported() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod");
+}
+
+[[noreturn]] static void throwThereIsNoCache() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache");
+}
+
+void IDisk::renameExchange(const std::string &, const std::string &)
+{
+    throwRenameExchangeNotImplemented(getDataSourceDescription().toString());
+}
+
+bool IDisk::renameExchangeIfSupported(const std::string &, const std::string &)
+{
+    throwRenameExchangeIfSupportedNotImplemented(getDataSourceDescription().toString());
+}
+
+void IDisk::removeDirectoryIfExists(const String &)
+{
+    throwRemoveDirectoryIfExistsNotImplemented(getDataSourceDescription().toString());
+}
+
+NameSet IDisk::getCacheLayersNames() const
+{
+    throwGetCacheLayersNamesNotImplemented(getDataSourceDescription().toString());
+}
+
+StoredObjects IDisk::getStorageObjects(const String &) const
+{
+    throwGetStorageObjectsNotImplemented(getDataSourceDescription().toString());
+}
+
+bool IDisk::isSymlink(const String &) const
+{
+    throwIsSymlinkNotImplemented(getDataSourceDescription().toString());
+}
+
+bool IDisk::isSymlinkNoThrow(const String &) const
+{
+    throwIsSymlinkNoThrowNotImplemented(getDataSourceDescription().toString());
+}
+
+void IDisk::createDirectorySymlink(const String &, const String &)
+{
+    throwCreateDirectorySymlinkNotImplemented(getDataSourceDescription().toString());
+}
+
+String IDisk::readSymlink(const fs::path &) const
+{
+    throwReadSymlinkNotImplemented(getDataSourceDescription().toString());
+}
+
+bool IDisk::equivalent(const String &, const String &) const
+{
+    throwEquivalentNotImplemented(getDataSourceDescription().toString());
+}
+
+bool IDisk::equivalentNoThrow(const String &, const String &) const
+{
+    throwEquivalentNoThrowNotImplemented(getDataSourceDescription().toString());
+}
+
+MetadataStoragePtr IDisk::getMetadataStorage()
+{
+    throwGetMetadataStorageNotImplemented(getDataSourceDescription().toString());
+}
+
+ObjectStoragePtr IDisk::getObjectStorage()
+{
+    throwGetObjectStorageNotImplemented(getDataSourceDescription().toString());
+}
+
+struct stat IDisk::stat(const String & /*path*/) const {
+    throwStatNotSupported();
+}
+
+void IDisk::chmod(const String & /*path*/, mode_t /*mode*/) {
+    throwChmodNotSupported();
+}
+
+[[noreturn]] static void throwCreateDiskObjectStorageNotImplemented(const std::string & desc) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method createDiskObjectStorage is not implemented for disk type: {}", desc);
+}
+
+DiskObjectStoragePtr IDisk::createDiskObjectStorage()
+{
+    throwCreateDiskObjectStorageNotImplemented(getDataSourceDescription().toString());
+}
+
+const String & IDisk::getCacheName() const { throwThereIsNoCache(); }
+
+#if USE_AWS_S3
+    std::shared_ptr<const S3::Client> IDisk::getS3StorageClient() const
+    {
+        throwGetS3StorageClientNotImplemented(getDataSourceDescription().toString());
+    }
+#endif
 
 }

@@ -487,12 +487,12 @@ public:
         data.query(levels, indices, size, result);
     }
 
-    Float64 getFloat64(Float64 /*level*/)
+    [[noreturn]] Float64 getFloat64(Float64 /*level*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat64 is not implemented for GKSampler");
     }
 
-    void getManyFloat(const Float64 * /*levels*/, const size_t * /*indices*/, size_t /*size*/, Float64 * /*result*/)
+    [[noreturn]] void getManyFloat(const Float64 * /*levels*/, const size_t * /*indices*/, size_t /*size*/, Float64 * /*result*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getManyFloat is not implemented for GKSampler");
     }

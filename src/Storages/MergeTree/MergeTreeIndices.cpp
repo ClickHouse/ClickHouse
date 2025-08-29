@@ -118,6 +118,54 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
     it->second(index, attach);
 }
 
+[[noreturn]] static void throwBulkIndexFilteringNotSupported() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Index does not support filtering in bulk");
+}
+
+[[noreturn]] static void throwCalculateApproximateNearestNeighborsNotImplemented() {
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
+}
+
+IMergeTreeIndexCondition::FilteredGranules IMergeTreeIndexCondition::getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const
+{
+    throwBulkIndexFilteringNotSupported();
+}
+
+NearestNeighbours IMergeTreeIndexCondition::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
+{
+    throwCalculateApproximateNearestNeighborsNotImplemented();
+}
+
+[[noreturn]] static void throwCreateIndexConditionNotImplemented(const std::string & type) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "createIndexCondition with vector search parameters is not implemented for index of type {}", type);
+}
+
+[[noreturn]] static void throwCreateIndexMergedConditionNotImplemented(const std::string & type) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "MergedCondition is not implemented for index of type {}", type);
+}
+
+MergeTreeIndexConditionPtr IMergeTreeIndex::createIndexCondition(
+    const ActionsDAG::Node * /*predicate*/, ContextPtr /*context*/,
+    const std::optional<VectorSearchParameters> & /*parameters*/) const
+{
+    throwCreateIndexConditionNotImplemented(index.type);
+}
+
+MergeTreeIndexMergedConditionPtr IMergeTreeIndex::createIndexMergedCondition(
+    const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
+{
+    throwCreateIndexMergedConditionNotImplemented(index.type);
+}
+
+MergeTreeIndexBulkGranulesPtr IMergeTreeIndex::createIndexBulkGranules() const
+{
+    throwBulkIndexFilteringNotSupported();
+}
+
 MergeTreeIndexFactory::MergeTreeIndexFactory()
 {
     registerCreator("minmax", minmaxIndexCreator);

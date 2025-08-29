@@ -125,8 +125,8 @@ public:
     std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t n) const override;
-    StringRef getDataAt(size_t n) const override;
-    void insertData(const char * pos, size_t length) override;
+    [[noreturn]] StringRef getDataAt(size_t n) const override;
+    [[noreturn]] void insertData(const char * pos, size_t length) override;
 
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;

@@ -117,14 +117,22 @@ void ISerialization::enumerateStreams(
     enumerateStreams(settings, callback, data);
 }
 
+[[noreturn]] static void throwSerializeBinaryBulkMultipleStreamsRequired(const std::string & name) {
+    throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be serialized with multiple streams", name);
+}
+
+[[noreturn]] static void throwDeserializeBinaryBulkMultipleStreamsRequired(const std::string & name) {
+    throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be deserialized with multiple streams", name);
+}
+
 void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, size_t, size_t) const
 {
-    throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be serialized with multiple streams", column.getName());
+    throwSerializeBinaryBulkMultipleStreamsRequired(column.getName());
 }
 
 void ISerialization::deserializeBinaryBulk(IColumn & column, ReadBuffer &, size_t, size_t, double) const
 {
-    throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be deserialized with multiple streams", column.getName());
+    throwDeserializeBinaryBulkMultipleStreamsRequired(column.getName());
 }
 
 void ISerialization::serializeBinaryBulkWithMultipleStreams(

@@ -65,29 +65,13 @@ public:
 
     std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
-    StringRef getDataAt(size_t) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
-    }
-
-    bool isDefaultAt(size_t) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "isDefaultAt is not implemented for {}", getName());
-    }
-
-    void insert(const Field &) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
-    }
-
+    StringRef getDataAt(size_t) const override;
+    bool isDefaultAt(size_t) const override;
+    void insert(const Field &) override;
+    void insertDefault() override;
     bool tryInsert(const Field &) override
     {
         return false;
-    }
-
-    void insertDefault() override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -101,96 +85,31 @@ public:
     void doInsertRangeFrom(const IColumn &, size_t start, size_t length) override;
 #endif
 
-    void insertData(const char *, size_t) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
-    }
-
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot serialize from {}", getName());
-    }
-
-    const char * deserializeAndInsertFromArena(const char *) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot deserialize to {}", getName());
-    }
-
-    const char * skipSerializedInArena(const char*) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot skip serialized {}", getName());
-    }
-
-    void updateHashWithValue(size_t, SipHash &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateHashWithValue is not implemented for {}", getName());
-    }
-
-    WeakHash32 getWeakHash32() const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getWeakHash32 is not implemented for {}", getName());
-    }
-
-    void updateHashFast(SipHash &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateHashFast is not implemented for {}", getName());
-    }
-
-    void popBack(size_t) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "popBack is not implemented for {}", getName());
-    }
+    void insertData(const char *, size_t) override;
+    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override;
+    const char * deserializeAndInsertFromArena(const char *) override;
+    const char * skipSerializedInArena(const char*) const override;
+    void updateHashWithValue(size_t, SipHash &) const override;
+    WeakHash32 getWeakHash32() const override;
+    void updateHashFast(SipHash &) const override;
+    void popBack(size_t) override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t, size_t, const IColumn &, int) const override
+    int compareAt(size_t, size_t, const IColumn &, int) const override;
 #else
-    int doCompareAt(size_t, size_t, const IColumn &, int) const override
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override;
 #endif
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "compareAt is not implemented for {}", getName());
-    }
 
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "compareColumn is not implemented for {}", getName());
-    }
-
-    bool hasEqualValues() const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "hasEqualValues is not implemented for {}", getName());
-    }
-
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override;
+    bool hasEqualValues() const override;
     void getPermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,
-                        size_t, int, Permutation &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getPermutation is not implemented for {}", getName());
-    }
-
+                        size_t, int, Permutation &) const override;
     void updatePermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,
-                        size_t, int, Permutation &, EqualRanges &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updatePermutation is not implemented for {}", getName());
-    }
-
-    void gather(ColumnGathererStream &) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method gather is not supported for {}", getName());
-    }
-
-    double getRatioOfDefaultRows(double) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getRatioOfDefaultRows is not supported for {}", getName());
-    }
-
-    UInt64 getNumberOfDefaultRows() const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getNumberOfDefaultRows is not supported for {}", getName());
-    }
-
-    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getIndicesOfNonDefaultRows is not supported for {}", getName());
-    }
+                        size_t, int, Permutation &, EqualRanges &) const override;
+    void gather(ColumnGathererStream &) override;
+    double getRatioOfDefaultRows(double) const override;
+    UInt64 getNumberOfDefaultRows() const override;
+    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override;
 
     bool isShortCircuitArgument() const { return is_short_circuit_argument; }
 

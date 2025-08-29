@@ -94,10 +94,16 @@ struct FixedSizeConverter
     /// is needed).
     virtual void convertField(std::span<const char> /*data*/, bool /*is_max*/, Field &) const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FixedSizeConverter subclass doesn't support decoding Field");
+        throwFieldDecodingNotImplemented();
     }
 
     virtual ~FixedSizeConverter() = default;
+
+private:
+    [[noreturn]] inline void throwFieldDecodingNotImplemented() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FixedSizeConverter subclass doesn't support decoding Field");
+    }
 };
 
 struct StringConverter
@@ -111,10 +117,16 @@ struct StringConverter
     virtual void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn &) const = 0;
     virtual void convertField(std::span<const char> /*data*/, bool /*is_max*/, Field &) const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "StringConverter subclass doesn't support decoding Field");
+        throwFieldDecodingNotImplemented();
     }
 
     virtual ~StringConverter() = default;
+
+private:
+    [[noreturn]] inline void throwFieldDecodingNotImplemented() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "StringConverter subclass doesn't support decoding Field");
+    }
 };
 
 /// We choose PageDecoder implementation in two steps:

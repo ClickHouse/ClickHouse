@@ -30,7 +30,7 @@ public:
 
     String getEngineName() const override { return "Ordinary"; }
 
-    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
+    [[noreturn]] void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
     bool supportsLoadingInTopologicalOrder() const override { return true; }
 

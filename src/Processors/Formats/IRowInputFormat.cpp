@@ -264,9 +264,17 @@ Chunk IRowInputFormat::read()
     return chunk;
 }
 
+[[noreturn]] static void throwSyncAfterErrorNotImplemented(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method syncAfterError is not implemented for input format {}", name);
+}
+
+[[noreturn]] static void throwCountRowsNotImplementedForInputFormat(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method countRows is not implemented for input format {}", name);
+}
+
 void IRowInputFormat::syncAfterError()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method syncAfterError is not implemented for input format {}", getName());
+    throwSyncAfterErrorNotImplemented(getName());
 }
 
 void IRowInputFormat::resetParser()
@@ -279,7 +287,7 @@ void IRowInputFormat::resetParser()
 
 size_t IRowInputFormat::countRows(size_t)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method countRows is not implemented for input format {}", getName());
+    throwCountRowsNotImplementedForInputFormat(getName());
 }
 
 void IRowInputFormat::setSerializationHints(const SerializationInfoByName & hints)

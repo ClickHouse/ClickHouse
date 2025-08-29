@@ -470,7 +470,7 @@ private:
         UNUSED(child_list_id);
 
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
+        visitorImpl(*state, [&][[noreturn]]()
         {
             throw DB::Exception(
                 DB::ErrorCodes::NOT_IMPLEMENTED,
@@ -489,7 +489,7 @@ private:
         ffi::free_kernel_opaque_expression_op(op);
 
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
+        visitorImpl(*state, [&][[noreturn]]()
         {
             throw DB::Exception(
                 DB::ErrorCodes::NOT_IMPLEMENTED,
@@ -508,7 +508,7 @@ private:
         ffi::free_kernel_opaque_predicate_op(op);
 
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
+        visitorImpl(*state, [&][[noreturn]]()
         {
             throw DB::Exception(
                 DB::ErrorCodes::NOT_IMPLEMENTED,
@@ -525,7 +525,7 @@ private:
         UNUSED(sibling_list_id);
 
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
+        visitorImpl(*state, [&][[noreturn]]()
         {
             throw DB::Exception(
                 DB::ErrorCodes::NOT_IMPLEMENTED,

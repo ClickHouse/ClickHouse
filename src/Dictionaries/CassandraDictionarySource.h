@@ -67,7 +67,7 @@ public:
 
     QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
-    QueryPipeline loadUpdatedAll() override;
+    [[noreturn]] QueryPipeline loadUpdatedAll() override;
 
     String toString() const override;
 

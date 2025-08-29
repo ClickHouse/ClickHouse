@@ -312,13 +312,13 @@ public:
     {
     }
 
-    off_t seek(off_t /* off */, int /* whence */) override
+    [[noreturn]] off_t seek(off_t /* off */, int /* whence */) override
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Seek is not supported when reading from archive");
     }
     bool checkIfActuallySeekable() override { return false; }
 
-    off_t getPosition() override { throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getPosition not supported when reading from archive"); }
+    [[noreturn]] off_t getPosition() override { throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getPosition not supported when reading from archive"); }
     String getFileName() const override { return handle.getFileName(); }
 
     std::optional<size_t> tryGetFileSize() override { return handle.getFileInfo().uncompressed_size; }

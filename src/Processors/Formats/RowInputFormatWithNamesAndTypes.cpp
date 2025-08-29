@@ -626,9 +626,72 @@ std::vector<String> FormatWithNamesAndTypesSchemaReader::readNamesFromFields(con
     return names;
 }
 
+[[noreturn]] static void throwReadRowForHeaderDetectionNotImplemented() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetFieldsAndDataTypes is not implemented for format reader");
+}
+
+[[noreturn]] static void throwCountRowsNotImplemented() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method countRows is not implemented for format reader");
+}
+
+[[noreturn]] static void throwSkipRowNotImplemented() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipRow is not implemented for format reader");
+}
+
+[[noreturn]] static void throwEscapingRuleNotImplemented() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Format reader doesn't have an escaping rule");
+}
+
+[[noreturn]] static void throwReadRowAndGetDataTypesImplNotImplemented() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method readRowAndGetDataTypesImpl is not implemented");
+}
+
+[[noreturn]] static void throwReadRowAndGetFieldsAndDataTypesNotImplemented() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method readRowAndGetFieldsAndDataTypes is not implemented");
+}
+
+[[noreturn]] static void throwCheckForEndOfRowNotImplemented() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method checkForEndOfRow is not implemented");
+}
+
 void FormatWithNamesAndTypesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
 {
     transformInferredTypesIfNeeded(type, new_type, format_settings);
+}
+
+std::vector<String> FormatWithNamesAndTypesReader::readRowForHeaderDetection()
+{
+    throwReadRowForHeaderDetectionNotImplemented();
+}
+
+size_t FormatWithNamesAndTypesReader::countRows(size_t /*max_block_size*/)
+{
+    throwCountRowsNotImplemented();
+}
+
+void FormatWithNamesAndTypesReader::skipRow()
+{
+    throwSkipRowNotImplemented();
+}
+
+FormatSettings::EscapingRule FormatWithNamesAndTypesReader::getEscapingRule() const
+{
+    throwEscapingRuleNotImplemented();
+}
+
+bool FormatWithNamesAndTypesReader::checkForEndOfRow() { throwCheckForEndOfRowNotImplemented(); }
+
+std::optional<DataTypes> FormatWithNamesAndTypesSchemaReader::readRowAndGetDataTypesImpl()
+{
+    throwReadRowAndGetDataTypesImplNotImplemented();
+}
+
+/// Return column fields with inferred types. In case of no more rows, return nullopt.
+std::optional<std::pair<std::vector<String>, DataTypes>> FormatWithNamesAndTypesSchemaReader::readRowAndGetFieldsAndDataTypes()
+{
+    throwReadRowAndGetFieldsAndDataTypesNotImplemented();
 }
 
 template class RowInputFormatWithNamesAndTypes<JSONCompactFormatReader>;

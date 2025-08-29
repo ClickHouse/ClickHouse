@@ -117,7 +117,7 @@ public:
         }
     }
 
-    void addBatchSinglePlaceNotNull(
+    [[noreturn]] void addBatchSinglePlaceNotNull(
         size_t, size_t, AggregateDataPtr __restrict, const IColumn **, const UInt8 *, Arena *, ssize_t) const override
     {
         /// This should not happen since it means somebody else has preprocessed the data (NULLs or IFs) and might

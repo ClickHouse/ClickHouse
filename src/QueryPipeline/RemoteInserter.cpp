@@ -79,7 +79,6 @@ void RemoteInserter::initialize()
         if (Protocol::Server::Exception == packet.type)
         {
             packet.exception->rethrow();
-            break;
         }
         if (Protocol::Server::Log == packet.type)
         {

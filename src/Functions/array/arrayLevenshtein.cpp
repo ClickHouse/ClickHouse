@@ -104,13 +104,17 @@ public:
         return execute(columns);
     }
 private:
-    ColumnPtr execute(std::vector<const ColumnArray *>) const
-    {
+    [[noreturn]] static void throwUnknownArrayFunction(const std::string & function_name) {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Unknown function {}. "
             "Supported names: 'arrayLevenshteinDistance', 'arrayLevenshteinDistanceWeighted', 'arraySimilarity'",
-            getName());
+            function_name);
+    }
+
+    ColumnPtr execute(std::vector<const ColumnArray *>) const
+    {
+        throwUnknownArrayFunction(getName());
     }
 
     template <typename N, typename Result>

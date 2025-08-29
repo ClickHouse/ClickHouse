@@ -659,17 +659,25 @@ void MySQLHandler::erasePreparedStatement(UInt32 statement_id)
     prepared_statements.erase(statement_id);
 }
 
-void MySQLHandler::authPluginSSL()
-{
+[[noreturn]] static void throwSSLAuthNotSupported() {
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ClickHouse was built without SSL support. Try specifying password using double SHA1 in users.xml.");
+}
+
+[[noreturn]] static void throwSSLHandshakeNotSupported() {
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Client requested SSL, while it is disabled.");
+}
+
+void MySQLHandler::authPluginSSL()
+{
+    throwSSLAuthNotSupported();
 }
 
 void MySQLHandler::finishHandshakeSSL(
     [[maybe_unused]] size_t packet_size, [[maybe_unused]] char * buf, [[maybe_unused]] size_t pos,
     [[maybe_unused]] std::function<void(size_t)> read_bytes, [[maybe_unused]] MySQLProtocol::ConnectionPhase::HandshakeResponse & packet)
 {
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Client requested SSL, while it is disabled.");
+    throwSSLHandshakeNotSupported();
 }
 
 #if USE_SSL

@@ -98,7 +98,7 @@ struct ExtractSubstringImpl
         res_data.assign(start, length);
     }
 
-    static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported by this function");
     }
@@ -154,7 +154,7 @@ struct CutSubstringImpl
         res_data.append(start + length, data.data() + data.size());
     }
 
-    static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported by this function");
     }

@@ -68,19 +68,19 @@ struct AddNanosecondsImpl
         Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(9);
         return DateTime64(DecimalUtils::multiplyAdd(static_cast<Int64>(t), multiplier, delta));
     }
-    static NO_SANITIZE_UNDEFINED Int8 execute(UInt16, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 execute(UInt16, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addNanoseconds() cannot be used with Date");
     }
-    static NO_SANITIZE_UNDEFINED Int8 execute(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 execute(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addNanoseconds() cannot be used with Date32");
     }
-    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addNanoseconds() cannot be used with Time");
     }
-    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addNanoseconds() cannot be used with Time");
     }
@@ -116,19 +116,19 @@ struct AddMicrosecondsImpl
         Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(6);
         return DateTime64(DecimalUtils::multiplyAdd(static_cast<Int64>(t), multiplier, delta));
     }
-    static NO_SANITIZE_UNDEFINED Int8 execute(UInt16, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 execute(UInt16, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMicroseconds() cannot be used with Date");
     }
-    static NO_SANITIZE_UNDEFINED Int8 execute(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 execute(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMicroseconds() cannot be used with Date32");
     }
-    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMicroseconds() cannot be used with Time");
     }
-    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMicroseconds() cannot be used with Time");
     }
@@ -164,19 +164,19 @@ struct AddMillisecondsImpl
         Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(3);
         return DateTime64(DecimalUtils::multiplyAdd(static_cast<Int64>(t), multiplier, delta));
     }
-    static NO_SANITIZE_UNDEFINED Int8 execute(UInt16, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 execute(UInt16, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMilliseconds() cannot be used with Date");
     }
-    static NO_SANITIZE_UNDEFINED Int8 execute(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 execute(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMilliseconds() cannot be used with Date32");
     }
-    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMilliseconds() cannot be used with Time");
     }
-    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMilliseconds() cannot be used with Time");
     }
@@ -346,11 +346,11 @@ struct AddDaysImpl
     {
         return static_cast<Int32>(d + delta);
     }
-    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addDays() cannot be used with Time");
     }
-    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addDays() cannot be used with Time");
     }
@@ -391,11 +391,11 @@ struct AddWeeksImpl
     {
         return static_cast<Int32>(d + delta * 7);
     }
-    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addWeeks() cannot be used with Time");
     }
-    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addWeeks() cannot be used with Time");
     }
@@ -436,11 +436,11 @@ struct AddMonthsImpl
     {
         return time_zone.addMonths(ExtendedDayNum(d), delta);
     }
-    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMonths() cannot be used with Time");
     }
-    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMonths() cannot be used with Time");
     }
@@ -481,11 +481,11 @@ struct AddQuartersImpl
     {
         return time_zone.addQuarters(ExtendedDayNum(d), delta);
     }
-    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addQuarters() cannot be used with Time");
     }
-    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addQuarters() cannot be used with Time");
     }
@@ -526,11 +526,11 @@ struct AddYearsImpl
     {
         return time_zone.addYears(ExtendedDayNum(d), delta);
     }
-    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addYears() cannot be used with Time");
     }
-    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    [[noreturn]] static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addYears() cannot be used with Time");
     }

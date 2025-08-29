@@ -43,7 +43,7 @@ public:
     }
 
     /// Returns global application's context.
-    ContextMutablePtr context() const override
+    [[noreturn]] ContextMutablePtr context() const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot fetch context for Keeper");
     }

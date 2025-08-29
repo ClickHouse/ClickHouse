@@ -26,8 +26,8 @@ private:
     std::streampos seekoff(std::streamoff off, std::ios_base::seekdir dir, std::ios_base::openmode which) override;
     std::streampos seekpos(std::streampos pos, std::ios_base::openmode which) override;
 
-    std::streamsize xsputn(const char* s, std::streamsize n) override;
-    int overflow(int c) override;
+    [[noreturn]] std::streamsize xsputn(const char* s, std::streamsize n) override;
+    [[noreturn]] int overflow(int c) override;
 
     std::streampos getCurrentPosition() const;
 

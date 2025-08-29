@@ -45,14 +45,19 @@ public:
     /** Same as the above but ensure no alias names are used. This is for index analysis */
     String getColumnNameWithoutAlias() const;
 
+[[noreturn]] inline void throwTryingToGetNameOfNotAColumn() const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get name of not a column: {}", getID());
+}
+
     virtual void appendColumnName(WriteBuffer &) const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get name of not a column: {}", getID());
+        throwTryingToGetNameOfNotAColumn();
     }
 
     virtual void appendColumnNameWithoutAlias(WriteBuffer &) const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get name of not a column: {}", getID());
+        throwTryingToGetNameOfNotAColumn();
     }
 
     /** Get the alias, if any, or the canonical name of the column, if it is not. */
@@ -61,10 +66,15 @@ public:
     /** Get the alias, if any, or an empty string if it does not exist, or if the element does not support aliases. */
     virtual String tryGetAlias() const { return String(); }
 
+    [[noreturn]] inline void throwCantSetAliasOf() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias of {} of {}", getColumnName(), getID());
+    }
+
     /** Set the alias. */
     virtual void setAlias(const String & /*to*/)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias of {} of {}", getColumnName(), getID());
+        throwCantSetAliasOf();
     }
 
     /** Get the text that identifies this element. */
@@ -348,7 +358,7 @@ protected:
         formatImpl(FormattingBuffer{ostr, settings, state, std::move(frame)});
     }
 
-    virtual void formatImpl(FormattingBuffer /*out*/) const
+    [[noreturn]] virtual void formatImpl(FormattingBuffer /*out*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
     }

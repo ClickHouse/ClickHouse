@@ -135,12 +135,12 @@ public:
 protected:
     virtual void loadFileMinMaxIndexImpl()
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadFileMinMaxIndexImpl is not supported by hive file:{}", getFormatName());
+        throwLoadFileMinMaxIndexImplNotSupported(getFormatName());
     }
 
     virtual void loadSplitMinMaxIndexesImpl()
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadSplitMinMaxIndexesImpl is not supported by hive file:{}", getFormatName());
+        throwLoadSplitMinMaxIndexesImplNotSupported(getFormatName());
     }
 
     virtual std::optional<size_t> getRowsImpl() = 0;
@@ -167,6 +167,17 @@ protected:
 
     /// IHiveFile would be shared among multi threads, need lock's protection to update min/max indexes.
     std::mutex mutex;
+
+private:
+    [[noreturn]] static void throwLoadFileMinMaxIndexImplNotSupported(const std::string & format) {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Method loadFileMinMaxIndexImpl is not supported by hive file:{}", format);
+    }
+
+    [[noreturn]] static void throwLoadSplitMinMaxIndexesImplNotSupported(const std::string & format) {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Method loadSplitMinMaxIndexesImpl is not supported by hive file:{}", format);
+    }
 };
 
 using HiveFilePtr = std::shared_ptr<IHiveFile>;

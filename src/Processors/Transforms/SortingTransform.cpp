@@ -405,9 +405,13 @@ void SortingTransform::enrichChunkWithConstants(Chunk & chunk)
     chunk.setColumns(std::move(column_with_constants), num_rows);
 }
 
+[[noreturn]] static void throwSortingTransformSerializeNotImplemented(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'serialize' is not implemented for {} processor", name);
+}
+
 void SortingTransform::serialize()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'serialize' is not implemented for {} processor", getName());
+    throwSortingTransformSerializeNotImplemented(getName());
 }
 
 }

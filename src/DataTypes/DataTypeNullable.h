@@ -38,7 +38,7 @@ public:
     bool haveMaximumSizeOfValue() const override { return nested_data_type->haveMaximumSizeOfValue(); }
     size_t getMaximumSizeOfValueInMemory() const override { return 1 + nested_data_type->getMaximumSizeOfValueInMemory(); }
     bool isNullable() const override { return true; }
-    size_t getSizeOfValueInMemory() const override;
+    [[noreturn]] size_t getSizeOfValueInMemory() const override;
     bool onlyNull() const override;
     bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
     bool canBePromoted() const override { return nested_data_type->canBePromoted(); }

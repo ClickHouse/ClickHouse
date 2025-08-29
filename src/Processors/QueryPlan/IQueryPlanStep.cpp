@@ -37,9 +37,25 @@ void IQueryPlanStep::updateInputHeader(SharedHeader input_header, size_t idx)
     updateOutputHeader();
 }
 
+[[noreturn]] static void throwHasCorrelatedExpressionsNotImplemented(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check {} plan step for correlated expressions", name);
+}
+
+[[noreturn]] static void throwClonePlanStepNotImplemented(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot clone {} plan step", name);
+}
+
+[[noreturn]] static void throwSerializePlanStepNotImplemented(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serialize is not implemented for {}", name);
+}
+
+[[noreturn]] static void throwUpdateOutputHeaderNotImplemented() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+}
+
 bool IQueryPlanStep::hasCorrelatedExpressions() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check {} plan step for correlated expressions", getName());
+    throwHasCorrelatedExpressionsNotImplemented(getName());
 }
 
 const SharedHeader & IQueryPlanStep::getOutputHeader() const
@@ -52,7 +68,7 @@ const SharedHeader & IQueryPlanStep::getOutputHeader() const
 
 QueryPlanStepPtr IQueryPlanStep::clone() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot clone {} plan step", getName());
+    throwClonePlanStepNotImplemented(getName());
 }
 
 const SortDescription & IQueryPlanStep::getSortDescription() const
@@ -168,9 +184,9 @@ String IQueryPlanStep::getUniqID() const
 
 void IQueryPlanStep::serialize(Serialization & /*ctx*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serialize is not implemented for {}", getName());
+    throwSerializePlanStepNotImplemented(getName());
 }
 
-void IQueryPlanStep::updateOutputHeader() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
+void IQueryPlanStep::updateOutputHeader() { throwUpdateOutputHeaderNotImplemented(); }
 
 }

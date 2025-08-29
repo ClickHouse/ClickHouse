@@ -35,7 +35,7 @@ public:
     {}
 
     HTTPException * clone() const override { return new HTTPException(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+    [[noreturn]] void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 
     Poco::Net::HTTPResponse::HTTPStatus getHTTPStatus() const { return http_status; }
 

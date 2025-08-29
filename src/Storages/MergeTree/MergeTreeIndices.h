@@ -192,19 +192,13 @@ public:
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
 
     using FilteredGranules = std::vector<size_t>;
-    virtual FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
-    }
+    virtual FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const;
 
     /// Special method for vector similarity indexes:
     /// Returns the N nearest neighbors of a reference vector in the index granule.
     /// The nearest neighbors are returned as row positions.
     /// If VectorSearchParameters::return_distances = true, then the distances are returned as well.
-    virtual NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
-    }
+    virtual NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const;
 
     template <typename RPNElement>
     bool rpnEvaluatesAlwaysUnknownOrTrue(
@@ -328,10 +322,7 @@ struct IMergeTreeIndex
         return false;
     }
 
-    virtual MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
-    }
+    virtual MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const;
 
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const = 0;
 
@@ -346,20 +337,12 @@ struct IMergeTreeIndex
     /// The vector similarity index overrides this method
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * /*predicate*/, ContextPtr /*context*/,
-        const std::optional<VectorSearchParameters> & /*parameters*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "createIndexCondition with vector search parameters is not implemented for index of type {}", index.type);
-    }
+        const std::optional<VectorSearchParameters> & /*parameters*/) const;
 
     virtual bool isVectorSimilarityIndex() const { return false; }
 
     virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
-        const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "MergedCondition is not implemented for index of type {}", index.type);
-    }
+        const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const;
 
     Names getColumnsRequiredForIndexCalc() const;
 

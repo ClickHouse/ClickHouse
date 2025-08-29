@@ -14,13 +14,18 @@ namespace ErrorCodes
 namespace GatherUtils
 {
 
+[[noreturn]] inline void throwAcceptNotImplementedSource(const std::string & name)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Accept not implemented for {}", name);
+}
+
 struct IValueSource
 {
     virtual ~IValueSource() = default;
 
     virtual void accept(ValueSourceVisitor &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Accept not implemented for {}", demangle(typeid(*this).name()));
+        throwAcceptNotImplementedSource(demangle(typeid(*this).name()));
     }
 
     virtual bool isConst() const { return false; }

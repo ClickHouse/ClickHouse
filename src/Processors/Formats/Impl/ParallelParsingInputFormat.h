@@ -112,7 +112,7 @@ public:
         finishAndWait();
     }
 
-    void resetParser() final
+    [[noreturn]] void resetParser() final
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "resetParser() is not allowed for {}", getName());
     }

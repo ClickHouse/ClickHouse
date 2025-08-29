@@ -1024,10 +1024,15 @@ void IMergeTreeDataPart::loadProjections(
     }
 }
 
-void IMergeTreeDataPart::loadIndexGranularity()
+[[noreturn]] static inline void throwLoadIndexGranularityNotImplemented(const std::string & type)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Method 'loadIndexGranularity' is not implemented for part with type {}", getType().toString());
+                    "Method 'loadIndexGranularity' is not implemented for part with type {}", type);
+}
+
+void IMergeTreeDataPart::loadIndexGranularity()
+{
+    throwLoadIndexGranularityNotImplemented(getType().toString());
 }
 
 
@@ -2350,9 +2355,13 @@ void IMergeTreeDataPart::checkConsistency(bool require_part_metadata) const
     }
 }
 
+[[noreturn]] static void throwCheckConsistencyNotImplemented(const std::string & type) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'checkConsistency' is not implemented for part with type {}", type);
+}
+
 void IMergeTreeDataPart::doCheckConsistency(bool /* require_part_metadata */) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'checkConsistency' is not implemented for part with type {}", getType().toString());
+    throwCheckConsistencyNotImplemented(getType().toString());
 }
 
 void IMergeTreeDataPart::checkConsistencyWithProjections(bool require_part_metadata) const

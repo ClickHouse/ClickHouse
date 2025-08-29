@@ -922,19 +922,19 @@ struct ToStartOfSecondImpl
         return time64 - fractional_with_sign;
     }
 
-    static UInt32 execute(UInt32, const DateLUTImpl &)
+    [[noreturn]] static UInt32 execute(UInt32, const DateLUTImpl &)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type DateTime of argument for function {}", name);
     }
-    static UInt32 execute(Int32, const DateLUTImpl &)
+    [[noreturn]] static UInt32 execute(Int32, const DateLUTImpl &)
     {
         throwDate32IsNotSupported(name);
     }
-    static UInt32 execute(UInt16, const DateLUTImpl &)
+    [[noreturn]] static UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throwDateIsNotSupported(name);
     }
-    static UInt32 execute(Int64, const DateLUTImpl &)
+    [[noreturn]] static UInt32 execute(Int64, const DateLUTImpl &)
     {
         throwTimeIsNotSupported(name);
     }
@@ -994,19 +994,19 @@ struct ToStartOfMillisecondImpl
         return time64 - droppable_part_with_sign;
     }
 
-    static UInt32 execute(UInt32, const DateLUTImpl &)
+    [[noreturn]] static UInt32 execute(UInt32, const DateLUTImpl &)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type DateTime of argument for function {}", name);
     }
-    static UInt32 execute(Int32, const DateLUTImpl &)
+    [[noreturn]] static UInt32 execute(Int32, const DateLUTImpl &)
     {
         throwDate32IsNotSupported(name);
     }
-    static UInt32 execute(Int64, const DateLUTImpl &)
+    [[noreturn]] static UInt32 execute(Int64, const DateLUTImpl &)
     {
         throwTimeIsNotSupported(name);
     }
-    static UInt32 execute(UInt16, const DateLUTImpl &)
+    [[noreturn]] static UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throwDateIsNotSupported(name);
     }
@@ -1063,7 +1063,7 @@ struct ToStartOfMicrosecondImpl
         return time64 - droppable_part_with_sign;
     }
 
-    static UInt32 execute(UInt32, const DateLUTImpl &)
+    [[noreturn]] static UInt32 execute(UInt32, const DateLUTImpl &)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type DateTime of argument for function {}", name);
     }
@@ -1118,7 +1118,7 @@ struct ToStartOfNanosecondImpl
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of argument for function {}, Time64 expected", name);
     }
 
-    static UInt32 execute(UInt32, const DateLUTImpl &)
+    [[noreturn]] static UInt32 execute(UInt32, const DateLUTImpl &)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type DateTime of argument for function {}", name);
     }

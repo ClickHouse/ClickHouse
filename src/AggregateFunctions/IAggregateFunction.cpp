@@ -78,9 +78,14 @@ bool IAggregateFunction::haveEqualArgumentTypes(const IAggregateFunction & rhs) 
         [](const auto & t1, const auto & t2) { return t1->equals(*t2); });
 }
 
+[[noreturn]] inline void throwPredictionNotSupported(const std::string & name)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Prediction is not supported for {}", name);
+}
+
 DataTypePtr IAggregateFunction::getReturnTypeToPredict() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Prediction is not supported for {}", getName());
+    throwPredictionNotSupported(getName());
 }
 
 bool IAggregateFunction::haveSameStateRepresentation(const IAggregateFunction & rhs) const
@@ -95,11 +100,20 @@ bool IAggregateFunction::haveSameStateRepresentationImpl(const IAggregateFunctio
     return getStateType()->equals(*rhs.getStateType());
 }
 
+[[noreturn]] static void throwParallelizeMergePrepareNotImplemented(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", name);
+}
+
+[[noreturn]] static void throwMergeNotImplemented(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "merge() with thread pool parameter isn't implemented for {} ", name);
+}
+
 void IAggregateFunction::parallelizeMergePrepare(
     AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const
 {
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", getName());
+    throwParallelizeMergePrepareNotImplemented(getName());
 }
 
 void IAggregateFunction::merge(
@@ -109,7 +123,7 @@ void IAggregateFunction::merge(
     std::atomic<bool> & /*is_cancelled*/,
     Arena * /*arena*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
+    throwMergeNotImplemented(getName());
 }
 
 void IAggregateFunction::insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
@@ -121,6 +135,16 @@ void IAggregateFunction::insertMergeResultInto(AggregateDataPtr __restrict place
     insertResultInto(place, to, arena);
 }
 
+[[noreturn]] static void throwPredictValuesNotSupported(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method predictValues is not supported for {}", name);
+}
+
+[[noreturn]] static void throwNotJITCompilable(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "{} is not JIT-compilable", name);
+}
+
 void IAggregateFunction::predictValues(
     ConstAggregateDataPtr __restrict /* place */,
     IColumn & /*to*/,
@@ -129,29 +153,29 @@ void IAggregateFunction::predictValues(
     size_t /*limit*/,
     ContextPtr /*context*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method predictValues is not supported for {}", getName());
+    throwPredictValuesNotSupported(getName());
 }
 
 void IAggregateFunction::compileCreate(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    throwNotJITCompilable(getName());
 }
 
 void IAggregateFunction::compileAdd(
     llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const ValuesWithType & /*arguments*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    throwNotJITCompilable(getName());
 }
 
 void IAggregateFunction::compileMerge(
     llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_dst_ptr*/, llvm::Value * /*aggregate_data_src_ptr*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    throwNotJITCompilable(getName());
 }
 
 llvm::Value * IAggregateFunction::compileGetResult(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    throwNotJITCompilable(getName());
 }
 
 }

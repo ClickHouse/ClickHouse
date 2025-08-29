@@ -90,7 +90,7 @@ public:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
-    const char * skipSerializedInArena(const char * pos) const override;
+    [[noreturn]] const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -152,17 +152,17 @@ public:
         return false;
     }
 
-    double getRatioOfDefaultRows(double) const override
+    [[noreturn]] double getRatioOfDefaultRows(double) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getRatioOfDefaultRows' not implemented for ColumnUnique");
     }
 
-    UInt64 getNumberOfDefaultRows() const override
+    [[noreturn]] UInt64 getNumberOfDefaultRows() const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getNumberOfDefaultRows' not implemented for ColumnUnique");
     }
 
-    void getIndicesOfNonDefaultRows(IColumn::Offsets &, size_t, size_t) const override
+    [[noreturn]] void getIndicesOfNonDefaultRows(IColumn::Offsets &, size_t, size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getIndicesOfNonDefaultRows' not implemented for ColumnUnique");
     }

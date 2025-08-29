@@ -147,7 +147,7 @@ public:
     Exception(CreateFromSTDTag, const std::exception & exc);
 
     Exception * clone() const override { return new Exception(*this); }
-    void rethrow() const override { throw *this; } // NOLINT
+    [[noreturn]] void rethrow() const override { throw *this; } // NOLINT
     const char * name() const noexcept override { return "DB::Exception"; }
     const char * what() const noexcept override { return message().data(); }
 
@@ -273,7 +273,7 @@ public:
     }
 
     ErrnoException * clone() const override { return new ErrnoException(*this); }
-    void rethrow() const override { throw *this; } // NOLINT
+    [[noreturn]] void rethrow() const override { throw *this; } // NOLINT
 
     int getErrno() const { return saved_errno; }
     std::optional<std::string> getPath() const { return path; }

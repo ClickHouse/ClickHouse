@@ -67,15 +67,15 @@ public:
         return s;
     }
 
-    Field operator[](size_t n) const override;
-    void get(size_t n, Field & res) const override;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override;
+    [[noreturn]] Field operator[](size_t n) const override;
+    [[noreturn]] void get(size_t n, Field & res) const override;
+    [[noreturn]] std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override;
 
-    bool isDefaultAt(size_t n) const override;
-    StringRef getDataAt(size_t n) const override;
-    void insertData(const char * pos, size_t length) override;
-    void insert(const Field & x) override;
-    bool tryInsert(const Field & x) override;
+    [[noreturn]] bool isDefaultAt(size_t n) const override;
+    [[noreturn]] StringRef getDataAt(size_t n) const override;
+    [[noreturn]] void insertData(const char * pos, size_t length) override;
+    [[noreturn]] void insert(const Field & x) override;
+    [[noreturn]] bool tryInsert(const Field & x) override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override;
@@ -89,13 +89,13 @@ public:
     void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #endif
 
-    void insertDefault() override;
-    void popBack(size_t n) override;
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
-    void updateHashWithValue(size_t n, SipHash & hash) const override;
-    WeakHash32 getWeakHash32() const override;
-    void updateHashFast(SipHash & hash) const override;
+    [[noreturn]] void insertDefault() override;
+    [[noreturn]] void popBack(size_t n) override;
+    [[noreturn]] const char * deserializeAndInsertFromArena(const char * pos) override;
+    [[noreturn]] const char * skipSerializedInArena(const char * pos) const override;
+    [[noreturn]] void updateHashWithValue(size_t n, SipHash & hash) const override;
+    [[noreturn]] WeakHash32 getWeakHash32() const override;
+    [[noreturn]] void updateHashFast(SipHash & hash) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -104,50 +104,50 @@ public:
 #endif
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    void expand(const Filter & mask, bool inverted) override;
+    [[noreturn]] void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
-    ColumnPtr replicate(const Offsets & offsets) const override;
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
-    void gather(ColumnGathererStream & gatherer_stream) override;
+    [[noreturn]] ColumnPtr replicate(const Offsets & offsets) const override;
+    [[noreturn]] MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    [[noreturn]] void gather(ColumnGathererStream & gatherer_stream) override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+    [[noreturn]] int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #else
-    int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
+    [[noreturn]] int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
 
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+    [[noreturn]] void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
-    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const override;
-    bool hasEqualValues() const override;
-    void getExtremes(Field & min, Field & max) const override;
-    void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+    [[noreturn]] int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const override;
+    [[noreturn]] bool hasEqualValues() const override;
+    [[noreturn]] void getExtremes(Field & min, Field & max) const override;
+    [[noreturn]] void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
-    void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+    [[noreturn]] void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const override;
-    void getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+    [[noreturn]] void getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
-    void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+    [[noreturn]] void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
-    void ensureOwnership() override;
+    [[noreturn]] void ensureOwnership() override;
     size_t byteSize() const override;
-    size_t byteSizeAt(size_t n) const override;
+    [[noreturn]] size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
-    void protect() override;
-    void forEachSubcolumnRecursively(RecursiveColumnCallback) const override;
-    bool structureEquals(const IColumn & rhs) const override;
-    bool isCollationSupported() const override;
-    ColumnPtr compress(bool force_compression) const override;
-    ColumnPtr updateFrom(const Patch & patch) const override;
-    void updateInplaceFrom(const Patch & patch) override;
-    double getRatioOfDefaultRows(double sample_ratio) const override;
-    UInt64 getNumberOfDefaultRows() const override;
-    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
-    void finalize() override;
-    bool isFinalized() const override;
+    [[noreturn]] void protect() override;
+    [[noreturn]] void forEachSubcolumnRecursively(RecursiveColumnCallback) const override;
+    [[noreturn]] bool structureEquals(const IColumn & rhs) const override;
+    [[noreturn]] bool isCollationSupported() const override;
+    [[noreturn]] ColumnPtr compress(bool force_compression) const override;
+    [[noreturn]] ColumnPtr updateFrom(const Patch & patch) const override;
+    [[noreturn]] void updateInplaceFrom(const Patch & patch) override;
+    [[noreturn]] double getRatioOfDefaultRows(double sample_ratio) const override;
+    [[noreturn]] UInt64 getNumberOfDefaultRows() const override;
+    [[noreturn]] void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
+    [[noreturn]] void finalize() override;
+    [[noreturn]] bool isFinalized() const override;
 
     const CapturedColumns & getColumns() const { return captured_columns; }
 

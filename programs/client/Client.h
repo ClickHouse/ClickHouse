@@ -29,7 +29,13 @@ protected:
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
 
     bool processWithASTFuzzer(std::string_view full_query) override;
+
+#if USE_BUZZHOUSE
     bool buzzHouse() override;
+#else
+    [[noreturn]] bool buzzHouse() override;
+#endif
+
     bool processASTFuzzerStep(const String & query_to_execute, const ASTPtr & parsed_query);
 
     void connect() override;

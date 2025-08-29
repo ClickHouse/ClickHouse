@@ -821,7 +821,7 @@ bool Client::buzzHouse()
     return server_up;
 }
 #else
-bool Client::buzzHouse()
+[[noreturn]] bool Client::buzzHouse()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
 }

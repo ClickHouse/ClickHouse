@@ -776,4 +776,43 @@ MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
     return cloned_col;
 }
 
+[[noreturn]] static void throwIsDefaultAtNotSupportedColumnAggregateFunction() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method isDefaultAt is not supported for ColumnAggregateFunction");
+}
+
+[[noreturn]] static void throwCompareColumnNotSupportedColumnAggregateFunction() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method compareColumn is not supported for ColumnAggregateFunction");
+}
+
+[[noreturn]] static void throwHasEqualValuesNotSupportedColumnAggregateFunction() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method hasEqualValues is not supported for ColumnAggregateFunction");
+}
+
+[[noreturn]] static void throwGetIndicesOfNonDefaultRowsNotSupportedColumnAggregateFunction() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Method getIndicesOfNonDefaultRows is not supported for ColumnAggregateFunction");
+}
+
+bool ColumnAggregateFunction::isDefaultAt(size_t) const
+{
+    throwIsDefaultAtNotSupportedColumnAggregateFunction();
+}
+void ColumnAggregateFunction::compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const
+{
+    throwCompareColumnNotSupportedColumnAggregateFunction();
+}
+
+bool ColumnAggregateFunction::hasEqualValues() const
+{
+    throwHasEqualValuesNotSupportedColumnAggregateFunction();
+}
+
+void ColumnAggregateFunction::getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const
+{
+    throwGetIndicesOfNonDefaultRowsNotSupportedColumnAggregateFunction();
+}
+
 }

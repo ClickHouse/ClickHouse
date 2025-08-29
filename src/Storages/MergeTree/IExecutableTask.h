@@ -73,7 +73,7 @@ public:
 
     void onCompleted() override { job_result_callback(!res); }
     StorageID getStorageID() const override { return id; }
-    Priority getPriority() const override;
+    [[noreturn]] Priority getPriority() const override;
 
     String getQueryId() const override { return id.getShortName() + "::lambda"; }
 

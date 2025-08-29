@@ -54,7 +54,7 @@ public:
     String getName() const override { return "JoinLogical"; }
     String getSerializationName() const override { return "Join"; }
 
-    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
+    [[noreturn]] QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
     void describePipeline(FormatSettings & settings) const override;
 

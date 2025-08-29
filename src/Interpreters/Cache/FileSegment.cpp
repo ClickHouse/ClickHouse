@@ -924,7 +924,7 @@ bool FileSegment::assertCorrectness() const
 
 bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock) const
 {
-    auto throw_logical = [&](const std::string & error)
+    auto throw_logical = [&][[noreturn]] (const std::string & error)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{}. File segment info: {}", error, getInfoForLogUnlocked(lock));
     };

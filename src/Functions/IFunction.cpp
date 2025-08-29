@@ -512,19 +512,34 @@ ColumnPtr IFunctionBase::execute(const DB::ColumnsWithTypeAndName& arguments, co
     return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
 }
 
+[[noreturn]] void throwNoParameters() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "IFunctionBase doesn't support getParameters method");
+}
+
+[[noreturn]] void throwNoMonotonicity(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Function {} has no information about its monotonicity", name);
+}
+
+[[noreturn]] void throwNoPreimage(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Function {} has no information about its preimage", name);
+}
+
 const Array & IFunctionBase::getParameters() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IFunctionBase doesn't support getParameters method");
+    throwNoParameters();
 }
 
 IFunctionBase::Monotonicity IFunctionBase::getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its monotonicity", getName());
+    throwNoMonotonicity(getName());
 }
 
 FieldIntervalPtr IFunctionBase::getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", getName());
+    throwNoPreimage(getName());
 }
 
 void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_arguments) const
@@ -644,47 +659,77 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
     return getReturnTypeImpl(arguments);
 }
 
+[[noreturn]] static void throwLambdaArgsForbiddenOverloadResolver(const std::string & name) {
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} can't have lambda-expressions as arguments", name);
+}
+
+[[noreturn]] static void throwBuildImplNotImplemented(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "buildImpl is not implemented for {}", name);
+}
+
+[[noreturn]] static void throwReturnTypeNotImplementedOverloadResolver(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "getReturnType is not implemented for {}", name);
+}
+
+[[noreturn]] static void throwReturnTypeNotImplementedFunction(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "getReturnType is not implemented for {}", name);
+}
+
+[[noreturn]] static void throwLambdaArgsForbiddenFunction(const std::string & name) {
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} can't have lambda-expressions as arguments", name);
+}
+
 void IFunctionOverloadResolver::getLambdaArgumentTypesImpl(DataTypes & arguments [[maybe_unused]]) const
 {
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} can't have lambda-expressions as arguments", getName());
+    throwLambdaArgsForbiddenOverloadResolver(getName());
 }
 
 FunctionBasePtr IFunctionOverloadResolver::buildImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "buildImpl is not implemented for {}", getName());
+    throwBuildImplNotImplemented(getName());
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnTypeImpl(const DataTypes & /*arguments*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
+    throwReturnTypeNotImplementedOverloadResolver(getName());
 }
 
 IFunctionBase::Monotonicity IFunction::getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its monotonicity", getName());
+    throwNoMonotonicity(getName());
 }
 
 FieldIntervalPtr IFunction::getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", getName());
+    throwNoPreimage(getName());
 }
 
 DataTypePtr IFunction::getReturnTypeImpl(const DataTypes & /*arguments*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
+    throwReturnTypeNotImplementedFunction(getName());
 }
 
 void IFunction::getLambdaArgumentTypes(DataTypes & /*arguments*/) const
 {
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} can't have lambda-expressions as arguments", getName());
+    throwLambdaArgsForbiddenFunction(getName());
 }
 
 
 #if USE_EMBEDDED_COMPILER
 
+[[noreturn]] inline void throwFunctionNotJITCompilable(const std::string & name)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", name);
+}
+
 llvm::Value * IFunctionBase::compile(llvm::IRBuilderBase & /*builder*/, const ValuesWithType & /*arguments*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    throwFunctionNotJITCompilable(getName());
 }
 
 static std::optional<DataTypes> removeNullables(const DataTypes & types)
@@ -773,7 +818,7 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
 
 llvm::Value * IFunction::compileImpl(llvm::IRBuilderBase & /*builder*/, const ValuesWithType & /*arguments*/, const DataTypePtr & /*result_type*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    throwFunctionNotJITCompilable(getName());
 }
 
 #endif

@@ -547,4 +547,18 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     }
 }
 
+[[noreturn]] static void throwBucketsNotSupported() {
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets are not supported");
+}
+
+[[noreturn]] static void throwPrepareProcessingRequestsImplNotImplemented() {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method prepareProcesingRequestsImpl is not implemented");
+}
+
+size_t ObjectStorageQueueIFileMetadata::getBucket() const { throwBucketsNotSupported(); }
+ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes ObjectStorageQueueIFileMetadata::prepareProcessingRequestsImpl(Coordination::Requests &)
+{
+    throwPrepareProcessingRequestsImplNotImplemented();
+}
+
 }

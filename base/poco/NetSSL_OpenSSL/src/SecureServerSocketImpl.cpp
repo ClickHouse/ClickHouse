@@ -43,24 +43,28 @@ SocketImpl* SecureServerSocketImpl::acceptConnection(SocketAddress& clientAddr)
 	return _impl.acceptConnection(clientAddr);
 }
 
+[[noreturn]] inline void throwCannotConnectSecureServerSocket()
+{
+	throw Poco::InvalidAccessException("Cannot connect() a SecureServerSocket");
+}
 
 void SecureServerSocketImpl::connect(const SocketAddress& address)
 {
-	throw Poco::InvalidAccessException("Cannot connect() a SecureServerSocket");
+    throwCannotConnectSecureServerSocket();
 }
 
 
 void SecureServerSocketImpl::connect(const SocketAddress& address, const Poco::Timespan& timeout)
 {
-	throw Poco::InvalidAccessException("Cannot connect() a SecureServerSocket");
+    throwCannotConnectSecureServerSocket();
 }
-	
+
 
 void SecureServerSocketImpl::connectNB(const SocketAddress& address)
 {
-	throw Poco::InvalidAccessException("Cannot connect() a SecureServerSocket");
+    throwCannotConnectSecureServerSocket();
 }
-	
+
 
 void SecureServerSocketImpl::bind(const SocketAddress& address, bool reuseAddress, bool reusePort)
 {
@@ -68,48 +72,52 @@ void SecureServerSocketImpl::bind(const SocketAddress& address, bool reuseAddres
 	reset(_impl.sockfd());
 }
 
-	
+
 void SecureServerSocketImpl::listen(int backlog)
 {
 	_impl.listen(backlog);
 	reset(_impl.sockfd());
 }
-	
+
 
 void SecureServerSocketImpl::close()
 {
 	reset();
 	_impl.close();
 }
-	
+
+[[noreturn]] void throwInvalidAccess(const char * what)
+{
+    throw Poco::InvalidAccessException(what);
+}
 
 int SecureServerSocketImpl::sendBytes(const void* buffer, int length, int flags)
 {
-	throw Poco::InvalidAccessException("Cannot sendBytes() on a SecureServerSocket");
+	throwInvalidAccess("Cannot sendBytes() on a SecureServerSocket");
 }
 
 
 int SecureServerSocketImpl::receiveBytes(void* buffer, int length, int flags)
 {
-	throw Poco::InvalidAccessException("Cannot receiveBytes() on a SecureServerSocket");
+	throwInvalidAccess("Cannot receiveBytes() on a SecureServerSocket");
 }
 
 
 int SecureServerSocketImpl::sendTo(const void* buffer, int length, const SocketAddress& address, int flags)
 {
-	throw Poco::InvalidAccessException("Cannot sendTo() on a SecureServerSocket");
+	throwInvalidAccess("Cannot sendTo() on a SecureServerSocket");
 }
 
 
 int SecureServerSocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, int flags)
 {
-	throw Poco::InvalidAccessException("Cannot receiveFrom() on a SecureServerSocket");
+	throwInvalidAccess("Cannot receiveFrom() on a SecureServerSocket");
 }
 
 
 void SecureServerSocketImpl::sendUrgent(unsigned char data)
 {
-	throw Poco::InvalidAccessException("Cannot sendUrgent() on a SecureServerSocket");
+	throwInvalidAccess("Cannot sendUrgent() on a SecureServerSocket");
 }
 
 

@@ -172,10 +172,7 @@ public:
         const ActionsDAG * /* filter_dag */,
         std::function<void(FileProgress)> /* callback */,
         size_t /* list_batch_size */,
-        ContextPtr /*context*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
-    }
+        ContextPtr /*context*/);
 
     /// Returns true, if metadata is of the latest version, false if unknown.
     virtual bool update(
@@ -199,10 +196,7 @@ public:
         ObjectStoragePtr /* object_storage */,
         const std::optional<FormatSettings> & /* format_settings */,
         ContextPtr /* context */,
-        std::shared_ptr<DataLake::ICatalog> /* catalog */)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write() is not implemented for configuration type {}", getTypeName());
-    }
+        std::shared_ptr<DataLake::ICatalog> /* catalog */);
 
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(const MutationCommands & /*commands*/,
@@ -216,10 +210,7 @@ public:
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) {}
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) {}
 
-    virtual const DataLakeStorageSettings & getDataLakeSettings() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
-    }
+    virtual const DataLakeStorageSettings & getDataLakeSettings() const;
 
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
 

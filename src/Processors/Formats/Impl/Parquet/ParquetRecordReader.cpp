@@ -23,6 +23,7 @@
 #include <parquet/properties.h>
 
 #include <Processors/Formats/Impl/Parquet/ParquetLeafColReader.h>
+#include <parquet/types.h>
 
 namespace DB
 {
@@ -114,10 +115,17 @@ private:
 
     std::unique_ptr<ParquetColumnReader> throwUnsupported(std::string msg = "")
     {
+        throwParquetUnsupported(col_descriptor.logical_type()->ToString(), col_descriptor.physical_type(), col_descriptor.name(), msg);
+    }
+
+    [[noreturn]] static void throwParquetUnsupported(const std::string & logical,
+                                                     const parquet::Type::type & physical,
+                                                     const std::string & field,
+                                                     const std::string & msg) {
         throw Exception(
             ErrorCodes::PARQUET_EXCEPTION,
             "Unsupported logical type: {} and physical type: {} for field `{}`{}",
-            col_descriptor.logical_type()->ToString(), col_descriptor.physical_type(), col_descriptor.name(), msg);
+            logical, physical, field, msg);
     }
 };
 

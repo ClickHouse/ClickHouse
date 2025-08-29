@@ -34,7 +34,7 @@ public:
 
     QueryPipeline loadAll() override;
 
-    QueryPipeline loadUpdatedAll() override
+    [[noreturn]] QueryPipeline loadUpdatedAll() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for YTsarususDictionarySource");
     }

@@ -508,7 +508,7 @@ namespace
             callback(true);
         }
 
-        void write(const GRPCResult &, const CompletionCallback &) override
+        [[noreturn]] void write(const GRPCResult &, const CompletionCallback &) override
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Responder<CALL_SIMPLE>::write() should not be called");
         }
@@ -540,7 +540,7 @@ namespace
             reader.Read(&query_info_, getCallbackPtr(callback));
         }
 
-        void write(const GRPCResult &, const CompletionCallback &) override
+        [[noreturn]] void write(const GRPCResult &, const CompletionCallback &) override
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Responder<CALL_WITH_STREAM_INPUT>::write() should not be called");
         }

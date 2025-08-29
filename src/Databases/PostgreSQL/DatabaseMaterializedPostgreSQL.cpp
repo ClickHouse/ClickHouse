@@ -399,9 +399,14 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
     }
 }
 
-StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr, const String &)
+[[noreturn]] inline void throwDetachTableNotImplemented()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE not allowed, use DETACH PERMANENTLY");
+}
+
+StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr, const String &)
+{
+    throwDetachTableNotImplemented();
 }
 
 void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const String & table_name)

@@ -100,11 +100,20 @@ public:
 
     virtual void setReadHints(const RangesInDataPartReadHints & /*read_hints_*/, const NamesAndTypesList & /*read_columns*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setReadHints not implemented for this reader");
+        throwSetReadHintsNotImplemented();
     }
 
     virtual const RangesInDataPartReadHints & getReadHints() const
     {
+        throwGetReadHintsNotImplemented();
+    }
+
+private:
+    [[noreturn]] static void throwSetReadHintsNotImplemented() {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setReadHints not implemented for this reader");
+    }
+
+    [[noreturn]] static void throwGetReadHintsNotImplemented() {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReadHints not implemented for this reader");
     }
 };

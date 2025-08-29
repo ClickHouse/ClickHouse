@@ -79,7 +79,7 @@ public:
         return none_info;
     }
 
-    std::unique_ptr<ReadBufferFromFileBase> createReader(
+    [[noreturn]] std::unique_ptr<ReadBufferFromFileBase> createReader(
         const StoredObject & object,
         const ReadSettings &) override
     {

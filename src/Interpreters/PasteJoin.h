@@ -30,7 +30,7 @@ public:
     std::string getName() const override { return "PasteJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
-    bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
+    [[noreturn]] bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PasteJoin::addBlockToJoin should not be called");
     }
@@ -66,19 +66,19 @@ public:
     void setTotals(const Block & block) override { totals = block; }
     const Block & getTotals() const override { return totals; }
 
-    size_t getTotalRowCount() const override
+    [[noreturn]] size_t getTotalRowCount() const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PasteJoin::getTotalRowCount should not be called");
     }
 
-    size_t getTotalByteCount() const override
+    [[noreturn]] size_t getTotalByteCount() const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PasteJoin::getTotalByteCount should not be called");
     }
 
     bool alwaysReturnsEmptySet() const override { return false; }
 
-    IBlocksStreamPtr
+    [[noreturn]] IBlocksStreamPtr
     getNonJoinedBlocks(const Block & /* left_sample_block */, const Block & /* result_sample_block */, UInt64 /* max_block_size */) const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PasteJoin::getNonJoinedBlocks should not be called");

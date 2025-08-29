@@ -497,7 +497,7 @@ protected:
 
     const ColumnRawPtrs & getActualColumns() const { return actual_columns; }
 
-    KeysNullMap<Key> createBitmap(size_t) const
+    [[noreturn]] KeysNullMap<Key> createBitmap(size_t) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error: calling createBitmap() for non-nullable keys is forbidden");
     }

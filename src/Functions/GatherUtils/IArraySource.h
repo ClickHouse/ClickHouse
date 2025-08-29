@@ -14,6 +14,11 @@ namespace ErrorCodes
 namespace GatherUtils
 {
 
+[[noreturn]] inline void throwAcceptNotImplemented(const std::string & name)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Accept not implemented for {}", name);
+}
+
 struct IArraySource
 {
     virtual ~IArraySource() = default;
@@ -26,7 +31,7 @@ struct IArraySource
 
     virtual void accept(ArraySourceVisitor &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Accept not implemented for {}", demangle(typeid(*this).name()));
+        throwAcceptNotImplemented(demangle(typeid(*this).name()));
     }
 };
 

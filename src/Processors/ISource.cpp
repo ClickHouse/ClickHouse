@@ -134,9 +134,13 @@ void ISource::work()
     }
 }
 
+[[noreturn]] static void throwGenerateNotImplemented(const std::string & name) {
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "generate is not implemented for {}", name);
+}
+
 Chunk ISource::generate()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "generate is not implemented for {}", getName());
+    throwGenerateNotImplemented(getName());
 }
 
 std::optional<Chunk> ISource::tryGenerate()

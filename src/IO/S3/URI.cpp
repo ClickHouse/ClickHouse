@@ -178,7 +178,7 @@ void URI::validateBucket(const String & bucket, const Poco::URI & uri)
 
 void URI::validateKey(const String & key, const Poco::URI & uri)
 {
-    auto onError = [&]()
+    auto onError = [&] [[noreturn]] ()
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,

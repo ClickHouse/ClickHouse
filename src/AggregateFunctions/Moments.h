@@ -65,7 +65,7 @@ struct VarMoments
         readPODBinary(*this, buf);
     }
 
-    T get() const
+    [[noreturn]] T get() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Variation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
@@ -177,17 +177,17 @@ struct CovarMoments
         readPODBinary(*this, buf);
     }
 
-    T get() const
+    [[noreturn]] T get() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Covariation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
 
-    T getMoment3() const
+    [[noreturn]] T getMoment3() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Covariation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
 
-    T getMoment4() const
+    [[noreturn]] T getMoment4() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Covariation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
@@ -250,22 +250,22 @@ struct CorrMoments
         return (m0 * xy - x1 * y1) / sqrt((m0 * x2 - x1 * x1) * (m0 * y2 - y1 * y1));
     }
 
-    T getSample() const
+    [[noreturn]] T getSample() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by the 'get' method");
     }
 
-    T getPopulation() const
+    [[noreturn]] T getPopulation() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by the 'get' method");
     }
 
-    T getMoment3() const
+    [[noreturn]] T getMoment3() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
 
-    T getMoment4() const
+    [[noreturn]] T getMoment4() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }

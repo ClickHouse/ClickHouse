@@ -97,14 +97,22 @@ ColumnPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
     return createColumnConst(size, getDefault());
 }
 
+[[noreturn]] static void throwPromoteNumericTypeNotImplemented(const std::string & name) {
+    throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_PROMOTED, "Data type {} can't be promoted.", name);
+}
+
+[[noreturn]] static void throwGetSizeOfValueInMemoryNotFixed(const std::string & name) {
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value of type {} in memory is not of fixed size.", name);
+}
+
 DataTypePtr IDataType::promoteNumericType() const
 {
-    throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_PROMOTED, "Data type {} can't be promoted.", getName());
+    throwPromoteNumericTypeNotImplemented(getName());
 }
 
 size_t IDataType::getSizeOfValueInMemory() const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value of type {} in memory is not of fixed size.", getName());
+    throwGetSizeOfValueInMemoryNotFixed(getName());
 }
 
 void IDataType::forEachSubcolumn(

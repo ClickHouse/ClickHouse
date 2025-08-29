@@ -75,7 +75,7 @@ public:
     FileStatusPtr getFileStatus() { return file_status; }
 
     virtual bool useBucketsForProcessing() const { return false; }
-    virtual size_t getBucket() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets are not supported"); }
+    virtual size_t getBucket() const;
 
     /// Try set file as Processing.
     bool trySetProcessing();
@@ -136,10 +136,7 @@ protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
     virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests) = 0;
 
-    virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method prepareProcesingRequestsImpl is not implemented");
-    }
+    virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &);
     void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
 
     const std::string path;

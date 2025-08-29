@@ -111,26 +111,26 @@ struct HasTokenImpl
     }
 
     template <typename... Args>
-    static void vectorVector(Args &&...)
+    [[noreturn]] static void vectorVector(Args &&...)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support non-constant needle argument", name);
     }
 
     /// Search different needles in single haystack.
     template <typename... Args>
-    static void constantVector(Args &&...)
+    [[noreturn]] static void constantVector(Args &&...)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support non-constant needle argument", name);
     }
 
     template <typename... Args>
-    static void vectorFixedConstant(Args &&...)
+    [[noreturn]] static void vectorFixedConstant(Args &&...)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
     }
 
     template <typename... Args>
-    static void vectorFixedVector(Args &&...)
+    [[noreturn]] static void vectorFixedVector(Args &&...)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
     }

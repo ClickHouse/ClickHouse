@@ -673,7 +673,7 @@ struct MatchImpl
     }
 
     template <typename... Args>
-    static void constantVector(Args &&...)
+    [[noreturn]] static void constantVector(Args &&...)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support search with non-constant needles in constant haystack", name);
     }

@@ -24,7 +24,7 @@ public:
     void close() override { pChannel->close(); }
     void setProperty(const std::string & name, const std::string & value) override { pChannel->setProperty(name, value); }
 
-    void log(const Poco::Message &) override;
+    [[noreturn]] void log(const Poco::Message &) override;
     void log(Poco::Message && msg) override;
     void logExtended(const ExtendedLogMessage & msg);
 

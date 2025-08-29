@@ -372,7 +372,7 @@ template <
 struct OperationApplier<Op, OperationApplierImpl, 0>
 {
     template <bool, typename Columns, typename Result>
-    static void NO_INLINE doBatchedApply(Columns &, Result &, size_t)
+    [[noreturn]] static void NO_INLINE doBatchedApply(Columns &, Result &, size_t)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "OperationApplier<...>::apply(...): not enough arguments to run this method");
     }
@@ -440,13 +440,13 @@ template <typename Op>
 struct TypedExecutorInvoker<Op>
 {
     template <typename T, typename Result>
-    static void apply(const ColumnVector<T> &, const IColumn & y, Result &)
+    [[noreturn]] static void apply(const ColumnVector<T> &, const IColumn & y, Result &)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column y of type: {}", demangle(typeid(y).name()));
     }
 
     template <typename Result>
-    static void apply(const IColumn & x, const IColumn &, Result &)
+    [[noreturn]] static void apply(const IColumn & x, const IColumn &, Result &)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column x of type: {}", demangle(typeid(x).name()));
     }

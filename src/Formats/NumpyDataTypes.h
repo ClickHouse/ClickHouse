@@ -49,12 +49,25 @@ public:
     Endianness getEndianness() const { return endianness; }
 
     virtual NumpyDataTypeIndex getTypeIndex() const = 0;
-    virtual size_t getSize() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function getSize is not implemented"); }
-    virtual void setSize(size_t) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function setSize is not implemented"); }
-    virtual String str() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function str is not implemented"); }
+    virtual size_t getSize() const { throwGetSizeNotImplemented(); }
+    virtual void setSize(size_t) { throwSetSizeNotImplemented(); }
+    virtual String str() const { throwStrNotImplemented(); }
 
 protected:
     Endianness endianness;
+
+private:
+    [[noreturn]] static void throwGetSizeNotImplemented() {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function getSize is not implemented");
+    }
+
+    [[noreturn]] static void throwSetSizeNotImplemented() {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function setSize is not implemented");
+    }
+
+    [[noreturn]] static void throwStrNotImplemented() {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function str is not implemented");
+    }
 };
 
 class NumpyDataTypeInt : public NumpyDataType
