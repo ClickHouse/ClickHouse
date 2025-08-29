@@ -120,6 +120,11 @@ struct NearestNeighbours
 
 /// ---------------------------------------------
 
+struct SerializeIndexSettings
+{
+    Index
+}
+
 /// Stores some info about a single block of data.
 struct IMergeTreeIndexGranule
 {
@@ -420,5 +425,8 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach)
 
 MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index);
 void ginIndexValidator(const IndexDescription & index, bool attach);
+
+MergeTreeIndexPtr textIndexCreator(const IndexDescription & index);
+void textIndexValidator(const IndexDescription & index, bool attach);
 
 }

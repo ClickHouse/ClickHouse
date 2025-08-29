@@ -143,8 +143,11 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
 
-    registerCreator("text", ginIndexCreator);
-    registerValidator("text", ginIndexValidator);
+    // registerCreator("text", ginIndexCreator);
+    // registerValidator("text", ginIndexValidator);
+
+    registerCreator("text", textIndexCreator);
+    registerValidator("text", textIndexValidator);
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

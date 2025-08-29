@@ -8,8 +8,16 @@
 namespace DB
 {
 
+struct MergeTreeIndexTextParams
+{
+    size_t dictionary_block_size = 0;
+    size_t bloom_filter_bits_per_row = 0;
+    size_t bloom_filter_num_hashes = 0;
+};
+
 struct DictionaryBlock
 {
+    DictionaryBlock() = default;
     DictionaryBlock(ColumnPtr tokens_, ColumnPtr marks_);
 
     ColumnPtr tokens;
@@ -20,7 +28,7 @@ struct DictionaryBlock
 
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
-    MergeTreeIndexGranuleText();
+    explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
     ~MergeTreeIndexGranuleText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
@@ -29,7 +37,8 @@ struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
     bool empty() const override { return sparse_index.empty(); }
     size_t memoryUsageBytes() const override { return 0; }
 
-    BloomFilter bloom_filter;
+    MergeTreeIndexTextParams params;
+    std::optional<BloomFilter> bloom_filter;
     DictionaryBlock sparse_index;
     std::vector<DictionaryBlock> dictionary_blocks;
 };
@@ -37,6 +46,7 @@ struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleTextWritable(
+        size_t total_rows_,
         BloomFilter bloom_filter_,
         std::vector<StringRef> tokens_,
         std::vector<roaring::Roaring> posting_lists_,
@@ -50,6 +60,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     bool empty() const override { return tokens.empty(); }
     size_t memoryUsageBytes() const override { return 0; }
 
+    size_t total_rows;
     BloomFilter bloom_filter;
     std::vector<StringRef> tokens;
     std::vector<roaring::Roaring> posting_lists;
@@ -58,27 +69,27 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 
 struct MergeTreeIndexTextGranuleBuilder
 {
-    explicit MergeTreeIndexTextGranuleBuilder(const BloomFilterParameters & bloom_filter_params_, TokenExtractorPtr token_extractor_);
+    explicit MergeTreeIndexTextGranuleBuilder(MergeTreeIndexTextParams params_, TokenExtractorPtr token_extractor_);
 
     void addDocument(StringRef document);
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
-    bool empty() const { return terms_map.empty(); }
+    bool empty() const { return tokens_map.empty(); }
 
-    size_t current_row = 0;
-    BloomFilter bloom_filter;
+    MergeTreeIndexTextParams params;
     TokenExtractorPtr token_extractor;
-    std::vector<roaring::Roaring> posting_lists;
 
     using PostingListRawPtr = roaring::Roaring *;
-    using TermsMap = HashMap<StringRef, PostingListRawPtr>;
+    using TokensMap = HashMap<StringRef, PostingListRawPtr>;
 
-    TermsMap terms_map;
+    UInt64 current_row = 0;
+    TokensMap tokens_map;
+    std::vector<roaring::Roaring> posting_lists;
     std::unique_ptr<Arena> arena;
 };
 
 struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 {
-    MergeTreeIndexAggregatorText(String index_column_name_, BloomFilterParameters bloom_filter_params_, TokenExtractorPtr token_extractor_);
+    MergeTreeIndexAggregatorText(String index_column_name_, MergeTreeIndexTextParams params_, TokenExtractorPtr token_extractor_);
     ~MergeTreeIndexAggregatorText() override = default;
 
     bool empty() const override { return !granule_builder || granule_builder->empty(); }
@@ -86,9 +97,27 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     void update(const Block & block, size_t * pos, size_t limit) override;
 
     String index_column_name;
-    BloomFilterParameters bloom_filter_params;
+    MergeTreeIndexTextParams params;
     TokenExtractorPtr token_extractor;
     std::optional<MergeTreeIndexTextGranuleBuilder> granule_builder;
+};
+
+class MergeTreeIndexText final : public IMergeTreeIndex
+{
+public:
+    MergeTreeIndexText(
+        const IndexDescription & index_,
+        MergeTreeIndexTextParams params_,
+        std::unique_ptr<ITokenExtractor> token_extractor_);
+
+    ~MergeTreeIndexText() override = default;
+
+    MergeTreeIndexGranulePtr createIndexGranule() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
+
+    MergeTreeIndexTextParams params;
+    std::unique_ptr<ITokenExtractor> token_extractor;
 };
 
 }

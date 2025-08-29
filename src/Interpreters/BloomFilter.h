@@ -49,6 +49,7 @@ public:
 
     const Container & getFilter() const { return filter; }
     Container & getFilter() { return filter; }
+    size_t getFilterSizeBytes() const { return size; }
 
     /// For debug.
     UInt64 isEmpty() const;
