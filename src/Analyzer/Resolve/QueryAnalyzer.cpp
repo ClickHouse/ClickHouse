@@ -2900,7 +2900,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_dict_get = functionIsDictGet(function_name);
         is_special_function_join_get = functionIsJoinGet(function_name);
         is_special_function_exists = function_name == "exists";
-        is_special_function_if = function_name == "if";
+        is_special_function_if = function_name == "if" || function_name == "multiIf";
 
         auto function_name_lowercase = Poco::toLower(function_name);
 
@@ -2992,44 +2992,40 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         auto constant_condition = tryExtractConstantFromConditionNode(if_function_condition);
 
-        if (constant_condition.has_value() && if_function_arguments.size() == 3)
+        if (constant_condition.has_value())
         {
-            QueryTreeNodePtr constant_if_result_node;
-            QueryTreeNodePtr possibly_invalid_argument_node;
+            if (if_function_arguments.size() == 3)
+            {
+                QueryTreeNodePtr constant_if_result_node = (*constant_condition) ? if_function_arguments[1] : if_function_arguments[2];
 
-            if (*constant_condition)
-            {
-                possibly_invalid_argument_node = if_function_arguments[2];
-                constant_if_result_node = if_function_arguments[1];
-            }
-            else
-            {
-                possibly_invalid_argument_node = if_function_arguments[1];
-                constant_if_result_node = if_function_arguments[2];
-            }
-
-            bool apply_constant_if_optimization = false;
-
-            try
-            {
-                resolveExpressionNode(possibly_invalid_argument_node,
-                    scope,
-                    false /*allow_lambda_expression*/,
-                    false /*allow_table_expression*/);
-            }
-            catch (...)
-            {
-                apply_constant_if_optimization = true;
-            }
-
-            if (apply_constant_if_optimization)
-            {
                 auto result_projection_names = resolveExpressionNode(constant_if_result_node,
                     scope,
                     false /*allow_lambda_expression*/,
                     false /*allow_table_expression*/);
                 node = std::move(constant_if_result_node);
+
                 return result_projection_names;
+            }
+            else if (if_function_arguments.size() > 3)
+            {
+                if (*constant_condition)
+                {
+                    auto result_projection_names = resolveExpressionNode(if_function_arguments[1],
+                        scope,
+                        false /*allow_lambda_expression*/,
+                        false /*allow_table_expression*/);
+                    node = std::move(if_function_arguments[1]);
+                    return result_projection_names;
+                }
+                else
+                {
+                    auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
+                    for (size_t n = 2; n < if_function_arguments.size(); ++n)
+                        multi_if_function->getArguments().getNodes().push_back(std::move(if_function_arguments[n]));
+
+                    node = std::move(multi_if_function);
+                    return resolveFunction(node, scope);
+                }
             }
         }
     }
