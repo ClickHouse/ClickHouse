@@ -37,7 +37,9 @@ private:
     VectorSimilarityIndexCache * vector_similarity_index_cache;
     MergeTreeReaderSettings settings;
 
-    std::unique_ptr<MergeTreeReaderStream> stream;
+    std::map<IndexSubstream::Type, MergeTreeReaderStream *> streams;
+    std::vector<std::unique_ptr<MergeTreeReaderStream>> stream_holders;
+
     uint8_t version = 0;
     size_t stream_mark = 0;
 

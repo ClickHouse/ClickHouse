@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/qvm/vec_traits.hpp>
+#include <base/scope_guard.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>

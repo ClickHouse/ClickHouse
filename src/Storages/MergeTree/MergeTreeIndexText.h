@@ -33,6 +33,7 @@ struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void deserializeBinaryWithMultipleStreams(IndexInputStreams & streams, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return sparse_index.empty(); }
     size_t memoryUsageBytes() const override { return 0; }
@@ -114,6 +115,8 @@ public:
     ~MergeTreeIndexText() override = default;
 
     IndexSubstreams getSubstreams() const override;
+    MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & path_prefix) const override;
+
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;

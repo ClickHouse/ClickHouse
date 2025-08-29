@@ -9,8 +9,8 @@ namespace
 using namespace DB;
 
 std::unique_ptr<MergeTreeReaderStream> makeIndexReader(
-    const std::string & extension,
-    MergeTreeIndexPtr index,
+    const String & stream_name,
+    const String & extension,
     MergeTreeData::DataPartPtr part,
     size_t marks_count,
     const MarkRanges & all_mark_ranges,
@@ -24,7 +24,7 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReader(
     auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
         std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, std::make_shared<AlterConversions>()),
         mark_cache,
-        part->index_granularity_info.getMarksFilePath(index->getFileName()),
+        part->index_granularity_info.getMarksFilePath(stream_name),
         marks_count,
         part->index_granularity_info,
         settings.save_marks_in_cache,
@@ -36,9 +36,9 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReader(
 
     return std::make_unique<MergeTreeReaderStreamSingleColumn>(
         part->getDataPartStoragePtr(),
-        index->getFileName(), extension, marks_count,
+        stream_name, extension, marks_count,
         all_mark_ranges, std::move(settings), uncompressed_cache,
-        part->getFileSizeOrZero(index->getFileName() + extension), std::move(marks_loader),
+        part->getFileSizeOrZero(stream_name + extension), std::move(marks_loader),
         ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE);
 }
 
@@ -69,25 +69,34 @@ MergeTreeIndexReader::MergeTreeIndexReader(
 
 void MergeTreeIndexReader::initStreamIfNeeded()
 {
-    if (stream)
+    if (!streams.empty())
         return;
 
     auto index_format = index->getDeserializedFormat(part->getDataPartStorage(), index->getFileName());
+    auto index_name = index->getFileName();
 
-    stream = makeIndexReader(
-        index_format.extension,
-        index,
-        part,
-        marks_count,
-        all_mark_ranges,
-        mark_cache,
-        uncompressed_cache,
-        std::move(settings));
+    for (const auto & substream : index_format.substreams)
+    {
+        auto stream_name = index_name + substream.suffix;
+
+        auto stream = makeIndexReader(
+            stream_name,
+            substream.extension,
+            part,
+            marks_count,
+            all_mark_ranges,
+            mark_cache,
+            uncompressed_cache,
+            std::move(settings));
+
+        stream->adjustRightMark(getLastMark(all_mark_ranges));
+        stream->seekToStart();
+
+        streams[substream.type] = stream.get();
+        stream_holders.emplace_back(std::move(stream));
+    }
 
     version = index_format.version;
-
-    stream->adjustRightMark(getLastMark(all_mark_ranges));
-    stream->seekToStart();
 }
 
 void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
@@ -95,12 +104,17 @@ void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
     auto load_func = [this, mark](auto & res)
     {
         initStreamIfNeeded();
+
         if (stream_mark != mark)
-            stream->seekToMark(mark);
+        {
+            for (const auto & stream : stream_holders)
+                stream->seekToMark(mark);
+        }
 
         if (!res)
             res = index->createIndexGranule();
-        res->deserializeBinary(*stream->getDataBuffer(), version);
+
+        res->deserializeBinaryWithMultipleStreams(streams, version);
         stream_mark = mark + 1;
     };
 
@@ -120,6 +134,7 @@ void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
             part->getDataPartStorage().getFullPath(),
             index->getFileName(),
             mark);
+
         granule = vector_similarity_index_cache->getOrSet(key, load_func);
     }
 }
@@ -129,7 +144,12 @@ void MergeTreeIndexReader::read(size_t mark, size_t current_granule_num, MergeTr
     if (granules == nullptr)
         granules = index->createIndexBulkGranules();
 
+    if (streams.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Bulk filtering is not supported for indexes with multiple streams. Have {} streams for index {}", streams.size(), index->getFileName());
+
     initStreamIfNeeded();
+    auto * stream = streams.at(IndexSubstream::Type::Regular);
+
     if (stream_mark != mark)
         stream->seekToMark(mark);
 

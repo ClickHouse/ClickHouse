@@ -8,7 +8,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/VectorSearchUtils.h>
 
 
 namespace DB

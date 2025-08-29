@@ -4,6 +4,7 @@
 
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
+#include "Storages/MergeTree/MergeTreeIndicesSerialization.h"
 
 #include <Columns/ColumnNullable.h>
 
@@ -219,10 +220,10 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
 MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
 {
     if (data_part_storage.existsFile(relative_path_prefix + ".idx2"))
-        return {2, ".idx2"};
+        return {2, {IndexSubstream{IndexSubstream::Type::Regular, "", ".idx2"}}};
     if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
-        return {1, ".idx"};
-    return {0 /* unknown */, ""};
+        return {1, {IndexSubstream{IndexSubstream::Type::Regular, "", ".idx"}}};
+    return {0 /* unknown */, {}};
 }
 
 MergeTreeIndexPtr minmaxIndexCreator(

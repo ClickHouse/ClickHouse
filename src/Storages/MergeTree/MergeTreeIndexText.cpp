@@ -35,10 +35,21 @@ void MergeTreeIndexGranuleText::serializeBinary(WriteBuffer &) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Serialization of MergeTreeIndexGranuleText is not implemented");
 }
 
-void MergeTreeIndexGranuleText::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleText::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)
 {
-    UNUSED(istr);
-    UNUSED(version);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with 3 streams: index, dictionary, postings");
+}
+
+void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(IndexInputStreams & streams, MergeTreeIndexVersion)
+{
+    auto * index_stream = streams.at(IndexSubstream::Type::Regular);
+    auto * dictionary_stream = streams.at(IndexSubstream::Type::TextIndexDictionary);
+    auto * postings_stream = streams.at(IndexSubstream::Type::TextIndexPostings);
+
+    if (!index_stream || !dictionary_stream || !postings_stream)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with 3 streams: index, dictionary, postings. One of the streams is missing");
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "KEK KEK KEK KEK KEK KEK");
 }
 
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
@@ -279,6 +290,13 @@ IndexSubstreams MergeTreeIndexText::getSubstreams() const
         {IndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
         {IndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
     };
+}
+
+MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & path_prefix) const
+{
+    if (data_part_storage.existsFile(path_prefix + ".idx"))
+        return {1, getSubstreams()};
+    return {0, {}};
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const

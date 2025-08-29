@@ -1,18 +1,16 @@
 #pragma once
-#include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
-#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
 
 namespace DB
 {
+
+class IDataPartStorage;
+using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
 
 /// Basic and the most low-level class
 /// for reading single columns or indexes.
