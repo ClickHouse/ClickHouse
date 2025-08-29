@@ -1,6 +1,9 @@
 SET optimize_move_to_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS t_02848_mt1;
 DROP TABLE IF EXISTS t_02848_mt2;
 

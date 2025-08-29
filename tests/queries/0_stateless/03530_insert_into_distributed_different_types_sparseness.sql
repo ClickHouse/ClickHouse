@@ -1,5 +1,8 @@
 -- Ensure that sparse columns does not leads to any errors/warnings while pushing via Distributed
 
+-- Disable this setting to properly test String type
+set data_type_string_use_size_stream = 0;
+
 drop table if exists sparse;
 drop table if exists intermediate;
 drop table if exists non_sparse;

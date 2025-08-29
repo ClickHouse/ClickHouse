@@ -1,3 +1,6 @@
+-- Disable this setting to properly test String type
+set data_type_string_use_size_stream = 0;
+
 drop table if exists foo;
 
 create table foo(bar String, projection p (select * apply groupUniqArray(100))) engine MergeTree order by bar;

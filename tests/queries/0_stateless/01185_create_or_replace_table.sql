@@ -1,5 +1,8 @@
 -- Tags: no-ordinary-database
 
+-- Disable this setting to properly test String type
+set data_type_string_use_size_stream = 0;
+
 drop table if exists t1;
 
 replace table t1 (n UInt64, s String) engine=MergeTree order by n; -- { serverError UNKNOWN_TABLE }

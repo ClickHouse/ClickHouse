@@ -1387,9 +1387,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// We apply the flatten_nested setting after writing the CREATE query to the DDL log,
         /// but before writing metadata to ZooKeeper. So we have to apply the setting on secondary replicas, but not in recovery mode.
         /// Set it to false, so it will do nothing on recovery. The metadata in ZooKeeper should be used as is.
-        /// Same for data_type_default_nullable.
+        /// Same for data_type_default_nullable and data_type_string_use_size_stream.
         query_context->setSetting("flatten_nested", false);
         query_context->setSetting("data_type_default_nullable", false);
+        query_context->setSetting("data_type_string_use_size_stream", false);
 
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);

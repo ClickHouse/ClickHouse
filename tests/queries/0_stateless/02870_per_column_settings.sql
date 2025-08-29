@@ -3,6 +3,9 @@
 -- The test use replicated table to test serialize and deserialize column with settings declaration on zookeeper
 -- Tests column-level settings for MergeTree* tables
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab

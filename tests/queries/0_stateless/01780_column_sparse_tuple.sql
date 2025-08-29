@@ -1,3 +1,6 @@
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS sparse_tuple;
 
 CREATE TABLE sparse_tuple (id UInt64, t Tuple(a UInt64, s String))

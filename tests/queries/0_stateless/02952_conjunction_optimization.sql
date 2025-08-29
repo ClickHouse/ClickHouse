@@ -1,5 +1,8 @@
 SET enable_analyzer = 1;
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS 02952_disjunction_optimization;
 
 CREATE TABLE 02952_disjunction_optimization

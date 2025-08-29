@@ -1,3 +1,6 @@
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS 03593_t;
 
 CREATE TABLE 03593_t (

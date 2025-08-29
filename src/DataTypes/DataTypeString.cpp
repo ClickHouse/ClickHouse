@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationString.h>
+#include <DataTypes/Serializations/SerializationStringWithSizeStream.h>
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
@@ -55,6 +56,11 @@ static DataTypePtr create(const ASTPtr & arguments)
     return std::make_shared<DataTypeString>();
 }
 
+class DataTypeStringWithSizeStream : public IDataTypeCustomName
+{
+public:
+    String getName() const override { return "StringWithSizeStream"; }
+};
 
 void registerDataTypeString(DataTypeFactory & factory)
 {
@@ -95,5 +101,14 @@ void registerDataTypeString(DataTypeFactory & factory)
     factory.registerAlias("VARBINARY", "String", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("GEOMETRY", "String", DataTypeFactory::Case::Insensitive); //mysql
 
+    factory.registerSimpleDataTypeCustom(
+        "StringWithSizeStream",
+        []
+        {
+            return std::make_pair(
+                DataTypeFactory::instance().get("String"),
+                std::make_unique<DataTypeCustomDesc>(
+                    std::make_unique<DataTypeStringWithSizeStream>(), std::make_unique<SerializationStringWithSizeStream>()));
+        });
 }
 }

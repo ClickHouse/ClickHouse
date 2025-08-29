@@ -1,3 +1,6 @@
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 CREATE TEMPORARY TABLE test (`id` String, `products` Nested (`产品` Array(String), `销量` Array(Int32)));
 
 DESCRIBE test;

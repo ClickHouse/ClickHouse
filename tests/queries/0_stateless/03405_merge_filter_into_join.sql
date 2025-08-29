@@ -1,3 +1,6 @@
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=MergeTree ORDER BY tuple();
 
 INSERT INTO users VALUES (1231, 'John', 33);

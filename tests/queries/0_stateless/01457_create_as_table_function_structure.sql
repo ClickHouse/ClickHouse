@@ -1,5 +1,8 @@
 -- Tags: no-parallel
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 SET prefer_localhost_replica = 1;
 
 DROP DATABASE IF EXISTS test_01457;

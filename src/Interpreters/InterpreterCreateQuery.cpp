@@ -125,6 +125,7 @@ namespace Setting
     extern const SettingsBool database_replicated_allow_heavy_create;
     extern const SettingsBool database_replicated_allow_only_replicated_engine;
     extern const SettingsBool data_type_default_nullable;
+    extern const SettingsBool data_type_string_use_size_stream;
     extern const SettingsSQLSecurityType default_materialized_view_sql_security;
     extern const SettingsSQLSecurityType default_normal_view_sql_security;
     extern const SettingsDefaultTableEngine default_table_engine;
@@ -556,7 +557,10 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
 }
 
 DataTypePtr InterpreterCreateQuery::getColumnType(
-    const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable)
+    const ASTColumnDeclaration & col_decl,
+    LoadingStrictnessLevel mode,
+    bool make_columns_nullable,
+    bool make_string_columns_with_size_stream)
 {
     if (!col_decl.type)
     {
@@ -593,11 +597,19 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         else
             column_type = makeNullable(column_type);
     }
+
+    if (isString(column_type) && make_string_columns_with_size_stream)
+        column_type = DataTypeFactory::instance().get("StringWithSizeStream");
     return column_type;
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+    const ASTExpressionList & columns_ast,
+    ContextPtr context_,
+    LoadingStrictnessLevel mode,
+    bool is_restore_from_backup,
+    bool make_columns_nullable,
+    bool make_string_columns_with_size_stream)
 {
     /// First, deduce implicit types.
 
@@ -606,9 +618,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     DefaultExpressionsInfo default_expr_info{std::make_shared<ASTExpressionList>()};
     NamesAndTypesList column_names_and_types;
-    bool make_columns_nullable = mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup
-        && context_->getSettingsRef()[Setting::data_type_default_nullable];
-
     for (const auto & ast : columns_ast.children)
     {
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
@@ -619,8 +628,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 ErrorCodes::NOT_IMPLEMENTED, "Cannot support collation, please set compatibility_ignore_collation_in_create_table=true");
         }
 
-
-        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable));
+        column_names_and_types.emplace_back(
+            col_decl.name, getColumnType(col_decl, mode, make_columns_nullable, make_string_columns_with_size_stream));
 
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
@@ -683,6 +692,11 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 /// set nullability for case of column declaration w/o type but with default expression
                 if ((col_decl.null_modifier && *col_decl.null_modifier) || make_columns_nullable)
                     column.type = makeNullable(column.type);
+
+                /// TODO(ab): Should we also rewrite all composite types containing String,
+                /// such as Nullable(String), LowCardinality(String), Array(String), etc.?
+                if (isString(column.type) && make_string_columns_with_size_stream)
+                    column.type = DataTypeFactory::instance().get("StringWithSizeStream");
             }
 
             column.default_desc.kind = columnDefaultKindFromString(col_decl.default_specifier);
@@ -781,29 +795,53 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->columns)
         {
-            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), mode, is_restore_from_backup);
+            bool make_columns_nullable = mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup
+                && getContext()->getSettingsRef()[Setting::data_type_default_nullable];
+            bool make_string_columns_with_size_stream = mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup
+                && getContext()->getSettingsRef()[Setting::data_type_string_use_size_stream];
+            properties.columns = getColumnsDescription(
+                *create.columns_list->columns,
+                getContext(),
+                mode,
+                is_restore_from_backup,
+                make_columns_nullable,
+                make_string_columns_with_size_stream);
         }
 
         if (create.columns_list->indices)
+        {
             for (const auto & index : create.columns_list->indices->children)
             {
                 IndexDescription index_desc = IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext());
                 if (properties.indices.has(index_desc.name))
-                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use a different index name", backQuoteIfNeed(index_desc.name));
+                {
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_INDEX,
+                        "Duplicated index name {} is not allowed. Please use a different index name",
+                        backQuoteIfNeed(index_desc.name));
+                }
 
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::allow_experimental_full_text_index])
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The experimental text index feature is disabled. Enable the setting 'allow_experimental_full_text_index' to use it");
+                {
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "The experimental text index feature is disabled. Enable the setting 'allow_experimental_full_text_index' to use "
+                        "it");
+                }
 
                 properties.indices.push_back(index_desc);
             }
+        }
 
         if (create.columns_list->projections)
+        {
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, getContext());
                 properties.projections.add(std::move(projection));
             }
+        }
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
     }

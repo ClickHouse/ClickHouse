@@ -1,6 +1,9 @@
 -- Tags: memory-engine
 -- https://github.com/ClickHouse/ClickHouse/issues/73099
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS example_table;
 DROP TABLE IF EXISTS example_table2;
 

@@ -6,6 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT+="--data_type_string_use_size_stream 0"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_table;"
 
 $CLICKHOUSE_CLIENT -q "SELECT 'Check JSONCompactEachRowWithProgress';"

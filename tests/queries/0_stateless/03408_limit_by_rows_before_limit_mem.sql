@@ -1,5 +1,8 @@
 -- Tags: no-parallel-replicas
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 SET output_format_write_statistics = 0;
 
 DROP TABLE IF EXISTS 03408_memory;

@@ -1,3 +1,6 @@
+-- Disable this setting to properly test String type
+set data_type_string_use_size_stream = 0;
+
 drop table if exists t_index;
 create table t_index(a int, b String) engine=MergeTree() order by a;
 

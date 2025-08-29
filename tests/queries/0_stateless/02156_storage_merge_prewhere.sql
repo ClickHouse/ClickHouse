@@ -1,3 +1,6 @@
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 SET optimize_move_to_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;
 SET prefer_localhost_replica = 1; -- Make sure plan is reliable

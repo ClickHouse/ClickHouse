@@ -1,5 +1,8 @@
 -- Tags: no-random-merge-tree-settings
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS data;
 DROP TABLE IF EXISTS mv_indexes;
 DROP TABLE IF EXISTS mv_no_indexes;

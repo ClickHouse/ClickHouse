@@ -1,5 +1,8 @@
 SET output_format_write_statistics = 0;
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS 03408_unsorted;
 
 CREATE TABLE 03408_unsorted (id Int32, val String) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part=1

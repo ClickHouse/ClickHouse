@@ -1,5 +1,8 @@
 SET enable_analyzer = 1;
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 DROP TABLE IF EXISTS users;
 CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=MergeTree order by (uid, name);
 

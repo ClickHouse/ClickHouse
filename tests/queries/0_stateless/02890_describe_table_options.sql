@@ -1,5 +1,8 @@
 DROP TABLE IF EXISTS t_describe_options;
 
+-- Disable this setting to properly test String type
+SET data_type_string_use_size_stream = 0;
+
 SET print_pretty_type_names = 0;
 
 CREATE TABLE t_describe_options (
