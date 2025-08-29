@@ -80,7 +80,7 @@ namespace DataLakeStorageSetting
     extern const DataLakeStorageSettingsString iceberg_metadata_table_uuid;
     extern const DataLakeStorageSettingsBool iceberg_recent_metadata_file_by_last_updated_ms_field;
     extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
-    extern const DataLakeStorageSettingsInt64 iceberg_format_version;
+    extern const DataLakeStorageSettingsNonZeroUInt64 iceberg_format_version;
 }
 
 namespace ErrorCodes
