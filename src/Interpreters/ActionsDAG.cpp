@@ -280,22 +280,12 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column)
 
 const ActionsDAG::Node & ActionsDAG::addAlias(const Node & child, std::string alias)
 {
-    ///unwrap any existing aliases
-    const Node * base = &child;
-    while (base->type == ActionType::ALIAS)
-        base = base->children.front();
-
-    /// if the required name is already in place, just return the base node
-    if (base->result_name == alias)
-        return *base;
-
-    /// create exactly one-layer alias
     Node node;
     node.type = ActionType::ALIAS;
-    node.result_type = base->result_type;
+    node.result_type = child.result_type;
     node.result_name = std::move(alias);
-    node.column = base->column;
-    node.children.emplace_back(base);
+    node.column = child.column;
+    node.children.emplace_back(&child);
 
     return addNode(std::move(node));
 }
@@ -3353,25 +3343,16 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
 
         NodeRawConstPtrs new_children = std::move(rejected_conjunctions);
 
-        if (new_children.size() == 1)
+        if (new_children.size() == 1 && new_children.front()->result_type->equals(*predicate->result_type))
         {
-            const Node * child = new_children.front();
-            while (child->type == ActionType::ALIAS)
-                child = child->children.front();
-
-            if (child->result_name == predicate->result_name)
-            {
-                /// predicate can become its only child – no alias needed at all
-                *predicate = *child;
-            }
-            else
-            {
-                predicate->type = ActionType::ALIAS;
-                predicate->children = {const_cast<Node *>(child)};
-                predicate->column = child->column;
-                predicate->function = nullptr;
-                predicate->function_base = nullptr;
-            }
+            /// Rejected set has only one predicate. And the type is the same as the result_type.
+            /// Just add alias.
+            Node node;
+            node.type = ActionType::ALIAS;
+            node.result_name = predicate->result_name;
+            node.result_type = predicate->result_type;
+            node.children.swap(new_children);
+            *predicate = std::move(node);
         }
         else
         {
