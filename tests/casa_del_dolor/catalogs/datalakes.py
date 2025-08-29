@@ -687,11 +687,12 @@ logger.jetty.level = warn
         self.run_query(next_session, next_sql)
         self.catalogs[catalog_name].spark_tables[data["table_name"]] = next_table
 
-        self.logger.info(
-            f"Inserting data into {data["table_name"]} in catalog: {catalog_name}"
-        )
-        next_data_generator = LakeDataGenerator()
-        next_data_generator.insert_random_data(next_session, catalog_name, next_table)
+        if random.randint(1, 5) != 5:
+            self.logger.info(
+                f"Inserting data into {data["table_name"]} in catalog: {catalog_name}"
+            )
+            next_data_generator = LakeDataGenerator()
+            next_data_generator.insert_random_data(next_session, catalog_name, next_table)
 
         if one_time:
             next_session.stop()
