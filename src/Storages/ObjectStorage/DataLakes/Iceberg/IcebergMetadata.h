@@ -116,7 +116,6 @@ public:
 
     void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr storage_snapshot) override
     {
-        LOG_DEBUG(log, "Releasing to snapshot, stacktrace: {}", StackTrace().toString());
         std::optional<Iceberg::IcebergTableStateSnapshot> snapshot_data = last_table_state_snapshot.get();
         if (storage_snapshot)
         {
