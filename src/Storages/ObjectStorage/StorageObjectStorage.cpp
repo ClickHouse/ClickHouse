@@ -119,7 +119,6 @@ StorageObjectStorage::StorageObjectStorage(
     , catalog(catalog_)
     , storage_id(table_id_)
 {
-    BasicScopeGuard<std::function<void()>> guard([this]() -> void { configuration->releaseTemporaryState(); });
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
 
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
@@ -347,7 +346,7 @@ void StorageObjectStorage::read(
 {
     /// We did configuration->update() in constructor,
     /// so in case of table function there is no need to do the same here again.
-    if (update_configuration_on_read_write && configuration->needUpdateOnReadWrite())
+    if (update_configuration_on_read_write && !configuration->neverNeedUpdateOnReadWrite())
     {
         configuration->update(
             object_storage,
@@ -407,7 +406,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    if (update_configuration_on_read_write && configuration->needUpdateOnReadWrite())
+    if (update_configuration_on_read_write && !configuration->neverNeedUpdateOnReadWrite())
     {
         configuration->update(
             object_storage,

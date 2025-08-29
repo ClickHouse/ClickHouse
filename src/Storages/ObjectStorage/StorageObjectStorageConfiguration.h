@@ -138,6 +138,10 @@ public:
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
+
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
+
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
     virtual void addDeleteTransformers(
@@ -192,10 +196,6 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return nullptr; }
-
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return nullptr; }
-
     virtual SinkToStoragePtr write(
         SharedHeader /* sample_block */,
         const StorageID & /* table_id */,
@@ -207,8 +207,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual bool needUpdateOnReadWrite() const { return true; }
-    virtual void releaseTemporaryState() noexcept { }
+    virtual bool neverNeedUpdateOnReadWrite() const { return false; }
 
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(const MutationCommands & /*commands*/,

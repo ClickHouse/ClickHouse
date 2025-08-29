@@ -176,7 +176,7 @@ public:
     }
 
     // This method should work even if metadata is not initialized
-    bool needUpdateOnReadWrite() const override { return !std::is_same_v<IcebergMetadata, DataLakeMetadata>; }
+    bool neverNeedUpdateOnReadWrite() const override { return !std::is_same_v<IcebergMetadata, DataLakeMetadata>; }
 
     std::optional<size_t> totalBytes(ContextPtr local_context) override
     {

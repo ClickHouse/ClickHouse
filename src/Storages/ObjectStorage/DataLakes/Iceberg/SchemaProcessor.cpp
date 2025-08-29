@@ -569,5 +569,6 @@ ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object)
     column_mapper->setStorageColumnEncoding(std::move(column_name_to_parquet_field_id));
     return column_mapper;
 }
+
 }
 }

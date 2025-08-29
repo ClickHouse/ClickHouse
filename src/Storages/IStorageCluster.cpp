@@ -113,8 +113,6 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
     if (extension)
         return;
 
-    chassert(getStorageSnapshot());
-
     extension = storage->getTaskIteratorExtension(
         predicate,
         filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),

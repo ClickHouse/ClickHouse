@@ -66,6 +66,9 @@ public:
         const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context);
 
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override;
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
+
     bool supportsSchemaEvolution() const override { return true; }
 
     static Int32 parseTableSchema(
@@ -81,8 +84,6 @@ public:
     std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr Local_context) const override;
     std::optional<size_t> updateConfigurationAndGetTotalBytes(ContextPtr Local_context) const override;
 
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override;
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
@@ -108,8 +109,6 @@ public:
         const std::optional<FormatSettings> & format_settings) override;
 
     void checkMutationIsPossible(const MutationCommands & commands) override;
-
-    bool needUpdateOnReadWrite() const override { return false; }
 
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override;
     void checkAlterIsPossible(const AlterCommands & commands) override;
@@ -137,17 +136,6 @@ public:
         ContextPtr local_context) const override;
 
 private:
-    const ObjectStoragePtr object_storage;
-    const StorageObjectStorageConfigurationWeakPtr configuration;
-    LoggerPtr log;
-
-    DB::Iceberg::PersistentTableComponents persistent_components;
-
-
-    Iceberg::OneThreadProtecting<Iceberg::IcebergTableStateSnapshot> last_table_state_snapshot;
-
-    Iceberg::PersistentTableComponents initializePersistentTableComponents(Poco::JSON::Object::Ptr metadata_object);
-
     Iceberg::IcebergDataSnapshotPtr
     getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const;
     Iceberg::IcebergDataSnapshotPtr
@@ -158,6 +146,15 @@ private:
     getState(const ContextPtr & local_context, String metadata_path, Int32 metadata_version) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::IcebergTableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
+
+    const ObjectStoragePtr object_storage;
+    const StorageObjectStorageConfigurationWeakPtr configuration;
+    DB::Iceberg::PersistentTableComponents persistent_components;
+    LoggerPtr log;
+
+    Iceberg::OneThreadProtecting<Iceberg::IcebergTableStateSnapshot> last_table_state_snapshot;
+
+    Iceberg::PersistentTableComponents initializePersistentTableComponents(Poco::JSON::Object::Ptr metadata_object)
 };
 }
 
