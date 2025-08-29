@@ -439,7 +439,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"engine_file_empty_if_not_exists", trueOrFalseSettingNoOracle},
     {"engine_file_skip_empty_files", trueOrFalseSettingNoOracle},
     {"engine_url_skip_empty_files", trueOrFalseSettingNoOracle},
-    {"exact_rows_before_limit", trueOrFalseSetting},
+    //{"exact_rows_before_limit", trueOrFalseSetting}, cannot use with generateRandom
     {"except_default_mode", setSetting},
     /// {"external_table_functions_use_nulls", trueOrFalseSettingNoOracle},
     /// {"external_table_strict_query", CHSetting(trueOrFalse, {}, true)},

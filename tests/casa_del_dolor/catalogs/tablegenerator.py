@@ -235,7 +235,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         # Parquet specific properties
         if self.write_format == FileFormat.Parquet:
             properties["write.parquet.compression-codec"] = random.choice(
-                ["snappy", "gzip", "zstd", "lz4", "brotli", "uncompressed"]
+                ["snappy", "gzip", "zstd", "lz4", "uncompressed"]
             )
             properties["write.parquet.compression-level"] = str(random.randint(1, 9))
             properties["write.parquet.dict-size-bytes"] = str(
@@ -276,10 +276,8 @@ class IcebergTableGenerator(LakeTableGenerator):
         # AVRO specific properties
         elif self.write_format == FileFormat.Avro:
             properties["write.avro.compression-codec"] = random.choice(
-                ["snappy", "deflate", "bzip2", "xz", "zstandard", "uncompressed"]
+                ["snappy", "bzip2", "xz", "uncompressed"]
             )
-            if properties["write.avro.compression-codec"] == "deflate":
-                properties["write.avro.compression-level"] = str(random.randint(1, 9))
 
         return properties
 
@@ -709,7 +707,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         # Parquet compression
         properties["spark.sql.parquet.compression.codec"] = random.choice(
-            ["snappy", "gzip", "lzo", "brotli", "lz4", "zstd", "uncompressed"]
+            ["snappy", "gzip", "lzo", "lz4", "zstd", "uncompressed"]
         )
 
         # Parquet file size

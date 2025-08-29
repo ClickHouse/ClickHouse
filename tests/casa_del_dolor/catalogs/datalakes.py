@@ -316,14 +316,6 @@ def get_spark(
                 "spark.hadoop.fs.s3a.aws.credentials.provider",
                 "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
             )
-            builder.config("spark.hadoop.fs.s3a.endpoint.region", "us-east-1")
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.client.region", "us-east-1"
-            )
-        # For Glue
-        builder.config("spark.executorEnv.AWS_REGION", "us-east-1")
-        builder.config("spark.executorEnv.AWS_ACCESS_KEY_ID", minio_access_key)
-        builder.config("spark.executorEnv.AWS_SECRET_ACCESS_KEY", minio_secret_key)
 
         if catalog == LakeCatalogs.NoCatalog:
             builder.config(
