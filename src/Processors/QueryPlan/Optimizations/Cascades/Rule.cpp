@@ -213,7 +213,7 @@ bool HashJoinImplementation::checkPattern(GroupExpressionPtr expression, const M
 std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressionPtr expression, Memo & memo) const
 {
     /// TODO: create hash join step from JoinStepLogical
-    auto * join_step = typeid_cast<JoinStepLogical *>(expression->plan_step.get());
+    auto * join_step = typeid_cast<JoinStepLogical *>(expression->getQueryPlanStep());
 
 //    QueryPlanOptimizationSettings optimization_settings(CurrentThread::get().getQueryContext());
 //
