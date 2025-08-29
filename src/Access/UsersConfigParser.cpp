@@ -124,12 +124,24 @@ namespace
         user->setName(user_name);
 
         bool has_no_password = config.has(user_config + ".no_password");
-        bool has_password_plaintext = config.has(user_config + ".password");
-        bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
-        bool has_scram_password_sha256_hex = config.has(user_config + ".password_scram_sha256_hex");
-        bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
-        bool has_ldap = config.has(user_config + ".ldap");
-        bool has_kerberos = config.has(user_config + ".kerberos");
+
+        const auto password_plaintext_config = user_config + ".password";
+        bool has_password_plaintext = config.has(password_plaintext_config);
+
+        const auto password_sha256_hex_config = user_config + ".password_sha256_hex";
+        bool has_password_sha256_hex = config.has(password_sha256_hex_config);
+
+        const auto scram_password_config = user_config + ".password_scram_sha256_hex";
+        bool has_scram_password_sha256_hex = config.has(scram_password_config);
+
+        const auto password_double_sha1_hex_config = user_config + ".password_double_sha1_hex";
+        bool has_password_double_sha1_hex = config.has(password_double_sha1_hex_config);
+
+        const auto ldap_config = user_config + ".ldap";
+        bool has_ldap = config.has(ldap_config);
+
+        const auto kerberos_config = user_config + ".kerberos";
+        bool has_kerberos = config.has(kerberos_config);
 
         const auto certificates_config = user_config + ".ssl_certificates";
         bool has_certificates = config.has(certificates_config);
@@ -143,58 +155,84 @@ namespace
         size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
             + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex;
 
-        if (num_password_fields > 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
-                            "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys', "
-                            "'http_authentication' are used to specify authentication info for user {}. "
-                            "Must be only one of them.", user_name);
-
         if (num_password_fields < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'password' or 'password_sha256_hex' "
                             "or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos "
                             "or 'ssl_certificates' or 'ssh_keys' or 'http_authentication' must be specified for user {}.", user_name);
 
+
         if (has_password_plaintext)
         {
-            user->authentication_methods.emplace_back(AuthenticationType::PLAINTEXT_PASSWORD);
-            user->authentication_methods.back().setPassword(config.getString(user_config + ".password"), validate);
+            const auto plaintext_passwords = getConfigValues(config, password_plaintext_config);
+            for (const String & pw : plaintext_passwords)
+            {
+                user->authentication_methods.emplace_back(AuthenticationType::PLAINTEXT_PASSWORD);
+                user->authentication_methods.back().setPassword(pw, validate);
+            }
         }
-        else if (has_password_sha256_hex)
+
+        if (has_password_sha256_hex)
         {
-            user->authentication_methods.emplace_back(AuthenticationType::SHA256_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"), validate);
+            const auto sha256_passwords = getConfigValues(config, password_sha256_hex_config);
+            for (const String & pw : sha256_passwords)
+            {
+                user->authentication_methods.emplace_back(AuthenticationType::SHA256_PASSWORD);
+                user->authentication_methods.back().setPasswordHashHex(pw, validate);
+            }
         }
-        else if (has_scram_password_sha256_hex)
+
+        if (has_scram_password_sha256_hex)
         {
-            user->authentication_methods.emplace_back(AuthenticationType::SCRAM_SHA256_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_scram_sha256_hex"), validate);
+            const auto scram_password_sha256_hex_passwords = getConfigValues(config, scram_password_config);
+            for (const String & pw : scram_password_sha256_hex_passwords)
+            {
+                user->authentication_methods.emplace_back(AuthenticationType::SCRAM_SHA256_PASSWORD);
+                user->authentication_methods.back().setPasswordHashHex(pw, validate);
+            }
         }
-        else if (has_password_double_sha1_hex)
+
+        if (has_password_double_sha1_hex)
         {
-            user->authentication_methods.emplace_back(AuthenticationType::DOUBLE_SHA1_PASSWORD);
-            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"), validate);
+            const auto double_sha1_passwords = getConfigValues(config, password_double_sha1_hex_config);
+            for (const String & pw : double_sha1_passwords) 
+            {
+                user->authentication_methods.emplace_back(AuthenticationType::DOUBLE_SHA1_PASSWORD);
+                user->authentication_methods.back().setPasswordHashHex(pw, validate);
+            }
         }
-        else if (has_ldap)
+
+        if (has_ldap)
         {
-            bool has_ldap_server = config.has(user_config + ".ldap.server");
-            if (!has_ldap_server)
+            const auto ldap_servers = getConfigValues(config, ldap_config);
+            if (ldap_servers.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing mandatory 'server' in 'ldap', with LDAP server name, for user {}.", user_name);
 
-            const auto ldap_server_name = config.getString(user_config + ".ldap.server");
-            if (ldap_server_name.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server name cannot be empty for user {}.", user_name);
-
-            user->authentication_methods.emplace_back(AuthenticationType::LDAP);
-            user->authentication_methods.back().setLDAPServerName(ldap_server_name);
+            for (const String & server : ldap_servers)
+            {
+                if (server.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server name cannot be empty for user {}.", user_name);
+                user->authentication_methods.emplace_back(AuthenticationType::LDAP);
+                user->authentication_methods.back().setLDAPServerName(server);
+            }
         }
-        else if (has_kerberos)
+
+        if (has_kerberos)
         {
-            const auto realm = config.getString(user_config + ".kerberos.realm", "");
+            const auto realms = getConfigValues(config, kerberos_config + ".realm");
 
-            user->authentication_methods.emplace_back(AuthenticationType::KERBEROS);
-            user->authentication_methods.back().setKerberosRealm(realm);
+            if (realms.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing mandatory 'realm' in 'kerberos', with Kerberos realm name, for user {}.", user_name);
+
+            for (const String & realm : realms)
+            {
+                if (realm.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kerberos realm name cannot be empty for user {}.", user_name);
+                user->authentication_methods.emplace_back(AuthenticationType::KERBEROS);
+                user->authentication_methods.back().setKerberosRealm(realm);
+            }
         }
-        else if (has_certificates)
+
+        if (has_certificates)
         {
 #if USE_SSL
             user->authentication_methods.emplace_back(AuthenticationType::SSL_CERTIFICATE);
@@ -223,7 +261,8 @@ namespace
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL certificates support is disabled, because ClickHouse was built without SSL library");
 #endif
         }
-        else if (has_ssh_keys)
+
+        if (has_ssh_keys)
         {
 #if USE_SSH
             user->authentication_methods.emplace_back(AuthenticationType::SSH_KEY);
@@ -269,14 +308,24 @@ namespace
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif
         }
-        else if (has_http_auth)
+
+        if (has_http_auth)
         {
-            user->authentication_methods.emplace_back(AuthenticationType::HTTP);
-            user->authentication_methods.back().setHTTPAuthenticationServerName(config.getString(http_auth_config + ".server"));
-            auto scheme = config.getString(http_auth_config + ".scheme");
-            user->authentication_methods.back().setHTTPAuthenticationScheme(parseHTTPAuthenticationScheme(scheme));
+            const auto servers = getConfigValues(config, http_auth_config + ".server");
+            if (servers.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing mandatory 'server' in 'http_authentication', with HTTP authentication server name, for user {}.", user_name);
+            for (const String & server : servers)
+            {
+                if (server.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP authentication server name cannot be empty for user {}.", user_name);
+                user->authentication_methods.emplace_back(AuthenticationType::HTTP);
+                user->authentication_methods.back().setHTTPAuthenticationServerName(server);
+                auto scheme = config.getString(http_auth_config + ".scheme");
+                user->authentication_methods.back().setHTTPAuthenticationScheme(parseHTTPAuthenticationScheme(scheme));
+            }
         }
-        else
+
+        if (user->authentication_methods.empty())
         {
             user->authentication_methods.emplace_back();
         }
@@ -852,4 +901,22 @@ std::unordered_set<UUID> UsersConfigParser::getAllowedIDs(
     return ids;
 }
 
+std::vector<String> getConfigValues(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & key)
+    {
+        std::vector<String> values;
+        if (!config.has(key))
+            return values;
+        Poco::Util::AbstractConfiguration::Keys sub_keys;
+        config.keys(key, sub_keys);
+        if (sub_keys.empty())
+            values.push_back(config.getString(key));
+        else
+        {
+            for (const auto & sub_key : sub_keys)
+                values.push_back(config.getString(key + "." + sub_key));
+        }
+        return values;
+    }
 }
