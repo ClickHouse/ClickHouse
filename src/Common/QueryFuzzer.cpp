@@ -1420,10 +1420,7 @@ ASTPtr QueryFuzzer::addJoinClause()
                 table_exp = std::make_shared<ASTTableExpression>();
                 auto * ntexp = typeid_cast<ASTTableExpression *>(table_exp.get());
 
-                try {
-                    child->setAlias(next_alias);
-                }
-                catch(...){}
+                child->setAlias(next_alias);
                 ntexp->children.push_back(child);
                 if (typeid_cast<ASTSubquery *>(input_table.get()))
                 {
