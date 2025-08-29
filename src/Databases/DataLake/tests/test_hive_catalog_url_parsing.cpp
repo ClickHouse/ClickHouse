@@ -20,17 +20,17 @@ protected:
 
 std::pair<String, Int32> testParseHostPort(const String & url)
 {
-    size_t protocol_sep = url.find("://");
+    auto protocol_sep = url.find("://");
     if (protocol_sep == String::npos)
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid URL format: missing protocol separator '://'");
 
     size_t start = protocol_sep + 3;
 
-    size_t colon_pos = url.find(':', start);
+    auto colon_pos = url.find(':', start);
     if (colon_pos == String::npos)
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid URL format: missing port number");
 
-    size_t slash_pos = url.find('/', start);
+    auto slash_pos = url.find('/', start);
 
     String host = url.substr(start, colon_pos - start);
 

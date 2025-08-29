@@ -27,17 +27,17 @@ namespace
 
 std::pair<String, Int32> parseHostPort(const String & url)
 {
-    size_t protocol_sep = url.find("://");
+    auto protocol_sep = url.find("://");
     if (protocol_sep == String::npos)
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid URL format: missing protocol separator '://'");
 
     size_t start = protocol_sep + 3;
 
-    size_t colon_pos = url.find(':', start);
+    auto colon_pos = url.find(':', start);
     if (colon_pos == String::npos)
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid URL format: missing port number");
 
-    size_t slash_pos = url.find('/', start);
+    auto slash_pos = url.find('/', start);
 
     String host = url.substr(start, colon_pos - start);
 
@@ -56,7 +56,7 @@ std::pair<String, Int32> parseHostPort(const String & url)
     }
     catch (const std::out_of_range&)
     {
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Port number too large: {}", port_str);
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid port number format: {}", port_str);
     }
     catch (const std::invalid_argument&)
     {
