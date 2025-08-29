@@ -1,14 +1,15 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Columns/IColumn.h>
+#include <Common/logger_useful.h>
+#include <Common/Logger.h>
+// #include <Core/Block_fwd.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Joins.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
-#include "Core/ColumnsWithTypeAndName.h"
-#include "Interpreters/ActionsDAG.h"
 
 namespace DB::QueryPlanOptimizations
 {
@@ -112,6 +113,22 @@ FilterResult filterResultForNotMatchedRows(const ActionsDAG & filter_dag, const 
     return getFilterResult(filter_output[0]);
 }
 
+enum class JoinSide
+{
+    Left,
+    Right
+};
+
+template <JoinSide join_side_to_check>
+std::vector<ActionsDAG *> getPreFilterActionsChain(QueryPlan::Node * join_node, JoinStepLogical * join)
+{
+    std::vector<ActionsDAG *> actions_chain;
+    if (auto * expression_before_join_step = typeid_cast<ExpressionStep *>(join_node->children[join_side_to_check == JoinSide::Left ? 0 : 1]->step.get()))
+        actions_chain.push_back(&expression_before_join_step->getExpression());
+    actions_chain.push_back(join_side_to_check == JoinSide::Left ? join->getExpressionActions().left_pre_join_actions.get() : join->getExpressionActions().right_pre_join_actions.get());
+    return actions_chain;
+};
+
 }
 
 size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & /*settings*/)
@@ -147,13 +164,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
         case JoinKind::Left:
         {
             auto result_for_not_matched_rows = filterResultForNotMatchedRows(filter_dag, filter_column_name, *right_stream_input_header);
-
-            std::vector<ActionsDAG *> actions_chain;
-            if (auto * right_plan_step = typeid_cast<ExpressionStep *>(child_node->children[1]->step.get()))
-                actions_chain.push_back(&right_plan_step->getExpression());
-            actions_chain.push_back(join->getExpressionActions().right_pre_join_actions.get());
-
-            auto result_for_matched_rows = filterResultForMatchedRows(actions_chain, filter_dag, filter_column_name);
+            auto result_for_matched_rows = filterResultForMatchedRows(getPreFilterActionsChain<JoinSide::Right>(child_node, join), filter_dag, filter_column_name);
 
             if (result_for_not_matched_rows == FilterResult::FALSE)
             {
@@ -161,11 +172,11 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                 join_info.strictness = JoinStrictness::Semi;
                 if (result_for_matched_rows == FilterResult::TRUE)
                 {
-                    LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Can remove filter after SEMI JOIN");
-                }
-                else
-                {
-                    LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Cannot remove filter after SEMI JOIN: {}", result_for_not_matched_rows == FilterResult::FALSE ? "FALSE" : "UNKNOWN");
+                    /// Remove filter after SEMI JOIN because it's a constant expression that always evaluates to TRUE for matched rows
+                    LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after SEMI JOIN because it's always TRUE for matched rows", filter_column_name);
+                    parent_node->step = std::move(child_node->step);
+                    parent_node->children = std::move(child_node->children);
+                    return 2;
                 }
                 return 1;
             }
@@ -175,11 +186,11 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                 join_info.strictness = JoinStrictness::Anti;
                 if (result_for_not_matched_rows == FilterResult::TRUE)
                 {
-                    LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Can remove filter after ANTI JOIN");
-                }
-                else
-                {
-                    LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Cannot remove filter after ANTI JOIN: {}", result_for_not_matched_rows == FilterResult::FALSE ? "FALSE" : "UNKNOWN");
+                    /// Remove filter after ANTI JOIN because it's a constant expression that always evaluates to TRUE for not matched rows
+                    LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after ANTI JOIN because it's always TRUE for not matched rows", filter_column_name);
+                    parent_node->step = std::move(child_node->step);
+                    parent_node->children = std::move(child_node->children);
+                    return 2;
                 }
                 return 1;
             }
@@ -188,13 +199,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
         case JoinKind::Right:
         {
             auto result_for_not_matched_rows = filterResultForNotMatchedRows(filter_dag, filter_column_name, *left_stream_input_header);
-
-            std::vector<ActionsDAG *> actions_chain;
-            if (auto * left_plan_step = typeid_cast<ExpressionStep *>(child_node->children[0]->step.get()))
-                actions_chain.push_back(&left_plan_step->getExpression());
-            actions_chain.push_back(join->getExpressionActions().left_pre_join_actions.get());
-
-            auto result_for_matched_rows = filterResultForMatchedRows(actions_chain, filter_dag, filter_column_name);
+            auto result_for_matched_rows = filterResultForMatchedRows(getPreFilterActionsChain<JoinSide::Left>(child_node, join), filter_dag, filter_column_name);
 
             if (result_for_not_matched_rows == FilterResult::FALSE)
             {
@@ -202,11 +207,11 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                 join_info.strictness = JoinStrictness::Semi;
                 if (result_for_matched_rows == FilterResult::TRUE)
                 {
-                    LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Can remove filter after SEMI JOIN");
-                }
-                else
-                {
-                    LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Cannot remove filter after SEMI JOIN: {}", result_for_not_matched_rows == FilterResult::FALSE ? "FALSE" : "UNKNOWN");
+                    /// Remove filter after SEMI JOIN because it's a constant expression that always evaluates to TRUE for matched rows
+                    LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after SEMI JOIN because it's always TRUE for matched rows", filter_column_name);
+                    parent_node->step = std::move(child_node->step);
+                    parent_node->children = std::move(child_node->children);
+                    return 2;
                 }
                 return 1;
             }
@@ -216,11 +221,11 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                 join_info.strictness = JoinStrictness::Anti;
                 if (result_for_not_matched_rows == FilterResult::TRUE)
                 {
-                    LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Can remove filter after ANTI JOIN");
-                }
-                else
-                {
-                    LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Cannot remove filter after ANTI JOIN: {}", result_for_not_matched_rows == FilterResult::FALSE ? "FALSE" : "UNKNOWN");
+                    /// Remove filter after ANTI JOIN because it's a constant expression that always evaluates to TRUE for not matched rows
+                    LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after ANTI JOIN because it's always TRUE for not matched rows", filter_column_name);
+                    parent_node->step = std::move(child_node->step);
+                    parent_node->children = std::move(child_node->children);
+                    return 2;
                 }
                 return 1;
             }
