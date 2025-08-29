@@ -84,7 +84,6 @@ public:
 
     virtual void releaseTemporaryState() noexcept { }
 
-
     virtual std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr) const { return {}; }
     virtual std::optional<size_t> updateConfigurationAndGetTotalBytes(ContextPtr) const { return {}; }
 

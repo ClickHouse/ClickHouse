@@ -175,7 +175,7 @@ public:
     std::optional<size_t> totalBytes(ContextPtr local_context) override
     {
         assertInitialized();
-        return current_metadata->updateConfigurationAndGetTotalBytes(local_context);
+        return current_metadata->updateConfigurationAndGetTotalRows(local_context);
     }
 
     bool hasExternalDynamicMetadata() override

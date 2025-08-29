@@ -317,11 +317,21 @@ StorageSnapshotPtr StorageObjectStorage::getStorageSnapshot(const StorageMetadat
 
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */ false,
+        /* check_consistent_with_previous_metadata */ false);
     return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
 {
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */ false,
+        /* check_consistent_with_previous_metadata */ false);
     return configuration->totalBytes(query_context);
 }
 
