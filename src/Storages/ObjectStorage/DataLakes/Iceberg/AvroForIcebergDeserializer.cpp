@@ -3,7 +3,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
-#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h"
 #include <Core/ColumnWithTypeAndName.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -32,8 +31,10 @@ String removeAllSlashes(const String & input)
     std::string result;
     result.reserve(input.size());
 
-    for (size_t i = 0; i < input.size(); ++i) {
-        if (i + 1 < input.size() && input[i] == '\\' && input[i + 1] == '"') {
+    for (size_t i = 0; i < input.size(); ++i)
+    {
+        if (i + 1 < input.size() && input[i] == '\\' && input[i + 1] == '"')
+        {
             ++i;
             continue;
         }

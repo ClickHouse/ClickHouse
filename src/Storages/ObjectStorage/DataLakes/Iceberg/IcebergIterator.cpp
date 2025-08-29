@@ -1,5 +1,4 @@
 
-#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h"
 #include "config.h"
 #if USE_AVRO
 

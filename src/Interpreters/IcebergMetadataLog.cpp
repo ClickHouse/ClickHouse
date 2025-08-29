@@ -42,7 +42,6 @@ ColumnsDescription IcebergMetadataLogElement::getColumnsDescription()
 
 void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
 {
-    std::cerr << "IcebergMetadataLogElement::appendToBlock start\n";
     size_t column_index = 0;
     auto event_time_seconds = current_time / 1000000;
     columns[column_index++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
@@ -52,7 +51,6 @@ void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_index++]->insert(path);
     columns[column_index++]->insert(filename);
     columns[column_index++]->insert(metadata_content);
-    std::cerr << "IcebergMetadataLogElement::appendToBlock done\n";
 }
 
 
