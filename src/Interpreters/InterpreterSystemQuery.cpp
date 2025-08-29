@@ -9,6 +9,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
@@ -43,9 +44,12 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/Freeze.h>
 #include <Storages/MaterializedView/RefreshTask.h>
@@ -110,6 +114,8 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
 }
 
 namespace ServerSetting
@@ -145,7 +151,6 @@ namespace ActionLocks
     extern const StorageActionBlockType Cleanup;
     extern const StorageActionBlockType ViewRefresh;
 }
-
 
 namespace
 {
@@ -1125,15 +1130,15 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, table_id);
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
-        if (!dropReplicaImpl(query, table))
+        if (!dropStorageReplica(query.replica, table))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
     }
     else if (query.database)
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase());
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
-        for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
-            dropReplicaImpl(query, iterator->table());
+
+        dropStorageReplicasFromDatabase(query.replica, database);
         LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
     }
     else if (query.is_drop_whole_replica)
@@ -1166,10 +1171,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         for (auto & elem : databases)
         {
             DatabasePtr & database = elem.second;
-            for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
-            {
-                dropReplicaImpl(query, iterator->table());
-            }
+            dropStorageReplicasFromDatabase(query.replica, database);
             LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
     }
@@ -1219,24 +1221,128 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
 }
 
-bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table)
+bool InterpreterSystemQuery::dropStorageReplica(const String & query_replica, const StoragePtr & storage)
 {
-    auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
+    auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(storage.get());
     if (!storage_replicated)
         return false;
 
     const auto & replica_name = storage_replicated->getReplicaName();
 
     /// Do not allow to drop local replicas and active remote replicas
-    if (query.replica == replica_name)
+    if (query_replica == replica_name)
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
                         "We can't drop local replica, please use `DROP TABLE` if you want "
                         "to clean the data and drop this replica");
 
-    storage_replicated->dropReplica(query.replica, log);
-    LOG_TRACE(log, "Dropped replica {} of {}", query.replica, table->getStorageID().getNameForLogs());
+    storage_replicated->dropReplica(query_replica, log);
+    LOG_TRACE(log, "Dropped replica {} of {}", query_replica, storage->getStorageID().getNameForLogs());
 
     return true;
+}
+
+void InterpreterSystemQuery::dropStorageReplicasFromDatabase(const String & query_replica, DatabasePtr database)
+{
+    for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+        dropStorageReplica(query_replica, iterator->table());
+
+    LOG_TRACE(
+        log, "Dropped storage replica from {} of Replicated database {}", query_replica, backQuoteIfNeed(database->getDatabaseName()));
+}
+
+DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(ASTSystemQuery & query)
+{
+    auto zookeeper = getContext()->getZooKeeper();
+    String metadata_path = query.replica_zk_path + "/metadata";
+    if (!zookeeper->exists(metadata_path))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database metadata keeper path does not exists: '{}'", metadata_path);
+
+    if (zookeeper->getChildren(metadata_path).empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database replicas keeper path is empty: '{}", metadata_path);
+
+    String replicas_path = query.replica_zk_path + "/replicas";
+    if (!zookeeper->exists(replicas_path))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database replicas keeper path does not exists: '{}", replicas_path);
+
+    if (zookeeper->getChildren(replicas_path).empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database replicas keeper path is empty: '{}", replicas_path);
+
+    String create_query = fmt::format(
+        "CREATE DATABASE `{}` ENGINE=Replicated('{}', '{{shard}}', '{{replica}}')", query.restore_and_drop_database, query.replica_zk_path);
+
+    auto create_ctx = Context::createCopy(Context::getGlobalContextInstance());
+    executeQuery(create_query, create_ctx, QueryFlags{.internal = true});
+
+    auto database = DatabaseCatalog::instance().getDatabase(query.restore_and_drop_database);
+
+    auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get());
+    chassert(replicated);
+    replicated->waitForReplicaToProcessAllEntries(180);
+    return database;
+}
+
+std::optional<String> InterpreterSystemQuery::getDetachedDatabaseFromKeeperPath(const ASTSystemQuery & query_)
+{
+    fs::path metadata_dir_path("metadata");
+    auto default_db_disk = getContext()->getDatabaseDisk();
+    for (const auto it = default_db_disk->iterateDirectory(metadata_dir_path); it->isValid(); it->next())
+    {
+        auto sub_path = fs::path(it->path());
+        if (!default_db_disk->existsFile(sub_path))
+            continue;
+
+        String db_name = sub_path.filename().string();
+        if (fs::path(db_name).extension() == ".sql")
+            db_name = fs::path(db_name).stem();
+
+        auto buf = default_db_disk->readFile(sub_path, getContext()->getReadSettings());
+        std::string query;
+        readStringUntilEOF(query, *buf);
+        ParserCreateQuery parser;
+        auto ast = parseQuery(
+            parser,
+            query,
+            "",
+            0,
+            getContext()->getSettingsRef()[Setting::max_parser_depth],
+            getContext()->getSettingsRef()[Setting::max_parser_backtracks]);
+
+        const auto * create_ast = ast->as<ASTCreateQuery>();
+        auto * engine_define = create_ast->storage;
+        if (!engine_define)
+            continue;
+        const ASTFunction * engine = engine_define->engine;
+        if (!engine || engine->name != "Replicated")
+            continue;
+
+        auto & arguments = engine->arguments->children;
+        if (!engine->arguments || engine->arguments->children.size() != 3)
+            continue;
+
+        String engine_zookeeper_path = safeGetLiteralValue<String>(arguments[0], "Replicated");
+        String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
+        String replica_name = safeGetLiteralValue<String>(arguments[2], "Replicated");
+
+        Macros::MacroExpansionInfo info;
+        engine_zookeeper_path = getContext()->getMacros()->expand(engine_zookeeper_path, info);
+
+        info.level = 0;
+        shard_name = getContext()->getMacros()->expand(shard_name, info);
+
+        info.level = 0;
+        replica_name = getContext()->getMacros()->expand(replica_name, info);
+
+        if (engine_zookeeper_path != query_.replica_zk_path)
+            continue;
+
+        String full_replica_name
+            = query_.shard.empty() ? query_.replica : DatabaseReplicated::getFullReplicaName(query_.shard, query_.replica);
+        if (DatabaseReplicated::getFullReplicaName(shard_name, replica_name) != full_replica_name)
+            continue;
+
+        return db_name;
+    }
+    return std::nullopt;
 }
 
 void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
@@ -1265,6 +1371,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         if (auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get()))
         {
             check_not_local_replica(replicated, query);
+            dropStorageReplicasFromDatabase(query.replica, database);
             DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
         }
         else
@@ -1290,6 +1397,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             }
 
             check_not_local_replica(replicated, query);
+            dropStorageReplicasFromDatabase(query.replica, database);
             DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
             LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
@@ -1302,6 +1410,26 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         for (auto & elem : DatabaseCatalog::instance().getDatabases())
             if (auto * replicated = dynamic_cast<DatabaseReplicated *>(elem.second.get()))
                 check_not_local_replica(replicated, query);
+
+        if (!query.restore_and_drop_database.empty())
+        {
+            auto detached_database_name = getDetachedDatabaseFromKeeperPath(query);
+            if (detached_database_name)
+                throw Exception(
+                    ErrorCodes::TABLE_WAS_NOT_DROPPED,
+                    "There is a detached database {}, which has the same path in ZooKeeper "
+                    "and the same replica name. Please check the path in query. "
+                    "If you want to drop replica of this database, reattach it with `ATTACH DATABASE`, then drop it with `DROP DATABASE`",
+                    *detached_database_name);
+
+            SCOPE_EXIT({
+                auto drop_ctx = Context::createCopy(Context::getGlobalContextInstance());
+                drop_ctx->setCurrentQueryId(toString(UUIDHelpers::generateV4()));
+                String drop_query = fmt::format("DROP DATABASE IF EXISTS `{}` SYNC", query.restore_and_drop_database);
+                executeQuery(drop_query, drop_ctx);
+            });
+            restoreDatabaseFromKeeperPath(query);
+        }
 
         DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
         LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.replica_zk_path);
@@ -1334,8 +1462,11 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
         if (!storage_replicated->waitForProcessingQueue(sync_timeout, sync_replica_mode, src_replicas))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id_.getNameForLogs());
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
-                    "See the 'receive_timeout' setting", table_id_.getNameForLogs());
+            throw Exception(
+                ErrorCodes::TIMEOUT_EXCEEDED,
+                "SYNC REPLICA {}: command timed out. "
+                "See the 'receive_timeout' setting",
+                table_id_.getNameForLogs());
         }
         LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id_.getNameForLogs());
     }
