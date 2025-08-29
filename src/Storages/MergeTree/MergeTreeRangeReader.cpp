@@ -7,7 +7,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/TargetSpecific.h>
 #include <Common/logger_useful.h>
-#include <Core/UUID.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <base/range.h>
@@ -929,36 +928,6 @@ bool MergeTreeRangeReader::isCurrentRangeFinished() const
     return stream.isFinished();
 }
 
-/// When executing ExpressionActions on an empty block, it is not possible to determine the number of rows
-/// in the block for the new columns so the result block will have 0 rows and it will not match the rest of
-/// the columns in the ReadResult.
-/// The dummy column is added to maintain the information about the number of rows in the block and to produce
-/// the result block with the correct number of rows.
-String MergeTreeRangeReader::addDummyColumnWithRowCount(Block & block, size_t num_rows)
-{
-    bool has_columns = false;
-    for (const auto & column : block)
-    {
-        if (column.column)
-        {
-            assert(column.column->size() == num_rows);
-            has_columns = true;
-            break;
-        }
-    }
-
-    if (has_columns)
-        return {};
-
-    ColumnWithTypeAndName dummy_column;
-    dummy_column.column = DataTypeUInt8().createColumnConst(num_rows, Field(1));
-    dummy_column.type = std::make_shared<DataTypeUInt8>();
-    /// Generate a random name to avoid collisions with real columns.
-    dummy_column.name = "....dummy...." + toString(UUIDHelpers::generateV4());
-    block.insert(dummy_column);
-
-    return dummy_column.name;
-}
 
 static size_t getTotalBytesInColumns(const Columns & columns)
 {
@@ -1001,6 +970,13 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
                 result.addRange(ranges.front());
                 ranges.pop_front();
                 current_mark = stream.current_mark;
+            }
+
+            if (merge_tree_reader->canSkipMark(currentMark()))
+            {
+                result.addGranule(0, {0, 0} /* unused when granule has no rows to read */);
+                stream.toNextMark();
+                continue;
             }
 
             size_t current_space = space_left;
