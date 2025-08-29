@@ -58,10 +58,7 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
     if (isColumnConst(column))
     {
         const ColumnConst & column_const = assert_cast<const ColumnConst &>(column);
-        if (column_const.isNullAt(0) || column_const.isDefaultAt(0))
-            always_false = true;
-        else
-            always_true = true;
+        (column_const.getBool(0) ? always_true : always_false) = true;
     }
 }
 
