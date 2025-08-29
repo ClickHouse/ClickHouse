@@ -106,7 +106,24 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
         right_stream_safe = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, *right_stream_input_header);
 
     if (!left_stream_safe || !right_stream_safe)
+    {
+        if (join_info.kind == JoinKind::Full)
+        {
+            if (left_stream_safe)
+            {
+                /// Rows with default values in the left stream are always filtered out.
+                join_info.kind = JoinKind::Left;
+                return 1;
+            }
+            if (right_stream_safe)
+            {
+                /// Rows with default values in the right stream are always filtered out.
+                join_info.kind = JoinKind::Right;
+                return 1;
+            }
+        }
         return 0;
+    }
     join_info.kind = JoinKind::Inner;
     return 1;
 }
