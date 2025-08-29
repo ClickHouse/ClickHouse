@@ -3,6 +3,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
+#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h"
 #include <Core/ColumnWithTypeAndName.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -22,6 +23,26 @@ namespace DB::Iceberg
 {
 
 using namespace DB;
+
+namespace
+{
+   
+String removeAllSlashes(const String & input)
+{
+    std::string result;
+    result.reserve(input.size());
+
+    for (size_t i = 0; i < input.size(); ++i) {
+        if (i + 1 < input.size() && input[i] == '\\' && input[i + 1] == '"') {
+            ++i;
+            continue;
+        }
+        result.push_back(input[i]);
+    }
+    return result;
+}
+
+}
 
 AvroForIcebergDeserializer::AvroForIcebergDeserializer(
     std::unique_ptr<ReadBufferFromFileBase> buffer_,
@@ -100,7 +121,9 @@ String AvroForIcebergDeserializer::getContent() const
     for (size_t i = 0; i < parsed_column->size(); ++i)
         output_format.writeRow({parsed_column}, i);
     output_format.finalize();
-    return buf.str();
+    auto result_json = buf.str();
+    /// result_json looks like '{"":<some_json>}\n'. We need to extract just <some_json>
+    return result_json.substr(4, result_json.size() - 6);
 }
 
 String AvroForIcebergDeserializer::getMetadataContent() const
@@ -110,12 +133,12 @@ String AvroForIcebergDeserializer::getMetadataContent() const
     {
         Poco::JSON::Object::Ptr new_metadata_field = new Poco::JSON::Object;
         new_metadata_field->set("key", key);
-        new_metadata_field->set("value", String(value.begin(), value.end()));
+        new_metadata_field->set("value", removeAllSlashes(String(value.begin(), value.end())));
         metadata_arr->add(new_metadata_field);
     }
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     metadata_arr->stringify(oss);
-    return oss.str();
+    return removeAllSlashes(oss.str());
 }
 
 }

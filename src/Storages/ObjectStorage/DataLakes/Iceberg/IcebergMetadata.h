@@ -89,7 +89,6 @@ public:
     bool update(const ContextPtr & local_context) override;
 
     IcebergHistory getHistory(ContextPtr local_context) const;
-    const Iceberg::IcebergMetadataLog & getMetadataLog() const;
 
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
@@ -146,10 +145,6 @@ private:
     Iceberg::IcebergDataSnapshotPtr relevant_snapshot TSA_GUARDED_BY(mutex);
     Int64 relevant_snapshot_id TSA_GUARDED_BY(mutex) {-1};
     CompressionMethod metadata_compression_method;
-
-    mutable Iceberg::IcebergMetadataLog metadata_logs;
-    mutable std::unordered_set<UInt64> logged_files_with_hash_content;
-    std::hash<String> content_hasher;
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, const String & path) TSA_REQUIRES(mutex);
     void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);

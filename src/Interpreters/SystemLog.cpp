@@ -30,6 +30,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryThreadLog.h>
+#include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Interpreters/DeadLetterQueue.h>
@@ -153,6 +154,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
 {
     if (!config.has(config_prefix))
     {
+        std::cerr << "createSystemLog bp1\n";
         LOG_DEBUG(getLogger("SystemLog"),
                 "Not creating {}.{} since corresponding section '{}' is missing from config",
                 default_database_name, default_table_name, config_prefix);
@@ -296,6 +298,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
         if (schema == "wide")
             return std::make_shared<TSystemLog>(context, log_settings);
 
+        std::cerr << "createSystemLog bp2\n";
         return {};
     }
     else if (std::is_same_v<TSystemLog, TransposedMetricLog>)
@@ -338,10 +341,11 @@ ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
 
 SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config)
 {
+    std::cerr << "should create " << global_context << '\n';
 /// NOLINTBEGIN(bugprone-macro-parentheses)
 #define CREATE_PUBLIC_MEMBERS(log_type, member, descr) \
     member = createSystemLog<log_type>(global_context, "system", #member, config, #member, descr); \
-
+    std::cerr << "created " << #member << '\n';
     LIST_OF_ALL_SYSTEM_LOGS(CREATE_PUBLIC_MEMBERS)
     #if CLICKHOUSE_CLOUD
         LIST_OF_CLOUD_SYSTEM_LOGS(CREATE_PUBLIC_MEMBERS)
@@ -379,6 +383,8 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         throw;
     }
 
+    if (!iceberg_metadata_log)
+        std::cerr << "not created\n";
     if (metric_log)
     {
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
@@ -587,6 +593,8 @@ void SystemLog<LogElement>::savingThreadFunction()
 template <typename LogElement>
 void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, uint64_t to_flush_end)
 {
+    if (!to_flush.empty() && to_flush.at(0).name() == "IcebergMetadataLog")
+        std::cerr << "SystemLog<LogElement>::flushImpl\n";
     try
     {
         LOG_TRACE(log, "Flushing system log, {} entries to flush up to offset {}",
@@ -598,11 +606,17 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// is called from single thread.
         prepareTable();
 
+        if (!to_flush.empty() && to_flush.at(0).name() == "IcebergMetadataLog")
+            std::cerr << "SystemLog<LogElement>::flushImpl bp1\n";
+
         ColumnsWithTypeAndName log_element_columns;
         auto log_element_names_and_types = LogElement::getColumnsDescription();
 
         for (const auto & name_and_type : log_element_names_and_types.getAll())
             log_element_columns.emplace_back(name_and_type.type, name_and_type.name);
+
+        if (!to_flush.empty() && to_flush.at(0).name() == "IcebergMetadataLog")
+            std::cerr << "SystemLog<LogElement>::flushImpl bp2\n";
 
         Block block(std::move(log_element_columns));
 
@@ -610,6 +624,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
         for (auto & column : columns)
             column->reserve(to_flush.size());
+
+        if (!to_flush.empty() && to_flush.at(0).name() == "IcebergMetadataLog")
+            std::cerr << "SystemLog<LogElement>::flushImpl bp3\n";
 
         for (const auto & elem : to_flush)
             elem.appendToBlock(columns);

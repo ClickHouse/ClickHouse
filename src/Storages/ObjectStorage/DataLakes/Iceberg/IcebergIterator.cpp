@@ -1,4 +1,5 @@
 
+#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h"
 #include "config.h"
 #if USE_AVRO
 
@@ -27,6 +28,7 @@
 
 #include <IO/CompressedReadBufferWrapper.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/IcebergMetadataLog.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
@@ -235,9 +237,7 @@ IcebergIterator::IcebergIterator(
     IDataLakeMetadata::FileProgressCallback callback_,
     Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-    PersistentTableComponents persistent_components_,
-    Iceberg::IcebergMetadataLog & metadata_logs_,
-    std::unordered_set<UInt64> & logged_files_with_hash_content_)
+    PersistentTableComponents persistent_components_)
     : filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , object_storage(std::move(object_storage_))
     , data_files_iterator(
@@ -289,8 +289,8 @@ IcebergIterator::IcebergIterator(
     , callback(std::move(callback_))
     , format(configuration_.lock()->format)
     , compression_method(configuration_.lock()->compression_method)
-    , metadata_logs(metadata_logs_)
-    , logged_files_with_hash_content(logged_files_with_hash_content_)
+    , local_context(local_context_)
+    , query_id(local_context_->getCurrentQueryId())
     , table_directory(configuration_.lock()->getRawPath().path)
     , log_level(local_context_->getSettingsRef()[Setting::iceberg_metadata_log_level])
 {
@@ -322,26 +322,24 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         if (clock_gettime(CLOCK_REALTIME, &spec))
             throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
 
-        auto content_hash = content_hasher(manifest_file_entry.content);
-        if (static_cast<UInt64>(IcebergMetadataLogLevel::ManifestEntry) <= log_level && !logged_files_with_hash_content.contains(content_hash))
+        if (static_cast<UInt64>(IcebergMetadataLogLevel::ManifestEntry) <= log_level)
         {
-            logged_files_with_hash_content.insert(content_hash);
-            metadata_logs.push_back(Iceberg::IcebergMetadataContentLog{
+            Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
                 .current_time = spec.tv_sec,
-                .content_type = IcebergMetadataLogLevel::ManifestEntry,
+                .query_id = query_id,
+                .content_type = DB::IcebergMetadataLogLevel::ManifestEntry,
                 .path = table_directory,
                 .filename = manifest_file_entry.path_to_manifest_file,
                 .metadata_content = manifest_file_entry.content
             });
         }
 
-        auto metadata_content_hash = content_hasher(manifest_file_entry.metadata_content);
-        if (static_cast<UInt64>(IcebergMetadataLogLevel::ManifestEntryMetadata) <= log_level && !logged_files_with_hash_content.contains(metadata_content_hash))
+        if (static_cast<UInt64>(DB::IcebergMetadataLogLevel::ManifestEntryMetadata) <= log_level)
         {
-            logged_files_with_hash_content.insert(metadata_content_hash);
-            metadata_logs.push_back(Iceberg::IcebergMetadataContentLog{
+            Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
                 .current_time = spec.tv_sec,
-                .content_type = IcebergMetadataLogLevel::ManifestEntryMetadata,
+                .query_id = query_id,
+                .content_type = DB::IcebergMetadataLogLevel::ManifestEntryMetadata,
                 .path = table_directory,
                 .filename = manifest_file_entry.path_to_manifest_file,
                 .metadata_content = manifest_file_entry.metadata_content

@@ -91,9 +91,7 @@ public:
         IDataLakeMetadata::FileProgressCallback callback_,
         Iceberg::IcebergTableStateSnapshotPtr table_snapshot_,
         Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-        Iceberg::PersistentTableComponents persistent_components,
-        Iceberg::IcebergMetadataLog & metadata_logs_,
-        std::unordered_set<UInt64> & logged_files_with_hash_content_);
+        Iceberg::PersistentTableComponents persistent_components);
 
     ObjectInfoPtr next(size_t) override;
 
@@ -113,12 +111,10 @@ private:
     std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
     std::vector<Iceberg::ManifestFileEntry> equality_deletes_files;
 
-    Iceberg::IcebergMetadataLog & metadata_logs;
-    std::unordered_set<UInt64> & logged_files_with_hash_content;
+    ContextPtr local_context;
+    String query_id;
     String table_directory;
     UInt64 log_level;
-
-    std::hash<String> content_hasher;
 };
 }
 

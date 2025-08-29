@@ -34,6 +34,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -310,16 +311,15 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
 
             for (const auto & manifest_list_entry : parsed_manifest_list)
             {
-                UInt64 content_hash = content_hasher(manifest_list_entry.file_content);
-                if (!logged_files_with_hash_content.contains(content_hash) && static_cast<UInt64>(IcebergMetadataLogLevel::Snapshot) <= local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value)
+                if (static_cast<UInt64>(DB::IcebergMetadataLogLevel::ManifestListEntry) <= local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value)
                 {
-                    logged_files_with_hash_content.insert(content_hash);
-                    metadata_logs.push_back(Iceberg::IcebergMetadataContentLog{
+                    Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
                         .current_time = spec.tv_sec,
-                        .content_type = IcebergMetadataLogLevel::Snapshot,
+                        .query_id = local_context->getCurrentQueryId(),
+                        .content_type = DB::IcebergMetadataLogLevel::ManifestListEntry,
                         .path = configuration_ptr->getPathForRead().path,
                         .filename = manifest_list_path,
-                        .metadata_content = manifest_list_entry.file_content
+                        .metadata_content = removeEscapedSlashes(manifest_list_entry.file_content)
                     });
                 }
             }
@@ -384,16 +384,15 @@ void IcebergMetadata::updateState(const ContextPtr & local_context, Poco::JSON::
     if (clock_gettime(CLOCK_REALTIME, &spec))
         throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
 
-    auto content_hash = content_hasher(oss.str());
-    if (!logged_files_with_hash_content.contains(content_hash) && static_cast<UInt64>(IcebergMetadataLogLevel::Metadata) <= local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value)
+    if (static_cast<UInt64>(DB::IcebergMetadataLogLevel::Metadata) <= local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value)
     {
-        logged_files_with_hash_content.insert(content_hash);
-        metadata_logs.push_back(Iceberg::IcebergMetadataContentLog{
+        Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
             .current_time = spec.tv_sec,
-            .content_type = IcebergMetadataLogLevel::Metadata,
+            .query_id = local_context->getCurrentQueryId(),
+            .content_type = DB::IcebergMetadataLogLevel::Metadata,
             .path = configuration_ptr->getPathForRead().path,
             .filename = path,
-            .metadata_content = oss.str()
+            .metadata_content = removeEscapedSlashes(oss.str())
         });
     }
     std::optional<String> manifest_list_file;
@@ -708,11 +707,6 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     return iceberg_history;
 }
 
-const Iceberg::IcebergMetadataLog & IcebergMetadata::getMetadataLog() const
-{
-    return metadata_logs;
-}
-
 std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
 {
     auto configuration_ptr = configuration.lock();
@@ -815,9 +809,7 @@ ObjectIterator IcebergMetadata::iterate(
         callback,
         table_snapshot,
         relevant_snapshot,
-        persistent_components,
-        metadata_logs,
-        logged_files_with_hash_content);
+        persistent_components);
 }
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const

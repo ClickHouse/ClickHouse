@@ -103,7 +103,6 @@
 #include <Storages/System/StorageSystemViewRefreshes.h>
 #include <Storages/System/StorageSystemDNSCache.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
-#include <Storages/System/StorageSystemIcebergMetadata.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
@@ -241,7 +240,6 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemWorkloads>(context, system_database, "workloads", "Contains a list of all currently existing workloads.");
     attach<StorageSystemResources>(context, system_database, "resources", "Contains a list of all currently existing resources.");
     attach<StorageSystemIcebergHistory>(context, system_database, "iceberg_history", "Displays the history of an iceberg table similar to the Spark history table");
-    attach<StorageSystemIcebergMetadata>(context, system_database, "iceberg_metadata", "Contains a list of iceberg metadata files.");
 
     if (has_zookeeper)
     {

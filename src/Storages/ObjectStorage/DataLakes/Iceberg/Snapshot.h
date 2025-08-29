@@ -53,26 +53,7 @@ struct IcebergHistoryRecord
     Int32 num_partitions;
 };
 
-enum class IcebergMetadataLogLevel : UInt64
-{
-    None = 0,
-    Metadata = 1,
-    Snapshot = 2,
-    ManifestEntry = 3,
-    ManifestEntryMetadata = 4,
-};
-
-struct IcebergMetadataContentLog
-{
-    std::time_t current_time;
-    IcebergMetadataLogLevel content_type;
-    String path;
-    String filename;
-    String metadata_content;
-};
-
 using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
-using IcebergMetadataLog = std::vector<Iceberg::IcebergMetadataContentLog>;
 }
 
 #endif
