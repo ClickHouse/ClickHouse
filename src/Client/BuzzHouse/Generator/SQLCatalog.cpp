@@ -46,7 +46,8 @@ void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
         }
 
         integration = IntegrationCall::Dolor; /// Has to use La Casa Del Dolor
-        format = (catalog == LakeCatalog::REST || rg.nextBool()) ? LakeFormat::Iceberg : LakeFormat::DeltaLake;
+        format
+            = (catalog == LakeCatalog::REST || catalog == LakeCatalog::Hive || rg.nextBool()) ? LakeFormat::Iceberg : LakeFormat::DeltaLake;
         storage = LakeStorage::S3; /// What ClickHouse supports now
     }
 }
