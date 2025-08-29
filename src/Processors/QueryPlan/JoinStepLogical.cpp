@@ -327,6 +327,7 @@ bool canPushDownFromOn(const JoinInfo & join_info, std::optional<JoinTableSide> 
         || (side == JoinTableSide::Right && join_info.kind == JoinKind::Left);
 
     return is_suitable_kind
+        && join_info.expression.disjunctive_conditions.empty()
         && join_info.strictness == JoinStrictness::All;
 }
 
@@ -781,6 +782,8 @@ std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, 
         return {};
 
     auto & join_expression = join_info.expression;
+    if (!join_expression.disjunctive_conditions.empty())
+        return {};
 
     if (!canPushDownFromOn(join_info, side))
         return {};
