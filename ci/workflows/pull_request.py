@@ -85,7 +85,7 @@ workflow = Workflow.Config(
             for job in JobConfigs.compatibility_test_jobs
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_dependency(REGULAR_BUILD_NAMES)
             for job in JobConfigs.stress_test_jobs
         ],
         *[
@@ -93,7 +93,7 @@ workflow = Workflow.Config(
             for job in JobConfigs.upgrade_test_jobs
         ],
         *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_dependency(REGULAR_BUILD_NAMES)
             for job in JobConfigs.ast_fuzzer_jobs
         ],
         *[
