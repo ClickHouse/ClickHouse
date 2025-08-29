@@ -197,10 +197,16 @@ Chunk LogSource::generate()
         ColumnPtr column;
         auto name_type_on_disk = getColumnOnDisk(name_type);
 
+        // If .null subcolumn is requested, we need to use the cache for the source column
+        // Otherwise we'll attempt to read size stream after EOF and skip all other subcolumns.
+        auto cache_column = name_type_on_disk.getNameInStorage();
+        if (name_type_on_disk.getSubcolumnName() == "null")
+            cache_column = Nested::splitName(name_type_on_disk.name).first;
+
         try
         {
             column = name_type_on_disk.type->createColumn();
-            readData(name_type_on_disk, column, max_rows_to_read, caches[name_type_on_disk.getNameInStorage()]);
+            readData(name_type_on_disk, column, max_rows_to_read, caches[cache_column]);
         }
         catch (Exception & e)
         {
