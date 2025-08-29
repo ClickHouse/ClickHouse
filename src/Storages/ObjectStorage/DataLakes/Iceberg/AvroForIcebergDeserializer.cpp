@@ -25,7 +25,7 @@ using namespace DB;
 
 namespace
 {
-   
+
 String removeAllSlashes(const String & input)
 {
     std::string result;

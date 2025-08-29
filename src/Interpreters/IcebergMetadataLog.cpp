@@ -1,5 +1,5 @@
 #include <Interpreters/IcebergMetadataLog.h>
-
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
