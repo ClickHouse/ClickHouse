@@ -282,7 +282,7 @@ String DateTimeType::typeName(const bool escape, const bool simplified) const
     {
         ret += "64";
     }
-    if (precision.has_value() || timezone.has_value())
+    if (precision.has_value() || (!simplified && timezone.has_value()))
     {
         ret += "(";
         if (precision.has_value())
