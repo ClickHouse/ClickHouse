@@ -25,6 +25,7 @@ namespace DB::Parquet
 
 // TODO [parquet]:
 //  * column_mapper
+//  * find a way to make this compatible at all with our implementation of iceberg positioned deletes: https://github.com/ClickHouse/ClickHouse/pull/83094 (prewhere causes nonconsecutive row idxs in chunk)
 //  * allow_geoparquet_parser
 //  * test on files from https://github.com/apache/parquet-testing
 //  * check fields for false sharing, add cacheline padding as needed
