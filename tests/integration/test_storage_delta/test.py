@@ -279,14 +279,8 @@ def create_delta_table(
     table_name,
     cluster,
     format="Parquet",
-    allow_dynamic_metadata_for_data_lakes=False,
     **kwargs,
 ):
-    allow_dynamic_metadata_for_datalakes_suffix = (
-        " SETTINGS allow_dynamic_metadata_for_data_lakes = 1"
-        if allow_dynamic_metadata_for_data_lakes
-        else ""
-    )
 
     if storage_type == "s3":
         if "bucket" in kwargs:
@@ -300,7 +294,6 @@ def create_delta_table(
             CREATE TABLE {table_name}
             ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
             """
-            + allow_dynamic_metadata_for_datalakes_suffix
         )
 
     elif storage_type == "azure":
@@ -310,7 +303,6 @@ def create_delta_table(
             CREATE TABLE {table_name}
             ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
             """
-            + allow_dynamic_metadata_for_datalakes_suffix
         )
     elif storage_type == "local":
         # For local storage, we need to use the absolute path
