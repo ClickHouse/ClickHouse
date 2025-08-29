@@ -1,6 +1,3 @@
-
-#include <Interpreters/PreparedSets.h>
-#include <Storages/ObjectStorage/Utils.h>
 #include "config.h"
 #if USE_AVRO
 
@@ -25,6 +22,8 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
 
+#include <Interpreters/PreparedSets.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 #include <Databases/DataLake/Common.h>
 #include <Core/Settings.h>
@@ -129,6 +128,24 @@ Iceberg::IcebergTableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject
 
 }
 
+Iceberg::PersistentTableComponents
+IcebergMetadata::initializePersistentTableComponents(IcebergMetadataFilesCachePtr cache_ptr, ContextPtr context_)
+{
+    const auto [metadata_version, metadata_file_path, compression_method]
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration.lock(), cache_ptr, context_, log.get());
+    auto metadata_object
+        = getMetadataJSONObject(metadata_file_path, object_storage, configuration.lock(), cache_ptr, context_, log, compression_method);
+    Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
+    String table_location = metadata_object->getValue<String>(f_location);
+    return PersistentTableComponents{
+        .schema_processor = std::make_shared<IcebergSchemaProcessor>(),
+        .metadata_cache = cache_ptr,
+        .format_version = format_version,
+        .table_location = table_location,
+        .metadata_compression_method = compression_method};
+}
+
+
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationWeakPtr configuration_,
@@ -137,27 +154,11 @@ IcebergMetadata::IcebergMetadata(
     : object_storage(std::move(object_storage_))
     , configuration(std::move(configuration_))
     , log(getLogger("IcebergMetadata"))
-    , persistent_components(
-          [this, cache_ptr, context_]()
-          {
-              const auto [metadata_version, metadata_file_path, compression_method]
-                  = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration.lock(), cache_ptr, context_, log.get());
-              auto metadata_object = getMetadataJSONObject(
-                  metadata_file_path, object_storage, configuration.lock(), cache_ptr, context_, log, compression_method);
-              Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
-              String table_location = metadata_object->getValue<String>(f_location);
-              return PersistentTableComponents{
-                  .schema_processor = std::make_shared<IcebergSchemaProcessor>(),
-                  .metadata_cache = cache_ptr,
-                  .format_version = format_version,
-                  .table_location = table_location,
-                  .metadata_compression_method = compression_method};
-          }())
+    , persistent_components(initializePersistentTableComponents(cache_ptr, context_))
 {
     const auto [metadata_version, metadata_file_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration.lock(), cache_ptr, context_, log.get());
     auto [_data_snapshot, table_state_snapshot] = getState(context_, metadata_file_path, metadata_version);
-    LOG_DEBUG(log, "Setting, stacktrace: {}", StackTrace().toString());
     last_table_state_snapshot.set(table_state_snapshot);
 }
 
@@ -215,13 +216,12 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage, configuration.lock(), persistent_components.metadata_cache, local_context, log.get());
     auto [_data_snapshot, table_state_snapshot] = getState(local_context, metadata_file_path, metadata_version);
-    LOG_DEBUG(log, "Setting, stacktrace: {}", StackTrace().toString());
     last_table_state_snapshot.set(table_state_snapshot);
     return true;
 }
 
 Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
-    Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, const PersistentTableComponents & persistent_components)
+    Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, IcebergSchemaProcessorPtr schema_processor)
 {
     if (!metadata_object->has(f_snapshots))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
@@ -229,7 +229,7 @@ Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
     for (UInt32 j = 0; j < schemas->size(); ++j)
     {
         auto schema = schemas->getObject(j);
-        persistent_components.schema_processor->addIcebergTableSchema(schema);
+        schema_processor->addIcebergTableSchema(schema);
     }
     Poco::JSON::Object::Ptr current_snapshot = nullptr;
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
@@ -238,7 +238,7 @@ Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
         auto current_schema_id = snapshot->getValue<Int32>(f_schema_id);
-        persistent_components.schema_processor->registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
+        schema_processor->registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
         if (snapshot->getValue<Int64>(f_metadata_snapshot_id) == snapshot_id)
         {
             current_snapshot = snapshot;
@@ -300,11 +300,39 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
 IcebergDataSnapshotPtr
 IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const
 {
-    auto object = traverseMetadataAndFindNecessarySnapshotObject(metadata_object, snapshot_id, persistent_components);
+    auto object = traverseMetadataAndFindNecessarySnapshotObject(metadata_object, snapshot_id, persistent_components.schema_processor);
     if (!object)
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot found for id `{}`", snapshot_id);
 
     return createIcebergDataSnapshotFromSnapshotJSON(object, snapshot_id, local_context);
+}
+
+
+
+bool IcebergMetadata::optimize(
+    const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings)
+{
+    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
+    {
+        auto configuration_ptr = configuration.lock();
+        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+        auto snapshots_info = getHistory(context);
+        compactIcebergTable(
+            snapshots_info,
+            persistent_components,
+            object_storage,
+            configuration_ptr,
+            format_settings,
+            sample_block,
+            context,
+            persistent_components.metadata_compression_method);
+        return true;
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
+    }
 }
 
 std::pair<IcebergDataSnapshotPtr, Int32>
@@ -429,32 +457,6 @@ std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextP
         : nullptr;
 }
 
-
-bool IcebergMetadata::optimize(
-    const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings)
-{
-    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
-    {
-        auto configuration_ptr = configuration.lock();
-        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto snapshots_info = getHistory(context);
-        compactIcebergTable(
-            snapshots_info,
-            persistent_components,
-            object_storage,
-            configuration_ptr,
-            format_settings,
-            sample_block,
-            context,
-            persistent_components.metadata_compression_method);
-        return true;
-    }
-    else
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables.");
-    }
-}
 
 void IcebergMetadata::mutate(
     const MutationCommands & commands,
@@ -591,7 +593,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
     Poco::JSON::Object::Ptr snapshot_object
-        = traverseMetadataAndFindNecessarySnapshotObject(metadata_object, *table_state_snapshot.snapshot_id, persistent_components);
+        = traverseMetadataAndFindNecessarySnapshotObject(metadata_object, *table_state_snapshot.snapshot_id, persistent_components.schema_processor);
 
     return createIcebergDataSnapshotFromSnapshotJSON(snapshot_object, *table_state_snapshot.snapshot_id, local_context);
 }
@@ -815,7 +817,6 @@ ObjectIterator IcebergMetadata::iterate(
         getRelevantDataSnapshotFromTableStateSnapshot(*iceberg_table_state, local_context),
         persistent_components);
 }
-
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const
 {

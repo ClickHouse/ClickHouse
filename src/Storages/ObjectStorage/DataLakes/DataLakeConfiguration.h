@@ -234,15 +234,6 @@ public:
         }
     }
 
-    void releaseTemporaryState() noexcept override
-    {
-        if (current_metadata)
-        {
-            current_metadata->releaseTemporaryState();
-        }
-    }
-
-
     /// This is an awful temporary crutch,
     /// which will be removed once DeltaKernel is used by default for DeltaLake.
     /// By release 25.3.

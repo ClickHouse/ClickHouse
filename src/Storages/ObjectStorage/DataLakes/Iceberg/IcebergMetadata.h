@@ -136,10 +136,14 @@ public:
         ContextPtr local_context) const override;
 
 private:
+    Iceberg::PersistentTableComponents initializePersistentTableComponents(
+        IcebergMetadataFilesCachePtr cache_ptr,
+        ContextPtr context_);
+
     Iceberg::IcebergDataSnapshotPtr
     getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const;
-    Iceberg::IcebergDataSnapshotPtr
-    createIcebergDataSnapshotFromSnapshotJSON(Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const;
+
+    Iceberg::IcebergDataSnapshotPtr createIcebergDataSnapshotFromSnapshotJSON(Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Int32>
     getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::IcebergTableStateSnapshot>
@@ -149,12 +153,10 @@ private:
 
     const ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationWeakPtr configuration;
-    DB::Iceberg::PersistentTableComponents persistent_components;
     LoggerPtr log;
+    DB::Iceberg::PersistentTableComponents persistent_components;
 
     Iceberg::OneThreadProtecting<Iceberg::IcebergTableStateSnapshot> last_table_state_snapshot;
-
-    Iceberg::PersistentTableComponents initializePersistentTableComponents(Poco::JSON::Object::Ptr metadata_object)
 };
 }
 
