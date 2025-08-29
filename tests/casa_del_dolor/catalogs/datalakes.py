@@ -61,77 +61,102 @@ def sample_from_dict(d: dict[str, Parameter], sample: int) -> dict[str, Paramete
     return dict(items)
 
 
+true_false_lambda = lambda: random.choice(["false", "true"])
+
+spark_properties = {
+    "spark.databricks.delta.checkLatestSchemaOnRead": true_false_lambda,
+    "spark.databricks.delta.merge.optimizeInsertOnlyMerge.enabled": true_false_lambda,
+    "spark.databricks.delta.metricsCollection.enabled": true_false_lambda,
+    "spark.databricks.delta.optimize.maxFileSize": lambda: random.choice(
+        ["134217728", "268435456", "1073741824"]
+    ),
+    # "spark.databricks.delta.optimize.minFileSize" : lambda: random.choice(["10485760", "20971520", "104857600"]),
+    "spark.databricks.delta.optimize.repartition.enabled": true_false_lambda,
+    "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact": true_false_lambda,
+    "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite": true_false_lambda,
+    "spark.databricks.delta.retentionDurationCheck.enabled": true_false_lambda,
+    "spark.databricks.delta.schema.autoMerge.enabled": true_false_lambda,
+    "spark.databricks.delta.stalenessLimit": lambda: random.choice(
+        ["1h", "6h", "12h", "24h"]
+    ),
+    "spark.databricks.delta.vacuum.parallelDelete.enabled": true_false_lambda,
+    "spark.sql.adaptive.coalescePartitions.enabled": true_false_lambda,
+    "spark.sql.adaptive.enabled": true_false_lambda,
+    "spark.sql.adaptive.localShuffleReader.enabled": true_false_lambda,
+    "spark.sql.adaptive.skewJoin.enabled": true_false_lambda,
+    "spark.sql.ansi.enabled": true_false_lambda,
+    "spark.sql.autoBroadcastJoinThreshold": lambda: random.choice(
+        ["-1", "1MB", "10MB", "48MB"]
+    ),
+    "spark.sql.caseSensitive": true_false_lambda,
+    "spark.sql.codegen.fallback": true_false_lambda,
+    "spark.sql.codegen.wholeStage": true_false_lambda,
+    "spark.sql.execution.sortBeforeRepartition": true_false_lambda,
+    "spark.sql.iceberg.check-committer-thread": true_false_lambda,
+    "spark.sql.iceberg.compress-metadata": true_false_lambda,
+    "spark.sql.iceberg.handle-timestamp-without-timezone": true_false_lambda,
+    "spark.sql.iceberg.merge-on-read.enabled": true_false_lambda,
+    "spark.sql.iceberg.planning.locality.enabled": true_false_lambda,
+    "spark.sql.iceberg.planning.max-table-cache-size": lambda: random.choice(
+        ["10", "50", "100"]
+    ),
+    "spark.sql.iceberg.use-native-partition-data": true_false_lambda,
+    "spark.sql.iceberg.vectorization.enabled": true_false_lambda,
+    "spark.sql.iceberg.write.distribution.mode": lambda: random.choice(
+        ["none", "hash", "range"]
+    ),
+    "spark.sql.iceberg.write.fanout.enabled": true_false_lambda,
+    "spark.sql.inMemoryColumnarStorage.batchSize": lambda: random.choice(
+        ["10", "100", "1000"]
+    ),
+    "spark.sql.inMemoryColumnarStorage.compressed": true_false_lambda,
+    "spark.sql.join.preferSortMergeJoin": true_false_lambda,
+    "spark.sql.jsonGenerator.ignoreNullFields": true_false_lambda,
+    "spark.sql.orc.compression.codec": lambda: random.choice(
+        ["snappy", "zlib", "zstd", "uncompressed"]
+    ),
+    "spark.sql.orc.enableVectorizedReader": true_false_lambda,
+    "spark.sql.orc.filterPushdown": true_false_lambda,
+    "spark.sql.orc.impl": lambda: random.choice(["native", "hive"]),
+    "spark.sql.parquet.compression.codec": lambda: random.choice(
+        ["uncompressed", "snappy", "gzip", "zstd"]
+    ),
+    "spark.sql.parquet.enableDictionary": true_false_lambda,
+    "spark.sql.parquet.enableVectorizedReader": true_false_lambda,
+    "spark.sql.parquet.filterPushdown": true_false_lambda,
+    "spark.sql.parquet.mergeSchema": true_false_lambda,
+    "spark.sql.parquet.outputTimestampType": lambda: random.choice(
+        ["INT96", "TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"]
+    ),
+    "spark.sql.parquet.writeLegacyFormat": true_false_lambda,
+    "spark.sql.shuffle.partitions": lambda: random.choice(
+        ["8", "16", "32", "64", "200", "400"]
+    ),
+    "spark.sql.sources.partitionOverwriteMode": lambda: random.choice(
+        ["static", "dynamic"]
+    ),
+    "spark.sql.statistics.autogather": true_false_lambda,
+}
+
+
 def get_spark(
     cluster,
-    logfile: str,
+    sparklogfile: str,
+    derbylogfile: str,
+    metastore_db: str,
     catalog_name: str,
     storage: TableStorage,
     lake: LakeFormat,
     catalog: LakeCatalogs,
 ):
-    true_false_lambda = lambda: random.choice(["false", "true"])
-
-    spark_properties = {
-        "spark.databricks.delta.checkLatestSchemaOnRead": true_false_lambda,
-        "spark.databricks.delta.merge.optimizeInsertOnlyMerge.enabled": true_false_lambda,
-        "spark.databricks.delta.metricsCollection.enabled": true_false_lambda,
-        "spark.databricks.delta.optimize.maxFileSize": lambda: random.choice(
-            ["134217728", "268435456", "1073741824"]
-        ),
-        # "spark.databricks.delta.optimize.minFileSize" : lambda: random.choice(["10485760", "20971520", "104857600"]),
-        "spark.databricks.delta.optimize.repartition.enabled": true_false_lambda,
-        "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact": true_false_lambda,
-        "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite": true_false_lambda,
-        "spark.databricks.delta.retentionDurationCheck.enabled": true_false_lambda,
-        "spark.databricks.delta.schema.autoMerge.enabled": true_false_lambda,
-        "spark.databricks.delta.stalenessLimit": lambda: random.choice(
-            ["1h", "6h", "12h", "24h"]
-        ),
-        "spark.databricks.delta.vacuum.parallelDelete.enabled": true_false_lambda,
-        "spark.sql.adaptive.coalescePartitions.enabled": true_false_lambda,
-        "spark.sql.adaptive.enabled": true_false_lambda,
-        "spark.sql.adaptive.localShuffleReader.enabled": true_false_lambda,
-        "spark.sql.adaptive.skewJoin.enabled": true_false_lambda,
-        "spark.sql.iceberg.check-committer-thread": true_false_lambda,
-        "spark.sql.iceberg.compress-metadata": true_false_lambda,
-        "spark.sql.iceberg.handle-timestamp-without-timezone": true_false_lambda,
-        "spark.sql.iceberg.merge-on-read.enabled": true_false_lambda,
-        "spark.sql.iceberg.planning.locality.enabled": true_false_lambda,
-        "spark.sql.iceberg.planning.max-table-cache-size": lambda: random.choice(
-            ["10", "50", "100"]
-        ),
-        "spark.sql.iceberg.use-native-partition-data": true_false_lambda,
-        "spark.sql.iceberg.vectorization.enabled": true_false_lambda,
-        "spark.sql.iceberg.write.distribution.mode": lambda: random.choice(
-            ["none", "hash", "range"]
-        ),
-        "spark.sql.iceberg.write.fanout.enabled": true_false_lambda,
-        "spark.sql.orc.compression.codec": lambda: random.choice(["snappy"]),
-        "spark.sql.parquet.compression.codec": lambda: random.choice(["snappy"]),
-        "spark.sql.parquet.filterPushdown": true_false_lambda,
-        "spark.sql.parquet.mergeSchema": true_false_lambda,
-        "spark.sql.statistics.autogather": true_false_lambda,
-    }
-
     # ============================================================
     # CORE CONFIGURATIONS FOR BOTH ICEBERG AND DELTA
     # ============================================================
     catalog_extension = ""
     catalog_format = ""
-    all_jars = [
-        "org.apache.spark:spark-hadoop-cloud_2.12:3.5.6",
-        "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2",
-        "org.apache.iceberg:iceberg-spark-extensions-3.5_2.12:1.9.2",
-        "io.delta:delta-spark_2.12:3.3.2",
-        "io.unitycatalog:unitycatalog-spark_2.12:0.2.0",
-    ]
+    all_jars = ["org.apache.spark:spark-hadoop-cloud_2.12:3.5.6"]
     if storage == TableStorage.S3:
-        all_jars.extend(
-            [
-                "org.apache.iceberg:iceberg-aws-bundle:1.9.2",
-                "com.amazonaws:aws-glue-datacatalog-spark-client-3_2.12:3.5.6",
-            ]
-        )
+        all_jars.extend(["org.apache.iceberg:iceberg-aws-bundle:1.9.2"])
     elif storage == TableStorage.Azure:
         all_jars.extend(
             [
@@ -146,6 +171,12 @@ def get_spark(
             "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
         )
         catalog_format = "org.apache.iceberg.spark.SparkCatalog"
+        all_jars.extend(
+            [
+                "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2",
+                "org.apache.iceberg:iceberg-spark-extensions-3.5_2.12:1.9.2",
+            ]
+        )
     elif lake == LakeFormat.DeltaLake:
         catalog_extension = "io.delta.sql.DeltaSparkSessionExtension"
         catalog_format = (
@@ -153,8 +184,13 @@ def get_spark(
             if catalog == LakeCatalogs.Unity
             else "org.apache.spark.sql.delta.catalog.DeltaCatalog"
         )
+        all_jars.extend(["io.delta:delta-spark_2.12:3.3.2"])
     else:
         raise Exception("Unknown lake format")
+    if catalog == LakeCatalogs.Unity:
+        all_jars.extend(["io.unitycatalog:unitycatalog-spark_2.12:0.2.0"])
+    elif catalog == LakeCatalogs.Glue:
+        all_jars.extend(["com.amazonaws:aws-glue-datacatalog-spark-client_2.12:4.0.0"])
 
     os.environ["PYSPARK_SUBMIT_ARGS"] = f"--packages {",".join(all_jars)} pyspark-shell"
 
@@ -164,18 +200,18 @@ def get_spark(
     builder.config("spark.sql.extensions", catalog_extension)
     builder.config(f"spark.sql.catalog.{catalog_name}", catalog_format)
     builder.config(
-        "spark.driver.extraJavaOptions", f"-Dlog4j.configurationFile=file:{logfile}"
+        "spark.driver.extraJavaOptions",
+        f"-Dlog4j.configurationFile=file:{sparklogfile} -Dderby.stream.error.file={derbylogfile}",
     )
     builder.config(
-        "spark.executor.extraJavaOptions", f"-Dlog4j.configurationFile=file:{logfile}"
+        "spark.executor.extraJavaOptions",
+        f"-Dlog4j.configurationFile=file:{sparklogfile} -Dderby.stream.error.file={derbylogfile}",
     )
     builder.config(
-        "spark.hadoop.javax.jdo.option.ConnectionURL",
-        "jdbc:derby:memory:metastore_db;create=true",
+        "javax.jdo.option.ConnectionURL", f"jdbc:derby:{metastore_db};create=true"
     )
     builder.config(
-        "spark.hadoop.javax.jdo.option.ConnectionDriverName",
-        "org.apache.derby.jdbc.EmbeddedDriver",
+        "javax.jdo.option.ConnectionDriverName", "org.apache.derby.jdbc.EmbeddedDriver"
     )
 
     # ============================================================
@@ -368,6 +404,8 @@ class DolorCatalog:
         self,
         cluster,
         spark_log_config: str,
+        derby_log_config: str,
+        metastore_db: str,
         _catalog_name: str,
         _storage_type: TableStorage,
         _lake_type: LakeFormat,
@@ -382,6 +420,8 @@ class DolorCatalog:
         self.session = get_spark(
             cluster,
             spark_log_config,
+            derby_log_config,
+            metastore_db,
             _catalog_name,
             _storage_type,
             _lake_type,
@@ -414,6 +454,8 @@ class SparkHandler:
         self.spark_log_dir = Path(cluster.instances_dir) / "spark"
         self.spark_log_config = Path(cluster.instances_dir) / "log4j2.properties"
         self.spark_query_logger = self.spark_log_dir / "query.log"
+        self.derby_logger = self.spark_log_dir / "derby.log"
+        self.metastore_db = self.spark_log_dir / "metastore_db"
         spark_log = f"""
 # ----- log4j2.properties -----
 status = error
@@ -647,6 +689,8 @@ logger.jetty.level = warn
         self.catalogs[catalog_name] = DolorCatalog(
             cluster,
             str(self.spark_log_config),
+            str(self.derby_logger),
+            str(self.metastore_db),
             catalog_name,
             next_storage,
             next_lake,
@@ -669,6 +713,8 @@ logger.jetty.level = warn
             self.catalogs[catalog_name] = DolorCatalog(
                 cluster,
                 str(self.spark_log_config),
+                str(self.derby_logger),
+                str(self.metastore_db),
                 catalog_name,
                 next_storage,
                 next_lake,
@@ -692,7 +738,9 @@ logger.jetty.level = warn
                 f"Inserting data into {data["table_name"]} in catalog: {catalog_name}"
             )
             next_data_generator = LakeDataGenerator()
-            next_data_generator.insert_random_data(next_session, catalog_name, next_table)
+            next_data_generator.insert_random_data(
+                next_session, catalog_name, next_table
+            )
 
         if one_time:
             next_session.stop()
