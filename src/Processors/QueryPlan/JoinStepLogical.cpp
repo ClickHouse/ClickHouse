@@ -17,12 +17,15 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/StorageJoin.h>
 #include <ranges>
+
+#include "fmt/xchar.h"
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Planner/PlannerJoins.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDynamic.h>
 
 #include <Functions/FunctionsLogical.h>
 #include <Functions/FunctionsComparison.h>
@@ -354,12 +357,24 @@ struct JoinPlanningContext
     bool is_using = false;
 };
 
-void predicateOperandsToCommonType(JoinPredicate & predicate, JoinExpressionActions & expression_actions, JoinPlanningContext join_context)
+void predicateOperandsToCommonType(JoinPredicate & predicate, JoinExpressionActions & expression_actions, const JoinSettings & join_settings, JoinPlanningContext join_context)
 {
     auto & left_node = predicate.left_node;
     auto & right_node = predicate.right_node;
     const auto & left_type = left_node.getType();
     const auto & right_type = right_node.getType();
+
+    bool is_left_key_dynamic = hasDynamicType(left_type);
+    bool is_right_key_dynamic = hasDynamicType(right_type);
+
+    if (!join_settings.allow_dynamic_type_in_join_keys && (is_left_key_dynamic || is_right_key_dynamic))
+    {
+        throw DB::Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "JOIN on keys with Dynamic type is not supported: key {} has type {}. In order to use this key in JOIN you should cast it to any other type",
+            is_left_key_dynamic ? left_node.getColumnName() : right_node.getColumnName(),
+            is_left_key_dynamic ? left_type->getName() : right_type->getName());
+    }
 
     if (left_type->equals(*right_type))
         return;
@@ -399,13 +414,13 @@ std::tuple<const ActionsDAG::Node *, const ActionsDAG::Node *> leftAndRightNodes
     return {predicate.left_node.getNode(), predicate.right_node.getNode()};
 }
 
-bool addJoinConditionToTableJoin(JoinCondition & join_condition, TableJoin::JoinOnClause & table_join_clause, JoinExpressionActions & expression_actions, JoinPlanningContext join_context)
+bool addJoinConditionToTableJoin(JoinCondition & join_condition, TableJoin::JoinOnClause & table_join_clause, JoinExpressionActions & expression_actions, const JoinSettings & join_settings, JoinPlanningContext join_context)
 {
     std::vector<JoinPredicate> new_predicates;
     for (size_t i = 0; i < join_condition.predicates.size(); ++i)
     {
         auto & predicate = join_condition.predicates[i];
-        predicateOperandsToCommonType(predicate, expression_actions, join_context);
+        predicateOperandsToCommonType(predicate, expression_actions, join_settings, join_context);
         if (PredicateOperator::Equals == predicate.op || PredicateOperator::NullSafeEquals == predicate.op)
         {
             auto [left_key_node, right_key_node] = leftAndRightNodes(predicate);
@@ -591,7 +606,7 @@ JoinPtr JoinStepLogical::convertToPhysical(
     {
         bool has_keys = addJoinConditionToTableJoin(
             join_expression.condition, table_join_clauses.emplace_back(),
-            expression_actions, join_context);
+            expression_actions, join_settings, join_context);
 
         if (!has_keys)
         {
@@ -633,7 +648,7 @@ JoinPtr JoinStepLogical::convertToPhysical(
         bool asof_predicate_found = false;
         for (auto & predicate : join_predicates)
         {
-            predicateOperandsToCommonType(predicate, expression_actions, join_context);
+            predicateOperandsToCommonType(predicate, expression_actions, join_settings, join_context);
             auto asof_inequality_op = operatorToAsofInequality(predicate.op);
             if (!asof_inequality_op)
                 continue;
@@ -652,7 +667,7 @@ JoinPtr JoinStepLogical::convertToPhysical(
     for (auto & join_condition : join_expression.disjunctive_conditions)
     {
         auto & table_join_clause = table_join_clauses.emplace_back();
-        bool has_keys = addJoinConditionToTableJoin(join_condition, table_join_clause, expression_actions, join_context);
+        bool has_keys = addJoinConditionToTableJoin(join_condition, table_join_clause, expression_actions, join_settings, join_context);
         if (!has_keys)
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
                 formatJoinCondition(join_condition));
