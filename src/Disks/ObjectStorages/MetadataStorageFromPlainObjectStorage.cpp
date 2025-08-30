@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
     extern const int UNSUPPORTED_METHOD;
+    extern const int DICTIONARY_IS_EMPTY;
 }
 
 namespace
@@ -291,10 +292,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std
 
     auto normalized_path = normalizeDirectoryPath(path);
     if (normalized_path.empty())
-    {
-        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageTransaction"), "Skipping creation of a directory with an empty path");
-        return;
-    }
+        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "Empty normalized path for directory '{}'", path);
 
     auto op = std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         std::move(normalized_path),
