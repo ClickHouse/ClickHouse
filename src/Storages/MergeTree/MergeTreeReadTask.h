@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB
 {
@@ -121,7 +122,9 @@ public:
         MergeTreeReaderPtr main;
         std::vector<MergeTreeReaderPtr> prewhere;
         MergeTreePatchReaders patches;
-        MergeTreeReaderPtr index;
+
+        MergeTreeReaderPtr prepared_index;
+        std::vector<MergeTreeReaderPtr> heavy_indexes;
     };
 
     struct BlockSizeParams
@@ -153,7 +156,8 @@ public:
     void initializeReadersChain(
         const PrewhereExprInfo & prewhere_actions,
         ReadStepsPerformanceCounters & read_steps_performance_counters,
-        MergeTreeIndexReadResultPtr index_read_result);
+        MergeTreeIndexReadResultPtr index_read_result,
+        std::vector<MergeTreeIndexWithCondition> heavy_indexes);
 
     BlockAndProgress read();
     bool isFinished() const { return mark_ranges.empty() && readers_chain.isCurrentRangeFinished(); }

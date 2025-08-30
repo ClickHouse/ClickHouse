@@ -2558,12 +2558,15 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     {
         /// Vector similarity indexes are not applicable on data reads.
         UsefulSkipIndexes applicable_skip_indexes = indexes->skip_indexes;
-        std::erase_if(applicable_skip_indexes.useful_indices, [](const auto & idx) { return idx.index->isVectorSimilarityIndex(); });
+        std::erase_if(applicable_skip_indexes.useful_indices, [](const auto & idx) { return idx.index->isVectorSimilarityIndex() || idx.index->hasHeavyGranules(); });
+
+        RangesByIndex read_ranges;
+        PartRemainingMarks part_remaining_marks;
+        MergeTreeIndexReadResultPoolPtr index_read_result_pool;
+        std::vector<MergeTreeIndexWithCondition> heavy_indexes;
 
         if (!applicable_skip_indexes.empty())
         {
-            RangesByIndex read_ranges;
-            PartRemainingMarks part_remaining_marks;
             for (const auto & ranges : result.parts_with_ranges)
             {
                 read_ranges.emplace(ranges.part_index_in_query, ranges);
@@ -2580,11 +2583,22 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
             /// TODO(ab): If projection index is available, build projection index reader and pass it into result pool.
 
-            MergeTreeIndexReadResultPoolPtr index_read_result_pool
-                = std::make_shared<MergeTreeIndexReadResultPool>(std::move(skip_index_reader));
+            index_read_result_pool = std::make_shared<MergeTreeIndexReadResultPool>(std::move(skip_index_reader));
+        }
 
+        for (const auto & index : indexes->skip_indexes.useful_indices)
+        {
+            if (index.index->hasHeavyGranules())
+                heavy_indexes.push_back(index);
+        }
+
+        if (index_read_result_pool || !heavy_indexes.empty())
+        {
             index_build_context = std::make_shared<MergeTreeIndexBuildContext>(
-                std::move(read_ranges), std::move(index_read_result_pool), std::move(part_remaining_marks));
+                std::move(read_ranges),
+                std::move(index_read_result_pool),
+                std::move(part_remaining_marks),
+                std::move(heavy_indexes));
         }
     }
 

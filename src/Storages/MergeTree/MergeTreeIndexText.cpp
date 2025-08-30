@@ -72,6 +72,19 @@ size_t DictionaryBlock::lowerBound(const StringRef & token) const
     return it - range.begin();
 }
 
+size_t DictionaryBlock::upperBound(const StringRef & token) const
+{
+    auto range = collections::range(0, tokens->size());
+
+    auto it = std::upper_bound(range.begin(), range.end(), token, [this](const StringRef & lhs_ref, size_t rhs_idx)
+    {
+        return lhs_ref < assert_cast<const ColumnString &>(*tokens).getDataAt(rhs_idx);
+    });
+
+    return it - range.begin();
+}
+
+
 std::optional<size_t> DictionaryBlock::binarySearch(const StringRef & token) const
 {
     size_t idx = lowerBound(token);
@@ -185,7 +198,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MarkInCompressedFile begin_mar
 
     for (const auto & [token, _] : remaining_tokens)
     {
-        size_t idx = sparse_index.lowerBound(token);
+        size_t idx = sparse_index.upperBound(token);
 
         if (idx != 0)
             --idx;
@@ -238,6 +251,14 @@ bool MergeTreeIndexGranuleText::hasAllTokensFromQuery(const GinQueryString & que
     return true;
 }
 
+void MergeTreeIndexGranuleText::resetAfterAnalysis(bool may_be_true)
+{
+    bloom_filter = BloomFilter(1, 1, 0);
+    sparse_index = DictionaryBlock();
+
+    if (!may_be_true)
+        remaining_tokens.clear();
+}
 
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     size_t dictionary_block_size_,

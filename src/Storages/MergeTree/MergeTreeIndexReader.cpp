@@ -8,7 +8,7 @@ namespace
 
 using namespace DB;
 
-std::unique_ptr<MergeTreeReaderStream> makeIndexReader(
+std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     const String & stream_name,
     const String & extension,
     MergeTreeData::DataPartPtr part,
@@ -79,7 +79,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     {
         auto stream_name = index_name + substream.suffix;
 
-        auto stream = makeIndexReader(
+        auto stream = makeIndexReaderStream(
             stream_name,
             substream.extension,
             part,

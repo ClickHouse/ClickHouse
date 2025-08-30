@@ -71,7 +71,7 @@ public:
 
     MergeTreeReaderSettings & getMergeTreeReaderSettings() { return settings; }
 
-    virtual bool canSkipMark(size_t) const { return false; }
+    virtual bool canSkipMark(size_t) { return false; }
 
 protected:
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
@@ -126,6 +126,7 @@ protected:
 
 private:
     friend class MergeTreeReaderIndex;
+    friend class MergeTreeReaderTextIndex;
 
     /// Returns actual column name in part, which can differ from table metadata.
     String getColumnNameInPart(const NameAndTypePair & required_column) const;

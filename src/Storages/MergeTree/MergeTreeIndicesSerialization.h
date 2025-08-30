@@ -1,7 +1,7 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
-#include "Formats/MarkInCompressedFile.h"
+#include <Formats/MarkInCompressedFile.h>
 
 namespace DB
 {

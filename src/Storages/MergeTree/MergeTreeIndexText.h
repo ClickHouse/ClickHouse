@@ -34,6 +34,7 @@ struct DictionaryBlock
     MarkInCompressedFile getMark(size_t idx) const;
 
     size_t lowerBound(const StringRef & token) const;
+    size_t upperBound(const StringRef & token) const;
     std::optional<size_t> binarySearch(const StringRef & token) const;
 };
 
@@ -50,6 +51,7 @@ public:
     bool empty() const override { return total_rows == 0; }
     size_t memoryUsageBytes() const override { return 0; }
     bool hasAllTokensFromQuery(const GinQueryString & query) const;
+    void resetAfterAnalysis(bool may_be_true);
 
 private:
     void deserializeBloomFilter(ReadBuffer & istr);
@@ -137,6 +139,7 @@ public:
 
     IndexSubstreams getSubstreams() const override;
     MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & path_prefix) const override;
+    bool hasHeavyGranules() const override { return true; }
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;

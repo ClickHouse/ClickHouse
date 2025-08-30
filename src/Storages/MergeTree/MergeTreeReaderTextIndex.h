@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB
 {
@@ -8,14 +10,12 @@ namespace DB
 struct MergeTreeIndexReadResult;
 using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
 
-/// A reader used in the first reading step to apply index-based filtering. Currently, skip indexes are used to
-/// determine which granules are relevant to the query, and only those are passed to subsequent readers.
-class MergeTreeReaderIndex : public IMergeTreeReader
+class MergeTreeReaderTextIndex : public IMergeTreeReader
 {
 public:
     using MatchingMarks = std::vector<bool>;
 
-    MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_);
+    MergeTreeReaderTextIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexWithCondition index_);
 
     size_t readRows(
         size_t from_mark,
@@ -33,11 +33,22 @@ private:
     /// Delegates to the main reader to determine if reading incomplete index granules is supported.
     const IMergeTreeReader * main_reader;
 
-    /// Used to filter data during merge tree reading.
-    MergeTreeIndexReadResultPtr index_read_result;
+    MergeTreeIndexWithCondition index;
+
+    MarkRanges index_ranges;
+
+    std::optional<MergeTreeIndexReader> index_reader;
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;
+
+    struct GranuleWithResult
+    {
+        MergeTreeIndexGranulePtr granule;
+        bool may_be_true = true;
+    };
+
+    std::map<size_t, GranuleWithResult> cached_granules;
 };
 
 }

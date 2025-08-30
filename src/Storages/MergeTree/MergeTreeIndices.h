@@ -279,6 +279,8 @@ struct IMergeTreeIndex
 
     virtual bool isMergeable() const { return false; }
 
+    virtual bool hasHeavyGranules() const { return false; }
+
     /// Returns extension for serialization.
     /// Reimplement if you want new index format.
     ///
@@ -342,6 +344,16 @@ struct IMergeTreeIndex
 using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
 using MergeTreeIndices = std::vector<MergeTreeIndexPtr>;
 
+struct MergeTreeIndexWithCondition
+{
+    MergeTreeIndexPtr index;
+    MergeTreeIndexConditionPtr condition;
+
+    MergeTreeIndexWithCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
+        : index(std::move(index_)), condition(std::move(condition_))
+    {
+    }
+};
 
 class MergeTreeIndexFactory : private boost::noncopyable
 {

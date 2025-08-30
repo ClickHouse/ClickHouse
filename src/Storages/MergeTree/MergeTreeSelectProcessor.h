@@ -61,6 +61,7 @@ struct MutableAtomicSizeT
 {
     mutable std::atomic_size_t value;
 };
+
 using PartRemainingMarks = std::unordered_map<size_t, MutableAtomicSizeT>;
 
 /// Provides shared context needed to build filtering indexes (e.g., skip indexes) during data reads.
@@ -70,14 +71,22 @@ struct MergeTreeIndexBuildContext
     const RangesByIndex read_ranges;
 
     /// Thread-safe shared pool for reading and building index filters. Must not be null (enforced in constructor).
-    const MergeTreeIndexReadResultPoolPtr index_reader;
+    const MergeTreeIndexReadResultPoolPtr index_reader_pool;
 
     /// Tracks how many marks are still being processed for each part during the execution phase. Once the count reaches
     /// zero for a part, its cached index can be released to free resources.
     const PartRemainingMarks part_remaining_marks;
 
+    /// TODO: comment
+    const std::vector<MergeTreeIndexWithCondition> heavy_indexes;
+
     MergeTreeIndexBuildContext(
-        RangesByIndex read_ranges_, MergeTreeIndexReadResultPoolPtr index_reader_, PartRemainingMarks part_remaining_marks_);
+        RangesByIndex read_ranges_,
+        MergeTreeIndexReadResultPoolPtr index_reader_,
+        PartRemainingMarks part_remaining_marks_,
+        std::vector<MergeTreeIndexWithCondition> heavy_indexes_);
+
+    MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTaskPtr & task) const;
 };
 
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;

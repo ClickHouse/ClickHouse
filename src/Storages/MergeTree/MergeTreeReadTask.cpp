@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderIndex.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -13,6 +15,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+static std::unique_ptr<IMergeTreeReader> createReaderForIndex(const IMergeTreeReader * main_reader, const MergeTreeIndexWithCondition & index)
+{
+    if (typeid_cast<const MergeTreeIndexText *>(index.index.get()))
+        return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type {} doesn't support unprepared reading", index.index->index.type);
 }
 
 String MergeTreeReadTaskColumns::dump() const
@@ -144,17 +154,26 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             prewhere_actions.steps.size(), task_readers.prewhere.size());
 
     std::vector<MergeTreeRangeReader> range_readers;
-    size_t num_readers = prewhere_actions.steps.size() + 1;
-    if (task_readers.index)
-        ++num_readers;
+
+    size_t num_readers = prewhere_actions.steps.size() + task_readers.heavy_indexes.size() + 1;
     range_readers.reserve(num_readers);
 
-    if (task_readers.index)
+    if (task_readers.prepared_index)
     {
         range_readers.emplace_back(
-            task_readers.index.get(),
+            task_readers.prepared_index.get(),
             Block{},
             /*prewhere_info_=*/nullptr,
+            read_steps_performance_counters.getCounterForIndexStep(),
+            /*main_reader_=*/false);
+    }
+
+    for (const auto & heavy_index : task_readers.heavy_indexes)
+    {
+        range_readers.emplace_back(
+            heavy_index.get(),
+            Block{},
+            /*prewhere_info_=*/ nullptr,
             read_steps_performance_counters.getCounterForIndexStep(),
             /*main_reader_=*/false);
     }
@@ -186,13 +205,17 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
 void MergeTreeReadTask::initializeReadersChain(
     const PrewhereExprInfo & prewhere_actions,
     ReadStepsPerformanceCounters & read_steps_performance_counters,
-    MergeTreeIndexReadResultPtr index_read_result)
+    MergeTreeIndexReadResultPtr index_read_result,
+    std::vector<MergeTreeIndexWithCondition> heavy_indexes)
 {
     if (readers_chain.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range readers chain is already initialized");
 
     if (index_read_result)
-        readers.index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result));
+        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result));
+
+    for (const auto & heavy_index : heavy_indexes)
+        readers.heavy_indexes.push_back(createReaderForIndex(readers.main.get(), heavy_index));
 
     readers_chain = createReadersChain(readers, prewhere_actions, read_steps_performance_counters);
 }
