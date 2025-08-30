@@ -1639,7 +1639,6 @@ void HashJoin::validateAdditionalFilterExpression(ExpressionActionsPtr additiona
             && (isLeft(kind) || isRight(kind)))
         || (strictness == JoinStrictness::Any && (isInner(kind)));
 
-
     if (!is_supported)
     {
         throw Exception(
