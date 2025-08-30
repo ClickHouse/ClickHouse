@@ -192,6 +192,12 @@ void MergeTreeReaderStream::adjustRightMark(size_t right_mark)
     }
 }
 
+MarkInCompressedFile MergeTreeReaderStream::getMarkAtBeginning(size_t row_index)
+{
+    loadMarks();
+    return marks_getter->getMark(row_index, 0);
+}
+
 ReadBuffer * MergeTreeReaderStream::getDataBuffer()
 {
     init();

@@ -1857,20 +1857,25 @@ static void buildIndexes(
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
-        for (const auto& part : parts)
+        for (const auto & part : parts)
         {
-            auto &index_order = skip_indexes.per_part_index_orders.emplace_back();
+            auto & index_order = skip_indexes.per_part_index_orders.emplace_back();
             index_order.resize(skip_indexes.useful_indices.size());
             std::iota(index_order.begin(), index_order.end(), 0);
 
             index_sizes.clear();
 
-            for (const auto &idx : skip_indexes.useful_indices)
+            for (const auto & idx : skip_indexes.useful_indices)
             {
-                const auto *extension = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName()).extension;
-                auto sz = part.data_part->getFileSizeOrZero(idx.index->getFileName() + extension);
-                index_sizes.emplace_back(sz);
+                size_t index_size = 0;
+                auto format = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName());
+
+                for (const auto & substream : format.substreams)
+                    index_size += part.data_part->getFileSizeOrZero(idx.index->getFileName() + substream.suffix + substream.extension);
+
+                index_sizes.emplace_back(index_size);
             }
+
             // Move minmax indices to first positions, so they will be applied first as cheapest ones
             std::stable_sort(index_order.begin(), index_order.end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
             {
@@ -1900,9 +1905,7 @@ static void buildIndexes(
                 const auto r_size = idx_sizes[r];
 
                 return std::tie(l_index_priority, neg_l_granularity, l_size) < std::tie(r_index_priority, neg_r_granularity, r_size);
-
             });
-
         }
     }
 

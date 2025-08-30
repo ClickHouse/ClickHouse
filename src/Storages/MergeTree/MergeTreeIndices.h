@@ -88,15 +88,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-using MergeTreeIndexVersion = uint8_t;
-struct MergeTreeIndexFormat
-{
-    MergeTreeIndexVersion version;
-    IndexSubstreams substreams;
-
-    explicit operator bool() const { return version != 0; }
-};
-
 /// Stores some info about a single block of data.
 struct IMergeTreeIndexGranule
 {
@@ -124,7 +115,7 @@ struct IMergeTreeIndexGranule
     virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
 
     /// Deserialize with multiple streams.
-    virtual void deserializeBinaryWithMultipleStreams(IndexInputStreams & streams, MergeTreeIndexVersion version);
+    virtual void deserializeBinaryWithMultipleStreams(IndexInputStreams & streams, IndexDeserializationState & state);
 
     virtual bool empty() const = 0;
 

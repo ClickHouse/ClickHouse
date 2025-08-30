@@ -461,15 +461,15 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
             {
                 auto * search_function = typeid_cast<FunctionSearchImpl<traits::SearchAnyTraits> *>(adaptor->getFunction().get());
                 chassert(search_function != nullptr);
-                search_function->trySetGinFilterParameters(gin_filter_params);
-                search_function->trySetSearchTokens(search_tokens);
+                search_function->setTokenExtractor(token_extractor->clone());
+                search_function->setSearchTokens(search_tokens);
             }
             else
             {
                 auto * search_function = typeid_cast<FunctionSearchImpl<traits::SearchAllTraits> *>(adaptor->getFunction().get());
                 chassert(search_function != nullptr);
-                search_function->trySetGinFilterParameters(gin_filter_params);
-                search_function->trySetSearchTokens(search_tokens);
+                search_function->setTokenExtractor(token_extractor->clone());
+                search_function->setSearchTokens(search_tokens);
             }
         }
         return true;

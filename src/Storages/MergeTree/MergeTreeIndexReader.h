@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include "Formats/MarkInCompressedFile.h"
 
 
 namespace DB
@@ -24,7 +25,7 @@ public:
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         MergeTreeReaderSettings settings_);
 
-    void read(size_t mark, MergeTreeIndexGranulePtr & granule);
+    void read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule);
     void read(size_t mark, size_t current_granule_num, MergeTreeIndexBulkGranulesPtr & granules);
 
 private:
@@ -44,6 +45,7 @@ private:
     size_t stream_mark = 0;
 
     void initStreamIfNeeded();
+    std::map<IndexSubstream::Type, MarkInCompressedFile> getCurrentMarks(size_t mark_num);
 };
 
 }

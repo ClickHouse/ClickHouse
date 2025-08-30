@@ -12,7 +12,12 @@ namespace DB
 /// Interface for string parsers.
 struct ITokenExtractor
 {
+    ITokenExtractor() = default;
+    ITokenExtractor(const ITokenExtractor &) = default;
+    ITokenExtractor & operator=(const ITokenExtractor &) = default;
+
     virtual ~ITokenExtractor() = default;
+    virtual std::unique_ptr<ITokenExtractor> clone() const = 0;
 
     /// Fast inplace implementation for regular use.
     /// Gets string (data ptr and len) and start position for extracting next token (state of extractor).
@@ -86,6 +91,11 @@ using TokenExtractorPtr = const ITokenExtractor *;
 template <typename Derived>
 class ITokenExtractorHelper : public ITokenExtractor
 {
+    std::unique_ptr<ITokenExtractor> clone() const override
+    {
+        return std::make_unique<Derived>(*static_cast<const Derived *>(this));
+    }
+
     void stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const override
     {
         size_t cur = 0;

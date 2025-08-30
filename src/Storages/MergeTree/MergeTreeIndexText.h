@@ -2,11 +2,17 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Columns/IColumn.h>
 #include <Formats/MarkInCompressedFile.h>
-#include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 #include <Common/HashTable/HashMap.h>
+#include "Interpreters/GinQueryString.h"
+#include <Interpreters/BloomFilter.h>
+#include <Interpreters/ITokenExtractor.h>
+#include <absl/container/flat_hash_set.h>
 
 namespace DB
 {
+
+class MergeTreeIndexReader;
+class MergeTreeIndexConditionText;
 
 struct MergeTreeIndexTextParams
 {
@@ -24,29 +30,43 @@ struct DictionaryBlock
     ColumnPtr marks;
 
     bool empty() const;
+    size_t size() const;
+    MarkInCompressedFile getMark(size_t idx) const;
+
+    size_t lowerBound(const StringRef & token) const;
+    std::optional<size_t> binarySearch(const StringRef & token) const;
 };
 
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
+public:
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
     ~MergeTreeIndexGranuleText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
-    void deserializeBinaryWithMultipleStreams(IndexInputStreams & streams, MergeTreeIndexVersion version) override;
+    void deserializeBinaryWithMultipleStreams(IndexInputStreams & streams, IndexDeserializationState & state) override;
 
     bool empty() const override { return sparse_index.empty(); }
     size_t memoryUsageBytes() const override { return 0; }
+    bool hasAllTokensFromQuery(const GinQueryString & query) const;
+
+private:
+    void deserializeBloomFilter(ReadBuffer & istr);
+    void analyzeBloomFilter(const MergeTreeIndexConditionText & condition);
+    void analyzeDictionary(const MarkInCompressedFile & begin_mark, IndexReaderStream & stream);
 
     MergeTreeIndexTextParams params;
-    std::optional<BloomFilter> bloom_filter;
+    size_t total_rows = 0;
+    BloomFilter bloom_filter;
     DictionaryBlock sparse_index;
-    std::vector<DictionaryBlock> dictionary_blocks;
+    absl::flat_hash_map<StringRef, MarkInCompressedFile> remaining_tokens;
 };
 
 struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleTextWritable(
+        size_t dictionary_block_size_,
         size_t total_rows_,
         BloomFilter bloom_filter_,
         std::vector<StringRef> tokens_,
@@ -62,6 +82,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     bool empty() const override { return tokens.empty(); }
     size_t memoryUsageBytes() const override { return 0; }
 
+    size_t dictionary_block_size;
     size_t total_rows;
     BloomFilter bloom_filter;
     std::vector<StringRef> tokens;
@@ -85,7 +106,7 @@ struct MergeTreeIndexTextGranuleBuilder
 
     UInt64 current_row = 0;
     TokensMap tokens_map;
-    std::vector<roaring::Roaring> posting_lists;
+    std::list<roaring::Roaring> posting_lists;
     std::unique_ptr<Arena> arena;
 };
 

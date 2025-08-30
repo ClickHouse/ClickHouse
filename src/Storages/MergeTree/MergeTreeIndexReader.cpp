@@ -99,9 +99,26 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     version = index_format.version;
 }
 
-void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
+std::map<IndexSubstream::Type, MarkInCompressedFile> MergeTreeIndexReader::getCurrentMarks(size_t mark_num)
 {
-    auto load_func = [this, mark](auto & res)
+    std::map<IndexSubstream::Type, MarkInCompressedFile> res;
+
+    for (const auto & [type, stream] : streams)
+    {
+        /// Regular streams doesn't need marks to be saved,
+        /// because the index reader does seeks for them.
+        if (type == IndexSubstream::Type::Regular)
+            continue;
+
+        res[type] = stream->getMarkAtBeginning(mark_num);
+    }
+
+    return res;
+}
+
+void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule)
+{
+    auto load_func = [this, mark, condition](auto & res)
     {
         initStreamIfNeeded();
 
@@ -114,7 +131,12 @@ void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
         if (!res)
             res = index->createIndexGranule();
 
-        res->deserializeBinaryWithMultipleStreams(streams, version);
+        IndexDeserializationState state;
+        state.version = version;
+        state.condition = condition;
+        state.current_marks = getCurrentMarks(mark);
+
+        res->deserializeBinaryWithMultipleStreams(streams, state);
         stream_mark = mark + 1;
     };
 
