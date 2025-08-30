@@ -795,7 +795,10 @@ bool QueryOracle::findTablesWithPeersAndReplace(
             bool res = false;
             const ExprSchemaTable & est = torfunc.est();
 
-            if ((!est.has_database() || est.database().database() != "system") && est.table().table().at(0) == 't')
+            if ((!est.has_database()
+                 || (est.database().database() != "system" && est.database().database() != "INFORMATION_SCHEMA"
+                     && est.database().database() != "information_schema"))
+                && est.table().table().at(0) == 't')
             {
                 const uint32_t tname = gen.getIdentifierFromString(est.table().table());
 

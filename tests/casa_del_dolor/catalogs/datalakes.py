@@ -379,6 +379,9 @@ def get_spark(
     #    f"spark.sql.catalog.{catalog_name}.compression.enabled",
     #    random.choice(["true", "false"]),
     # )
+    # Support very old dates
+    builder.config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED")
+    builder.config("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED")
 
     # Random properties
     if random.randint(1, 100) <= 70:

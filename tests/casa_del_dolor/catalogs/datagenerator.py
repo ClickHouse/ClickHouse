@@ -69,8 +69,8 @@ class LakeDataGenerator:
         return date.fromordinal(self._rand_int(start, end))
 
     def _rand_timestamp(self):
-        start = datetime(1900, 1, 1)
-        end = datetime(2300, 12, 31)
+        start = datetime(1, 1, 1)
+        end = datetime(9999, 12, 31)
         delta = end - start
         secs = self._rand_int(0, int(delta.total_seconds()))
         micros = self._rand_int(0, 999999)

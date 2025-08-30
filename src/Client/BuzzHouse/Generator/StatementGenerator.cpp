@@ -4677,10 +4677,13 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::TABLE)
             {
                 const BackupRestoreObject & bro = bre.bobject();
+                const ExprSchemaTable & est = bro.object().est();
 
-                if (!bro.object().est().has_database() || bro.object().est().database().database() != "system")
+                if (!est.has_database()
+                    || (est.database().database() != "system" && est.database().database() != "INFORMATION_SCHEMA"
+                        && est.database().database() != "information_schema"))
                 {
-                    const uint32_t tname = getIdentifierFromString(bro.object().est().table().table());
+                    const uint32_t tname = getIdentifierFromString(est.table().table());
 
                     newb.tables[tname] = this->tables[tname];
                     if (bro.partitions_size())
@@ -4690,8 +4693,8 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 }
                 else
                 {
-                    newb.system_table_schema = bro.object().est().database().database();
-                    newb.system_table_name = bro.object().est().table().table();
+                    newb.system_table_schema = est.database().database();
+                    newb.system_table_name = est.table().table();
                 }
             }
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::VIEW)

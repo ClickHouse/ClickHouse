@@ -514,7 +514,7 @@ void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
     if (processServerQuery(
             false,
             fmt::format(
-                "SELECT c.database, c.name, c.name from system.columns c WHERE c.database IN ('system', 'INFORMATION_SCHEMA', "
+                "SELECT c.database, c.table, c.name from system.columns c WHERE c.database IN ('system', 'INFORMATION_SCHEMA', "
                 "'information_schema') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 fuzz_server_out.generic_string())))
     {
