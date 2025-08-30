@@ -1285,6 +1285,10 @@ namespace ErrorCodes
     Maximum amount of outdated parts leader will try to confirm for removal at
     one HTTP request. Only available in ClickHouse Cloud.
     )", 0) \
+    DECLARE(UInt64, shared_merge_tree_outdated_parts_group_size, 2, R"(
+    How many replicas will be in the same rendezvous hash group for outdated parts cleanup.
+    Only available in ClickHouse Cloud.
+    )", 0) \
     DECLARE(UInt64, shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold, 1000000, R"(
     Minimum size of part (in rows) to postpone assigning a next merge just after
     merging it locally. Only available in ClickHouse Cloud.
