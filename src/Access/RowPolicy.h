@@ -62,7 +62,7 @@ struct RowPolicy : public IAccessEntity
     RolesOrUsersSet to_roles;
 
 private:
-    void setName(const String &) override;
+    [[noreturn]] void setName(const String &) override;
 
     RowPolicyName full_name;
     bool restrictive = false;

@@ -14,13 +14,18 @@ namespace ErrorCodes
 namespace GatherUtils
 {
 
+[[noreturn]] inline void throwAcceptNotImplementedSink(const std::string & name)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Accept not implemented for {}", name);
+}
+
 struct IArraySink
 {
     virtual ~IArraySink() = default;
 
     virtual void accept(ArraySinkVisitor &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Accept not implemented for {}", demangle(typeid(*this).name()));
+        throwAcceptNotImplementedSink(demangle(typeid(*this).name()));
     }
 };
 

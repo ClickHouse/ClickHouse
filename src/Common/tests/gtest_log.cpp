@@ -184,7 +184,7 @@ public:
     {
     }
 
-    void log(const Poco::Message &) override { throw Poco::Exception("Exception from AlwaysFailingChannel"); }
+    [[noreturn]] void log(const Poco::Message &) override { throw Poco::Exception("Exception from AlwaysFailingChannel"); }
 };
 
 TEST(Logger, ExceptionsFromPocoLoggerAreNotPropagated)

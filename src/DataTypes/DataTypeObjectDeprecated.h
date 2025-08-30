@@ -28,7 +28,7 @@ public:
 
     MutableColumnPtr createColumn() const override { return ColumnObjectDeprecated::create(is_nullable); }
 
-    Field getDefault() const override
+    [[noreturn]] Field getDefault() const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDefault is not implemented for data type {}", getName());
     }

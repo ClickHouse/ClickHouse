@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using ConstArenaPtr = std::shared_ptr<const Arena>;
@@ -138,10 +133,7 @@ public:
 
     std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
-    bool isDefaultAt(size_t) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for ColumnAggregateFunction");
-    }
+    bool isDefaultAt(size_t) const override;
 
     StringRef getDataAt(size_t n) const override;
 
@@ -175,7 +167,7 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * src_arena) override;
 
-    const char * skipSerializedInArena(const char *) const override;
+    [[noreturn]] const char * skipSerializedInArena(const char *) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -223,15 +215,9 @@ public:
         return 0;
     }
 
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareColumn is not supported for ColumnAggregateFunction");
-    }
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override;
 
-    bool hasEqualValues() const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasEqualValues is not supported for ColumnAggregateFunction");
-    }
+    bool hasEqualValues() const override;
 
     double getRatioOfDefaultRows(double) const override
     {
@@ -243,10 +229,7 @@ public:
         return 0;
     }
 
-    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getIndicesOfNonDefaultRows is not supported for ColumnAggregateFunction");
-    }
+    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override;
 
     void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, Permutation & res) const override;

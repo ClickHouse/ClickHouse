@@ -56,6 +56,9 @@ namespace
     };
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-noreturn"
+
 size_t SeekableReadBuffer::getFileOffsetOfBufferEnd() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFileOffsetOfBufferEnd() not implemented");
@@ -65,6 +68,8 @@ size_t SeekableReadBuffer::readBigAt(char * /*to*/, size_t /*n*/, size_t /*offse
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() not implemented");
 }
+
+#pragma clang diagnostic pop
 
 
 std::optional<off_t> SeekableReadBuffer::tryGetPosition()

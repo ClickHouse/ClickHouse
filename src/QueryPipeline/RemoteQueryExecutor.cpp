@@ -660,7 +660,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
         case Protocol::Server::Exception:
             got_exception_from_replica = true;
             packet.exception->rethrow();
-            break;
 
         case Protocol::Server::EndOfStream:
             if (!connections->hasActiveConnections())
@@ -815,7 +814,6 @@ void RemoteQueryExecutor::finish()
             case Protocol::Server::Exception:
                 got_exception_from_replica = true;
                 packet.exception->rethrow();
-                break;
 
             case Protocol::Server::Log:
                 /// Pass logs from remote server to client

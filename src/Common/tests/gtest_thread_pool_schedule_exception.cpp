@@ -17,7 +17,7 @@ static bool check()
     ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 10);
 
     /// The throwing thread.
-    pool.scheduleOrThrowOnError([] { throw std::runtime_error("Hello, world!"); });
+    pool.scheduleOrThrowOnError([][[noreturn]] { throw std::runtime_error("Hello, world!"); });
 
     try
     {
@@ -58,7 +58,7 @@ static bool check2()
 
     try
     {
-        pool.scheduleOrThrowOnError([&]{ throw std::runtime_error("Hello, world!"); });
+        pool.scheduleOrThrowOnError([&][[noreturn]]{ throw std::runtime_error("Hello, world!"); });
         pool.scheduleOrThrowOnError([]{});
     }
     catch (const std::runtime_error &)

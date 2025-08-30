@@ -4,11 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /// Step which has single input and single output data stream.
 /// It doesn't mean that pipeline has single port before or after such step.
 class ITransformingStep : public IQueryPlanStep
@@ -62,10 +57,7 @@ public:
 
     /// Enforcement is supposed to be done through the special settings that will be taken into account by remote nodes during query planning (e.g. force_aggregation_in_order).
     /// Should be called only if data_stream_traits.can_enforce_sorting_properties_in_distributed_query == true.
-    virtual void adjustSettingsToEnforceSortingPropertiesInDistributedQuery(ContextMutablePtr) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
-    }
+    virtual void adjustSettingsToEnforceSortingPropertiesInDistributedQuery(ContextMutablePtr) const;
 
 protected:
     TransformTraits transform_traits;

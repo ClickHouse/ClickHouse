@@ -40,7 +40,7 @@ public:
 
     const String & getPath() const override { return root_path; }
 
-    ReservationPtr reserve(UInt64 bytes) override;
+    [[noreturn]] ReservationPtr reserve(UInt64 bytes) override;
 
     std::optional<UInt64> getTotalSpace() const override;
     std::optional<UInt64> getAvailableSpace() const override;
@@ -56,19 +56,19 @@ public:
 
     void createDirectories(const String & path) override;
 
-    void clearDirectory(const String & path) override;
+    [[noreturn]] void clearDirectory(const String & path) override;
 
-    void moveDirectory(const String & from_path, const String & to_path) override;
+    [[noreturn]] void moveDirectory(const String & from_path, const String & to_path) override;
 
     DirectoryIteratorPtr iterateDirectory(const String & path) const override;
 
-    void createFile(const String & path) override;
+    [[noreturn]] void createFile(const String & path) override;
 
-    void moveFile(const String & from_path, const String & to_path) override;
+    [[noreturn]] void moveFile(const String & from_path, const String & to_path) override;
 
-    void replaceFile(const String & from_path, const String & to_path) override;
+    [[noreturn]] void replaceFile(const String & from_path, const String & to_path) override;
 
-    void copyDirectoryContent(
+    [[noreturn]] void copyDirectoryContent(
         const String & from_dir,
         const std::shared_ptr<IDisk> & to_disk,
         const String & to_dir,
@@ -84,20 +84,20 @@ public:
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const override;
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+    [[noreturn]] std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
         WriteMode mode,
         const WriteSettings & settings) override;
 
-    Strings getBlobPath(const String & path) const override;
+    [[noreturn]] Strings getBlobPath(const String & path) const override;
     bool areBlobPathsRandom() const override { return false; }
-    void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
+    [[noreturn]] void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 
-    void removeFile(const String & path) override;
-    void removeFileIfExists(const String & path) override;
-    void removeDirectory(const String & path) override;
-    void removeRecursive(const String & path) override;
+    [[noreturn]] void removeFile(const String & path) override;
+    [[noreturn]] void removeFileIfExists(const String & path) override;
+    [[noreturn]] void removeDirectory(const String & path) override;
+    [[noreturn]] void removeRecursive(const String & path) override;
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
@@ -107,9 +107,9 @@ public:
 
     void setReadOnly(const String & path) override;
 
-    void createHardLink(const String & src_path, const String & dst_path) override;
+    [[noreturn]] void createHardLink(const String & src_path, const String & dst_path) override;
 
-    void truncateFile(const String & path, size_t size) override;
+    [[noreturn]] void truncateFile(const String & path, size_t size) override;
 
     DataSourceDescription getDataSourceDescription() const override;
 
@@ -117,9 +117,9 @@ public:
 
     bool supportZeroCopyReplication() const override { return false; }
 
-    SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
+    [[noreturn]] SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &) override;
+    [[noreturn]] void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &) override;
 
     bool isBroken() const override { return false; }
 

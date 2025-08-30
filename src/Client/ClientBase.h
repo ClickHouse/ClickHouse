@@ -44,11 +44,6 @@ static const NameSet exit_strings
     "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
 };
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 enum MultiQueryProcessingStage
 {
     QUERIES_END,
@@ -105,10 +100,7 @@ public:
     /// Returns true if query succeeded
     bool processTextAsSingleQuery(const String & full_query);
 
-    virtual bool tryToReconnect(const uint32_t, const uint32_t)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reconnection is not implemented");
-    }
+    virtual bool tryToReconnect(uint32_t, uint32_t);
 protected:
     void runInteractive();
     void runNonInteractive();
@@ -119,15 +111,8 @@ protected:
     /// This is the analogue of Poco::Application::config()
     virtual Poco::Util::LayeredConfiguration & getClientConfiguration() = 0;
 
-    virtual bool processWithASTFuzzer(std::string_view)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
-    }
-
-    virtual bool buzzHouse()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
-    }
+    virtual bool processWithASTFuzzer(std::string_view);
+    virtual bool buzzHouse();
 
     virtual void connect() = 0;
     virtual void processError(std::string_view query) const = 0;

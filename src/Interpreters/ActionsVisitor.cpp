@@ -343,7 +343,7 @@ ColumnsWithTypeAndName createBlockForSet(
     const size_t left_type_depth = getTypeDepth(left_arg_type);
     const size_t right_type_depth = getTypeDepth(right_arg_type);
 
-    auto throw_unsupported_type = [](const auto & type)
+    auto throw_unsupported_type = [][[noreturn]] (const auto & type)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported value type at the right-side of IN: {}.",
             type->getName());

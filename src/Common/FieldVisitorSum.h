@@ -22,17 +22,17 @@ public:
     bool operator() (UInt64 & x) const;
     bool operator() (Float64 & x) const;
     bool operator() (Null &) const;
-    bool operator() (String &) const;
-    bool operator() (Array &) const;
-    bool operator() (Tuple &) const;
-    bool operator() (Map &) const;
-    bool operator() (Object &) const;
-    bool operator() (UUID &) const;
-    bool operator() (IPv4 &) const;
-    bool operator() (IPv6 &) const;
-    bool operator() (AggregateFunctionStateData &) const;
-    bool operator() (CustomType &) const;
-    bool operator() (bool &) const;
+    [[noreturn]] bool operator() (String &) const;
+    [[noreturn]] bool operator() (Array &) const;
+    [[noreturn]] bool operator() (Tuple &) const;
+    [[noreturn]] bool operator() (Map &) const;
+    [[noreturn]] bool operator() (Object &) const;
+    [[noreturn]] bool operator() (UUID &) const;
+    [[noreturn]] bool operator() (IPv4 &) const;
+    [[noreturn]] bool operator() (IPv6 &) const;
+    [[noreturn]] bool operator() (AggregateFunctionStateData &) const;
+    [[noreturn]] bool operator() (CustomType &) const;
+    [[noreturn]] bool operator() (bool &) const;
 
     template <typename T>
     bool operator() (DecimalField<T> & x) const

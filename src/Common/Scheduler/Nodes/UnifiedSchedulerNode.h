@@ -534,7 +534,7 @@ protected: // Hide all the ISchedulerNode interface methods as an implementation
         return type_name;
     }
 
-    bool equals(ISchedulerNode *) override
+    [[noreturn]] bool equals(ISchedulerNode *) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "UnifiedSchedulerNode should not be used with CustomResourceManager");
     }

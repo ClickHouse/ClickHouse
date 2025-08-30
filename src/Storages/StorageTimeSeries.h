@@ -50,7 +50,7 @@ public:
     void startup() override;
     void shutdown(bool is_drop) override;
 
-    void read(
+    [[noreturn]] void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -60,7 +60,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
+    [[noreturn]] SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
     bool optimize(
         const ASTPtr & query,
@@ -77,7 +77,7 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
-    void renameInMemory(const StorageID & new_table_id) override;
+    [[noreturn]] void renameInMemory(const StorageID & new_table_id) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
     void alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & table_lock_holder) override;

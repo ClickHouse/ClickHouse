@@ -23,7 +23,7 @@ public:
 
     StorageInMemoryMetadata getInMemoryMetadata() const override;
     StorageMetadataPtr getInMemoryMetadataPtr() const override;
-    void alter(const AlterCommands &, ContextPtr, AlterLockHolder &) override;
+    [[noreturn]] void alter(const AlterCommands &, ContextPtr, AlterLockHolder &) override;
 
     static void modifyContextByQueryAST(ASTPtr query, ContextMutablePtr context);
 private:

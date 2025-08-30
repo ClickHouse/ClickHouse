@@ -91,24 +91,44 @@ void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
     }
 }
 
-UInt64 IStatistics::estimateCardinality() const
+[[noreturn]] static void throwCardinalityEstimationNotImplemented()
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cardinality estimation is not implemented for this type of statistics");
 }
 
-Float64 IStatistics::estimateEqual(const Field & /*val*/) const
+[[noreturn]] static void throwEqualityEstimationNotImplemented()
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Equality estimation is not implemented for this type of statistics");
 }
 
-Float64 IStatistics::estimateLess(const Field & /*val*/) const
+[[noreturn]] static void throwLessThanEstimationNotImplemented()
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Less-than estimation is not implemented for this type of statistics");
 }
 
-Float64 IStatistics::estimateRange(const Range & /*range*/) const
+[[noreturn]] static void throwRangeEstimationNotImplemented()
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Range estimation is not implemented for this type of statistics");
+}
+
+UInt64 IStatistics::estimateCardinality() const
+{
+    throwCardinalityEstimationNotImplemented();
+}
+
+Float64 IStatistics::estimateEqual(const Field & /*val*/) const
+{
+    throwEqualityEstimationNotImplemented();
+}
+
+Float64 IStatistics::estimateLess(const Field & /*val*/) const
+{
+    throwLessThanEstimationNotImplemented();
+}
+
+Float64 IStatistics::estimateRange(const Range & /*range*/) const
+{
+    throwRangeEstimationNotImplemented();
 }
 
 /// Notes:

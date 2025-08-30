@@ -252,7 +252,7 @@ public:
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
-    void gather(ColumnGathererStream &) override;
+    [[noreturn]] void gather(ColumnGathererStream &) override;
 
     void getExtremes(Field & min, Field & max) const override
     {

@@ -91,7 +91,7 @@ struct DummyJSONParser
     };
 
     /// Parses a JSON document, returns the reference to its root element if succeeded.
-    bool parse(std::string_view, Element &);
+    [[noreturn]] bool parse(std::string_view, Element &);
 
 #if 0
     /// Optional: Allocates memory to parse JSON documents faster.

@@ -52,12 +52,15 @@ public:
     virtual DiskPtr getDisk() const { return nullptr; }
 
     virtual bool isReference() const { return false; }
-    virtual String getReferenceTarget() const
+    virtual String getReferenceTarget() const { throwGetReferenceTargetNotImplemented(); }
+
+    virtual DataSourceDescription getDataSourceDescription() const = 0;
+
+private:
+    [[noreturn]] inline void throwGetReferenceTargetNotImplemented() const
     {
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "getReferenceTarget not implemented for the backup entry");
     }
-
-    virtual DataSourceDescription getDataSourceDescription() const = 0;
 };
 
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;

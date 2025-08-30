@@ -155,7 +155,7 @@ inline int Exception::code() const
         const char * name() const throw(); \
         const char * className() const throw(); \
         Poco::Exception * clone() const; \
-        void rethrow() const; \
+        [[noreturn]] void rethrow() const; \
     };
 
 #define POCO_DECLARE_EXCEPTION(API, CLS, BASE) POCO_DECLARE_EXCEPTION_CODE(API, CLS, BASE, 0)

@@ -85,7 +85,7 @@ public:
 
     void drop() override;
 
-    Pipe read(
+    [[noreturn]] Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,

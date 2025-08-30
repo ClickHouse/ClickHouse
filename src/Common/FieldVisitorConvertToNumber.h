@@ -21,32 +21,32 @@ template <typename T>
 class FieldVisitorConvertToNumber : public StaticVisitor<T>
 {
 public:
-    T operator() (const Null &) const
+    [[noreturn]] T operator() (const Null &) const
     {
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert NULL to {}", demangle(typeid(T).name()));
     }
 
-    T operator() (const String &) const
+    [[noreturn]] T operator() (const String &) const
     {
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert String to {}", demangle(typeid(T).name()));
     }
 
-    T operator() (const Array &) const
+    [[noreturn]] T operator() (const Array &) const
     {
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert Array to {}", demangle(typeid(T).name()));
     }
 
-    T operator() (const Tuple &) const
+    [[noreturn]] T operator() (const Tuple &) const
     {
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert Tuple to {}", demangle(typeid(T).name()));
     }
 
-    T operator() (const Map &) const
+    [[noreturn]] T operator() (const Map &) const
     {
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert Map to {}", demangle(typeid(T).name()));
     }
 
-    T operator() (const Object &) const
+    [[noreturn]] T operator() (const Object &) const
     {
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert Object to {}", demangle(typeid(T).name()));
     }
@@ -95,12 +95,12 @@ public:
             return (x.getValue() / x.getScaleMultiplier()).template convertTo<T>();
     }
 
-    T operator() (const AggregateFunctionStateData &) const
+    [[noreturn]] T operator() (const AggregateFunctionStateData &) const
     {
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert AggregateFunctionStateData to {}", demangle(typeid(T).name()));
     }
 
-    T operator() (const CustomType &) const
+    [[noreturn]] T operator() (const CustomType &) const
     {
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert CustomType to {}", demangle(typeid(T).name()));
     }

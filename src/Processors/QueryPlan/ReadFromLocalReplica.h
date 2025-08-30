@@ -13,7 +13,7 @@ public:
 
     String getName() const override { return "ReadFromLocalReplica"; }
 
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    [[noreturn]] void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     QueryPlanPtr extractQueryPlan();
 

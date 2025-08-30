@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int IO_URING_INIT_FAILED;
     extern const int IO_URING_SUBMIT_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 IOUringReader::IOUringReader(uint32_t entries_)
@@ -348,6 +349,9 @@ IOUringReader::~IOUringReader()
 
     io_uring_queue_exit(&ring);
 }
+
+[[noreturn]] inline void throwExecuteNotSupported() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `execute` not implemented for IOUringReader"); }
+IOUringReader::Result IOUringReader::execute(Request /* request */) { throwExecuteNotSupported(); }
 
 }
 #endif

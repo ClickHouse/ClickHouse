@@ -70,7 +70,7 @@ public:
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
-    MergeTreeIndexConditionPtr createIndexCondition(
+    [[noreturn]] MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     MergeTreeIndexMergedConditionPtr createIndexMergedCondition(

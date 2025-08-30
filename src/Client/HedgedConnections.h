@@ -95,12 +95,12 @@ public:
 
     void sendQueryPlan(const QueryPlan & query_plan) override;
 
-    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
+    [[noreturn]] void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
     }
 
-    void sendMergeTreeReadTaskResponse(const ParallelReadResponse &) override
+    [[noreturn]] void sendMergeTreeReadTaskResponse(const ParallelReadResponse &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendMergeTreeReadTaskResponse in not supported with HedgedConnections");
     }
@@ -109,7 +109,7 @@ public:
 
     Packet receivePacketUnlocked(AsyncCallback async_callback) override;
 
-    UInt64 receivePacketTypeUnlocked(AsyncCallback async_callback) override;
+    [[noreturn]] UInt64 receivePacketTypeUnlocked(AsyncCallback async_callback) override;
 
     void disconnect() override;
 

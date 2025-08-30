@@ -99,7 +99,7 @@ struct LowerUpperUTF8Impl
         res_data.resize(curr_offset);
     }
 
-    static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Functions lowerUTF8 and upperUTF8 cannot work with FixedString argument");
     }

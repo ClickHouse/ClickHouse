@@ -601,7 +601,7 @@ public:
         return false;
     }
 
-    bool operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compare AggregateFunctionStates"); }
+    [[noreturn]] bool operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compare AggregateFunctionStates"); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }
     bool operator() (Tuple & x) const { return compareImpl<Tuple>(x); }
@@ -642,7 +642,7 @@ public:
         return false;
     }
 
-    bool operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum AggregateFunctionStates"); }
+    [[noreturn]] bool operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum AggregateFunctionStates"); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }
     bool operator() (Tuple & x) const { return compareImpl<Tuple>(x); }

@@ -67,7 +67,7 @@ public:
 
     String getName() const override { return "DelayedCreatingSets"; }
 
-    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &) override;
+    [[noreturn]] QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &) override;
 
     static std::vector<std::unique_ptr<QueryPlan>> makePlansForSets(
         DelayedCreatingSetsStep && step,

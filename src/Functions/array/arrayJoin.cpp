@@ -61,7 +61,7 @@ public:
 
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[noreturn]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         throw Exception(ErrorCodes::FUNCTION_IS_SPECIAL, "Function {} must not be executed directly.", getName());
     }

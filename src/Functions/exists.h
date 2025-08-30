@@ -23,7 +23,7 @@ class FunctionExists : public IFunction
 public:
     String getName() const override { return "exists"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/, size_t  /*input_rows_count*/) const override
+    [[noreturn]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/, size_t  /*input_rows_count*/) const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Function 'exists' is not supposed to be executed");
     }

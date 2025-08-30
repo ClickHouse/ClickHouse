@@ -941,9 +941,14 @@ OpNum ZooKeeperWatchResponse::getOpNum() const
     throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "OpNum for watch response doesn't exist");
 }
 
-void ZooKeeperCloseResponse::readImpl(ReadBuffer &)
+[[noreturn]] inline void throwReceivedResponseForCloseRequest()
 {
     throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "Received response for close request");
+}
+
+void ZooKeeperCloseResponse::readImpl(ReadBuffer &)
+{
+    throwReceivedResponseForCloseRequest();
 }
 
 ZooKeeperResponsePtr ZooKeeperHeartbeatRequest::makeResponse() const { return std::make_shared<ZooKeeperHeartbeatResponse>(); }

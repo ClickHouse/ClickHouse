@@ -87,7 +87,7 @@ namespace
         String doGetName() const override { return finalize()->getName(); }
         TypeIndex getTypeId() const override { return TypeIndex::JSONPaths; }
 
-        bool isParametric() const override
+        [[noreturn]] bool isParametric() const override
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isParametric is not implemented for JSONObjectForInference type");
         }

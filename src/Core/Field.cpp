@@ -31,24 +31,44 @@ extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-bool AggregateFunctionStateData::operator < (const AggregateFunctionStateData &) const
+[[noreturn]] static void throwOperatorLessNotImplemented()
 {
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator < is not implemented for AggregateFunctionStateData.");
 }
 
-bool AggregateFunctionStateData::operator <= (const AggregateFunctionStateData &) const
+[[noreturn]] static void throwOperatorLessEqualNotImplemented()
 {
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator <= is not implemented for AggregateFunctionStateData.");
 }
 
-bool AggregateFunctionStateData::operator > (const AggregateFunctionStateData &) const
+[[noreturn]] static void throwOperatorGreaterNotImplemented()
 {
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator > is not implemented for AggregateFunctionStateData.");
 }
 
-bool AggregateFunctionStateData::operator >= (const AggregateFunctionStateData &) const
+[[noreturn]] static void throwOperatorGreaterEqualNotImplemented()
 {
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator >= is not implemented for AggregateFunctionStateData.");
+}
+
+bool AggregateFunctionStateData::operator < (const AggregateFunctionStateData &) const
+{
+    throwOperatorLessNotImplemented();
+}
+
+bool AggregateFunctionStateData::operator <= (const AggregateFunctionStateData &) const
+{
+    throwOperatorLessEqualNotImplemented();
+}
+
+bool AggregateFunctionStateData::operator > (const AggregateFunctionStateData &) const
+{
+    throwOperatorGreaterNotImplemented();
+}
+
+bool AggregateFunctionStateData::operator >= (const AggregateFunctionStateData &) const
+{
+    throwOperatorGreaterEqualNotImplemented();
 }
 
 bool AggregateFunctionStateData::operator == (const AggregateFunctionStateData & rhs) const
@@ -541,7 +561,7 @@ String Field::dump() const
 
 Field Field::restoreFromDump(std::string_view dump_)
 {
-    auto show_error = [&dump_]
+    auto show_error = [&dump_] [[noreturn]]
     {
         throw Exception(ErrorCodes::CANNOT_RESTORE_FROM_FIELD_DUMP, "Couldn't restore Field from dump: {}", String{dump_});
     };

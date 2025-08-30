@@ -24,11 +24,11 @@ public:
     void removeEmptyDirectories() override;
 
     bool fileExists(const String & file_name) override;
-    UInt64 getFileSize(const String & file_name) override;
+    [[noreturn]] UInt64 getFileSize(const String & file_name) override;
     bool fileContentsEqual(const String & file_name, const String & expected_file_contents) override;
 
 private:
-    std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
+    [[noreturn]] std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
 };
 
 }

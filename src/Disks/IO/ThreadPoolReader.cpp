@@ -77,7 +77,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
-
+    extern const int NOT_IMPLEMENTED;
 }
 
 #if defined(OS_LINUX)
@@ -253,5 +253,8 @@ void ThreadPoolReader::wait()
 {
     pool->wait();
 }
+
+[[noreturn]] inline void throwExecuteNotImplemented() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `execute` not implemented for ThreadpoolReader"); }
+ThreadPoolReader::Result ThreadPoolReader::execute(Request /* request */) { throwExecuteNotImplemented(); }
 
 }

@@ -38,12 +38,12 @@ public:
 
     bool hasEqualValues() const override { return true; }
 
-    Field operator[](size_t) const override;
-    void get(size_t, Field &) const override;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
-    void insert(const Field &) override;
+    [[noreturn]] Field operator[](size_t) const override;
+    [[noreturn]] void get(size_t, Field &) const override;
+    [[noreturn]] std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
+    [[noreturn]] void insert(const Field &) override;
     bool tryInsert(const Field &) override { return false; }
-    bool isDefaultAt(size_t) const override;
+    [[noreturn]] bool isDefaultAt(size_t) const override;
 
     StringRef getDataAt(size_t) const override
     {
@@ -112,10 +112,10 @@ public:
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
-    double getRatioOfDefaultRows(double) const override;
-    UInt64 getNumberOfDefaultRows() const override;
-    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override;
-    void gather(ColumnGathererStream &) override;
+    [[noreturn]] double getRatioOfDefaultRows(double) const override;
+    [[noreturn]] UInt64 getNumberOfDefaultRows() const override;
+    [[noreturn]] void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override;
+    [[noreturn]] void gather(ColumnGathererStream &) override;
 
     void getExtremes(Field &, Field &) const override
     {

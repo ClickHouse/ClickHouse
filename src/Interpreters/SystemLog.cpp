@@ -94,13 +94,13 @@ namespace
 
         String getID(char) const override { return "Storage with comment definition"; }
 
-        ASTPtr clone() const override
+        [[noreturn]] ASTPtr clone() const override
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method clone is not supported");
         }
 
     protected:
-        void formatImpl(WriteBuffer &, const FormatSettings &, FormatState &, FormatStateStacked) const override
+        [[noreturn]] void formatImpl(WriteBuffer &, const FormatSettings &, FormatState &, FormatStateStacked) const override
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported");
         }

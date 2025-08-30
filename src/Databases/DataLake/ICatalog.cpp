@@ -234,19 +234,34 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     return changes;
 }
 
-void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
+[[noreturn]] static void throwCreateTableNotImplemented()
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");
 }
 
-bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const
+[[noreturn]] static void throwUpdateMetadataNotImplemented()
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
 }
 
-void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/) const
+[[noreturn]] static void throwDropTableNotImplemented()
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");
+}
+
+void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
+{
+    throwCreateTableNotImplemented();
+}
+
+bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const
+{
+    throwUpdateMetadataNotImplemented();
+}
+
+void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/) const
+{
+    throwDropTableNotImplemented();
 }
 
 }

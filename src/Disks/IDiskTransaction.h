@@ -40,10 +40,12 @@ public:
 
     virtual void undo() = 0;
 
-    virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &)
+    [[noreturn]] inline void throwCommitWithZKNotImplemented()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Commit with ZK connection not implemented");
     }
+
+    virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &) { throwCommitWithZKNotImplemented(); }
 
     virtual ~IDiskTransaction() = default;
 

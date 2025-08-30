@@ -322,12 +322,16 @@ std::unique_lock<std::mutex> NamedCollection::lock()
     return std::unique_lock(mutex);
 }
 
-
-void NamedCollection::update(const ASTAlterNamedCollectionQuery & /*query*/)
+[[noreturn]] inline void throwUpdateNotImplemented()
 {
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED,
         "update() not implemented for NamedCollection base class.");
+}
+
+void NamedCollection::update(const ASTAlterNamedCollectionQuery & /*query*/)
+{
+    throwUpdateNotImplemented();
 }
 
 NamedCollectionFromConfig::NamedCollectionFromConfig(

@@ -68,6 +68,12 @@ struct IReadBufferIterator
     /// copying data.
     virtual std::unique_ptr<ReadBuffer> recreateLastReadBuffer()
     {
+        throwRecreateLastBufferNotImplemented();
+    }
+
+private:
+    [[noreturn]] inline void throwRecreateLastBufferNotImplemented()
+    {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method recreateLastReadBuffer is not implemented");
     }
 };

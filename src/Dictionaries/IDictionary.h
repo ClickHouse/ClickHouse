@@ -221,6 +221,13 @@ public:
         return result;
     }
 
+    [[noreturn]] inline void throwGetColumnAllValuesNotSupported() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Method getColumnAllValues is not supported for {} dictionary.",
+                        getDictionaryID().getNameForLogs());
+    }
+
     /**
      * Analogous to getColumn, but for dictGetAll
      */
@@ -232,9 +239,7 @@ public:
         const ColumnPtr & default_values_column [[maybe_unused]],
         size_t limit [[maybe_unused]]) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method getColumnAllValues is not supported for {} dictionary.",
-                        getDictionaryID().getNameForLogs());
+        throwGetColumnAllValuesNotSupported();
     }
 
     /**
@@ -276,12 +281,24 @@ public:
 
     virtual bool hasHierarchy() const { return false; }
 
+    [[noreturn]] inline void throwGetHierarchyNotSupported() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Method getHierarchy is not supported for {} dictionary.",
+                        getDictionaryID().getNameForLogs());
+    }
+
     virtual ColumnPtr getHierarchy(
         ColumnPtr key_column [[maybe_unused]],
         const DataTypePtr & key_type [[maybe_unused]]) const
     {
+        throwGetHierarchyNotSupported();
+    }
+
+    [[noreturn]] inline void throwIsInHierarchyNotSupported() const
+    {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method getHierarchy is not supported for {} dictionary.",
+                        "Method isInHierarchy is not supported for {} dictionary.",
                         getDictionaryID().getNameForLogs());
     }
 
@@ -290,21 +307,31 @@ public:
         ColumnPtr in_key_column [[maybe_unused]],
         const DataTypePtr & key_type [[maybe_unused]]) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method isInHierarchy is not supported for {} dictionary.",
-                        getDictionaryID().getNameForLogs());
+        throwIsInHierarchyNotSupported();
     }
 
-    virtual DictionaryHierarchicalParentToChildIndexPtr getHierarchicalIndex() const
+    [[noreturn]] inline void throwGetHierarchicalIndexNotSupported() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Method getHierarchicalIndex is not supported for {} dictionary.",
                         getDictionaryID().getNameForLogs());
     }
 
+    virtual DictionaryHierarchicalParentToChildIndexPtr getHierarchicalIndex() const
+    {
+        throwGetHierarchicalIndexNotSupported();
+    }
+
     virtual size_t getHierarchicalIndexBytesAllocated() const
     {
         return 0;
+    }
+
+    [[noreturn]] inline void throwgetDescendantsNotSupported() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Method getDescendants is not supported for {} dictionary.",
+                        getDictionaryID().getNameForLogs());
     }
 
     virtual ColumnPtr getDescendants(
@@ -313,9 +340,7 @@ public:
         size_t level [[maybe_unused]],
         DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index [[maybe_unused]]) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method getDescendants is not supported for {} dictionary.",
-                        getDictionaryID().getNameForLogs());
+        throwgetDescendantsNotSupported();
     }
 
     virtual Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const = 0;

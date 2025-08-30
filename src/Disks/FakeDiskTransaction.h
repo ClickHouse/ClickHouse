@@ -140,7 +140,7 @@ public:
         disk.createHardLink(src_path, dst_path);
     }
 
-    void truncateFile(const std::string & /* src_path */, size_t /* target_size */) override
+    [[noreturn]] void truncateFile(const std::string & /* src_path */, size_t /* target_size */) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation `truncateFile` is not implemented");
     }

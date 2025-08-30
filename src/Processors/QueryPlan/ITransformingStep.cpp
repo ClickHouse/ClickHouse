@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 ITransformingStep::ITransformingStep(SharedHeader input_header, SharedHeader output_header_, Traits traits, bool collect_processors_)
     : transform_traits(std::move(traits.transform_traits))
     , collect_processors(collect_processors_)
@@ -31,5 +36,12 @@ void ITransformingStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
 }
+
+[[noreturn]] inline void throwNotImplemented()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+}
+
+void ITransformingStep::adjustSettingsToEnforceSortingPropertiesInDistributedQuery(ContextMutablePtr) const { throwNotImplemented(); }
 
 }

@@ -195,7 +195,7 @@ public:
 
     bool isSystemStorage() const override { return true; }
 
-    void checkAlterIsPossible(const AlterCommands &, ContextPtr) const override
+    [[noreturn]] void checkAlterIsPossible(const AlterCommands &, ContextPtr) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alters of system tables are not supported");
     }

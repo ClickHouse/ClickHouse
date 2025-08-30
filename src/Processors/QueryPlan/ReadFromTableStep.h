@@ -12,7 +12,7 @@ public:
 
     String getName() const override { return "ReadFromTable"; }
 
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    [[noreturn]] void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void serialize(Serialization & ctx) const override;
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);

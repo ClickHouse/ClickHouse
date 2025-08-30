@@ -87,7 +87,7 @@ public:
             getDictionaryID(), structure, source_ptr->clone(), configuration, use_vectorscan, flag_case_insensitive, flag_dotall);
     }
 
-    ColumnUInt8::Ptr hasKeys(const Columns &, const DataTypes &) const override
+    [[noreturn]] ColumnUInt8::Ptr hasKeys(const Columns &, const DataTypes &) const override
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Dictionary {} does not support method `hasKeys`", name);
     }

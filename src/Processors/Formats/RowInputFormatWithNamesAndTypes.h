@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class FormatWithNamesAndTypesReader;
 
 /// Base class for input formats with -WithNames and -WithNamesAndTypes suffixes.
@@ -105,10 +100,7 @@ public:
     virtual std::vector<String> readTypes() = 0;
 
     /// Read row with raw values.
-    virtual std::vector<String> readRowForHeaderDetection()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetFieldsAndDataTypes is not implemented for format reader");
-    }
+    virtual std::vector<String> readRowForHeaderDetection();
 
     /// Skip single field, it's used to skip unknown columns.
     virtual void skipField(size_t file_column) = 0;
@@ -117,15 +109,8 @@ public:
     /// Skip the whole row with types.
     virtual void skipTypes() = 0;
 
-    virtual size_t countRows(size_t /*max_block_size*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method countRows is not implemented for format reader");
-    }
-
-    virtual void skipRow()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipRow is not implemented for format reader");
-    }
+    virtual size_t countRows(size_t /*max_block_size*/);
+    virtual void skipRow();
 
     /// Skip delimiters, if any.
     virtual void skipPrefixBeforeHeader() {}
@@ -138,7 +123,7 @@ public:
     virtual bool checkForSuffix() { return in->eof(); }
 
     /// Check if we are at the end of row, not between fields.
-    virtual bool checkForEndOfRow() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method checkForEndOfRow is not implemented"); }
+    virtual bool checkForEndOfRow();
 
     const FormatSettings & getFormatSettings() const { return format_settings; }
 
@@ -146,10 +131,7 @@ public:
 
     virtual ~FormatWithNamesAndTypesReader() = default;
 
-    virtual FormatSettings::EscapingRule getEscapingRule() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Format reader doesn't have an escaping rule");
-    }
+    virtual FormatSettings::EscapingRule getEscapingRule() const;
 
 protected:
     ReadBuffer * in;
@@ -181,16 +163,10 @@ public:
 protected:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 
-    virtual std::optional<DataTypes> readRowAndGetDataTypesImpl()
-    {
-        throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetDataTypesImpl is not implemented"};
-    }
+    virtual std::optional<DataTypes> readRowAndGetDataTypesImpl();
 
     /// Return column fields with inferred types. In case of no more rows, return nullopt.
-    virtual std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes()
-    {
-        throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetFieldsAndDataTypes is not implemented"};
-    }
+    virtual std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes();
 
     bool with_names;
     bool with_types;

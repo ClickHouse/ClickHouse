@@ -401,14 +401,24 @@ CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in, bool allow_d
 {
 }
 
-void CompressedReadBufferBase::seek(size_t, size_t)
+[[noreturn]] inline void throwSeekNotImplemented()
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedReadBufferBase does not implements seek");
 }
 
-off_t CompressedReadBufferBase::getPosition() const
+[[noreturn]] inline void throwGetPositionNotImplemented()
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedReadBufferBase does not implement getPosition");
+}
+
+void CompressedReadBufferBase::seek(size_t, size_t)
+{
+    throwSeekNotImplemented();
+}
+
+off_t CompressedReadBufferBase::getPosition() const
+{
+    throwGetPositionNotImplemented();
 }
 
 CompressedReadBufferBase::~CompressedReadBufferBase() = default; /// Proper destruction of unique_ptr of forward-declared type.

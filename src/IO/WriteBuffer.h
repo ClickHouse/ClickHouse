@@ -138,7 +138,7 @@ private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).
       * Throw an exception if something is wrong.
       */
-    virtual void nextImpl();
+    [[noreturn]] virtual void nextImpl();
 
     bool isStackUnwinding() const
     {

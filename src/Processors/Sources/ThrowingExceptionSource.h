@@ -21,7 +21,7 @@ public:
     String getName() const override { return "ThrowingExceptionSource"; }
 
 protected:
-    Chunk generate() override
+    [[noreturn]] Chunk generate() override
     {
         throw callback();
     }
