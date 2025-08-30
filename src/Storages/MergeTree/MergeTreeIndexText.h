@@ -12,7 +12,7 @@ namespace DB
 {
 
 class MergeTreeIndexReader;
-class MergeTreeIndexConditionText;
+class IMergeTreeIndexCondition;
 
 struct MergeTreeIndexTextParams
 {
@@ -31,7 +31,7 @@ struct DictionaryBlock
 
     bool empty() const;
     size_t size() const;
-    MarkInCompressedFile getMark(size_t idx) const;
+    UInt64 getPackedMark(size_t idx) const;
 
     size_t lowerBound(const StringRef & token) const;
     size_t upperBound(const StringRef & token) const;
@@ -41,6 +41,8 @@ struct DictionaryBlock
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
+    using TokenToMarkMap = absl::flat_hash_map<StringRef, MarkInCompressedFile>;
+
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
     ~MergeTreeIndexGranuleText() override = default;
 
@@ -52,17 +54,18 @@ public:
     size_t memoryUsageBytes() const override { return 0; }
     bool hasAllTokensFromQuery(const GinQueryString & query) const;
     void resetAfterAnalysis(bool may_be_true);
+    const TokenToMarkMap & getRemainingTokens() const { return remaining_tokens; }
 
 private:
     void deserializeBloomFilter(ReadBuffer & istr);
-    void analyzeBloomFilter(const MergeTreeIndexConditionText & condition);
-    void analyzeDictionary(MarkInCompressedFile begin_mark, TextSearchMode global_search_mode, IndexReaderStream & stream);
+    void analyzeBloomFilter(const IMergeTreeIndexCondition & condition);
+    void analyzeDictionary(IndexReaderStream & stream, IndexDeserializationState & state);
 
     MergeTreeIndexTextParams params;
     size_t total_rows = 0;
     BloomFilter bloom_filter;
     DictionaryBlock sparse_index;
-    absl::flat_hash_map<StringRef, MarkInCompressedFile> remaining_tokens;
+    TokenToMarkMap remaining_tokens;
 };
 
 struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
@@ -78,7 +81,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     ~MergeTreeIndexGranuleTextWritable() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void serializeBinaryWithMultipleStreams(IndexOutputStreams & streams) const override;
+    void serializeBinaryWithMultipleStreams(IndexOutputStreams & streams, IndexSerializationState & state) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return tokens.empty(); }

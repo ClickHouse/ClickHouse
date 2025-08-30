@@ -15,6 +15,8 @@ class VectorSimilarityIndexCache;
 class MergeTreeIndexReader
 {
 public:
+    using StreamMap = std::map<IndexSubstream::Type, MergeTreeReaderStream *>;
+
     MergeTreeIndexReader(
         MergeTreeIndexPtr index_,
         MergeTreeData::DataPartPtr part_,
@@ -27,6 +29,7 @@ public:
 
     void read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule);
     void read(size_t mark, size_t current_granule_num, MergeTreeIndexBulkGranulesPtr & granules);
+    const StreamMap & getStreams() { return streams; }
 
 private:
     MergeTreeIndexPtr index;
@@ -38,7 +41,7 @@ private:
     VectorSimilarityIndexCache * vector_similarity_index_cache;
     MergeTreeReaderSettings settings;
 
-    std::map<IndexSubstream::Type, MergeTreeReaderStream *> streams;
+    StreamMap streams;
     std::vector<std::unique_ptr<MergeTreeReaderStream>> stream_holders;
 
     uint8_t version = 0;

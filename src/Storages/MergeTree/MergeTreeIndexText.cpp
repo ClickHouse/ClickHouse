@@ -6,8 +6,14 @@
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Interpreters/BloomFilterHash.h>
-#include "Common/logger_useful.h"
+#include <Common/logger_useful.h>
 #include "base/range.h"
+
+namespace ProfileEvents
+{
+    extern const Event TextIndexReadDictionaryBlocks;
+    extern const Event TextIndexSkipDictionaryBlocks;
+}
 
 namespace DB
 {
@@ -25,18 +31,18 @@ static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t total_rows)
     return (bits_per_row * total_rows + atom_size - 1) / atom_size;
 }
 
-static UInt64 getPackedMark(const MarkInCompressedFile & begin_mark, const MarkInCompressedFile & current_mark)
+static UInt64 packMark(const MarkInCompressedFile & begin_mark, const MarkInCompressedFile & current_mark)
 {
     UInt32 offset_in_compressed_file = current_mark.offset_in_compressed_file - begin_mark.offset_in_compressed_file;
     UInt32 offset_in_decompressed_block = static_cast<UInt32>(current_mark.offset_in_decompressed_block);
     return (static_cast<UInt64>(offset_in_compressed_file) << 32) | offset_in_decompressed_block;
 }
 
-static MarkInCompressedFile unpackMark(UInt64 packed_mark)
+static MarkInCompressedFile unpackMark(const MarkInCompressedFile & begin_mark, UInt64 packed_mark)
 {
     UInt32 offset_in_compressed_file = static_cast<UInt32>(packed_mark >> 32);
     UInt32 offset_in_decompressed_block = static_cast<UInt32>(packed_mark & 0xFFFFFFFF);
-    return {offset_in_compressed_file, offset_in_decompressed_block};
+    return {begin_mark.offset_in_compressed_file + offset_in_compressed_file, offset_in_decompressed_block};
 }
 
 DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, ColumnPtr marks_)
@@ -54,10 +60,9 @@ size_t DictionaryBlock::size() const
     return tokens ? tokens->size() : 0;
 }
 
-MarkInCompressedFile DictionaryBlock::getMark(size_t idx) const
+UInt64 DictionaryBlock::getPackedMark(size_t idx) const
 {
-    const auto & marks_data = assert_cast<const ColumnUInt64 &>(*marks).getData();
-    return unpackMark(marks_data[idx]);
+    return assert_cast<const ColumnUInt64 &>(*marks).getData()[idx];
 }
 
 size_t DictionaryBlock::lowerBound(const StringRef & token) const
@@ -122,7 +127,7 @@ void MergeTreeIndexGranuleText::deserializeBloomFilter(ReadBuffer & istr)
 }
 
 /// TODO: add cache for dictionary blocks
-static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
+static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, bool skip)
 {
     size_t tokens_size;
     readVarUInt(tokens_size, istr);
@@ -136,8 +141,18 @@ static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
     SerializationString serialization_string;
     SerializationNumber<UInt64> serialization_number;
 
-    serialization_string.deserializeBinaryBulk(*tokens_column, istr, 0, tokens_size, 0.0);
-    serialization_number.deserializeBinaryBulk(*marks_column, istr, 0, tokens_size, 0.0);
+    if (skip)
+    {
+        ProfileEvents::increment(ProfileEvents::TextIndexSkipDictionaryBlocks);
+        serialization_string.deserializeBinaryBulk(*tokens_column, istr, tokens_size, 0, 0.0);
+        serialization_number.deserializeBinaryBulk(*marks_column, istr, tokens_size, 0, 0.0);
+    }
+    else
+    {
+        ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
+        serialization_string.deserializeBinaryBulk(*tokens_column, istr, 0, tokens_size, 0.0);
+        serialization_number.deserializeBinaryBulk(*marks_column, istr, 0, tokens_size, 0.0);
+    }
 
     return DictionaryBlock(std::move(tokens_column), std::move(marks_column));
 }
@@ -150,24 +165,21 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(IndexInputS
     if (!index_stream || !dictionary_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
-    const auto * condition_text = typeid_cast<const MergeTreeIndexConditionText *>(state.condition);
-    if (!condition_text)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with a MergeTreeIndexConditionText");
-
     deserializeBloomFilter(*index_stream->getDataBuffer());
-    sparse_index = deserializeDictionaryBlock(*index_stream->getDataBuffer());
+    analyzeBloomFilter(*state.condition);
 
-    analyzeBloomFilter(*condition_text);
-    auto begin_mark = state.current_marks.at(IndexSubstream::Type::TextIndexDictionary);
-    analyzeDictionary(begin_mark, condition_text->getGlobalSearchMode(), *dictionary_stream);
+    bool skip_index = remaining_tokens.empty();
+    sparse_index = deserializeDictionaryBlock(*index_stream->getDataBuffer(), skip_index);
+    analyzeDictionary(*dictionary_stream, state);
 }
 
-void MergeTreeIndexGranuleText::analyzeBloomFilter(const MergeTreeIndexConditionText & condition)
+void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexCondition & condition)
 {
-    const auto & search_tokens = condition.getAllSearchTokens();
-    auto global_search_mode = condition.getGlobalSearchMode();
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(condition);
+    const auto & search_tokens = condition_text.getAllSearchTokens();
+    auto global_search_mode = condition_text.getGlobalSearchMode();
 
-    if (condition.useBloomFilter())
+    if (condition_text.useBloomFilter())
     {
         for (const auto & token : search_tokens)
         {
@@ -189,10 +201,13 @@ void MergeTreeIndexGranuleText::analyzeBloomFilter(const MergeTreeIndexCondition
     }
 }
 
-void MergeTreeIndexGranuleText::analyzeDictionary(MarkInCompressedFile begin_mark, TextSearchMode global_search_mode, IndexReaderStream & stream)
+void MergeTreeIndexGranuleText::analyzeDictionary(IndexReaderStream & stream, IndexDeserializationState & state)
 {
     if (remaining_tokens.empty())
         return;
+
+    auto begin_dict_mark = state.current_marks.at(IndexSubstream::Type::TextIndexDictionary);
+    auto begin_postings_mark = state.current_marks.at(IndexSubstream::Type::TextIndexPostings);
 
     std::map<size_t, std::vector<StringRef>> block_to_tokens;
 
@@ -209,13 +224,16 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MarkInCompressedFile begin_mar
     auto * data_buffer = stream.getDataBuffer();
     auto * compressed_buffer = stream.getCompressedDataBuffer();
 
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    auto global_search_mode = condition_text.getGlobalSearchMode();
+
     for (const auto & [block_idx, tokens] : block_to_tokens)
     {
-        MarkInCompressedFile mark = sparse_index.getMark(block_idx);
-        mark.offset_in_compressed_file += begin_mark.offset_in_compressed_file;
+        UInt64 packed_dict_mark = sparse_index.getPackedMark(block_idx);
+        MarkInCompressedFile dict_mark = unpackMark(begin_dict_mark, packed_dict_mark);
 
-        compressed_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
-        auto dictionary_block = deserializeDictionaryBlock(*data_buffer);
+        compressed_buffer->seek(dict_mark.offset_in_compressed_file, dict_mark.offset_in_decompressed_block);
+        auto dictionary_block = deserializeDictionaryBlock(*data_buffer, false);
 
         for (const auto & token : tokens)
         {
@@ -226,7 +244,8 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MarkInCompressedFile begin_mar
 
             if (token_idx.has_value())
             {
-                it->second = dictionary_block.getMark(token_idx.value());
+                UInt64 packed_posting_mark = dictionary_block.getPackedMark(token_idx.value());
+                it->second = unpackMark(begin_postings_mark, packed_posting_mark);
             }
             else if (global_search_mode == TextSearchMode::Any)
             {
@@ -272,39 +291,39 @@ MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
 }
 
 template <typename Stream>
-ColumnPtr serializePostings(const std::vector<roaring::Roaring> & postings, Stream & stream)
+ColumnPtr serializePostings(const std::vector<roaring::Roaring> & postings, Stream & stream, const IndexSerializationState & state)
 {
-    auto begin_mark = stream.getCurrentMark();
+    auto begin_mark = state.current_marks.at(IndexSubstream::Type::TextIndexPostings);
 
-    auto marks_column = ColumnUInt64::create(postings.size());
+    auto marks_column = ColumnUInt64::create();
     auto & marks_data = marks_column->getData();
     marks_data.reserve(postings.size());
 
     SerializationNumber<UInt32> serialization;
-    auto postings_columns = ColumnUInt32::create();
-    auto & postings_data = postings_columns->getData();
+    auto postings_column = ColumnUInt32::create();
+    auto & postings_data = postings_column->getData();
 
     for (const auto & posting_list : postings)
     {
         auto current_mark = stream.getCurrentMark();
-        marks_data.emplace_back(getPackedMark(begin_mark, current_mark));
+        marks_data.emplace_back(packMark(begin_mark, current_mark));
 
         postings_data.resize(posting_list.cardinality() + 1);
         postings_data[0] = posting_list.cardinality();
 
         posting_list.toUint32Array(postings_data.data() + 1);
-        serialization.serializeBinaryBulk(*postings_columns, stream.compressed_hashing, 0, posting_list.cardinality() + 1);
+        serialization.serializeBinaryBulk(*postings_column, stream.compressed_hashing, 0, posting_list.cardinality() + 1);
     }
 
     return marks_column;
 }
 
 template <typename Stream>
-DictionaryBlock serializeDictionary(const std::vector<StringRef> & tokens, const IColumn & marks_to_postings, Stream & stream, size_t block_size)
+DictionaryBlock serializeDictionary(const std::vector<StringRef> & tokens, const IColumn & marks_to_postings, Stream & stream, const IndexSerializationState & state, size_t block_size)
 {
     chassert(tokens.size() == marks_to_postings.size());
 
-    auto begin_mark = stream.getCurrentMark();
+    auto begin_mark = state.current_marks.at(IndexSubstream::Type::TextIndexDictionary);
     size_t num_blocks = (tokens.size() + block_size - 1) / block_size;
     SerializationNumber<UInt64> serialization_number;
 
@@ -322,7 +341,7 @@ DictionaryBlock serializeDictionary(const std::vector<StringRef> & tokens, const
         size_t block_end = std::min(block_begin + block_size, tokens.size());
 
         auto current_mark = stream.getCurrentMark();
-        sparse_index_marks_data.emplace_back(getPackedMark(begin_mark, current_mark));
+        sparse_index_marks_data.emplace_back(packMark(begin_mark, current_mark));
         sparse_index_str.insertData(tokens[block_begin].data, tokens[block_begin].size);
 
         size_t num_tokens = block_end - block_begin;
@@ -366,7 +385,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinary(WriteBuffer &) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings");
 }
 
-void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(IndexOutputStreams & streams) const
+void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(IndexOutputStreams & streams, IndexSerializationState & state) const
 {
     auto * index_stream = streams.at(IndexSubstream::Type::Regular);
     auto * dictionary_stream = streams.at(IndexSubstream::Type::TextIndexDictionary);
@@ -375,8 +394,8 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Index
     if (!index_stream || !dictionary_stream || !postings_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
-    auto marks_to_postings = serializePostings(posting_lists, *postings_stream);
-    auto sparse_index_block = serializeDictionary(tokens, *marks_to_postings, *dictionary_stream, dictionary_block_size);
+    auto marks_to_postings = serializePostings(posting_lists, *postings_stream, state);
+    auto sparse_index_block = serializeDictionary(tokens, *marks_to_postings, *dictionary_stream, state, dictionary_block_size);
 
     serializeBloomFilter(total_rows, bloom_filter, *index_stream);
     serializeSparseIndex(sparse_index_block, *index_stream);
@@ -630,7 +649,7 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     }
 
     UInt64 dictionary_block_size = getOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(256);
-    double bloom_filter_false_positive_rate = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(0.01);
+    double bloom_filter_false_positive_rate = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(0.025);
 
     const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
     MergeTreeIndexTextParams params{dictionary_block_size, bits_per_rows, num_hashes};

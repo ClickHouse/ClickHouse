@@ -30,7 +30,7 @@ MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IDataPartStora
     return {0 /*unknown*/, {}};
 }
 
-void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(IndexOutputStreams & streams) const
+void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(IndexOutputStreams & streams, IndexSerializationState &) const
 {
     auto * stream = streams.at(IndexSubstream::Type::Regular);
     serializeBinary(stream->compressed_hashing);

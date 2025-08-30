@@ -173,6 +173,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 
         skip_indices_aggregators.push_back(skip_index->createIndexAggregator(settings));
         skip_index_accumulated_marks.push_back(0);
+        skip_indices_serialization_states.emplace_back();
     }
 }
 
@@ -247,7 +248,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             if (skip_index_accumulated_marks[i] == index_helper->index.granularity)
             {
                 auto index_granule = skip_indices_aggregators[i]->getGranuleAndReset();
-                index_granule->serializeBinaryWithMultipleStreams(index_streams);
+                index_granule->serializeBinaryWithMultipleStreams(index_streams, skip_indices_serialization_states[i]);
                 skip_index_accumulated_marks[i] = 0;
             }
 
@@ -255,15 +256,18 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             {
                 skip_indices_aggregators[i] = index_helper->createIndexAggregator(settings);
 
-                for (const auto & [_, stream] : index_streams)
+                for (const auto & [type, stream] : index_streams)
                 {
                     auto & marks_out = stream->compress_marks ? stream->marks_compressed_hashing : stream->marks_hashing;
 
                     if (stream->compressed_hashing.offset() >= settings.min_compress_block_size)
                         stream->compressed_hashing.next();
 
-                    writeBinaryLittleEndian(stream->plain_hashing.count(), marks_out);
-                    writeBinaryLittleEndian(stream->compressed_hashing.offset(), marks_out);
+                    MarkInCompressedFile mark{stream->plain_hashing.count(), stream->compressed_hashing.offset()};
+                    skip_indices_serialization_states[i].current_marks[type] = mark;
+
+                    writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
+                    writeBinaryLittleEndian(mark.offset_in_decompressed_block, marks_out);
 
                     /// Actually this numbers is redundant, but we have to store them
                     /// to be compatible with the normal .mrk2 file format
@@ -350,7 +354,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         {
             auto & index_streams = skip_indices_streams[i];
             auto index_granule = skip_indices_aggregators[i]->getGranuleAndReset();
-            index_granule->serializeBinaryWithMultipleStreams(index_streams);
+            index_granule->serializeBinaryWithMultipleStreams(index_streams, skip_indices_serialization_states[i]);
         }
     }
 
@@ -401,6 +405,7 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
     skip_indices_streams_holders.clear();
     skip_indices_aggregators.clear();
     skip_index_accumulated_marks.clear();
+    skip_indices_serialization_states.clear();
 }
 
 Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
