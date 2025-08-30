@@ -16,6 +16,7 @@
 namespace ProfileEvents
 {
     extern const Event ReadPatchesMicroseconds;
+    extern const Event PatchesReadRows;
     extern const Event PatchesReadUncompressedBytes;
 }
 
@@ -53,7 +54,9 @@ MergeTreePatchReader::ReadResult MergeTreePatchReader::readPatchRanges(MarkRange
         range_reader.getReader()->performRequiredConversions(read_result.columns);
 
     ProfileEvents::increment(ProfileEvents::ReadPatchesMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::PatchesReadRows, read_result.num_rows);
     ProfileEvents::increment(ProfileEvents::PatchesReadUncompressedBytes, read_result.numBytesRead());
+
     return read_result;
 }
 
