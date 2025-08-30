@@ -94,7 +94,7 @@ ObjectStoragePtr createObjectStorage(
                     .metadata_type = MetadataStorageType::PlainRewritable,
                     .description = "",
                     .zookeeper_name = ""}
-                    .toString());
+                    .name());
 
         auto metadata_storage_metrics = DB::MetadataStorageMetrics::create<BaseObjectStorage, MetadataStorageType::PlainRewritable>();
         return std::make_shared<PlainRewritableObjectStorage<BaseObjectStorage>>(
