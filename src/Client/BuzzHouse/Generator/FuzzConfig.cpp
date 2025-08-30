@@ -154,9 +154,9 @@ parseDisabledOptions(uint64_t & res, const String & text, const std::unordered_m
         String input = String(value.getString());
         std::transform(input.begin(), input.end(), input.begin(), ::tolower);
 
-        for (const auto word : std::views::split(input, delim))
+        for (auto word : std::views::split(input, delim))
         {
-            const auto & entry = std::string_view(word);
+            const std::string_view entry(word.begin(), word.end());
 
             if (entries.find(entry) == entries.end())
             {
@@ -185,11 +185,11 @@ static std::function<void(const JSONObjectType &)> parseErrorCodes(std::unordere
         using std::operator""sv;
         constexpr auto delim{","sv};
 
-        for (const auto word : std::views::split(String(value.getString()), delim))
+        for (auto word : std::views::split(String(value.getString()), delim))
         {
             uint32_t result;
-            const auto & sv = std::string_view(word);
-            auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
+            const std::string_view sv(word.begin(), word.end());
+            const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
 
             if (ec == std::errc::invalid_argument)
             {
@@ -503,18 +503,19 @@ String FuzzConfig::getHTTPURL(const bool secure) const
     return fmt::format("http{}://{}:{}", secure ? "s" : "", this->host, secure ? this->http_secure_port : this->http_port);
 }
 
-void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tables)
+void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
 {
     String buf;
+    String current_schema;
     String current_table;
     DB::Strings next_cols;
 
+    tables.clear();
     if (processServerQuery(
             false,
             fmt::format(
-                "SELECT t.name, c.name from system.tables t JOIN system.columns c ON t.name = c.table WHERE t.database = 'system' AND "
-                "c.database = 'system' INTO OUTFILE "
-                "'{}' TRUNCATE FORMAT TabSeparated;",
+                "SELECT c.database, c.table, c.name from system.columns c WHERE c.database IN ('system', 'INFORMATION_SCHEMA', "
+                "'information_schema') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 fuzz_server_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
@@ -524,18 +525,21 @@ void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tabl
             {
                 buf.pop_back();
             }
-            const auto tabchar = buf.find('\t');
-            const auto ntable = buf.substr(0, tabchar);
-            const auto ncol = buf.substr(tabchar + 1);
+            const size_t pos1 = buf.find('\t');
+            const String nschema = buf.substr(0, pos1);
+            const size_t pos2 = buf.find('\t', pos1 + 1);
+            const String ntable = buf.substr(pos1 + 1, pos2 - pos1 - 1);
+            const String ncol = buf.substr(pos2 + 1);
 
-            if (ntable != current_table && !next_cols.empty())
+            if (nschema != current_schema || ntable != current_table)
             {
-                if (current_table != "stack_trace"
+                if (!next_cols.empty() && current_table != "stack_trace"
                     && (allow_infinite_tables || (!current_table.starts_with("numbers") && !current_table.starts_with("zeros"))))
                 {
-                    tables[current_table] = next_cols;
+                    tables.emplace_back(SystemTable(current_schema, current_table, next_cols));
                 }
                 next_cols.clear();
+                current_schema = nschema;
                 current_table = ntable;
             }
             next_cols.emplace_back(ncol);

@@ -1385,85 +1385,6 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
 }
 #endif
 
-bool MinIOIntegration::sendRequest(const String & resource)
-{
-    struct tm ttm;
-    char buffer[1024];
-    const std::time_t time = std::time({});
-    DB::WriteBufferFromOwnString sign_cmd;
-    DB::WriteBufferFromOwnString sign_out;
-    DB::WriteBufferFromOwnString sign_err;
-
-    /// Set authentication
-    if (!gmtime_r(&time, &ttm))
-    {
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Could not convert time: {}", buffer);
-        return false;
-    }
-    if (!std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S GMT", &ttm))
-    {
-        LOG_ERROR(fc.log, "Buffer size was to small to fit result");
-        return false;
-    }
-    sign_cmd << R"(printf "PUT\n\napplication/octet-stream\n)" << buffer << "\\n"
-             << resource << "\""
-             << " | openssl sha1 -hmac " << sc.password << " -binary | base64";
-    auto res = DB::ShellCommand::execute(sign_cmd.str());
-    res->in.close();
-    copyData(res->out, sign_out);
-    copyData(res->err, sign_err);
-    res->wait();
-    if (!sign_err.str().empty())
-    {
-        LOG_ERROR(fc.log, "Error while executing shell command: {}", sign_err.str());
-        return false;
-    }
-
-    /// Build URI
-    Poco::URI uri;
-    uri.setScheme("http");
-    uri.setHost(sc.client_hostname);
-    uri.setPort(sc.port);
-    uri.setPath(resource);
-
-    /// Build PUT request
-    Poco::Net::HTTPClientSession session = Poco::Net::HTTPClientSession(uri.getHost(), uri.getPort());
-    Poco::Net::HTTPRequest req(Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
-    req.set("Date", buffer);
-    req.set("Accept", "*/*");
-    req.set("Host", uri.getHost() + (uri.getPort() ? ":" + std::to_string(uri.getPort()) : ""));
-    req.set("Authorization", fmt::format("AWS {}:{}", sc.user, sign_out.str()));
-    req.set("Connection", "close");
-    req.setContentType("application/octet-stream");
-    req.setContentLength(0);
-
-    try
-    {
-        /// Send body
-        const auto & u = session.sendRequest(req);
-        UNUSED(u);
-
-        /// Receive response
-        Poco::Net::HTTPResponse hres;
-        const auto & v = session.receiveResponse(hres);
-        UNUSED(v);
-        if (hres.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
-        {
-            return true;
-        }
-        LOG_ERROR(fc.log, "Request \"{}\" did not return 200: status: {} reason: \"{}\"", resource, hres.getStatus(), hres.getReason());
-        LOG_TRACE(fc.log, "StringToSign: \"PUT\\n\\napplication/octet-stream\\n{}\\n{}\"", buffer, resource);
-        LOG_TRACE(fc.log, "Authorization: AWS {}:{}", sc.user, sign_out.str());
-        return false;
-    }
-    catch (const std::exception & e)
-    {
-        LOG_ERROR(fc.log, "Request \"{}\" was not successful: \"{}\"", resource, e.what());
-        return false;
-    }
-}
-
 void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te)
 {
     te->add_params()->set_rvalue(sc.named_collection);
@@ -1545,7 +1466,7 @@ bool DolorIntegration::httpPut(const String & path, const String & body)
     }
 }
 
-bool DolorIntegration::performDatabaseIntegration(RandomGenerator &, SQLDatabase & d)
+bool DolorIntegration::performDatabaseIntegration(RandomGenerator & rg, SQLDatabase & d)
 {
     String buf;
     String catalog = "none";
@@ -1568,7 +1489,8 @@ bool DolorIntegration::performDatabaseIntegration(RandomGenerator &, SQLDatabase
             chassert(0);
     }
     buf += fmt::format(
-        R"({{"database_name":"{}","storage":"{}","lake":"{}","catalog":"{}"}})",
+        R"({{"seed":{},"database_name":"{}","storage":"{}","lake":"{}","catalog":"{}"}})",
+        rg.nextRandomUInt64(),
         d.getSparkCatalogName(),
         d.storage == LakeStorage::S3 ? "s3" : (d.storage == LakeStorage::Azure ? "azure" : "local"),
         d.format == LakeFormat::DeltaLake ? "deltalake" : "iceberg",
@@ -1643,7 +1565,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
 
 extern void collectColumnPaths(String cname, SQLType * tp, uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths);
 
-bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
+bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
 {
     String buf;
     bool first = true;
@@ -1658,7 +1580,8 @@ bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, 
 
     chassert(t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine());
     buf += fmt::format(
-        R"({{"database_name":"{}","table_name":"{}","storage":"{}","lake":"{}","format":"{}","deterministic":{},"columns":[)",
+        R"({{"seed":{},"database_name":"{}","table_name":"{}","storage":"{}","lake":"{}","format":"{}","deterministic":{},"columns":[)",
+        rg.nextRandomUInt64(),
         t.getSparkCatalogName(),
         t.getTableName(false),
         t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"),
@@ -1668,7 +1591,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator &, SQLTable & t, 
     for (const auto & entry : entries)
     {
         buf += fmt::format(
-            R"({}{{"name":"{}","type":"{}"}})", first ? "" : ",", entry.getBottomName(), entry.getBottomType()->ToSparkTypeName(false));
+            R"({}{{"name":"{}","type":"{}"}})", first ? "" : ",", entry.getBottomName(), entry.getBottomType()->typeName(false, true));
         first = false;
     }
     buf += "]}";

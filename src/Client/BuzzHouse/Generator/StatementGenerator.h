@@ -103,7 +103,7 @@ public:
     std::unordered_map<uint32_t, SQLView> views;
     std::unordered_map<uint32_t, SQLDictionary> dictionaries;
     /// Backup a system table
-    std::optional<String> system_table, partition_id;
+    std::optional<String> system_table_schema, system_table_name, partition_id;
 
     CatalogBackup() = default;
 };
@@ -128,6 +128,7 @@ class StatementGenerator
 {
 public:
     static const std::unordered_map<OutFormat, InFormat> outIn;
+    static const std::unordered_map<JoinType, std::vector<JoinConst>> joinMappings;
 
     FuzzConfig & fc;
     uint64_t next_type_mask = std::numeric_limits<uint64_t>::max();
@@ -299,6 +300,7 @@ public:
 
 private:
     String getNextAlias() { return "a" + std::to_string(aliases_counter++); }
+    uint32_t getIdentifierFromString(const String & tname) const;
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
     void entryOrConstant(RandomGenerator & rg, const ColumnPathChain & entry, Expr * expr);

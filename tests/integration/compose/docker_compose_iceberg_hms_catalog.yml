@@ -13,8 +13,8 @@ services:
       - AWS_REGION=us-east-1
     ports:
       - 8080:8080
-      - 10000:10000
-      - 10001:10001
+      - 10004:10000
+      - 10005:10001
     stop_grace_period: 5s
   hive:
     image: clickhouse/integration-test-with-hms
