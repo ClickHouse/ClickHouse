@@ -174,12 +174,10 @@ class LakeDataGenerator:
                 containsNull=dtype.containsNull,
             )
         if isinstance(dtype, MapType):
-            return (
-                MapType(
-                    dtype.keyType,
-                    dtype.valueType,
-                    valueContainsNull=dtype.valueContainsNull,
-                ),
+            return MapType(
+                dtype.keyType,
+                dtype.valueType,
+                valueContainsNull=dtype.valueContainsNull,
             )
         if isinstance(dtype, StructType):
             struct_fields = []

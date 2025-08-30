@@ -103,7 +103,7 @@ public:
     std::unordered_map<uint32_t, SQLView> views;
     std::unordered_map<uint32_t, SQLDictionary> dictionaries;
     /// Backup a system table
-    std::optional<String> system_table, partition_id;
+    std::optional<String> system_table_schema, system_table_name, partition_id;
 
     CatalogBackup() = default;
 };

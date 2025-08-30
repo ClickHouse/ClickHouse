@@ -1358,7 +1358,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
 
 std::unique_ptr<SQLType> size_tp, null_tp;
 
-std::unordered_map<String, DB::Strings> systemTables;
+std::vector<SystemTable> systemTables;
 
 void loadSystemTables(FuzzConfig & fc)
 {

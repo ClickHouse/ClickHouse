@@ -588,9 +588,10 @@ void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimiz
     {
         /// Optimize system table
         ExprSchemaTable * est = ot->mutable_est();
+        const auto & ntable = rg.pickRandomly(systemTables);
 
-        est->mutable_database()->set_database("system");
-        est->mutable_table()->set_table(rg.pickRandomly(systemTables));
+        est->mutable_database()->set_database(ntable.schema_name);
+        est->mutable_table()->set_table(ntable.table_name);
         ot->set_final(rg.nextBool());
         if (rg.nextBool())
         {
@@ -624,9 +625,10 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
     {
         /// Check system table
         ExprSchemaTable * est = ct->mutable_est();
+        const auto & ntable = rg.pickRandomly(systemTables);
 
-        est->mutable_database()->set_database("system");
-        est->mutable_table()->set_table(rg.pickRandomly(systemTables));
+        est->mutable_database()->set_database(ntable.schema_name);
+        est->mutable_table()->set_table(ntable.table_name);
     }
     if (rg.nextSmallNumber() < 3)
     {
@@ -791,9 +793,10 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
     else if (desc_system_table && nopt < (desc_table + desc_view + desc_dict + desc_query + desc_function + desc_system_table + 1))
     {
         ExprSchemaTable * est = dt->mutable_tof()->mutable_est();
+        const auto & ntable = rg.pickRandomly(systemTables);
 
-        est->mutable_database()->set_database("system");
-        est->mutable_table()->set_table(rg.pickRandomly(systemTables));
+        est->mutable_database()->set_database(ntable.schema_name);
+        est->mutable_table()->set_table(ntable.table_name);
     }
     else
     {
@@ -1141,9 +1144,10 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
     else if (trunc_system_table && nopt < (trunc_table + trunc_db_tables + trunc_db + trunc_system_table + 1))
     {
         ExprSchemaTable * est = trunc->mutable_est();
+        const auto & ntable = rg.pickRandomly(systemTables);
 
-        est->mutable_database()->set_database("system");
-        est->mutable_table()->set_table(rg.pickRandomly(systemTables));
+        est->mutable_database()->set_database(ntable.schema_name);
+        est->mutable_table()->set_table(ntable.table_name);
     }
     else
     {
@@ -3348,13 +3352,13 @@ std::optional<String> StatementGenerator::backupOrRestoreObject(BackupRestoreObj
     return b.getCluster();
 }
 
-static void backupOrRestoreSystemTable(BackupRestoreObject * bro, const String & name)
+static void backupOrRestoreSystemTable(BackupRestoreObject * bro, const String & nschema, const String & ntable)
 {
     ExprSchemaTable * est = bro->mutable_object()->mutable_est();
 
     bro->set_sobject(SQLObject::TABLE);
-    est->mutable_database()->set_database("system");
-    est->mutable_table()->set_table(name);
+    est->mutable_database()->set_database(nschema);
+    est->mutable_table()->set_table(ntable);
 }
 
 static std::optional<String> backupOrRestoreDatabase(BackupRestoreObject * bro, const std::shared_ptr<SQLDatabase> & d)
@@ -3465,7 +3469,9 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     }
     else if (backup_system_table && nopt < (backup_table + backup_system_table + 1))
     {
-        backupOrRestoreSystemTable(bre->mutable_bobject(), rg.pickRandomly(systemTables));
+        const auto & ntable = rg.pickRandomly(systemTables);
+
+        backupOrRestoreSystemTable(bre->mutable_bobject(), ntable.schema_name, ntable.table_name);
     }
     else if (backup_view && nopt < (backup_table + backup_system_table + backup_view + 1))
     {
@@ -3525,7 +3531,8 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
     else
     {
         const uint32_t restore_table = 10 * static_cast<uint32_t>(!backup.tables.empty());
-        const uint32_t restore_system_table = 3 * static_cast<uint32_t>(backup.system_table.has_value());
+        const uint32_t restore_system_table
+            = 3 * static_cast<uint32_t>(backup.system_table_schema.has_value() && backup.system_table_name.has_value());
         const uint32_t restore_view = 10 * static_cast<uint32_t>(!backup.views.empty());
         const uint32_t restore_dictionary = 10 * static_cast<uint32_t>(!backup.dictionaries.empty());
         const uint32_t restore_database = 10 * static_cast<uint32_t>(!backup.databases.empty());
@@ -3547,7 +3554,7 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
         }
         else if (restore_system_table && (nopt < restore_table + restore_system_table + 1))
         {
-            backupOrRestoreSystemTable(bre->mutable_bobject(), backup.system_table.value());
+            backupOrRestoreSystemTable(bre->mutable_bobject(), backup.system_table_schema.value(), backup.system_table_name.value());
         }
         else if (restore_view && nopt < (restore_table + restore_system_table + restore_view + 1))
         {
@@ -4683,7 +4690,8 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 }
                 else
                 {
-                    newb.system_table = bro.object().est().table().table();
+                    newb.system_table_schema = bro.object().est().database().database();
+                    newb.system_table_name = bro.object().est().table().table();
                 }
             }
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::VIEW)

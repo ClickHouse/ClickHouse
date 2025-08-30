@@ -840,11 +840,10 @@ bool StatementGenerator::joinedTableOrFunction(
         SQLRelation rel(rel_name);
         ExprSchemaTable * est = tof->mutable_est();
         const auto & ntable = rg.pickRandomly(systemTables);
-        const auto & tentries = systemTables.at(ntable);
 
-        est->mutable_database()->set_database("system");
-        est->mutable_table()->set_table(ntable);
-        for (const auto & entry : tentries)
+        est->mutable_database()->set_database(ntable.schema_name);
+        est->mutable_table()->set_table(ntable.table_name);
+        for (const auto & entry : ntable.columns)
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {entry}));
         }
