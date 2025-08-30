@@ -74,7 +74,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} source parts for mutation {}: {}", future_part->parts.size(),
                         result_part_info.getPartNameV1(), fmt::join(source_part_names, ", "));
 
-    thread_group = ThreadGroup::createForBackgroundProcess(context);
+    thread_group = ThreadGroup::createForMergeMutate(context);
 }
 
 MergeInfo MergeListElement::getInfo() const
