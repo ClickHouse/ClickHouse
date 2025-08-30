@@ -535,7 +535,7 @@ protected:
     bool offset_parallel_replicas_enabled = true;
 
     /// Used at query runtime to save per-query runtime filters and find them by names
-    RuntimeFilterLookupPtr runtime_filter_lookup = createRuntimeFilterLookup();
+    RuntimeFilterLookupPtr runtime_filter_lookup;
 
     /// indicates how the query operates storage alias:
     /// 0: operate on original storage
