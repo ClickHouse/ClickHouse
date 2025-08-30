@@ -12,6 +12,7 @@
 #include <Common/ArenaUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IntervalTree.h>
+#include "Interpreters/Context_fwd.h"
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -67,6 +68,7 @@ public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     RangeHashedDictionary(
+        ContextPtr context_,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -137,7 +139,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    Pipe read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
 
@@ -234,6 +236,7 @@ private:
     void createAttributes();
 
     void loadData();
+    void loadDataImpl(QueryPipeline & pipeline);
 
     void calculateBytesAllocated();
 
@@ -267,7 +270,7 @@ private:
         const PaddedPODArray<UInt64> & key_to_index,
         ValueSetter && set_value) const;
 
-    void updateData();
+    void updateData(ContextMutablePtr query_context);
 
     void blockToAttributes(const Block & block);
 
@@ -277,6 +280,9 @@ private:
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
     const RangeHashedDictionaryConfiguration configuration;
+
+    ContextPtr context;
+    
     BlockPtr update_field_loaded_block;
 
     std::vector<Attribute> attributes;
@@ -328,6 +334,7 @@ namespace impl
 
 template <DictionaryKeyType dictionary_key_type>
 RangeHashedDictionary<dictionary_key_type>::RangeHashedDictionary(
+    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -339,6 +346,7 @@ RangeHashedDictionary<dictionary_key_type>::RangeHashedDictionary(
     , source_ptr(std::move(source_ptr_))
     , dict_lifetime(dict_lifetime_)
     , configuration(configuration_)
+    , context(std::move(context_))
     , update_field_loaded_block(std::move(update_field_loaded_block_))
 {
     createAttributes();
@@ -543,21 +551,24 @@ void RangeHashedDictionary<dictionary_key_type>::createAttributes()
 template <DictionaryKeyType dictionary_key_type>
 void RangeHashedDictionary<dictionary_key_type>::loadData()
 {
+    auto [query_scope, query_context] = createLoadQueryScope(context);
     if (!source_ptr->hasUpdateField())
     {
-        QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
-        Block block;
-
-        while (executor.pull(block))
+        BlockIO io = source_ptr->loadAll(std::move(query_context));
+        try
         {
-            blockToAttributes(block);
+            loadDataImpl(io.pipeline);
+            io.onFinish();
+        }
+        catch (...)
+        {
+            io.onException();
+            throw;
         }
     }
     else
     {
-        updateData();
+        updateData(std::move(query_context));
     }
 
     impl::callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
@@ -575,6 +586,19 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
             "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
+}
+
+template <DictionaryKeyType dictionary_key_type>
+void RangeHashedDictionary<dictionary_key_type>::loadDataImpl(QueryPipeline & pipeline)
+{
+    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+    pipeline.setConcurrencyControl(false);
+    Block block;
+
+    while (executor.pull(block))
+    {
+        blockToAttributes(block);
+    }
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -693,11 +717,11 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsInternalImpl(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-void RangeHashedDictionary<dictionary_key_type>::updateData()
+void RangeHashedDictionary<dictionary_key_type>::updateData(ContextMutablePtr query_context)
 {
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
+        QueryPipeline pipeline(source_ptr->loadUpdatedAll(std::move(query_context)));
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
         pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
@@ -726,7 +750,7 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
     {
         static constexpr size_t range_columns_size = 2;
 
-        auto pipe = source_ptr->loadUpdatedAll();
+        auto pipe = source_ptr->loadUpdatedAll(std::move(query_context));
 
         /// Use complex dictionary key type to count range columns as part of complex primary key during update
         update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<DictionaryKeyType::Complex>(
@@ -930,7 +954,7 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
 }
 
 template <DictionaryKeyType dictionary_key_type>
-Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe RangeHashedDictionary<dictionary_key_type>::read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     auto key_to_index_column = ColumnUInt64::create();
     auto range_min_column = dict_struct.range_min->type->createColumn();

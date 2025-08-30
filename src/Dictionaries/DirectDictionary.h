@@ -7,6 +7,7 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryHelpers.h>
+#include "Interpreters/Context_fwd.h"
 
 
 namespace DB
@@ -21,6 +22,7 @@ public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     DirectDictionary(
+        ContextPtr context_,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_);
@@ -94,16 +96,19 @@ public:
         ColumnPtr in_key_column,
         const DataTypePtr & key_type) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    Pipe read(ContextMutablePtr query_context, const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
     void applySettings(const Settings & settings);
 
 private:
-    Pipe getSourcePipe(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
+    Pipe getSourcePipe(QueryPipeline pipeline, const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
+    BlockIO loadKeys(ContextMutablePtr query_context, const PaddedPODArray<KeyType> & requested_keys, const Columns & key_columns) const;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
+
+    ContextPtr context;
 
     bool use_async_executor = false;
 
