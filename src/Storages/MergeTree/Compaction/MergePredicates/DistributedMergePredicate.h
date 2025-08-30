@@ -13,7 +13,7 @@
 namespace DB
 {
 
-using PartitionIdsHint = std::unordered_set<String>;
+using PartitionIdsHint = PartitionIds;
 using CommittingBlocks = std::unordered_map<String, CommittingBlocksSet>;
 
 CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, std::optional<PartitionIdsHint> & partition_ids_hint, bool with_data);
