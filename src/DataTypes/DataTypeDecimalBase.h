@@ -95,7 +95,7 @@ public:
     size_t getSizeOfValueInMemory() const override { return sizeof(T); }
 
     bool isSummable() const override { return true; }
-    bool canBeUsedInBooleanContext() const override { return true; }
+    bool canBeUsedInBooleanContext() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
 
     /// Decimal specific

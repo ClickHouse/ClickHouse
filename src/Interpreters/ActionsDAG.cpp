@@ -2665,17 +2665,17 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
 
     chassert(predicate->result_type);
 
-    if (conjunction.rejected.size() == 1)
-    {
-        chassert(conjunction.rejected.front()->result_type);
+    // if (conjunction.rejected.size() == 1)
+    // {
+    //     chassert(conjunction.rejected.front()->result_type);
 
-        if (conjunction.allowed.front()->type == ActionType::COLUMN
-            && !conjunction.rejected.front()->result_type->equals(*predicate->result_type))
-        {
-            /// No further optimization can be done
-            return {};
-        }
-    }
+    //     if (conjunction.allowed.front()->type == ActionType::COLUMN
+    //         && !conjunction.rejected.front()->result_type->equals(*predicate->result_type))
+    //     {
+    //         /// No further optimization can be done
+    //         return {};
+    //     }
+    // }
 
     auto actions = createActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
@@ -2944,10 +2944,14 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
 
         NodeRawConstPtrs new_children = std::move(rejected_conjunctions);
 
-        if (new_children.size() == 1 && new_children.front()->result_type->equals(*predicate->result_type))
+        if (new_children.size() == 1)
         {
-            /// Rejected set has only one predicate. And the type is the same as the result_type.
-            /// Just add alias.
+            /// Rejected set has only one predicate.
+            /// Fix the result type and add an alias.
+            const auto * child = new_children.front();
+            if (!child->result_type->equals(*predicate->result_type))
+                child = &addCast(*child, predicate->result_type, {});
+
             Node node;
             node.type = ActionType::ALIAS;
             node.result_name = predicate->result_name;
@@ -2959,17 +2963,7 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
         {
             /// Predicate is function AND, which still have more then one argument
             /// or it has one argument of the wrong type.
-            /// Just update children and rebuild it.
-            if (new_children.size() == 1)
-            {
-                Node node;
-                node.type = ActionType::COLUMN;
-                node.result_name = "1";
-                node.column = DataTypeUInt8().createColumnConst(0, 1u);
-                node.result_type = std::make_shared<DataTypeUInt8>();
-                const auto * const_col = &nodes.emplace_back(std::move(node));
-                new_children.emplace_back(const_col);
-            }
+            /// Update children and rebuild it.
             predicate->children.swap(new_children);
             auto arguments = prepareFunctionArguments(predicate->children);
 
