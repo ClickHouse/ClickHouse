@@ -12,7 +12,7 @@
             <cached_azure_plain_rewritable_03602>
                 <type>cache</type>
                 <disk>azure_plain_rewritable_03602</disk>
-                <path>azure_cache/</path>
+                <path>azure_cache_03602/</path>
                 <cache_policy>LRU</cache_policy>
                 <max_size>100000000000</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
