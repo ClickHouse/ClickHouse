@@ -155,6 +155,15 @@ class CIDB:
         }
         assert Settings.CI_DB_TABLE_NAME
 
+        for i, json in enumerate(jsons):
+            print(f"INFO: Inserting row {i}: {json}")
+
+        for key, value in params.items():
+            print(f"Parameter key: {key}")
+            print(f"Parameter value: {value}")
+
+        print(f"Making a query to url: {self.url}, sending {len(jsons)} rows")
+
         for retry in range(retries):
             try:
                 response = requests.post(
@@ -164,6 +173,13 @@ class CIDB:
                     headers=self.auth,
                     timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
                 )
+
+                query_id = response.headers.get("X-ClickHouse-Query-Id")
+                if query_id:
+                    print(f"Query ID: {query_id}")
+                else:
+                    print("Query ID not found in response headers")
+
                 print(response.text)
                 if response.ok:
                     print(f"INFO: {len(jsons)} rows inserted into CIDB")
