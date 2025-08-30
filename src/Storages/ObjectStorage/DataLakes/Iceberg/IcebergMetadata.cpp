@@ -1,4 +1,5 @@
 
+#include <sstream>
 #include "config.h"
 #if USE_AVRO
 
@@ -33,6 +34,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -84,6 +86,7 @@ namespace DataLakeStorageSetting
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int CANNOT_CLOCK_GETTIME;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
@@ -106,6 +109,8 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_experimental_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
+extern const SettingsUInt64 iceberg_metadata_log_level;
+
 }
 
 
@@ -231,6 +236,25 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 
     updateState(local_context, metadata_object);
 
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::JSON::Stringifier::stringify(metadata_object, oss);
+
+    timespec spec{};
+    if (clock_gettime(CLOCK_REALTIME, &spec))
+        throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
+
+    if (static_cast<UInt64>(DB::IcebergMetadataLogLevel::Metadata) <= local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value)
+    {
+        Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
+            .current_time = spec.tv_sec,
+            .query_id = local_context->getCurrentQueryId(),
+            .content_type = DB::IcebergMetadataLogLevel::Metadata,
+            .path = configuration_ptr->getPathForRead().path,
+            .filename = metadata_file_path,
+            .metadata_content = removeEscapedSlashes(oss.str())
+        });
+    }
+
     if (previous_snapshot_id != relevant_snapshot_id)
     {
         return true;
@@ -289,15 +313,37 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
                 }
             }
 
+            auto manifest_list_path = getProperFilePathFromMetadataInfo(
+                snapshot->getValue<String>(f_manifest_list), configuration_ptr->getPathForRead().path, persistent_components.table_location);
+            auto parsed_manifest_list = getManifestList(
+                object_storage,
+                configuration_ptr,
+                persistent_components,
+                local_context,
+                manifest_list_path,
+                log);
+
+            timespec spec{};
+            if (clock_gettime(CLOCK_REALTIME, &spec))
+                throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
+
+            for (const auto & manifest_list_entry : parsed_manifest_list)
+            {
+                if (static_cast<UInt64>(DB::IcebergMetadataLogLevel::ManifestListEntry) <= local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value)
+                {
+                    Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
+                        .current_time = spec.tv_sec,
+                        .query_id = local_context->getCurrentQueryId(),
+                        .content_type = DB::IcebergMetadataLogLevel::ManifestListEntry,
+                        .path = configuration_ptr->getPathForRead().path,
+                        .filename = manifest_list_path,
+                        .metadata_content = removeEscapedSlashes(manifest_list_entry.file_content)
+                    });
+                }
+            }
+
             relevant_snapshot = std::make_shared<IcebergDataSnapshot>(
-                getManifestList(
-                    object_storage,
-                    configuration_ptr,
-                    persistent_components,
-                    local_context,
-                    getProperFilePathFromMetadataInfo(
-                        snapshot->getValue<String>(f_manifest_list), configuration_ptr->getPathForRead().path, persistent_components.table_location),
-                    log),
+                parsed_manifest_list,
                 relevant_snapshot_id,
                 total_rows,
                 total_bytes,
@@ -660,7 +706,6 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 
     return iceberg_history;
 }
-
 
 std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
 {

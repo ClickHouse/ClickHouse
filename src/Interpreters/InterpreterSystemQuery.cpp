@@ -41,6 +41,7 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTCreateQuery.h>

@@ -86,6 +86,7 @@ def started_cluster():
                 "configs/config.d/cluster.xml",
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
+                "configs/config.d/metadata_log.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
             with_minio=True,
@@ -99,6 +100,7 @@ def started_cluster():
                 "configs/config.d/cluster.xml",
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
+                "configs/config.d/metadata_log.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
             stay_alive=True,
@@ -110,6 +112,7 @@ def started_cluster():
                 "configs/config.d/cluster.xml",
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
+                "configs/config.d/metadata_log.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
             stay_alive=True,
@@ -2970,6 +2973,62 @@ def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
     assert len(df) == 1
 
 
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
+def test_system_iceberg_metadata(started_cluster, format_version, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_single_iceberg_file_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    write_iceberg_from_df(spark, generate_data(spark, 0, 100), TABLE_NAME)
+
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
+        "SELECT number, toString(number + 1) FROM numbers(100)"
+    )
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}", settings={"iceberg_metadata_log_level":1}) == instance.query(
+        "SELECT number, toString(number + 1) FROM numbers(100)"
+    )
+
+    instance.query("SYSTEM FLUSH LOGS iceberg_metadata_log")
+    assert 'avro' not in instance.query(f"SELECT file_name FROM system.iceberg_metadata_log")
+    assert 'json' in instance.query(f"SELECT file_name FROM system.iceberg_metadata_log")
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}", settings={"iceberg_metadata_log_level":4}) == instance.query(
+        "SELECT number, toString(number + 1) FROM numbers(100)"
+    )
+
+    instance.query("SYSTEM FLUSH LOGS iceberg_metadata_log")
+    assert 'avro' in instance.query(f"SELECT file_name FROM system.iceberg_metadata_log")
+    assert 'json' in instance.query(f"SELECT file_name FROM system.iceberg_metadata_log")
+
+    file_contents = instance.query("SELECT content FROM system.iceberg_metadata_log").split('\n')
+
+    for content in file_contents:
+        if len(content) == 0:
+            continue
+        try:
+            json.loads(content)
+        except:
+            raise ValueError(content)
+
+        
 @pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
 def test_writes_field_partitioning(started_cluster, storage_type):
     format_version = 2

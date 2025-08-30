@@ -146,7 +146,9 @@ ManifestFileContent::ManifestFileContent(
     Int64 inherited_snapshot_id,
     const String & table_location,
     DB::ContextPtr context,
-    const String & path_to_manifest_file_)
+    const String & path_to_manifest_file_,
+    const String & content_,
+    const String & metadata_content_)
     : path_to_manifest_file(path_to_manifest_file_)
 {
     for (const auto & column_name : {f_status, f_data_file})
@@ -387,7 +389,10 @@ ManifestFileContent::ManifestFileContent(
                     columns_infos,
                     file_format,
                     /*reference_data_file = */ std::nullopt,
-                    /*equality_ids*/ std::nullopt);
+                    /*equality_ids*/ std::nullopt,
+                    content_,
+                    path_to_manifest_file_,
+                    metadata_content_);
                 break;
             case FileContentType::POSITION_DELETE:
             {
@@ -413,7 +418,10 @@ ManifestFileContent::ManifestFileContent(
                     columns_infos,
                     file_format,
                     reference_file_path,
-                    /*equality_ids*/ std::nullopt);
+                    /*equality_ids*/ std::nullopt,
+                    content_,
+                    path_to_manifest_file_,
+                    metadata_content_);
                 break;
             }
             case FileContentType::EQUALITY_DELETE:

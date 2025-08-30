@@ -30,6 +30,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryThreadLog.h>
+#include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Interpreters/DeadLetterQueue.h>

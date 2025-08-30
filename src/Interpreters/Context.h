@@ -123,6 +123,7 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class ZooKeeperConnectionLog;
+class IcebergMetadataLog;
 class SessionLog;
 class BackupsWorker;
 class TransactionsInfoLog;
@@ -1367,6 +1368,7 @@ public:
     std::shared_ptr<QueryMetricLog> getQueryMetricLog() const;
     std::shared_ptr<DeadLetterQueue> getDeadLetterQueue() const;
     std::shared_ptr<ZooKeeperConnectionLog> getZooKeeperConnectionLog() const;
+    std::shared_ptr<IcebergMetadataLog> getIcebergMetadataLog() const;
 
     SystemLogs getSystemLogs() const;
 
