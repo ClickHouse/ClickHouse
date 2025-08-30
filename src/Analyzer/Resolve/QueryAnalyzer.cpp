@@ -123,6 +123,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool enable_function_early_short_circuit;
     extern const SettingsBool execute_exists_as_scalar_subquery;
 }
 
@@ -2820,6 +2821,78 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
+
+/** Attempts to compute a constant result for any function by evaluating its arguments at the query analysis phase.
+ * This function implements general constant folding optimization. It recursively processes function
+ * arguments to determine if the entire function can be evaluated to a constant value without
+ * executing the query.
+ * The function works by:
+ * 1. Processing each function argument recursively
+ * 2. For constant arguments: use their values directly
+ * 3. For function arguments: recursively call this function to get constant results
+ * 4. For other arguments: use UInt8 as fallback type
+ * 5. Building the function with resolved arguments
+ * 6. Calling getConstantResultForNonConstArguments() to check if the function can be evaluated
+ * Returns:
+ * - ConstantNodePtr: if the function can be evaluated to a constant at compile time
+ * - nullptr: if the function cannot be folded (requires runtime evaluation)
+ */
+ConstantNodePtr getConstantResultFromFunctionArgs(const QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+{
+    FunctionNodePtr function_node = std::static_pointer_cast<FunctionNode>(node);
+    auto function_name = function_node->getFunctionName();
+    ColumnsWithTypeAndName arg_columns;
+    auto & arg_nodes = function_node->getArguments().getNodes();
+    arg_columns.reserve(arg_nodes.size());
+
+    for (const auto & arg : arg_nodes)
+    {
+        ColumnWithTypeAndName col;
+        if (const auto * cn = arg->as<ConstantNode>())
+        {
+            col.column = cn->getColumn();
+            col.type = arg->getResultType();
+        }
+        else if (arg->as<FunctionNode>())
+        {
+            auto res = getConstantResultFromFunctionArgs(arg, scope);
+            if (res)
+            {
+                col.column = res->getColumn();
+                col.type = res->getResultType();
+            }
+            else col.type = std::make_shared<DataTypeUInt8>();
+        }
+        else
+            col.type = std::make_shared<DataTypeUInt8>();
+        arg_columns.emplace_back(std::move(col));
+    }
+    FunctionOverloadResolverPtr resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
+    if (resolver)
+    {
+        FunctionBasePtr base;
+        try
+        {
+            base = resolver->build(arg_columns);
+        }
+        catch (...)
+        {
+            return nullptr;
+        }
+
+        if (!base->isSuitableForConstantFolding())
+            return nullptr;
+        ColumnPtr result = base->getConstantResultForNonConstArguments(arg_columns, base->getResultType());
+        if (result)
+        {
+            auto const_node = std::make_shared<ConstantNode>(std::move(result), base->getResultType());
+            if (!function_node->getAlias().empty())
+                const_node->setAlias(function_node->getAlias());
+            return const_node;
+        }
+    }
+    return nullptr;
+}
 }
 
 /** Resolve function node in scope.
@@ -2851,6 +2924,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 {
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
+
+    /** Early short-circuit optimization: attempt to evaluate functions at the analysis phase
+      * This can avoid expensive subquery execution when the result is determined by one of the arguments
+      * Examples: 1 OR anything = 1, 0 AND anything = 0.
+      * Use enable_function_early_short_circuit setting as guardrail to disable this optimization if needed
+      */
+    if (scope.context->getSettingsRef()[Setting::enable_function_early_short_circuit])
+    {
+        auto const_res = getConstantResultFromFunctionArgs(node, scope);
+        if (const_res)
+        {
+            auto value_string = const_res->getValueStringRepresentation();
+            node = std::move(const_res);
+            return { value_string };
+        }
+    }
 
     /// Resolve function parameters
 
