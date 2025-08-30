@@ -9,11 +9,11 @@ class GinQueryString
 {
 public:
     GinQueryString() = default;
-    GinQueryString(std::string_view query_string_, const std::vector<String> & search_terms_);
+    GinQueryString(std::string_view query_string_, const std::vector<String> & tokens_);
 
     /// Getter
     const String & getQueryString() const { return query_string; }
-    const std::vector<String> & getTerms() const { return terms; }
+    const std::vector<String> & getTokens() const { return tokens; }
 
     /// Set the query string of the filter
     void setQueryString(std::string_view query_string_)
@@ -22,12 +22,12 @@ public:
     }
 
     /// Add term which are tokens generated from the query string
-    bool addTerm(std::string_view term)
+    bool addToken(std::string_view token)
     {
-        if (term.length() > FST::MAX_TERM_LENGTH) [[unlikely]]
+        if (token.length() > FST::MAX_TOKEN_LENGTH) [[unlikely]]
             return false;
 
-        terms.push_back(String(term));
+        tokens.push_back(String(token));
         return true;
     }
 
@@ -35,7 +35,7 @@ private:
     /// Query string of the filter
     String query_string;
     /// Tokenized terms from query string
-    std::vector<String> terms;
+    std::vector<String> tokens;
 };
 
 }
