@@ -288,7 +288,9 @@ public:
         IntermediateExecutionResult & node_to_column,
         const NodeRawConstPtrs & outputs,
         size_t input_rows_count,
-        bool throw_on_error);
+        bool throw_on_error,
+        bool skip_materialize = false
+    );
 
     /// Replace all PLACEHOLDER nodes with INPUT nodes
     void decorrelate() noexcept;

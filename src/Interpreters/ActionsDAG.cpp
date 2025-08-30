@@ -950,7 +950,8 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
     IntermediateExecutionResult & node_to_column,
     const NodeRawConstPtrs & outputs,
     size_t input_rows_count,
-    bool throw_on_error)
+    bool throw_on_error,
+    bool skip_materialize)
 {
     chassert(input_rows_count <= 1); /// evaluatePartialResult() should be used only to evaluate headers or constants
 
@@ -1020,7 +1021,14 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                                         node->result_name);
 
                     if (node->type != ActionsDAG::ActionType::INPUT && has_all_arguments)
+                    {
+                        if (node->type == ActionType::FUNCTION && skip_materialize && node->function_base->getName() == "materialize")
+                        {
+                            node_to_column[node] = arguments.at(0);
+                        }
+
                         node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count);
+                    }
                 }
             }
 
