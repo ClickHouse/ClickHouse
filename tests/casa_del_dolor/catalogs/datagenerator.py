@@ -175,8 +175,8 @@ class LakeDataGenerator:
             )
         if isinstance(dtype, MapType):
             return MapType(
-                dtype.keyType,
-                dtype.valueType,
+                self._map_type_to_insert(dtype.keyType),
+                self._map_type_to_insert(dtype.valueType),
                 valueContainsNull=dtype.valueContainsNull,
             )
         if isinstance(dtype, StructType):
