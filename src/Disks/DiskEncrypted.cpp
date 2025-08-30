@@ -11,7 +11,6 @@
 #include <IO/S3/Credentials.h>
 #include <IO/S3Common.h>
 #include <boost/algorithm/hex.hpp>
-#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #if CLICKHOUSE_CLOUD
@@ -328,12 +327,6 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , current_settings(std::move(settings_))
     , use_fake_transaction(config_.getBool(config_prefix_ + ".use_fake_transaction", true))
 {
-    if (disk_path.empty())
-    {
-        LOG_TRACE(getLogger("DiskEncrypted"), "Skipping creation of a directory with an empty path");
-        return;
-    }
-
     delegate->createDirectories(disk_path);
 }
 
