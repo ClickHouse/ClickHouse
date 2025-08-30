@@ -448,6 +448,7 @@ JoinCondition JoinCondition::deserialize(ReadBuffer & in, const JoinActionRef::A
     auto left_filter_conditions = deserializeJoinActions(in, dags);
     auto right_filter_conditions = deserializeJoinActions(in, dags);
     auto residual_conditions = deserializeJoinActions(in, dags);
+
     return {
         std::move(predicates),
         std::move(left_filter_conditions),

@@ -112,6 +112,9 @@ public:
     QueryPlanStepPtr clone() const override;
     bool hasCorrelatedExpressions() const override { return expression_actions.hasCorrelatedExpressions(); }
 
+    bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
+    void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
+
 protected:
     void updateOutputHeader() override;
 
@@ -138,6 +141,9 @@ protected:
 
     /// Add some information from convertToPhysical to description in explain output.
     std::vector<std::pair<String, String>> runtime_info_description;
+
+private:
+    bool disjunctions_optimization_applied = false;
 };
 
 }

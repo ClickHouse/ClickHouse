@@ -232,6 +232,13 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     if (!join && !filled_join && !logical_join)
         return 0;
 
+    if ((join && join->isDisjunctionsOptimizationApplied()) ||
+        (logical_join && logical_join->isDisjunctionsOptimizationApplied()) ||
+        (filled_join && filled_join->isDisjunctionsOptimizationApplied()))
+    {
+        return 0;
+    }
+
     /** For equivalent JOIN with condition `ON lhs.x_1 = rhs.y_1 AND lhs.x_2 = rhs.y_2 ...`, we can build equivalent sets of columns and this
       * will allow to push conditions that only use columns from equivalent sets to both sides of JOIN, without considering JOIN type.
       *
@@ -364,15 +371,23 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     Names left_stream_available_columns_to_push_down = get_available_columns_for_filter(true /*push_to_left_stream*/, left_stream_filter_push_down_input_columns_available);
     Names right_stream_available_columns_to_push_down = get_available_columns_for_filter(false /*push_to_left_stream*/, right_stream_filter_push_down_input_columns_available);
 
-    auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(filter->getFilterColumnName(),
-        filter->removesFilterColumn(),
-        left_stream_available_columns_to_push_down,
-        *left_stream_input_header,
-        right_stream_available_columns_to_push_down,
-        *right_stream_input_header,
-        equivalent_columns_to_push_down,
-        equivalent_left_stream_column_to_right_stream_column,
-        equivalent_right_stream_column_to_left_stream_column);
+    if (join && join->isDisjunctionsOptimizationApplied())
+    {
+        LOG_DEBUG(getLogger("QueryPlanOptimizations"), "Disjunctions optimization already applied, RETURN 0");
+        return 0;
+    }
+
+    auto join_filter_push_down_actions =
+        filter->getExpression().splitActionsForJOINFilterPushDown(
+            filter->getFilterColumnName(),
+            filter->removesFilterColumn(),
+            left_stream_available_columns_to_push_down,
+            *left_stream_input_header,
+            right_stream_available_columns_to_push_down,
+            *right_stream_input_header,
+            equivalent_columns_to_push_down,
+            equivalent_left_stream_column_to_right_stream_column,
+            equivalent_right_stream_column_to_left_stream_column);
 
     size_t updated_steps = 0;
 
@@ -441,6 +456,16 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     if (updated_steps > 0)
     {
+        // Set the global flag to prevent this optimization from running again
+        if (join)
+            join->setDisjunctionsOptimizationApplied(true);
+        if (logical_join)
+            logical_join->setDisjunctionsOptimizationApplied(true);
+        if (filled_join)
+            filled_join->setDisjunctionsOptimizationApplied(true);
+
+        // The JoinStep-specific flag was already set earlier in the function to prevent recursion
+
         const auto & filter_column_name = filter->getFilterColumnName();
         auto & filter_expression = filter->getExpression();
 
