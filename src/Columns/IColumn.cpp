@@ -561,11 +561,20 @@ IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena 
             return {memory, 1};
         }
 
-        size_t sz = self.byteSizeAt(n) + 1 /* null map byte */;
-        memory = arena.allocContinue(sz, begin);
+        auto serialized_value_size = self.getSerializedValueSize(n);
+        if (serialized_value_size)
+        {
+            size_t total_size = *serialized_value_size + 1 /* null map byte */;
+            memory = arena.allocContinue(total_size, begin);
+            *memory = 0;
+            self.serializeValueIntoMemory(n, memory + 1);
+            return {memory, total_size};
+        }
+
+        memory = arena.allocContinue(1, begin);
         *memory = 0;
-        self.serializeValueIntoMemory(n, memory + 1);
-        return {memory, sz};
+        auto res = self.serializeValueIntoArena(n, arena, begin);
+        return StringRef(res.data - 1, res.size + 1);
     }
 
     return self.serializeValueIntoArena(n, arena, begin);
