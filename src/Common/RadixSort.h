@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <string.h>
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 #include <malloc.h>
@@ -13,11 +12,11 @@
 #include <type_traits>
 #include <memory>
 
+#include <Core/Defines.h>
 #include <base/bit_cast.h>
 #include <base/extended_types.h>
 #include <base/sort.h>
-#include <Core/Defines.h>
-
+#include <Common/PODArray.h>
 
 /** Radix sort, has the following functionality:
   *
@@ -225,6 +224,7 @@ private:
     static constexpr size_t PART_BITMASK = HISTOGRAM_SIZE - 1;
     static constexpr size_t KEY_BITS = sizeof(Key) * 8;
     static constexpr size_t NUM_PASSES = (KEY_BITS + (Traits::PART_SIZE_BITS - 1)) / Traits::PART_SIZE_BITS;
+    static constexpr size_t PREFETCH_DISTANCE = std::max(1UL, 64 / sizeof(Element) / 2);
 
 
     static KeyBits keyToBits(Key x) { return bit_cast<KeyBits>(x); }
@@ -276,7 +276,6 @@ private:
         }
     }
 
-
     template <bool DIRECT_WRITE_TO_DESTINATION>
     static NO_INLINE void radixSortLSDInternal(Element * arr, size_t size, bool reverse, Result * destination)
     {
@@ -304,7 +303,7 @@ private:
         }
 
         {
-            /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions minus one.
+            /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions.
             CountType sums[NUM_PASSES] = {0};
 
             for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
@@ -312,7 +311,7 @@ private:
                 for (size_t pass = 0; pass < NUM_PASSES; ++pass)
                 {
                     CountType tmp = histograms[pass * HISTOGRAM_SIZE + i] + sums[pass];
-                    histograms[pass * HISTOGRAM_SIZE + i] = sums[pass] - 1;
+                    histograms[pass * HISTOGRAM_SIZE + i] = sums[pass];
                     sums[pass] = tmp;
                 }
             }
@@ -326,15 +325,23 @@ private:
 
             for (size_t i = 0; i < size; ++i)
             {
-                size_t pos = extractPart(pass, reader[i]);
+                auto element = reader[i];
+                size_t pos = extractPart(pass, element);
+                if (i + PREFETCH_DISTANCE < size) [[likely]]
+                {
+                    size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
+                    __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
+                }
 
                 /// Place the element on the next free position.
-                auto & dest = writer[++histograms[pass * HISTOGRAM_SIZE + pos]];
-                dest = reader[i];
+                auto & dest = writer[histograms[pass * HISTOGRAM_SIZE + pos]];
+                dest = element;
 
                 /// On the last pass, we do the reverse transformation.
                 if (!Traits::Transform::transform_is_simple && pass == NUM_PASSES - 1)
-                    Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(reader[i]))));
+                    Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(element))));
+
+                histograms[pass * HISTOGRAM_SIZE + pos]++;
             }
         }
 
@@ -348,16 +355,30 @@ private:
             {
                 for (size_t i = 0; i < size; ++i)
                 {
-                    size_t pos = extractPart(pass, reader[i]);
-                    writer[size - 1 - (++histograms[pass * HISTOGRAM_SIZE + pos])] = Traits::extractResult(reader[i]);
+                    auto element = reader[i];
+                    size_t pos = extractPart(pass, element);
+                    if (i + PREFETCH_DISTANCE < size) [[likely]]
+                    {
+                        size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
+                        __builtin_prefetch(&writer[size - 1 - histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
+                    }
+
+                    writer[size - 1 - (histograms[pass * HISTOGRAM_SIZE + pos]++)] = Traits::extractResult(element);
                 }
             }
             else
             {
                 for (size_t i = 0; i < size; ++i)
                 {
-                    size_t pos = extractPart(pass, reader[i]);
-                    writer[++histograms[pass * HISTOGRAM_SIZE + pos]] = Traits::extractResult(reader[i]);
+                    auto element = reader[i];
+                    size_t pos = extractPart(pass, element);
+                    if (i + PREFETCH_DISTANCE < size)
+                    {
+                        size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
+                        __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
+                    }
+
+                    writer[histograms[pass * HISTOGRAM_SIZE + pos]++] = Traits::extractResult(element);
                 }
             }
         }
