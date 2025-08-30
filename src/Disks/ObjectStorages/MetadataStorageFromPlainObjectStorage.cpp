@@ -292,7 +292,10 @@ void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std
     auto normalized_path = normalizeDirectoryPath(path);
     if (normalized_path.empty())
     {
-        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageTransaction"), "Skipping creation of a directory with an empty path");
+        LOG_TRACE(
+            getLogger("MetadataStorageFromPlainObjectStorageTransaction"),
+            "Skipping creation of a directory '{}' with an empty normalized path",
+            path);
         return;
     }
 
