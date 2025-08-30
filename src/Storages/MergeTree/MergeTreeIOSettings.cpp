@@ -2,6 +2,7 @@
 #include <DataTypes/ObjectUtils.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/SelectQueryInfo.h>
 
@@ -47,12 +48,19 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_compress_block_size;
     extern const MergeTreeSettingsUInt64 min_compress_block_size;
     extern const MergeTreeSettingsNonZeroUInt64 primary_key_compress_block_size;
+    extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
+    extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_compact_part;
+    extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
+    extern const MergeTreeSettingsMergeTreeDynamicSerializationVersion dynamic_serialization_version;
 }
 
 MergeTreeWriterSettings::MergeTreeWriterSettings(
     const Settings & global_settings,
     const WriteSettings & query_write_settings_,
     const MergeTreeSettingsPtr & storage_settings,
+    const MergeTreeDataPartPtr & data_part,
     bool can_use_adaptive_granularity_,
     bool rewrite_primary_key_,
     bool save_marks_in_cache_,
@@ -74,7 +82,10 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , low_cardinality_max_dictionary_size(global_settings[Setting::low_cardinality_max_dictionary_size])
     , low_cardinality_use_single_dictionary_for_part(global_settings[Setting::low_cardinality_use_single_dictionary_for_part] != 0)
     , use_compact_variant_discriminators_serialization((*storage_settings)[MergeTreeSetting::use_compact_variant_discriminators_serialization])
-    , use_v1_object_and_dynamic_serialization(global_settings[Setting::merge_tree_use_v1_object_and_dynamic_serialization])
+    , dynamic_serialization_version(global_settings[Setting::merge_tree_use_v1_object_and_dynamic_serialization] ? MergeTreeDynamicSerializationVersion::V1 : (*storage_settings)[MergeTreeSetting::dynamic_serialization_version])
+    , object_serialization_version(global_settings[Setting::merge_tree_use_v1_object_and_dynamic_serialization] ? MergeTreeObjectSerializationVersion::V1 : (*storage_settings)[MergeTreeSetting::object_serialization_version])
+    , object_shared_data_serialization_version(data_part->isZeroLevel() ? (*storage_settings)[MergeTreeSetting::object_shared_data_serialization_version_for_zero_level_parts] : (*storage_settings)[MergeTreeSetting::object_shared_data_serialization_version])
+    , object_shared_data_buckets(isCompactPart(data_part) ? (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] : (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_wide_part])
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
 {

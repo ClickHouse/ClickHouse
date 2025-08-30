@@ -19,7 +19,7 @@ $CLICKHOUSE_CLIENT -q "
         max_cleanup_delay_period = 1,
         cleanup_delay_period_random_add = 0;
 
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
     INSERT INTO t_lwu_bytes_limits_2 SELECT number, randomPrintableASCII(10) FROM numbers(2000);
 
     UPDATE t_lwu_bytes_limits_2 SET s = 'aaabbb' WHERE 1;
@@ -53,7 +53,7 @@ for _ in {0..50}; do
 done
 
 $CLICKHOUSE_CLIENT -q "
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
     UPDATE t_lwu_bytes_limits_2 SET s = 'cccddd' WHERE 1;
 
     SELECT sum(data_uncompressed_bytes) < 100 * 1024
