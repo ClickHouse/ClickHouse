@@ -93,6 +93,10 @@ private:
         int64_t size,
         const std::unique_ptr<Stopwatch> & execution_watch);
 
+    /// Calculates size of buffer for the next prefetch or read operation taking into account current position and
+    /// number of bytes left until the end of the file.
+    size_t calculateBufferSizeForNextRead() const;
+
     std::future<IAsynchronousReader::Result> readAsync(char * data, size_t size, Priority priority);
 
     IAsynchronousReader::Result readSync(char * data, size_t size);
