@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FullTextSearchFunctionMixin.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
@@ -84,9 +85,10 @@ enum class HaystackNeedleOrderIsConfigurable : uint8_t
 };
 
 template <typename Impl,
-         ExecutionErrorPolicy execution_error_policy = ExecutionErrorPolicy::Throw,
-         HaystackNeedleOrderIsConfigurable haystack_needle_order_is_configurable = HaystackNeedleOrderIsConfigurable::No>
-class FunctionsStringSearch : public IFunction
+    ExecutionErrorPolicy execution_error_policy = ExecutionErrorPolicy::Throw,
+    HaystackNeedleOrderIsConfigurable haystack_needle_order_is_configurable = HaystackNeedleOrderIsConfigurable::No,
+    FullTextSearchFunctionMixin::IsReplaceable replaceable = FullTextSearchFunctionMixin::IsReplaceable::No>
+class FunctionsStringSearch : public IFunction, public FullTextSearchFunctionMixin
 {
 private:
     enum class ArgumentOrder : uint8_t
@@ -100,9 +102,10 @@ private:
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionsStringSearch>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionsStringSearch>(context_); }
 
-    explicit FunctionsStringSearch([[maybe_unused]] ContextPtr context)
+    explicit FunctionsStringSearch(ContextPtr context_)
+        : FullTextSearchFunctionMixin(replaceable, context_)
     {
         if constexpr (haystack_needle_order_is_configurable == HaystackNeedleOrderIsConfigurable::Yes)
         {

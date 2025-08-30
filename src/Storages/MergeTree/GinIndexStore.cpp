@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/GinFilter.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -934,12 +935,32 @@ GinPostingsListsCachePtr GinIndexStoreDeserializer::createPostingsListsCacheFrom
     return postings_lists_cache;
 }
 
-GinPostingsListsCachePtr GinPostingsListsCacheForStore::getPostingsLists(const String & query_string) const
+
+GinPostingsListsCacheForStore::GinPostingsListsCacheForStore(const String & name, DataPartStoragePtr storage)
+    :store(GinIndexStoreFactory::instance().get(name, storage))
 {
-    auto it = cache.find(query_string);
-    if (it == cache.end())
-        return nullptr;
-    return it->second;
+    chassert(store);
+}
+
+GinPostingsListsCachePtr GinPostingsListsCacheForStore::getCachedPostings(const GinQueryString & gin_query_string) const
+{
+    if (auto it = cache.find(gin_query_string.getQueryString()); it != cache.end())
+        return it->second;
+
+    return nullptr;
+}
+
+GinPostingsListsCachePtr GinPostingsListsCacheForStore::getOrRetrievePostings(const GinQueryString & gin_query_string)
+{
+    if (auto cached_posting = this->getCachedPostings(gin_query_string))
+        return cached_posting;
+
+    GinIndexStoreDeserializer reader(store);
+    GinPostingsListsCachePtr postings_cache = reader.createPostingsListsCacheFromTokens(gin_query_string.getTokens());
+    const auto [place, inserted] = cache.emplace(gin_query_string.getQueryString(), std::move(postings_cache));
+    chassert(inserted);
+
+    return place->second;
 }
 
 GinIndexStoreFactory & GinIndexStoreFactory::instance()

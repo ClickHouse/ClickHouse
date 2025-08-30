@@ -67,6 +67,8 @@ public:
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
     bool mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule, GinPostingsListsCacheForStore & postings_lists_cache_for_store) const;
 
+    std::shared_ptr<const GinQueryString> getGinFilter(const std::string & token) const;
+
 private:
     struct KeyTuplePositionMapping
     {
@@ -97,16 +99,18 @@ private:
             /// Constants
             ALWAYS_FALSE,
             ALWAYS_TRUE,
+            /// Index Functions
+            FUNCTION_EQUALS_INDEX,
         };
 
         RPNElement( /// NOLINT
             Function function_ = FUNCTION_UNKNOWN, std::unique_ptr<GinQueryString> && query_string_ = nullptr)
-                : function(function_), query_string(std::move(query_string_)) {}
+                : function(function_), gin_query_string(std::move(query_string_)) {}
 
         Function function = FUNCTION_UNKNOWN;
 
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS
-        std::unique_ptr<GinQueryString> query_string;
+        std::shared_ptr<GinQueryString> gin_query_string;
 
         /// For FUNCTION_IN and FUNCTION_NOT_IN
         std::vector<std::vector<GinQueryString>> query_strings_for_set;
@@ -124,6 +128,8 @@ private:
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out);
+
+    bool traverseASTEqualsIndex(const RPNBuilderFunctionTreeNode & function, RPNElement & out);
 
     bool tryPrepareSetGinFilter(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, RPNElement & out);
 

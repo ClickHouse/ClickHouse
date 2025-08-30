@@ -59,6 +59,8 @@ struct GinSegmentWithRowIdRange
 
 using GinSegmentsWithRowIdRange = std::vector<GinSegmentWithRowIdRange>;
 
+struct MarkRanges;
+
 /// GinFilter provides two types of functionality:
 /// 1) it builds a text index, and
 /// 2) it filters the unmatched rows according to its query string.
@@ -97,6 +99,10 @@ public:
 
     /// Check if the filter (built from query string) contains any rows in given filter by using given postings list cache.
     bool contains(const GinQueryString & query_string, GinPostingsListsCacheForStore & postings_lists_cache_for_store, GinSearchMode mode = GinSearchMode::All) const;
+
+    /// Get row numbers whose content match a given query string.
+    /// 'ranges' limit the desired indices.
+    std::vector<UInt32> getMatchingRows(const GinQueryString & gin_query_string, const GinPostingsListsCacheForStore * cache_store, const MarkRanges & ranges) const;
 
     const GinSegmentsWithRowIdRange & getSegmentsWithRowIdRange() const { return segments_with_rowid_range; }
     GinSegmentsWithRowIdRange & getSegmentsWithRowIdRange() { return segments_with_rowid_range; }

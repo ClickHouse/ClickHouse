@@ -32,7 +32,8 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-
+#include <utility>
+#include <shared_mutex>
 
 namespace Poco::Net
 {
@@ -269,6 +270,12 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+
+struct UsefulSkipIndexes;
+struct RangesInDataParts;
+struct PostingsCacheForStore;
+
+class IndexContextInfo;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -574,6 +581,12 @@ protected:
     using StorageSnapshotCache = std::unordered_map<const IStorage *, StorageSnapshotPtr>;
     mutable StorageSnapshotCache storage_snapshot_cache;
     mutable std::mutex storage_snapshot_cache_mutex;
+
+    /// TODO: get a better name for this.
+    using IndexContextInfoPtr = std::shared_ptr<const IndexContextInfo>;
+    mutable std::shared_mutex index_info_mutex;
+    mutable bool needs_index_info;
+    mutable IndexContextInfoPtr index_info;
 
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
@@ -1470,6 +1483,40 @@ public:
     std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> getSampleBlockCache() const;
     std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> getStorageMetadataCache() const;
     std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> getStorageSnapshotCache() const;
+
+     /// Information needed in pure index functions (without real column access).
+    void setNeedsIndexInfo() const
+    {
+        std::lock_guard lock(index_info_mutex);
+        chassert(index_info == nullptr);
+        needs_index_info = true;
+    }
+
+    bool needsIndexInfo() const
+    {
+        std::shared_lock slock(index_info_mutex);
+        return needs_index_info;
+    }
+
+    bool updateIndexInfo(IndexContextInfoPtr info) const
+    {
+        std::lock_guard lock(index_info_mutex);
+        chassert(needs_index_info);
+        index_info = info;
+        return true;
+    }
+
+    std::pair<IndexContextInfoPtr, std::shared_lock<std::shared_mutex>> getIndexInfo() const
+    {
+        std::shared_lock slock(index_info_mutex);
+        /// This function may be used ONLY when needs_index_info is set.
+        chassert(needs_index_info);
+        if (index_info)
+            return {index_info, std::move(slock)};
+
+        return {nullptr, std::shared_lock<std::shared_mutex>{}};
+    }
+
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;

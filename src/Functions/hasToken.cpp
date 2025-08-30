@@ -1,3 +1,4 @@
+#include <Functions/FullTextSearchFunctionMixin.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringSearch.h>
 #include <Functions/HasTokenImpl.h>
@@ -17,8 +18,12 @@ struct NameHasTokenOrNull
     static constexpr auto name = "hasTokenOrNull";
 };
 
-using FunctionHasToken
-    = FunctionsStringSearch<HasTokenImpl<NameHasToken, Volnitsky, false>>;
+using FunctionHasToken = FunctionsStringSearch<
+    HasTokenImpl<NameHasToken, Volnitsky, false>,
+    ExecutionErrorPolicy::Throw,
+    HaystackNeedleOrderIsConfigurable::No,
+    FullTextSearchFunctionMixin::IsReplaceable::Yes>;
+
 using FunctionHasTokenOrNull
     = FunctionsStringSearch<HasTokenImpl<NameHasTokenOrNull, Volnitsky, false>, ExecutionErrorPolicy::Null>;
 
