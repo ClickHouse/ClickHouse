@@ -67,7 +67,7 @@ for TEST in "${TESTS[@]}"; do
           test_case_result="$(echo "$test_case_result" | sed s/FAIL/OK/)"
           test_case_result="$(echo "$test_case_result" | sed s/INFO//)"
         else
-          test_case_result="$(echo "$test_case_result" | sed s/INFO/$assertion_error/)"
+          test_case_result="$(echo "$test_case_result" | sed "s|INFO|$assertion_error|")"
           OVERALL_STATUS="failure"
         fi
 
