@@ -46,6 +46,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_iceberg_data_file_rows", 100000, 100000, "New setting."},
             {"max_iceberg_data_file_bytes", 100000000, 100000000, "New setting."},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
+            {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {

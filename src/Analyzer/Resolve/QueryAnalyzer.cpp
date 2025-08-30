@@ -3704,7 +3704,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /** Create SET column for special function IN to allow constant folding
-      * if left and right arguments are constants.
+      * if right arguments is a constant.
       *
       * Example: SELECT * FROM test_table LIMIT 1 IN 1;
       */
