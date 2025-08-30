@@ -1335,6 +1335,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 no_order_by_optimization_impl();
             } else
             {
+                // Max allowable fill of method.data (hash table)
                 size_t max_allowable_fill = std::numeric_limits<uint64_t>::max();
                 const size_t allowed_times_more = 4; // constant could be changed;
                 if (std::numeric_limits<uint64_t>::max() / allowed_times_more >= params.limit_plus_offset_length)
@@ -1343,12 +1344,11 @@ void NO_INLINE Aggregator::executeImplBatch(
                 const auto& optimization_indexes = params.optimization_indexes.value();
                 using DataIterator = typename DataType::iterator;
 
+                // Making heap
                 std::vector<DataIterator> top_keys_heap;
                 top_keys_heap.reserve(roundUpToPow2(params.limit_plus_offset_length));
-                chassert(method.data.size() <= max_allowable_fill);
                 for (auto iterator = method.data.begin(); iterator != method.data.end(); ++iterator)
                     top_keys_heap.push_back(iterator);
-
                 auto heap_cmp = [&](DataIterator& lhs, DataIterator& rhs)
                 {
                     return ColumnsHashing::columns_hashing_impl::compareKeyHolders(lhs->getKey(), rhs->getKey(), optimization_indexes);
@@ -1377,7 +1377,6 @@ void NO_INLINE Aggregator::executeImplBatch(
                     }
 
                     auto emplace_result = state.emplaceKeyOptimization(method.data, i, *aggregates_pool, optimization_indexes, params.limit_plus_offset_length, max_allowable_fill, top_keys_heap, heap_cmp);
-                    // auto emplace_result = std::optional{state.emplaceKey(method.data, i, *aggregates_pool)};
 
                     if (!emplace_result.has_value())
                     {
