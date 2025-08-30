@@ -1,29 +1,32 @@
 
 #include <memory>
 #include <sstream>
+#include <config.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Settings.h>
+#include <Core/TypeId.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <IO/CompressionMethod.h>
+#include <Interpreters/Context_fwd.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <base/getThreadId.h>
+#include <base/types.h>
 #include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Parsers/ASTFunction.h>
-#include <Core/Settings.h>
-#include <Core/TypeId.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <IO/CompressionMethod.h>
-#include <Interpreters/Context_fwd.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Storages/ColumnsDescription.h>
-#include <base/types.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
-#include <config.h>
+
 
 #if USE_AVRO
 
@@ -821,6 +824,37 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
 }
 
+
+template <typename T>
+OneThreadProtecting<T>::OneThreadProtecting() = default;
+
+template <typename T>
+void OneThreadProtecting<T>::set(T value_)
+{
+    std::lock_guard lock(mutex);
+    this->value = std::move(value_);
+    current_thread_id = getThreadId();
+}
+
+template <typename T>
+T & OneThreadProtecting<T>::get()
+{
+    std::lock_guard lock(mutex);
+    if (current_thread_id != getThreadId())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Another thread is using the object protected by OneThreadProtecting");
+    return value.value();
+}
+
+template <typename T>
+const T & OneThreadProtecting<T>::get() const
+{
+    std::lock_guard lock(mutex);
+    if (current_thread_id != getThreadId())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Another thread is using the object protected by OneThreadProtecting");
+    return value.value();
+}
+
+template class OneThreadProtecting<IcebergTableStateSnapshot>;
 }
 
 #endif

@@ -48,7 +48,9 @@ public:
         const ActionsDAG * /* filter_dag */,
         FileProgressCallback /* callback */,
         size_t /* list_batch_size */,
-        ContextPtr context) const = 0;
+        StorageSnapshotPtr storage_snapshot,
+        ContextPtr context) const
+        = 0;
 
     /// Table schema from data lake metadata.
     virtual NamesAndTypesList getTableSchema() const = 0;
@@ -65,24 +67,28 @@ public:
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
 
-    /// Whether metadata is updateable (instead of recreation from scratch)
+    virtual bool neverNeedUpdateOnReadWrite() const { return false; }
+
+    /// Whether current metadata object is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
     virtual bool supportsUpdate() const { return false; }
     /// Update metadata to the latest version.
     virtual bool update(const ContextPtr &) { return false; }
-
+        
     virtual bool supportsSchemaEvolution() const { return false; }
     virtual bool supportsWrites() const { return false; }
 
     virtual void modifyFormatSettings(FormatSettings &) const {}
 
-    virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
-    virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
+    virtual void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr /**/) { }
+
+    virtual std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr) const { return {}; }
+    virtual std::optional<size_t> updateConfigurationAndGetTotalBytes(ContextPtr) const { return {}; }
 
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
-    virtual ColumnMapperPtr getColumnMapperForCurrentSchema() const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr, ContextPtr) const { return nullptr; }
 
     virtual SinkToStoragePtr write(
         SharedHeader /*sample_block*/,
