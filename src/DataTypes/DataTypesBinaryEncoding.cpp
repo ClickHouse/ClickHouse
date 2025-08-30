@@ -103,7 +103,16 @@ enum class BinaryTypeIndex : uint8_t
     JSON = 0x30,
     BFloat16 = 0x31,
     Time = 0x32,
-    Time64 = 0x33,
+    /* The reason behind putting Time64 to 0x34 instead of 0x33 is following:
+    Originally, there were Time and Time64 with (and without) timezones, which were making the following indexing:
+    TimeUTC = 0x32
+    TimeWithTimezone = 0x33
+    Time64UTC = 0x34
+    Time64WithTimezone = 0x35
+
+    After that timezoned became forbidden for Time[64] types, so we removed those types from here.
+    But we need to make the indexing consistent with integration tools.*/
+    Time64 = 0x34
 };
 
 /// In future we can introduce more arguments in the JSON data type definition.
