@@ -119,6 +119,8 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    std::unique_ptr<IQueryPlanStep> clone() const override;
+
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
     void updateOutputHeader() override;

@@ -1757,6 +1757,22 @@ public:
 #endif
     }
 
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<MergePartsStep>(
+            input_headers.front(),
+            sort_description,
+            partition_and_sorting_required_columns,
+            merging_params,
+            rows_sources_temporary_file_name,
+            merge_block_size_rows,
+            merge_block_size_bytes,
+            blocks_are_granules_size,
+            cleanup,
+            time_of_merge
+        );
+    }
+
     void updateOutputHeader() override
     {
         output_header = input_headers.front();
