@@ -46,6 +46,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_iceberg_data_file_rows", 100000, 100000, "New setting."},
             {"max_iceberg_data_file_bytes", 100000000, 100000000, "New setting."},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
+            {"enable_producing_buckets_out_of_order_in_aggregation", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
@@ -111,7 +112,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"promql_table", "", "", "New experimental setting"},
             {"evaluation_time", 0, 0, "New experimental setting"},
             {"output_format_parquet_date_as_uint16", false, false, "Added a compatibility setting for a minor compatibility-breaking change introduced back in 24.12."},
-            {"allow_experimental_delta_lake_writes", false, false, "New setting."},
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
             {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
