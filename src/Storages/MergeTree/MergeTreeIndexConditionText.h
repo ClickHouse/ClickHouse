@@ -22,6 +22,7 @@ public:
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
     bool useBloomFilter() const { return use_bloom_filter; }
+    TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
 
 private:
     struct KeyTuplePositionMapping
@@ -91,7 +92,9 @@ private:
     RPN rpn;
     PreparedSetsPtr prepared_sets;
     std::vector<String> all_search_tokens;
+
     bool use_bloom_filter = true;
+    TextSearchMode global_search_mode = TextSearchMode::All;
 };
 
 }

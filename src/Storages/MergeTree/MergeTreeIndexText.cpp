@@ -146,19 +146,27 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(IndexInputS
 
     analyzeBloomFilter(*condition_text);
     auto begin_mark = state.current_marks.at(IndexSubstream::Type::TextIndexDictionary);
-    analyzeDictionary(begin_mark, *dictionary_stream);
+    analyzeDictionary(begin_mark, condition_text->getGlobalSearchMode(), *dictionary_stream);
 }
 
 void MergeTreeIndexGranuleText::analyzeBloomFilter(const MergeTreeIndexConditionText & condition)
 {
     const auto & search_tokens = condition.getAllSearchTokens();
+    auto global_search_mode = condition.getGlobalSearchMode();
 
     if (condition.useBloomFilter())
     {
         for (const auto & token : search_tokens)
         {
             if (bloom_filter.find(token.data(), token.size()))
+            {
                 remaining_tokens.emplace(token, MarkInCompressedFile{0, 0});
+            }
+            else if (global_search_mode == TextSearchMode::All)
+            {
+                remaining_tokens.clear();
+                return;
+            }
         }
     }
     else
@@ -168,7 +176,7 @@ void MergeTreeIndexGranuleText::analyzeBloomFilter(const MergeTreeIndexCondition
     }
 }
 
-void MergeTreeIndexGranuleText::analyzeDictionary(const MarkInCompressedFile & begin_mark, IndexReaderStream & stream)
+void MergeTreeIndexGranuleText::analyzeDictionary(MarkInCompressedFile begin_mark, TextSearchMode global_search_mode, IndexReaderStream & stream)
 {
     if (remaining_tokens.empty())
         return;
@@ -204,16 +212,25 @@ void MergeTreeIndexGranuleText::analyzeDictionary(const MarkInCompressedFile & b
             auto token_idx = dictionary_block.binarySearch(token);
 
             if (token_idx.has_value())
+            {
                 it->second = dictionary_block.getMark(token_idx.value());
-            else
+            }
+            else if (global_search_mode == TextSearchMode::Any)
+            {
                 remaining_tokens.erase(it);
+            }
+            else
+            {
+                remaining_tokens.clear();
+                return;
+            }
         }
     }
 }
 
 bool MergeTreeIndexGranuleText::hasAllTokensFromQuery(const GinQueryString & query) const
 {
-    for (const auto & token : query.getTerms())
+    for (const auto & token : query.getTokens())
     {
         if (remaining_tokens.find(token) == remaining_tokens.end())
             return false;

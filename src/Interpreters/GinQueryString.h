@@ -5,6 +5,12 @@
 namespace DB
 {
 
+enum class TextSearchMode : uint8_t
+{
+    Any,
+    All
+};
+
 class GinQueryString
 {
 public:

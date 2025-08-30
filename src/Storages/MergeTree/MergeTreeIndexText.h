@@ -47,14 +47,14 @@ public:
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
     void deserializeBinaryWithMultipleStreams(IndexInputStreams & streams, IndexDeserializationState & state) override;
 
-    bool empty() const override { return sparse_index.empty(); }
+    bool empty() const override { return total_rows == 0; }
     size_t memoryUsageBytes() const override { return 0; }
     bool hasAllTokensFromQuery(const GinQueryString & query) const;
 
 private:
     void deserializeBloomFilter(ReadBuffer & istr);
     void analyzeBloomFilter(const MergeTreeIndexConditionText & condition);
-    void analyzeDictionary(const MarkInCompressedFile & begin_mark, IndexReaderStream & stream);
+    void analyzeDictionary(MarkInCompressedFile begin_mark, TextSearchMode global_search_mode, IndexReaderStream & stream);
 
     MergeTreeIndexTextParams params;
     size_t total_rows = 0;
@@ -96,7 +96,7 @@ struct MergeTreeIndexTextGranuleBuilder
 
     void addDocument(StringRef document);
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
-    bool empty() const { return tokens_map.empty(); }
+    bool empty() const { return current_row == 0; }
 
     MergeTreeIndexTextParams params;
     TokenExtractorPtr token_extractor;

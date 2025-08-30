@@ -44,7 +44,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
 
     auto collect_tokens = [&](const auto & gin_query_string)
     {
-        for (const auto & token : gin_query_string.getTerms())
+        for (const auto & token : gin_query_string.getTokens())
             all_search_tokens_set.insert(token);
     };
 
@@ -59,6 +59,11 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         {
             for (const auto & gin_query_string : gin_query_strings)
                 collect_tokens(gin_query_string);
+        }
+
+        if (element.function == RPNElement::FUNCTION_SEARCH_ANY || element.function == RPNElement::FUNCTION_OR)
+        {
+            global_search_mode = TextSearchMode::Any;
         }
     }
 
