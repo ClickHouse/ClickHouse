@@ -8,8 +8,10 @@ namespace DB
 struct MergeTreeIndexReadResult;
 using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
 
-/// A reader used in the first reading step to apply index-based filtering. Currently, skip indexes are used to
-/// determine which granules are relevant to the query, and only those are passed to subsequent readers.
+/// A reader used in the initial stage of reading to apply index-based filtering. Currently, both skip indexes and
+/// projection indexes are used to identify which granules are relevant to the query, and only those are passed to
+/// subsequent readers. In addition, the projection index constructs a row-level filter to further reduce I/O within
+/// selected granules.
 class MergeTreeReaderIndex : public IMergeTreeReader
 {
 public:
