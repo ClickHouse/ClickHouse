@@ -40,16 +40,16 @@ set(AI_SDK_ANTHROPIC_SOURCES
 
 # Add nlohmann_json from submodule
 set(NLOHMANN_JSON_SOURCE_DIR "${AI_SDK_THIRD_PARTY_DIR}/nlohmann_json_patched")
-add_library(_nlohmann_json INTERFACE)
-target_include_directories(_nlohmann_json SYSTEM INTERFACE 
+add_library(_ai_sdk_nlohmann_json INTERFACE)
+target_include_directories(_ai_sdk_nlohmann_json SYSTEM INTERFACE
     "${NLOHMANN_JSON_SOURCE_DIR}/include"
 )
-add_library(nlohmann_json::nlohmann_json ALIAS _nlohmann_json)
+add_library(ai_sdk_nlohmann_json::ai_sdk_nlohmann_json ALIAS _ai_sdk_nlohmann_json)
 
 # Add httplib from submodule (header-only)
 set(HTTPLIB_SOURCE_DIR "${AI_SDK_THIRD_PARTY_DIR}/httplib-header-only")
 add_library(_httplib INTERFACE)
-target_include_directories(_httplib SYSTEM INTERFACE 
+target_include_directories(_httplib SYSTEM INTERFACE
     "${HTTPLIB_SOURCE_DIR}"
 )
 target_link_libraries(_httplib INTERFACE
@@ -62,7 +62,7 @@ add_library(httplib::httplib ALIAS _httplib)
 # Add concurrentqueue from submodule (header-only)
 set(CONCURRENTQUEUE_SOURCE_DIR "${AI_SDK_THIRD_PARTY_DIR}/concurrentqueue-header-only")
 add_library(_concurrentqueue INTERFACE)
-target_include_directories(_concurrentqueue SYSTEM INTERFACE 
+target_include_directories(_concurrentqueue SYSTEM INTERFACE
     "${CONCURRENTQUEUE_SOURCE_DIR}"
 )
 add_library(concurrentqueue ALIAS _concurrentqueue)
@@ -79,7 +79,7 @@ target_include_directories(_ai-sdk-cpp-core SYSTEM
 
 target_link_libraries(_ai-sdk-cpp-core
     PUBLIC
-        nlohmann_json::nlohmann_json
+        ai_sdk_nlohmann_json::ai_sdk_nlohmann_json
     PRIVATE
         httplib::httplib
         concurrentqueue
@@ -105,7 +105,7 @@ target_include_directories(_ai-sdk-cpp-openai SYSTEM
 target_link_libraries(_ai-sdk-cpp-openai
     PUBLIC
         _ai-sdk-cpp-core
-        nlohmann_json::nlohmann_json
+        ai_sdk_nlohmann_json::ai_sdk_nlohmann_json
     PRIVATE
         httplib::httplib
         concurrentqueue
@@ -133,7 +133,7 @@ target_include_directories(_ai-sdk-cpp-anthropic SYSTEM
 target_link_libraries(_ai-sdk-cpp-anthropic
     PUBLIC
         _ai-sdk-cpp-core
-        nlohmann_json::nlohmann_json
+        ai_sdk_nlohmann_json::ai_sdk_nlohmann_json
     PRIVATE
         httplib::httplib
         concurrentqueue

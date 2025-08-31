@@ -1,5 +1,4 @@
 #include <Common/FieldVisitorToString.h>
-
 #include <Columns/ColumnNullable.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -31,8 +30,13 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Planner/Utils.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/QueryPlan/LimitStep.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/SetUtils.h>
@@ -61,6 +65,7 @@
 #include <Analyzer/Identifier.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 #include <Analyzer/RecursiveCTE.h>
+#include <Analyzer/QueryTreePassManager.h>
 
 #include <Analyzer/Resolve/CorrelatedColumnsCollector.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
@@ -92,6 +97,7 @@ namespace Setting
     extern const SettingsBool asterisk_include_materialized_columns;
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool enable_scopes_for_with_statement;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool enable_positional_arguments;
     extern const SettingsBool enable_scalar_subquery_optimization;
@@ -117,6 +123,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool execute_exists_as_scalar_subquery;
 }
 
 
@@ -209,7 +216,11 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
             }
 
             if (node_type == QueryTreeNodeType::LIST)
+            {
+                QueryExpressionsAliasVisitor visitor(scope.aliases);
+                visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            }
             else
                 resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -230,12 +241,13 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
                             node->getNodeTypeName());
         }
     }
+
+    validateCorrelatedSubqueries(node);
 }
 
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
 {
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
-
     if (!scope.context)
         scope.context = context;
 
@@ -258,6 +270,8 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
         resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     else
         resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+    validateCorrelatedSubqueries(node);
 }
 
 bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeNode * tree_node)
@@ -571,7 +585,7 @@ bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
 }
 
 /// Evaluate scalar subquery and perform constant folding if scalar subquery does not have constant value
-void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool execute_for_exists)
 {
     auto * query_node = node->as<QueryNode>();
     auto * union_node = node->as<UnionNode>();
@@ -679,7 +693,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         if (only_analyze)
         {
             /// If query is only analyzed, then constants are not correct.
-            scalar_block = interpreter->getSampleBlock();
+            scalar_block = *interpreter->getSampleBlock();
             for (auto & column : scalar_block)
             {
                 if (column.column->empty())
@@ -694,38 +708,79 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         }
         else
         {
-            auto io = interpreter->execute();
-            PullingAsyncPipelineExecutor executor(io.pipeline);
-            io.pipeline.setProgressCallback(context->getProgressCallback());
-            io.pipeline.setProcessListElement(context->getProcessListElement());
-            io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
+            BlockIO io;
+            auto & query_plan = interpreter->getQueryPlan();
+            bool skip_execution_for_exists = false;
 
+            if (execute_for_exists)
+            {
+                if (optimizePlanForExists(query_plan))
+                    skip_execution_for_exists = true;
+                else
+                {
+                    auto limit_step = std::make_unique<LimitStep>(query_plan.getCurrentHeader(), 1, 0);
+                    query_plan.addStep(std::move(limit_step));
+                }
+            }
+
+            if (!skip_execution_for_exists)
+            {
+                QueryPlanOptimizationSettings optimization_settings(subquery_context);
+                BuildQueryPipelineSettings build_pipeline_settings(subquery_context);
+
+                query_plan.setConcurrencyControl(subquery_context->getSettingsRef()[Setting::use_concurrency_control]);
+
+                auto pipeline_builder = std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
+
+                io.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
+                io.pipeline.setQuota(subquery_context->getQuota());
+            }
+
+            std::optional<PullingAsyncPipelineExecutor> executor;
             Block block;
 
-            while (block.rows() == 0 && executor.pull(block))
+            if (!skip_execution_for_exists)
             {
+                io.pipeline.setProgressCallback(context->getProgressCallback());
+                io.pipeline.setProcessListElement(context->getProcessListElement());
+                io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
+
+                executor.emplace(io.pipeline);
+                while (block.rows() == 0 && executor->pull(block))
+                {
+                }
             }
 
             if (block.rows() == 0)
             {
-                auto types = interpreter->getSampleBlock().getDataTypes();
-                if (types.size() != 1)
-                    types = {std::make_shared<DataTypeTuple>(types)};
-
-                auto & type = types[0];
-                if (!type->isNullable())
+                DataTypePtr type;
+                if (execute_for_exists)
+                    type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+                else
                 {
-                    if (!type->canBeInsideNullable())
-                        throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
-                            "Scalar subquery returned empty result of type {} which cannot be Nullable",
-                            type->getName());
+                    const auto & sample_block = interpreter->getSampleBlock();
+                    auto types = sample_block->getDataTypes();
+                    if (types.size() != 1)
+                        types = {std::make_shared<DataTypeTuple>(types)};
 
-                    type = makeNullable(type);
+                    type = types[0];
+                    if (!type->isNullable())
+                    {
+                        if (!type->canBeInsideNullable())
+                            throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
+                                "Scalar subquery returned empty result of type {} which cannot be Nullable",
+                                type->getName());
+
+                        type = makeNullable(type);
+                    }
                 }
 
                 auto scalar_column = type->createColumn();
-                scalar_column->insert(Null());
-                scalar_block.insert({std::move(scalar_column), type, "null"});
+                if (skip_execution_for_exists)
+                    scalar_column->insert(1);
+                else
+                    scalar_column->insert(Null());
+                scalar_block.insert({std::move(scalar_column), type, (execute_for_exists ? "exists" : "null")});
             }
             else
             {
@@ -733,15 +788,25 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
                 Block tmp_block;
-                while (tmp_block.rows() == 0 && executor.pull(tmp_block))
+                while (tmp_block.rows() == 0 && executor->pull(tmp_block))
                 {
                 }
 
                 if (tmp_block.rows() != 0)
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
-                wrap_with_nullable_or_tuple(block);
-                scalar_block = std::move(block);
+                if (execute_for_exists)
+                {
+                    auto type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+                    auto scalar_column = type->createColumn();
+                    scalar_column->insert(1);
+                    scalar_block.insert({std::move(scalar_column), type, "exists"});
+                }
+                else
+                {
+                    wrap_with_nullable_or_tuple(block);
+                    scalar_block = std::move(block);
+                }
             }
 
             logProcessorProfile(context, io.pipeline.getProcessors());
@@ -2555,6 +2620,13 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
 
         parent_window_node = window_node_it->second;
 
+        auto [_, inserted] = windows_in_resolve_process.emplace(parent_window_node.get());
+        if (!inserted)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Recursive window {}. In scope {}",
+                node->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+
         if (identifier_node)
         {
             node = parent_window_node->clone();
@@ -2636,6 +2708,7 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
             frame_end_offset_projection_names.empty() ? "" : frame_end_offset_projection_names.front());
     }
 
+    windows_in_resolve_process.erase(parent_window_node.get());
     return result_projection_name;
 }
 
@@ -3003,18 +3076,33 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
-            /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
-            QueryTreeNodePtr constant = std::make_shared<ConstantNode>(1UL, constant_data_type);
+            if (only_analyze || !scope.context->getSettingsRef()[Setting::execute_exists_as_scalar_subquery])
+            {
+                /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
+                QueryTreeNodePtr constant = std::make_shared<ConstantNode>(1UL, constant_data_type);
 
-            function_node_ptr = std::make_shared<FunctionNode>("in");
-            function_node_ptr->getArguments().getNodes() = {
-                constant,
-                std::move(new_exists_argument)
-            };
+                function_node_ptr = std::make_shared<FunctionNode>("in");
+                function_node_ptr->getArguments().getNodes() = {
+                    constant,
+                    std::move(new_exists_argument)
+                };
 
-            node = function_node_ptr;
-            function_name = "in";
-            is_special_function_in = true;
+                node = function_node_ptr;
+                function_name = "in";
+                is_special_function_in = true;
+            }
+            else
+            {
+                evaluateScalarSubqueryIfNeeded(new_exists_argument, scope, true);
+                auto res_col = ColumnUInt8::create();
+                const auto * const_node = new_exists_argument->as<ConstantNode>();
+                res_col->getData().push_back(const_node->getColumn()->isNullAt(0) ? 0 : 1);
+                ConstantValue const_value(std::move(res_col), std::make_shared<DataTypeUInt8>());
+                auto tme_const_node = std::make_shared<ConstantNode>(std::move(const_value), std::move(node));
+                auto res = tme_const_node->getValueStringRepresentation();
+                node = std::move(tme_const_node);
+                return {std::move(res)};
+            }
         }
     }
 
@@ -4924,7 +5012,26 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 table_function_node_to_resolve_typed->getArgumentsNode() = table_function_argument_function->getArgumentsNode();
 
                 QueryTreeNodePtr table_function_node_to_resolve = std::move(table_function_node_to_resolve_typed);
-                resolveTableFunction(table_function_node_to_resolve, scope, expressions_visitor, true /*nested_table_function*/);
+                if (table_function_argument_function_name == "view")
+                {
+                    /// Subquery in view() table function can reference tables that don't exist on the initiator.
+                    /// In the following example `users` table may be not available on the initiator:
+                    /// SELECT *
+                    /// FROM remoteSecure(<address>, view(
+                    ///     SELECT
+                    ///         t1.age,
+                    ///         t1.name,
+                    ///         t2.name
+                    ///     FROM users AS t1
+                    ///     INNER JOIN users AS t2 ON t1.uid = t2.uid
+                    /// ), <user>, <password>)
+                    /// SETTINGS prefer_localhost_replica = 0
+                    skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+                }
+                else
+                {
+                    resolveTableFunction(table_function_node_to_resolve, scope, expressions_visitor, true /*nested_table_function*/);
+                }
 
                 result_table_function_arguments.push_back(std::move(table_function_node_to_resolve));
                 continue;
@@ -5690,8 +5797,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// Initialize aliases in query node scope
     QueryExpressionsAliasVisitor visitor(scope.aliases);
 
-    if (query_node_typed.hasWith())
+    if (scope.context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
+    {
         visitor.visit(query_node_typed.getWithNode());
+    }
+    else
+    {
+        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases);
+        alias_collector.visit(query_node_typed.getWithNode());
+
+        scope.aliases = scope.global_with_aliases;
+    }
 
     if (!query_node_typed.getProjection().getNodes().empty())
         visitor.visit(query_node_typed.getProjectionNode());

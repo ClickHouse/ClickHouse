@@ -6,7 +6,7 @@
 namespace DB
 {
 
-IInputFormat::IInputFormat(Block header, ReadBuffer * in_) : ISource(std::move(header)), in(in_)
+IInputFormat::IInputFormat(SharedHeader header, ReadBuffer * in_) : ISource(std::move(header)), in(in_)
 {
     column_mapping = std::make_shared<ColumnMapping>();
 }
@@ -15,7 +15,8 @@ Chunk IInputFormat::generate()
 {
     try
     {
-        return read();
+        Chunk res = read();
+        return res;
     }
     catch (Exception & e)
     {
@@ -28,8 +29,9 @@ Chunk IInputFormat::generate()
 
 void IInputFormat::resetParser()
 {
-    chassert(in);
-    in->ignoreAll();
+    if (in)
+        in->ignoreAll();
+
     // those are protected attributes from ISource (I didn't want to propagate resetParser up there)
     finished = false;
     got_exception = false;
@@ -48,4 +50,13 @@ Chunk IInputFormat::getChunkForCount(size_t rows)
     return cloneConstWithDefault(Chunk{header.getColumns(), 0}, rows);
 }
 
+void IInputFormat::resetOwnedBuffers()
+{
+    owned_buffers.clear();
+}
+
+void IInputFormat::onFinish()
+{
+    resetReadBuffer();
+}
 }

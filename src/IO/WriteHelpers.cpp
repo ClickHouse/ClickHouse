@@ -36,7 +36,7 @@ std::array<char, 36> formatUUID(const UUID & uuid)
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     const auto * src_ptr = reinterpret_cast<const UInt8 *>(&uuid);
-    const std::reverse_iterator src(src_ptr + 16);
+    const std::reverse_iterator<const UInt8 *> src(src_ptr + 16);
 #else
     const auto * src = reinterpret_cast<const UInt8 *>(&uuid);
 #endif
@@ -70,11 +70,11 @@ void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf)
 
 void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
 {
-    char addr[IPV6_MAX_TEXT_LENGTH + 1] {};
+    char addr[IPV6_MAX_TEXT_LENGTH] {};
     char * paddr = addr;
 
     formatIPv6(reinterpret_cast<const unsigned char *>(&ip), paddr);
-    buf.write(addr, paddr - addr - 1);
+    buf.write(addr, paddr - addr);
 }
 
 void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace)

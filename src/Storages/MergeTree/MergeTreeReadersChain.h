@@ -22,7 +22,7 @@ public:
     size_t numRowsInCurrentGranule() const;
     size_t currentMark() const;
 
-    Block getSampleBlock() const;
+    const Block & getSampleBlock() const;
     bool isCurrentRangeFinished() const;
 
 private:
@@ -53,8 +53,6 @@ private:
         std::optional<UInt64> max_version,
         bool after_conversions,
         const Block & additional_columns) const;
-
-    using PatchReadResultPtr = MergeTreePatchReader::PatchReadResultPtr;
 
     RangeReaders range_readers;
     MergeTreePatchReaders patch_readers;

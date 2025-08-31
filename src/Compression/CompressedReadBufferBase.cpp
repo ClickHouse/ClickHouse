@@ -178,47 +178,80 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     if (compressed_in->eof())
         return 0;
 
-    UInt8 header_size = ICompressionCodec::getHeaderSize();
-    own_compressed_buffer.resize(header_size + sizeof(Checksum));
-    compressed_in->readStrict(own_compressed_buffer.data(), sizeof(Checksum) + header_size);
-    own_compressed_buffer_header_init = true;
+    constexpr UInt8 header_size = ICompressionCodec::getHeaderSize();
+    constexpr size_t size_header_plus_checksum = sizeof(Checksum) + header_size;
+    Checksum checksum;
 
-    readHeaderAndGetCodecAndSize(
-        own_compressed_buffer.data() + sizeof(Checksum),
-        header_size,
-        codec,
-        size_decompressed,
-        size_compressed_without_checksum,
-        allow_different_codecs,
-        external_data);
+    if (!always_copy && compressed_in->available() >= size_header_plus_checksum)
+    {
+        own_compressed_buffer_header_init = false;
+        {
+            ReadBufferFromMemory checksum_in(compressed_in->position(), sizeof(checksum));
+            readBinaryLittleEndian(checksum.low64, checksum_in);
+            readBinaryLittleEndian(checksum.high64, checksum_in);
+        }
+
+        readHeaderAndGetCodecAndSize(
+            compressed_in->position() + sizeof(Checksum),
+            header_size,
+            codec,
+            size_decompressed,
+            size_compressed_without_checksum,
+            allow_different_codecs,
+            external_data);
+        compressed_in->position() += size_header_plus_checksum;
+    }
+    else
+    {
+        own_compressed_buffer.resize(size_header_plus_checksum);
+        compressed_in->readStrict(own_compressed_buffer.data(), size_header_plus_checksum);
+        own_compressed_buffer_header_init = true;
+
+        {
+            ReadBufferFromMemory checksum_in(own_compressed_buffer.data(), sizeof(checksum));
+            readBinaryLittleEndian(checksum.low64, checksum_in);
+            readBinaryLittleEndian(checksum.high64, checksum_in);
+        }
+
+        readHeaderAndGetCodecAndSize(
+            own_compressed_buffer.data() + sizeof(Checksum),
+            header_size,
+            codec,
+            size_decompressed,
+            size_compressed_without_checksum,
+            allow_different_codecs,
+            external_data);
+    }
+
 
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
-    /// Is whole compressed block located in 'compressed_in->' buffer?
-    if (!always_copy &&
-        compressed_in->offset() >= header_size + sizeof(Checksum) &&
-        compressed_in->available() >= (size_compressed_without_checksum - header_size) + additional_size_at_the_end_of_buffer + sizeof(Checksum))
+    // Is whole compressed block available in 'compressed_in->' buffer?
+    if (!own_compressed_buffer_header_init
+        && compressed_in->available() >= size_compressed_without_checksum - header_size + additional_size_at_the_end_of_buffer)
     {
-        compressed_in->position() -= header_size;
-        compressed_buffer = compressed_in->position();
-        compressed_in->position() += size_compressed_without_checksum;
+        compressed_buffer = compressed_in->position() - header_size;
+        compressed_in->position() += size_compressed_without_checksum - header_size;
+    }
+    else if (!own_compressed_buffer_header_init)
+    {
+        /// We read directly from compressed_in but we can't get the full buffer now. We need to copy it, so we'll read everything,
+        /// including the header and checksum again as it's simpler than regenerating it
+        own_compressed_buffer.resize(sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
+        compressed_in->position() -= size_header_plus_checksum;
+        compressed_in->readStrict(own_compressed_buffer.data(), size_header_plus_checksum + size_compressed_without_checksum - header_size);
+        own_compressed_buffer_header_init = true;
+        compressed_buffer = own_compressed_buffer.data() + sizeof(Checksum);
     }
     else
     {
         own_compressed_buffer.resize(sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
+        compressed_in->readStrict(own_compressed_buffer.data() + size_header_plus_checksum, size_compressed_without_checksum - header_size);
         compressed_buffer = own_compressed_buffer.data() + sizeof(Checksum);
-        compressed_in->readStrict(compressed_buffer + header_size, size_compressed_without_checksum - header_size);
     }
 
     if (!disable_checksum)
-    {
-        Checksum checksum;
-        ReadBufferFromMemory checksum_in(own_compressed_buffer.data(), sizeof(checksum));
-        readBinaryLittleEndian(checksum.low64, checksum_in);
-        readBinaryLittleEndian(checksum.high64, checksum_in);
-
         validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum, external_data);
-    }
 
     ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
     return size_compressed_without_checksum + sizeof(Checksum);

@@ -45,8 +45,8 @@ Columns:
 - `master_thread_id` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — OS initial ID of initial thread.
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
 - `is_initial_query` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Query type. Possible values:
-    - 1 — Query was initiated by the client.
-    - 0 — Query was initiated by another query for distributed query execution.
+  - 1 — Query was initiated by the client.
+  - 0 — Query was initiated by another query for distributed query execution.
 - `user` ([String](../../sql-reference/data-types/string.md)) — Name of the user who initiated the current query.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the query.
 - `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address that was used to make the query.
@@ -56,8 +56,8 @@ Columns:
 - `initial_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address that the parent query was launched from.
 - `initial_port` ([UInt16](/sql-reference/data-types/int-uint#integer-ranges)) — The client port that was used to make the parent query.
 - `interface` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Interface that the query was initiated from. Possible values:
-    - 1 — TCP.
-    - 2 — HTTP.
+  - 1 — TCP.
+  - 2 — HTTP.
 - `os_user` ([String](../../sql-reference/data-types/string.md)) — OS's username who runs [clickhouse-client](../../interfaces/cli.md).
 - `client_hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the client machine where the [clickhouse-client](../../interfaces/cli.md) or another TCP client is run.
 - `client_name` ([String](../../sql-reference/data-types/string.md)) — The [clickhouse-client](../../interfaces/cli.md) or another TCP client name.
@@ -66,9 +66,9 @@ Columns:
 - `client_version_minor` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Minor version of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
 - `client_version_patch` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Patch component of the [clickhouse-client](../../interfaces/cli.md) or another TCP client version.
 - `http_method` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — HTTP method that initiated the query. Possible values:
-    - 0 — The query was launched from the TCP interface.
-    - 1 — `GET` method was used.
-    - 2 — `POST` method was used.
+  - 0 — The query was launched from the TCP interface.
+  - 1 — `GET` method was used.
+  - 2 — `POST` method was used.
 - `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — The `UserAgent` header passed in the HTTP request.
 - `quota_key` ([String](../../sql-reference/data-types/string.md)) — The "quota key" specified in the [quotas](../../operations/quotas.md) setting (see `keyed`).
 - `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse revision.

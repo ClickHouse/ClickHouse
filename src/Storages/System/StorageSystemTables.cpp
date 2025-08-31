@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
 
 namespace
@@ -122,7 +123,11 @@ ColumnPtr getFilteredTables(
         }
         else
         {
-            for (auto table_it = database->getLightweightTablesIterator(context); table_it->isValid(); table_it->next())
+            auto table_it = database->getLightweightTablesIterator(context,
+                                                                   /* filter_by_table_name */ {},
+                                                                   /* skip_not_loaded */ false,
+                                                                   !context->getSettingsRef()[DB::Setting::show_data_lake_catalogs_in_system_tables]);
+            for (; table_it->isValid(); table_it->next())
             {
                 database_column->insert(table_it->name());
                 if (engine_column)
@@ -213,6 +218,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "Dependent loading table."
         },
+        {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
     };
 
     description.setAliases({
@@ -228,7 +234,7 @@ class TablesBlockSource : public ISource
 public:
     TablesBlockSource(
         std::vector<UInt8> columns_mask_,
-        Block header,
+        SharedHeader header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ColumnPtr tables_,
@@ -436,7 +442,10 @@ protected:
             const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getLightweightTablesIterator(context);
+                tables_it = database->getLightweightTablesIterator(context,
+                        /* filter_by_table_name */ {},
+                        /* skip_not_loaded */ false,
+                        !context->getSettingsRef()[DB::Setting::show_data_lake_catalogs_in_system_tables]);
 
             const bool need_table = needTable(database, getPort().getHeader());
 
@@ -811,7 +820,18 @@ protected:
                         res_columns[res_index++]->insert(dependents_databases);
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(dependents_tables);
+                }
+                else
+                {
+                    src_index += 4;
+                }
 
+                if (columns_mask[src_index++])
+                {
+                    if (table && table->getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
+                        res_columns[res_index++]->insert(*table->getInMemoryMetadataPtr()->definer);
+                    else
+                        res_columns[res_index++]->insertDefault();
                 }
             }
         }
@@ -847,7 +867,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            std::make_shared<const Block>(std::move(sample_block)),
             column_names_,
             query_info_,
             storage_snapshot_,

@@ -1228,7 +1228,7 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         return makeStringLiteral(pos, node, "");
 
     PODArray<UInt8> res;
-    res.resize((pos->size() + word_size) / word_size + 1);
+    res.resize((str_end - str_begin + word_size - 1) / word_size);
     char * res_begin = reinterpret_cast<char *>(res.data());
     char * res_pos = res_begin;
 
@@ -1241,7 +1241,7 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
-    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), (res_pos - res_begin - 1)));
+    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), res.size()));
 }
 
 bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -2405,12 +2405,21 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_set(Keyword::SET);
     ParserKeyword s_recompress(Keyword::RECOMPRESS);
     ParserKeyword s_codec(Keyword::CODEC);
+    ParserKeyword s_materialize(Keyword::MATERIALIZE);
+    ParserKeyword s_remove(Keyword::REMOVE);
+    ParserKeyword s_modify(Keyword::MODIFY);
 
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
     ParserExpression parser_exp;
     ParserExpressionList parser_keys_list(false);
     ParserCodec parser_codec;
+
+    if (s_materialize.checkWithoutMoving(pos, expected) ||
+        s_remove.checkWithoutMoving(pos, expected) ||
+        s_modify.checkWithoutMoving(pos, expected))
+
+        return false;
 
     ASTPtr ttl_expr;
     if (!parser_exp.parse(pos, ttl_expr, expected))

@@ -22,7 +22,8 @@ struct QueryPlanOptimizationSettings
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
         ExpressionActionsSettings actions_settings_,
-        PreparedSetsCachePtr prepared_sets_cache_);
+        PreparedSetsCachePtr prepared_sets_cache_,
+        bool is_parallel_replicas_initiator_with_projection_support_);
 
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
@@ -76,6 +77,16 @@ struct QueryPlanOptimizationSettings
     bool build_sets = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
 
+    bool make_distributed_plan = false;
+    bool distributed_plan_singe_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
+    UInt64 distributed_plan_default_shuffle_join_bucket_count = 8;
+    UInt64 distributed_plan_default_reader_bucket_count = 8; /// Default bucket count for read steps in distributed query plan
+    bool distributed_plan_optimize_exchanges = true; /// Removes unnecessary exchanges in distributed query plan
+    String distributed_plan_force_exchange_kind; /// Force exchange kind for all exchanges in distributed query plan
+    UInt64 distributed_plan_max_rows_to_broadcast = 20000; /// Max number of rows to broadcast in distributed query plan
+    bool distributed_plan_force_shuffle_aggregation = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
+    bool distributed_aggregation_memory_efficient = true; /// Is the memory-saving mode of distributed aggregation enabled
+
     /// ------------------------------------------------------
 
     /// Other settings related to plan-level optimizations
@@ -84,12 +95,18 @@ struct QueryPlanOptimizationSettings
     bool force_use_projection;
     String force_projection_name;
 
+    /// When optimizing projections for parallel replicas reading, the initiator and the remote replicas require different handling.
+    /// This parameter is used to distinguish between the initiator and the remote replicas.
+    bool is_parallel_replicas_initiator_with_projection_support = false;
+
     /// If lazy materialization optimisation is enabled
     bool optimize_lazy_materialization = false;
     size_t max_limit_for_lazy_materialization = 0;
 
-    VectorSearchFilterStrategy vector_search_filter_strategy;
+    /// Vector-search-related settings
     size_t max_limit_for_vector_search_queries;
+    bool vector_search_with_rescoring;
+    VectorSearchFilterStrategy vector_search_filter_strategy;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
 
