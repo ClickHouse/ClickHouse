@@ -121,7 +121,7 @@ std::shared_ptr<AzureBlobStorage::ContainerClient> AzureObjectStorageConnectionI
     AzureBlobStorage::processURL(info.endpoint, info.container_name, params.endpoint, params.auth_method);
 
     auto settings = AzureBlobStorage::getRequestSettings(Context::getGlobalContextInstance()->getSettingsRef());
-    params.client_options = AzureBlobStorage::getClientOptions(Context::getGlobalContextInstance(), *settings, /*for_disk*/true);
+    params.client_options = AzureBlobStorage::getClientOptions(*settings, /*for_disk*/true);
     params.auth_method = std::make_shared<AzureBlobStorage::StaticCredential>(info.session_token, info.expires_on);
 
     return params.createForContainer();
