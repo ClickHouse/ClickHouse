@@ -739,7 +739,17 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     else
         return false;
 
+    {
+        Pos la = pos;
+        Expected dummy;
+        ParserKeyword{Keyword::TEMPORARY}.ignore(la, dummy);
 
+        if (ParserKeyword{Keyword::VIEW}.ignore(la, dummy)
+            || ParserKeyword{Keyword::MATERIALIZED}.ignore(la, dummy)
+            || ParserKeyword{Keyword::LIVE}.ignore(la, dummy)
+            || ParserKeyword{Keyword::WINDOW}.ignore(la, dummy))
+            return false;
+    }
     if (!replace && !or_replace && s_temporary.ignore(pos, expected))
     {
         is_temporary = true;
@@ -1545,6 +1555,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_empty(Keyword::EMPTY);
     ParserKeyword s_or_replace(Keyword::OR_REPLACE);
     ParserKeyword s_to{Keyword::TO};
+    ParserKeyword s_temporary(Keyword::TEMPORARY);
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
@@ -1576,6 +1587,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     bool is_populate = false;
     bool is_create_empty = false;
     bool replace_view = false;
+    bool is_temporary = false;
 
     if (!s_create.ignore(pos, expected))
     {
@@ -1599,6 +1611,11 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
     else
         is_ordinary_view = true;
+
+    if (!replace_view && !is_materialized_view && s_temporary.ignore(pos, expected))
+    {
+        is_temporary = true;
+    }
 
     if (!s_view.ignore(pos, expected))
         return false;
@@ -1725,6 +1742,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->is_populate = is_populate;
     query->is_create_empty = is_create_empty;
     query->replace_view = replace_view;
+    query->temporary = is_temporary;
 
     auto * table_id = table->as<ASTTableIdentifier>();
     query->database = table_id->getDatabase();
