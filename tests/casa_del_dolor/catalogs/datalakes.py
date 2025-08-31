@@ -719,12 +719,23 @@ logger.jetty.level = warn
             )
             self.create_database(self.catalogs[catalog_name].session, catalog_name)
         next_session = self.catalogs[catalog_name].session
+
+        next_location = ""
+        if next_storage == TableStorage.S3:
+            next_location = f"s3a://{cluster.minio_bucket}/{catalog_name}"
+        elif next_storage == TableStorage.Azure:
+            next_location = f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}"
+        elif next_storage == TableStorage.Local:
+            next_location = f"file://{get_local_base_path(cluster, catalog_name)}"
+        next_location += f"/test/{data["table_name"]}"
+
         next_sql, next_table = next_table_generator.generate_create_table_ddl(
             catalog_name,
             data["table_name"],
             data["columns"],
             data["format"],
             data["deterministic"] > 0,
+            next_location,
         )
         self.run_query(next_session, next_sql)
         self.catalogs[catalog_name].spark_tables[data["table_name"]] = next_table

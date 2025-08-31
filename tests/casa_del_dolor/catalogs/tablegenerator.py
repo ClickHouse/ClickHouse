@@ -35,6 +35,10 @@ class LakeTableGenerator:
         pass
 
     @abstractmethod
+    def set_table_location(self, next_location: str) -> str:
+        return ""
+
+    @abstractmethod
     def set_basic_properties(self) -> dict[str, str]:
         return {}
 
@@ -65,6 +69,7 @@ class LakeTableGenerator:
         columns: list[dict[str, str]],
         file_format: str,
         deterministic: bool,
+        next_location: str,
     ) -> tuple[str, SparkTable]:
         """
         Generate a complete CREATE TABLE DDL statement with random properties
@@ -101,6 +106,8 @@ class LakeTableGenerator:
             )
             ddl += f" PARTITIONED BY ({",".join(random_subset)})"
 
+        ddl += self.set_table_location(next_location)
+
         properties = self.set_basic_properties()
         # Add table properties
         if random.randint(1, 2) == 1:
@@ -114,7 +121,10 @@ class LakeTableGenerator:
                 prop_lines.append(f"'{key}' = '{value}'")
             ddl += ",".join(prop_lines)
             ddl += ")"
-        return (ddl + ";", SparkTable(table_name, columns_spark, deterministic))
+        return (
+            ddl + ";",
+            SparkTable(table_name, columns_spark, deterministic, next_location),
+        )
 
     def generate_alter_table_statements(
         self,
@@ -143,6 +153,9 @@ class IcebergTableGenerator(LakeTableGenerator):
 
     def get_format(self) -> str:
         return "iceberg"
+
+    def set_table_location(self, next_location: str) -> str:
+        return ""
 
     def set_basic_properties(self) -> dict[str, str]:
         properties = {}
@@ -540,6 +553,9 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
     def get_format(self) -> str:
         return "delta"
+
+    def set_table_location(self, next_location: str) -> str:
+        return f" LOCATION '{next_location}'"
 
     def set_basic_properties(self) -> dict[str, str]:
         return {}

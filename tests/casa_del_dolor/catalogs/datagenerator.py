@@ -180,16 +180,16 @@ class LakeDataGenerator:
                 valueContainsNull=dtype.valueContainsNull,
             )
         if isinstance(dtype, StructType):
-            struct_fields = []
-            for f in dtype.fields:
-                struct_fields.append(
+            return StructType(
+                [
                     StructField(
                         name=f.name,
                         dataType=self._map_type_to_insert(f.dataType),
                         nullable=f.nullable,
                     )
-                )
-            return StructType(struct_fields)
+                    for f in dtype.fields
+                ]
+            )
         return dtype
 
     def insert_random_data(
