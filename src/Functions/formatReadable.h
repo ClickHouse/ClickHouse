@@ -74,7 +74,6 @@ public:
         {
             /// The cost of the virtual call for getFloat64 is negligible compared with the format calls
             Impl::format(arguments[0].column->getFloat64(i), buf_to);
-            writeChar(0, buf_to);
             offsets_to[i] = buf_to.count();
         }
 

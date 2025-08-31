@@ -281,7 +281,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::SYNC_DATABASE_REPLICA:
         {
             ostr << ' ';
-            print_identifier(database->as<ASTIdentifier>()->name());
+            database->format(ostr, settings, state, frame);
             if (sync_replica_mode != SyncReplicaMode::DEFAULT)
             {
                 ostr << ' ';
@@ -363,8 +363,11 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::UNLOCK_SNAPSHOT:
         {
             ostr << quoteString(backup_name);
-            print_keyword(" FROM ");
-            backup_source->format(ostr, settings);
+            if (backup_source)
+            {
+                print_keyword(" FROM ");
+                backup_source->format(ostr, settings);
+            }
             break;
         }
         case Type::START_LISTEN:
