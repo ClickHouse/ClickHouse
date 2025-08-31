@@ -59,11 +59,11 @@ class JobConfigs:
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
     )
-    change_log_job = Job.Config(
-        name=JobNames.PR_CHECK,
+    pr_body = Job.Config(
+        name=JobNames.PR_BODY,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/pr_autogen_description_changelog_job.py",
-        enable_gh_auth=True,
+        enable_gh_auth=True
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,

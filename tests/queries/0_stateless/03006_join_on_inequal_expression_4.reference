@@ -42,6 +42,18 @@ SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND ((t2.a IN (SELECT 
 2	15	2	10
 3	20	0	0
 SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND ((t2.a IN (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
+2	15	2	10
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND ((t2.a IN (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
+2	15	2	10
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND ((t2.a IN (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
+2	15	2	10
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND ((t2.a IN (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
+2	15	2	10
+SET join_algorithm='hash';
 SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND (t1.a=2 AND (t2.a IN (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
 1	10	0	0
 2	15	0	0
@@ -81,6 +93,14 @@ SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND (t1.a=2 AND (t2.a 
 1	10	0	0
 2	15	0	0
 3	20	0	0
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND (t1.a=2 AND (t2.a IN (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND (t1.a=2 AND (t2.a IN (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND (t1.a=2 AND (t2.a IN (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND (t1.a=2 AND (t2.a IN (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
 SET join_algorithm='hash';
 SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a = (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
 1	10	0	0
@@ -122,6 +142,18 @@ SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a =
 2	15	2	10
 3	20	0	0
 SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a = (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
+2	15	2	10
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a = (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
+2	15	2	10
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a = (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
+2	15	2	10
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a = (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
+2	15	2	10
+SET join_algorithm='hash';
 SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
 1	10	0	0
 2	15	2	10
@@ -161,3 +193,15 @@ SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a I
 1	10	0	0
 2	15	2	10
 3	20	0	0
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
+2	15	2	10
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
+2	15	2	10
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
+2	15	2	10
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND (t1.a=2 OR (t2.a IN (SELECT a FROM t1 WHERE a = 10))) ORDER BY ALL;
+2	15	2	10
