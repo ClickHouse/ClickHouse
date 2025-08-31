@@ -236,26 +236,34 @@ void MergeTreeReadTask::initializeIndexReaders(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type {} doesn't support unprepared reading", index.index->index.type);
     };
 
-    std::vector<MergeTreeReaderPtr> new_prewhere_readers;
-
     for (const auto & index : index_build_context.heavy_indexes)
     {
         auto it = info->index_read_tasks.find(index.index->index.name);
 
         if (it != info->index_read_tasks.end())
-        {
-            new_prewhere_readers.push_back(create_reader(index, it->second.columns));
             all_prewhere_actions.steps.push_back(it->second.prewhere_step);
-        }
         else
-        {
-            new_prewhere_readers.push_back(create_reader(index, NamesAndTypesList{}));
             all_prewhere_actions.steps.emplace_back();
-        }
     }
 
-    std::move(readers.prewhere.begin(), readers.prewhere.end(), std::back_inserter(new_prewhere_readers));
-    readers.prewhere = std::move(new_prewhere_readers);
+    if (!readers.added_index_readers)
+    {
+        std::vector<MergeTreeReaderPtr> new_prewhere_readers;
+
+        for (const auto & index : index_build_context.heavy_indexes)
+        {
+            auto it = info->index_read_tasks.find(index.index->index.name);
+
+            if (it != info->index_read_tasks.end())
+                new_prewhere_readers.push_back(create_reader(index, it->second.columns));
+            else
+                new_prewhere_readers.push_back(create_reader(index, NamesAndTypesList{}));
+        }
+
+        readers.added_index_readers = true;
+        std::move(readers.prewhere.begin(), readers.prewhere.end(), std::back_inserter(new_prewhere_readers));
+        readers.prewhere = std::move(new_prewhere_readers);
+    }
 }
 
 UInt64 MergeTreeReadTask::estimateNumRows() const

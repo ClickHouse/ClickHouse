@@ -214,7 +214,7 @@ void MergeTreeReaderTextIndex::fillColumns(Columns & res_columns, size_t num_row
             res_columns[pos] = column_to_read.type->createColumn(*serializations[pos]);
 
         auto & column_mutable = res_columns[pos]->assumeMutableRef();
-        fillColumn(column_mutable, TextSearchMode::All, num_rows);
+        fillColumn(column_mutable, TextSearchMode::Any, num_rows);
     }
 }
 

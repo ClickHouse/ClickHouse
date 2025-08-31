@@ -137,6 +137,8 @@ public:
         std::vector<MergeTreeReaderPtr> prewhere;
         MergeTreePatchReaders patches;
         MergeTreeReaderPtr prepared_index;
+        /// TODO: remove this
+        bool added_index_readers = false;
     };
 
     struct BlockSizeParams
