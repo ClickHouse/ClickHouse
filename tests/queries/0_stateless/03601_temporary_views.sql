@@ -11,6 +11,9 @@ WHERE id <= 2;
 
 SELECT * FROM tview_basic ORDER BY id;
 
+EXISTS TEMPORARY VIEW tview_basic;
+SHOW TEMPORARY VIEW tview_basic;
+
 CREATE TEMPORARY VIEW IF NOT EXISTS tview_basic AS SELECT 0;
 
 -- CREATE OR REPLACE TEMPORARY VIEW tview_basic AS SELECT 0; -- { serverError 62 }

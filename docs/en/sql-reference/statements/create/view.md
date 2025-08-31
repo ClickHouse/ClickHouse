@@ -431,3 +431,83 @@ The window view is useful in the following scenarios:
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 - Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)
+
+## Temporary Views {#temporary-views}
+
+ClickHouse supports **temporary views** with the following characteristics (matching temporary tables where applicable):
+
+* **Session-lifetime**
+  A temporary view exists only for the duration of the current session. It is dropped automatically when the session ends.
+
+* **No database**
+  You **cannot** qualify a temporary view with a database name. It lives outside databases (session namespace).
+
+* **Not replicated / no ON CLUSTER**
+  Temporary objects are local to the session and **cannot** be created with `ON CLUSTER`.
+
+* **Name resolution**
+  If a temporary object (table or view) has the same name as a persistent object and a query references the name **without** a database, the **temporary** object is used.
+
+* **Logical object (no storage)**
+  A temporary view stores only its `SELECT` text (uses the `View` storage internally). It does not persist data and cannot accept `INSERT`.
+
+* **Engine clause**
+  You do **not** need to specify `ENGINE`; if provided as `ENGINE = View`, it’s ignored/treated as the same logical view.
+
+* **Security / privileges**
+  Creating a temporary view requires the privilege to create views.
+
+* **SHOW CREATE**
+  Use `SHOW CREATE TEMPORARY VIEW view_name;` to print the DDL of a temporary view.
+
+### Syntax
+
+```sql
+CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
+```
+
+`OR REPLACE` is **not** supported for temporary views (to match temporary tables). If you need to “replace” a temporary view, drop it and create it again.
+
+### Examples
+
+Create a temporary source table and a temporary view on top:
+
+```sql
+CREATE TEMPORARY TABLE t_src (id UInt32, val String);
+INSERT INTO t_src VALUES (1, 'a'), (2, 'b');
+
+CREATE TEMPORARY VIEW tview AS
+SELECT id, upper(val) AS u
+FROM t_src
+WHERE id <= 2;
+
+SELECT * FROM tview ORDER BY id;
+```
+
+Show its DDL:
+
+```sql
+SHOW CREATE TEMPORARY VIEW tview;
+```
+
+Drop it:
+
+```sql
+DROP TEMPORARY TABLE IF EXISTS tview;  -- temporary views are dropped with TEMPORARY TABLE syntax
+```
+
+### Disallowed / limitations
+
+* `CREATE OR REPLACE TEMPORARY VIEW ...` → **not allowed** (use `DROP` + `CREATE`).
+* `CREATE TEMPORARY MATERIALIZED VIEW ...` / `LIVE VIEW` / `WINDOW VIEW` → **not allowed**.
+* `CREATE TEMPORARY VIEW db.view AS ...` → **not allowed** (no database qualifier).
+* `CREATE TEMPORARY VIEW view ON CLUSTER 'name' AS ...` → **not allowed** (temporary objects are session-local).
+* `POPULATE`, `REFRESH`, `TO [db.table]`, inner engines, and all MV-specific clauses → **not applicable** to temporary views.
+
+### Notes on distributed queries
+
+A temporary **view** is just a definition; there’s no data to pass around. If your temporary view references temporary **tables** (e.g., `Memory`), their data can be shipped to remote servers during distributed query execution the same way temporary tables work.
+
+---
+
+**See also:** [Temporary Tables](#temporary-tables) for shared semantics and caveats.

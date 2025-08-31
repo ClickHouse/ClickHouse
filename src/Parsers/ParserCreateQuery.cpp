@@ -739,17 +739,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     else
         return false;
 
-    {
-        Pos la = pos;
-        Expected dummy;
-        ParserKeyword{Keyword::TEMPORARY}.ignore(la, dummy);
-
-        if (ParserKeyword{Keyword::VIEW}.ignore(la, dummy)
-            || ParserKeyword{Keyword::MATERIALIZED}.ignore(la, dummy)
-            || ParserKeyword{Keyword::LIVE}.ignore(la, dummy)
-            || ParserKeyword{Keyword::WINDOW}.ignore(la, dummy))
-            return false;
-    }
     if (!replace && !or_replace && s_temporary.ignore(pos, expected))
     {
         is_temporary = true;
