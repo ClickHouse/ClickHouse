@@ -59,10 +59,10 @@ namespace ErrorCodes
     DECLARE(UInt64, max_get_rps, 0, "", 0) \
     DECLARE(UInt64, max_get_burst, 0, "", 0) \
     DECLARE(UInt64, max_put_rps, 0, "", 0) \
-    DECLARE(UInt64, max_put_burst, 0, "", 0)
+    DECLARE(UInt64, max_put_burst, 0, "", 0) \
     DECLARE(UInt64, max_redirects, S3::DEFAULT_MAX_REDIRECTS, "", 0) \
     DECLARE(UInt64, retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, "", 0) \
-    DECLARE(UInt64, retry_scale_factor, S3::DEFAULT_RETRY_SCALE_FACTOR, "", 0) \
+    DECLARE(UInt64, retry_initial_delay_ms, S3::DEFAULT_RETRY_INITIAL_DELAY_MS, "", 0) \
     DECLARE(UInt64, retry_max_delay_ms, S3::DEFAULT_RETRY_MAX_DELAY_MS, "", 0) \
     DECLARE(Bool, slow_all_threads_after_network_error, true, "", 0) \
     DECLARE(Bool, enable_request_logging, false, "", 0)

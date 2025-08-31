@@ -48,9 +48,9 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     struct RetryStrategy
     {
         unsigned int max_retries = DEFAULT_RETRY_ATTEMPTS;
-        unsigned int initial_delay_ms = 25;
+        unsigned int initial_delay_ms = DEFAULT_RETRY_INITIAL_DELAY_MS;
         unsigned int max_delay_ms = DEFAULT_RETRY_MAX_DELAY_MS;
-        double jitter_factor = 0;
+        double jitter_factor = DEFAULT_RETRY_JITTER_FACTOR;
     };
     std::function<ProxyConfiguration()> per_request_configuration;
     String force_region;
