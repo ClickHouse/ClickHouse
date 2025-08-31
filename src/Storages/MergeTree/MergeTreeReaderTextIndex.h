@@ -31,9 +31,17 @@ public:
     bool canReadIncompleteGranules() const override { return false; }
 
 private:
-    void readPostings();
-    void fillColumn(IColumn & column, TextSearchMode search_mode, size_t num_rows);
-    void fillColumns(Columns & res_columns, size_t num_rows);
+    struct Granule
+    {
+        MergeTreeIndexGranulePtr granule;
+        absl::flat_hash_map<StringRef, ColumnPtr> postings;
+        bool may_be_true = true;
+        bool need_read_postings = true;
+    };
+
+    void readPostingsIfNeeded(Granule & granule);
+    void fillSkippedColumn(IColumn & column, size_t num_rows);
+    void fillColumn(IColumn & column, const Granule & granule, TextSearchMode search_mode, size_t granule_offset, size_t num_rows);
 
     /// Delegates to the main reader to determine if reading incomplete index granules is supported.
     const IMergeTreeReader * main_reader;
@@ -47,14 +55,7 @@ private:
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;
     size_t current_mark = 0;
-    size_t current_index_mark = 0;
-    size_t granule_offset = 0;
-
-    bool may_be_true = true;
-    bool need_read_postings = true;
-
-    MergeTreeIndexGranulePtr granule;
-    absl::flat_hash_map<StringRef, ColumnPtr> postings;
+    std::map<size_t, Granule> granules;
 };
 
 }

@@ -53,4 +53,8 @@ struct IndexSerializationState
     IndexStreamMarks current_marks;
 };
 
+class ICompressionCodec;
+using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
+CompressionCodecPtr getIndexComressionCodec(IndexSubstream::Type type, CompressionCodecPtr default_codec);
+
 }
