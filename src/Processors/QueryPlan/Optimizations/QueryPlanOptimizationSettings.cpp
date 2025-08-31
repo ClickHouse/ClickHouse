@@ -64,6 +64,8 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsBool query_plan_direct_read_from_text_index;
+    extern const SettingsBool use_skip_indexes;
 }
 
 namespace ServerSetting
@@ -116,6 +118,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     query_condition_cache_store_conditions_as_plaintext = from[Setting::query_condition_cache_store_conditions_as_plaintext];
+    direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
 
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];

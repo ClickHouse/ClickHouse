@@ -93,6 +93,7 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
     auto it = requested_columns.begin();
     for (size_t pos = 0; pos < columns.size(); ++pos, ++it)
     {
+        LOG_DEBUG(getLogger("KEK"), "part: {}, pos: {}, name: {}, column: {}, rows: {}", data_part->name, pos, it->name, columns[pos] ? columns[pos]->dumpStructure() : "null", rows);
         if (columns[pos] || storage_columns.has(it->name))
             continue;
 
@@ -415,6 +416,15 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
     if (num_columns_to_read != requested_columns.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "invalid number of columns passed to MergeTreeReader::readRows. "
                         "Expected {}, got {}", requested_columns.size(), num_columns_to_read);
+}
+
+void IMergeTreeReader::createEmptyColumns(Columns & columns) const
+{
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (columns[i] == nullptr)
+            columns[i] = columns_to_read[i].type->createColumn(*serializations[i]);
+    }
 }
 
 String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const

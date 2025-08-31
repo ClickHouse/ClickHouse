@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <boost/core/noncopyable.hpp>
 #include <Core/NamesAndTypes.h>
 #include <Storages/StorageSnapshot.h>
@@ -52,6 +53,15 @@ enum class MergeTreeReadType : uint8_t
     ParallelReplicas,
 };
 
+struct IndexReadTask
+{
+    String index_name;
+    NamesAndTypesList columns;
+    PrewhereExprStepPtr prewhere_step;
+};
+
+using IndexReadTasks = std::vector<IndexReadTask>;
+
 struct MergeTreeReadTaskColumns
 {
     /// Column names to read during WHERE
@@ -90,6 +100,8 @@ struct MergeTreeReadTaskInfo
     MergeTreeBlockSizePredictorPtr shared_size_predictor;
     /// Shared constant fields for virtual columns.
     VirtualFields const_virtual_fields;
+    /// Index read tasks.
+    IndexReadTasks index_read_tasks;
     /// The amount of data to read per task based on size of the queried columns.
     size_t min_marks_per_task = 0;
     size_t approx_size_of_mark = 0;
@@ -180,7 +192,10 @@ public:
         const std::vector<MarkRanges> & patches_ranges);
 
     static MergeTreeReadersChain createReadersChain(
-        const Readers & readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters);
+        const Readers & readers,
+        const PrewhereExprInfo & prewhere_actions,
+        const IndexReadTasks & index_read_tasks,
+        ReadStepsPerformanceCounters & read_steps_performance_counters);
 
 private:
     UInt64 estimateNumRows() const;

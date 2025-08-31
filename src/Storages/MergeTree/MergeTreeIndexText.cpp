@@ -25,24 +25,29 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
-static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t total_rows)
+namespace
+{
+
+size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t total_rows)
 {
     static constexpr size_t atom_size = 8;
     return (bits_per_row * total_rows + atom_size - 1) / atom_size;
 }
 
-static UInt64 packMark(const MarkInCompressedFile & begin_mark, const MarkInCompressedFile & current_mark)
+UInt64 packMark(const MarkInCompressedFile & begin_mark, const MarkInCompressedFile & current_mark)
 {
     UInt32 offset_in_compressed_file = current_mark.offset_in_compressed_file - begin_mark.offset_in_compressed_file;
     UInt32 offset_in_decompressed_block = static_cast<UInt32>(current_mark.offset_in_decompressed_block);
     return (static_cast<UInt64>(offset_in_compressed_file) << 32) | offset_in_decompressed_block;
 }
 
-static MarkInCompressedFile unpackMark(const MarkInCompressedFile & begin_mark, UInt64 packed_mark)
+MarkInCompressedFile unpackMark(const MarkInCompressedFile & begin_mark, UInt64 packed_mark)
 {
     UInt32 offset_in_compressed_file = static_cast<UInt32>(packed_mark >> 32);
     UInt32 offset_in_decompressed_block = static_cast<UInt32>(packed_mark & 0xFFFFFFFF);
     return {begin_mark.offset_in_compressed_file + offset_in_compressed_file, offset_in_decompressed_block};
+}
+
 }
 
 DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, ColumnPtr marks_)
@@ -284,14 +289,19 @@ MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     size_t total_rows_,
     BloomFilter bloom_filter_,
     std::vector<StringRef> tokens_,
-    std::vector<roaring::Roaring> posting_lists_,
+    std::vector<PostingList> posting_lists_,
     std::unique_ptr<Arena> arena_)
-    : dictionary_block_size(dictionary_block_size_), total_rows(total_rows_), bloom_filter(bloom_filter_), tokens(tokens_), posting_lists(posting_lists_), arena(std::move(arena_))
+    : dictionary_block_size(dictionary_block_size_)
+    , total_rows(total_rows_)
+    , bloom_filter(std::move(bloom_filter_))
+    , tokens(std::move(tokens_))
+    , posting_lists(std::move(posting_lists_))
+    , arena(std::move(arena_))
 {
 }
 
 template <typename Stream>
-ColumnPtr serializePostings(const std::vector<roaring::Roaring> & postings, Stream & stream, const IndexSerializationState & state)
+ColumnPtr serializePostings(const std::vector<PostingList> & postings, Stream & stream, const IndexSerializationState & state)
 {
     auto begin_mark = state.current_marks.at(IndexSubstream::Type::TextIndexPostings);
 
@@ -308,11 +318,12 @@ ColumnPtr serializePostings(const std::vector<roaring::Roaring> & postings, Stre
         auto current_mark = stream.getCurrentMark();
         marks_data.emplace_back(packMark(begin_mark, current_mark));
 
-        postings_data.resize(posting_list.cardinality() + 1);
+        postings_data.clear();
+        postings_data.resize(posting_list.cardinality());
         postings_data[0] = posting_list.cardinality();
-
         posting_list.toUint32Array(postings_data.data() + 1);
-        serialization.serializeBinaryBulk(*postings_column, stream.compressed_hashing, 0, posting_list.cardinality() + 1);
+
+        serialization.serializeBinaryBulk(*postings_column, stream.compressed_hashing, 0, postings_data.size());
     }
 
     return marks_column;
@@ -435,7 +446,7 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
 {
     size_t total_rows = current_row;
-    std::vector<std::pair<StringRef, roaring::Roaring *>> sorted_values;
+    std::vector<std::pair<StringRef, PostingList *>> sorted_values;
     sorted_values.reserve(tokens_map.size());
 
     for (auto it = tokens_map.begin(); it != tokens_map.end(); ++it)
@@ -444,7 +455,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
     std::sort(sorted_values.begin(), sorted_values.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
     std::vector<StringRef> sorted_tokens;
-    std::vector<roaring::Roaring> sorted_posting_lists;
+    std::vector<PostingList> sorted_posting_lists;
 
     sorted_tokens.reserve(sorted_values.size());
     sorted_posting_lists.reserve(sorted_values.size());

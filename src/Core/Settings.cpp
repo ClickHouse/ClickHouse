@@ -6926,6 +6926,9 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
 If set to true, allow using the experimental text index.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
+Allow to perform full text search filtering using only the inverted index in query plan.
+)", 0) \
     DECLARE(Bool, allow_experimental_live_view, false, R"(
 Allows creation of a deprecated LIVE VIEW.
 

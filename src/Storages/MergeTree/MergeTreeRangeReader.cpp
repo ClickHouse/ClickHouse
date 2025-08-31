@@ -5,6 +5,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/Logger.h>
 #include <Common/TargetSpecific.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
@@ -975,7 +976,9 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
 
             if (merge_tree_reader->canSkipMark(currentMark()))
             {
+                LOG_DEBUG(getLogger("KEK"), "skipping mark: {}", currentMark());
                 result.addGranule(0, {0, 0} /* unused when granule has no rows to read */);
+                merge_tree_reader->createEmptyColumns(result.columns);
                 stream.toNextMark();
                 continue;
             }
@@ -1482,6 +1485,8 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         /// Filter computed at the current step. Its size is equal to num_rows which is <= total_rows_per_granule
         size_t filter_column_pos = block.getPositionByName(prewhere_info->filter_column_name);
         auto current_step_filter = result.columns[filter_column_pos];
+
+        LOG_DEBUG(getLogger("KEK"), "filter_column_name: {}, bytes in filter: {}, size: {}", prewhere_info->filter_column_name, countBytesInFilter(assert_cast<const ColumnUInt8 &>(*current_step_filter).getData()), current_step_filter->size());
 
         /// In case when we are returning prewhere column the caller expects it to serve as a final filter:
         /// it must contain 0s not only from the current step but also from all the previous steps.

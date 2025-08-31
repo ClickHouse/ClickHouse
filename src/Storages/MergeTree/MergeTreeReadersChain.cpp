@@ -120,6 +120,8 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     auto * merge_tree_reader = range_reader.getReader();
     const auto * prewhere_info = range_reader.getPrewhereInfo();
 
+    LOG_DEBUG(log, "fillVirtualColumns: {}, num_read_rows: {}", read_columns.size(), num_read_rows);
+
     merge_tree_reader->fillVirtualColumns(read_columns, num_read_rows);
 
     /// fillMissingColumns() must be called after reading but before any filterings because

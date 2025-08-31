@@ -261,6 +261,8 @@ public:
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
+    void replaceColumnsForTextSearch(const Names & removed_columns, const IndexReadTasks & added_index_tasks);
+
 private:
     MergeTreeReaderSettings reader_settings;
 
@@ -377,6 +379,7 @@ private:
 
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
+    IndexReadTasks index_read_tasks;
 
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;

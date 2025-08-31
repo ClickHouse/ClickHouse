@@ -333,6 +333,35 @@ void optimizeTreeSecondPass(
             stack.pop_back();
     }
 
+    if (optimization_settings.direct_read_from_text_index && !extra_settings.vector_search_with_rescoring)
+    {
+        chassert(stack.empty());
+        stack.push_back({.node = &root});
+        while (!stack.empty())
+        {
+            auto & frame = stack.back();
+
+            if (frame.next_child == 0)
+            {
+                if (optimizeDirectReadFromTextIndex(*frame.node))
+                    break;
+            }
+
+            /// Traverse all children first.
+            if (frame.next_child < frame.node->children.size())
+            {
+                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+                ++frame.next_child;
+                stack.push_back(next_frame);
+                continue;
+            }
+
+            stack.pop_back();
+        }
+        while (!stack.empty()) /// Vector search only for 1 substree with ORDER BY..LIMIT
+            stack.pop_back();
+    }
+
     /// projection optimizations can introduce additional reading step
     /// so, applying lazy materialization after it, since it's dependent on reading step
     if (optimization_settings.optimize_lazy_materialization)

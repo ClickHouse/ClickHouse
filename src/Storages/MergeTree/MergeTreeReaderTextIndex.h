@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/GinQueryString.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -9,13 +10,14 @@ namespace DB
 
 struct MergeTreeIndexReadResult;
 using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
+static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
 
 class MergeTreeReaderTextIndex : public IMergeTreeReader
 {
 public:
     using MatchingMarks = std::vector<bool>;
 
-    MergeTreeReaderTextIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexWithCondition index_);
+    MergeTreeReaderTextIndex(const IMergeTreeReader * main_reader_, NamesAndTypesList columns_, MergeTreeIndexWithCondition index_);
 
     size_t readRows(
         size_t from_mark,
@@ -25,11 +27,14 @@ public:
         size_t offset,
         Columns & res_columns) override;
 
+    bool canSkipMark(size_t mark) override;
     bool canReadIncompleteGranules() const override { return main_reader->canReadIncompleteGranules(); }
 
-    bool canSkipMark(size_t mark) override;
 
 private:
+    void readPostings();
+    void fillColumn(IColumn & column, TextSearchMode search_mode, size_t max_rows_to_read);
+
     /// Delegates to the main reader to determine if reading incomplete index granules is supported.
     const IMergeTreeReader * main_reader;
 
@@ -41,14 +46,14 @@ private:
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;
+    size_t current_index_mark = 0;
+    size_t granule_offset = 0;
 
-    struct GranuleWithResult
-    {
-        MergeTreeIndexGranulePtr granule;
-        bool may_be_true = true;
-    };
+    bool may_be_true = true;
+    bool need_read_postings = true;
 
-    std::map<size_t, GranuleWithResult> cached_granules;
+    MergeTreeIndexGranulePtr granule;
+    absl::flat_hash_map<StringRef, ColumnPtr> postings;
 };
 
 }

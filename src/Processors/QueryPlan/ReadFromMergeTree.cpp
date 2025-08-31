@@ -431,6 +431,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         std::move(parts_with_range),
         mutations_snapshot,
         shared_virtual_fields,
+        index_read_tasks,
         storage_snapshot,
         prewhere_info,
         actions_settings,
@@ -510,6 +511,7 @@ Pipe ReadFromMergeTree::readFromPool(
             std::move(parts_with_range),
             mutations_snapshot,
             shared_virtual_fields,
+            index_read_tasks,
             storage_snapshot,
             prewhere_info,
             actions_settings,
@@ -525,6 +527,7 @@ Pipe ReadFromMergeTree::readFromPool(
             std::move(parts_with_range),
             mutations_snapshot,
             shared_virtual_fields,
+            index_read_tasks,
             storage_snapshot,
             prewhere_info,
             actions_settings,
@@ -597,6 +600,7 @@ Pipe ReadFromMergeTree::readInOrder(
             parts_with_ranges,
             mutations_snapshot,
             shared_virtual_fields,
+            index_read_tasks,
             has_limit_below_one_block,
             storage_snapshot,
             prewhere_info,
@@ -615,6 +619,7 @@ Pipe ReadFromMergeTree::readInOrder(
             parts_with_ranges,
             mutations_snapshot,
             shared_virtual_fields,
+            index_read_tasks,
             storage_snapshot,
             prewhere_info,
             actions_settings,
@@ -1926,6 +1931,9 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         if (filter_actions_dag)
             query_info.filter_actions_dag = filter_actions_dag;
 
+        LOG_DEBUG(getLogger("KEK"), "building indexes...");
+        LOG_DEBUG(getLogger("KEK"), "stacktrace: {}", StackTrace().toString());
+
         buildIndexes(
             indexes,
             query_info.filter_actions_dag.get(),
@@ -3051,6 +3059,55 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount());
+}
+
+void ReadFromMergeTree::replaceColumnsForTextSearch(const Names & removed_columns, const IndexReadTasks & added_index_tasks)
+{
+    if (added_index_tasks.empty())
+        return;
+
+    for (const auto & removed_column : removed_columns)
+    {
+        const auto it = std::ranges::find(all_column_names, removed_column);
+        chassert(it != all_column_names.end());
+        all_column_names.erase(it);
+    }
+
+    auto new_virtual_columns = std::make_shared<VirtualColumnsDescription>(*storage_snapshot->virtual_columns);
+
+    for (const auto & index_task : added_index_tasks)
+    {
+        for (const auto & added_column : index_task.columns)
+        {
+            const auto it = std::ranges::find(all_column_names, added_column.name);
+            chassert(it != all_column_names.end());
+
+            all_column_names.emplace(it, added_column.name);
+            new_virtual_columns->addEphemeral(added_column.name, added_column.type, "");
+        }
+
+        index_read_tasks.push_back(index_task);
+    }
+
+    storage_snapshot = std::make_shared<StorageSnapshot>(
+        storage_snapshot->storage,
+        storage_snapshot->metadata,
+        std::move(new_virtual_columns),
+        storage_snapshot->object_columns,
+        std::move(storage_snapshot->data));
+
+    if (output_header != nullptr)
+    {
+        output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+            storage_snapshot->getSampleBlockForColumns(all_column_names),
+            lazily_read_info,
+            query_info.prewhere_info));
+    }
+
+    if (analyzed_result_ptr)
+    {
+        analyzed_result_ptr->column_names_to_read = all_column_names;
+    }
 }
 
 }

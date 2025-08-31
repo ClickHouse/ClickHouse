@@ -1,11 +1,14 @@
+#include <DataTypes/DataTypesNumber.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <DataTypes/NestedUtils.h>
 #include <Core/NamesAndTypes.h>
+#include <Common/Logger.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>

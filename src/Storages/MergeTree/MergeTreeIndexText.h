@@ -21,6 +21,8 @@ struct MergeTreeIndexTextParams
     size_t bloom_filter_num_hashes = 0;
 };
 
+using PostingList = roaring::Roaring;
+
 struct DictionaryBlock
 {
     DictionaryBlock() = default;
@@ -75,7 +77,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
         size_t total_rows_,
         BloomFilter bloom_filter_,
         std::vector<StringRef> tokens_,
-        std::vector<roaring::Roaring> posting_lists_,
+        std::vector<PostingList> posting_lists_,
         std::unique_ptr<Arena> arena_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
@@ -91,7 +93,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     size_t total_rows;
     BloomFilter bloom_filter;
     std::vector<StringRef> tokens;
-    std::vector<roaring::Roaring> posting_lists;
+    std::vector<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
 };
 
@@ -106,12 +108,12 @@ struct MergeTreeIndexTextGranuleBuilder
     MergeTreeIndexTextParams params;
     TokenExtractorPtr token_extractor;
 
-    using PostingListRawPtr = roaring::Roaring *;
+    using PostingListRawPtr = PostingList *;
     using TokensMap = HashMap<StringRef, PostingListRawPtr>;
 
     UInt64 current_row = 0;
     TokensMap tokens_map;
-    std::list<roaring::Roaring> posting_lists;
+    std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
 };
 
