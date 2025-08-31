@@ -1696,18 +1696,42 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
 
             auto & columns = columns_list.back().columns;
             size_t start_row = columns.at(0)->size();
-            for (; it.ok(); ++it)
+            size_t new_rows = 0;
+            RowRefList new_rows_ref;
+            size_t output_by_row_list_threshold = table_join->outputByRowListPerkeyRowsThreshold();
+            size_t join_data_avg_perkey_rows = data->avgPerKeyRows();
+
+            if (join_data_avg_perkey_rows < output_by_row_list_threshold)
             {
-                for (size_t i = 0; i < columns.size(); ++i)
+                size_t row_index = start_row;
+                for (; it.ok(); ++it)
                 {
-                    auto & col = columns[i]->assumeMutableRef();
-                    col.insertFrom(*((*it->columns)[i]), it->row_num);
+                    for (size_t i = 0; i < columns.size(); ++i)
+                    {
+                        auto & col = columns[i]->assumeMutableRef();
+                        col.insertFrom(*((*it->columns)[i]), it->row_num);
+                    }
+                    new_rows_ref.insert({&columns, row_index}, data->pool);
+                    row_index ++;
                 }
+                new_rows = columns.at(0)->size();
             }
-            size_t new_rows = columns.at(0)->size();
+            else
+            {
+                for (; it.ok(); ++it)
+                {
+                    for (size_t i = 0; i < columns.size(); ++i)
+                    {
+                        auto & col = columns[i]->assumeMutableRef();
+                        col.insertFrom(*((*it->columns)[i]), it->row_num);
+                    }
+                }
+                new_rows = columns.at(0)->size();
+                new_rows_ref = RowRefList(&columns, start_row, new_rows - start_row);
+            }
+
             if (new_rows > start_row)
             {
-                RowRefList new_rows_ref(&columns, start_row, new_rows - start_row);
                 rows_ref = std::move(new_rows_ref);
             }
         };
