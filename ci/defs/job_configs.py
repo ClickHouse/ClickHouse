@@ -60,9 +60,9 @@ class JobConfigs:
         enable_commit_status=True,
     )
     change_log_job = Job.Config(
-        name=JobNames.CHANGE_LOG,
+        name=JobNames.PR_CHECK,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        command="python3 ./ci/jobs/claude_job.py",
+        command="python3 ./ci/jobs/pr_autogen_description_changelog_job.py",
         enable_gh_auth=True,
     )
     fast_test = Job.Config(
