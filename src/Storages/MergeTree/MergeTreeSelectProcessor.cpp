@@ -20,6 +20,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include "Storages/MergeTree/MergeTreeReadTask.h"
 
 namespace
 {
@@ -100,23 +101,23 @@ MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
 {
 }
 
-MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTaskPtr & task) const
+MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTask & task) const
 {
     if (!index_reader_pool)
         return nullptr;
 
-    const auto & part_ranges = read_ranges.at(task->getInfo().part_index_in_query);
-    auto & remaining_marks = part_remaining_marks.at(task->getInfo().part_index_in_query).value;
+    const auto & part_ranges = read_ranges.at(task.getInfo().part_index_in_query);
+    auto & remaining_marks = part_remaining_marks.at(task.getInfo().part_index_in_query).value;
     auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(part_ranges);
 
     /// Atomically subtract the number of marks this task will read from the total remaining marks. If the
     /// remaining marks after subtraction reach zero, this is the last task for the part, and we can trigger
     /// cleanup of any per-part cached resources (e.g., skip index read result).
-    size_t task_marks = task->getNumMarksToRead();
+    size_t task_marks = task.getNumMarksToRead();
     bool part_last_task = remaining_marks.fetch_sub(task_marks, std::memory_order_acq_rel) == task_marks;
 
     if (part_last_task)
-        index_reader_pool->clear(task->getInfo().data_part);
+        index_reader_pool->clear(task.getInfo().data_part);
 
     return index_read_result;
 }
@@ -326,27 +327,7 @@ void MergeTreeSelectProcessor::cancel() noexcept
 
 void MergeTreeSelectProcessor::initializeReadersChain()
 {
-    PrewhereExprInfo all_prewhere_actions;
-
-    for (const auto & step : task->getInfo().mutation_steps)
-        all_prewhere_actions.steps.push_back(step);
-
-    for (const auto & step : prewhere_actions.steps)
-        all_prewhere_actions.steps.push_back(step);
-
-    /// Optionally initialize the index filter for the current read task. If the build context exists and contains
-    /// relevant read ranges for the current part, retrieve or construct index filter for all involved skip indexes.
-    /// This filter will later be used to filter granules during the first reading step.
-    MergeTreeIndexReadResultPtr index_read_result;
-    std::vector<MergeTreeIndexWithCondition> heavy_indexes;
-
-    if (merge_tree_index_build_context)
-    {
-        index_read_result = merge_tree_index_build_context->getPreparedIndexReadResult(task);
-        heavy_indexes = merge_tree_index_build_context->heavy_indexes;
-    }
-
-    task->initializeReadersChain(all_prewhere_actions, read_steps_performance_counters, std::move(index_read_result), std::move(heavy_indexes));
+    task->initializeReadersChain(prewhere_actions, merge_tree_index_build_context, read_steps_performance_counters);
 }
 
 void MergeTreeSelectProcessor::injectLazilyReadColumns(

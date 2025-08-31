@@ -353,6 +353,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const Names & required_columns,
     const PrewhereInfoPtr & prewhere_info,
     const PrewhereExprSteps & mutation_steps,
+    const IndexReadTasks & index_read_tasks,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns)
@@ -363,6 +364,12 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     /// Inject columns required for defaults evaluation
     injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
+
+    for (const auto & [_, index_read_task] : index_read_tasks)
+    {
+        for (const auto & column : index_read_task.columns)
+            columns_from_previous_steps.insert(column.name);
+    }
 
     auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withExtendedObjects()
@@ -459,6 +466,7 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
         required_columns,
         /*prewhere_info=*/ nullptr,
         mutation_steps,
+        /*index_read_tasks*/ {},
         /*actions_settings=*/ {},
         /*reader_settings=*/ {},
         storage_snapshot->storage.supportsSubcolumns());

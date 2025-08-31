@@ -35,15 +35,15 @@ struct IndexInfo : public IndexSize
     }
 };
 
-std::unordered_map<String, IndexInfo> getIndexInfosForColumns(const ReadFromMergeTree * read_from_mergetree_step)
+std::unordered_map<String, IndexInfo> getIndexInfosForColumns(const ReadFromMergeTree & read_from_mergetree_step)
 {
     std::unordered_map<String, IndexInfo> columns_to_index_infos;
 
-    auto metadata = read_from_mergetree_step->getStorageMetadata();
+    auto metadata = read_from_mergetree_step.getStorageMetadata();
     if (!metadata || !metadata->hasSecondaryIndices())
         return {};
 
-    auto secondary_index_sizes = read_from_mergetree_step->getMergeTreeData().getSecondaryIndexSizes();
+    auto secondary_index_sizes = read_from_mergetree_step.getMergeTreeData().getSecondaryIndexSizes();
 
     /// Get the list of columns: text_index we use latter and construct the size information needed by Replacer
     for (const auto & index_description : metadata->getSecondaryIndices())
@@ -122,8 +122,8 @@ public:
     /// Not all replacements end with a column removal, so the number of replacements >= column names size
     std::pair<IndexReadTasks, Names> replace()
     {
+        IndexReadTasks index_read_tasks;
         Names original_inputs = actions_dag.getRequiredColumnsNames();
-        std::unordered_map<String, NamesAndTypesList> added_columns_by_index;
 
         for (ActionsDAG::Node & node : actions_dag.nodes)
         {
@@ -138,11 +138,26 @@ public:
             if (replaced.has_value())
             {
                 const auto & [index_name, column_name] = replaced.value();
-                added_columns_by_index[index_name].emplace_back(column_name, node.result_type);
+
+                auto & index_task = index_read_tasks[index_name];
+                index_task.columns.emplace_back(column_name, node.result_type);
+
+                PrewhereExprStep step
+                {
+                    .type = PrewhereExprStep::Filter,
+                    .actions = std::make_shared<ExpressionActions>(actions_dag.clone()),
+                    .filter_column_name = actions_dag.getOutputs().front()->result_name,
+                    .remove_filter_column = false,
+                    .need_filter = true,
+                    .perform_alter_conversions = true,
+                    .mutation_version = std::nullopt,
+                };
+
+                index_task.prewhere_step = std::make_shared<PrewhereExprStep>(std::move(step));
             }
         }
 
-        if (added_columns_by_index.empty())
+        if (index_read_tasks.empty())
             return {{}, {}};
 
         actions_dag.removeUnusedActions();
@@ -150,29 +165,6 @@ public:
         Names removed_columns;
         Names replaced_columns = actions_dag.getRequiredColumnsNames();
         std::ranges::set_difference(original_inputs, replaced_columns, std::back_inserter(removed_columns));
-
-        IndexReadTasks index_read_tasks;
-
-        for (const auto & [index_name, columns] : added_columns_by_index)
-        {
-            auto & index_task = index_read_tasks.emplace_back();
-
-            index_task.index_name = index_name;
-            index_task.columns = columns;
-
-            PrewhereExprStep step
-            {
-                .type = PrewhereExprStep::Filter,
-                .actions = std::make_shared<ExpressionActions>(actions_dag.clone()),
-                .filter_column_name = actions_dag.getOutputs().front()->result_name,
-                .remove_filter_column = true,
-                .need_filter = true,
-                .perform_alter_conversions = true,
-                .mutation_version = std::nullopt,
-            };
-
-            index_task.prewhere_step = std::make_shared<PrewhereExprStep>(std::move(step));
-        }
 
         return {index_read_tasks, removed_columns};
     }
@@ -264,9 +256,12 @@ private:
 ///
 /// (*) Text search only makes sense if a text index exists on text. In the scope of this function, we don't care.
 ///     That check is left to query runtime, ReadFromMergeTree specifically.
-bool optimizeDirectReadFromTextIndex(QueryPlan::Node & root)
+void optimizeDirectReadFromTextIndex(const Stack & stack)
 {
-    QueryPlan::Node * filter_node = &root;
+    if (stack.size() < 2)
+        return;
+
+    const auto & frame = stack.back();
 
     /// Expect this query plan:
     /// FilterStep
@@ -274,21 +269,19 @@ bool optimizeDirectReadFromTextIndex(QueryPlan::Node & root)
     ///    |
     /// ReadFromMergeTree
 
-    auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
-    LOG_DEBUG(getLogger("KEK"), "filter_step: {}, step: {}, typeid: {}, name: {}", filter_step ? filter_step->getStepDescription() : "null", filter_node->step->getStepDescription(), typeid(filter_step).name(), filter_node->step->getName());
-    if (!filter_step || filter_node->children.size() != 1) // TODO: This one will change when adding AND and OR support
-        return false;
-
-    QueryPlan::Node * node = filter_node->children.front();
-    ReadFromMergeTree * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
-
+    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
     if (!read_from_merge_tree_step)
-        return false;
+        return;
 
     /// Get information of MATERIALIZED indices
-    std::unordered_map<String, IndexInfo> columns_to_index_info = getIndexInfosForColumns(read_from_merge_tree_step);
+    std::unordered_map<String, IndexInfo> columns_to_index_info = getIndexInfosForColumns(*read_from_merge_tree_step);
     if (columns_to_index_info.empty())
-        return false;
+        return;
+
+    QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
+    auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
+    if (!filter_step)
+        return;
 
     /// If the expression contains no columns with a text index as input, do nothing.
     bool input_node_has_column_with_text_index = false;
@@ -302,20 +295,18 @@ bool optimizeDirectReadFromTextIndex(QueryPlan::Node & root)
     }
 
     if (!input_node_has_column_with_text_index)
-        return false;
+        return;
 
     /// Now try to modify the ActionsDAG.
     FullTextMatchingFunctionDAGReplacer replacer(filter_step->getExpression(), columns_to_index_info);
     const auto [added_index_tasks, removed_columns] = replacer.replace();
 
     if (added_index_tasks.empty())
-        return false;
+        return;
 
     read_from_merge_tree_step->replaceColumnsForTextSearch(removed_columns, added_index_tasks);
     auto new_filter_column_name = filter_step->getExpression().getOutputs().front()->result_name;
     filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_step->getExpression().clone(), new_filter_column_name, true);
-    LOG_DEBUG(getLogger("KEK"), "replaced filter dag...");
-    return true;
 }
 
 }

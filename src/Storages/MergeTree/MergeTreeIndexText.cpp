@@ -319,7 +319,7 @@ ColumnPtr serializePostings(const std::vector<PostingList> & postings, Stream & 
         marks_data.emplace_back(packMark(begin_mark, current_mark));
 
         postings_data.clear();
-        postings_data.resize(posting_list.cardinality());
+        postings_data.resize(posting_list.cardinality() + 1);
         postings_data[0] = posting_list.cardinality();
         posting_list.toUint32Array(postings_data.data() + 1);
 

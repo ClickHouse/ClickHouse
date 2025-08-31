@@ -86,7 +86,7 @@ struct MergeTreeIndexBuildContext
         PartRemainingMarks part_remaining_marks_,
         std::vector<MergeTreeIndexWithCondition> heavy_indexes_);
 
-    MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTaskPtr & task) const;
+    MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
 };
 
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;

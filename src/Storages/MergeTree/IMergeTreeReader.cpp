@@ -93,7 +93,6 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
     auto it = requested_columns.begin();
     for (size_t pos = 0; pos < columns.size(); ++pos, ++it)
     {
-        LOG_DEBUG(getLogger("KEK"), "part: {}, pos: {}, name: {}, column: {}, rows: {}", data_part->name, pos, it->name, columns[pos] ? columns[pos]->dumpStructure() : "null", rows);
         if (columns[pos] || storage_columns.has(it->name))
             continue;
 

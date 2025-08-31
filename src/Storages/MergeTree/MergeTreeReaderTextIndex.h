@@ -28,12 +28,12 @@ public:
         Columns & res_columns) override;
 
     bool canSkipMark(size_t mark) override;
-    bool canReadIncompleteGranules() const override { return main_reader->canReadIncompleteGranules(); }
-
+    bool canReadIncompleteGranules() const override { return false; }
 
 private:
     void readPostings();
-    void fillColumn(IColumn & column, TextSearchMode search_mode, size_t max_rows_to_read);
+    void fillColumn(IColumn & column, TextSearchMode search_mode, size_t num_rows);
+    void fillColumns(Columns & res_columns, size_t num_rows);
 
     /// Delegates to the main reader to determine if reading incomplete index granules is supported.
     const IMergeTreeReader * main_reader;
@@ -46,6 +46,7 @@ private:
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;
+    size_t current_mark = 0;
     size_t current_index_mark = 0;
     size_t granule_offset = 0;
 

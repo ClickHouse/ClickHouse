@@ -84,6 +84,9 @@ size_t MergeTreeReaderTextIndex::readRows(
     size_t rows_offset,
     Columns & res_columns)
 {
+    if (continue_reading)
+        from_mark = current_mark;
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
     size_t index_start_mark = from_mark / index.index->index.granularity;
 
@@ -113,26 +116,36 @@ size_t MergeTreeReaderTextIndex::readRows(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule must be read before reading rows (from_mark: {}, index_start_mark: {})", from_mark, index_start_mark);
     }
 
-    if (need_read_postings)
+    size_t read_rows = 0;
+
+    while (read_rows < max_rows_to_read)
     {
-        readPostings();
-        need_read_postings = false;
+        size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
+
+        if (canSkipMark(from_mark))
+        {
+            chassert(postings.empty());
+            fillColumns(res_columns, rows_to_read);
+        }
+        else
+        {
+            if (need_read_postings)
+            {
+                readPostings();
+                need_read_postings = false;
+            }
+
+            fillColumns(res_columns, rows_to_read);
+        }
+
+        ++from_mark;
+        read_rows += rows_to_read;
+        granule_offset += rows_to_read;
+        current_row += rows_to_read;
     }
 
-    for (size_t pos = 0; pos < res_columns.size(); ++pos)
-    {
-        const auto & column_to_read = columns_to_read[pos];
-
-        if (!res_columns[pos])
-            res_columns[pos] = column_to_read.type->createColumn(*serializations[pos]);
-
-        auto & column_mutable = res_columns[pos]->assumeMutableRef();
-        fillColumn(column_mutable, TextSearchMode::All, max_rows_to_read);
-    }
-
-    current_row += max_rows_to_read;
-    granule_offset += max_rows_to_read;
-    return max_rows_to_read;
+    current_mark = from_mark;
+    return read_rows;
 }
 
 void MergeTreeReaderTextIndex::readPostings()
@@ -143,8 +156,6 @@ void MergeTreeReaderTextIndex::readPostings()
 
     for (const auto & [token, mark] : remaining_tokens)
     {
-        LOG_DEBUG(getLogger("KEK"), "token: {}, mark: ({}, {})", token.toString(), mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
-
         auto * postings_stream = index_reader->getStreams().at(IndexSubstream::Type::TextIndexPostings);
         auto * data_buffer = postings_stream->getDataBuffer();
         auto * compressed_buffer = postings_stream->getCompressedDataBuffer();
@@ -153,7 +164,6 @@ void MergeTreeReaderTextIndex::readPostings()
 
         UInt32 total_tokens;
         readPODBinary(total_tokens, *data_buffer);
-        LOG_DEBUG(getLogger("KEK"), "total_tokens: {}", total_tokens);
 
         auto postings_column = ColumnUInt32::create();
         auto & postings_data = postings_column->getData();
@@ -174,21 +184,17 @@ void applyPostings(
     const IColumn & postings_column,
     size_t column_offset,
     size_t granule_offset,
-    size_t max_rows_to_read)
+    size_t num_rows)
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     const auto & postings_data = assert_cast<const ColumnUInt32 &>(postings_column).getData();
     const auto * begin = std::lower_bound(postings_data.begin(), postings_data.end(), granule_offset);
 
-    LOG_DEBUG(getLogger("KEK"), "postings.size(): {}, granule_offset: {}, begin: {}", postings_data.size(), granule_offset, postings_data.end() - begin);
-
     for (const auto * it = begin; it != postings_data.end(); ++it)
     {
         size_t relative_row_number = *it - granule_offset;
 
-        LOG_DEBUG(getLogger("KEK"), "row: {}, relative_row_number: {}, max_rows_to_read: {}", *it, relative_row_number, max_rows_to_read);
-
-        if (relative_row_number >= max_rows_to_read)
+        if (relative_row_number > num_rows)
             break;
 
         if constexpr (search_mode == TextSearchMode::Any)
@@ -196,34 +202,44 @@ void applyPostings(
         else
             column_data[column_offset + relative_row_number] &= 1;
     }
-
-    LOG_DEBUG(getLogger("KEK"), "bytes: {}", countBytesInFilter(column_data));
 }
 
-void MergeTreeReaderTextIndex::fillColumn(IColumn & column, TextSearchMode search_mode, size_t max_rows_to_read)
+void MergeTreeReaderTextIndex::fillColumns(Columns & res_columns, size_t num_rows)
+{
+    for (size_t pos = 0; pos < res_columns.size(); ++pos)
+    {
+        const auto & column_to_read = columns_to_read[pos];
+
+        if (!res_columns[pos])
+            res_columns[pos] = column_to_read.type->createColumn(*serializations[pos]);
+
+        auto & column_mutable = res_columns[pos]->assumeMutableRef();
+        fillColumn(column_mutable, TextSearchMode::All, num_rows);
+    }
+}
+
+void MergeTreeReaderTextIndex::fillColumn(IColumn & column, TextSearchMode search_mode, size_t num_rows)
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     size_t old_size = column_data.size();
-    column_data.resize_fill(old_size + max_rows_to_read, 0);
-
-    LOG_DEBUG(getLogger("KEK"), "fillColumn: {}, old_size: {}, max_rows_to_read: {}, postings.size(): {}", search_mode, old_size, max_rows_to_read, postings.size());
+    column_data.resize_fill(old_size + num_rows, 0);
 
     if (postings.empty())
         return;
 
     auto it = postings.begin();
-    applyPostings<TextSearchMode::Any>(column, *it->second, old_size, granule_offset, max_rows_to_read);
+    applyPostings<TextSearchMode::Any>(column, *it->second, old_size, granule_offset, num_rows);
     ++it;
 
     if (search_mode == TextSearchMode::All)
     {
         for (; it != postings.end(); ++it)
-            applyPostings<TextSearchMode::All>(column, *it->second, old_size, granule_offset, max_rows_to_read);
+            applyPostings<TextSearchMode::All>(column, *it->second, old_size, granule_offset, num_rows);
     }
     else
     {
         for (; it != postings.end(); ++it)
-            applyPostings<TextSearchMode::Any>(column, *it->second, old_size, granule_offset, max_rows_to_read);
+            applyPostings<TextSearchMode::Any>(column, *it->second, old_size, granule_offset, num_rows);
     }
 }
 
@@ -242,8 +258,9 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark)
         granule_text.resetAfterAnalysis(may_be_true);
 
         postings.clear();
-        need_read_postings = true;
         granule_offset = 0;
+        need_read_postings = true;
+        current_index_mark = index_start_mark;
     }
 
     return !may_be_true;

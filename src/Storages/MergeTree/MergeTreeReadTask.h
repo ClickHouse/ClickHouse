@@ -34,6 +34,9 @@ using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 struct MergeTreeIndexReadResult;
 using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
 
+struct MergeTreeIndexBuildContext;
+using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
+
 enum class MergeTreeReadType : uint8_t
 {
     /// By default, read will use MergeTreeReadPool and return pipe with num_streams outputs.
@@ -55,12 +58,11 @@ enum class MergeTreeReadType : uint8_t
 
 struct IndexReadTask
 {
-    String index_name;
     NamesAndTypesList columns;
     PrewhereExprStepPtr prewhere_step;
 };
 
-using IndexReadTasks = std::vector<IndexReadTask>;
+using IndexReadTasks = std::unordered_map<String, IndexReadTask>;
 
 struct MergeTreeReadTaskColumns
 {
@@ -134,9 +136,7 @@ public:
         MergeTreeReaderPtr main;
         std::vector<MergeTreeReaderPtr> prewhere;
         MergeTreePatchReaders patches;
-
         MergeTreeReaderPtr prepared_index;
-        std::vector<MergeTreeReaderPtr> heavy_indexes;
     };
 
     struct BlockSizeParams
@@ -167,9 +167,12 @@ public:
 
     void initializeReadersChain(
         const PrewhereExprInfo & prewhere_actions,
-        ReadStepsPerformanceCounters & read_steps_performance_counters,
-        MergeTreeIndexReadResultPtr index_read_result,
-        std::vector<MergeTreeIndexWithCondition> heavy_indexes);
+        MergeTreeIndexBuildContextPtr index_build_context,
+        ReadStepsPerformanceCounters & read_steps_performance_counters);
+
+    void initializeIndexReaders(
+        const MergeTreeIndexBuildContext & index_build_context,
+        PrewhereExprInfo & all_prewhere_actions);
 
     BlockAndProgress read();
     bool isFinished() const { return mark_ranges.empty() && readers_chain.isCurrentRangeFinished(); }
@@ -194,7 +197,6 @@ public:
     static MergeTreeReadersChain createReadersChain(
         const Readers & readers,
         const PrewhereExprInfo & prewhere_actions,
-        const IndexReadTasks & index_read_tasks,
         ReadStepsPerformanceCounters & read_steps_performance_counters);
 
 private:

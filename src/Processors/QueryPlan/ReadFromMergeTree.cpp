@@ -1931,9 +1931,6 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         if (filter_actions_dag)
             query_info.filter_actions_dag = filter_actions_dag;
 
-        LOG_DEBUG(getLogger("KEK"), "building indexes...");
-        LOG_DEBUG(getLogger("KEK"), "stacktrace: {}", StackTrace().toString());
-
         buildIndexes(
             indexes,
             query_info.filter_actions_dag.get(),
@@ -3075,7 +3072,7 @@ void ReadFromMergeTree::replaceColumnsForTextSearch(const Names & removed_column
 
     auto new_virtual_columns = std::make_shared<VirtualColumnsDescription>(*storage_snapshot->virtual_columns);
 
-    for (const auto & index_task : added_index_tasks)
+    for (const auto & [index_name, index_task] : added_index_tasks)
     {
         for (const auto & added_column : index_task.columns)
         {
@@ -3086,7 +3083,7 @@ void ReadFromMergeTree::replaceColumnsForTextSearch(const Names & removed_column
             new_virtual_columns->addEphemeral(added_column.name, added_column.type, "");
         }
 
-        index_read_tasks.push_back(index_task);
+        index_read_tasks[index_name] = index_task;
     }
 
     storage_snapshot = std::make_shared<StorageSnapshot>(

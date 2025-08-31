@@ -192,6 +192,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
             column_names,
             prewhere_info,
             read_task_info.mutation_steps,
+            index_read_tasks,
             actions_settings,
             reader_settings,
             /*with_subcolumns=*/ true);
