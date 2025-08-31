@@ -40,7 +40,7 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canMergeParts(
     if (left.projection_names != right.projection_names)
     {
         return std::unexpected(PreformattedMessage::create(
-            "Parts have different projection sets: {} in {} and {} in {}",
+            "Parts have different projection sets: {} in '{}' and {} in '{}'",
             left.projection_names, left.name, right.projection_names, right.name));
     }
 
