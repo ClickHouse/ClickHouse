@@ -59,6 +59,7 @@ DistinctTransform::DistinctTransform(
         try_init_bf = !(limit_hint_ && limit_hint_ < 1000000);
     } else
     {
+        try_init_bf = false;
         pool = std::make_unique<ThreadPool>(
             CurrentMetrics::DestroyAggregatesThreads,
             CurrentMetrics::DestroyAggregatesThreadsActive,
