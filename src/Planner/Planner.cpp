@@ -499,7 +499,11 @@ std::optional<std::vector<ColumnsHashing::OptimizationDataOneExpression>> findOp
         index_of_group_by_expression[group_by_node_typed.getColumnName()] = i;
         const DataTypePtr & column_type = group_by_node_typed.getColumnType();
         if (column_type != nullptr)
+        {
+            if (column_type->getName().starts_with("LowCardinality")) // Optimization could not be applied for lowCardinality
+                return std::nullopt;
             expression_signed_or_not[group_by_node_typed.getColumnName()] = column_type->getName() == "Int8" || column_type->getName() == "Int16" || column_type->getName() == "Int32" || column_type->getName() == "Int64" || column_type->getName() == "Int128" || column_type->getName() == "Int256";
+        }
     }
 
     for (size_t i = 0; i < order_by_nodes.size(); ++i)
