@@ -60,7 +60,8 @@ struct HostID
         return host_name + ":" + DB::toString(port);
     }
 
-    bool isLocalAddress(UInt16 clickhouse_port) const;
+    bool isLocalAddress(UInt16 clickhouse_port, bool allow_loopback_host) const;
+    bool isLoopbackHost() const;
 
     static String applyToString(const HostID & host_id)
     {
@@ -156,6 +157,9 @@ struct DDLTask : public DDLTaskBase
     void setClusterInfo(ContextPtr context, LoggerPtr log);
 
     String getShardID() const override;
+
+    static bool isSeflHostID(const HostID & checking_host_id, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port);
+    static bool isSeflHostname(const String & checking_host_name, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port);
 
 private:
     bool tryFindHostInCluster();

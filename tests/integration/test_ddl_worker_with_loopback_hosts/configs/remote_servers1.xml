@@ -1,0 +1,31 @@
+<clickhouse>
+    <remote_servers>
+        <test_cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster>
+        <test_dummy_cluster>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_dummy_cluster>
+    </remote_servers>
+</clickhouse>

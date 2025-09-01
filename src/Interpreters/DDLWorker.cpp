@@ -1,14 +1,16 @@
 
+#include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -19,10 +21,9 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ParserQuery.h>
-#include <IO/NullWriteBuffer.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
@@ -60,6 +61,11 @@ namespace Setting
     extern const SettingsBool implicit_transaction;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+}
+
+namespace ServerSetting
+{
+extern const ServerSettingsBool allow_ddl_loopback_hosts;
 }
 
 namespace ErrorCodes
@@ -1282,13 +1288,25 @@ void DDLWorker::initializeReplication()
 
     zookeeper->createAncestors(fs::path(replicas_dir) / "");
 
+    auto allow_ddl_loopback_hosts = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::allow_ddl_loopback_hosts];
     NameSet host_id_set;
     for (const auto & it : context->getClusters())
     {
         auto cluster = it.second;
         for (const auto & host_ids : cluster->getHostIDs())
             for (const auto & host_id : host_ids)
-                host_id_set.emplace(host_id);
+            {
+                if (allow_ddl_loopback_hosts)
+                {
+                    host_id_set.emplace(host_id);
+                }
+                else
+                {
+                    HostID host = HostID::fromString(host_id);
+                    if (!host.isLoopbackHost())
+                        host_id_set.emplace(host_id);
+                }
+            }
     }
 
     createReplicaDirs(zookeeper, host_id_set);
@@ -1353,10 +1371,7 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         try
         {
             HostID host = HostID::fromString(host_id);
-            /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
-            bool is_local_host = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port)) || host.isLocalAddress(port);
-
-            if (is_local_host)
+            if (DDLTask::isSeflHostID(host, maybe_secure_port, port))
                 local_host_ids.emplace(host_id);
         }
         catch (const Exception & e)
