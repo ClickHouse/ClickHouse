@@ -86,6 +86,10 @@ SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc', 'bar']);
 SELECT groupArray(id) FROM tab WHERE searchAll(message, ['foo', 'bar']);
 SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc', 'fo']);
 
+--- Test for GitHub issue #86300
+SELECT groupArray(id) FROM tab WHERE searchAny(message, []);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, []);
+
 DROP TABLE tab;
 
 SELECT '-- Ngram tokenizer';

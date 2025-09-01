@@ -177,6 +177,13 @@ void execute(
 {
     col_result.resize(input_rows_count);
 
+    if (needles.empty())
+    {
+        for (size_t i = 0; i < input_rows_count; ++i)
+            col_result[i] = true;
+        return;
+    }
+
     switch (SearchTraits::search_mode)
     {
         case GinSearchMode::Any:
