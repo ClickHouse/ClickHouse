@@ -182,12 +182,15 @@ JoinStepLogical::JoinStepLogical(
     actions_after_join = std::move(actions_after_join_);
     updateInputHeaders({left_header_, right_header_});
 
-    auto current_actions_dag = expression_actions.getActionsDAG();
+#ifndef NDEBUG
+    auto all_nodes_set = std::ranges::to<std::unordered_set>(
+        expression_actions.getActionsDAG()->getNodes() | std::views::transform([](const auto & node) { return &node; }));
     for (const auto * node_after_join : actions_after_join)
     {
-        if (!current_actions_dag->containsNode(node_after_join))
+        if (!all_nodes_set.contains(node_after_join))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} is not in the expression actions dag", fmt::ptr(node_after_join));
     }
+#endif
 }
 
 std::unordered_set<JoinTableSide> JoinStepLogical::typeChangingSides() const
@@ -785,6 +788,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
     auto & join_expression = join_operator.expression;
 
     bool is_join_without_expression = isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind);
+    /// When we do JOIN ON NULL or JOIN ON 1 we create dummy columns and in fact joining on 1 = 0 or 1 = 1.
+    /// For INNER JOIN we could just do CROSS, but for OUTER result depends on whether any table is empty or not.
     if ((!is_join_without_expression && join_expression.empty()) ||
         (join_expression.size() == 1
             && join_expression[0].getType()->onlyNull()

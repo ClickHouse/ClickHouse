@@ -3870,12 +3870,4 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
     return dag;
 }
 
-bool ActionsDAG::containsNode(const Node * node)
-{
-    for (const auto & dag_node : nodes)
-        if (&dag_node == node)
-            return true;
-    return false;
-}
-
 }
