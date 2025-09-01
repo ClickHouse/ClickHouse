@@ -56,20 +56,20 @@ namespace
     };
 }
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wmissing-noreturn"
+[[noreturn]] inline void throwNotImplemented(const std::string & message)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}", message);
+}
 
 size_t SeekableReadBuffer::getFileOffsetOfBufferEnd() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFileOffsetOfBufferEnd() not implemented");
+    throwNotImplemented("Method getFileOffsetOfBufferEnd() not implemented");
 }
 
 size_t SeekableReadBuffer::readBigAt(char * /*to*/, size_t /*n*/, size_t /*offset*/, const std::function<bool(size_t m)> & /*progress_callback*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() not implemented");
+    throwNotImplemented("Method readBigAt() not implemented");
 }
-
-#pragma clang diagnostic pop
 
 
 std::optional<off_t> SeekableReadBuffer::tryGetPosition()
