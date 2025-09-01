@@ -281,7 +281,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::SYNC_DATABASE_REPLICA:
         {
             ostr << ' ';
-            print_identifier(database->as<ASTIdentifier>()->name());
+            database->format(ostr, settings, state, frame);
             if (sync_replica_mode != SyncReplicaMode::DEFAULT)
             {
                 ostr << ' ';

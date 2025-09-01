@@ -28,6 +28,7 @@
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
 
+#include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 
 #include <Interpreters/Context_fwd.h>
