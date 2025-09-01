@@ -3065,8 +3065,7 @@ void ReadFromMergeTree::replaceColumnsForTextSearch(const Names & removed_column
 
     for (const auto & removed_column : removed_columns)
     {
-        const auto it = std::ranges::find(all_column_names, removed_column);
-        chassert(it != all_column_names.end());
+        auto it = std::ranges::find(all_column_names, removed_column);
         all_column_names.erase(it);
     }
 
@@ -3076,8 +3075,9 @@ void ReadFromMergeTree::replaceColumnsForTextSearch(const Names & removed_column
     {
         for (const auto & added_column : index_task.columns)
         {
-            const auto it = std::ranges::find(all_column_names, added_column.name);
-            chassert(it != all_column_names.end());
+            auto it = std::ranges::find(all_column_names, added_column.name);
+            if (it != all_column_names.end())
+                continue;
 
             all_column_names.emplace(it, added_column.name);
             new_virtual_columns->addEphemeral(added_column.name, added_column.type, "");
