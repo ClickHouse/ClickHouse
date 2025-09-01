@@ -105,6 +105,7 @@ class SparkTable:
         _location: str,
         _lake_format: LakeFormat,
         _file_format: FileFormat,
+        _storage: TableStorage,
     ):
         self.catalog_name = _catalog_name
         self.table_name = _table_name
@@ -113,3 +114,7 @@ class SparkTable:
         self.location = _location
         self.lake_format = _lake_format
         self.file_format = _file_format
+        self.storage = _storage
+
+    def get_table_full_path(self) -> str:
+        return f"{self.catalog_name}.test.{self.table_name}"

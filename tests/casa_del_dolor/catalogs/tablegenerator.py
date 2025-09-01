@@ -2,7 +2,7 @@ import random
 from abc import abstractmethod
 
 from .clickhousetospark import ClickHouseSparkTypeMapper
-from .laketables import LakeFormat, SparkTable, FileFormat, SparkColumn
+from .laketables import LakeFormat, SparkTable, FileFormat, TableStorage, SparkColumn
 
 from pyspark.sql.types import DateType, TimestampType, StructType, DataType
 
@@ -68,6 +68,7 @@ class LakeTableGenerator:
         columns: list[dict[str, str]],
         file_format: str,
         deterministic: bool,
+        next_storage: TableStorage,
         next_location: str,
     ) -> tuple[str, SparkTable]:
         """
@@ -130,6 +131,7 @@ class LakeTableGenerator:
                 next_location,
                 LakeFormat.lakeformat_from_str(self.get_format()),
                 self.write_format,
+                next_storage,
             ),
         )
 

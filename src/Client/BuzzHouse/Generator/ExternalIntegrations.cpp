@@ -1655,6 +1655,11 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
     }
 }
 
+bool DolorIntegration::performRandomCommand(const uint64_t seed, const String & dname, const String & tname)
+{
+    return httpPut("/sparkupdate", fmt::format(R"({{"seed":{},"database_name":"{}","table_name":"{}"}})", seed, dname, tname));
+}
+
 ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     : fc(fcc)
 {
@@ -1759,6 +1764,23 @@ void ExternalIntegrations::createExternalDatabaseTable(
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performTableIntegration(rg, t, true, entries));
     next->setTableEngineDetails(rg, t, te);
+}
+
+void ExternalIntegrations::performRandomCommand(const uint64_t seed, const IntegrationCall ic, const String & dname, const String & tname)
+{
+    ClickHouseIntegration * next = nullptr;
+
+    switch (ic)
+    {
+        case IntegrationCall::Dolor:
+            next = dolor.get();
+            break;
+        default:
+            chassert(0);
+            break;
+    }
+    auto u = next->performRandomCommand(seed, dname, tname);
+    UNUSED(u);
 }
 
 ClickHouseIntegratedDatabase * ExternalIntegrations::getPeerPtr(const PeerTableDatabase pt) const
