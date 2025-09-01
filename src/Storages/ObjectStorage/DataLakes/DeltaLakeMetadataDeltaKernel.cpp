@@ -128,21 +128,15 @@ static void checkTypesAndNestedTypesEqual(DataTypePtr type, DataTypePtr expected
     }
 }
 
-/// Returns column and physical column.
-static std::pair<NameAndTypePair, std::optional<NameAndTypePair>> getColumn(
+/// Returns column and whether it is readable from data file.
+static std::pair<NameAndTypePair, bool> getColumn(
     const NameAndTypePair & column,
-    DataTypePtr expected_type,
     const NamesAndTypesList & read_schema,
     const NameToNameMap & physical_names_map,
     bool get_name_in_storgae,
     LoggerPtr log)
 {
     NameAndTypePair result_column = column;
-    /// Convert for compatibility, because it used to work this way.
-    if (expected_type && result_column.type->isNullable() && !expected_type->isNullable())
-        result_column.type = removeNullable(result_column.type);
-
-    checkTypesAndNestedTypesEqual(result_column.type, expected_type, column.name);
 
     /// columnMapping.mode == ''.
     if (physical_names_map.empty())
@@ -150,7 +144,7 @@ static std::pair<NameAndTypePair, std::optional<NameAndTypePair>> getColumn(
         LOG_TEST(log, "Name: {}, name in storage: {}, subcolumn name: {}",
                  column.name, column.getNameInStorage(), column.getSubcolumnName());
 
-        return {result_column, std::nullopt};
+        return {result_column, true};
     }
 
     auto physical_name = DeltaLake::getPhysicalName(get_name_in_storgae ? column.getNameInStorage() : column.name, physical_names_map);
@@ -159,10 +153,13 @@ static std::pair<NameAndTypePair, std::optional<NameAndTypePair>> getColumn(
     /// Not a readable column.
     if (!physical_name_and_type.has_value())
     {
-        LOG_TEST(log, "Name: {}, name in storage: {}, subcolumn name: {}",
-                 column.name, column.getNameInStorage(), column.getSubcolumnName());
+        LOG_TEST(log, "Name: {}, name in storage: {}, subcolumn name: {}, physical name: {}",
+                 column.name, column.getNameInStorage(), column.getSubcolumnName(), physical_name);
 
-        return {result_column, std::nullopt};
+        /// Not a readable column, but if columnMapping.mode == 'name'
+        /// we will still have it named as col-<uuid> in metadata.
+        result_column.name = physical_name;
+        return {result_column, false};
     }
 
     std::string physical_subcolumn_name;
@@ -179,28 +176,22 @@ static std::pair<NameAndTypePair, std::optional<NameAndTypePair>> getColumn(
         column.name, column.getNameInStorage(), column.getSubcolumnName(),
         physical_name, physical_subcolumn_name, physical_name_and_type->type->getName());
 
-    NameAndTypePair result_physical_column;
     if (column.isSubcolumn())
     {
-        result_physical_column = NameAndTypePair(
+        result_column = NameAndTypePair(
             physical_name,
             /// physical_subcolumn_name can be empty here while column.getSubcolumnName() is not,
             /// if that subcolumn is size0, null, etc.
             physical_subcolumn_name.empty() ? column.getSubcolumnName() : physical_subcolumn_name,
             /* type_in_storage */physical_name_and_type->type,
-            /* subcolumn_type */column.type);
+            /* subcolumn_type */result_column.type);
     }
     else
     {
-        result_physical_column = NameAndTypePair(physical_name, physical_name_and_type->type);
+        result_column = NameAndTypePair(physical_name, physical_name_and_type->type);
     }
 
-    /// Convert for compatibility, because it used to work this way.
-    /// Note: however, we do not convert nested types.
-    if (expected_type && result_physical_column.type->isNullable() && !expected_type->isNullable())
-        result_physical_column.type = removeNullable(result_physical_column.type);
-
-    return {result_column, result_physical_column};
+    return {result_column, true};
 }
 
 ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
@@ -259,18 +250,17 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// so we want it to be verified that chunk contains all the requested columns.
     for (auto & column : requested_table_columns)
     {
-        auto [result_column, result_physical_column] = getColumn(
+        auto expected_type = info.source_header.getByName(column.name).type;
+        checkTypesAndNestedTypesEqual(column.type, expected_type, column.name);
+
+        auto [result_column, _] = getColumn(
             column,
-            info.source_header.getByName(column.name).type,
             all_read_columns_with_subcolumns,
             physical_names_map,
             /* get_name_in_storage */true,
             log);
 
-        if (result_physical_column.has_value())
-            info.requested_columns.emplace_back(result_physical_column.value());
-        else
-            info.requested_columns.push_back(result_column);
+        info.requested_columns.emplace_back(result_column);
     }
 
     auto table_columns_to_read = table_columns_description.getByNames(
@@ -280,16 +270,15 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
 
     for (auto & column : table_columns_to_read)
     {
-        auto [result_column, result_physical_column] = getColumn(
+        auto [result_column, readable] = getColumn(
             column,
-            info.columns_description.get(column.name).type,
             all_read_columns_with_subcolumns,
             physical_names_map,
             /* get_name_in_storage */false,
             log);
 
-        if (result_physical_column.has_value())
-            info.format_header.insert(ColumnWithTypeAndName{result_physical_column->type, result_physical_column->name});
+        if (readable)
+            info.format_header.insert(ColumnWithTypeAndName{result_column.type, result_column.name});
     }
 
     /// If only virtual columns were requested, just read the smallest column.
@@ -301,6 +290,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());
     LOG_TEST(log, "Requested columns: {}", info.requested_columns.toString());
+    LOG_TEST(log, "Columns description: {}", info.columns_description.toString());
     return info;
 }
 
