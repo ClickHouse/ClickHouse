@@ -124,7 +124,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool execute_exists_as_scalar_subquery;
-    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -3040,8 +3039,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             else if (if_function_arguments.size() > 3)
             {
                 bool apply_cast_to_common_type = true;
-                bool use_variant_when_no_common_type =
-                    scope.context->getSettingsRef()[Setting::allow_experimental_variant_type] && scope.context->getSettingsRef()[Setting::use_variant_as_common_type];
+                bool use_variant_when_no_common_type = scope.context->getSettingsRef()[Setting::use_variant_as_common_type];
 
                 if (*constant_condition)
                 {
