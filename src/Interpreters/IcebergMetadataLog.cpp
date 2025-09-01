@@ -31,7 +31,7 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsUInt64 iceberg_metadata_log_level;
+extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
 }
 
 namespace ErrorCodes
@@ -61,9 +61,9 @@ ColumnsDescription IcebergMetadataLogElement::getColumnsDescription()
         {"event_time", std::make_shared<DataTypeDateTime>(), "Event time."},
         {"query_id", std::make_shared<DataTypeString>(), "Query id."},
         {"content_type", std::move(iceberg_metadata_log_entry_datatype), "Content type."},
-        {"path", std::make_shared<DataTypeString>(), "Path of table."},
-        {"file_name", std::make_shared<DataTypeString>(), "Name of file."},
-        {"content", std::make_shared<DataTypeString>(), "Content of metadata."},
+        {"table_path", std::make_shared<DataTypeString>(), "Table path."},
+        {"file_path", std::make_shared<DataTypeString>(), "File path."},
+        {"content", std::make_shared<DataTypeString>(), "Content in a JSON format (json file content, avro metadata or avro entry)."},
         {"row_in_file", rowType, "Row in file."}};
 }
 
@@ -75,8 +75,8 @@ void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_index++]->insert(current_time);
     columns[column_index++]->insert(query_id);
     columns[column_index++]->insert(content_type);
-    columns[column_index++]->insert(path);
-    columns[column_index++]->insert(filename);
+    columns[column_index++]->insert(table_path);
+    columns[column_index++]->insert(file_path);
     columns[column_index++]->insert(metadata_content);
     columns[column_index++]->insert(row_in_file ? *row_in_file : rowType->getDefault());
 }
@@ -85,16 +85,11 @@ void insertRowToLogTable(
     const ContextPtr & local_context,
     String row,
     IcebergMetadataLogLevel row_log_level,
+    const String & table_path,
     const String & file_path,
-    const String & filename,
     std::optional<UInt64> row_in_file)
 {
-    IcebergMetadataLogLevel set_log_level = getIcebergMetadataLogLevelFromSettings(local_context);
-    LOG_DEBUG(
-        &Poco::Logger::get("IcebergMetadataLog"),
-        "IcebergMetadataLog insertRowToLogTable called with log level {}, current setting is {}",
-        static_cast<UInt64>(row_log_level),
-        set_log_level);
+    IcebergMetadataLogLevel set_log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
     if (set_log_level < row_log_level)
         return;
     timespec spec{};
@@ -106,14 +101,9 @@ void insertRowToLogTable(
             .current_time = spec.tv_sec,
             .query_id = local_context->getCurrentQueryId(),
             .content_type = row_log_level,
-            .path = file_path,
-            .filename = filename,
+            .table_path = table_path,
+            .file_path = file_path,
             .metadata_content = row,
             .row_in_file = row_in_file});
-}
-
-IcebergMetadataLogLevel getIcebergMetadataLogLevelFromSettings(const ContextPtr & local_context)
-{
-    return static_cast<IcebergMetadataLogLevel>(local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value);
 }
 }

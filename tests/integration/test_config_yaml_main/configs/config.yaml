@@ -92,7 +92,7 @@ asynchronous_metric_log:
 iceberg_metadata_log:
   database: system
   table: iceberg_metadata_log
-  flush_interval_milliseconds: 60000
+  flush_interval_milliseconds: 2000
 opentelemetry_span_log:
   engine: |-
     engine MergeTree

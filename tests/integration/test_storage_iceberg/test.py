@@ -2998,21 +2998,21 @@ def test_system_iceberg_metadata(started_cluster, format_version, storage_type):
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
 
-    assert instance.query(f"SELECT * FROM {TABLE_NAME}", settings={"iceberg_metadata_log_level":1}) == instance.query(
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}", settings={"iceberg_metadata_log_level":"metadata"}) == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
     instance.query("SYSTEM FLUSH LOGS iceberg_metadata_log")
-    assert 'avro' not in instance.query(f"SELECT file_name FROM system.iceberg_metadata_log")
-    assert 'json' in instance.query(f"SELECT file_name FROM system.iceberg_metadata_log")
+    assert 'avro' not in instance.query(f"SELECT file_path FROM system.iceberg_metadata_log")
+    assert 'json' in instance.query(f"SELECT file_path FROM system.iceberg_metadata_log")
 
-    assert instance.query(f"SELECT * FROM {TABLE_NAME}", settings={"iceberg_metadata_log_level":4}) == instance.query(
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}", settings={"iceberg_metadata_log_level":"manifest_file_entry"}) == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
     instance.query("SYSTEM FLUSH LOGS iceberg_metadata_log")
-    assert 'avro' in instance.query(f"SELECT file_name FROM system.iceberg_metadata_log")
-    assert 'json' in instance.query(f"SELECT file_name FROM system.iceberg_metadata_log")
+    assert 'avro' in instance.query(f"SELECT file_path FROM system.iceberg_metadata_log")
+    assert 'json' in instance.query(f"SELECT file_path FROM system.iceberg_metadata_log")
 
     file_contents = instance.query("SELECT content FROM system.iceberg_metadata_log").split('\n')
 
@@ -3024,7 +3024,8 @@ def test_system_iceberg_metadata(started_cluster, format_version, storage_type):
         except:
             raise ValueError(content)
 
-        
+    instance.query("TRUNCATE TABLE system.iceberg_metadata_log")
+
 @pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
 def test_writes_field_partitioning(started_cluster, storage_type):
     format_version = 2

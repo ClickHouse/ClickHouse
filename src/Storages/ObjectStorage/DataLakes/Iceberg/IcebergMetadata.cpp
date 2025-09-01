@@ -110,6 +110,16 @@ extern const SettingsBool allow_experimental_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
 }
 
+namespace
+{
+String dumpMetadataObjectToString(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::JSON::Stringifier::stringify(metadata_object, oss);
+    return removeEscapedSlashes(oss.str());
+}
+}
+
 
 using namespace Iceberg;
 
@@ -233,9 +243,13 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 
     updateState(local_context, metadata_object);
 
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(metadata_object, oss);
-    insertRowToLogTable(local_context, removeEscapedSlashes(oss.str()), DB::IcebergMetadataLogLevel::Metadata, configuration_ptr->getRawPath().path, metadata_file_path, std::nullopt);
+    insertRowToLogTable(
+        local_context,
+        dumpMetadataObjectToString(metadata_object),
+        DB::IcebergMetadataLogLevel::Metadata,
+        configuration_ptr->getRawPath().path,
+        metadata_file_path,
+        std::nullopt);
 
     if (previous_snapshot_id != relevant_snapshot_id)
     {
@@ -567,9 +581,13 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     auto format_version = object->getValue<int>(f_format_version);
 
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(object, oss);
-    insertRowToLogTable(local_context, removeEscapedSlashes(oss.str()), DB::IcebergMetadataLogLevel::Metadata, configuration_ptr->getRawPath().path, metadata_file_path, std::nullopt);
+    insertRowToLogTable(
+        local_context,
+        dumpMetadataObjectToString(object),
+        DB::IcebergMetadataLogLevel::Metadata,
+        configuration_ptr->getRawPath().path,
+        metadata_file_path,
+        std::nullopt);
     return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object, cache_ptr, compression_method);
 }
 

@@ -23,28 +23,6 @@ namespace DB::Iceberg
 
 using namespace DB;
 
-namespace
-{
-
-String removeAllSlashes(const String & input)
-{
-    std::string result;
-    result.reserve(input.size());
-
-    for (size_t i = 0; i < input.size(); ++i)
-    {
-        if (i + 1 < input.size() && input[i] == '\\' && input[i + 1] == '"')
-        {
-            ++i;
-            continue;
-        }
-        result.push_back(input[i]);
-    }
-    return result;
-}
-
-}
-
 AvroForIcebergDeserializer::AvroForIcebergDeserializer(
     std::unique_ptr<ReadBufferFromFileBase> buffer_,
     const std::string & manifest_file_path_,
@@ -110,6 +88,28 @@ std::optional<std::string> AvroForIcebergDeserializer::tryGetAvroMetadataValue(s
         return std::nullopt;
 
     return std::string{it->second.begin(), it->second.end()};
+}
+
+namespace
+{
+
+String removeAllSlashes(const String & input)
+{
+    std::string result;
+    result.reserve(input.size());
+
+    for (size_t i = 0; i < input.size(); ++i)
+    {
+        if (i + 1 < input.size() && input[i] == '\\' && input[i + 1] == '"')
+        {
+            ++i;
+            continue;
+        }
+        result.push_back(input[i]);
+    }
+    return result;
+}
+
 }
 
 String AvroForIcebergDeserializer::getContent(size_t row_number) const

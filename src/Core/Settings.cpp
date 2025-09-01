@@ -4883,14 +4883,17 @@ The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELE
     DECLARE(Float, create_replicated_merge_tree_fault_injection_probability, 0.0f, R"(
 The probability of a fault injection during table creation after creating metadata in ZooKeeper
 )", 0) \
-    DECLARE(UInt64, iceberg_metadata_log_level, 0, R"(
-Possible values:
+    DECLARE(IcebergMetadataLogLevel, iceberg_metadata_log_level, IcebergMetadataLogLevel::None, R"(
+Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log. 
+Usually this setting can be modified for debugging purposes.
 
-- 0 - No metadata log.
-- 1 - Just metadata.json files
-- 2 - metadata.json + snapshots
-- 3 - metadata.json + snapshots + metadata from avro manifest files
-- 4 - metadata.json + snapshots + metadata from avro manifest files + manifest entries 
+Possible values:
+- none - No metadata log.
+- metadata - Root metadata.json file.
+- manifest_list_metadata - Everything above + metadata from avro manifest list which corresponds to a snapshot.
+- manifest_list_entry - Everything above + avro manifest list entries.
+- manifest_file_metadata - Everything above + metadata from traversed avro manifest files.
+- manifest_file_entry - Everything above + traversed avro manifest files entries.
 )", 0) \
     \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
