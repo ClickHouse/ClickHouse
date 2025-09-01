@@ -4,6 +4,7 @@
 #include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Functions/IFunction.h>
 
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
