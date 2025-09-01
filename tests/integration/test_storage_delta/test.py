@@ -75,6 +75,8 @@ def get_spark():
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
+        .config("spark.driver.memory", "8g")
+        .config("spark.executor.memory", "8g")
         .master("local")
     )
 
@@ -279,14 +281,8 @@ def create_delta_table(
     table_name,
     cluster,
     format="Parquet",
-    allow_dynamic_metadata_for_data_lakes=False,
     **kwargs,
 ):
-    allow_dynamic_metadata_for_datalakes_suffix = (
-        " SETTINGS allow_dynamic_metadata_for_data_lakes = 1"
-        if allow_dynamic_metadata_for_data_lakes
-        else ""
-    )
 
     if storage_type == "s3":
         if "bucket" in kwargs:
@@ -300,7 +296,6 @@ def create_delta_table(
             CREATE TABLE {table_name}
             ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
             """
-            + allow_dynamic_metadata_for_datalakes_suffix
         )
 
     elif storage_type == "azure":
@@ -310,7 +305,6 @@ def create_delta_table(
             CREATE TABLE {table_name}
             ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
             """
-            + allow_dynamic_metadata_for_datalakes_suffix
         )
     elif storage_type == "local":
         # For local storage, we need to use the absolute path
@@ -3341,7 +3335,66 @@ def test_writes_spark_compatibility(started_cluster):
         == str(df)
     )
 
-    
+
+@pytest.mark.parametrize("partitioned", [False, True])
+@pytest.mark.parametrize("limit_enabled", [False, True])
+def test_write_limits(started_cluster, partitioned, limit_enabled):
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_write_limits")
+    result_file = f"{table_name}_data"
+
+    schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["id"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+    files = (
+        instance.exec_in_container(["bash", "-c", f"ls /{result_file}"])
+        .strip()
+        .split("\n")
+    )
+    assert len(files) == 1
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLakeLocal('/{result_file}') SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+
+    num_rows = 1000000
+    partitions_num = 5
+    limit_rows = 10 if limit_enabled else (num_rows + 1)
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number % {partitions_num}, randomString(10) FROM numbers({num_rows}) SETTINGS delta_lake_insert_max_rows_in_data_file = {limit_rows}, max_insert_block_size = 1000, min_chunk_bytes_for_parallel_parsing = 1000"
+    )
+
+    files = LocalDownloader(instance).download_directory(f"/{result_file}/", f"/{result_file}/")
+    data_files = [file for file in files if file.endswith(".parquet")]
+    assert len(data_files) > 0, f"No data files: {files}"
+
+    if partitioned:
+        if limit_enabled:
+            assert len(data_files) > partitions_num, f"Data files: {data_files}"
+        else:
+            assert len(data_files) == partitions_num, f"Data files: {data_files}"
+    else:
+        if limit_enabled:
+            assert len(data_files) > 1, f"Data files: {data_files}"
+        else:
+            assert len(data_files) == 1, f"Data files: {data_files}"
+
+    assert num_rows == int(instance.query(f"SELECT count() FROM {table_name}"))
+
+    spark = started_cluster.spark_session
+    df = spark.read.format("delta").load(f"/{result_file}")
+    assert df.count() == num_rows
+
+
+>>>>>>> origin/master
 def test_column_mapping_id(started_cluster):
     node = started_cluster.instances["node1"]
     table_name = randomize_table_name("test_column_mapping_id")
