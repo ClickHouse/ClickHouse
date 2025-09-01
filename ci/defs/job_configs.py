@@ -710,29 +710,32 @@ class JobConfigs:
     ).parametrize(
         *[
             Job.ParamSet(
-                parameter=f"amd_asan, old analyzer, {batch}/{total_batches}",
+                parameter=f"amd_asan, old analyzer, {parallel_sequential}, {batch}/{total_batches}",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_ASAN],
             )
-            for total_batches in (6,)
+            for parallel_sequential in ("parallel", "sequential")
+            for total_batches in (3,)
             for batch in range(1, total_batches + 1)
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_binary, {batch}/{total_batches}",
+                parameter=f"amd_binary, {parallel_sequential}, {batch}/{total_batches}",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_BINARY],
             )
-            for total_batches in (5,)
+            for parallel_sequential in ("parallel", "sequential")
+            for total_batches in (2,)
             for batch in range(1, total_batches + 1)
         ],
         *[
             Job.ParamSet(
-                parameter=f"arm_binary, distributed plan, {batch}/{total_batches}",
+                parameter=f"arm_binary, distributed plan, {parallel_sequential}, {batch}/{total_batches}",
                 runs_on=RunnerLabels.FUNC_TESTER_ARM,
                 requires=[ArtifactNames.CH_ARM_BINARY],
             )
-            for total_batches in (4,)
+            for parallel_sequential in ("parallel", "sequential")
+            for total_batches in (2,)
             for batch in range(1, total_batches + 1)
         ],
     )
@@ -752,11 +755,12 @@ class JobConfigs:
     ).parametrize(
         *[
             Job.ParamSet(
-                parameter=f"amd_tsan, {batch}/{total_batches}",
+                parameter=f"amd_tsan, {parallel_sequential}, {batch}/{total_batches}",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_TSAN],
             )
-            for total_batches in (6,)
+            for parallel_sequential in ("parallel", "sequential")
+            for total_batches in (3,)
             for batch in range(1, total_batches + 1)
         ]
     )
