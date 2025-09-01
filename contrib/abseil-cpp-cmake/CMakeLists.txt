@@ -2920,7 +2920,6 @@ absl_cc_library(
     "${DIR}/has_absl_stringify.h"
     "${DIR}/internal/damerau_levenshtein_distance.h"
     "${DIR}/internal/string_constant.h"
-    "${DIR}/internal/has_absl_stringify.h"
     "${DIR}/match.h"
     "${DIR}/numbers.h"
     "${DIR}/str_cat.h"

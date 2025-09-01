@@ -5,6 +5,7 @@
 #pragma clang diagnostic ignored "-Wunused-parameter"
 #pragma clang diagnostic ignored "-Wshadow-field-in-constructor"
 #pragma clang diagnostic ignored "-Wdtor-name"
+#pragma clang diagnostic ignored "-Wnullability-extension"
 #include <re2/re2.h>
 #include <re2/regexp.h>
 #include <re2/walker-inl.h>
