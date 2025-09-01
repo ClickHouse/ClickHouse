@@ -3465,3 +3465,61 @@ deltaLake(
         "2025-06-04\t('100022','2025-06-04 18:40:56.000000','2025-06-09 21:19:00.364000')\t100022"
         == node.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
     )
+    assert (
+        "100022\t2025-06-04 18:40:56.000000"
+        == node.query(
+            f"SELECT col_x2D2.col_x2D3, col_x2D2.col_x2D4 FROM {table_name} ORDER BY all"
+        ).strip()
+    )
+
+
+@pytest.mark.parametrize("column_mapping", ["", "name"])
+def test_subcolumns_2(started_cluster, column_mapping):
+    instance = started_cluster.instances["node1"]
+    instance_disabled_kernel = cluster.instances["node_with_disabled_delta_kernel"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_write_column_order")
+    spark = started_cluster.spark_session
+    path = f"/{table_name}"
+
+    if column_mapping == "name":
+        table_properties = "'delta.minReaderVersion' = '2', 'delta.minWriterVersion' = '5', 'delta.columnMapping.mode' = 'name'"
+    else:
+        table_properties = ""
+
+    create_query = f"""
+CREATE TABLE {table_name}
+    (c1 STRUCT<_2: ARRAY<INT>> NOT NULL)
+    USING DELTA
+    LOCATION '{path}'
+    """
+    if len(table_properties) > 0:
+        create_query += f" TBLPROPERTIES ({table_properties})"
+
+    spark.sql(create_query)
+    LocalUploader(instance).upload_directory(f"{path}/", f"{path}/")
+
+    table_function = f"deltaLakeLocal('{path}')"
+    assert 0 == int(instance.query(f"SELECT count() FROM {table_function}"))
+    assert (
+        "c1\tTuple(\\n    _2 Array(Nullable(Int32)))"
+        == instance.query(f"DESCRIBE TABLE {table_function}").strip()
+    )
+
+    instance.query(
+        f"CREATE TABLE {table_name} ENGINE = DeltaLakeLocal('{path}') SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+    assert 0 == int(instance.query(f"SELECT count() FROM {table_name}"))
+    assert "" == instance.query(f"SELECT {table_name}.`c1._2` FROM {table_name}")
+
+    spark.sql(f"""
+    INSERT INTO {table_name}
+    VALUES (named_struct('_2', array(1, 2, 3))),
+        (named_struct('_2', array(4, 5)))
+    """)
+    LocalUploader(instance).upload_directory(f"{path}/", f"{path}/")
+
+    assert "([1,2,3])\n([4,5])" == instance.query(f"SELECT * FROM {table_name}").strip()
+    assert "[1,2,3]\n[4,5]" == instance.query(f"SELECT {table_name}.`c1._2` FROM {table_name}").strip()
+    assert "3\n2" == instance.query(f"SELECT {table_name}.`c1._2`.size0 FROM {table_name}").strip()
