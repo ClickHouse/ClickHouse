@@ -21,6 +21,8 @@
 namespace DB
 {
 
+constexpr auto DUMMY_JOIN_STATS_PARAM_NAME = "_internal_join_table_stat_hints";
+
 /* Read dummy stats from query parameter
  * The parameter should be a JSON object with the following structure:
  * SET param__internal_join_table_stat_hints = '{
@@ -28,19 +30,12 @@ namespace DB
  *   ...
  * }';
  */
-RelationStats getDummyStats(ContextPtr context, const String & table_name)
+RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name)
 {
-    constexpr auto param_name = "_internal_join_table_stat_hints";
-
-    const auto & query_params = context->getQueryParameters();
-    auto it = query_params.find(param_name);
-    if (it == query_params.end())
-        return {};
-
     try
     {
         Poco::JSON::Parser parser;
-        Poco::Dynamic::Var result = parser.parse(it->second);
+        Poco::Dynamic::Var result = parser.parse(dummy_stats_str);
         const auto & object = result.extract<Poco::JSON::Object::Ptr>();
         if (!object)
             return {};
@@ -66,14 +61,22 @@ RelationStats getDummyStats(ContextPtr context, const String & table_name)
         }
         LOG_WARNING(getLogger("optimizeJoin"),
             "Got dummy join stats for table '{}' from '{}' query parameter, it's supposed to be used only for testing, do not use it in production",
-            table_name, param_name);
+            table_name, DUMMY_JOIN_STATS_PARAM_NAME);
         return stats;
     }
     catch (const Poco::Exception & e)
     {
-        LOG_WARNING(getLogger("optimizeJoin"), "Failed to parse '{}': {}", param_name, e.displayText());
+        LOG_WARNING(getLogger("optimizeJoin"), "Failed to parse '{}': {}", DUMMY_JOIN_STATS_PARAM_NAME, e.displayText());
         return {};
     }
+}
+
+RelationStats getDummyStats(ContextPtr context, const String & table_name)
+{
+    const auto & query_params = context->getQueryParameters();
+    if (auto it = query_params.find(DUMMY_JOIN_STATS_PARAM_NAME); it != query_params.end())
+        return getDummyStats(it->second, table_name);
+    return {};
 }
 
 }

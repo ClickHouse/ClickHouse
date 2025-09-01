@@ -143,16 +143,17 @@ public:
         right_table_label = std::move(right_table_label_);
     }
 
-    std::pair<std::string_view, std::string_view> getInputLabels() const
+    std::pair<std::reference_wrapper<const String>, std::reference_wrapper<const String>> getInputLabels() const
     {
-        std::string_view left_label = left_table_label;
-        std::string_view right_label = right_table_label;
-        return {left_label, right_label};
+        return {std::cref(left_table_label), std::cref(right_table_label)};
     }
 
     String getReadableRelationName() const;
 
     ActionsDAG::NodeRawConstPtrs getActionsAfterJoin() const { return actions_after_join; }
+
+    std::string_view getDummyStats() const { return dummy_stats; }
+    void setDummyStats(String dummy_stats_) { dummy_stats = std::move(dummy_stats_); }
 
 protected:
     void updateOutputHeader() override;
@@ -179,6 +180,10 @@ protected:
 
     String left_table_label;
     String right_table_label;
+
+    /// Dummy stats retrieved from hints, used for debugging
+    String dummy_stats;
+
 
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;

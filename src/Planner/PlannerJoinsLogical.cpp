@@ -220,7 +220,6 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
         auto cast_to_super = [&result_type, &changed_types](auto & dag, const auto & nodes)
         {
             auto arg = nodes.at(0);
-            // return &dag.addCast(*e, result_type, {});
             const auto & casted = dag.addCast(*arg, result_type, {});
             changed_types[arg->result_name] = &dag.addAlias(casted, arg->result_name);
             return arg;
@@ -546,7 +545,8 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
         }
     }
 
-    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
     auto join_step = std::make_unique<JoinStepLogical>(
         left_header,
         right_header,
@@ -562,6 +562,12 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     auto left_table_label = getQueryDisplayLabel(join_node.getLeftTableExpression(), display_internal_aliases);
     auto right_table_label = getQueryDisplayLabel(join_node.getRightTableExpression(), display_internal_aliases);
     join_step->setInputLabels(std::move(left_table_label), std::move(right_table_label));
+
+    {
+        const auto & query_params = query_context->getQueryParameters();
+        if (auto it = query_params.find("_internal_join_table_stat_hints"); it != query_params.end())
+            join_step->setDummyStats(it->second);
+    }
 
     if (shouldForbidReordering(build_context))
         join_step->setOptimized();

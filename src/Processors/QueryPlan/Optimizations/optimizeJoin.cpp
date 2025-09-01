@@ -51,6 +51,7 @@ namespace ErrorCodes
 }
 
 RelationStats getDummyStats(ContextPtr context, const String & table_name);
+RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name);
 
 namespace QueryPlanOptimizations
 {
@@ -119,6 +120,7 @@ NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & acti
     return output_names;
 }
 
+/// If we have stats for column names for storage we need to find corresponding internal column names
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
     std::unordered_map<String, ColumnStats> original = std::move(mapped);
@@ -167,21 +169,21 @@ struct RuntimeHashStatisticsContext
     }
 };
 
-static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = false)
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = false)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
-        String table_diplay_name = reading->getStorageID().getTableName();
+        String table_display_name = reading->getStorageID().getTableName();
 
-        if (auto dummy_stats = getDummyStats(reading->getContext(), table_diplay_name); !dummy_stats.table_name.empty())
+        if (auto dummy_stats = getDummyStats(reading->getContext(), table_display_name); !dummy_stats.table_name.empty())
             return dummy_stats;
 
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = nullptr;
         analyzed_result = analyzed_result ? analyzed_result : reading->getAnalyzedResult();
         analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
         if (!analyzed_result)
-            return RelationStats{.estimated_rows = {}, .table_name = table_diplay_name};
+            return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
 
         bool is_filtered_by_index = false;
         UInt64 total_parts = 0;
@@ -209,16 +211,16 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filt
         /// If any conditions are pushed down to storage but not used in the index,
         /// we cannot precisely estimate the row count
         if (has_filter && !is_filtered_by_index)
-            return RelationStats{.estimated_rows = {}, .table_name = table_diplay_name};
+            return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
 
-        return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_diplay_name};
+        return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
     {
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
-        String table_diplay_name = reading->getStorage()->getName();
-        return RelationStats{.estimated_rows = estimated_rows, .table_name = table_diplay_name};
+        String table_display_name = reading->getStorage()->getName();
+        return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name};
     }
 
     if (node.children.size() != 1)
@@ -352,6 +354,7 @@ struct QueryGraphBuilder
         RuntimeHashStatisticsContext statistics_context;
         JoinSettings join_settings;
         SortingStep::Settings sorting_settings;
+        String dummy_stats;
 
         BuilderContext(
             const QueryPlanOptimizationSettings & optimization_settings_,
@@ -447,7 +450,7 @@ constexpr bool isInnerOrCross(JoinKind kind)
     return kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
 }
 
-size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, std::string_view label, int join_steps_limit)
+size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
 {
     if (isTrivialStep(node))
         node = node->children[0];
@@ -472,6 +475,13 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
 
     graph.inputs.push_back(node);
     RelationStats stats = estimateReadRowsCount(*node);
+    if (!label.empty() && !graph.context->dummy_stats.empty())
+    {
+        auto dummy_stats = getDummyStats(graph.context->dummy_stats, label);
+        if (!dummy_stats.table_name.empty())
+            stats = std::move(dummy_stats);
+    }
+
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (num_rows_from_cache)
         stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value_or(MAX_ROWS), num_rows_from_cache.value());
@@ -480,7 +490,7 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
         stats.table_name = label;
 
     LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
-        num_rows_from_cache.has_value() ? "(from cache)" : "",
+        num_rows_from_cache.has_value() ? " (from cache)" : "",
         node->step->getName(), dumpStatsForLogs(stats));
     graph.relation_stats.push_back(stats);
     return 1;
@@ -1035,6 +1045,7 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     }
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
+    query_graph_builder.context->dummy_stats = join_step->getDummyStats();
 
     int query_graph_size_limit = safe_cast<int>(optimization_settings.query_plan_optimize_join_order_limit);
     if (strictness == JoinStrictness::Any)
