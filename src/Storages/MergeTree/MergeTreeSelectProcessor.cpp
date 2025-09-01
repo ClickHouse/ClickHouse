@@ -20,7 +20,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include "Storages/MergeTree/MergeTreeReadTask.h"
+#include <Storages/MergeTree/MergeTreeReadTask.h>
 
 namespace
 {

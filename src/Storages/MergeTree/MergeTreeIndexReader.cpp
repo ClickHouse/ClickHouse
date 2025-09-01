@@ -46,6 +46,10 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 MergeTreeIndexReader::MergeTreeIndexReader(
     MergeTreeIndexPtr index_,

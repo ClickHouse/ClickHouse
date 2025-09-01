@@ -11,7 +11,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MarkCache.h>
-#include "Storages/MergeTree/MergeTreeIndicesSerialization.h"
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 
 namespace DB
 {

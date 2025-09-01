@@ -7,7 +7,7 @@
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Common/logger_useful.h>
-#include "base/range.h"
+#include <base/range.h>
 
 namespace ProfileEvents
 {
@@ -99,7 +99,7 @@ std::optional<size_t> DictionaryBlock::binarySearch(const StringRef & token) con
     size_t idx = lowerBound(token);
     const auto & tokens_str = assert_cast<const ColumnString &>(*tokens);
 
-    if (idx == tokens->size() || token != tokens_str.getDataAt(idx))
+    if (idx == tokens_str.size() || token != tokens_str.getDataAt(idx))
         return std::nullopt;
 
     return idx;

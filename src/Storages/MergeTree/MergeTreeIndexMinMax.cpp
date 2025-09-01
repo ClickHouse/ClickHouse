@@ -4,7 +4,6 @@
 
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
-#include "Storages/MergeTree/MergeTreeIndicesSerialization.h"
 
 #include <Columns/ColumnNullable.h>
 

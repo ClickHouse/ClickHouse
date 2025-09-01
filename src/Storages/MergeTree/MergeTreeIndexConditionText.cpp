@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace Setting
 {
     extern const SettingsBool text_index_use_bloom_filter;
@@ -219,11 +224,13 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             rpn_stack.emplace_back(true, false);
         }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in GinFilterCondition::RPNElement");
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in MergeTreeIndexConditionText::RPNElement");
+        }
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in GinFilterCondition::mayBeTrueOnGranule");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in MergeTreeIndexConditionText::mayBeTrueOnGranule");
 
     return rpn_stack[0].can_be_true;
 }

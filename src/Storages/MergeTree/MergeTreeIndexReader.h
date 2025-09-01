@@ -4,7 +4,7 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include "Formats/MarkInCompressedFile.h"
+#include <Formats/MarkInCompressedFile.h>
 
 
 namespace DB
