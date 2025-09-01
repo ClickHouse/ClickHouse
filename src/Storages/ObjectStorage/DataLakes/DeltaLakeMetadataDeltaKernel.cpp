@@ -17,18 +17,13 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
 {
     extern const SettingsBool allow_experimental_delta_lake_writes;
-}
-
-namespace ErrorCodes
-{
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 [[maybe_unused]] static void tracingCallback(struct ffi::Event event)
