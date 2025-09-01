@@ -1089,10 +1089,14 @@ absl_cc_library(
     "${DIR}/internal/address_is_readable.h"
     "${DIR}/internal/elf_mem_image.h"
     "${DIR}/internal/vdso_support.h"
+    "${DIR}/internal/decode_rust_punycode.h"
+    "${DIR}/internal/utf8_for_code_point.h"
   SRCS
     "${DIR}/internal/address_is_readable.cc"
     "${DIR}/internal/elf_mem_image.cc"
     "${DIR}/internal/vdso_support.cc"
+    "${DIR}/internal/decode_rust_punycode.cc"
+    "${DIR}/internal/utf8_for_code_point.cc"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
