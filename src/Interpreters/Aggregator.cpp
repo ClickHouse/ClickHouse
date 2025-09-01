@@ -590,8 +590,8 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     // Disable is_simple_sum for cases where we use FixedHashMap. Its implementation has a special
     // optimization for zero values. This causes to generate incorrect total aggregated size
-    // when a key column is zero values, and its value is also zero. For example,
-    // `SELECT dummy, sum(dummy) GROUP BY dummy` it would returns nothing.
+    // when a key column is a zero value, and the aggregated value is also zero. For example,
+    // `SELECT dummy, sum(dummy) GROUP BY dummy` would return nothing.
     switch (method_chosen)
     {
     #define M(NAME) \
