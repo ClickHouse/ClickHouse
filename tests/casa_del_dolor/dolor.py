@@ -458,13 +458,21 @@ if args.with_postgresql:
 
 # Handler for HTTP server
 def datalakehandler(path, data, headers):
-    if path == "/sparkdatabase":
-        spark_handler.create_lake_database(cluster, data)
-        return True
-    if path == "/sparktable":
-        spark_handler.create_lake_table(cluster, data)
-        return True
-    return False
+    res = False
+    state = random.getstate()
+    try:
+        random.seed(data["seed"])
+        if path == "/sparkdatabase":
+            spark_handler.create_lake_database(cluster, data)
+            res = True
+        elif path == "/sparktable":
+            spark_handler.create_lake_table(cluster, data)
+            res = True
+        random.setstate(state)
+    except:
+        random.setstate(state)
+        raise
+    return res
 
 
 catalog_server = DolorHTTPServer(
