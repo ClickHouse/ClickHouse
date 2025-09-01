@@ -89,8 +89,12 @@ std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
 }
 
 MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
-    RangesByIndex read_ranges_, MergeTreeIndexReadResultPoolPtr index_reader_, PartRemainingMarks part_remaining_marks_)
+    RangesByIndex read_ranges_,
+    ProjectionRangesByIndex projection_read_ranges_,
+    MergeTreeIndexReadResultPoolPtr index_reader_,
+    PartRemainingMarks part_remaining_marks_)
     : read_ranges(std::move(read_ranges_))
+    , projection_read_ranges(std::move(projection_read_ranges_))
     , index_reader(std::move(index_reader_))
     , part_remaining_marks(std::move(part_remaining_marks_))
 {
@@ -316,12 +320,16 @@ void MergeTreeSelectProcessor::initializeReadersChain()
     if (merge_tree_index_build_context)
     {
         const auto & part_ranges = merge_tree_index_build_context->read_ranges.at(task->getInfo().part_index_in_query);
+        auto it = merge_tree_index_build_context->projection_read_ranges.find(task->getInfo().part_index_in_query);
+        static RangesInDataParts empty_parts_ranges;
+        const auto & projection_parts_ranges
+            = it != merge_tree_index_build_context->projection_read_ranges.end() ? it->second : empty_parts_ranges;
         auto & remaining_marks = merge_tree_index_build_context->part_remaining_marks.at(task->getInfo().part_index_in_query).value;
-        index_read_result = merge_tree_index_build_context->index_reader->getOrBuildIndexReadResult(part_ranges);
+        index_read_result = merge_tree_index_build_context->index_reader->getOrBuildIndexReadResult(part_ranges, projection_parts_ranges);
 
         /// Atomically subtract the number of marks this task will read from the total remaining marks. If the
         /// remaining marks after subtraction reach zero, this is the last task for the part, and we can trigger
-        /// cleanup of any per-part cached resources (e.g., skip index read result).
+        /// cleanup of any per-part cached resources (e.g., skip index read result or projection index bitmaps).
         size_t task_marks = task->getNumMarksToRead();
         bool part_last_task = remaining_marks.fetch_sub(task_marks, std::memory_order_acq_rel) == task_marks;
         if (part_last_task)

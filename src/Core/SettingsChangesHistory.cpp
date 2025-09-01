@@ -46,6 +46,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_iceberg_data_file_rows", 100000, 100000, "New setting."},
             {"max_iceberg_data_file_bytes", 100000000, 100000000, "New setting."},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
+            {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
+            {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {

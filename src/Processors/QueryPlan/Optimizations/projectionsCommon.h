@@ -78,13 +78,16 @@ bool analyzeProjectionCandidate(
     const SelectQueryInfo & projection_query_info,
     const ContextPtr & context);
 
-/// Attempts to filter out data parts using projections.
-void filterPartsUsingProjection(
+/// Performs part-level filtering using projection to skip irrelevant data parts.
+/// Also collects projections to build filters that will be applied during MergeTree reading for fine-grained row-level filtering.
+void filterPartsAndCollectProjectionCandidates(
+    ReadFromMergeTree & reading,
     const ProjectionDescription & projection,
     const MergeTreeDataSelectExecutor & reader,
     MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
     const SelectQueryInfo & projection_query_info,
+    const ActionsDAG::Node * filter_node,
     const ContextPtr & context);
 
 /// When parallel replicas are enabled, projections are read directly on the initial replica if both projection and part streams are present.
