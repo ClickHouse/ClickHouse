@@ -34,7 +34,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DISK_INDEX;
-    extern const int LOGICAL_ERROR;
     extern const int CANNOT_RMDIR;
 }
 
