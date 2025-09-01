@@ -39,7 +39,7 @@ const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, 
     if (!key_column.type->equals(*filter_element_type))
         filter_argument = &actions_dag.addCast(key_column_node, filter_element_type, {});
 
-    auto filter_function = FunctionFactory::instance().get("filterContains", /*query_context*/nullptr);
+    auto filter_function = FunctionFactory::instance().get("__filterContains", /*query_context*/nullptr);
     const auto & condition = actions_dag.addFunction(filter_function, {&filter_name_node, filter_argument}, {});
     return condition;
 }

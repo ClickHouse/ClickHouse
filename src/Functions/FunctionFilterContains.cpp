@@ -24,7 +24,7 @@ namespace ErrorCodes
 class FunctionFilterContains : public IFunction
 {
 public:
-    static constexpr auto name = "filterContains";
+    static constexpr auto name = "__filterContains";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFilterContains>(); }
 
     String getName() const override
@@ -100,7 +100,7 @@ public:
 REGISTER_FUNCTION(FilterContains)
 {
     FunctionDocumentation::Description description = R"(Special function for JOIN runtime filtering.)";
-    FunctionDocumentation::Syntax syntax = "filterContains(filter_name, key)";
+    FunctionDocumentation::Syntax syntax = "__filterContains(filter_name, key)";
     FunctionDocumentation::Arguments arguments = {
         {"filter_name", "Internal name of runtime filter. It is built by BuildRuntimeFilterStep.", {"String"}},
         {"key", "Value of any type that is checked to be present in the filter", {}}
