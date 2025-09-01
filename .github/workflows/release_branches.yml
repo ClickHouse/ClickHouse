@@ -813,11 +813,11 @@ jobs:
             python3 -m praktika run 'Integration tests (amd_asan, 4/4)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_amd_asan_old_analyzer_1_6:
+  integration_tests_amd_asan_old_analyzer_parallel_1_3:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBvbGQgYW5hbHl6ZXIsIDEvNik=') }}
-    name: "Integration tests (amd_asan, old analyzer, 1/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBvbGQgYW5hbHl6ZXIsIHBhcmFsbGVsLCAxLzMp') }}
+    name: "Integration tests (amd_asan, old analyzer, parallel, 1/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -846,16 +846,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, 1/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, parallel, 1/3)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, 1/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, parallel, 1/3)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_amd_asan_old_analyzer_2_6:
+  integration_tests_amd_asan_old_analyzer_parallel_2_3:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBvbGQgYW5hbHl6ZXIsIDIvNik=') }}
-    name: "Integration tests (amd_asan, old analyzer, 2/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBvbGQgYW5hbHl6ZXIsIHBhcmFsbGVsLCAyLzMp') }}
+    name: "Integration tests (amd_asan, old analyzer, parallel, 2/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -884,16 +884,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, 2/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, parallel, 2/3)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, 2/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, parallel, 2/3)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_amd_asan_old_analyzer_3_6:
+  integration_tests_amd_asan_old_analyzer_parallel_3_3:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBvbGQgYW5hbHl6ZXIsIDMvNik=') }}
-    name: "Integration tests (amd_asan, old analyzer, 3/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBvbGQgYW5hbHl6ZXIsIHBhcmFsbGVsLCAzLzMp') }}
+    name: "Integration tests (amd_asan, old analyzer, parallel, 3/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -922,16 +922,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, 3/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, parallel, 3/3)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, 3/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, parallel, 3/3)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_amd_asan_old_analyzer_4_6:
+  integration_tests_amd_asan_old_analyzer_sequential_1_3:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBvbGQgYW5hbHl6ZXIsIDQvNik=') }}
-    name: "Integration tests (amd_asan, old analyzer, 4/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBvbGQgYW5hbHl6ZXIsIHNlcXVlbnRpYWwsIDEvMyk=') }}
+    name: "Integration tests (amd_asan, old analyzer, sequential, 1/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -960,16 +960,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, 4/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, sequential, 1/3)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, 4/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, sequential, 1/3)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_amd_asan_old_analyzer_5_6:
+  integration_tests_amd_asan_old_analyzer_sequential_2_3:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBvbGQgYW5hbHl6ZXIsIDUvNik=') }}
-    name: "Integration tests (amd_asan, old analyzer, 5/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBvbGQgYW5hbHl6ZXIsIHNlcXVlbnRpYWwsIDIvMyk=') }}
+    name: "Integration tests (amd_asan, old analyzer, sequential, 2/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -998,16 +998,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, 5/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, sequential, 2/3)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, 5/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, sequential, 2/3)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_amd_asan_old_analyzer_6_6:
+  integration_tests_amd_asan_old_analyzer_sequential_3_3:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBvbGQgYW5hbHl6ZXIsIDYvNik=') }}
-    name: "Integration tests (amd_asan, old analyzer, 6/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBvbGQgYW5hbHl6ZXIsIHNlcXVlbnRpYWwsIDMvMyk=') }}
+    name: "Integration tests (amd_asan, old analyzer, sequential, 3/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -1036,16 +1036,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, 6/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, sequential, 3/3)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, 6/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_asan, old analyzer, sequential, 3/3)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_amd_tsan_1_6:
+  integration_tests_amd_tsan_parallel_1_3:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAxLzYp') }}
-    name: "Integration tests (amd_tsan, 1/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCBwYXJhbGxlbCwgMS8zKQ==') }}
+    name: "Integration tests (amd_tsan, parallel, 1/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -1074,16 +1074,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, parallel, 1/3)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, parallel, 1/3)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_amd_tsan_2_6:
+  integration_tests_amd_tsan_parallel_2_3:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAyLzYp') }}
-    name: "Integration tests (amd_tsan, 2/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCBwYXJhbGxlbCwgMi8zKQ==') }}
+    name: "Integration tests (amd_tsan, parallel, 2/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -1112,16 +1112,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, parallel, 2/3)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, parallel, 2/3)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_amd_tsan_3_6:
+  integration_tests_amd_tsan_parallel_3_3:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAzLzYp') }}
-    name: "Integration tests (amd_tsan, 3/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCBwYXJhbGxlbCwgMy8zKQ==') }}
+    name: "Integration tests (amd_tsan, parallel, 3/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -1150,16 +1150,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, parallel, 3/3)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, parallel, 3/3)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_amd_tsan_4_6:
+  integration_tests_amd_tsan_sequential_1_3:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA0LzYp') }}
-    name: "Integration tests (amd_tsan, 4/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCBzZXF1ZW50aWFsLCAxLzMp') }}
+    name: "Integration tests (amd_tsan, sequential, 1/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -1188,16 +1188,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, sequential, 1/3)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, sequential, 1/3)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_amd_tsan_5_6:
+  integration_tests_amd_tsan_sequential_2_3:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA1LzYp') }}
-    name: "Integration tests (amd_tsan, 5/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCBzZXF1ZW50aWFsLCAyLzMp') }}
+    name: "Integration tests (amd_tsan, sequential, 2/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -1226,16 +1226,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, sequential, 2/3)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, sequential, 2/3)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  integration_tests_amd_tsan_6_6:
+  integration_tests_amd_tsan_sequential_3_3:
     runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA2LzYp') }}
-    name: "Integration tests (amd_tsan, 6/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCBzZXF1ZW50aWFsLCAzLzMp') }}
+    name: "Integration tests (amd_tsan, sequential, 3/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -1264,9 +1264,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, sequential, 3/3)' --workflow "ReleaseBranchCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Integration tests (amd_tsan, sequential, 3/3)' --workflow "ReleaseBranchCI" --ci |& tee ./ci/tmp/job.log
           fi
 
   stress_test_amd_debug:
@@ -1461,7 +1461,7 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_arm_release, build_arm_asan, build_amd_darwin, build_arm_darwin, docker_server_image, docker_keeper_image, install_packages_amd_release, install_packages_arm_release, integration_tests_amd_asan_1_4, integration_tests_amd_asan_2_4, integration_tests_amd_asan_3_4, integration_tests_amd_asan_4_4, integration_tests_amd_asan_old_analyzer_1_6, integration_tests_amd_asan_old_analyzer_2_6, integration_tests_amd_asan_old_analyzer_3_6, integration_tests_amd_asan_old_analyzer_4_6, integration_tests_amd_asan_old_analyzer_5_6, integration_tests_amd_asan_old_analyzer_6_6, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, stress_test_amd_debug, stress_test_amd_tsan, stress_test_arm_asan, stress_test_amd_ubsan, stress_test_amd_msan]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_amd_msan, build_amd_ubsan, build_arm_release, build_arm_asan, build_amd_darwin, build_arm_darwin, docker_server_image, docker_keeper_image, install_packages_amd_release, install_packages_arm_release, integration_tests_amd_asan_1_4, integration_tests_amd_asan_2_4, integration_tests_amd_asan_3_4, integration_tests_amd_asan_4_4, integration_tests_amd_asan_old_analyzer_parallel_1_3, integration_tests_amd_asan_old_analyzer_parallel_2_3, integration_tests_amd_asan_old_analyzer_parallel_3_3, integration_tests_amd_asan_old_analyzer_sequential_1_3, integration_tests_amd_asan_old_analyzer_sequential_2_3, integration_tests_amd_asan_old_analyzer_sequential_3_3, integration_tests_amd_tsan_parallel_1_3, integration_tests_amd_tsan_parallel_2_3, integration_tests_amd_tsan_parallel_3_3, integration_tests_amd_tsan_sequential_1_3, integration_tests_amd_tsan_sequential_2_3, integration_tests_amd_tsan_sequential_3_3, stress_test_amd_debug, stress_test_amd_tsan, stress_test_arm_asan, stress_test_amd_ubsan, stress_test_amd_msan]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:

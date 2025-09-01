@@ -203,12 +203,17 @@ def main():
     match = re.search(r"\(.*?\)", check_name)
     options = match.group(0)[1:-1].split(",") if match else []
     run_by_hash_num, run_by_hash_total = 0, 1
+    only_parallel, only_sequential = False, False
     for option in options:
         if "/" in option:
             run_by_hash_num = int(option.split("/")[0]) - 1
             run_by_hash_total = int(option.split("/")[1])
             print(f"batch {run_by_hash_num}/{run_by_hash_total}")
             break
+        if "parallel" in option:
+            only_parallel = True
+        if "sequential" in option:
+            only_sequential = True
 
     job_configuration = options[0].strip()
 
@@ -278,7 +283,7 @@ def main():
     )
 
     try:
-        runner.run()
+        runner.run(only_parallel=only_parallel, only_sequential=only_sequential)
     except Exception as e:
         logging.error("Exception: %s", e)
         state, description, test_results, additional_logs = (
