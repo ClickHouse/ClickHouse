@@ -55,8 +55,8 @@ public:
     bool empty() const override { return total_rows == 0; }
     size_t memoryUsageBytes() const override { return 0; }
     bool hasAllTokensFromQuery(const GinQueryString & query) const;
-    void resetAfterAnalysis(bool may_be_true);
     const TokenToMarkMap & getRemainingTokens() const { return remaining_tokens; }
+    void resetAfterAnalysis();
 
 private:
     void deserializeBloomFilter(ReadBuffer & istr);

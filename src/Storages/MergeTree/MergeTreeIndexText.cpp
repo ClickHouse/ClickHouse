@@ -94,7 +94,6 @@ size_t DictionaryBlock::upperBound(const StringRef & token) const
     return it - range.begin();
 }
 
-
 std::optional<size_t> DictionaryBlock::binarySearch(const StringRef & token) const
 {
     size_t idx = lowerBound(token);
@@ -275,13 +274,10 @@ bool MergeTreeIndexGranuleText::hasAllTokensFromQuery(const GinQueryString & que
     return true;
 }
 
-void MergeTreeIndexGranuleText::resetAfterAnalysis(bool may_be_true)
+void MergeTreeIndexGranuleText::resetAfterAnalysis()
 {
     bloom_filter = BloomFilter(1, 1, 0);
     sparse_index = DictionaryBlock();
-
-    if (!may_be_true)
-        remaining_tokens.clear();
 }
 
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
@@ -424,7 +420,9 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(MergeTreeInde
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
 {
-    for (const auto & token : token_extractor->getTokensView(document.data, document.size))
+    auto tokens_view = token_extractor->getTokensView(document.data, document.size);
+
+    for (const auto & token : tokens_view)
     {
         bool inserted;
         TokensMap::LookupResult it;

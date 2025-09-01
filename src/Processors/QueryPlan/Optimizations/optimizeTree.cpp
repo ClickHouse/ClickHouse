@@ -145,7 +145,7 @@ void optimizeTreeSecondPass(
         updateQueryConditionCache(stack, optimization_settings);
 
         if (optimization_settings.direct_read_from_text_index)
-            optimizeDirectReadFromTextIndex(stack);
+            optimizeDirectReadFromTextIndex(stack, nodes);
 
         /// NOTE: optimizePrewhere can modify the stack.
         /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)

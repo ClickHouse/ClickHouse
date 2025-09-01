@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include "Common/logger_useful.h"
 
 namespace DB::QueryPlanOptimizations
 {

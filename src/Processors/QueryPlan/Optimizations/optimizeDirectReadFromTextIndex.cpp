@@ -144,11 +144,13 @@ public:
                 index_task.search_modes.push_back(text_search_mode.value());
                 index_task.columns.emplace_back(column_name, node.result_type);
 
+                auto split = actions_dag.splitActionsForFilter(column_name);
+
                 PrewhereExprStep step
                 {
                     .type = PrewhereExprStep::Filter,
-                    .actions = std::make_shared<ExpressionActions>(actions_dag.clone()),
-                    .filter_column_name = actions_dag.getOutputs().front()->result_name,
+                    .actions = std::make_shared<ExpressionActions>(split.first.clone()),
+                    .filter_column_name = split.first.getOutputs().front()->result_name,
                     .remove_filter_column = false,
                     .need_filter = true,
                     .perform_alter_conversions = true,
@@ -177,10 +179,7 @@ private:
 
     static std::optional<TextSearchMode> getTextSearchMode(const ActionsDAG::Node & node)
     {
-        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
-            return std::nullopt;
-
-        if (node.function == nullptr)
+        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function)
             return std::nullopt;
 
         const auto & function_name = node.function->getName();
@@ -242,10 +241,6 @@ private:
         function_node.children.clear();
         actions_dag.inputs.push_back(&function_node);
 
-        /// We just added it so, we expect it to be at the end to remove it.
-        // chassert(&replaced_node == &actions_dag.nodes.back());
-        // actions_dag.nodes.pop_back();
-
         return std::make_pair(index_info.name, virtual_column_name);
     }
 };
@@ -265,7 +260,7 @@ private:
 ///
 /// (*) Text search only makes sense if a text index exists on text. In the scope of this function, we don't care.
 ///     That check is left to query runtime, ReadFromMergeTree specifically.
-void optimizeDirectReadFromTextIndex(const Stack & stack)
+void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*nodes*/)
 {
     if (stack.size() < 2)
         return;

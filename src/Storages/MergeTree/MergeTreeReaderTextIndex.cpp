@@ -100,13 +100,14 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark)
     if (granules.empty() || index_mark != granules.rbegin()->first)
     {
         auto & granule = granules[index_mark];
+        chassert(granule.granule == nullptr);
 
         index_reader->read(index_mark, index.condition.get(), granule.granule);
         granule.may_be_true = index.condition->mayBeTrueOnGranule(granule.granule);
         granule.need_read_postings = granule.may_be_true;
 
         auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule.granule);
-        granule_text.resetAfterAnalysis(granule.may_be_true);
+        granule_text.resetAfterAnalysis();
     }
 
     chassert(granules.rbegin()->first == index_mark);
@@ -161,9 +162,6 @@ size_t MergeTreeReaderTextIndex::readRows(
         auto & granule = it->second;
         const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
 
-        size_t mark_at_index_granule = index_mark * index.index->index.granularity;
-        size_t granule_offset = index_granularity.getRowsCountInRange(mark_at_index_granule, from_mark);
-
         if (!granule.may_be_true)
         {
             for (const auto & column : res_columns)
@@ -175,6 +173,9 @@ size_t MergeTreeReaderTextIndex::readRows(
         else
         {
             readPostingsIfNeeded(granule);
+
+            size_t mark_at_index_granule = index_mark * index.index->index.granularity;
+            size_t granule_offset = index_granularity.getRowsCountInRange(mark_at_index_granule, from_mark);
 
             for (size_t i = 0; i < res_columns.size(); ++i)
             {
@@ -264,7 +265,7 @@ void applyPostingsAll(
     size_t num_rows)
 {
     if (postings_map.size() > std::numeric_limits<UInt16>::max())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many tokens ({}) for All search mode", postings_map.size());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many tokens ({}) for All search mode", postings_map.size());
 
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     PaddedPODArray<UInt16> counters(num_rows, 0);
