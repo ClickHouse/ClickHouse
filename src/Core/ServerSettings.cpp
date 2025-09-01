@@ -319,26 +319,6 @@ namespace DB
     Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups.
 
     To disable the cgroup observer, set this value to `0`.
-
-    see settings:
-    - [`cgroup_memory_watcher_hard_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_hard_limit_ratio)
-    - [`cgroup_memory_watcher_soft_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_soft_limit_ratio).
-    )", 0) \
-    DECLARE(Double, cgroup_memory_watcher_hard_limit_ratio, 0.95, R"(
-    Specifies the "hard" threshold of the memory consumption of the server process according to cgroups after which the server's
-    maximum memory consumption is adjusted to the threshold value.
-
-    See settings:
-    - [`cgroups_memory_usage_observer_wait_time`](/operations/server-configuration-parameters/settings#cgroups_memory_usage_observer_wait_time)
-    - [`cgroup_memory_watcher_soft_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_soft_limit_ratio)
-    )", 0) \
-    DECLARE(Double, cgroup_memory_watcher_soft_limit_ratio, 0.9, R"(
-    Specifies the "soft" threshold of the memory consumption of the server process according to cgroups after which arenas in
-    jemalloc are purged.
-
-    See settings:
-    - [`cgroups_memory_usage_observer_wait_time`](/operations/server-configuration-parameters/settings#cgroups_memory_usage_observer_wait_time)
-    - [`cgroup_memory_watcher_hard_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_hard_limit_ratio)
     )", 0) \
     DECLARE(UInt64, async_insert_threads, 16, R"(Maximum number of threads to actually parse and insert data in background. Zero means asynchronous mode is disabled)", 0) \
     DECLARE(Bool, async_insert_queue_flush_on_shutdown, true, R"(If true queue of asynchronous inserts is flushed on graceful shutdown)", 0) \
