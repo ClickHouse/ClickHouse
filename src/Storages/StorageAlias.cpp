@@ -22,7 +22,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
-    extern const int LOGICAL_ERROR;
 }
 
 StorageAlias::StorageAlias(const StorageID & table_id_, const StorageID & ref_table_id_)
