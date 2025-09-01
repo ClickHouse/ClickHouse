@@ -109,7 +109,7 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_experimental_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
-
+extern const SettingsUInt64 iceberg_metadata_log_level;
 }
 
 
@@ -242,14 +242,17 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     if (clock_gettime(CLOCK_REALTIME, &spec))
         throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
 
-    Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
-        .current_time = spec.tv_sec,
-        .query_id = local_context->getCurrentQueryId(),
-        .content_type = DB::IcebergMetadataLogLevel::Metadata,
-        .path = configuration_ptr->getPathForRead().path,
-        .filename = metadata_file_path,
-        .metadata_content = removeEscapedSlashes(oss.str())
-    });
+    if (static_cast<UInt64>(DB::IcebergMetadataLogLevel::Metadata) <= local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value)
+    {
+        Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
+            .current_time = spec.tv_sec,
+            .query_id = local_context->getCurrentQueryId(),
+            .content_type = DB::IcebergMetadataLogLevel::Metadata,
+            .path = configuration_ptr->getPathForRead().path,
+            .filename = metadata_file_path,
+            .metadata_content = removeEscapedSlashes(oss.str())
+        });
+    }
 
     if (previous_snapshot_id != relevant_snapshot_id)
     {

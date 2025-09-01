@@ -61,6 +61,11 @@ extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
 }
 
+namespace Setting
+{
+extern const SettingsUInt64 iceberg_metadata_log_level;
+}
+
 namespace Iceberg
 {
 Iceberg::ManifestFilePtr getManifestFile(
@@ -73,6 +78,7 @@ Iceberg::ManifestFilePtr getManifestFile(
     Int64 inherited_sequence_number,
     Int64 inherited_snapshot_id)
 {
+    UInt64 log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
     auto create_fn = [&]()
     {
         RelativePathWithMetadata manifest_object_info(filename);
@@ -88,14 +94,29 @@ Iceberg::ManifestFilePtr getManifestFile(
         if (clock_gettime(CLOCK_REALTIME, &spec))
             throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
 
-        Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
-            .current_time = spec.tv_sec,
-            .query_id = local_context->getCurrentQueryId(),
-            .content_type = DB::IcebergMetadataLogLevel::ManifestEntry,
-            .path = configuration->getRawPath().path,
-            .filename = filename,
-            .metadata_content = manifest_file_deserializer.getContent()
-        });
+        if (static_cast<UInt64>(DB::IcebergMetadataLogLevel::ManifestEntryMetadata) <= log_level)
+        {
+            Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
+                .current_time = spec.tv_sec,
+                .query_id = local_context->getCurrentQueryId(),
+                .content_type = DB::IcebergMetadataLogLevel::ManifestEntry,
+                .path = configuration->getRawPath().path,
+                .filename = filename,
+                .metadata_content = manifest_file_deserializer.getContent()
+            });
+        }
+
+        if (static_cast<UInt64>(DB::IcebergMetadataLogLevel::ManifestEntryMetadata) <= log_level)
+        {
+            Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
+                .current_time = spec.tv_sec,
+                .query_id = local_context->getCurrentQueryId(),
+                .content_type = DB::IcebergMetadataLogLevel::ManifestEntryMetadata,
+                .path = configuration->getRawPath().path,
+                .filename = filename,
+                .metadata_content = manifest_file_deserializer.getMetadataContent()
+            });
+        }
 
         return std::make_shared<Iceberg::ManifestFileContent>(
             manifest_file_deserializer,
@@ -110,7 +131,7 @@ Iceberg::ManifestFilePtr getManifestFile(
             filename);
     };
 
-    if (persistent_table_components.metadata_cache)
+    if (persistent_table_components.metadata_cache && log_level == 0)
     {
         auto manifest_file = persistent_table_components.metadata_cache->getOrSetManifestFile(
             IcebergMetadataFilesCache::getKey(configuration, filename), create_fn);
@@ -131,6 +152,7 @@ ManifestFileCacheKeys getManifestList(
     if (configuration_ptr == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
 
+    UInt64 log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
     auto create_fn = [&]()
     {
         StorageObjectStorage::ObjectInfo object_info(filename);
@@ -175,14 +197,17 @@ ManifestFileCacheKeys getManifestList(
             manifest_file_cache_keys.emplace_back(
                 manifest_file_name, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
 
-            Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
-                .current_time = spec.tv_sec,
-                .query_id = local_context->getCurrentQueryId(),
-                .content_type = DB::IcebergMetadataLogLevel::ManifestEntryMetadata,
-                .path = configuration_ptr->getRawPath().path,
-                .filename = file_path,
-                .metadata_content = manifest_list_deserializer.getContent()
-            });
+            if (static_cast<UInt64>(DB::IcebergMetadataLogLevel::ManifestListEntry) <= log_level)
+            {
+                Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
+                    .current_time = spec.tv_sec,
+                    .query_id = local_context->getCurrentQueryId(),
+                    .content_type = DB::IcebergMetadataLogLevel::ManifestListEntry,
+                    .path = configuration_ptr->getRawPath().path,
+                    .filename = file_path,
+                    .metadata_content = manifest_list_deserializer.getContent()
+                });
+            }
         }
         /// We only return the list of {file name, seq number} for cache.
         /// Because ManifestList holds a list of ManifestFilePtr which consume much memory space.
@@ -191,7 +216,7 @@ ManifestFileCacheKeys getManifestList(
     };
 
     ManifestFileCacheKeys manifest_file_cache_keys;
-    if (persistent_table_components.metadata_cache)
+    if (persistent_table_components.metadata_cache && log_level == 0)
         manifest_file_cache_keys = persistent_table_components.metadata_cache->getOrSetManifestFileCacheKeys(
             IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
     else

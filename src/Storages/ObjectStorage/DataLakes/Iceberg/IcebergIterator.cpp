@@ -60,7 +60,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int CANNOT_CLOCK_GETTIME;
 extern const int LOGICAL_ERROR;
 }
 namespace Setting
