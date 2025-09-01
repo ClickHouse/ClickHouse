@@ -9,7 +9,6 @@ import typing
 import urllib3
 
 from pathlib import Path
-from minio import Minio
 from pyiceberg.catalog import load_catalog
 from pyiceberg.catalog.rest import RestCatalog
 from .laketables import (
@@ -493,17 +492,6 @@ logger.jetty.level = warn
 """
         with open(self.spark_log_config, "w") as f:
             f.write(spark_log)
-
-    def create_minio_bucket(self, cluster, bucket_name: str):
-        minio_client = Minio(
-            f"{cluster.minio_ip}:{cluster.minio_port}",
-            access_key=minio_access_key,
-            secret_key=minio_secret_key,
-            secure=False,
-            http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
-        )
-        if not minio_client.bucket_exists(bucket_name):
-            minio_client.make_bucket(bucket_name)
 
     def start_uc_server(self):
         if self.uc_server is None:
