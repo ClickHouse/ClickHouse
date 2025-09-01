@@ -39,3 +39,6 @@ private:
 
     Poco::AutoPtr<DB::OwnSplitChannel> split;
 };
+
+class OwnPatternFormatter;
+Poco::AutoPtr<OwnPatternFormatter> getFormatForChannel(Poco::Util::AbstractConfiguration & config, const std::string & channel, bool color = false);
