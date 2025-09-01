@@ -112,15 +112,14 @@ std::optional<std::string> AvroForIcebergDeserializer::tryGetAvroMetadataValue(s
     return std::string{it->second.begin(), it->second.end()};
 }
 
-String AvroForIcebergDeserializer::getContent() const
+String AvroForIcebergDeserializer::getContent(size_t row_number) const
 {
     WriteBufferFromOwnString buf;
     FormatSettings settings;
     settings.write_statistics = false;
     ColumnsWithTypeAndName columns({ColumnWithTypeAndName(parsed_column, parsed_column_data_type, "")});
     JSONEachRowRowOutputFormat output_format = JSONEachRowRowOutputFormat(buf, std::make_shared<const Block>(columns), settings);
-    for (size_t i = 0; i < parsed_column->size(); ++i)
-        output_format.writeRow({parsed_column}, i);
+    output_format.writeRow({parsed_column}, row_number);
     output_format.finalize();
     auto result_json = buf.str();
     /// result_json looks like '{"":<some_json>}\n'. We need to extract just <some_json>
@@ -129,16 +128,13 @@ String AvroForIcebergDeserializer::getContent() const
 
 String AvroForIcebergDeserializer::getMetadataContent() const
 {
-    Poco::JSON::Array::Ptr metadata_arr = new Poco::JSON::Array;
+    Poco::JSON::Object::Ptr metadata_object = new Poco::JSON::Object;
     for (const auto & [key, value] : metadata)
     {
-        Poco::JSON::Object::Ptr new_metadata_field = new Poco::JSON::Object;
-        new_metadata_field->set("key", key);
-        new_metadata_field->set("value", removeAllSlashes(String(value.begin(), value.end())));
-        metadata_arr->add(new_metadata_field);
+        metadata_object->set(key, String(value.begin(), value.end()));
     }
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    metadata_arr->stringify(oss);
+    metadata_object->stringify(oss);
     return removeAllSlashes(oss.str());
 }
 

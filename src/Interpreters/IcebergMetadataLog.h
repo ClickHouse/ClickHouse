@@ -11,9 +11,10 @@ enum class IcebergMetadataLogLevel : UInt8
 {
     None = 0,
     Metadata = 1,
-    ManifestListEntry = 2,
-    ManifestFileMetadata = 3,
-    ManifestFileEntry = 4,
+    ManifestListMetadata = 2,
+    ManifestListEntry = 3,
+    ManifestFileMetadata = 4,
+    ManifestFileEntry = 5,
 };
 
 struct IcebergMetadataLogElement
@@ -24,6 +25,7 @@ struct IcebergMetadataLogElement
     String path;
     String filename;
     String metadata_content;
+    std::optional<UInt64> row_in_file;
 
     static std::string name() { return "IcebergMetadataLog"; }
 
@@ -35,7 +37,12 @@ struct IcebergMetadataLogElement
 IcebergMetadataLogLevel getIcebergMetadataLogLevelFromSettings(const ContextPtr & local_context);
 
 void insertRowToLogTable(
-    const ContextPtr & local_context, String row, IcebergMetadataLogLevel row_log_level, const String & file_path, const String & filename);
+    const ContextPtr & local_context,
+    String row,
+    IcebergMetadataLogLevel row_log_level,
+    const String & file_path,
+    const String & filename,
+    std::optional<UInt64> row_in_file);
 class IcebergMetadataLog : public SystemLog<IcebergMetadataLogElement>
 {
     using SystemLog<IcebergMetadataLogElement>::SystemLog;

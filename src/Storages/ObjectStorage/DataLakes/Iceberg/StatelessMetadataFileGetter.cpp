@@ -72,7 +72,7 @@ Iceberg::ManifestFilePtr getManifestFile(
     Int64 inherited_sequence_number,
     Int64 inherited_snapshot_id)
 {
-    IcebergMetadataLogLevel log_level = getIcebergMetadataLogLevelFromSettings(local_context);
+    auto log_level = getIcebergMetadataLogLevelFromSettings(local_context);
     auto create_fn = [&]()
     {
         RelativePathWithMetadata manifest_object_info(filename);
@@ -84,20 +84,6 @@ Iceberg::ManifestFilePtr getManifestFile(
 
         auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
         Iceberg::AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
-
-
-        insertRowToLogTable(
-            local_context,
-            manifest_file_deserializer.getContent(),
-            DB::IcebergMetadataLogLevel::ManifestFileEntry,
-            configuration->getRawPath().path,
-            filename);
-        insertRowToLogTable(
-            local_context,
-            manifest_file_deserializer.getMetadataContent(),
-            DB::IcebergMetadataLogLevel::ManifestFileMetadata,
-            configuration->getRawPath().path,
-            filename);
 
         return std::make_shared<Iceberg::ManifestFileContent>(
             manifest_file_deserializer,
@@ -174,7 +160,13 @@ ManifestFileCacheKeys getManifestList(
             manifest_file_cache_keys.emplace_back(
                 manifest_file_name, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
 
-            insertRowToLogTable(local_context, manifest_list_deserializer.getContent(), DB::IcebergMetadataLogLevel::ManifestListEntry, configuration_ptr->getRawPath().path, filename);
+            insertRowToLogTable(
+                local_context,
+                manifest_list_deserializer.getContent(i),
+                DB::IcebergMetadataLogLevel::ManifestListEntry,
+                configuration_ptr->getRawPath().path,
+                filename,
+                i);
         }
         /// We only return the list of {file name, seq number} for cache.
         /// Because ManifestList holds a list of ManifestFilePtr which consume much memory space.

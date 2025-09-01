@@ -51,7 +51,7 @@ public:
 
     std::optional<std::string> tryGetAvroMetadataValue(std::string metadata_key) const;
 
-    String getContent() const;
+    String getContent(size_t row_number) const;
     String getMetadataContent() const;
 };
 
