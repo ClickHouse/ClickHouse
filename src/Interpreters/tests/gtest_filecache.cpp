@@ -60,7 +60,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 max_elements;
     extern const FileCacheSettingsUInt64 max_file_segment_size;
     extern const FileCacheSettingsUInt64 boundary_alignment;
-    extern const FileCacheSettingsFileCachePolicy cache_policy;
+    extern const FileCacheSettingsString cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
     extern const FileCacheSettingsUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
@@ -388,7 +388,6 @@ TEST_F(FileCacheTest, LRUPolicy)
     settings[FileCacheSetting::max_elements] = 5;
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
     const size_t file_size = INT_MAX; // the value doesn't really matter because boundary_alignment == 1.
 
@@ -778,7 +777,6 @@ TEST_F(FileCacheTest, LRUPolicy)
         auto settings2 = settings;
         settings2[FileCacheSetting::max_file_segment_size] = 10;
         settings2[FileCacheSetting::path] = caches_dir / "cache2";
-        settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
         fs::create_directories(settings2[FileCacheSetting::path].value);
         auto cache2 = DB::FileCache("3", settings2);
         cache2.initialize();
@@ -849,7 +847,6 @@ TEST_F(FileCacheTest, writeBuffer)
     settings[FileCacheSetting::max_file_segment_size] = 5;
     settings[FileCacheSetting::path] = cache_base_path;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
     FileCache cache("6", settings);
     cache.initialize();
@@ -970,7 +967,7 @@ static size_t readAllTemporaryData(NativeReader & stream)
     {
         block = stream.read();
         read_rows += block.rows();
-    } while (!block.empty());
+    } while (block);
     return read_rows;
 }
 
@@ -983,7 +980,6 @@ try
     settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
     settings[FileCacheSetting::path] = cache_base_path;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
     DB::FileCache file_cache("7", settings);
     file_cache.initialize();
@@ -1015,13 +1011,13 @@ try
 
 
     {
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
         ASSERT_TRUE(stream);
         /// Do nothing with stream, just create it and destroy.
     }
 
     {
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
         ASSERT_GT(stream->write(generateBlock(100)), 0);
 
         ASSERT_GT(file_cache.getUsedCacheSize(), 0);
@@ -1058,7 +1054,7 @@ try
     }
 
     {
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(generateBlock()), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
 
         ASSERT_GT(stream->write(generateBlock(100)), 0);
 
@@ -1123,7 +1119,6 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     settings[FileCacheSetting::max_elements] = 10;
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
@@ -1185,7 +1180,6 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
         settings[FileCacheSetting::path] = cache_base_path;
         settings[FileCacheSetting::load_metadata_asynchronously] = false;
-        settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
         DB::FileCache file_cache("cache", settings);
         file_cache.initialize();
@@ -1193,7 +1187,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(&file_cache, TemporaryDataOnDiskSettings{});
 
         auto block = generateBlock(/*size=*/3);
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(block), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(block, tmp_data_scope.get());
 
         stream->write(block);
         auto stat = stream.finishWriting();
@@ -1219,7 +1213,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(volume, TemporaryDataOnDiskSettings{});
 
         auto block = generateBlock(/*size=*/3);
-        TemporaryBlockStreamHolder stream(std::make_shared<const Block>(block), tmp_data_scope.get());
+        TemporaryBlockStreamHolder stream(block, tmp_data_scope.get());
         stream->write(block);
         auto stat = stream.finishWriting();
 
@@ -1253,7 +1247,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
     settings[FileCacheSetting::boundary_alignment] = 1;
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    settings[FileCacheSetting::cache_policy] = "SLRU";
     settings[FileCacheSetting::slru_size_ratio] = 0.5;
 
     const size_t file_size = -1; // the value doesn't really matter because boundary_alignment == 1.
@@ -1362,9 +1356,9 @@ TEST_F(FileCacheTest, SLRUPolicy)
         settings2[FileCacheSetting::max_size] = 30;
         settings2[FileCacheSetting::max_elements] = 6;
         settings2[FileCacheSetting::boundary_alignment] = 1;
+        settings2[FileCacheSetting::cache_policy] = "SLRU";
         settings2[FileCacheSetting::slru_size_ratio] = 0.5;
-        settings2[FileCacheSetting::load_metadata_asynchronously] = false;
-        settings2[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
         auto cache = std::make_shared<DB::FileCache>("slru_2", settings2);
         cache->initialize();

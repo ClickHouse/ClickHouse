@@ -148,8 +148,7 @@ IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(StreamingHandleErrorMode, ErrorCodes::BAD_ARGUMENTS,
     {{"default",      StreamingHandleErrorMode::DEFAULT},
-     {"stream",       StreamingHandleErrorMode::STREAM},
-     {"dead_letter_queue", StreamingHandleErrorMode::DEAD_LETTER_QUEUE}})
+     {"stream",       StreamingHandleErrorMode::STREAM}})
 
 IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
@@ -176,8 +175,7 @@ IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto},
-     {"prql", Dialect::prql},
-     {"promql", Dialect::promql}})
+     {"prql", Dialect::prql}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
@@ -308,14 +306,6 @@ IMPLEMENT_SETTING_ENUM(
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})
 
 IMPLEMENT_SETTING_ENUM(
-    FileCachePolicy,
-    ErrorCodes::BAD_ARGUMENTS,
-    {{"lru", FileCachePolicy::LRU},
-     {"LRU", FileCachePolicy::LRU},
-     {"slru", FileCachePolicy::SLRU},
-     {"SLRU", FileCachePolicy::SLRU}})
-
-IMPLEMENT_SETTING_ENUM(
     VectorSearchFilterStrategy,
     ErrorCodes::BAD_ARGUMENTS,
     {{"auto", VectorSearchFilterStrategy::AUTO},
@@ -327,33 +317,5 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
-
-IMPLEMENT_SETTING_ENUM(
-    MergeTreeObjectSerializationVersion,
-    ErrorCodes::BAD_ARGUMENTS,
-    {{"v1", MergeTreeObjectSerializationVersion::V1},
-     {"v2", MergeTreeObjectSerializationVersion::V2},
-     {"v3", MergeTreeObjectSerializationVersion::V3}})
-
-IMPLEMENT_SETTING_ENUM(
-    MergeTreeObjectSharedDataSerializationVersion,
-    ErrorCodes::BAD_ARGUMENTS,
-    {{"map", MergeTreeObjectSharedDataSerializationVersion::MAP},
-     {"map_with_buckets", MergeTreeObjectSharedDataSerializationVersion::MAP_WITH_BUCKETS},
-     {"advanced", MergeTreeObjectSharedDataSerializationVersion::ADVANCED}})
-
-IMPLEMENT_SETTING_ENUM(
-    MergeTreeDynamicSerializationVersion,
-    ErrorCodes::BAD_ARGUMENTS,
-    {{"v1", MergeTreeDynamicSerializationVersion::V1},
-     {"v2", MergeTreeDynamicSerializationVersion::V2},
-     {"v3", MergeTreeDynamicSerializationVersion::V3}})
-
-IMPLEMENT_SETTING_ENUM(
-    SearchOrphanedPartsDisks,
-    ErrorCodes::BAD_ARGUMENTS,
-    {{"any", SearchOrphanedPartsDisks::ANY},
-     {"local", SearchOrphanedPartsDisks::LOCAL},
-     {"none", SearchOrphanedPartsDisks::NONE}})
 
 }

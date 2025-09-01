@@ -11,6 +11,12 @@
 #include <mutex>
 #include <unordered_map>
 
+namespace DB
+{
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
+}
+
 class DateLUTImpl;
 
 
@@ -23,7 +29,7 @@ public:
     /// If setting is not set, returns the server timezone.
     static const DateLUTImpl & instance();
 
-    static ALWAYS_INLINE const DateLUTImpl & instance(std::string_view time_zone)
+    static ALWAYS_INLINE const DateLUTImpl & instance(const std::string & time_zone)
     {
         if (time_zone.empty())
             return instance();
@@ -40,7 +46,7 @@ public:
         return *date_lut.default_impl.load(std::memory_order_acquire);
     }
 
-    static void setDefaultTimezone(std::string_view time_zone)
+    static void setDefaultTimezone(const std::string & time_zone)
     {
         auto & date_lut = getInstance();
         const auto & impl = date_lut.getImplementation(time_zone);
@@ -53,7 +59,7 @@ protected:
 private:
     static DateLUT & getInstance();
 
-    const DateLUTImpl & getImplementation(std::string_view time_zone) const;
+    const DateLUTImpl & getImplementation(const std::string & time_zone) const;
 
     using DateLUTImplPtr = std::unique_ptr<DateLUTImpl>;
 

@@ -3,7 +3,7 @@ import os
 import time
 from pathlib import Path
 
-from ci.defs.defs import ToolSet, chcache_secret
+from ci.defs.defs import ToolSet
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.info import Info
@@ -55,7 +55,6 @@ def clone_submodules():
         "contrib/incbin",
         "contrib/yaml-cpp",
         "contrib/corrosion",
-        "contrib/rust_vendor",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
@@ -143,11 +142,6 @@ def main():
             Shell.check(f"ln -sf {clickhouse_bin_path} {clickhouse_server_link}")
         Shell.check(f"chmod +x {clickhouse_bin_path}")
     else:
-        os.environ["CH_HOSTNAME"] = "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
-        os.environ["CH_USER"] = "ci_builder"
-        os.environ["CH_PASSWORD"] = chcache_secret.get_value()
-        os.environ["CH_USE_LOCAL_CACHE"] = "false"
-
         os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
         os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
         os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
@@ -158,7 +152,6 @@ def main():
     res = True
     results = []
     attach_files = []
-    job_info = ""
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
@@ -178,12 +171,9 @@ def main():
                 name="Cmake configuration",
                 command=f"cmake {current_directory} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} \
                 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} \
-                -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE} \
                 -DENABLE_LIBRARIES=0 \
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
-                -DENABLE_LEXER_TEST=1 \
-                -DBUILD_STRIPPED_BINARY=1 \
-                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1",
+                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DCOMPILER_CACHE=sccache",
                 workdir=build_dir,
             )
         )
@@ -194,11 +184,10 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
-                command="command time -v ninja clickhouse-bundle clickhouse-stripped lexer_test",
+                command="ninja clickhouse-bundle clickhouse-stripped",
                 workdir=build_dir,
             )
         )
-        Shell.check(f"{build_dir}/rust/chcache/chcache stats")
         Shell.check("sccache --show-stats")
         res = results[-1].is_ok()
 
@@ -207,7 +196,7 @@ def main():
             f"mkdir -p {Settings.OUTPUT_DIR}/binaries",
             "sccache --show-stats",
             "clickhouse-client --version",
-            # "clickhouse-test --help",
+            "clickhouse-test --help",
         ]
         results.append(
             Result.from_commands_run(
@@ -220,8 +209,9 @@ def main():
 
     if res and JobStages.CONFIG in stages:
         commands = [
+            f"rm -rf {temp_dir}/etc/ && mkdir -p {temp_dir}/etc/clickhouse-client {temp_dir}/etc/clickhouse-server",
             f"cp ./programs/server/config.xml ./programs/server/users.xml {temp_dir}/etc/clickhouse-server/",
-            f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --fast-test",
+            f"./tests/config/install.sh {temp_dir}/etc/clickhouse-server {temp_dir}/etc/clickhouse-client --fast-test",
             # f"cp -a {current_directory}/programs/server/config.d/log_to_console.xml {temp_dir}/etc/clickhouse-server/config.d/",
             f"rm -f {temp_dir}/etc/clickhouse-server/config.d/secure_ports.xml",
             update_path_ch_config,
@@ -267,7 +257,6 @@ def main():
             )
         if not results[-1].is_ok():
             attach_debug = True
-        job_info = results[-1].info
 
     if attach_debug:
         attach_files += [
@@ -279,7 +268,7 @@ def main():
     CH.terminate()
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=attach_files, info=job_info
+        results=results, stopwatch=stop_watch, files=attach_files
     ).complete_job()
 
 

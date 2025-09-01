@@ -92,7 +92,7 @@ UUID IAccessStorage::getID(AccessEntityType type, const String & name) const
     auto id = findImpl(type, name);
     if (id)
         return *id;
-    throwNotFound(type, name, storage_name);
+    throwNotFound(type, name);
 }
 
 
@@ -576,7 +576,7 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
     }
 
     if (throw_if_user_not_exists)
-        throwNotFound(AccessEntityType::USER, credentials.getUserName(), storage_name);
+        throwNotFound(AccessEntityType::USER, credentials.getUserName());
     else
         return std::nullopt;
 }
@@ -748,15 +748,17 @@ LoggerPtr IAccessStorage::getLogger() const
     return log;
 }
 
-void IAccessStorage::throwNotFound(const UUID & id, const String & storage_name)
+
+void IAccessStorage::throwNotFound(const UUID & id) const
 {
-    throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "{} not found in {}", outputID(id), backQuote(storage_name));
+    throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "{} not found in {}", outputID(id), getStorageName());
 }
 
-void IAccessStorage::throwNotFound(AccessEntityType type, const String & name, const String & storage_name)
+
+void IAccessStorage::throwNotFound(AccessEntityType type, const String & name) const
 {
     int error_code = AccessEntityTypeInfo::get(type).not_found_error_code;
-    throw Exception(error_code, "There is no {} in {}", formatEntityTypeWithName(type, name), backQuote(storage_name));
+    throw Exception(error_code, "There is no {} in {}", formatEntityTypeWithName(type, name), getStorageName());
 }
 
 
@@ -766,23 +768,26 @@ void IAccessStorage::throwBadCast(const UUID & id, AccessEntityType type, const 
         formatEntityTypeWithName(type, name), toString(required_type));
 }
 
-void IAccessStorage::throwIDCollisionCannotInsert(
-    const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name, const String & storage_name)
+
+void IAccessStorage::throwIDCollisionCannotInsert(const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name) const
 {
-    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot insert because the {} is already used by {} in {}", formatEntityTypeWithName(type, name),
-        outputID(id), formatEntityTypeWithName(existing_type, existing_name), backQuote(storage_name));
+    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: "
+        "cannot insert because the {} is already used by {} in {}", formatEntityTypeWithName(type, name),
+        outputID(id), formatEntityTypeWithName(existing_type, existing_name), getStorageName());
 }
 
-void IAccessStorage::throwNameCollisionCannotInsert(AccessEntityType type, const String & name, const String & storage_name)
+
+void IAccessStorage::throwNameCollisionCannotInsert(AccessEntityType type, const String & name) const
 {
     throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot insert because {} already exists in {}",
-                    formatEntityTypeWithName(type, name), formatEntityTypeWithName(type, name), backQuote(storage_name));
+                    formatEntityTypeWithName(type, name), formatEntityTypeWithName(type, name), getStorageName());
 }
 
-void IAccessStorage::throwNameCollisionCannotRename(AccessEntityType type, const String & old_name, const String & new_name, const String & storage_name)
+
+void IAccessStorage::throwNameCollisionCannotRename(AccessEntityType type, const String & old_name, const String & new_name) const
 {
     throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot rename to {} because {} already exists in {}",
-        formatEntityTypeWithName(type, old_name), backQuote(new_name), formatEntityTypeWithName(type, new_name), backQuote(storage_name));
+        formatEntityTypeWithName(type, old_name), backQuote(new_name), formatEntityTypeWithName(type, new_name), getStorageName());
 }
 
 

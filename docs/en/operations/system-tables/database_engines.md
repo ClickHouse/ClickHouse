@@ -17,7 +17,7 @@ Example:
 ```sql
 SELECT *
 FROM system.database_engines
-WHERE name IN ('Atomic', 'Lazy', 'Ordinary')
+WHERE name in ('Atomic', 'Lazy', 'Ordinary')
 ```
 
 ```text

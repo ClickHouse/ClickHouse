@@ -67,8 +67,6 @@ class Labels:
     RELEASE_LTS = "release-lts"
     SUBMODULE_CHANGED = "submodule changed"
 
-    CI_BUILD = "ci-build"
-
     CI_PERFORMANCE = "ci-performance"
 
     CI_INTEGRATION_FLAKY = "ci-integration-test-flaky"
@@ -183,7 +181,7 @@ def check_labels(category, info):
             pr_labels_to_remove.append(label)
 
     if info.pr_number:
-        changed_files = info.get_kv_data("changed_files")
+        changed_files = info.get_custom_data("changed_files")
         if "contrib/" in " ".join(changed_files):
             pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
 

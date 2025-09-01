@@ -10,8 +10,6 @@ pub struct Config {
 
     pub source_table: String,
     pub target_table: String,
-
-    pub use_local_store: bool,
 }
 
 impl Default for Config {
@@ -23,8 +21,6 @@ impl Default for Config {
 
             source_table: "default.build_cache".to_string(),
             target_table: "default.build_cache".to_string(),
-
-            use_local_store: true,
         }
     }
 }
@@ -32,16 +28,12 @@ impl Default for Config {
 impl Config {
     pub fn init() -> Self {
         let config_path = xdg::BaseDirectories::with_prefix("chcache")
+            .unwrap()
             .place_config_file("config.toml")
             .unwrap();
 
         let mut env_vars_available = true;
-        let required_env_vars = vec![
-            "CH_HOSTNAME",
-            "CH_USER",
-            "CH_PASSWORD",
-            "CH_USE_LOCAL_CACHE",
-        ];
+        let required_env_vars = vec!["CH_HOSTNAME", "CH_USER", "CH_PASSWORD"];
         for var in required_env_vars {
             if std::env::var(var).is_ok() {
                 continue;
@@ -71,12 +63,6 @@ impl Config {
                     hostname: std::env::var("CH_HOSTNAME").unwrap(),
                     user: std::env::var("CH_USER").unwrap(),
                     password: std::env::var("CH_PASSWORD").unwrap(),
-
-                    use_local_store: std::env::var("CH_USE_LOCAL_CACHE")
-                        .unwrap()
-                        .to_lowercase()
-                        .parse::<bool>()
-                        .unwrap(),
 
                     ..Default::default()
                 }

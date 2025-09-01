@@ -10,7 +10,6 @@
 #include <Processors/Chunk.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
-#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/IFunction.h>
 
@@ -64,16 +63,16 @@ Block FilterTransform::transformHeader(
 }
 
 FilterTransform::FilterTransform(
-    SharedHeader header_,
+    const Block & header_,
     ExpressionActionsPtr expression_,
     String filter_column_name_,
     bool remove_filter_column_,
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    std::optional<std::pair<UInt64, String>> condition_)
+    std::optional<std::pair<size_t, String>> condition_)
     : ISimpleTransform(
             header_,
-            std::make_shared<const Block>(transformHeader(*header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_)),
+            transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
             true)
     , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))
@@ -169,7 +168,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     ColumnPtr filter_column = columns[filter_column_position];
     ConstantFilterDescription constant_filter_description(*filter_column);
 
-    if (constant_filter_description.always_true || on_totals || isVirtualRow(chunk))
+    if (constant_filter_description.always_true || on_totals)
     {
         incrementProfileEvents(num_rows_before_filtration, columns);
         removeFilterIfNeed(columns);

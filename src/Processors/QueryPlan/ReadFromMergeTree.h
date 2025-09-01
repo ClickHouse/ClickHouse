@@ -16,12 +16,8 @@ struct LazilyReadInfo;
 using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
 class Pipe;
-class ParallelReadingExtension;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
-
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 struct MergeTreeDataSelectSamplingData
 {
@@ -57,15 +53,9 @@ struct UsefulSkipIndexes
         }
     };
 
-    bool empty() const { return useful_indices.empty() && merged_indices.empty(); }
-
     std::vector<DataSkippingIndexAndCondition> useful_indices;
     std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
-    std::vector<std::vector<size_t>> per_part_index_orders;
 };
-
-struct MergeTreeIndexBuildContext;
-using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
 
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
@@ -88,34 +78,14 @@ public:
     {
         IndexType type;
         std::string name = {};
-        std::string part_name = {};
         std::string description = {};
         std::string condition = {};
         std::vector<std::string> used_keys = {};
         size_t num_parts_after;
         size_t num_granules_after;
-        MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
     };
 
     using IndexStats = std::vector<IndexStat>;
-
-    /// Information about used projections.
-    struct ProjectionStat
-    {
-        std::string name = {};
-        std::string description = {};
-        std::string condition = {};
-        MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
-        UInt64 selected_parts = 0;
-        UInt64 selected_ranges = 0;
-        UInt64 selected_marks = 0;
-        UInt64 selected_rows = 0;
-        UInt64 filtered_parts = 0;
-    };
-
-    /// `deque` is used to ensure stable addresses during projection analysis stats building.
-    using ProjectionStats = std::deque<ProjectionStat>;
-
     using ReadType = MergeTreeReadType;
 
     struct AnalysisResult
@@ -124,7 +94,6 @@ public:
         SplitPartsByRanges split_parts;
         MergeTreeDataSelectSamplingData sampling;
         IndexStats index_stats;
-        ProjectionStats projection_stats;
         Names column_names_to_read;
         ReadType read_type = ReadType::Default;
         UInt64 total_parts = 0;
@@ -162,10 +131,9 @@ public:
         std::optional<size_t> number_of_current_replica_ = std::nullopt);
 
     ReadFromMergeTree(const ReadFromMergeTree &) = default;
-    ReadFromMergeTree(ReadFromMergeTree &&) noexcept = default;
+    ReadFromMergeTree(ReadFromMergeTree &&) = default;
 
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
-        ContextPtr & context_,
         AnalysisResultPtr analyzed_result_ptr_,
         MergeTreeAllRangesCallback all_ranges_callback_,
         MergeTreeReadTaskCallback read_task_callback_,
@@ -180,11 +148,9 @@ public:
 
     void describeActions(FormatSettings & format_settings) const override;
     void describeIndexes(FormatSettings & format_settings) const override;
-    void describeProjections(FormatSettings & format_settings) const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
-    void describeProjections(JSONBuilder::JSONMap & map) const override;
 
     const Names & getAllColumnNames() const { return all_column_names; }
 
@@ -223,8 +189,9 @@ public:
         const Names & all_column_names,
         LoggerPtr log,
         std::optional<Indexes> & indexes,
-        bool find_exact_ranges,
-        bool is_parallel_reading_from_replicas_);
+        bool find_exact_ranges);
+
+    AnalysisResultPtr selectRangesToRead(RangesInDataParts parts, bool find_exact_ranges = false) const;
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
@@ -241,10 +208,6 @@ public:
     void updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value);
     bool isQueryWithSampling() const;
 
-    /// Special stuff for vector search - replace vector column in read list with virtual "_distance" column
-    void replaceVectorColumnWithDistanceColumn(const String & vector_column);
-    bool isVectorColumnReplaced() const;
-
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePort();
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
@@ -252,7 +215,7 @@ public:
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
-    const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : prepared_parts; }
+    const RangesInDataParts & getParts() const { return prepared_parts; }
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
 
     const MergeTreeData & getMergeTreeData() const { return data; }
@@ -263,14 +226,6 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     void setVectorSearchParameters(std::optional<VectorSearchParameters> && vector_search_parameters_) { vector_search_parameters = vector_search_parameters_; }
-    std::optional<VectorSearchParameters> getVectorSearchParameters() const { return vector_search_parameters; }
-
-    bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
-
-    /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
-    /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
-    void clearParallelReadingExtension();
-    std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
 private:
     MergeTreeReaderSettings reader_settings;
@@ -308,60 +263,21 @@ private:
 
     using PoolSettings = MergeTreeReadPoolBase::PoolSettings;
 
-    Pipe read(
-        RangesInDataParts parts_with_range,
-        const MergeTreeIndexBuildContextPtr & index_build_context,
-        Names required_columns,
-        ReadType read_type,
-        size_t max_streams,
-        size_t min_marks_for_concurrent_read,
-        bool use_uncompressed_cache);
-    Pipe readFromPool(
-        RangesInDataParts parts_with_range,
-        const MergeTreeIndexBuildContextPtr & index_build_context,
-        Names required_columns,
-        PoolSettings pool_settings);
-    Pipe readFromPoolParallelReplicas(
-        RangesInDataParts parts_with_range,
-        const MergeTreeIndexBuildContextPtr & index_build_context,
-        Names required_columns,
-        PoolSettings pool_settings);
-    Pipe readInOrder(
-        RangesInDataParts parts_with_ranges,
-        const MergeTreeIndexBuildContextPtr & index_build_context,
-        Names required_columns,
-        PoolSettings pool_settings,
-        ReadType read_type,
-        UInt64 limit);
+    Pipe read(RangesInDataParts parts_with_range, Names required_columns, ReadType read_type, size_t max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache);
+    Pipe readFromPool(RangesInDataParts parts_with_range, Names required_columns, PoolSettings pool_settings);
+    Pipe readFromPoolParallelReplicas(RangesInDataParts parts_with_range, Names required_columns, PoolSettings pool_settings);
+    Pipe readInOrder(RangesInDataParts parts_with_ranges, Names required_columns, PoolSettings pool_settings, ReadType read_type, UInt64 limit);
 
-    Pipe spreadMarkRanges(
-        RangesInDataParts && parts_with_ranges,
-        const MergeTreeIndexBuildContextPtr & index_build_context,
-        size_t num_streams,
-        AnalysisResult & result,
-        std::optional<ActionsDAG> & result_projection);
+    Pipe spreadMarkRanges(RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, std::optional<ActionsDAG> & result_projection);
 
-    Pipe groupStreamsByPartition(
-        AnalysisResult & result,
-        const MergeTreeIndexBuildContextPtr & index_build_context,
-        std::optional<ActionsDAG> & result_projection);
+    Pipe groupStreamsByPartition(AnalysisResult & result, std::optional<ActionsDAG> & result_projection);
 
-    Pipe readByLayers(
-        const RangesInDataParts & parts_with_ranges,
-        SplitPartsByRanges split_parts,
-        const MergeTreeIndexBuildContextPtr & index_build_context,
-        const Names & column_names,
-        const InputOrderInfoPtr & input_order_info);
+    Pipe readByLayers(const RangesInDataParts & parts_with_ranges, SplitPartsByRanges split_parts, const Names & column_names, const InputOrderInfoPtr & input_order_info);
 
-    Pipe spreadMarkRangesAmongStreams(
-        RangesInDataParts && parts_with_ranges,
-        const MergeTreeIndexBuildContextPtr & index_build_context,
-        size_t num_streams,
-        const Names & column_names);
+    Pipe spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names);
 
     Pipe spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts_with_ranges,
-        const MergeTreeIndexBuildContextPtr & index_build_context,
         size_t num_streams,
         const Names & column_names,
         std::optional<ActionsDAG> & out_projection,
@@ -370,21 +286,12 @@ private:
     bool doNotMergePartsAcrossPartitionsFinal() const;
 
     Pipe spreadMarkRangesAmongStreamsFinal(
-        RangesInDataParts && parts,
-        const MergeTreeIndexBuildContextPtr & index_build_context,
-        size_t num_streams,
-        const Names & origin_column_names,
-        const Names & column_names,
-        std::optional<ActionsDAG> & out_projection);
+        RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, std::optional<ActionsDAG> & out_projection);
 
-    ReadFromMergeTree::AnalysisResult & getAnalysisResultImpl() const;
-    const ReadFromMergeTree::AnalysisResult & getAnalysisResult() const { return getAnalysisResultImpl(); }
-    ReadFromMergeTree::AnalysisResult & getAnalysisResult() { return getAnalysisResultImpl(); }
+    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
 
     int getSortDirection() const;
     void updateSortDescription();
-
-    bool isParallelReplicasLocalPlanForInitiator() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;

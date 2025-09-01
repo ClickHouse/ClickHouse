@@ -9,6 +9,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
 #include <Core/callOnTypeIndex.h>
@@ -16,7 +17,6 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
@@ -765,7 +765,6 @@ private:
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal128>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal256>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Time64>>, strategy>,
 
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UUID>>, strategy>,
         SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<IPv4>>, strategy>,
@@ -796,7 +795,6 @@ private:
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal128>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal256>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Time64>>, strategy>,
 
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UUID>>, strategy>,
         SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<IPv4>>, strategy>,

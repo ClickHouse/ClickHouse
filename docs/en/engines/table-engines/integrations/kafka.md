@@ -1,28 +1,33 @@
 ---
-description: 'The Kafka Table Engine can be used to publish works with Apache Kafka and lets you publish or subscribe
+description: 'The Kafka engine works with Apache Kafka and lets you publish or subscribe
   to data flows, organize fault-tolerant storage, and process streams as they become
   available.'
 sidebar_label: 'Kafka'
 sidebar_position: 110
 slug: /engines/table-engines/integrations/kafka
-title: 'Kafka table engine'
-keywords: ['Kafka', 'table engine']
+title: 'Kafka'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# Kafka table engine
+# Kafka
+
+<CloudNotSupportedBadge/>
 
 :::note
-If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/clickpipes) instead. ClickPipes natively supports private network connections, scaling ingestion and cluster resources independently, and comprehensive monitoring for streaming Kafka data into ClickHouse.
+ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for streaming Kafka data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
 :::
+
+This engine works with [Apache Kafka](http://kafka.apache.org/).
+
+Kafka lets you:
 
 - Publish or subscribe to data flows.
 - Organize fault-tolerant storage.
 - Process streams as they become available.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -78,7 +83,7 @@ Optional parameters:
 - `kafka_poll_max_batch_size` — Maximum amount of messages to be polled in a single Kafka poll. Default: [max_block_size](/operations/settings/settings#max_block_size).
 - `kafka_flush_interval_ms` — Timeout for flushing data from Kafka. Default: [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms).
 - `kafka_thread_per_consumer` — Provide independent thread for each consumer. When enabled, every consumer flush the data independently, in parallel (otherwise — rows from several consumers squashed to form one block). Default: `0`.
-- `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`), dead_letter_queue (error related data will be saved in system.dead_letter_queue).
+- `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
 - `kafka_commit_on_select` —  Commit messages when select query is made. Default: `false`.
 - `kafka_max_rows_per_message` — The maximum number of rows written in one kafka message for row-based formats. Default : `1`.
 
@@ -137,8 +142,6 @@ The delivered messages are tracked automatically, so each message in a group is 
 
 Groups are flexible and synced on the cluster. For instance, if you have 10 topics and 5 copies of a table in a cluster, then each copy gets 2 topics. If the number of copies changes, the topics are redistributed across the copies automatically. Read more about this at http://kafka.apache.org/intro.
 
-It is recommended that each Kafka topic have its own dedicated consumer group, ensuring exclusive pairing between the topic and the group, especially in environments where topics may be created and deleted dynamically (e.g., in testing or staging).
-
 `SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using materialized views. To do this:
 
 1.  Use the engine to create a Kafka consumer and consider it a data stream.
@@ -164,7 +167,7 @@ Example:
   ) ENGINE = SummingMergeTree(day, (day, level), 8192);
 
   CREATE MATERIALIZED VIEW consumer TO daily
-    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
+    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() as total
     FROM queue GROUP BY day, level;
 
   SELECT level, sum(total) FROM daily GROUP BY level;
@@ -224,6 +227,7 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
   </kafka>
 ```
 
+
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
 
 ### Kerberos support {#kafka-kerberos-support}
@@ -242,7 +246,7 @@ Example:
 </kafka>
 ```
 
-## Virtual columns {#virtual-columns}
+## Virtual Columns {#virtual-columns}
 
 - `_topic` — Kafka topic. Data type: `LowCardinality(String)`.
 - `_key` — Key of the message. Data type: `String`.
@@ -273,8 +277,8 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 <ExperimentalBadge/>
 
 If `allow_experimental_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
-- `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper
-- `kafka_replica_name` specifies the replica name in ClickHouse Keeper
+ - `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper
+ - `kafka_replica_name` specifies the replica name in ClickHouse Keeper
 
 Either both of the settings must be specified or neither of them. When both of them are specified, then a new, experimental Kafka engine will be used. The new engine doesn't depend on storing the committed offsets in Kafka, but stores them in ClickHouse Keeper. It still tries to commit the offsets to Kafka, but it only depends on those offsets when the table is created. In any other circumstances (table is restarted, or recovered after some error) the offsets stored in ClickHouse Keeper will be used as an offset to continue consuming messages from. Apart from the committed offset, it also stores how many messages were consumed in the last batch, so if the insert fails, the same amount of messages will be consumed, thus enabling deduplication if necessary.
 
@@ -303,10 +307,10 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 ### Known limitations {#known-limitations}
 
 As the new engine is experimental, it is not production ready yet. There are few known limitations of the implementation:
-- The biggest limitation is the engine doesn't support direct reading. Reading from the engine using materialized views and writing to the engine work, but direct reading doesn't. As a result, all direct `SELECT` queries will fail.
-- Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
-- To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
-- Consumers created by the new storage engine do not show up in [`system.kafka_consumers`](../../../operations/system-tables/kafka_consumers.md) table.
+ - The biggest limitation is the engine doesn't support direct reading. Reading from the engine using materialized views and writing to the engine work, but direct reading doesn't. As a result, all direct `SELECT` queries will fail.
+ - Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
+ - To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
+ - Consumers created by the new storage engine do not show up in [`system.kafka_consumers`](../../../operations/system-tables/kafka_consumers.md) table.
 
 **See Also**
 

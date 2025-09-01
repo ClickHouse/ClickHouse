@@ -5,12 +5,6 @@
 #include <Interpreters/Context.h>
 
 
-namespace ProfileEvents
-{
-    extern const Event WriteBufferFromHTTPRequestsSent;
-    extern const Event WriteBufferFromHTTPBytes;
-}
-
 namespace DB
 {
 
@@ -29,10 +23,7 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
     , session{makeHTTPSession(connection_group, uri, timeouts, proxy_configuration)}
     , request{method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1}
 {
-    if (uri.getPort())
-        request.setHost(uri.getHost(), uri.getPort());
-    else
-        request.setHost(uri.getHost());
+    request.setHost(uri.getHost());
     request.setChunkedTransferEncoding(true);
 
     if (!content_encoding.empty())
@@ -48,14 +39,7 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
 
     LOG_TRACE((getLogger("WriteBufferToHTTP")), "Sending request to {}", uri.toString());
 
-    ProfileEvents::increment(ProfileEvents::WriteBufferFromHTTPRequestsSent);
     ostr = &session->sendRequest(request);
-}
-
-void WriteBufferFromHTTP::nextImpl()
-{
-    ProfileEvents::increment(ProfileEvents::WriteBufferFromHTTPBytes, offset());
-    WriteBufferFromOStream::nextImpl();
 }
 
 void WriteBufferFromHTTP::finalizeImpl()
