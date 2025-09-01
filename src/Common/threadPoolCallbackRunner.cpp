@@ -53,9 +53,6 @@ void ThreadPoolCallbackRunnerFast::shutdown()
     queue_cv.notify_all();
 #endif
     shutdown_cv.wait(lock, [&] { return threads == 0; });
-
-    if (mode == Mode::ThreadPool)
-        chassert(active_tasks.load() == queue.size());
 }
 
 void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)
@@ -70,7 +67,6 @@ void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)
 
     if (mode == Mode::ThreadPool)
     {
-        active_tasks.fetch_add(1, std::memory_order_relaxed);
 #ifdef OS_LINUX
         UInt32 prev_size = queue_size.fetch_add(1, std::memory_order_release);
         if (prev_size < max_threads)
@@ -96,7 +92,6 @@ void ThreadPoolCallbackRunnerFast::bulkSchedule(std::vector<std::function<void()
 
     if (mode == Mode::ThreadPool)
     {
-        active_tasks.fetch_add(fs.size(), std::memory_order_relaxed);
 #ifdef OS_LINUX
         UInt32 prev_size = queue_size.fetch_add(fs.size(), std::memory_order_release);
         if (prev_size < max_threads)
@@ -127,67 +122,58 @@ bool ThreadPoolCallbackRunnerFast::runTaskInline()
 
 void ThreadPoolCallbackRunnerFast::threadFunction()
 {
-    {
-        ThreadGroupSwitcher switcher(thread_group, thread_name.c_str());
+    ThreadGroupSwitcher switcher(thread_group, thread_name.c_str());
 
+    while (true)
+    {
+#ifdef OS_LINUX
+        UInt32 x = queue_size.load(std::memory_order_relaxed);
         while (true)
         {
-    #ifdef OS_LINUX
-            UInt32 x = queue_size.load(std::memory_order_relaxed);
-            while (true)
+            if (x == 0)
             {
-                if (x == 0)
-                {
-                    futexWait(&queue_size, 0);
-                    x = queue_size.load(std::memory_order_relaxed);
-                }
-                else if (queue_size.compare_exchange_weak(
-                            x, x - 1, std::memory_order_acquire, std::memory_order_relaxed))
-                    break;
+                futexWait(&queue_size, 0);
+                x = queue_size.load(std::memory_order_relaxed);
             }
-    #endif
-
-            std::function<void()> f;
-            {
-                std::unique_lock lock(mutex);
-
-    #ifndef OS_LINUX
-                queue_cv.wait(lock, [&] { return shutdown_requested || !queue.empty(); });
-    #endif
-
-                if (shutdown_requested)
-                    break;
-
-                chassert(!queue.empty());
-
-                f = std::move(queue.front());
-                queue.pop_front();
-            }
-
-            try
-            {
-                f();
-
-                CurrentThread::updatePerformanceCountersIfNeeded();
-            }
-            catch (...)
-            {
-                tryLogCurrentException("FastThreadPool");
-                chassert(false);
-            }
-
-            active_tasks.fetch_sub(1, std::memory_order_relaxed);
+            else if (queue_size.compare_exchange_weak(
+                        x, x - 1, std::memory_order_acquire, std::memory_order_relaxed))
+                break;
         }
-    }
+#endif
 
-    /// Important that we destroy the `ThreadGroupSwitcher` before decrementing `threads`.
-    /// Otherwise ~ThreadGroupSwitcher may access global Context after the query is finished, which
-    /// may race with mutating Context (specifically, Settings) at the start of next query.
-    {
-        std::unique_lock lock(mutex);
-        threads -= 1;
-        if (threads == 0)
-            shutdown_cv.notify_all();
+        std::function<void()> f;
+        {
+            std::unique_lock lock(mutex);
+
+#ifndef OS_LINUX
+            queue_cv.wait(lock, [&] { return shutdown_requested || !queue.empty(); });
+#endif
+
+            if (shutdown_requested)
+            {
+                threads -= 1;
+                if (threads == 0)
+                    shutdown_cv.notify_all();
+                return;
+            }
+
+            chassert(!queue.empty());
+
+            f = std::move(queue.front());
+            queue.pop_front();
+        }
+
+        try
+        {
+            f();
+
+            CurrentThread::updatePerformanceCountersIfNeeded();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("FastThreadPool");
+            chassert(false);
+        }
     }
 }
 

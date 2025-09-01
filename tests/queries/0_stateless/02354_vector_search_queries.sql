@@ -2,11 +2,10 @@
 
 -- Tests various simple approximate nearest neighborhood (ANN) queries that utilize vector search indexes.
 
+SET enable_vector_similarity_index = 1;
+
 -- Test runs with analyzer enabled
 SET enable_analyzer = 1;
-
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
 
 SELECT '10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule, 1 indexed block';
 

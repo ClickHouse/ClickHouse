@@ -122,16 +122,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         return ostr;
     };
 
-    auto print_restore_database_replica = [&]() -> WriteBuffer &
-    {
-        chassert(database);
-
-        ostr << " ";
-        print_identifier(getDatabase());
-
-        return ostr;
-    };
-
     auto print_drop_replica = [&]
     {
         ostr << " " << quoteString(replica);
@@ -296,14 +286,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_drop_replica();
             break;
         }
-        case Type::RESTORE_DATABASE_REPLICA:
-        {
-            if (database)
-            {
-                print_restore_database_replica();
-            }
-            break;
-        }
         case Type::SUSPEND:
         {
             print_keyword(" FOR ") << seconds;
@@ -363,11 +345,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::UNLOCK_SNAPSHOT:
         {
             ostr << quoteString(backup_name);
-            if (backup_source)
-            {
-                print_keyword(" FROM ");
-                backup_source->format(ostr, settings);
-            }
+            print_keyword(" FROM ");
+            backup_source->format(ostr, settings);
             break;
         }
         case Type::START_LISTEN:

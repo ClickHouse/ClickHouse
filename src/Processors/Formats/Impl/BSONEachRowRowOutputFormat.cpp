@@ -542,7 +542,7 @@ void registerOutputFormatBSONEachRow(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "BSONEachRow",
-        [](WriteBuffer & buf, const Block & sample, const FormatSettings & _format_settings, FormatFilterInfoPtr /*format_filter_info*/)
+        [](WriteBuffer & buf, const Block & sample, const FormatSettings & _format_settings)
         { return std::make_shared<BSONEachRowRowOutputFormat>(buf, std::make_shared<const Block>(sample), _format_settings); });
     factory.markOutputFormatSupportsParallelFormatting("BSONEachRow");
     factory.markOutputFormatNotTTYFriendly("BSONEachRow");

@@ -1,7 +1,6 @@
 #include <Loggers/Loggers.h>
 
 #include <Loggers/OwnFormattingChannel.h>
-#include <Loggers/OwnJSONPatternFormatter.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <Loggers/OwnSplitChannel.h>
 
@@ -19,21 +18,6 @@
 #include <filesystem>
 
 namespace fs = std::filesystem;
-
-namespace ProfileEvents
-{
-extern const Event AsyncLoggingConsoleDroppedMessages;
-extern const Event AsyncLoggingConsoleTotalMessages;
-
-extern const Event AsyncLoggingFileLogDroppedMessages;
-extern const Event AsyncLoggingFileLogTotalMessages;
-
-extern const Event AsyncLoggingErrorFileLogDroppedMessages;
-extern const Event AsyncLoggingErrorFileLogTotalMessages;
-
-extern const Event AsyncLoggingSyslogDroppedMessages;
-extern const Event AsyncLoggingSyslogTotalMessages;
-}
 
 namespace DB
 {
@@ -113,10 +97,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     /// Split logs to ordinary log, error log, syslog and console.
     /// Use extended interface of Channel for more comprehensive logging.
     if (config.getBool("logger.async", true))
-    {
-        auto async_queue_size = config.getUInt("logger.async_queue_max_size", 10000);
-        split = new DB::OwnAsyncSplitChannel(static_cast<size_t>(async_queue_size));
-    }
+        split = new DB::OwnAsyncSplitChannel();
     else
         split = new DB::OwnSplitChannel();
 
@@ -156,9 +137,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         log_file->open();
 
         Poco::AutoPtr<OwnPatternFormatter> pf = getFormatForChannel(config, "log");
-        auto log = std::make_shared<DB::OwnFormattingChannel>(pf, log_file);
-        split->addChannel(
-            log, "FileLog", log_level, ProfileEvents::AsyncLoggingFileLogTotalMessages, ProfileEvents::AsyncLoggingFileLogDroppedMessages);
+        Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, log_file);
+        log->setLevel(log_level);
+        split->addChannel(log, "log");
     }
 
     const auto errorlog_path_prop = config.getString("logger.errorlog", "");
@@ -189,14 +170,10 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
 
         Poco::AutoPtr<OwnPatternFormatter> pf = getFormatForChannel(config, "errorlog");
-        auto errorlog = std::make_shared<DB::OwnFormattingChannel>(pf, error_log_file);
+        Poco::AutoPtr<DB::OwnFormattingChannel> errorlog = new DB::OwnFormattingChannel(pf, error_log_file);
+        errorlog->setLevel(errorlog_level);
         errorlog->open();
-        split->addChannel(
-            errorlog,
-            "ErrorFileLog",
-            errorlog_level,
-            ProfileEvents::AsyncLoggingErrorFileLogTotalMessages,
-            ProfileEvents::AsyncLoggingErrorFileLogDroppedMessages);
+        split->addChannel(errorlog, "errorlog");
     }
 
     if (config.getBool("logger.use_syslog", false))
@@ -227,9 +204,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         syslog_channel->open();
 
         Poco::AutoPtr<OwnPatternFormatter> pf = getFormatForChannel(config, "syslog");
-        auto log = std::make_shared<DB::OwnFormattingChannel>(pf, syslog_channel);
-        split->addChannel(
-            log, "Syslog", syslog_level, ProfileEvents::AsyncLoggingSyslogTotalMessages, ProfileEvents::AsyncLoggingSyslogDroppedMessages);
+        Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, syslog_channel);
+        log->setLevel(syslog_level);
+        split->addChannel(log, "syslog");
     }
 
     bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
@@ -245,13 +222,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         max_log_level = std::max(console_log_level, max_log_level);
 
         Poco::AutoPtr<OwnPatternFormatter> pf = getFormatForChannel(config, "console", color_enabled);
-        auto log = std::make_shared<DB::OwnFormattingChannel>(pf, new Poco::ConsoleChannel);
-        split->addChannel(
-            log,
-            "Console",
-            console_log_level,
-            ProfileEvents::AsyncLoggingConsoleTotalMessages,
-            ProfileEvents::AsyncLoggingConsoleDroppedMessages);
+        Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
+        log->setLevel(console_log_level);
+        split->addChannel(log, "console");
     }
 
     if (allowTextLog() && config.has("text_log"))
@@ -348,7 +321,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     max_log_level = std::max(log_level, max_log_level);
 
     if (log_file)
-        split->setLevel("FileLog", log_level);
+        split->setLevel("log", log_level);
 
     // Set level to console
     bool is_daemon = config.getBool("application.runAsDaemon", false);
@@ -359,17 +332,17 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
         auto console_log_level_string = config.getString("logger.console_log_level", log_level_string);
         auto console_log_level = Poco::Logger::parseLevel(console_log_level_string);
         max_log_level = std::max(console_log_level, max_log_level);
-        split->setLevel("Console", console_log_level);
+        split->setLevel("console", console_log_level);
     }
     else
-        split->setLevel("Console", 0);
+        split->setLevel("console", 0);
 
     // Set level to errorlog
     if (error_log_file)
     {
         int errorlog_level = Poco::Logger::parseLevel(config.getString("logger.errorlog_level", "notice"));
         max_log_level = std::max(errorlog_level, max_log_level);
-        split->setLevel("ErrorFileLog", errorlog_level);
+        split->setLevel("errorlog", errorlog_level);
     }
 
     // Set level to syslog
@@ -379,7 +352,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
         syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level_string));
         max_log_level = std::max(syslog_level, max_log_level);
     }
-    split->setLevel("Syslog", syslog_level);
+    split->setLevel("syslog", syslog_level);
 
     // Global logging level (it can be overridden for specific loggers).
     logger.setLevel(max_log_level);
@@ -437,13 +410,6 @@ void Loggers::flushTextLogs()
 {
     if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
         async->flushTextLogs();
-}
-
-DB::AsyncLogQueueSizes Loggers::getAsynchronousMetricsFromAsyncLogs()
-{
-    if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
-        return async->getAsynchronousMetrics();
-    return {};
 }
 
 void Loggers::stopLogging()

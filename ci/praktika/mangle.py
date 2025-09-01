@@ -94,19 +94,19 @@ def _get_workflows(
     return res
 
 
-def _get_artifact_to_providing_job_map(workflow):
+def _update_workflow_artifacts(workflow):
     artifact_job = {}
     for job in workflow.jobs:
         for artifact_name in job.provides:
             artifact_job[artifact_name] = job.name
-    return artifact_job
-
-
-def _update_workflow_artifacts(workflow):
-    artifact_job = _get_artifact_to_providing_job_map(workflow)
     for artifact in workflow.artifacts:
         if artifact.name in artifact_job:
             artifact._provided_by = artifact_job[artifact.name]
+        # not meaningful - remove?
+        # else:
+        #     print(
+        #         f"WARNING: Artifact [{artifact.name}] in workflow [{workflow.name}] has no job that provides it"
+        #     )
 
 
 def _update_workflow_with_native_jobs(workflow):
@@ -158,7 +158,11 @@ def _update_workflow_with_native_jobs(workflow):
         for job in workflow.jobs[len(docker_job_names) :]:
             job.requires.extend(docker_job_names)
 
-    if workflow._enabled_workflow_config():
+    if (
+        workflow.enable_cache
+        or workflow.enable_report
+        or workflow.enable_merge_ready_status
+    ):
         from .native_jobs import _workflow_config_job
 
         print(f"Enable native job [{_workflow_config_job.name}] for [{workflow.name}]")
@@ -171,7 +175,6 @@ def _update_workflow_with_native_jobs(workflow):
         workflow.enable_merge_ready_status
         or workflow.post_hooks
         or workflow.enable_automerge
-        or workflow.enable_cidb  # to write cpu and storage usage summary into cidb
     ):
         from .native_jobs import _final_job
 
@@ -180,31 +183,3 @@ def _update_workflow_with_native_jobs(workflow):
         for job in workflow.jobs:
             aux_job.requires.append(job.name)
         workflow.jobs.append(aux_job)
-
-    # Propagate transitive dependencies: if B depends on A and C depends on B, then C should also depend on A
-    # To enable complex scenarios in GH Actions: do not block pipeline on failed job/action
-    job_map = {job.name: job for job in workflow.jobs}
-    artifact_map = _get_artifact_to_providing_job_map(workflow)
-    workflow.jobs = copy.deepcopy(
-        workflow.jobs
-    )  # same Job.Config objects may be used in other workflows, thus deep copy
-    for job in workflow.jobs:
-        all_deps = set(
-            job.requires
-        )  # init with original content to preserve artifacts (vs job names) set in .requires
-        to_visit = list(job.requires)
-        visited = set()
-        while to_visit:
-            dep_name = to_visit.pop()
-            if dep_name in visited:
-                continue
-            visited.add(dep_name)
-            if dep_name in job_map:
-                to_visit.extend(job_map[dep_name].requires)
-                all_deps.add(dep_name)
-            elif dep_name in artifact_map:
-                to_visit.extend(job_map[artifact_map[dep_name]].requires)
-                all_deps.add(artifact_map[dep_name])
-            else:
-                assert False, f"dependency [{dep_name}] not found"
-        job.requires = sorted(list(all_deps))

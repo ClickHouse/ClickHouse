@@ -218,7 +218,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "Dependent loading table."
         },
-        {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
     };
 
     description.setAliases({
@@ -820,18 +819,7 @@ protected:
                         res_columns[res_index++]->insert(dependents_databases);
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(dependents_tables);
-                }
-                else
-                {
-                    src_index += 4;
-                }
 
-                if (columns_mask[src_index++])
-                {
-                    if (table && table->getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
-                        res_columns[res_index++]->insert(*table->getInMemoryMetadataPtr()->definer);
-                    else
-                        res_columns[res_index++]->insertDefault();
                 }
             }
         }

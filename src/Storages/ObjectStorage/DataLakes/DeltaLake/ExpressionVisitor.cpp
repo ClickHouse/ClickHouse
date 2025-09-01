@@ -93,8 +93,6 @@ private:
     /// Result expression schema.
     const DB::NamesAndTypesList & schema;
 
-    const bool enable_logging;
-
     /// Final parsing result.
     std::shared_ptr<DB::ActionsDAG> dag;
     /// Intermediate parsing result.
@@ -106,15 +104,12 @@ private:
 
 public:
     /// `schema` is the expression schema of result expression.
-    explicit ExpressionVisitorData(const DB::NamesAndTypesList & schema_, bool enable_logging_)
+    explicit ExpressionVisitorData(const DB::NamesAndTypesList & schema_)
         : schema(schema_)
-        , enable_logging(enable_logging_)
         , dag(std::make_shared<DB::ActionsDAG>())
         , context(DB::Context::getGlobalContextInstance())
     {
     }
-
-    bool enableLogging() const { return enable_logging; }
 
     DB::ContextPtr getContext() const { return context; }
 
@@ -156,8 +151,7 @@ public:
         /// Finalize the result in result_dag with requested schema.
         for (const auto & node : nodes)
         {
-            if (enable_logging)
-                LOG_TEST(log, "Node type: {}, result name: {}", node->type, node->result_name);
+            LOG_TEST(log, "Node type: {}, result name: {}", node->type, node->result_name);
 
             /// During parsing we assigned temporary const_{i} names
             /// to constant expressions,
@@ -189,10 +183,9 @@ public:
                 column_with_type_and_name = DB::ColumnWithTypeAndName(node->column, node->result_type, node->result_name);
             }
 
-            if (enable_logging)
-                LOG_TEST(
-                    log, "Added output: {}, type: {}",
-                    column_with_type_and_name.name, column_with_type_and_name.type->getTypeId());
+            LOG_TEST(
+                log, "Added output: {}, type: {}",
+                column_with_type_and_name.name, column_with_type_and_name.type->getTypeId());
 
             result_columns.push_back(column_with_type_and_name);
             ++schema_it;
@@ -244,9 +237,7 @@ public:
         const auto & node = dag->addColumn(std::move(column));
 
         node_lists[list_id].push_back(&node);
-
-        if (enable_logging)
-            LOG_TEST(log, "Added list id {}", list_id);
+        LOG_TEST(log, "Added list id {}", list_id);
     }
 
     /// Add identifier (column name) node to the list by `list_id`.
@@ -275,9 +266,7 @@ public:
         const auto & node = dag->addInput(std::move(column));
 
         node_lists[list_id].push_back(&node);
-
-        if (enable_logging)
-            LOG_TEST(log, "Added list id {}", list_id);
+        LOG_TEST(log, "Added list id {}", list_id);
     }
 
     /// Add function node to the list by `list_id`.
@@ -297,14 +286,10 @@ public:
         const auto & node = dag->addFunction(function, std::move(it->second), {});
 
         node_lists.erase(child_list_id);
-
-        if (enable_logging)
-            LOG_TEST(log, "Removed list id {}", child_list_id);
+        LOG_TEST(log, "Removed list id {}", child_list_id);
 
         node_lists[list_id].push_back(&node);
-
-        if (enable_logging)
-            LOG_TEST(log, "Added list id {}", list_id);
+        LOG_TEST(log, "Added list id {}", list_id);
     }
 
     /// Once a list by id `list_id` is fully formed
@@ -346,9 +331,7 @@ public:
         }
 
         node_lists.erase(it);
-
-        if (enable_logging)
-            LOG_TEST(log, "Removed list id {}", list_id);
+        LOG_TEST(log, "Removed list id {}", list_id);
 
         return std::pair(values, types);
     }
@@ -386,10 +369,14 @@ private:
     enum NotImplementedMethod
     {
         LT,
+        //LE,
         GT,
+        //GE,
         EQ,
+        //NE,
         DISTINCT,
         IN,
+        //NOT_IN,
         ADD,
         MINUS,
         MULTIPLY,
@@ -397,45 +384,50 @@ private:
     };
     static ffi::EngineExpressionVisitor createVisitor(ExpressionVisitorData & data)
     {
-        return ffi::EngineExpressionVisitor{
-            .data = &data,
-            .make_field_list = &makeFieldList,
-            .visit_literal_int = &visitSimpleLiteral<int32_t, DB::DataTypeInt32>,
-            .visit_literal_long = &visitSimpleLiteral<int64_t, DB::DataTypeInt64>,
-            .visit_literal_short = &visitSimpleLiteral<int16_t, DB::DataTypeInt16>,
-            .visit_literal_byte = &visitSimpleLiteral<int8_t, DB::DataTypeInt8>,
-            .visit_literal_float = &visitSimpleLiteral<float, DB::DataTypeFloat32>,
-            .visit_literal_double = &visitSimpleLiteral<double, DB::DataTypeFloat64>,
-            .visit_literal_string = &visitStringLiteral,
-            .visit_literal_bool = &visitSimpleLiteral<bool, DB::DataTypeUInt8>,
-            .visit_literal_timestamp = &visitTimestampLiteral,
-            .visit_literal_timestamp_ntz = &visitTimestampNtzLiteral,
-            .visit_literal_date = &visitDateLiteral,
-            .visit_literal_binary = &visitBinaryLiteral,
-            .visit_literal_decimal = &visitDecimalLiteral,
-            .visit_literal_struct = &visitStructLiteral,
-            .visit_literal_array = &visitArrayLiteral,
-            .visit_literal_map = &visitMapLiteral,
-            .visit_literal_null = &visitNullLiteral,
-            .visit_and = &visitFunction<DB::FunctionAnd>,
-            .visit_or = &visitFunction<DB::FunctionOr>,
-            .visit_not = &visitFunction<DB::FunctionNot>,
-            .visit_is_null = &visitFunction<DB::FunctionIsNull>,
-            .visit_lt = &throwNotImplemented<LT>,
-            .visit_gt = &throwNotImplemented<GT>,
-            .visit_eq = &throwNotImplemented<EQ>,
-            .visit_distinct = &throwNotImplemented<DISTINCT>,
-            .visit_in = &throwNotImplemented<IN>,
-            .visit_add = &throwNotImplemented<ADD>,
-            .visit_minus = &throwNotImplemented<MINUS>,
-            .visit_multiply = &throwNotImplemented<MULTIPLY>,
-            .visit_divide = &throwNotImplemented<DIVIDE>,
-            .visit_column = &visitColumnExpression,
-            .visit_struct_expr = &visitStructExpression,
-            .visit_opaque_expr = &throwNotImplementedOpaqueExpression,
-            .visit_opaque_pred = &throwNotImplementedOpaquePredicate,
-            .visit_unknown = &throwNotImplementedUnknown
-        };
+        ffi::EngineExpressionVisitor visitor;
+        visitor.data = &data;
+        visitor.make_field_list = &makeFieldList;
+
+        visitor.visit_literal_bool = &visitSimpleLiteral<bool, DB::DataTypeUInt8>;
+        visitor.visit_literal_byte = &visitSimpleLiteral<int8_t, DB::DataTypeInt8>;
+        visitor.visit_literal_short = &visitSimpleLiteral<int16_t, DB::DataTypeInt16>;
+        visitor.visit_literal_int = &visitSimpleLiteral<int32_t, DB::DataTypeInt32>;
+        visitor.visit_literal_long = &visitSimpleLiteral<int64_t, DB::DataTypeInt64>;
+        visitor.visit_literal_float = &visitSimpleLiteral<float, DB::DataTypeFloat32>;
+        visitor.visit_literal_double = &visitSimpleLiteral<double, DB::DataTypeFloat64>;
+
+        visitor.visit_literal_string = &visitStringLiteral;
+        visitor.visit_literal_decimal = &visitDecimalLiteral;
+
+        visitor.visit_literal_timestamp = &visitTimestampLiteral;
+        visitor.visit_literal_timestamp_ntz = &visitTimestampNtzLiteral;
+        visitor.visit_literal_date = &visitDateLiteral;
+        visitor.visit_literal_binary = &visitBinaryLiteral;
+        visitor.visit_literal_null = &visitNullLiteral;
+        visitor.visit_literal_array = &visitArrayLiteral;
+        visitor.visit_literal_struct = &visitStructLiteral;
+        visitor.visit_literal_map = &visitMapLiteral;
+
+        visitor.visit_column = &visitColumnExpression;
+        visitor.visit_struct_expr = &visitStructExpression;
+
+        visitor.visit_or = &visitFunction<DB::FunctionOr>;
+        visitor.visit_and = &visitFunction<DB::FunctionAnd>;
+        visitor.visit_not = &visitFunction<DB::FunctionNot>;
+
+        visitor.visit_is_null = &visitFunction<DB::FunctionIsNull>;
+
+        visitor.visit_lt = &throwNotImplemented<LT>;
+        visitor.visit_gt = &throwNotImplemented<GT>;
+        visitor.visit_eq = &throwNotImplemented<EQ>;
+        visitor.visit_distinct = &throwNotImplemented<DISTINCT>;
+        visitor.visit_in = &throwNotImplemented<IN>;
+        visitor.visit_add = &throwNotImplemented<ADD>;
+        visitor.visit_minus = &throwNotImplemented<MINUS>;
+        visitor.visit_multiply = &throwNotImplemented<MULTIPLY>;
+        visitor.visit_divide = &throwNotImplemented<DIVIDE>;
+
+        return visitor;
     }
 
     static uintptr_t makeFieldList(void * data, uintptr_t capacity_hint)
@@ -478,62 +470,6 @@ private:
         });
     }
 
-    static void throwNotImplementedOpaqueExpression(
-        void * data,
-        uintptr_t sibling_list_id,
-        ffi::SharedOpaqueExpressionOp * op,
-        uintptr_t child_list_id)
-    {
-        UNUSED(sibling_list_id);
-        UNUSED(child_list_id);
-        ffi::free_kernel_opaque_expression_op(op);
-
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::NOT_IMPLEMENTED,
-                "Method OpaqueExpr not implemented");
-        });
-    }
-
-    static void throwNotImplementedOpaquePredicate(
-        void * data,
-        uintptr_t sibling_list_id,
-        ffi::SharedOpaquePredicateOp * op,
-        uintptr_t child_list_id)
-    {
-        UNUSED(sibling_list_id);
-        UNUSED(child_list_id);
-        ffi::free_kernel_opaque_predicate_op(op);
-
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::NOT_IMPLEMENTED,
-                "Method OpaquePred not implemented");
-        });
-    }
-
-    static void throwNotImplementedUnknown(
-        void * data,
-        uintptr_t sibling_list_id,
-        ffi::KernelStringSlice name)
-    {
-        UNUSED(data);
-        UNUSED(sibling_list_id);
-
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::NOT_IMPLEMENTED,
-                "Method Unknown not implemented (name: {})",
-                KernelUtils::fromDeltaString(name));
-        });
-    }
-
     template <typename Func>
     static void visitFunction(
         void * data,
@@ -543,11 +479,10 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            if (state->enableLogging())
-                LOG_TEST(
-                    state->logger(),
-                    "List id: {}, child list id: {}, type: Function {}",
-                    sibling_list_id, child_list_id, Func::name);
+            LOG_TEST(
+                state->logger(),
+                "List id: {}, child list id: {}, type: Function {}",
+                sibling_list_id, child_list_id, Func::name);
 
             DB::FunctionOverloadResolverPtr function = DB::FunctionFactory::instance().get(Func::name, state->getContext());
             state->addFunction(sibling_list_id, child_list_id, std::move(function));
@@ -560,9 +495,7 @@ private:
         visitorImpl(*state, [&]()
         {
             const auto name_str = KernelUtils::fromDeltaString(name);
-
-            if (state->enableLogging())
-                LOG_TEST(state->logger(), "List id: {}, name: {}, type: Column", sibling_list_id, name_str);
+            LOG_TEST(state->logger(), "List id: {}, name: {}, type: Column", sibling_list_id, name_str);
 
             state->addIdentifier(sibling_list_id, name_str);
         });
@@ -576,11 +509,10 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            if (state->enableLogging())
-                LOG_TEST(
-                    state->logger(),
-                    "List id: {}, child list id: {}, type: StructExpression",
-                    sibling_list_id, child_list_id);
+            LOG_TEST(
+                state->logger(),
+                "List id: {}, child list id: {}, type: StructExpression",
+                sibling_list_id, child_list_id);
 
 
             DB::FunctionOverloadResolverPtr function =
@@ -597,9 +529,7 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            if (state->enableLogging())
-                LOG_TEST(state->logger(), "List id: {}, type: {}", sibling_list_id, DataType::type_id);
-
+            LOG_TEST(state->logger(), "List id: {}, type: {}", sibling_list_id, DataType::type_id);
             state->addLiteral(sibling_list_id, value, std::make_shared<DataType>());
         });
     }
@@ -649,8 +579,7 @@ private:
                 state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeDecimal128>(precision, scale));
             }
 
-            if (state->enableLogging())
-                LOG_TEST(state->logger(), "List id: {}, type: Decimal", sibling_list_id);
+            LOG_TEST(state->logger(), "List id: {}, type: Decimal", sibling_list_id);
         });
     }
 
@@ -659,8 +588,7 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            if (state->enableLogging())
-                LOG_TEST(state->logger(), "List id: {}, type: Date", sibling_list_id);
+            LOG_TEST(state->logger(), "List id: {}, type: Date", sibling_list_id);
 
             const ExtendedDayNum daynum{value};
             state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeDate32>());
@@ -672,8 +600,7 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            if (state->enableLogging())
-                LOG_TEST(state->logger(), "List id: {}, type: Timestamp", sibling_list_id);
+            LOG_TEST(state->logger(), "List id: {}, type: Timestamp", sibling_list_id);
 
             const auto datetime_value = DB::DecimalField<DB::Decimal64>(value, 6);
             state->addLiteral(sibling_list_id, datetime_value, std::make_shared<DB::DataTypeDateTime64>(6));
@@ -685,8 +612,7 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            if (state->enableLogging())
-                LOG_TEST(state->logger(), "List id: {}, type: TimestampNtz", sibling_list_id);
+            LOG_TEST(state->logger(), "List id: {}, type: TimestampNtz", sibling_list_id);
 
             const auto datetime_value = DB::DecimalField<DB::Decimal64>(value, 6);
             state->addLiteral(sibling_list_id, datetime_value, std::make_shared<DB::DataTypeDateTime64>(6));
@@ -699,8 +625,7 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            if (state->enableLogging())
-                LOG_TEST(state->logger(), "List id: {}, type: Binary", sibling_list_id);
+            LOG_TEST(state->logger(), "List id: {}, type: Binary", sibling_list_id);
 
             std::string value(reinterpret_cast<const char *>(buffer), len);
             state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeFixedString>(len));
@@ -712,9 +637,7 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            if (state->enableLogging())
-                LOG_TEST(state->logger(), "List id: {}, type: Null", sibling_list_id);
-
+            LOG_TEST(state->logger(), "List id: {}, type: Null", sibling_list_id);
             state->addLiteral(
                 sibling_list_id,
                 DB::Null(),
@@ -727,8 +650,7 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            if (state->enableLogging())
-                LOG_TEST(state->logger(), "List id: {}, child list id: {}, type: Array", sibling_list_id, child_list_id);
+            LOG_TEST(state->logger(), "List id: {}, child list id: {}, type: Array", sibling_list_id, child_list_id);
 
             auto [values, types] = state->extractLiteralList<DB::Array>(child_list_id);
             state->addLiteral(
@@ -747,11 +669,10 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            if (state->enableLogging())
-                LOG_TEST(
-                    state->logger(),
-                    "List id: {}, child field list id: {}, child value list id: {}, type: Struct",
-                    sibling_list_id, child_field_list_id, child_value_list_id);
+            LOG_TEST(
+                state->logger(),
+                "List id: {}, child field list id: {}, child value list id: {}, type: Struct",
+                sibling_list_id, child_field_list_id, child_value_list_id);
 
             auto [values, types] = state->extractLiteralList<DB::Tuple>(child_value_list_id);
             state->addLiteral(sibling_list_id, values, std::make_shared<DB::DataTypeTuple>(types));
@@ -767,11 +688,10 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            if (state->enableLogging())
-                LOG_TEST(
-                    state->logger(),
-                    "List id: {}, key list id: {}, value list id: {}, type: Map",
-                    sibling_list_id, key_list_id, value_list_id);
+            LOG_TEST(
+                state->logger(),
+                "List id: {}, key list id: {}, value list id: {}, type: Map",
+                sibling_list_id, key_list_id, value_list_id);
 
             auto [keys, key_types] = state->extractLiteralList<DB::Tuple>(key_list_id);
             chassert(keys.size() == key_types.size());
@@ -825,10 +745,9 @@ std::vector<DB::Field> getConstValuesFromExpression(const DB::Names & columns, c
 
 std::shared_ptr<DB::ActionsDAG> visitScanCallbackExpression(
     const ffi::Expression * expression,
-    const DB::NamesAndTypesList & expression_schema,
-    bool enable_logging)
+    const DB::NamesAndTypesList & expression_schema)
 {
-    ExpressionVisitorData data(expression_schema, enable_logging);
+    ExpressionVisitorData data(expression_schema);
     ExpressionVisitor::visit(expression, data);
     return data.getScanCallbackExpressionResult();
 }
@@ -837,7 +756,7 @@ std::shared_ptr<DB::ActionsDAG> visitExpression(
     ffi::SharedExpression * expression,
     const DB::NamesAndTypesList & expression_schema)
 {
-    ExpressionVisitorData data(expression_schema, /* enable_logging */true);
+    ExpressionVisitorData data(expression_schema);
     ExpressionVisitor::visit(expression, data);
     return data.getScanCallbackExpressionResult();
 }
