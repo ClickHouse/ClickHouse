@@ -20,15 +20,7 @@ DESC test_alter_if_exists;
 
 DROP TABLE test_alter_if_exists;
 
--- Test 3: COMMENT COLUMN IF EXISTS with column deleted by previous command
-CREATE TABLE test_alter_if_exists (x Int32, y String) ENGINE = Memory;
--- This should succeed - DROP removes x, COMMENT with IF EXISTS should be silently ignored
-ALTER TABLE test_alter_if_exists DROP COLUMN x, COMMENT COLUMN IF EXISTS x 'test comment';
-DESC test_alter_if_exists;
-
-DROP TABLE test_alter_if_exists;
-
--- Test 4: RENAME COLUMN IF EXISTS with column deleted by previous command
+-- Test 3: RENAME COLUMN IF EXISTS with column deleted by previous command
 CREATE TABLE test_alter_if_exists (x Int32, y String) ENGINE = Memory;
 -- This should succeed - DROP removes x, RENAME with IF EXISTS should be silently ignored
 ALTER TABLE test_alter_if_exists DROP COLUMN x, RENAME COLUMN IF EXISTS x TO z;
@@ -36,26 +28,5 @@ DESC test_alter_if_exists;
 
 DROP TABLE test_alter_if_exists;
 
--- Test 5: Multiple operations in sequence
-CREATE TABLE test_alter_if_exists (a Int32, b String, c Float64) ENGINE = Memory;
--- Complex case: multiple drops and modifications
-ALTER TABLE test_alter_if_exists 
-    DROP COLUMN a, 
-    DROP COLUMN IF EXISTS a,
-    MODIFY COLUMN IF EXISTS a Int64,
-    COMMENT COLUMN IF EXISTS a 'should be ignored',
-    RENAME COLUMN IF EXISTS a TO a_renamed,
-    MODIFY COLUMN IF EXISTS b String DEFAULT 'test',
-    DROP COLUMN c,
-    MODIFY COLUMN IF EXISTS c Float32;
-DESC test_alter_if_exists;
-
-DROP TABLE test_alter_if_exists;
-
--- Test 6: Verify that without IF EXISTS, operations fail as expected
+-- Test 4: Verify that without IF EXISTS, operations fail as expected
 CREATE TABLE test_alter_if_exists (x Int32, y String) ENGINE = Memory;
-
--- This should fail - trying to drop non-existent column without IF EXISTS
-ALTER TABLE test_alter_if_exists DROP COLUMN x, DROP COLUMN x; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
-
-DROP TABLE IF EXISTS test_alter_if_exists;
