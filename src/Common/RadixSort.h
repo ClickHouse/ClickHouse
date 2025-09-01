@@ -16,6 +16,8 @@
 #include <base/extended_types.h>
 #include <base/sort.h>
 
+#include <Common/TargetSpecific.h>
+
 /** Radix sort, has the following functionality:
   *
   * Can sort unsigned, signed numbers, and floats.
@@ -222,6 +224,7 @@ private:
     static constexpr size_t PART_BITMASK = HISTOGRAM_SIZE - 1;
     static constexpr size_t KEY_BITS = sizeof(Key) * 8;
     static constexpr size_t NUM_PASSES = (KEY_BITS + (Traits::PART_SIZE_BITS - 1)) / Traits::PART_SIZE_BITS;
+    static constexpr size_t PREFETCH_DISTANCE = std::max(1UL, 64 / sizeof(Element) / 2);
     static constexpr size_t UNROLL_DISTANCE = 512 / (8 * sizeof(Element));
 
     static KeyBits keyToBits(Key x) { return bit_cast<KeyBits>(x); }
@@ -273,8 +276,10 @@ private:
         }
     }
 
-
-    template <bool DIRECT_WRITE_TO_DESTINATION>
+    /// SOFTWARE_PREFETCH is used only on Intel CPUs, where software prefetching is beneficial
+    /// On AMD x86 CPUs and on ARM, it does not help or even slows down
+    /// See more measurements in https://github.com/ClickHouse/ClickHouse/pull/86378
+    template <bool DIRECT_WRITE_TO_DESTINATION, bool SOFTWARE_PREFETCH>
     static NO_INLINE void radixSortLSDInternal(Element * arr, size_t size, bool reverse, Result * destination)
     {
         /// If the array is smaller than 256, then it is better to use another algorithm.
@@ -324,7 +329,8 @@ private:
             size_t unrolled_end = (size / UNROLL_DISTANCE * UNROLL_DISTANCE);
 
             size_t i = 0;
-            if constexpr (UNROLL_DISTANCE >= 2)
+            /// Unrolling allows for vectorized code, but prefetching disables it
+            if constexpr (!SOFTWARE_PREFETCH && UNROLL_DISTANCE >= 2)
             {
                 for (; i < unrolled_end; i += UNROLL_DISTANCE)
                 {
@@ -354,6 +360,17 @@ private:
                 auto element = reader[i];
                 size_t pos = extractPart(pass, element);
 
+                if constexpr (SOFTWARE_PREFETCH)
+                {
+                    /// Note that for prefetch to be effective, the distance must be large enough so that the memory access is ready
+                    /// when we actually need it. This depends on CPU and memory subsystem.
+                    if (i + PREFETCH_DISTANCE < size) [[likely]]
+                    {
+                        size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
+                        __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
+                    }
+                }
+
                 /// Place the element on the next free position.
                 auto & dest = writer[histograms[pass * HISTOGRAM_SIZE + pos]];
                 ++histograms[pass * HISTOGRAM_SIZE + pos];
@@ -377,6 +394,14 @@ private:
                 {
                     auto element = reader[i];
                     size_t pos = extractPart(pass, element);
+                    if constexpr (SOFTWARE_PREFETCH)
+                    {
+                        if (i + PREFETCH_DISTANCE < size) [[likely]]
+                        {
+                            size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
+                            __builtin_prefetch(&writer[size - 1 - histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
+                        }
+                    }
                     writer[size - 1 - (histograms[pass * HISTOGRAM_SIZE + pos])] = Traits::extractResult(element);
                     ++histograms[pass * HISTOGRAM_SIZE + pos];
                 }
@@ -387,6 +412,14 @@ private:
                 {
                     auto element = reader[i];
                     size_t pos = extractPart(pass, element);
+                    if constexpr (SOFTWARE_PREFETCH)
+                    {
+                        if (i + PREFETCH_DISTANCE < size)
+                        {
+                            size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
+                            __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
+                        }
+                    }
                     writer[histograms[pass * HISTOGRAM_SIZE + pos]] = Traits::extractResult(element);
                     ++histograms[pass * HISTOGRAM_SIZE + pos];
                 }
@@ -581,8 +614,14 @@ private:
 
             return;
         }
-
-        radixSortLSDInternal<DIRECT_WRITE_TO_DESTINATION>(arr, size, reverse, destination);
+#if USE_MULTITARGET_CODE
+        if (DB::isArchSupported(DB::TargetArch::GenuineIntel))
+        {
+            radixSortLSDInternal<DIRECT_WRITE_TO_DESTINATION, true>(arr, size, reverse, destination);
+            return;
+        }
+#endif
+        radixSortLSDInternal<DIRECT_WRITE_TO_DESTINATION, false>(arr, size, reverse, destination);
     }
 
 public:
@@ -591,12 +630,26 @@ public:
       */
     static void executeLSD(Element * arr, size_t size)
     {
-        radixSortLSDInternal<false>(arr, size, false, nullptr);
+#if USE_MULTITARGET_CODE
+        if (DB::isArchSupported(DB::TargetArch::GenuineIntel))
+        {
+            radixSortLSDInternal<false, true>(arr, size, false, nullptr);
+            return;
+        }
+#endif
+        radixSortLSDInternal<false, false>(arr, size, false, nullptr);
     }
 
     static void executeLSD(Element * arr, size_t size, bool reverse)
     {
-        radixSortLSDInternal<false>(arr, size, reverse, nullptr);
+#if USE_MULTITARGET_CODE
+        if (DB::isArchSupported(DB::TargetArch::GenuineIntel))
+        {
+            radixSortLSDInternal<false, true>(arr, size, reverse, nullptr);
+            return;
+        }
+#endif
+        radixSortLSDInternal<false, false>(arr, size, reverse, nullptr);
     }
 
     /** This function will start to sort inplace (modify 'arr')
@@ -607,7 +660,14 @@ public:
       */
     static void executeLSD(Element * arr, size_t size, bool reverse, Result * destination)
     {
-        radixSortLSDInternal<true>(arr, size, reverse, destination);
+#if USE_MULTITARGET_CODE
+        if (DB::isArchSupported(DB::TargetArch::GenuineIntel))
+        {
+            radixSortLSDInternal<true, true>(arr, size, reverse, destination);
+            return;
+        }
+#endif
+        radixSortLSDInternal<true, false>(arr, size, reverse, destination);
     }
 
     /** Tries to fast sort elements for common sorting patterns (unstable).
