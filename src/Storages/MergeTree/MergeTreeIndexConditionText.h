@@ -86,6 +86,7 @@ private:
         RPNElement & out);
 
     bool tryPrepareSetGinFilter(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, RPNElement & out);
+    TextSearchMode getTextSearchMode(const RPNElement & element);
 
     const Block & header;
     TokenExtractorPtr token_extractor;

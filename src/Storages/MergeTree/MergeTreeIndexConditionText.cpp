@@ -61,7 +61,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
                 collect_tokens(gin_query_string);
         }
 
-        if (element.function == RPNElement::FUNCTION_SEARCH_ANY || element.function == RPNElement::FUNCTION_OR)
+        if (getTextSearchMode(element) == TextSearchMode::Any)
         {
             global_search_mode = TextSearchMode::Any;
         }
@@ -69,6 +69,24 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
 
     all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
     std::sort(all_search_tokens.begin(), all_search_tokens.end());
+}
+
+TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement & element)
+{
+    if (element.function == RPNElement::FUNCTION_SEARCH_ANY
+        || element.function == RPNElement::FUNCTION_OR
+        || element.function == RPNElement::FUNCTION_IN
+        || element.function == RPNElement::FUNCTION_NOT_IN)
+    {
+        return TextSearchMode::Any;
+    }
+
+    if (element.function == RPNElement::FUNCTION_MATCH)
+    {
+        return element.gin_query_strings_for_set.empty() ? TextSearchMode::All : TextSearchMode::Any;
+    }
+
+    return TextSearchMode::All;
 }
 
 /// Keep in-sync with MergeTreeIndexConditionText::alwaysUnknownOrTrue

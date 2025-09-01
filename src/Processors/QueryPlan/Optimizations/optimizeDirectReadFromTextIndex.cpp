@@ -134,6 +134,9 @@ public:
             if (!hasChildColumnNodeWithTextIndex(node))
                 continue;
 
+            if (actions_dag.getOutputs().empty() || actions_dag.getOutputs().front()->result_name != node.result_name)
+                continue;
+
             auto replaced = tryReplaceFunctionNodeInplace(node);
 
             if (replaced.has_value())

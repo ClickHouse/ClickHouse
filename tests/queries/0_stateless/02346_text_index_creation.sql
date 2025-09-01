@@ -119,37 +119,6 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
-SELECT 'Test segment_digestion_threshold_bytes argument.';
-
-SELECT '-- segment_digestion_threshold_bytes must be an integer.';
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', segment_digestion_threshold_bytes = '1024')
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
-
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', segment_digestion_threshold_bytes = 1024)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-DROP TABLE tab;
-
-SELECT '-- segment_digestion_threshold_bytes can be 0 (zero).';
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'default', segment_digestion_threshold_bytes = 0)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-DROP TABLE tab;
-
 SELECT 'Test bloom_filter_false_positive_rate argument.';
 
 SELECT '-- bloom_filter_false_positive_rate must be a double.';
