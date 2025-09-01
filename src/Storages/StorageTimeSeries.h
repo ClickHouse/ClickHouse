@@ -72,7 +72,7 @@ public:
         bool cleanup,
         ContextPtr local_context) override;
 
-    void drop() override;
+    void drop(ContextPtr) override;
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;

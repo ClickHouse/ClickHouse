@@ -126,7 +126,7 @@ public:
 
     void dropInnerTableIfAny(bool sync, ContextPtr context) override;
 
-    void drop() override;
+    void drop(ContextPtr) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 

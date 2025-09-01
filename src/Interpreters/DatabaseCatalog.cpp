@@ -1124,7 +1124,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         auto full_path = elem.first;
         auto storage_id = elem.second.first;
         auto db_disk = elem.second.second;
-        runner([this, full_path, storage_id, db_disk]() { this->enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path); });
+        runner([this, full_path, storage_id, db_disk]() { this->enqueueDroppedTableCleanup(getContext(), storage_id, nullptr, db_disk, full_path); });
     }
     runner.waitForAllToFinishAndRethrowFirstError();
 }
@@ -1155,12 +1155,13 @@ String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
 }
 
 void DatabaseCatalog::enqueueDroppedTableCleanup(
-    StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay)
+    ContextPtr local_context, StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay)
 {
     assert(table_id.hasUUID());
     assert(!table || table->getStorageID().uuid == table_id.uuid);
     assert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
 
+    current_local_context = local_context;
     /// Table was removed from database. Enqueue removal of its data from disk.
     time_t drop_time;
     if (table)
@@ -1465,7 +1466,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 
     if (table.table)
     {
-        table.table->drop();
+        table.table->drop(current_local_context);
     }
 
     /// Check if we are interested in a particular disk

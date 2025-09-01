@@ -1526,7 +1526,7 @@ void StorageDistributed::shutdown(bool)
     async_insert_blocker.cancelForever();
 }
 
-void StorageDistributed::drop()
+void StorageDistributed::drop(ContextPtr)
 {
     // Some INSERT in-between shutdown() and drop() can call
     // getDirectoryQueue() again, so call shutdown() to clear them, but

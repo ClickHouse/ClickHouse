@@ -224,7 +224,7 @@ public:
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     String getPathForMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(
-        StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay = false);
+        ContextPtr local_context, StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay = false);
     void undropTable(StorageID table_id);
 
     void waitTableFinallyDropped(const UUID & uuid);
@@ -370,6 +370,7 @@ private:
     static constexpr time_t DBMS_DEFAULT_DISK_RELOAD_PERIOD_SEC = 5;
 
     std::atomic<bool> replicated_ddl_queries_enabled = false;
+    ContextPtr current_local_context;
 };
 
 

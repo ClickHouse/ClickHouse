@@ -83,7 +83,7 @@ public:
     void startup() override;
     void shutdown(bool is_drop) override;
 
-    void drop() override;
+    void drop(ContextPtr) override;
 
     Pipe read(
         const Names & column_names,

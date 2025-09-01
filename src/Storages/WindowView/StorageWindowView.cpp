@@ -1740,7 +1740,7 @@ void StorageWindowView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr que
     }
 }
 
-void StorageWindowView::drop()
+void StorageWindowView::drop(ContextPtr)
 {
     /// Must be guaranteed at this point for database engine Atomic that has_inner_table == false,
     /// because otherwise will be a deadlock.

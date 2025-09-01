@@ -70,7 +70,7 @@ public:
         return getNested()->write(query, metadata_snapshot, context, async_insert);
     }
 
-    void drop() override { getNested()->drop(); }
+    void drop(ContextPtr context) override { getNested()->drop(context); }
 
     void truncate(
         const ASTPtr & query,

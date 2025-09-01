@@ -223,7 +223,7 @@ SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMet
 }
 
 
-void StorageMemory::drop()
+void StorageMemory::drop(ContextPtr)
 {
     data.set(std::make_unique<Blocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);

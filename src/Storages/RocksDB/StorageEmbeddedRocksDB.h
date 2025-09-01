@@ -64,7 +64,7 @@ public:
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands &, ContextPtr) override;
-    void drop() override;
+    void drop(ContextPtr) override;
     void alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder &) override;
 
     bool optimize(

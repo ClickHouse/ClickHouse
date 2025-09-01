@@ -889,7 +889,7 @@ bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::E
     return completely_removed;
 }
 
-void StorageKeeperMap::drop()
+void StorageKeeperMap::drop(ContextPtr)
 {
     auto current_table_status = getTableStatus(getContext());
     if (current_table_status == TableStatus::UNKNOWN)

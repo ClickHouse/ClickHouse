@@ -1348,7 +1348,7 @@ void StorageReplicatedMergeTree::dropZookeeperZeroCopyLockPaths(zkutil::ZooKeepe
     }
 }
 
-void StorageReplicatedMergeTree::drop()
+void StorageReplicatedMergeTree::drop(ContextPtr)
 {
     /// There is also the case when user has configured ClickHouse to wrong ZooKeeper cluster
     /// or metadata of staled replica were removed manually,

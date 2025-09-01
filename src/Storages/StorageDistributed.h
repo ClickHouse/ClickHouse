@@ -132,7 +132,7 @@ public:
     void initializeFromDisk();
     void shutdown(bool is_drop) override;
     void flushAndPrepareForShutdown() override;
-    void drop() override;
+    void drop(ContextPtr) override;
 
     bool storesDataOnDisk() const override { return data_volume != nullptr; }
     Strings getDataPaths() const override;

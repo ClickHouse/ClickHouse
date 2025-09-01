@@ -47,6 +47,7 @@ namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool iceberg_drop_delete_data;
 }
 
 namespace ErrorCodes
@@ -507,13 +508,14 @@ void StorageObjectStorage::truncate(
     object_storage->removeObjectsIfExist(objects);
 }
 
-void StorageObjectStorage::drop()
+void StorageObjectStorage::drop(ContextPtr local_context)
 {
     if (catalog)
     {
         const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
         catalog->dropTable(namespace_name, table_name);
     }
+    configuration->drop(local_context);
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(

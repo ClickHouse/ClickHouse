@@ -218,7 +218,7 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
 
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
-    DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, db_disk, table_metadata_path_drop, sync);
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(local_context, table->getStorageID(), table, db_disk, table_metadata_path_drop, sync);
 }
 
 void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,

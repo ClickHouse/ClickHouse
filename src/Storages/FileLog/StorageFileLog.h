@@ -60,7 +60,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    void drop() override;
+    void drop(ContextPtr) override;
 
     const auto & getFormatName() const { return format_name; }
 

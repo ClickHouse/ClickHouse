@@ -79,11 +79,11 @@ public:
             nested->flushAndPrepareForShutdown();
     }
 
-    void drop() override
+    void drop(ContextPtr context) override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
-            nested->drop();
+            nested->drop(context);
     }
 
     void read(
