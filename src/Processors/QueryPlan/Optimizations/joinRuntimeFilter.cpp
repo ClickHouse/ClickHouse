@@ -59,7 +59,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     const auto & join_info = join_step->getJoinInfo();
     const bool can_use_runtime_filter =
         (
-            (join_info.kind == JoinKind::Inner && (join_info.strictness == JoinStrictness::All || join_info.strictness != JoinStrictness::Any)) ||
+            (join_info.kind == JoinKind::Inner && (join_info.strictness == JoinStrictness::All || join_info.strictness == JoinStrictness::Any)) ||
             ((join_info.kind == JoinKind::Left || join_info.kind == JoinKind::Right) && join_info.strictness == JoinStrictness::Semi)
         ) &&
         (join_info.locality == JoinLocality::Unspecified || join_info.locality != JoinLocality::Global) &&
