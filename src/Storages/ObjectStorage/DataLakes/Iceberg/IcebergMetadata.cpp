@@ -106,7 +106,7 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_experimental_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
-extern const SettingsBool iceberg_drop_delete_data;
+extern const SettingsBool iceberg_delete_data_on_drop;
 }
 
 
@@ -921,10 +921,10 @@ SinkToStoragePtr IcebergMetadata::write(
 
 void IcebergMetadata::drop(ContextPtr local_context)
 {
-    if (local_context->getSettingsRef()[Setting::iceberg_drop_delete_data].value)
+    if (local_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
     {
         auto configuration_ptr = configuration.lock();
-        auto files = listFiles(*object_storage, *configuration_ptr, "", "");
+        auto files = listFiles(*object_storage, *configuration_ptr, configuration_ptr->getPathForRead().path, "");
         for (const auto & file : files)
             object_storage->removeObjectIfExists(StoredObject(file));
     }

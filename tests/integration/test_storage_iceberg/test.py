@@ -2922,13 +2922,19 @@ def test_full_drop(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_full_drop_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME_2 = "test_full_drop_" + storage_type + "_" + get_uuid_str()
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x Nullable(Int32))", format_version)
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (123);", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\n'
 
-    instance.query(f"DROP TABLE {TABLE_NAME}", settings={"iceberg_drop_delete_data":1})
+    create_iceberg_table(storage_type, instance, TABLE_NAME_2, started_cluster, "(x Nullable(Int32))", format_version)
+    assert instance.query(f"SELECT * FROM {TABLE_NAME_2} ORDER BY ALL") == ''
+    instance.query(f"INSERT INTO {TABLE_NAME_2} VALUES (777);", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME_2} ORDER BY ALL") == '777\n'
+
+    instance.query(f"DROP TABLE {TABLE_NAME}", settings={"iceberg_delete_data_on_drop":1})
 
     #exception means that there are no files.
     with pytest.raises(Exception):
@@ -2956,6 +2962,7 @@ def test_full_drop(started_cluster, format_version, storage_type):
     )
 
     assert len(files) > 0
+    assert instance.query(f"SELECT * FROM {TABLE_NAME_2} ORDER BY ALL") == '777\n'
 
 @pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
 @pytest.mark.parametrize("partition_type", ["", "identity(x)", "icebergBucket(3, x)"])

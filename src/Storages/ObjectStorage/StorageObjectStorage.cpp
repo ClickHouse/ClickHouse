@@ -47,7 +47,7 @@ namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsBool iceberg_drop_delete_data;
+    extern const SettingsBool iceberg_delete_data_on_drop;
 }
 
 namespace ErrorCodes
