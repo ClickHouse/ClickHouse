@@ -320,7 +320,7 @@ inline bool haveGenuineIntel() noexcept
 
     return (ebx == 0x756e6547 && edx == 0x49656e69 && ecx == 0x6c65746e);
 #else
-    return 0;
+    return false;
 #endif
 }
 
