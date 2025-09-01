@@ -32,10 +32,9 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
         request_body = self.rfile.read(content_length)
 
         # Log the request
-        if self.config.get("verbose", True):
+        if self.config.get("verbose", False):
             self.logger.info(f"PUT request received at: {self.path}")
-            if self.config.get("headers", False):
-                self.logger.info(f"Headers: {self.headers}")
+            self.logger.info(f"Headers: {self.headers}")
             self.logger.info(f"Body: {request_body.decode('utf-8')}")
 
         # Process the request

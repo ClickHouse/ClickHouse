@@ -191,9 +191,12 @@ Possible values:
 - 0 (or 1) — `INSERT SELECT` no parallel execution.
 - Positive integer. Bigger than 1.
 
-Cloud default value: from `2` to `4`, depending on the service size.
+Cloud default value:
+- `1` for nodes with 8 GiB memory
+- `2` for nodes with 16 GiB memory
+- `4` for larger nodes
 
-Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max_threads](#max_threads) setting.
+Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
 Higher values will lead to higher memory usage.
 )", 0) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
@@ -219,6 +222,8 @@ For example, when reading from a table, if it is possible to evaluate expression
 For queries that are completed quickly because of a LIMIT, you can set a lower 'max_threads'. For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
 
 The smaller the `max_threads` value, the less memory is consumed.
+
+Cloud default value: `auto(3)`
 )", 0) \
     DECLARE(Bool, use_concurrency_control, true, R"(
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
@@ -293,7 +298,7 @@ other connections are cancelled. Queries with `max_parallel_replicas > 1` are su
 
 Enabled by default.
 
-Disabled by default on Cloud.
+Cloud default value: `1`
 )", 0) \
     DECLARE(Bool, allow_changing_replica_until_first_data_packet, false, R"(
 If it's enabled, in hedged requests we can start new connection until receiving first data packet even if we have already made some progress
@@ -700,10 +705,10 @@ By default, when inserting data into a `Distributed` table, the ClickHouse serve
 
 Possible values:
 
-- 0 — Data is inserted in background mode.
-- 1 — Data is inserted in synchronous mode.
+- `0` — Data is inserted in background mode.
+- `1` — Data is inserted in synchronous mode.
 
-Cloud default value: `1`.
+Cloud default value: `0`.
 
 **See Also**
 
@@ -800,22 +805,22 @@ Allows to set up waiting for actions to be executed on replicas by [ALTER](../..
 
 Possible values:
 
-- 0 — Do not wait.
-- 1 — Wait for own execution.
-- 2 — Wait for everyone.
+- `0` — Do not wait.
+- `1` — Wait for own execution.
+- `2` — Wait for everyone.
 
-Cloud default value: `0`.
+Cloud default value: `1`.
 
 :::note
 `alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
 :::
 )", 0, replication_alter_partitions_sync) \
     DECLARE(Int64, replication_wait_for_inactive_replica_timeout, 120, R"(
-Specifies how long (in seconds) to wait for inactive replicas to execute [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+Specifies how long (in seconds) to wait for inactive replicas to execute [`ALTER`](../../sql-reference/statements/alter/index.md), [`OPTIMIZE`](../../sql-reference/statements/optimize.md) or [`TRUNCATE`](../../sql-reference/statements/truncate.md) queries.
 
 Possible values:
 
-- 0 — Do not wait.
+- `0` — Do not wait.
 - Negative integer — Wait for unlimited time.
 - Positive integer — The number of seconds to wait.
 )", 0) \
@@ -3581,7 +3586,7 @@ Possible values:
     DECLARE(Bool, cancel_http_readonly_queries_on_client_close, false, R"(
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
 
-Cloud default value: `1`.
+Cloud default value: `0`.
 )", 0) \
     DECLARE(Bool, external_table_functions_use_nulls, true, R"(
 Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md) table functions use Nullable columns.
@@ -3810,7 +3815,7 @@ Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
     DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(
-Restriction on deleting tables in query time. The value 0 means that you can delete all tables without any restrictions.
+Restriction on deleting tables in query time. The value `0` means that you can delete all tables without any restrictions.
 
 Cloud default value: 1 TB.
 
@@ -3819,7 +3824,7 @@ This query setting overwrites its server setting equivalent, see [max_table_size
 :::
 )", 0) \
     DECLARE(UInt64, max_partition_size_to_drop, default_max_size_to_drop, R"(
-Restriction on dropping partitions in query time. The value 0 means that you can drop partitions without any restrictions.
+Restriction on dropping partitions in query time. The value `0` means that you can drop partitions without any restrictions.
 
 Cloud default value: 1 TB.
 
@@ -5268,7 +5273,7 @@ Possible values:
 - `null_status_on_timeout_only_active` — similar to `null_status_on_timeout`, but doesn't wait for inactive replicas of the `Replicated` database
 - `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
-Cloud default value: `none`.
+Cloud default value: `throw`.
 )", 0) \
     DECLARE(UInt64, distributed_ddl_entry_format_version, 5, R"(
 Compatibility version of distributed DDL (ON CLUSTER) queries
@@ -6486,6 +6491,9 @@ Enables throwing an exception if there was an error when analyzing scan predicat
     DECLARE(Bool, delta_lake_enable_engine_predicate, true, R"(
 Enables delta-kernel internal data pruning.
 )", 0) \
+    DECLARE(Bool, allow_experimental_delta_lake_writes, false, R"(
+Enables delta-kernel writes feature.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
@@ -6799,6 +6807,12 @@ File/S3 engines/table function will parse paths with '::' as `<archive> :: <file
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
 )", BETA) \
+    DECLARE(UInt64, max_iceberg_data_file_rows, 100000, R"(
+Max rows of iceberg parquet data file on insert operation.
+)", 0) \
+    DECLARE(UInt64, max_iceberg_data_file_bytes, 1_GiB, R"(
+Max rows of iceberg parquet data file on insert operation.
+)", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
     DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0) \
