@@ -96,7 +96,7 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
 
 
 ManifestFilesPruner::ManifestFilesPruner(
-    const DB::IcebergSchemaProcessor & schema_processor_,
+    const IcebergSchemaProcessor & schema_processor_,
     Int32 current_schema_id_,
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
@@ -124,10 +124,10 @@ ManifestFilesPruner::ManifestFilesPruner(
     if (manifest_file.hasBoundsInfoInManifests() && transformed_dag != nullptr)
     {
         {
-            const auto & bounded_colums = manifest_file.getColumnsIDsWithBounds();
+            const auto & bounded_columns = manifest_file.getColumnsIDsWithBounds();
             for (Int32 used_column_id : used_columns_in_filter)
             {
-                if (!bounded_colums.contains(used_column_id))
+                if (!bounded_columns.contains(used_column_id))
                     continue;
 
                 auto name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);

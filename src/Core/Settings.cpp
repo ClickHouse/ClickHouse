@@ -191,9 +191,12 @@ Possible values:
 - 0 (or 1) — `INSERT SELECT` no parallel execution.
 - Positive integer. Bigger than 1.
 
-Cloud default value: from `2` to `4`, depending on the service size.
+Cloud default value:
+- `1` for nodes with 8 GiB memory
+- `2` for nodes with 16 GiB memory
+- `4` for larger nodes
 
-Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max_threads](#max_threads) setting.
+Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
 Higher values will lead to higher memory usage.
 )", 0) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
@@ -219,6 +222,8 @@ For example, when reading from a table, if it is possible to evaluate expression
 For queries that are completed quickly because of a LIMIT, you can set a lower 'max_threads'. For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
 
 The smaller the `max_threads` value, the less memory is consumed.
+
+Cloud default value: `auto(3)`
 )", 0) \
     DECLARE(Bool, use_concurrency_control, true, R"(
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
@@ -293,7 +298,7 @@ other connections are cancelled. Queries with `max_parallel_replicas > 1` are su
 
 Enabled by default.
 
-Disabled by default on Cloud.
+Cloud default value: `1`
 )", 0) \
     DECLARE(Bool, allow_changing_replica_until_first_data_packet, false, R"(
 If it's enabled, in hedged requests we can start new connection until receiving first data packet even if we have already made some progress
@@ -467,6 +472,11 @@ When set to `true`, all threads executing S3 requests to the same backup endpoin
 after any single s3 request encounters a retryable network error, such as socket timeout.
 When set to `false`, each thread handles S3 request backoff independently of the others.
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, s3_slow_all_threads_after_retryable_error, true, R"(
+When set to `true`, all threads executing S3 requests to the same endpoint are slowed down
+after any single S3 request encounters a retryable S3 error, such as 'Slow Down'.
+When set to `false`, each thread handles s3 request backoff independently of the others.
+)", 0, backup_slow_all_threads_after_retryable_s3_error) \
     DECLARE(UInt64, azure_list_object_keys_size, 1000, R"(
 Maximum number of files that could be returned in batch by ListObject request
 )", 0) \
@@ -695,10 +705,10 @@ By default, when inserting data into a `Distributed` table, the ClickHouse serve
 
 Possible values:
 
-- 0 — Data is inserted in background mode.
-- 1 — Data is inserted in synchronous mode.
+- `0` — Data is inserted in background mode.
+- `1` — Data is inserted in synchronous mode.
 
-Cloud default value: `1`.
+Cloud default value: `0`.
 
 **See Also**
 
@@ -795,22 +805,22 @@ Allows to set up waiting for actions to be executed on replicas by [ALTER](../..
 
 Possible values:
 
-- 0 — Do not wait.
-- 1 — Wait for own execution.
-- 2 — Wait for everyone.
+- `0` — Do not wait.
+- `1` — Wait for own execution.
+- `2` — Wait for everyone.
 
-Cloud default value: `0`.
+Cloud default value: `1`.
 
 :::note
 `alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
 :::
 )", 0, replication_alter_partitions_sync) \
     DECLARE(Int64, replication_wait_for_inactive_replica_timeout, 120, R"(
-Specifies how long (in seconds) to wait for inactive replicas to execute [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+Specifies how long (in seconds) to wait for inactive replicas to execute [`ALTER`](../../sql-reference/statements/alter/index.md), [`OPTIMIZE`](../../sql-reference/statements/optimize.md) or [`TRUNCATE`](../../sql-reference/statements/truncate.md) queries.
 
 Possible values:
 
-- 0 — Do not wait.
+- `0` — Do not wait.
 - Negative integer — Wait for unlimited time.
 - Positive integer — The number of seconds to wait.
 )", 0) \
@@ -1389,7 +1399,7 @@ Possible values:
 - Any positive integer.
 )", 0) \
 DECLARE(Bool, merge_tree_use_deserialization_prefixes_cache, true, R"(
-Enables caching of columns metadata from the file prefixes during reading from Wide parts in MergeTree.
+Enables caching of columns metadata from the file prefixes during reading from remote disks in MergeTree.
 )", 0) \
 DECLARE(Bool, merge_tree_use_prefixes_deserialization_thread_pool, true, R"(
 Enables usage of the thread pool for parallel prefixes reading in Wide parts in MergeTree. Size of that thread pool is controlled by server setting `max_prefixes_deserialization_thread_pool_size`.
@@ -1489,6 +1499,16 @@ Possible values:
 Controls whether granules returned by a skipping index are expanded in newer parts to return correct results when executing a query with the FINAL modifier.
 
 Using skip indexes may exclude rows (granules) containing the latest data which could lead to incorrect results. This setting can ensure that correct results are returned by scanning newer parts that have overlap with the ranges returned by the skip index. This setting should be disabled only if approximate results based on looking up the skip index are okay for an application.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(Bool, use_skip_indexes_on_data_read, true, R"(
+Enable using data skipping indexes during data reading.
+
+When enabled, skip indexes are evaluated dynamically at the time each data granule is being read, rather than being analyzed in advance before query execution begins. This can reduce query startup latency.
 
 Possible values:
 
@@ -3338,11 +3358,6 @@ Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means
     DECLARE(Float, backup_restore_s3_retry_jitter_factor, .1f, R"(
     Jitter factor applied to the retry backoff delay in Aws::Client::RetryStrategy during backup and restore operations. The computed backoff delay is multiplied by a random factor in the range [1.0, 1.0 + jitter], up to the maximum `backup_restore_s3_retry_max_backoff_ms`. Must be in [0.0, 1.0] interval
 )", 0) \
-    DECLARE(Bool, backup_slow_all_threads_after_retryable_s3_error, true, R"(
-When set to `true`, all threads executing S3 requests to the same backup endpoint are slowed down
-after any single S3 request encounters a retryable S3 error, such as 'Slow Down'.
-When set to `false`, each thread handles s3 request backoff independently of the others.
-)", 0) \
     DECLARE(UInt64, max_backup_bandwidth, 0, R"(
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
 )", 0) \
@@ -3571,7 +3586,7 @@ Possible values:
     DECLARE(Bool, cancel_http_readonly_queries_on_client_close, false, R"(
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
 
-Cloud default value: `1`.
+Cloud default value: `0`.
 )", 0) \
     DECLARE(Bool, external_table_functions_use_nulls, true, R"(
 Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md) table functions use Nullable columns.
@@ -3800,7 +3815,7 @@ Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
     DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(
-Restriction on deleting tables in query time. The value 0 means that you can delete all tables without any restrictions.
+Restriction on deleting tables in query time. The value `0` means that you can delete all tables without any restrictions.
 
 Cloud default value: 1 TB.
 
@@ -3809,7 +3824,7 @@ This query setting overwrites its server setting equivalent, see [max_table_size
 :::
 )", 0) \
     DECLARE(UInt64, max_partition_size_to_drop, default_max_size_to_drop, R"(
-Restriction on dropping partitions in query time. The value 0 means that you can drop partitions without any restrictions.
+Restriction on dropping partitions in query time. The value `0` means that you can drop partitions without any restrictions.
 
 Cloud default value: 1 TB.
 
@@ -4181,8 +4196,8 @@ These functions can be transformed:
 - [length](/sql-reference/functions/array-functions#length) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
 - [empty](/sql-reference/functions/array-functions#empty) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
 - [notEmpty](/sql-reference/functions/array-functions#notEmpty) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
-- [isNull](/sql-reference/functions/functions-for-nulls#isnull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
-- [isNotNull](/sql-reference/functions/functions-for-nulls#isnotnull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
+- [isNull](/sql-reference/functions/functions-for-nulls#isNull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
+- [isNotNull](/sql-reference/functions/functions-for-nulls#isNotNull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
 - [count](/sql-reference/aggregate-functions/reference/count) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
 - [mapKeys](/sql-reference/functions/tuple-map-functions#mapkeys) to read the [keys](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 - [mapValues](/sql-reference/functions/tuple-map-functions#mapvalues) to read the [values](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
@@ -4838,6 +4853,9 @@ If true, include only column names and types into result of DESCRIBE query
     DECLARE(Bool, apply_mutations_on_fly, false, R"(
 If true, mutations (UPDATEs and DELETEs) which are not materialized in data part will be applied on SELECTs.
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, enable_lightweight_update, true, R"(
+    Allow to use lightweight updates.
+)", BETA, allow_experimental_lightweight_update) \
     DECLARE(Bool, apply_patch_parts, true, R"(
 If true, patch parts (that represent lightweight updates) are applied on SELECTs.
 )", 0) \
@@ -5255,7 +5273,7 @@ Possible values:
 - `null_status_on_timeout_only_active` — similar to `null_status_on_timeout`, but doesn't wait for inactive replicas of the `Replicated` database
 - `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
-Cloud default value: `none`.
+Cloud default value: `throw`.
 )", 0) \
     DECLARE(UInt64, distributed_ddl_entry_format_version, 5, R"(
 Compatibility version of distributed DDL (ON CLUSTER) queries
@@ -5682,7 +5700,8 @@ Timeout for waiting for processing asynchronous insertion
 Maximum size in bytes of unparsed data collected per query before being inserted
 )", 0) \
     DECLARE(UInt64, async_insert_max_query_number, 450, R"(
-Maximum number of insert queries before being inserted
+Maximum number of insert queries before being inserted.
+Only takes effect if setting [`async_insert_deduplicate`](#async_insert_deduplicate) is 1.
 )", 0) \
     DECLARE(Milliseconds, async_insert_poll_timeout_ms, 10, R"(
 Timeout for polling data from asynchronous insert queue
@@ -6472,6 +6491,9 @@ Enables throwing an exception if there was an error when analyzing scan predicat
     DECLARE(Bool, delta_lake_enable_engine_predicate, true, R"(
 Enables delta-kernel internal data pruning.
 )", 0) \
+    DECLARE(Bool, allow_experimental_delta_lake_writes, false, R"(
+Enables delta-kernel writes feature.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
@@ -6605,6 +6627,15 @@ The timeout in milliseconds for connecting to a remote replica during query exec
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
+)", BETA, allow_database_iceberg) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_unity_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
+)", BETA, allow_database_unity_catalog) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_glue_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
+)", BETA, allow_database_glue_catalog) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_analyzer, true, R"(
 Allow new query analyzer.
 )", IMPORTANT, enable_analyzer) \
@@ -6738,16 +6769,6 @@ It is unspecified how this setting affects views and distributed queries.
 The setting accepts a table name (then the table is resolved from the current database) or a qualified name in the form of 'database.table'.
 Both database and table names have to be unquoted - only simple identifiers are allowed.
 )", 0) \
-    \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_variant_type, true, R"(
-Allows creation of [Variant](../../sql-reference/data-types/variant.md) data type.
-)", 0, enable_variant_type) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_dynamic_type, true, R"(
-Allows creation of [Dynamic](../../sql-reference/data-types/dynamic.md) data type.
-)", 0, enable_dynamic_type) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_json_type, true, R"(
-Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
-)", 0, enable_json_type) \
     DECLARE(Bool, allow_general_join_planning, true, R"(
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 )", 0) \
@@ -6786,6 +6807,12 @@ File/S3 engines/table function will parse paths with '::' as `<archive> :: <file
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
 )", BETA) \
+    DECLARE(UInt64, max_iceberg_data_file_rows, 100000, R"(
+Max rows of iceberg parquet data file on insert operation.
+)", 0) \
+    DECLARE(UInt64, max_iceberg_data_file_bytes, 1_GiB, R"(
+Max rows of iceberg parquet data file on insert operation.
+)", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
     DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0) \
@@ -6896,10 +6923,6 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
 If set to true, allow using the experimental text index.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_lightweight_update, false, R"(
-Allow to use lightweight updates.
-)", EXPERIMENTAL) \
-    \
     DECLARE(Bool, allow_experimental_live_view, false, R"(
 Allows creation of a deprecated LIVE VIEW.
 
@@ -6939,15 +6962,6 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
     /** Experimental feature for moving data between shards. */ \
     DECLARE(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_database_unity_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_database_glue_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
@@ -7021,6 +7035,18 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
 Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
 )", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
     \
+    DECLARE(String, promql_database, "", R"(
+Specifies the database name used by the 'promql' dialect. Empty string means the current database.
+)", EXPERIMENTAL) \
+    \
+    DECLARE(String, promql_table, "", R"(
+Specifies the name of a TimeSeries table used by the 'promql' dialect.
+)", EXPERIMENTAL) \
+    \
+    DECLARE(FloatAuto, evaluation_time, Field("auto"), R"(
+Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
+)", EXPERIMENTAL) \
+    \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
@@ -7063,6 +7089,12 @@ Experimental timeSeries* aggregate functions for Prometheus-like timeseries resa
     MAKE_OBSOLETE(M, LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW) \
     MAKE_OBSOLETE(M, Bool, use_local_cache_for_remote_storage, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_join_condition, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_variant_type, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_dynamic_type, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_json_type, true) \
+    MAKE_OBSOLETE(M, Bool, enable_variant_type, true) \
+    MAKE_OBSOLETE(M, Bool, enable_dynamic_type, true) \
+    MAKE_OBSOLETE(M, Bool, enable_json_type, true) \
     \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \

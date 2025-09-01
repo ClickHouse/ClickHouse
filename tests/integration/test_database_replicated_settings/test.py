@@ -176,3 +176,13 @@ def test_database_replicated_settings(
     settings_dict_from_logs = get_settings_from_logs(node, db_name)
     assert setting_dict == settings_dict_from_logs
     node.query(f"DROP DATABASE IF EXISTS {db_name}")
+
+
+def test_database_replicated_settings_zero_logs_to_keep(started_cluster):
+    db_name = "test_" + get_random_string()
+
+    assert "A setting's value has to be greater than 0" in node1.query_and_get_error(
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/test/{db_name}', "
+        + r"'{shard}', '{replica}') "
+        + "SETTINGS logs_to_keep=0"
+    )
