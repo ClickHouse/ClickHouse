@@ -203,6 +203,32 @@ public:
     PerformanceResult & operator=(PerformanceResult && pr) noexcept = default;
 };
 
+class SystemTable
+{
+public:
+    String schema_name, table_name;
+    DB::Strings columns;
+
+    SystemTable()
+        : schema_name("system")
+        , table_name("tables")
+        , columns()
+    {
+    }
+
+    SystemTable(const String & schema_name_, const String & table_name_, const DB::Strings & columns_)
+        : schema_name(schema_name_)
+        , table_name(table_name_)
+        , columns(columns_)
+    {
+    }
+
+    SystemTable(const SystemTable & c) = default;
+    SystemTable(SystemTable && c) = default;
+    SystemTable & operator=(const SystemTable & c) = default;
+    SystemTable & operator=(SystemTable && c) noexcept = default;
+};
+
 class FuzzConfig
 {
 private:
@@ -253,7 +279,7 @@ public:
 
     String getHTTPURL(bool secure) const;
 
-    void loadSystemTables(std::unordered_map<String, DB::Strings> & tables);
+    void loadSystemTables(std::vector<SystemTable> & tables);
 
     bool hasMutations();
 

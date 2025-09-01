@@ -288,9 +288,6 @@ public:
 
 class MinIOIntegration : public ClickHouseIntegration
 {
-private:
-    bool sendRequest(const String & resource);
-
 public:
     explicit MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
         : ClickHouseIntegration(fcc, ssc)

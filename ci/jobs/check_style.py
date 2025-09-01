@@ -443,4 +443,5 @@ if __name__ == "__main__":
     #             command=check_mypy,
     #         )
     #     )
+
     Result.create_from(results=results).complete_job()

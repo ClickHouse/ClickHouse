@@ -46,7 +46,8 @@ void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
         }
 
         integration = IntegrationCall::Dolor; /// Has to use La Casa Del Dolor
-        format = (catalog == LakeCatalog::REST || rg.nextBool()) ? LakeFormat::Iceberg : LakeFormat::DeltaLake;
+        format
+            = (catalog == LakeCatalog::REST || catalog == LakeCatalog::Hive || rg.nextBool()) ? LakeFormat::Iceberg : LakeFormat::DeltaLake;
         storage = LakeStorage::S3; /// What ClickHouse supports now
     }
 }
@@ -119,7 +120,7 @@ String SQLBase::getSparkCatalogName() const
         /// DeltaLake tables on Spark must be on the `spark_catalog` :(
         return isAnyIcebergEngine() ? getTableName(false) : "spark_catalog";
     }
-    return getDatabaseName();
+    return db->getSparkCatalogName();
 }
 
 static const constexpr String PARTITION_STR = "{_partition_id}";
@@ -158,12 +159,11 @@ void SQLBase::setTablePath(RandomGenerator & rg, const bool has_dolor)
 
             /// Set bucket path, Spark has the warehouse concept on the path :(
             next_bucket_path = fmt::format(
-                "{}{}{}{}{}{}t{}/",
+                "{}{}{}{}{}t{}/",
                 base,
                 onSpark ? getSparkCatalogName() : "",
                 onSpark ? "/" : "",
                 onSpark ? "test" : "",
-                (onSpark && isAnyDeltaLakeEngine()) ? ".db" : "",
                 onSpark ? "/" : "",
                 tname);
         }
