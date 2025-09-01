@@ -2979,7 +2979,7 @@ def test_system_iceberg_metadata(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
-        "test_single_iceberg_file_"
+        "test_system_iceberg_metadata_"
         + format_version
         + "_"
         + storage_type

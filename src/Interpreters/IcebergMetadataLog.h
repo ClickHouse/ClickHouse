@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Interpreters/Context.h>
 #include <Interpreters/SystemLog.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
@@ -32,6 +32,8 @@ struct IcebergMetadataLogElement
     void appendToBlock(MutableColumns & columns) const;
 };
 
+void insertRowToLogTable(
+    const ContextPtr & local_context, String row, IcebergMetadataLogLevel row_log_level, const String & file_path, const String & filename);
 class IcebergMetadataLog : public SystemLog<IcebergMetadataLogElement>
 {
     using SystemLog<IcebergMetadataLogElement>::SystemLog;

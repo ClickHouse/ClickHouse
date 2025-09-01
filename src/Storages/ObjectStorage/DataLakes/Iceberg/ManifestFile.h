@@ -75,9 +75,6 @@ struct ManifestFileEntry
     String file_format;
     std::optional<String> reference_data_file_path; // For position delete files only.
     std::optional<std::vector<Int32>> equality_ids;
-    String content;
-    String path_to_manifest_file;
-    String metadata_content;
 };
 
 /**

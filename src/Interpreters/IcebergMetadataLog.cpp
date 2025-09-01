@@ -26,6 +26,17 @@
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsUInt64 iceberg_metadata_log_level;
+}
+
+namespace ErrorCodes
+{
+extern const int CANNOT_CLOCK_GETTIME;
+}
+
+
 ColumnsDescription IcebergMetadataLogElement::getColumnsDescription()
 {
     return ColumnsDescription
@@ -53,5 +64,23 @@ void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_index++]->insert(metadata_content);
 }
 
+void insertRowToLogTable(
+    const ContextPtr & local_context, String row, IcebergMetadataLogLevel row_log_level, const String & file_path, const String & filename)
+{
+    UInt64 set_log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
+    if (set_log_level < static_cast<UInt64>(row_log_level))
+        return;
+    timespec spec{};
+    if (clock_gettime(CLOCK_REALTIME, &spec))
+        throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
 
+    Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(
+        DB::IcebergMetadataLogElement{
+            .current_time = spec.tv_sec,
+            .query_id = local_context->getCurrentQueryId(),
+            .content_type = row_log_level,
+            .path = file_path,
+            .filename = filename,
+            .metadata_content = row});
+}
 }

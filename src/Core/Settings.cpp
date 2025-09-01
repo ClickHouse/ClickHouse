@@ -4889,8 +4889,8 @@ Possible values:
 - 0 - No metadata log.
 - 1 - Just metadata.json files
 - 2 - metadata.json + snapshots
-- 3 - metadata.json + snapshots + manifest entries
-- 4 - metadata.json + snapshots + manifest entries + metadata from avro manifest files
+- 3 - metadata.json + snapshots + metadata from avro manifest files
+- 4 - metadata.json + snapshots + metadata from avro manifest files + manifest entries 
 )", 0) \
     \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(

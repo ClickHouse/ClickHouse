@@ -1,6 +1,5 @@
 #pragma once
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
-#include <base/types.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -110,8 +109,6 @@ private:
     const String compression_method;
     std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
     std::vector<Iceberg::ManifestFileEntry> equality_deletes_files;
-
-    ContextPtr local_context;
 };
 }
 

@@ -285,7 +285,6 @@ IcebergIterator::IcebergIterator(
     , callback(std::move(callback_))
     , format(configuration_.lock()->format)
     , compression_method(configuration_.lock()->compression_method)
-    , local_context(local_context_)
 {
     auto delete_file = deletes_iterator.next();
     while (delete_file.has_value())
