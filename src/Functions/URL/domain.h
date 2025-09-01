@@ -172,7 +172,7 @@ inline std::string_view getURLHost(const char * data, size_t size)
     Pos pos = data;
     Pos end = data + size;
 
-    if (*pos == '/' && *(pos + 1) == '/')
+    if (size >= 2 && *pos == '/' && *(pos + 1) == '/')
     {
         pos += 2;
     }
