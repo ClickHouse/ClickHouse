@@ -71,7 +71,7 @@ public:
 
     MergeTreeReaderSettings & getMergeTreeReaderSettings() { return settings; }
 
-    virtual bool canSkipMark(size_t) { return false; }
+    virtual bool canSkipMark(size_t, size_t) { return false; }
 
     void createEmptyColumns(Columns & columns) const;
 

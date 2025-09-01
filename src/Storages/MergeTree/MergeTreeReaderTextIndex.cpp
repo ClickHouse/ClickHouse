@@ -90,18 +90,20 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         settings);
 }
 
-bool MergeTreeReaderTextIndex::canSkipMark(size_t mark)
+bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last_mark)
 {
     chassert(index_reader);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
 
     size_t index_mark = mark / index.index->index.granularity;
+    size_t index_last_mark = (current_task_last_mark + index.index->index.granularity - 1) / index.index->index.granularity;
 
     if (granules.empty() || index_mark != granules.rbegin()->first)
     {
         auto & granule = granules[index_mark];
         chassert(granule.granule == nullptr);
 
+        index_reader->adjustRightMark(index_last_mark);
         index_reader->read(index_mark, index.condition.get(), granule.granule);
         granule.may_be_true = index.condition->mayBeTrueOnGranule(granule.granule);
         granule.need_read_postings = granule.may_be_true;
@@ -116,7 +118,7 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark)
 
 size_t MergeTreeReaderTextIndex::readRows(
     size_t from_mark,
-    size_t /* current_task_last_mark */,
+    size_t current_task_last_mark,
     bool continue_reading,
     size_t max_rows_to_read,
     size_t rows_offset,
@@ -153,7 +155,12 @@ size_t MergeTreeReaderTextIndex::readRows(
     while (read_rows < max_rows_to_read)
     {
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
-        size_t index_mark = from_mark / index.index->index.granularity;
+
+        size_t granularity = index.index->index.granularity;
+        size_t index_mark = from_mark / granularity;
+        size_t index_last_mark = (current_task_last_mark + granularity - 1) / granularity;
+
+        index_reader->adjustRightMark(index_last_mark);
 
         auto it = granules.find(index_mark);
         if (it == granules.end())

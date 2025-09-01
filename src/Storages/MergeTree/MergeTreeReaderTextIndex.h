@@ -34,7 +34,7 @@ public:
         size_t offset,
         Columns & res_columns) override;
 
-    bool canSkipMark(size_t mark) override;
+    bool canSkipMark(size_t mark, size_t current_task_last_mark) override;
     bool canReadIncompleteGranules() const override { return false; }
 
 private:

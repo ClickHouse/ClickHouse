@@ -974,7 +974,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
                 current_mark = stream.current_mark;
             }
 
-            if (merge_tree_reader->canSkipMark(currentMark()))
+            if (merge_tree_reader->canSkipMark(currentMark(), current_task_last_mark))
             {
                 result.addGranule(0, {0, 0} /* unused when granule has no rows to read */);
                 merge_tree_reader->createEmptyColumns(result.columns);

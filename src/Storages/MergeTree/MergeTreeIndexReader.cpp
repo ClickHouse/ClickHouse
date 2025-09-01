@@ -79,6 +79,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
 
     auto index_format = index->getDeserializedFormat(part->getDataPartStorage(), index->getFileName());
     auto index_name = index->getFileName();
+    auto last_mark = getLastMark(all_mark_ranges);
 
     for (const auto & substream : index_format.substreams)
     {
@@ -94,7 +95,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
             uncompressed_cache,
             std::move(settings));
 
-        stream->adjustRightMark(getLastMark(all_mark_ranges));
+        stream->adjustRightMark(last_mark);
         stream->seekToStart();
 
         streams[substream.type] = stream.get();
@@ -180,6 +181,12 @@ void MergeTreeIndexReader::read(size_t mark, size_t current_granule_num, MergeTr
         stream->seekToMark(mark);
 
     granules->deserializeBinary(current_granule_num, *stream->getDataBuffer(), version);
+}
+
+void MergeTreeIndexReader::adjustRightMark(size_t right_mark)
+{
+    for (const auto & stream : stream_holders)
+        stream->adjustRightMark(right_mark);
 }
 
 }

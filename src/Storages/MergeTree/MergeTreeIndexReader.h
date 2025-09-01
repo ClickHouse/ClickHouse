@@ -29,6 +29,7 @@ public:
 
     void read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule);
     void read(size_t mark, size_t current_granule_num, MergeTreeIndexBulkGranulesPtr & granules);
+    void adjustRightMark(size_t right_mark);
     const StreamMap & getStreams() { return streams; }
 
 private:
