@@ -557,7 +557,6 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             is_simple_count = true;
         else if (params.aggregates[0].function->getName() == "sum" && result_type->getTypeId() == DB::TypeIndex::UInt64)
         {
-            // TODO: handle sparse column.
             if (false) {} // NOLINT
             #define M(TYPE) \
                 else if (result_type->getTypeId() == DB::TypeIndex::TYPE) { \
@@ -565,7 +564,6 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
                 }
             FOR_INLINABLE_UINT_TYPES(M)
             #undef M
-            LOG_INFO(log, "is_simple_sum: {}", is_simple_sum);
         }
     }
 
@@ -581,9 +579,28 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     #define M(NAME) \
         case AggregatedDataVariants::Type::NAME: \
             is_simple_count = false; \
+            is_simple_sum = false; \
             break;
 
         APPLY_FOR_LOW_CARDINALITY_VARIANTS(M)
+    #undef M
+        default:
+            ;
+    }
+
+    // Disable is_simple_sum for cases where we use FixedHashMap. Its implementation has a special
+    // optimization for zero values. This causes to generate incorrect total aggregated size
+    // when a key column is zero values, and its value is also zero. For example,
+    // `SELECT dummy, sum(dummy) GROUP BY dummy` it would returns nothing.
+    switch (method_chosen)
+    {
+    #define M(NAME) \
+        case AggregatedDataVariants::Type::NAME: \
+            is_simple_sum = false; \
+            break;
+
+        M(key8) \
+        M(key16)
     #undef M
         default:
             ;
@@ -2135,9 +2152,9 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
             if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
             {
                 /**
-                    * When one_key_nullable_optimization is enabled, null data will be written to the key column and result column in advance.
-                    * And in insertResultsIntoColumns need to allocate memory for null data.
-                    */
+                 * When one_key_nullable_optimization is enabled, null data will be written to the key column and result column in advance.
+                 * And in insertResultsIntoColumns need to allocate memory for null data.
+                 */
                 if (data.hasNullKeyData())
                 {
                     if (final)

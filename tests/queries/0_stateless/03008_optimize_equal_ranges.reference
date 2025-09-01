@@ -10,7 +10,7 @@
 0	449985000
 1	449985000
 2	449985000
-sum	1	1
-sum	16	1
+sum	1	0
+sum	16	0
 uniqExact	1	1
 uniqExact	16	0
