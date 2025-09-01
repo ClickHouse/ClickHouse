@@ -820,7 +820,10 @@ protected:
                         res_columns[res_index++]->insert(dependents_databases);
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(dependents_tables);
-
+                }
+                else
+                {
+                    src_index += 4;
                 }
 
                 if (columns_mask[src_index++])
