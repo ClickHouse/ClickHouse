@@ -2666,18 +2666,6 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
 
     chassert(predicate->result_type);
 
-    // if (conjunction.rejected.size() == 1)
-    // {
-    //     chassert(conjunction.rejected.front()->result_type);
-
-    //     if (conjunction.allowed.front()->type == ActionType::COLUMN
-    //         && !conjunction.rejected.front()->result_type->equals(*predicate->result_type))
-    //     {
-    //         /// No further optimization can be done
-    //         return {};
-    //     }
-    // }
-
     auto actions = createActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
         return {};
