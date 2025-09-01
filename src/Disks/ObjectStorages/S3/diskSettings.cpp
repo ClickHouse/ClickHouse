@@ -32,6 +32,7 @@ namespace Setting
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
+    extern const SettingsBool s3_slow_all_threads_after_retryable_error;
 }
 
 namespace S3AuthSetting
@@ -53,6 +54,13 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool use_adaptive_timeouts;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool use_insecure_imds_request;
+
+    extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString http_client;
+    extern const S3AuthSettingsString service_account;
+    extern const S3AuthSettingsString metadata_service;
+    extern const S3AuthSettingsString request_token_path;
 }
 
 namespace ErrorCodes
@@ -104,6 +112,10 @@ std::unique_ptr<S3::Client> getClient(
     if (!for_disk_s3 && local_settings.isChanged("s3_slow_all_threads_after_network_error"))
         s3_slow_all_threads_after_network_error = static_cast<int>(local_settings[Setting::s3_slow_all_threads_after_network_error]);
 
+    bool s3_slow_all_threads_after_retryable_error = static_cast<int>(global_settings[Setting::s3_slow_all_threads_after_retryable_error]);
+    if (!for_disk_s3 && local_settings.isChanged("s3_slow_all_threads_after_retryable_error"))
+        s3_slow_all_threads_after_retryable_error = static_cast<int>(local_settings[Setting::s3_slow_all_threads_after_retryable_error]);
+
     bool enable_s3_requests_logging = global_settings[Setting::enable_s3_requests_logging];
     if (!for_disk_s3 && local_settings.isChanged("enable_s3_requests_logging"))
         enable_s3_requests_logging = local_settings[Setting::enable_s3_requests_logging];
@@ -112,8 +124,9 @@ std::unique_ptr<S3::Client> getClient(
         auth_settings[S3AuthSetting::region],
         context->getRemoteHostFilter(),
         s3_max_redirects,
-        s3_retry_attempts,
+        S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = static_cast<unsigned>(s3_retry_attempts)},
         s3_slow_all_threads_after_network_error,
+        s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         for_disk_s3,
         request_settings.get_request_throttler,
@@ -125,6 +138,11 @@ std::unique_ptr<S3::Client> getClient(
     client_configuration.maxConnections = static_cast<uint32_t>(auth_settings[S3AuthSetting::max_connections]);
     client_configuration.http_keep_alive_timeout = auth_settings[S3AuthSetting::http_keep_alive_timeout];
     client_configuration.http_keep_alive_max_requests = auth_settings[S3AuthSetting::http_keep_alive_max_requests];
+
+    client_configuration.http_client = auth_settings[S3AuthSetting::http_client];
+    client_configuration.service_account = auth_settings[S3AuthSetting::service_account];
+    client_configuration.metadata_service = auth_settings[S3AuthSetting::metadata_service];
+    client_configuration.request_token_path = auth_settings[S3AuthSetting::request_token_path];
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.s3_use_adaptive_timeouts = auth_settings[S3AuthSetting::use_adaptive_timeouts];
@@ -151,6 +169,9 @@ std::unique_ptr<S3::Client> getClient(
         auth_settings[S3AuthSetting::use_insecure_imds_request],
         auth_settings[S3AuthSetting::expiration_window_seconds],
         auth_settings[S3AuthSetting::no_sign_request],
+        auth_settings[S3AuthSetting::role_arn],
+        auth_settings[S3AuthSetting::role_session_name],
+        /*sts_endpoint_override=*/""
     };
 
     return S3::ClientFactory::instance().create(

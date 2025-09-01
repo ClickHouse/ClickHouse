@@ -40,12 +40,12 @@ struct StemImpl
         const String & language,
         size_t input_rows_count)
     {
-        sb_stemmer * stemmer = sb_stemmer_new(language.data(), "UTF_8");
+        std::unique_ptr<sb_stemmer, void(*)(sb_stemmer*)> stemmer(
+            sb_stemmer_new(language.c_str(), "UTF_8"),
+            [](sb_stemmer * ptr){ sb_stemmer_delete(ptr); });
 
-        if (stemmer == nullptr)
-        {
+        if (!stemmer)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Language {} is not supported for function stem", language);
-        }
 
         res_data.resize(data.size());
         res_offsets.assign(offsets);
@@ -55,10 +55,10 @@ struct StemImpl
         {
             /// Note that accessing -1th element is valid for PaddedPODArray.
             size_t original_size = offsets[i] - offsets[i - 1];
-            const sb_symbol * result = sb_stemmer_stem(stemmer,
+            const sb_symbol * result = sb_stemmer_stem(stemmer.get(),
                 reinterpret_cast<const uint8_t *>(data.data() + offsets[i - 1]),
-                static_cast<int>(original_size - 1));
-            size_t new_size = sb_stemmer_length(stemmer) + 1;
+                static_cast<int>(original_size));
+            size_t new_size = sb_stemmer_length(stemmer.get());
 
             memcpy(res_data.data() + data_size, result, new_size);
 
@@ -66,7 +66,6 @@ struct StemImpl
             res_offsets[i] = data_size;
         }
         res_data.resize(data_size);
-        sb_stemmer_delete(stemmer);
     }
 };
 

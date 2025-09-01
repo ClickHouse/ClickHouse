@@ -248,9 +248,6 @@ def test_query_after_restore_db_replica(
         node_2, exclusive_database_name
     )
 
-    if need_restart:
-        node_1.restart_clickhouse()
-
     assert (
         zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{exists_table_name}")
         is None
@@ -261,6 +258,9 @@ def test_query_after_restore_db_replica(
     )
 
     node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+
+    if need_restart:
+        node_1.restart_clickhouse()
 
     assert (
         zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{process_table}")
@@ -335,9 +335,6 @@ def test_query_after_restore_db_replica(
         f"{exclusive_database_name}.{changed_table}",
     )
 
-    if need_restart:
-        node_1.restart_clickhouse()
-
     assert (
         zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{exists_table_name}")
         is None
@@ -349,6 +346,9 @@ def test_query_after_restore_db_replica(
 
     node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
     node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+
+    if need_restart:
+        node_1.restart_clickhouse()
 
     if exists_table:
         assert zk.exists(

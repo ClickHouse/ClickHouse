@@ -132,14 +132,18 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     const ObjectStorageQueueTableMetadata & table_metadata_,
     size_t cleanup_interval_min_ms_,
     size_t cleanup_interval_max_ms_,
+    bool use_persistent_processing_nodes_,
+    size_t persistent_processing_nodes_ttl_seconds_,
     size_t keeper_multiread_batch_size_)
     : table_metadata(table_metadata_)
     , storage_type(storage_type_)
     , mode(table_metadata.getMode())
     , zookeeper_path(zookeeper_path_)
+    , keeper_multiread_batch_size(keeper_multiread_batch_size_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
-    , keeper_multiread_batch_size(keeper_multiread_batch_size_)
+    , use_persistent_processing_nodes(use_persistent_processing_nodes_)
+    , persistent_processing_node_ttl_seconds(persistent_processing_nodes_ttl_seconds_)
     , buckets_num(table_metadata_.getBucketsNum())
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
@@ -208,6 +212,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 buckets_num,
                 table_metadata.loading_retries,
                 *metadata_ref_count,
+                use_persistent_processing_nodes,
                 log);
         case ObjectStorageQueueMode::UNORDERED:
             return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
@@ -216,6 +221,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 file_status,
                 table_metadata.loading_retries,
                 *metadata_ref_count,
+                use_persistent_processing_nodes,
                 log);
     }
 }
@@ -473,6 +479,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 buckets_num,
                 table_metadata.loading_retries,
                 noop,
+                /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.
                 log).prepareProcessedAtStartRequests(requests, zookeeper);
         }
 
@@ -559,14 +566,6 @@ namespace
     };
 }
 
-void ObjectStorageQueueMetadata::registerIfNot(const StorageID & storage_id, bool active)
-{
-    if (active)
-        registerActive(storage_id);
-    else
-        registerNonActive(storage_id);
-}
-
 void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
 {
     const auto id = getProcessorID(storage_id);
@@ -586,14 +585,15 @@ void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
     LOG_TRACE(log, "Added {} to active registry ({})", self.table_id, id);
 }
 
-void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
+void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id, bool & created_new_metadata)
 {
     const auto registry_path = zookeeper_path / "registry";
     const auto self = Info::create(storage_id);
     const auto drop_lock_path = zookeeper_path / "drop";
 
     Coordination::Error code;
-    for (size_t i = 0; i < 1000; ++i)
+    const size_t max_tries = 1000;
+    for (size_t i = 0; i < max_tries; ++i)
     {
         Coordination::Stat stat;
         std::string registry_str;
@@ -605,6 +605,8 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
 
         if (zk_client->tryGet(registry_path, registry_str, &stat))
         {
+            created_new_metadata = false;
+
             Strings registered;
             splitInto<','>(registered, registry_str);
 
@@ -626,6 +628,8 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
         }
         else
         {
+            created_new_metadata = true;
+
             requests.push_back(zkutil::makeCreateRequest(
                 registry_path,
                 self.serialize(),
@@ -642,12 +646,15 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
             return;
         }
 
-        if (code == Coordination::Error::ZBADVERSION
+        if ((code == Coordination::Error::ZBADVERSION
             || code == Coordination::Error::ZNODEEXISTS
-            || code == Coordination::Error::ZSESSIONEXPIRED)
+            || code == Coordination::Error::ZNONODE
+            || code == Coordination::Error::ZSESSIONEXPIRED) && (i < max_tries - 1))
+        {
             continue;
+        }
 
-        throw zkutil::KeeperException(code);
+        zkutil::KeeperMultiException::check(code, requests, responses);
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot register in keeper. Last error: {}", code);
 }
@@ -672,42 +679,34 @@ Strings ObjectStorageQueueMetadata::getRegistered(bool active)
     return registered;
 }
 
-size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id, bool active, bool remove_metadata_if_no_registered)
-{
-    if (active)
-        return unregisterActive(storage_id);
-    else
-        return unregisterNonActive(storage_id, remove_metadata_if_no_registered);
-}
-
-size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
+void ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
 {
     const auto zk_client = getZooKeeper();
     const auto registry_path = zookeeper_path / "registry";
     const auto table_path = registry_path / getProcessorID(storage_id);
 
     auto code = zk_client->tryRemove(table_path);
-    const size_t remaining_nodes_num = zk_client->getChildren(registry_path).size();
 
-    const auto self = Info::create(storage_id);
     if (code == Coordination::Error::ZOK)
     {
-        LOG_TRACE(log, "Table '{}' has been removed from the active registry (remaining nodes: {})", self.table_id, remaining_nodes_num);
+        LOG_TRACE(
+            log, "Table '{}' has been removed from the active registry "
+            "(table path: {})",
+            storage_id.getNameForLogs(), table_path);
     }
     else
     {
         LOG_DEBUG(
             log,
-            "Cannot remove table '{}' from the active registry, reason: {} (remaining nodes: {})",
-            self.table_id,
+            "Cannot remove table '{}' from the active registry, reason: {} "
+            "(table path: {})",
+            storage_id.getNameForLogs(),
             Coordination::errorMessage(code),
-            remaining_nodes_num);
+            table_path);
     }
-
-    return remaining_nodes_num;
 }
 
-size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered)
+void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered)
 {
     const auto registry_path = zookeeper_path / "registry";
     const auto drop_lock_path = zookeeper_path / "drop";
@@ -736,7 +735,7 @@ size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage
             {
                 LOG_WARNING(log, "Cannot unregister: registry does not exist");
                 chassert(false);
-                return 0;
+                return;
             }
 
             Strings registered;
@@ -760,8 +759,11 @@ size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage
                     count += 1;
                 }
             }
+
             if (!found)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: table '{}' is not registered", self.table_id);
+
+            LOG_TRACE(log, "Registered count: {}, remove metadata: {}", count, remove_metadata_if_no_registered);
 
             if (remove_metadata_if_no_registered && count == 0)
             {
@@ -835,7 +837,7 @@ size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage
                     throw;
                 }
             }
-            return count;
+            return;
         }
 
         if (Coordination::isHardwareError(code)
@@ -1036,6 +1038,8 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         return;
     }
     /// TODO because of this lock we might not update local file statuses on time on one of the nodes.
+
+    cleanupPersistentProcessingNodes(zk_client);
 
     const fs::path zookeeper_processed_path = zookeeper_path / "processed";
     const fs::path zookeeper_failed_path = zookeeper_path / "failed";
@@ -1253,6 +1257,101 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         remove_nodes(/*node_limit=*/false);
 
     LOG_TRACE(log, "Node limits check finished");
+}
+
+void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
+{
+    for (const auto & change : changes)
+    {
+        if (change.name == "cleanup_interval_min_ms")
+            cleanup_interval_min_ms = change.value.safeGet<UInt64>();
+        if (change.name == "cleanup_interval_max_ms")
+            cleanup_interval_max_ms = change.value.safeGet<UInt64>();
+        if (change.name == "use_persistent_processing_nodes")
+            use_persistent_processing_nodes = change.value.safeGet<bool>();
+        if (change.name == "persistent_processing_node_ttl_seconds")
+            persistent_processing_node_ttl_seconds = change.value.safeGet<UInt64>();
+    }
+}
+
+void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(zkutil::ZooKeeperPtr zk_client)
+{
+    const fs::path zookeeper_persistent_processing_path = zookeeper_path
+        / ObjectStorageQueueIFileMetadata::getProcessingNodesPath(true);
+
+    Strings persistent_processing_nodes;
+    auto code = zk_client->tryGetChildren(zookeeper_persistent_processing_path, persistent_processing_nodes);
+    if (code != Coordination::Error::ZOK)
+    {
+        if (code == Coordination::Error::ZNONODE)
+        {
+            LOG_TEST(log, "Path {} does not exist", zookeeper_persistent_processing_path.string());
+            return;
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(code));
+    }
+
+    auto current_time = getCurrentTime();
+    Strings nodes_to_remove;
+    Strings get_batch;
+    auto get_paths = [&]
+    {
+        auto response = zk_client->tryGet(get_batch);
+
+        for (size_t i = 0; i < response.size(); ++i)
+        {
+            if (response[i].error == Coordination::Error::ZNONODE)
+            {
+                LOG_ERROR(log, "Failed to fetch node metadata {}", get_batch[i]);
+                continue;
+            }
+
+            LOG_TEST(
+                log, "Node: {}, mtime: {}, ttl sec: {}, current time: {}",
+                get_batch[i], response[i].stat.mtime, persistent_processing_node_ttl_seconds.load(), current_time);
+
+            if (response[i].stat.mtime / 1000 + persistent_processing_node_ttl_seconds < current_time)
+                nodes_to_remove.push_back(get_batch[i]);
+        }
+        get_batch.clear();
+    };
+
+    for (const auto & node : persistent_processing_nodes)
+    {
+        get_batch.push_back(zookeeper_persistent_processing_path / node);
+        try
+        {
+            if (get_batch.size() == keeper_multiread_batch_size)
+                get_paths();
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            if (!Coordination::isHardwareError(e.code))
+            {
+                LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
+                chassert(false);
+            }
+
+            /// Will retry with a new zk connection.
+            throw;
+        }
+    }
+    if (!get_batch.empty())
+        get_paths();
+
+    if (nodes_to_remove.empty())
+    {
+        if (!persistent_processing_nodes.empty())
+            LOG_TRACE(log, "No persistent processing nodes to remove, "
+                     "total persistent processing nodes: {}", persistent_processing_nodes.size());
+        return;
+    }
+
+    for (const auto & node : nodes_to_remove)
+        zk_client->remove(node);
+
+    LOG_DEBUG(log, "Removed {} persistent processing nodes", nodes_to_remove.size());
 }
 
 }
