@@ -14,10 +14,6 @@ The key length depends on the encryption mode: `16`, `24`, and `32` bytes long f
 
 The initialization vector length is always 16 bytes (bytes in excess of 16 are ignored).
 
-:::note Improved performance from v21.1
-These functions work slowly until ClickHouse version 21.1
-:::
-
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.
