@@ -127,7 +127,8 @@ public:
 
         for (ActionsDAG::Node & node : actions_dag.nodes)
         {
-            if (!isReplaceableFunction(node))
+            auto text_search_mode = getTextSearchMode(node);
+            if (!text_search_mode.has_value())
                 continue;
 
             if (!hasChildColumnNodeWithTextIndex(node))
@@ -140,6 +141,7 @@ public:
                 const auto & [index_name, column_name] = replaced.value();
 
                 auto & index_task = index_read_tasks[index_name];
+                index_task.search_modes.push_back(text_search_mode.value());
                 index_task.columns.emplace_back(column_name, node.result_type);
 
                 PrewhereExprStep step
@@ -173,16 +175,23 @@ private:
     ActionsDAG & actions_dag;
     const std::unordered_map<String, IndexInfo> & columns_to_index_info;
 
-    static bool isReplaceableFunction(const ActionsDAG::Node & node)
+    static std::optional<TextSearchMode> getTextSearchMode(const ActionsDAG::Node & node)
     {
         if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
-            return false;
+            return std::nullopt;
 
         if (node.function == nullptr)
-            return false;
+            return std::nullopt;
 
         const auto & function_name = node.function->getName();
-        return function_name == "hasToken" || function_name == "searchAny" || function_name == "searchAll";
+
+        if (function_name == "searchAny")
+            return TextSearchMode::Any;
+
+        if (function_name == "hasToken" || function_name == "searchAll")
+            return TextSearchMode::All;
+
+        return std::nullopt;
     }
 
     bool isColumnNodeWithTextIndex(const ActionsDAG::Node * node) const
@@ -206,7 +215,7 @@ private:
     /// Returns the number of columns (inputs) replaced with an index name in the new function.
     std::optional<std::pair<String, String>> tryReplaceFunctionNodeInplace(ActionsDAG::Node & function_node)
     {
-        chassert(isReplaceableFunction(function_node));
+        chassert(getTextSearchMode(function_node).has_value());
 
         size_t num_text_columns = 0;
         size_t text_column_position = 0;

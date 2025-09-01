@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Interpreters/GinQueryString.h>
 
 namespace DB
 {
@@ -59,6 +60,7 @@ enum class MergeTreeReadType : uint8_t
 struct IndexReadTask
 {
     NamesAndTypesList columns;
+    std::vector<TextSearchMode> search_modes;
     PrewhereExprStepPtr prewhere_step;
 };
 

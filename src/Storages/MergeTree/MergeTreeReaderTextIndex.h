@@ -8,8 +8,7 @@
 namespace DB
 {
 
-struct MergeTreeIndexReadResult;
-using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
+using PostingsMap = absl::flat_hash_map<StringRef, ColumnPtr>;
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
 
 class MergeTreeReaderTextIndex : public IMergeTreeReader
@@ -17,7 +16,15 @@ class MergeTreeReaderTextIndex : public IMergeTreeReader
 public:
     using MatchingMarks = std::vector<bool>;
 
-    MergeTreeReaderTextIndex(const IMergeTreeReader * main_reader_, NamesAndTypesList columns_, MergeTreeIndexWithCondition index_);
+    MergeTreeReaderTextIndex(
+        const IMergeTreeReader * main_reader_,
+        MergeTreeIndexWithCondition index_);
+
+    MergeTreeReaderTextIndex(
+        const IMergeTreeReader * main_reader_,
+        NamesAndTypesList columns_,
+        std::vector<TextSearchMode> search_modes_,
+        MergeTreeIndexWithCondition index_);
 
     size_t readRows(
         size_t from_mark,
@@ -34,7 +41,7 @@ private:
     struct Granule
     {
         MergeTreeIndexGranulePtr granule;
-        absl::flat_hash_map<StringRef, ColumnPtr> postings;
+        PostingsMap postings;
         bool may_be_true = true;
         bool need_read_postings = true;
     };
@@ -45,11 +52,10 @@ private:
 
     /// Delegates to the main reader to determine if reading incomplete index granules is supported.
     const IMergeTreeReader * main_reader;
-
+    std::vector<TextSearchMode> search_modes;
     MergeTreeIndexWithCondition index;
 
     MarkRanges index_ranges;
-
     std::optional<MergeTreeIndexReader> index_reader;
 
     /// Current row position used when continuing reads across multiple calls.

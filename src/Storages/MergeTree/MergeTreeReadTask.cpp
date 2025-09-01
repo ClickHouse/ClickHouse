@@ -226,11 +226,15 @@ void MergeTreeReadTask::initializeIndexReaders(
     if (index_build_context.heavy_indexes.empty())
         return;
 
-    auto create_reader = [&](const auto & index, const auto & columns)
+    auto create_reader = [&](const auto & index)
     {
         if (const auto * text_index = typeid_cast<const MergeTreeIndexText *>(index.index.get()))
         {
-            return std::make_unique<MergeTreeReaderTextIndex>(readers.main.get(), columns, index);
+            auto it = info->index_read_tasks.find(index.index->index.name);
+            if (it == info->index_read_tasks.end())
+                return std::make_unique<MergeTreeReaderTextIndex>(readers.main.get(), index);
+
+            return std::make_unique<MergeTreeReaderTextIndex>(readers.main.get(), it->second.columns, it->second.search_modes, index);
         }
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type {} doesn't support unprepared reading", index.index->index.type);
@@ -251,14 +255,7 @@ void MergeTreeReadTask::initializeIndexReaders(
         std::vector<MergeTreeReaderPtr> new_prewhere_readers;
 
         for (const auto & index : index_build_context.heavy_indexes)
-        {
-            auto it = info->index_read_tasks.find(index.index->index.name);
-
-            if (it != info->index_read_tasks.end())
-                new_prewhere_readers.push_back(create_reader(index, it->second.columns));
-            else
-                new_prewhere_readers.push_back(create_reader(index, NamesAndTypesList{}));
-        }
+            new_prewhere_readers.push_back(create_reader(index));
 
         readers.added_index_readers = true;
         std::move(readers.prewhere.begin(), readers.prewhere.end(), std::back_inserter(new_prewhere_readers));

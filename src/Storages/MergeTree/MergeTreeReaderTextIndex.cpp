@@ -23,7 +23,18 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(const IMergeTreeReader * main_reader_, NamesAndTypesList columns_, MergeTreeIndexWithCondition index_)
+MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
+    const IMergeTreeReader * main_reader_,
+    MergeTreeIndexWithCondition index_)
+    : MergeTreeReaderTextIndex(main_reader_, {}, {}, std::move(index_))
+{
+}
+
+MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
+    const IMergeTreeReader * main_reader_,
+    NamesAndTypesList columns_,
+    std::vector<TextSearchMode> search_modes_,
+    MergeTreeIndexWithCondition index_)
     : IMergeTreeReader(
         main_reader_->data_part_info_for_read,
         /*columns=*/ columns_,
@@ -34,8 +45,11 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(const IMergeTreeReader * main
         main_reader_->all_mark_ranges,
         main_reader_->settings)
     , main_reader(main_reader_)
+    , search_modes(std::move(search_modes_))
     , index(std::move(index_))
 {
+    chassert(search_modes.size() == columns_.size());
+
     for (const auto & column : columns_)
     {
         if (!column.name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX) || !WhichDataType(column.type).isUInt8())
@@ -162,10 +176,10 @@ size_t MergeTreeReaderTextIndex::readRows(
         {
             readPostingsIfNeeded(granule);
 
-            for (const auto & column : res_columns)
+            for (size_t i = 0; i < res_columns.size(); ++i)
             {
-                auto & column_mutable = column->assumeMutableRef();
-                fillColumn(column_mutable, granule, TextSearchMode::Any, granule_offset, rows_to_read);
+                auto & column_mutable = res_columns[i]->assumeMutableRef();
+                fillColumn(column_mutable, granule, search_modes[i], granule_offset, rows_to_read);
             }
         }
 
@@ -216,30 +230,64 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
     granule.need_read_postings = false;
 }
 
-template <TextSearchMode search_mode>
-void applyPostings(
+void applyPostingsAny(
     IColumn & column,
-    const IColumn & postings_column,
+    const PostingsMap & postings_map,
     size_t column_offset,
     size_t granule_offset,
     size_t num_rows)
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
-    const auto & postings_data = assert_cast<const ColumnUInt32 &>(postings_column).getData();
-    const auto * begin = std::lower_bound(postings_data.begin(), postings_data.end(), granule_offset);
 
-    for (const auto * it = begin; it != postings_data.end(); ++it)
+    for (const auto & [_, postings_column] : postings_map)
     {
-        size_t relative_row_number = *it - granule_offset;
+        const auto & postings_data = assert_cast<const ColumnUInt32 &>(*postings_column).getData();
+        const auto * begin = std::lower_bound(postings_data.begin(), postings_data.end(), granule_offset);
 
-        if (relative_row_number >= num_rows)
-            break;
+        for (const auto * it = begin; it != postings_data.end(); ++it)
+        {
+            size_t relative_row_number = *it - granule_offset;
 
-        if constexpr (search_mode == TextSearchMode::Any)
+            if (relative_row_number >= num_rows)
+                break;
+
             column_data[column_offset + relative_row_number] = 1;
-        else
-            column_data[column_offset + relative_row_number] &= 1;
+        }
     }
+}
+
+void applyPostingsAll(
+    IColumn & column,
+    const PostingsMap & postings_map,
+    size_t column_offset,
+    size_t granule_offset,
+    size_t num_rows)
+{
+    if (postings_map.size() > std::numeric_limits<UInt16>::max())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many tokens ({}) for All search mode", postings_map.size());
+
+    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    PaddedPODArray<UInt16> counters(num_rows, 0);
+
+    for (const auto & [_, postings_column] : postings_map)
+    {
+        const auto & postings_data = assert_cast<const ColumnUInt32 &>(*postings_column).getData();
+        const auto * begin = std::lower_bound(postings_data.begin(), postings_data.end(), granule_offset);
+
+        for (const auto * it = begin; it != postings_data.end(); ++it)
+        {
+            size_t relative_row_number = *it - granule_offset;
+
+            if (relative_row_number >= num_rows)
+                break;
+
+            ++counters[relative_row_number];
+        }
+    }
+
+    size_t total_tokens = postings_map.size();
+    for (size_t i = 0; i < num_rows; ++i)
+        column_data[column_offset + i] = static_cast<UInt8>(counters[i] == total_tokens);
 }
 
 void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const Granule & granule, TextSearchMode search_mode, size_t granule_offset, size_t num_rows)
@@ -251,20 +299,12 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const Granule & gran
     if (granule.postings.empty())
         return;
 
-    auto it = granule.postings.begin();
-    applyPostings<TextSearchMode::Any>(column, *it->second, old_size, granule_offset, num_rows);
-    ++it;
-
-    if (search_mode == TextSearchMode::All)
-    {
-        for (; it != granule.postings.end(); ++it)
-            applyPostings<TextSearchMode::All>(column, *it->second, old_size, granule_offset, num_rows);
-    }
+    if (search_mode == TextSearchMode::Any || granule.postings.size() == 1)
+        applyPostingsAny(column, granule.postings, old_size, granule_offset, num_rows);
+    else if (search_mode == TextSearchMode::All)
+        applyPostingsAll(column, granule.postings, old_size, granule_offset, num_rows);
     else
-    {
-        for (; it != granule.postings.end(); ++it)
-            applyPostings<TextSearchMode::Any>(column, *it->second, old_size, granule_offset, num_rows);
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_mode);
 }
 
 }
