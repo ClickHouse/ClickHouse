@@ -1266,6 +1266,17 @@ See also:
 Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
 :::
 )", 0) \
+    DECLARE(Bool, optimize_sharding_key_global_in, true, R"(
+For filters such as `sharding_key GLOBAL IN (...)` rewrites the shard queries by applying the shard filter to the result of the GLOBAL IN subquery (requires [`optimize_skip_unused_shards`](#optimize_skip_unused_shards) to be enabled).
+
+This optimization is supported only when the left-hand side of GLOBAL IN expression is a column that is used in the sharding key expression and the sharding key is based on a single column.
+For example, for a distributed table created with `ENGINE = Distributed(<cluster>, <db>, <table>, xxHash64(field))`, the only supported query pattern is `WHERE field GLOBAL IN (...)`.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(UInt64, optimize_skip_unused_shards_limit, 1000, R"(
 Limit for number of sharding key values, turns off `optimize_skip_unused_shards` if the limit is reached.
 

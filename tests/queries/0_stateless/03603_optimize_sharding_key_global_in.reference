@@ -1,0 +1,55 @@
+-- Simple shard key
+
+1	val-1
+500	val-500
+
+0
+
+0	val-0
+0	val-0
+499	val-499
+499	val-499
+
+-- Hash shard key
+
+1	val-1
+500	val-500
+
+0	val-0
+0	val-0
+499	val-499
+499	val-499
+
+-- Complex shard key
+
+1	val-1
+500	val-500
+
+0	val-0
+0	val-0
+499	val-499
+499	val-499
+
+-- No shard key
+
+1	val-1
+1	val-1
+500	val-500
+500	val-500
+
+default.`03603_dist_simple`	(SELECT `__table2`.`f` AS `f` FROM `_data_xxx` AS `__table2` WHERE equals(modulo(`__table2`.`f`, 2), 0))
+default.`03603_dist_simple`	(SELECT `__table2`.`f` AS `f` FROM `_data_xxx` AS `__table2` WHERE equals(modulo(`__table2`.`f`, 2), 1))
+default.`03603_dist_simple`	(SELECT `__table2`.`f` AS `f` FROM `_data_xxx` AS `__table2` WHERE equals(modulo(`__table2`.`f`, 2), 0))
+default.`03603_dist_simple`	(SELECT `__table2`.`f` AS `f` FROM `_data_xxx` AS `__table2` WHERE equals(modulo(`__table2`.`f`, 2), 1))
+default.`03603_dist_simple`	(`_data_xxx` AS `__table2`)
+default.`03603_dist_simple`	(`_data_xxx` AS `__table2`)
+default.`03603_dist_hash`	(SELECT `__table2`.`f` AS `f` FROM `_data_xxx` AS `__table2` WHERE equals(modulo(xxHash32(`__table2`.`f`), 2), 0))
+default.`03603_dist_hash`	(SELECT `__table2`.`f` AS `f` FROM `_data_xxx` AS `__table2` WHERE equals(modulo(xxHash32(`__table2`.`f`), 2), 1))
+default.`03603_dist_hash`	(`_data_xxx` AS `__table2`)
+default.`03603_dist_hash`	(`_data_xxx` AS `__table2`)
+default.`03603_dist_complex`	(SELECT `__table2`.`f` AS `f` FROM `_data_xxx` AS `__table2` WHERE equals(modulo(intDiv(xxHash32(`__table2`.`f` + 1), 100), 2), 0))
+default.`03603_dist_complex`	(SELECT `__table2`.`f` AS `f` FROM `_data_xxx` AS `__table2` WHERE equals(modulo(intDiv(xxHash32(`__table2`.`f` + 1), 100), 2), 1))
+default.`03603_dist_complex`	(`_data_xxx` AS `__table2`)
+default.`03603_dist_complex`	(`_data_xxx` AS `__table2`)
+default.`03603_dist_nokey`	(`_data_xxx` AS `__table2`)
+default.`03603_dist_nokey`	(`_data_xxx` AS `__table2`)
