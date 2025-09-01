@@ -2378,6 +2378,29 @@ inline bool isConstNode(const ActionsDAG::Node * n)
     return n->type == ActionsDAG::ActionType::COLUMN && n->column && isColumnConst(*n->column);
 }
 
+inline bool isOrFn(const ActionsDAG::Node * n)
+{
+    return n->type == ActionsDAG::ActionType::FUNCTION
+        && n->function_base
+        && n->function_base->getName() == "or";
+}
+
+bool predicateContainsOr(const ActionsDAG::Node * root)
+{
+    if (!root) return false;
+    std::stack<const ActionsDAG::Node *> st;
+    st.push(root);
+    std::unordered_set<const ActionsDAG::Node *> seen;
+    while (!st.empty())
+    {
+        const auto * n = st.top(); st.pop();
+        if (!seen.insert(n).second) continue;
+        if (isOrFn(n)) return true;
+        for (const auto * ch : n->children) st.push(ch);
+    }
+    return false;
+}
+
 /// Take a node which result is a predicate.
 /// Assuming predicate is a conjunction (probably, trivial).
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
@@ -2982,9 +3005,9 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     }
 
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes, allow_non_deterministic_functions);
-    auto disjunction = getDisjunctionNodes(predicate, allowed_nodes, allow_non_deterministic_functions);
+    const bool has_or = predicateContainsOr(predicate);
 
-    if (conjunction.allowed.empty() && disjunction.allowed.empty())
+    if (!has_or && conjunction.allowed.empty())
         return {};
 
     chassert(predicate->result_type);
@@ -3002,15 +3025,29 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     }
 
     std::optional<ActionsForFilterPushDown> actions;
+    if (has_or)
+    {
+        auto disjunction = getDisjunctionNodes(predicate, allowed_nodes, allow_non_deterministic_functions);
+        if (conjunction.allowed.empty() && disjunction.allowed.empty())
+            return {};
 
-    actions = createActionsForMixed(conjunction.allowed, disjunction.allowed, all_inputs);
+        actions = createActionsForMixed(conjunction.allowed, disjunction.allowed, all_inputs);
+        if (!actions)
+            return {};
 
-    if (!actions)
-        return {};
+        /// We only manipulate rejected conjunctions here,  don't try to rewrite the OR subtree itself
+        if (disjunction.allowed.empty() || !conjunction.rejected.empty())
+            removeUnusedConjunctions(std::move(conjunction.rejected), predicate, removes_filter);
+    }
+    else
+    {
+        /// Pure conjunction path
+        actions = createActionsForConjunction(conjunction.allowed, all_inputs);
+        if (!actions)
+            return {};
 
-    /// Now, when actions are created, update the current DAG.
-    if (disjunction.allowed.empty() || !conjunction.rejected.empty())
         removeUnusedConjunctions(std::move(conjunction.rejected), predicate, removes_filter);
+    }
 
     return actions;
 }
@@ -3168,57 +3205,71 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         return allowed_nodes;
     };
 
+    const bool has_or = predicateContainsOr(predicate);
+
     auto left_stream_allowed_nodes = get_input_nodes(left_stream_available_columns_to_push_down);
     auto right_stream_allowed_nodes = get_input_nodes(right_stream_available_columns_to_push_down);
     auto both_streams_allowed_nodes = get_input_nodes(equivalent_columns_to_push_down);
 
-    // Try to extract OR-of-AND terms from the full predicate.
-    auto maybe_terms = extractTopLevelOrOfAndTerms(predicate);
-
-    NodeRawConstPtrs left_or_projection;   // atoms to OR for the left input
-    NodeRawConstPtrs right_or_projection;  // atoms to OR for the right input
-
-    if (maybe_terms)
+    NodeRawConstPtrs left_or_projection;
+    NodeRawConstPtrs right_or_projection;
+    if (has_or)
     {
-        const auto & terms = *maybe_terms;
-
-        // ----- LEFT SIDE -----
-        bool every_term_has_left = true;
-        std::unordered_set<const Node *> seen_left;
-        for (const auto & atoms : terms)
+        // Try to extract OR-of-AND terms from the full predicate
+        if (auto maybe_terms = extractTopLevelOrOfAndTerms(predicate))
         {
-            bool found = false;
-            for (const auto * a : atoms)
+            const auto & terms = *maybe_terms;
+
+            /// Left side processing
+            bool every_term_has_left = true;
+            std::unordered_set<const Node *> seen_left;
+            for (const auto & atoms : terms)
             {
-                if (left_stream_allowed_nodes.contains(a))
+                bool found = false;
+                for (const auto * a : atoms)
                 {
-                    found = true;
-                    if (seen_left.insert(a).second) left_or_projection.push_back(a);
+                    if (left_stream_allowed_nodes.contains(a))
+                    {
+                        found = true;
+                        if (seen_left.insert(a).second)
+                            left_or_projection.push_back(a);
+                    }
+                }
+
+                if (!found)
+                {
+                    every_term_has_left = false;
+                    break;
                 }
             }
-            if (!found) { every_term_has_left = false; break; }
-        }
-        if (!every_term_has_left)
-            left_or_projection.clear();  // don’t push any OR to the left if some term has no left atom
+            if (!every_term_has_left)
+                left_or_projection.clear();  /// don’t push any OR to the left if some term has no left atom
 
-        // ----- RIGHT SIDE -----
-        bool every_term_has_right = true;
-        std::unordered_set<const Node *> seen_right;
-        for (const auto & atoms : terms)
-        {
-            bool found = false;
-            for (const auto * a : atoms)
+            /// Right side processing
+            bool every_term_has_right = true;
+            std::unordered_set<const Node *> seen_right;
+            for (const auto & atoms : terms)
             {
-                if (right_stream_allowed_nodes.contains(a))
+                bool found = false;
+                for (const auto * a : atoms)
                 {
-                    found = true;
-                    if (seen_right.insert(a).second) right_or_projection.push_back(a);
+                    if (right_stream_allowed_nodes.contains(a))
+                    {
+                        found = true;
+                        if (seen_right.insert(a).second)
+                            right_or_projection.push_back(a);
+                    }
+                }
+
+                if (!found)
+                {
+                    every_term_has_right = false;
+                    break;
                 }
             }
-            if (!found) { every_term_has_right = false; break; }
+            if (!every_term_has_right)
+                right_or_projection.clear();  /// don’t push any OR to the right if some term has no right atom
         }
-        if (!every_term_has_right)
-            right_or_projection.clear();  // don’t push any OR to the right if some term has no right atom
     }
 
     auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes, false);
@@ -3241,22 +3292,27 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
     /// getDisjunctionNodes MUST collect atoms (non-and/or/alias) that appear anywhere under an OR
     /// and classify them using the same bottom-up allowedness rules as conjunctions
-    auto left_stream_push_down_disjunctions = getDisjunctionNodes(predicate, left_stream_allowed_nodes, /*allow_non_deterministic_functions*/ false);
-    auto right_stream_push_down_disjunctions = getDisjunctionNodes(predicate, right_stream_allowed_nodes, /*allow_non_deterministic_functions*/ false);
-    auto both_streams_push_down_disjunctions = getDisjunctionNodes(predicate, both_streams_allowed_nodes, /*allow_non_deterministic_functions*/ false);
-
-    NodeRawConstPtrs left_stream_allowed_disjunctions = std::move(left_stream_push_down_disjunctions.allowed);
-    NodeRawConstPtrs right_stream_allowed_disjunctions = std::move(right_stream_push_down_disjunctions.allowed);
-
-    std::unordered_set<const Node *> left_stream_allowed_disjunctions_set(left_stream_allowed_disjunctions.begin(), left_stream_allowed_disjunctions.end());
-    std::unordered_set<const Node *> right_stream_allowed_disjunctions_set(right_stream_allowed_disjunctions.begin(), right_stream_allowed_disjunctions.end());
-
-    for (const auto * n : both_streams_push_down_disjunctions.allowed)
+    NodeRawConstPtrs left_stream_allowed_disjunctions;
+    NodeRawConstPtrs right_stream_allowed_disjunctions;
+    if (has_or)
     {
-        if (!left_stream_allowed_disjunctions_set.contains(n))
-            left_stream_allowed_disjunctions.push_back(n);
-        if (!right_stream_allowed_disjunctions_set.contains(n))
-            right_stream_allowed_disjunctions.push_back(n);
+        auto left_stream_push_down_disjunctions  = getDisjunctionNodes(predicate, left_stream_allowed_nodes,  /*allow_non_deterministic_functions*/ false);
+        auto right_stream_push_down_disjunctions = getDisjunctionNodes(predicate, right_stream_allowed_nodes, /*allow_non_deterministic_functions*/ false);
+        auto both_streams_push_down_disjunctions = getDisjunctionNodes(predicate, both_streams_allowed_nodes, /*allow_non_deterministic_functions*/ false);
+
+        left_stream_allowed_disjunctions  = std::move(left_stream_push_down_disjunctions.allowed);
+        right_stream_allowed_disjunctions = std::move(right_stream_push_down_disjunctions.allowed);
+
+        std::unordered_set<const Node *> left_stream_allowed_disjunctions_set(left_stream_allowed_disjunctions.begin(), left_stream_allowed_disjunctions.end());
+        std::unordered_set<const Node *> right_stream_allowed_disjunctions_set(right_stream_allowed_disjunctions.begin(), right_stream_allowed_disjunctions.end());
+
+        for (const auto * n : both_streams_push_down_disjunctions.allowed)
+        {
+            if (!left_stream_allowed_disjunctions_set.contains(n))
+                left_stream_allowed_disjunctions.push_back(n);
+            if (!right_stream_allowed_disjunctions_set.contains(n))
+                right_stream_allowed_disjunctions.push_back(n);
+        }
     }
 
     std::unordered_set<const Node *> rejected_conjunctions_set;
@@ -3286,17 +3342,25 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         }
     }
 
-    /// Final per-side filter = AND( AND(conjuncts...), OR(disjunction_atoms...) )
-    /// createActionsForMixed handles empty sides (falls back to conj or disj as needJoinStepLogicaled)
-    auto left_stream_filter_to_push_down  =
-        createActionsForMixed(left_stream_allowed_conjunctions,
-                              left_stream_allowed_disjunctions,
-                              left_stream_header.getColumnsWithTypeAndName());
-
-    auto right_stream_filter_to_push_down =
-        createActionsForMixed(right_stream_allowed_conjunctions,
-                              right_stream_allowed_disjunctions,
-                              right_stream_header.getColumnsWithTypeAndName());
+    /// Build final per-side filters
+    std::optional<ActionsForFilterPushDown> left_stream_filter_to_push_down;
+    std::optional<ActionsForFilterPushDown> right_stream_filter_to_push_down;
+    if (has_or)
+    {
+        left_stream_filter_to_push_down = createActionsForMixed(left_stream_allowed_conjunctions,
+                                                                 left_stream_allowed_disjunctions,
+                                                                 left_stream_header.getColumnsWithTypeAndName());
+        right_stream_filter_to_push_down = createActionsForMixed(right_stream_allowed_conjunctions,
+                                                                 right_stream_allowed_disjunctions,
+                                                                 right_stream_header.getColumnsWithTypeAndName());
+    }
+    else
+    {
+        left_stream_filter_to_push_down = createActionsForConjunction(left_stream_allowed_conjunctions,
+                                                                       left_stream_header.getColumnsWithTypeAndName());
+        right_stream_filter_to_push_down = createActionsForConjunction(right_stream_allowed_conjunctions,
+                                                                       right_stream_header.getColumnsWithTypeAndName());
+    }
 
     auto replace_equivalent_columns_in_filter = [](
         const ActionsDAG & filter,
