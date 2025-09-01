@@ -438,9 +438,6 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
 void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
-    const auto & select_query = getInMemoryMetadataPtr()->getSelectQuery();
-    if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, table_id);
 
     /// Sync flag and the setting make sense for Atomic databases only.
     /// However, with Atomic databases, IStorage::drop() can be called only from a background task in DatabaseCatalog.
