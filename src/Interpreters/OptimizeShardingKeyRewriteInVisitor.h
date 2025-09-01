@@ -28,12 +28,18 @@ struct OptimizeShardingKeyRewriteInMatcher
     {
         /// Expression of sharding_key for the Distributed() table
         const ExpressionActionsPtr & sharding_key_expr;
+        /// AST of sharding key expression of the Distributed() table
+        const ASTPtr & sharding_key_ast;
         /// Name of the column for sharding_expr
         const std::string & sharding_key_column_name;
         /// Info for the current shard (to compare shard_num with calculated)
         const Cluster::ShardInfo & shard_info;
         /// weight -> shard mapping
         const Cluster::SlotToShard & slots;
+        /// If rewriting IN functions allowed
+        const bool allow_rewrite_in;
+        /// If rewriting GLOBAL IN functions allowed
+        const bool allow_rewrite_global_in;
     };
 
     static bool needChildVisit(ASTPtr & /*node*/, const ASTPtr & /*child*/);

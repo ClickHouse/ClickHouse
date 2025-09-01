@@ -1080,6 +1080,7 @@ void StorageDistributed::read(
         local_context,
         modified_query_info,
         sharding_key_expr,
+        sharding_key,
         sharding_key_column_name,
         *distributed_settings,
         shard_filter_generator,
