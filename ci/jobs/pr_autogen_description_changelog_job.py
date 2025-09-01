@@ -12,6 +12,7 @@ if __name__ == "__main__":
     os.environ["CLAUDE_CODE_USE_BEDROCK"] = "1"
     os.environ["AWS_REGION"] = "us-east-1"
     os.environ["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = "4096"
+    os.environ["ANTHROPIC_MODEL"] = "us.anthropic.claude-opus-4-1-20250805-v1:0"
     os.environ["ANTHROPIC_SMALL_FAST_MODEL"] = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
     # https://github.com/anthropics/claude-code/issues/4887
     #os.environ["MAX_THINKING_TOKENS"] = "1024" 
