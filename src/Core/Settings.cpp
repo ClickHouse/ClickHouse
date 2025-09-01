@@ -4869,8 +4869,8 @@ The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELE
 The probability of a fault injection during table creation after creating metadata in ZooKeeper
 )", 0) \
     \
-    DECLARE(Bool, iceberg_drop_delete_data, false, R"(
-Either to delete all iceberg files on drop or not.
+    DECLARE(Bool, iceberg_delete_data_on_drop, false, R"(
+Whether to delete all iceberg files on drop or not.
 )", 0) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
