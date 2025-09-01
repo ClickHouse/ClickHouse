@@ -3,7 +3,6 @@
 #include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
 #include <Common/Logger.h>
-// #include <Core/Block_fwd.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Joins.h>
 #include <Interpreters/ActionsDAG.h>
@@ -63,17 +62,10 @@ FilterResult getFilterResult(const ColumnWithTypeAndName & column)
     if (!column.column)
         return FilterResult::UNKNOWN;
 
-    auto which_constant_type = WhichDataType(column.type);
-    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
+    if (!column.type->canBeUsedInBooleanContext())
         return FilterResult::UNKNOWN;
 
-    Field value;
-    column.column->get(0, value);
-
-    if (value.isNull())
-        return FilterResult::FALSE;
-
-    return value.safeGet<UInt8>() == 0 ? FilterResult::FALSE : FilterResult::TRUE;
+    return column.column->getBool(0) ? FilterResult::TRUE : FilterResult::FALSE;
 }
 
 FilterResult filterResultForMatchedRows(const std::vector<ActionsDAG *> & pre_actions_chain, const ActionsDAG & filter_dag, const String & filter_column_name)
