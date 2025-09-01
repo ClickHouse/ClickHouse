@@ -22,7 +22,6 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypesCache.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/NullsAction.h>
@@ -102,8 +101,10 @@ enum class BinaryTypeIndex : uint8_t
     Nested = 0x2F,
     JSON = 0x30,
     BFloat16 = 0x31,
-    Time = 0x32,
-    Time64 = 0x33,
+    TimeUTC = 0x32,
+    TimeWithTimezone = 0x33,
+    Time64UTC = 0x34,
+    Time64WithTimezone = 0x35,
 };
 
 /// In future we can introduce more arguments in the JSON data type definition.
@@ -178,9 +179,13 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
                 return BinaryTypeIndex::DateTime64WithTimezone;
             return BinaryTypeIndex::DateTime64UTC;
         case TypeIndex::Time:
-            return BinaryTypeIndex::Time;
+            if (assert_cast<const DataTypeTime &>(*type).hasExplicitTimeZone())
+                return BinaryTypeIndex::TimeWithTimezone;
+            return BinaryTypeIndex::TimeUTC;
         case TypeIndex::Time64:
-            return BinaryTypeIndex::Time64;
+            if (assert_cast<const DataTypeTime64 &>(*type).hasExplicitTimeZone())
+                return BinaryTypeIndex::Time64WithTimezone;
+            return BinaryTypeIndex::Time64UTC;
         case TypeIndex::String:
             return BinaryTypeIndex::String;
         case TypeIndex::FixedString:
@@ -204,7 +209,7 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
         case TypeIndex::Tuple:
         {
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
-            if (tuple_type.hasExplicitNames())
+            if (tuple_type.haveExplicitNames())
                 return BinaryTypeIndex::NamedTuple;
             return BinaryTypeIndex::UnnamedTuple;
         }
@@ -370,11 +375,24 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
             writeStringBinary(getDateLUTTimeZone(datetime64_type.getTimeZone()), buf);
             break;
         }
-        case BinaryTypeIndex::Time64:
+        case BinaryTypeIndex::TimeWithTimezone:
+        {
+            const auto & time_type = assert_cast<const DataTypeTime &>(*type);
+            writeStringBinary(time_type.getTimeZone().getTimeZone(), buf);
+            break;
+        }
+        case BinaryTypeIndex::Time64UTC:
         {
             const auto & time64_type = assert_cast<const DataTypeTime64 &>(*type);
             /// Maximum scale for Time64 is 9, so we can write it as 1 byte.
             buf.write(UInt8(time64_type.getScale()));
+            break;
+        }
+        case BinaryTypeIndex::Time64WithTimezone:
+        {
+            const auto & time64_type = assert_cast<const DataTypeTime64 &>(*type);
+            buf.write(UInt8(time64_type.getScale()));
+            writeStringBinary(time64_type.getTimeZone().getTimeZone(), buf);
             break;
         }
         case BinaryTypeIndex::FixedString:
@@ -568,43 +586,43 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
     switch (BinaryTypeIndex(type))
     {
         case BinaryTypeIndex::Nothing:
-            return getDataTypesCache().getType("Nothing");
+            return std::make_shared<DataTypeNothing>();
         case BinaryTypeIndex::UInt8:
-            return getDataTypesCache().getType("UInt8");
+            return std::make_shared<DataTypeUInt8>();
         case BinaryTypeIndex::Bool:
-            return getDataTypesCache().getType("Bool");
+            return DataTypeFactory::instance().get("Bool");
         case BinaryTypeIndex::UInt16:
-            return getDataTypesCache().getType("UInt16");
+            return std::make_shared<DataTypeUInt16>();
         case BinaryTypeIndex::UInt32:
-            return getDataTypesCache().getType("UInt32");
+            return std::make_shared<DataTypeUInt32>();
         case BinaryTypeIndex::UInt64:
-            return getDataTypesCache().getType("UInt64");
+            return std::make_shared<DataTypeUInt64>();
         case BinaryTypeIndex::UInt128:
-            return getDataTypesCache().getType("UInt128");
+            return std::make_shared<DataTypeUInt128>();
         case BinaryTypeIndex::UInt256:
-            return getDataTypesCache().getType("UInt256");
+            return std::make_shared<DataTypeUInt256>();
         case BinaryTypeIndex::Int8:
-            return getDataTypesCache().getType("Int8");
+            return std::make_shared<DataTypeInt8>();
         case BinaryTypeIndex::Int16:
-            return getDataTypesCache().getType("Int16");
+            return std::make_shared<DataTypeInt16>();
         case BinaryTypeIndex::Int32:
-            return getDataTypesCache().getType("Int32");
+            return std::make_shared<DataTypeInt32>();
         case BinaryTypeIndex::Int64:
-            return getDataTypesCache().getType("Int64");
+            return std::make_shared<DataTypeInt64>();
         case BinaryTypeIndex::Int128:
-            return getDataTypesCache().getType("Int128");
+            return std::make_shared<DataTypeInt128>();
         case BinaryTypeIndex::Int256:
-            return getDataTypesCache().getType("Int256");
+            return std::make_shared<DataTypeInt256>();
         case BinaryTypeIndex::BFloat16:
-            return getDataTypesCache().getType("BFloat16");
+            return std::make_shared<DataTypeBFloat16>();
         case BinaryTypeIndex::Float32:
-            return getDataTypesCache().getType("Float32");
+            return std::make_shared<DataTypeFloat32>();
         case BinaryTypeIndex::Float64:
-            return getDataTypesCache().getType("Float64");
+            return std::make_shared<DataTypeFloat64>();
         case BinaryTypeIndex::Date:
-            return getDataTypesCache().getType("Date");
+            return std::make_shared<DataTypeDate>();
         case BinaryTypeIndex::Date32:
-            return getDataTypesCache().getType("Date32");
+            return std::make_shared<DataTypeDate32>();
         case BinaryTypeIndex::DateTimeUTC:
             return std::make_shared<DataTypeDateTime>();
         case BinaryTypeIndex::DateTimeWithTimezone:
@@ -627,16 +645,30 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             readStringBinary(time_zone, buf);
             return std::make_shared<DataTypeDateTime64>(scale, time_zone);
         }
-        case BinaryTypeIndex::Time:
+        case BinaryTypeIndex::TimeUTC:
             return std::make_shared<DataTypeTime>();
-        case BinaryTypeIndex::Time64:
+        case BinaryTypeIndex::TimeWithTimezone:
+        {
+            String time_zone;
+            readStringBinary(time_zone, buf);
+            return std::make_shared<DataTypeTime>(time_zone);
+        }
+        case BinaryTypeIndex::Time64UTC:
         {
             UInt8 scale;
             readBinary(scale, buf);
             return std::make_shared<DataTypeTime64>(scale);
         }
+        case BinaryTypeIndex::Time64WithTimezone:
+        {
+            UInt8 scale;
+            readBinary(scale, buf);
+            String time_zone;
+            readStringBinary(time_zone, buf);
+            return std::make_shared<DataTypeTime64>(scale, time_zone);
+        }
         case BinaryTypeIndex::String:
-            return getDataTypesCache().getType("String");
+            return std::make_shared<DataTypeString>();
         case BinaryTypeIndex::FixedString:
         {
             UInt64 size;
@@ -656,7 +688,7 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
         case BinaryTypeIndex::Decimal256:
             return decodeDecimal<Decimal256>(buf);
         case BinaryTypeIndex::UUID:
-            return getDataTypesCache().getType("UUID");
+            return std::make_shared<DataTypeUUID>();
         case BinaryTypeIndex::Array:
             return std::make_shared<DataTypeArray>(decodeDataType(buf));
         case BinaryTypeIndex::NamedTuple:
@@ -725,9 +757,9 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             return std::make_shared<DataTypeMap>(key_type, value_type);
         }
         case BinaryTypeIndex::IPv4:
-            return getDataTypesCache().getType("IPv4");
+            return std::make_shared<DataTypeIPv4>();
         case BinaryTypeIndex::IPv6:
-            return getDataTypesCache().getType("IPv6");
+            return std::make_shared<DataTypeIPv6>();
         case BinaryTypeIndex::Variant:
         {
             size_t size;

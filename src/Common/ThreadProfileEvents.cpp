@@ -1,10 +1,10 @@
-#include <Common/ThreadProfileEvents.h>
+#include "ThreadProfileEvents.h"
 
 #if defined(OS_LINUX)
 
-#include <Common/NetlinkMetricsProvider.h>
-#include <Common/ProcfsMetricsProvider.h>
-#include <Common/hasLinuxCapability.h>
+#include "NetlinkMetricsProvider.h"
+#include "ProcfsMetricsProvider.h"
+#include "hasLinuxCapability.h"
 
 #include <fstream>
 #include <optional>

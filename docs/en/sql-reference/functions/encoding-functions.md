@@ -1,11 +1,12 @@
 ---
 description: 'Documentation for Encoding Functions'
 sidebar_label: 'Encoding'
+sidebar_position: 65
 slug: /sql-reference/functions/encoding-functions
 title: 'Encoding Functions'
 ---
 
-# Encoding functions
+# Encoding Functions
 
 ## char {#char}
 
@@ -150,7 +151,7 @@ Result:
 Query:
 
 ```sql
-SELECT lower(hex(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))) AS uuid_hex
+SELECT lower(hex(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))) as uuid_hex
 ```
 
 Result:
@@ -297,7 +298,7 @@ Result:
 Query:
 
 ```sql
-SELECT bin(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')) AS bin_uuid
+SELECT bin(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')) as bin_uuid
 ```
 
 Result:
@@ -550,7 +551,7 @@ Query:
 First create the table and insert some data.
 
 ```sql
-CREATE TABLE morton_numbers(
+create table morton_numbers(
     n1 UInt32,
     n2 UInt32,
     n3 UInt16,
@@ -560,7 +561,7 @@ CREATE TABLE morton_numbers(
     n7 UInt8,
     n8 UInt8
 )
-ENGINE=MergeTree()
+Engine=MergeTree()
 ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into morton_numbers (*) values(1,2,3,4,5,6,7,8);
 ```
@@ -674,7 +675,7 @@ First create the table and insert some data.
 
 Query:
 ```sql
-CREATE TABLE morton_numbers(
+create table morton_numbers(
     n1 UInt32,
     n2 UInt32,
     n3 UInt16,
@@ -684,7 +685,7 @@ CREATE TABLE morton_numbers(
     n7 UInt8,
     n8 UInt8
 )
-ENGINE=MergeTree()
+Engine=MergeTree()
 ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into morton_numbers (*) values(1,2,3,4,5,6,7,8);
 ```
@@ -693,7 +694,7 @@ Use column names instead of constants as function arguments to `mortonDecode`
 Query:
 
 ```sql
-SELECT untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) FROM morton_numbers;
+select untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) from morton_numbers;
 ```
 
 Result:
@@ -828,11 +829,11 @@ Query:
 First create the table and insert some data.
 
 ```sql
-CREATE TABLE hilbert_numbers(
+create table hilbert_numbers(
     n1 UInt32,
     n2 UInt32
 )
-ENGINE=MergeTree()
+Engine=MergeTree()
 ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into hilbert_numbers (*) values(1,2);
 ```
@@ -945,11 +946,11 @@ First create the table and insert some data.
 
 Query:
 ```sql
-CREATE TABLE hilbert_numbers(
+create table hilbert_numbers(
     n1 UInt32,
     n2 UInt32
 )
-ENGINE=MergeTree()
+Engine=MergeTree()
 ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into hilbert_numbers (*) values(1,2);
 ```
@@ -958,7 +959,7 @@ Use column names instead of constants as function arguments to `hilbertDecode`
 Query:
 
 ```sql
-SELECT untuple(hilbertDecode(2, hilbertEncode(n1, n2))) FROM hilbert_numbers;
+select untuple(hilbertDecode(2, hilbertEncode(n1, n2))) from hilbert_numbers;
 ```
 
 Result:

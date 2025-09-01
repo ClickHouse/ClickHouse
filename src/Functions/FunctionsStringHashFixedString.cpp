@@ -20,7 +20,6 @@
 #    include <openssl/md4.h>
 #    include <openssl/md5.h>
 #    include <Common/OpenSSLHelpers.h>
-#    include <Common/Crypto/OpenSSLInitializer.h>
 #endif
 
 #if USE_SHA3IUF
@@ -43,7 +42,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int OPENSSL_ERROR;
     extern const int LOGICAL_ERROR;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -58,14 +56,10 @@ class OpenSSLProvider
 public:
     static constexpr auto name = ProviderImpl::name;
     static constexpr auto length = ProviderImpl::length;
-    static constexpr auto available_in_fips_mode = ProviderImpl::available_in_fips_mode;
 
     OpenSSLProvider()
         : ctx_template(EVP_MD_CTX_new(), &EVP_MD_CTX_free)
     {
-        if (OpenSSLInitializer::instance().isFIPSEnabled() && !available_in_fips_mode)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} is not available in FIPS mode", name);
-
         if (!ctx_template)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
 
@@ -98,7 +92,6 @@ struct MD4Impl
 {
     static constexpr auto name = "MD4";
     static constexpr const EVP_MD * (*provider)() = &EVP_md4;
-    static constexpr bool available_in_fips_mode = false;
     enum
     {
         length = MD4_DIGEST_LENGTH
@@ -109,7 +102,6 @@ struct MD5Impl
 {
     static constexpr auto name = "MD5";
     static constexpr const EVP_MD * (*provider)() = &EVP_md5;
-    static constexpr bool available_in_fips_mode = false;
     enum
     {
         length = MD5_DIGEST_LENGTH
@@ -120,7 +112,6 @@ struct SHA1Impl
 {
     static constexpr auto name = "SHA1";
     static constexpr const EVP_MD * (*provider)() = &EVP_sha1;
-    static constexpr bool available_in_fips_mode = false;
     enum
     {
         length = SHA_DIGEST_LENGTH
@@ -131,7 +122,6 @@ struct SHA224Impl
 {
     static constexpr auto name = "SHA224";
     static constexpr const EVP_MD * (*provider)() = &EVP_sha224;
-    static constexpr bool available_in_fips_mode = true;
     enum
     {
         length = SHA224_DIGEST_LENGTH
@@ -143,7 +133,6 @@ struct SHA256Impl
 {
     static constexpr auto name = "SHA256";
     static constexpr const EVP_MD * (*provider)() = &EVP_sha256;
-    static constexpr bool available_in_fips_mode = true;
     enum
     {
         length = SHA256_DIGEST_LENGTH
@@ -154,7 +143,6 @@ struct SHA384Impl
 {
     static constexpr auto name = "SHA384";
     static constexpr const EVP_MD * (*provider)() = &EVP_sha384;
-    static constexpr bool available_in_fips_mode = true;
     enum
     {
         length = SHA384_DIGEST_LENGTH
@@ -165,7 +153,6 @@ struct SHA512Impl
 {
     static constexpr auto name = "SHA512";
     static constexpr const EVP_MD * (*provider)() = &EVP_sha512;
-    static constexpr bool available_in_fips_mode = true;
     enum
     {
         length = SHA512_DIGEST_LENGTH
@@ -176,7 +163,6 @@ struct SHA512Impl256
 {
     static constexpr auto name = "SHA512_256";
     static constexpr const EVP_MD * (*provider)() = &EVP_sha512_256;
-    static constexpr bool available_in_fips_mode = true;
     enum
     {
         length = SHA256_DIGEST_LENGTH
@@ -187,7 +173,6 @@ struct RIPEMD160Impl
 {
     static constexpr auto name = "RIPEMD160";
     static constexpr const EVP_MD * (*provider)() = &EVP_ripemd160;
-    static constexpr bool available_in_fips_mode = false;
     enum
     {
         length = RIPEMD160_DIGEST_LENGTH
@@ -290,7 +275,7 @@ public:
             {
                 hasher.apply(
                     reinterpret_cast<const char *>(&data[current_offset]),
-                    offsets[i] - current_offset,
+                    offsets[i] - current_offset - 1,
                     reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
 
                 current_offset = offsets[i];
@@ -358,7 +343,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT RIPEMD160(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the RIPEMD160 hash of the given input string as a fixed-length string.", {"FixedString(20)"}},
+        = "The RIPEMD160 hash of the given input string returned as a [FixedString(20)](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));",
@@ -374,7 +359,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT MD4(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the MD4 hash of the given input string as a fixed-length string.", {"FixedString(16)"}},
+        = "The MD4 hash of the given input string returned as a [FixedString(16)](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(MD4('abc'));",
@@ -390,7 +375,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT MD5(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the MD5 hash of the given input string as a fixed-length string.", {"FixedString(16)"}},
+        = "The MD5 hash of the given input string returned as a [FixedString(16)](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(MD5('abc'));",
@@ -406,7 +391,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT SHA1(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA1 hash of the given input string as a fixed-length string.", {"FixedString(20)"}},
+        = "The SHA1 hash of the given input string returned as a [FixedString](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(SHA1('abc'));",
@@ -422,7 +407,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT SHA224(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA224 hash of the given input string as a fixed-length string.", {"FixedString(28)"}},
+        = "The SHA224 hash of the given input string returned as a [FixedString](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(SHA224('abc'));",
@@ -438,7 +423,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT SHA256(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA256 hash of the given input string as a fixed-length string.", {"FixedString(32)"}},
+        = "The SHA256 hash of the given input string returned as a [FixedString](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(SHA256('abc'));",
@@ -454,7 +439,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT SHA384(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA384 hash of the given input string as a fixed-length string.", {"FixedString(48)"}},
+        = "The SHA384 hash of the given input string returned as a [FixedString](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(SHA384('abc'));",
@@ -470,7 +455,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT SHA512(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA512 hash of the given input string as a fixed-length string.", {"FixedString(64)"}},
+        = "The SHA512 hash of the given input string returned as a [FixedString](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(SHA512('abc'));",
@@ -486,7 +471,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT SHA512_256(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA512_256 hash of the given input string as a fixed-length string.", {"FixedString(32)"}},
+        = "The SHA512_256 hash of the given input string returned as a [FixedString](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(SHA512_256('abc'));",
@@ -510,10 +495,6 @@ REGISTER_FUNCTION(HashFixedStrings)
     The function is rather fast and shows approximately two times faster performance compared to SHA-2, while generating hashes of the same length as SHA-256.
     It returns a BLAKE3 hash as a byte array with type FixedString(32).
     )",
-        .syntax = "SELECT BLAKE3(message)",
-        .arguments = {{"message", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = {"Returns the 32-byte BLAKE3 hash of the input string as a fixed-length string.", {"FixedString(32)"}},
         .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
         .category = FunctionDocumentation::Category::Hash});
 #    endif
@@ -526,7 +507,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT keccak256(message)",
         .arguments = {{"message", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the 32-byte Keccak-256 hash of the input string as a fixed-length string.", {"FixedString(32)"}},
+        = "A [FixedString(32)](../../sql-reference/data-types/fixedstring.md) containing the 32-byte Keccak-256 hash of the input string.",
         .examples
         = {{"",
             "SELECT hex(keccak256('hello'))",

@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/AvroRowInputFormat.h>
+#include "AvroRowInputFormat.h"
 #if USE_AVRO
 
 #include <numeric>
@@ -1010,7 +1010,7 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
 }
 
 
-AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
+AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_), format_settings(format_settings_)
 {
 }
@@ -1023,7 +1023,7 @@ void AvroRowInputFormat::readPrefix()
     file_reader_ptr->init();
 }
 
-bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
+bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &ext)
 {
     if (file_reader_ptr->hasMore())
     {
@@ -1083,10 +1083,7 @@ private:
                     .withReceiveTimeout(1);
 
                 Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-                if (url.getPort())
-                    request.setHost(url.getHost(), url.getPort());
-                else
-                    request.setHost(url.getHost());
+                request.setHost(url.getHost());
 
                 if (!url.getUserInfo().empty())
                 {
@@ -1195,7 +1192,7 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
 }
 
 AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
-    SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
+    const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
     , format_settings(format_settings_)
@@ -1413,7 +1410,7 @@ void registerInputFormatAvro(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<AvroRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
+        return std::make_shared<AvroRowInputFormat>(sample, buf, params, settings);
     });
 
     factory.markFormatSupportsSubsetOfColumns("Avro");
@@ -1424,7 +1421,7 @@ void registerInputFormatAvro(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<AvroConfluentRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
+        return std::make_shared<AvroConfluentRowInputFormat>(sample, buf, params, settings);
     });
 
     factory.markFormatSupportsSubsetOfColumns("AvroConfluent");

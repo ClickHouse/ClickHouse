@@ -17,6 +17,7 @@ class DataTypeNumber;
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int DECIMAL_OVERFLOW;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
@@ -311,11 +312,16 @@ ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
     using DecimalNativeType = typename DecimalType::NativeType;
     static constexpr bool throw_exception = std::is_void_v<ReturnType>;
 
-    if constexpr (is_floating_point<To>)
+    if constexpr (std::is_same_v<To, BFloat16>)
     {
-        /// Float64 is enough to accommodate the digits of the biggest decimal (with possible precision loss),
-        /// while Float32 is not enough, and it can overflow to infinity.
-        result = static_cast<To>(static_cast<Float64>(decimal.value) / static_cast<Float64>(scaleMultiplier<DecimalNativeType>(scale)));
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from Decimal to BFloat16 is not implemented");
+        else
+            return ReturnType(false);
+    }
+    else if constexpr (is_floating_point<To>)
+    {
+        result = static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<DecimalNativeType>(scale));
     }
     else if constexpr (is_integer<To> && (sizeof(To) >= sizeof(DecimalNativeType)))
     {
@@ -370,18 +376,6 @@ template <typename To, typename DecimalType>
 bool tryConvertTo(const DecimalType & decimal, UInt32 scale, To & result)
 {
     return convertToImpl<To, DecimalType, bool>(decimal, scale, result);
-}
-
-/// Converts a decimal to another decimal.
-template <is_decimal To, typename DecimalType>
-To convertTo(UInt32 to_scale, const DecimalType & decimal, UInt32 scale)
-{
-    if (to_scale > scale)
-        return decimal.template convertTo<To>().value * scaleMultiplier<To>(to_scale - scale);
-    else if (to_scale < scale)
-        return decimal.template convertTo<To>().value / DecimalUtils::scaleMultiplier<To>(scale - to_scale);
-    else
-        return decimal.template convertTo<To>();
 }
 
 template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>

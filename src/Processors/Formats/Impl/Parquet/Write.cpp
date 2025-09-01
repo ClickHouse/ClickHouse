@@ -1,12 +1,9 @@
-#include <Processors/Formats/Impl/Parquet/Write.h>
-#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
-#include <arrow/util/key_value_metadata.h>
+#include "Processors/Formats/Impl/Parquet/Write.h"
+#include "Processors/Formats/Impl/Parquet/ThriftUtil.h"
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
 #include <arrow/util/rle_encoding.h>
 #include <lz4.h>
-#include <Poco/JSON/JSON.h>
-#include <Poco/JSON/Object.h>
 #include <xxhash.h>
 #include <DataTypes/DataTypeObject.h>
 #include <Columns/MaskOperations.h>
@@ -18,13 +15,9 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnObject.h>
 #include <IO/WriteHelpers.h>
-#include <Common/WKB.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
 #include <Common/HashTable/HashSet.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <Core/Block.h>
-#include <DataTypes/DataTypeCustom.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -39,6 +32,8 @@ namespace DB::ErrorCodes
 
 namespace DB::Parquet
 {
+
+namespace parq = parquet::format;
 
 namespace
 {
@@ -177,8 +172,11 @@ struct StatisticsFixedStringCopy
     inline static int compare(const uint8_t * lhs, const uint8_t * rhs)
     {
         if constexpr (SIGNED)
+        {
             /// Comparing the first byte as signed is sufficient.
-            if (*lhs != *rhs) return int(int8_t(*lhs)) - int(int8_t(*rhs));
+            if (*lhs != *rhs)
+                return int(int8_t(*lhs)) - int(int8_t(*rhs));
+        }
         return memcmp(lhs, rhs, S);
     }
 
@@ -351,34 +349,6 @@ struct ConverterString
     }
 };
 
-template <typename T>
-struct ConverterEnumAsString
-{
-    using Statistics = StatisticsStringRef;
-
-    explicit ConverterEnumAsString(const ColumnPtr & c, const DataTypePtr & enum_type_)
-    : column(assert_cast<const ColumnVector<T> &>(*c)), enum_type(assert_cast<const DataTypeEnum<T> *>(enum_type_.get())) {}
-
-    const ColumnVector<T> & column;
-    const DataTypeEnum<T> * enum_type;
-    PODArray<parquet::ByteArray> buf;
-
-    const parquet::ByteArray * getBatch(size_t offset, size_t count)
-    {
-        buf.resize(count);
-
-        const auto & data = column.getData();
-
-        for (size_t i = 0; i < count; ++i)
-        {
-            const T value = data[offset + i];
-            const StringRef s = enum_type->getNameForValue(value);
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size), reinterpret_cast<const uint8_t *>(s.data));
-        }
-        return buf.data();
-    }
-};
-
 struct ConverterFixedString
 {
     using Statistics = StatisticsFixedStringRef;
@@ -480,7 +450,8 @@ struct ConverterJSON
 };
 
 /// Like ConverterNumberAsFixedString, but converts to big-endian. (Parquet uses little-endian
-/// for INT32 and INT64, but big-endian for decimals represented as FIXED_LEN_BYTE_ARRAY.)
+/// for INT32 and INT64, but big-endian for decimals represented as FIXED_LEN_BYTE_ARRAY, presumably
+/// to make them comparable lexicographically.)
 template <typename T>
 struct ConverterDecimal
 {
@@ -623,7 +594,7 @@ void writePage(const parq::PageHeader & header, const PODArray<char> & compresse
 
     if (add_to_offset_index)
     {
-        parq::PageLocation location;
+        parquet::format::PageLocation location;
         /// Offset relative to column chunk. finalizeColumnChunkAndWriteFooter later adjusts it to global offset.
         location.__set_offset(s.column_chunk.meta_data.total_compressed_size);
         location.__set_compressed_page_size(static_cast<int32_t>(compressed_page_size));
@@ -648,8 +619,7 @@ void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkInd
     /// There appear to be undocumented requirements:
     ///  * number of blocks must be a power of two,
     ///  * bloom filter size must be at most 128 MiB.
-    /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
-    /// requires this.
+    /// At least parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters) requires this.
     double requested_num_blocks = hashes.size() * options.bloom_filter_bits_per_value / 256;
     size_t num_blocks = 1;
     while (num_blocks < requested_num_blocks)
@@ -721,14 +691,6 @@ void writeColumnImpl(
             page_statistics.fixed_string_size = converter.fixedStringSize();
     }
 
-    s.column_chunk.meta_data.__isset.size_statistics = true;
-    if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
-        s.column_chunk.meta_data.size_statistics.__set_unencoded_byte_array_data_bytes(0);
-    if (s.max_rep > 0)
-        s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1));
-    if (s.max_def > 0)
-        s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1));
-
     /// Could use an arena here (by passing a custom MemoryPool), to reuse memory across pages.
     /// Alternatively, we could avoid using arrow's dictionary encoding code and leverage
     /// ColumnLowCardinality instead. It would work basically the same way as what this function
@@ -777,18 +739,11 @@ void writeColumnImpl(
             row_count = 0;
             for (size_t i = def_offset; i < def_offset + def_count; ++i)
             {
-                ++s.column_chunk.meta_data.size_statistics.repetition_level_histogram[s.rep[i]];
                 row_count += s.rep[i] == 0;
             }
         }
-
         if (s.max_def > 0)
-        {
             encodeRepDefLevelsRLE(s.def.data() + def_offset, def_count, s.max_def, encoded);
-
-            for (size_t i = def_offset; i < def_offset + def_count; ++i)
-                ++s.column_chunk.meta_data.size_statistics.definition_level_histogram[s.def[i]];
-        }
 
         std::shared_ptr<parquet::Buffer> values = encoder->FlushValues(); // resets it for next page
 
@@ -892,7 +847,7 @@ void writeColumnImpl(
     auto is_dict_too_big = [&] {
         auto * dict_encoder = dynamic_cast<parquet::DictEncoder<ParquetDType> *>(encoder.get());
         int dict_size = dict_encoder->dict_encoded_size();
-        return static_cast<size_t>(dict_size) >= options.max_dictionary_size;
+        return static_cast<size_t>(dict_size) >= options.dictionary_size_limit;
     };
 
     while (def_offset < num_values)
@@ -949,12 +904,6 @@ void writeColumnImpl(
                     }
                     hashes_for_bloom_filter->insert(h);
                 }
-            }
-
-            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
-            {
-                for (size_t i = 0; i < data_count; ++i)
-                    s.column_chunk.meta_data.size_statistics.unencoded_byte_array_data_bytes += converted[i].len;
             }
 
             encoder->Put(converted, static_cast<int>(data_count));
@@ -1066,24 +1015,8 @@ void writeColumnChunkBody(
             break;
         case TypeIndex::UInt16 : N(UInt16, Int32Type); break;
         case TypeIndex::UInt64 : N(UInt64, Int64Type); break;
-        case TypeIndex::Int8:
-        {
-            if (options.output_enum_as_byte_array && isEnum8(s.type))
-                writeColumnImpl<parquet::ByteArrayType>(
-                    s, options, out, ConverterEnumAsString<Int8>(s.primitive_column, s.type));
-            else
-                N(Int8, Int32Type);
-         break;
-        }
-        case TypeIndex::Int16:
-        {
-            if (options.output_enum_as_byte_array && isEnum16(s.type))
-                writeColumnImpl<parquet::ByteArrayType>(
-                    s, options, out, ConverterEnumAsString<Int16>(s.primitive_column, s.type));
-            else
-                N(Int16, Int32Type);
-            break;
-        }
+        case TypeIndex::Int8   : N(Int8,   Int32Type); break;
+        case TypeIndex::Int16  : N(Int16,  Int32Type); break;
         case TypeIndex::Int32  : N(Int32,  Int32Type); break;
         case TypeIndex::Int64  : N(Int64,  Int64Type); break;
 
@@ -1287,11 +1220,7 @@ static void writePageIndex(FileWriteState & file, WriteBuffer & out)
     }
 }
 
-void writeFileFooter(FileWriteState & file,
-    SchemaElements schema,
-    const WriteOptions & options,
-    WriteBuffer & out,
-    const Block & header)
+void writeFileFooter(FileWriteState & file, SchemaElements schema, const WriteOptions & options, WriteBuffer & out)
 {
     chassert(file.offset != 0);
     chassert(file.current_row_group.row_group.columns.empty());
@@ -1321,65 +1250,6 @@ void writeFileFooter(FileWriteState & file,
                 meta.column_orders.emplace_back();
         for (auto & c : meta.column_orders)
             c.__set_TYPE_ORDER({});
-    }
-
-    /// Documentation about geoparquet metadata: https://geoparquet.org/releases/v1.0.0-beta.1/
-    if (options.write_geometadata)
-    {
-        std::vector<std::pair<std::string, Poco::JSON::Object::Ptr>> geo_columns_metadata;
-        for (const auto & [column_name, type] : header.getNamesAndTypesList())
-        {
-            if (type->getCustomName() &&
-                (type->getCustomName()->getName() == WKBPointTransform::name ||
-                type->getCustomName()->getName() == WKBLineStringTransform::name ||
-                type->getCustomName()->getName() == WKBPolygonTransform::name ||
-                type->getCustomName()->getName() == WKBMultiLineStringTransform::name ||
-                type->getCustomName()->getName() == WKBMultiPolygonTransform::name))
-            {
-                Poco::JSON::Object::Ptr geom_meta = new Poco::JSON::Object;
-                geom_meta->set("encoding", "WKB");
-
-                Poco::JSON::Array::Ptr geom_types = new Poco::JSON::Array;
-                geom_types->add(type->getCustomName()->getName());
-                geom_meta->set("geometry_types", geom_types);
-                geom_meta->set("crs", "EPSG:4326");
-
-                geo_columns_metadata.push_back({column_name, geom_meta});
-
-                if (type->getCustomName()->getName() == WKBPolygonTransform::name ||
-                    type->getCustomName()->getName() == WKBMultiPolygonTransform::name)
-                {
-                    geom_meta->set("edges", "planar");
-                    geom_meta->set("orientation", "counterclockwise");
-                }
-                geo_columns_metadata.push_back({column_name, geom_meta});
-            }
-        }
-
-        if (!geo_columns_metadata.empty())
-        {
-            Poco::JSON::Object::Ptr columns = new Poco::JSON::Object;
-            for (const auto & [column_name, column_type] : geo_columns_metadata)
-            {
-                columns->set(column_name, column_type);
-            }
-
-            Poco::JSON::Object::Ptr geo = new Poco::JSON::Object;
-            geo->set("version", "1.0.0");
-            geo->set("columns", columns);
-            geo->set("primary_column", geo_columns_metadata[0].first);
-
-            std::ostringstream // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-                oss;
-            Poco::JSON::Stringifier::stringify(geo, oss, 4);
-
-            parquet::format::KeyValue key_value;
-            key_value.__set_key("geo");
-            key_value.__set_value(oss.str());
-
-            meta.key_value_metadata.push_back(std::move(key_value));
-            meta.__isset.key_value_metadata = true;
-        }
     }
 
     size_t footer_size = serializeThriftStruct(meta, out);

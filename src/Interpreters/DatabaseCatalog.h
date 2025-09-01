@@ -137,7 +137,7 @@ public:
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
-    static void shutdown(std::function<void()> shutdown_system_logs);
+    static void shutdown();
 
     void createBackgroundTasks();
     void initializeAndLoadTemporaryDatabase();
@@ -185,14 +185,9 @@ public:
     StoragePtr tryGetTable(const StorageID & table_id, ContextPtr context) const;
     DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
     DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable getTableAndCheckAlias(
-        const StorageID & table_id,
-        ContextPtr context,
-        std::optional<Exception> * exception = nullptr) const;
-    DatabaseAndTable getTableImpl(
-        const StorageID & table_id,
-        ContextPtr context,
-        std::optional<Exception> * exception = nullptr) const;
+    DatabaseAndTable getTableImpl(const StorageID & table_id,
+                                  ContextPtr context,
+                                  std::optional<Exception> * exception = nullptr) const;
 
     /// Returns true if a passed table_id refers to one of the predefined tables' names.
     /// All tables in the "system" database with System* table engine are predefined.
@@ -225,7 +220,6 @@ public:
     static String getPathForUUID(const UUID & uuid);
 
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
-    DatabaseAndTable getByUUID(const UUID & uuid) const;
 
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     String getPathForMetadata(const StorageID & table_id) const;
@@ -288,7 +282,7 @@ private:
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
 
-    void shutdownImpl(std::function<void()> shutdown_system_logs);
+    void shutdownImpl();
 
     void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
 

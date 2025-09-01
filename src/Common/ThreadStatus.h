@@ -4,7 +4,6 @@
 #include <IO/Progress.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/StringRef.h>
-#include <Common/IThrottler.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -117,9 +116,11 @@ public:
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
-    static ThreadGroupPtr createForBackgroundProcess(ContextPtr storage_context);
+    /// NOTE: The caller should call background_memory_tracker.adjustOnBackgroundTaskEnd() at the end (see existing callers),
+    /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
+    static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
-    static ThreadGroupPtr createForMaterializedView();
+    static ThreadGroupPtr createForMaterializedView(ContextPtr context);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
@@ -144,6 +145,8 @@ private:
     size_t peak_threads_usage TSA_GUARDED_BY(mutex) = 0;
 
     UInt64 elapsed_total_threads_counter_ms TSA_GUARDED_BY(mutex) = 0;
+
+    static ThreadGroupPtr create(ContextPtr context);
 };
 
 /**
@@ -218,11 +221,9 @@ public:
     Progress progress_in;
     Progress progress_out;
 
-    /// IO scheduling and throttling
+    /// IO scheduling
     ResourceLink read_resource_link;
     ResourceLink write_resource_link;
-    ThrottlerPtr read_throttler;
-    ThrottlerPtr write_throttler;
 
 protected:
     /// Group of threads, to which this thread attached
@@ -355,10 +356,7 @@ class MainThreadStatus : public ThreadStatus
 public:
     static MainThreadStatus & getInstance();
     static ThreadStatus * get() { return main_thread; }
-    static bool initialized() { return is_initialized.test(std::memory_order_relaxed); }
     static bool isMainThread() { return main_thread == current_thread; }
-
-    static void reset() { is_initialized.clear(std::memory_order_relaxed); }
 
     ~MainThreadStatus();
 
@@ -366,7 +364,6 @@ private:
     MainThreadStatus();
 
     static ThreadStatus * main_thread;
-    static std::atomic_flag is_initialized;
 };
 
 }
