@@ -2,6 +2,7 @@ import random
 from decimal import Decimal, getcontext
 from datetime import datetime, timedelta, date
 import math
+import logging
 import string
 from pyspark.sql import Row, SparkSession
 from pyspark.sql.types import (
@@ -35,6 +36,7 @@ class LakeDataGenerator:
         self._max_nested = 100
         self._min_str_len = 0
         self._max_str_len = 100
+        self.logger = logging.getLogger(__name__)
 
     # ============================================================
     # Random data
@@ -192,9 +194,7 @@ class LakeDataGenerator:
             )
         return dtype
 
-    def insert_random_data(
-        self, spark: SparkSession, catalog_name: str, table: SparkTable
-    ):
+    def insert_random_data(self, spark: SparkSession, table: SparkTable):
         """
         Build a DataFrame of random rows for the given schema (types as strings are fine).
         - null_rate: probability any value is None (ignored for map keys)
@@ -236,4 +236,11 @@ class LakeDataGenerator:
             rows.append(Row(**rec))
         # Use explicit schema so types match exactly
         df = spark.createDataFrame(rows, schema=struct2)
-        df.writeTo(f"{catalog_name}.test.{table.table_name}").append()
+        self.logger.info(
+            f"Inserting data into {table.catalog_name}.test.{table.table_name}"
+        )
+        df.writeTo(f"{table.catalog_name}.test.{table.table_name}").append()
+
+    def update_table(self, spark: SparkSession, table: SparkTable):
+        # So far, only insert
+        self.insert_random_data(spark, table)

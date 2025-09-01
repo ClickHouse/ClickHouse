@@ -8,17 +8,16 @@ from pyspark.sql.types import DateType, TimestampType, StructType, DataType
 
 
 class LakeTableGenerator:
-    def __init__(self, _bucket: str):
-        self.bucket = _bucket
+    def __init__(self):
         self.type_mapper = ClickHouseSparkTypeMapper()
-        self.write_format = FileFormat.Parquet
+        self.write_format: FileFormat = FileFormat.Parquet
 
     @staticmethod
-    def get_next_generator(bucket: str, lake: LakeFormat):
+    def get_next_generator(lake: LakeFormat):
         return (
-            IcebergTableGenerator(bucket)
+            IcebergTableGenerator()
             if lake == LakeFormat.Iceberg
-            else DeltaLakePropertiesGenerator(bucket)
+            else DeltaLakePropertiesGenerator()
         )
 
     @abstractmethod
@@ -123,7 +122,15 @@ class LakeTableGenerator:
             ddl += ")"
         return (
             ddl + ";",
-            SparkTable(table_name, columns_spark, deterministic, next_location),
+            SparkTable(
+                catalog_name,
+                table_name,
+                columns_spark,
+                deterministic,
+                next_location,
+                LakeFormat.lakeformat_from_str(self.get_format()),
+                self.write_format,
+            ),
         )
 
     def generate_alter_table_statements(
@@ -148,8 +155,8 @@ class LakeTableGenerator:
 
 class IcebergTableGenerator(LakeTableGenerator):
 
-    def __init__(self, _bucket):
-        super().__init__(_bucket)
+    def __init__(self):
+        super().__init__()
 
     def get_format(self) -> str:
         return "iceberg"
@@ -548,8 +555,8 @@ class IcebergTableGenerator(LakeTableGenerator):
 
 class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
-    def __init__(self, _bucket):
-        super().__init__(_bucket)
+    def __init__(self):
+        super().__init__()
 
     def get_format(self) -> str:
         return "delta"

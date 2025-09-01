@@ -440,6 +440,7 @@ def wait_for_port(host, port, timeout=90):
 class SparkHandler:
     def __init__(self, cluster, args):
         self.logger = logging.getLogger(__name__)
+        self.data_generator = LakeDataGenerator()
         self.uc_server = None
         self.catalogs = {}
         self.uc_server_dir = None
@@ -697,15 +698,12 @@ logger.jetty.level = warn
 
     def create_lake_table(self, cluster, data):
         catalog_name = data["database_name"]
-        one_time = catalog_name[0] != "d"
         next_session = None
         next_storage = TableStorage.storage_from_str(data["storage"])
         next_lake = LakeFormat.lakeformat_from_str(data["lake"])
-        next_table_generator = LakeTableGenerator.get_next_generator(
-            cluster.minio_bucket, next_lake
-        )
+        next_table_generator = LakeTableGenerator.get_next_generator(next_lake)
 
-        if one_time:
+        if catalog_name[0] != "d":
             self.catalogs[catalog_name] = DolorCatalog(
                 cluster,
                 str(self.spark_log_config),
@@ -720,6 +718,7 @@ logger.jetty.level = warn
             self.create_database(self.catalogs[catalog_name].session, catalog_name)
         next_session = self.catalogs[catalog_name].session
 
+        # To fix, this is not right for some catalogs
         next_location = ""
         if next_storage == TableStorage.S3:
             next_location = f"s3a://{cluster.minio_bucket}/{catalog_name}"
@@ -741,16 +740,15 @@ logger.jetty.level = warn
         self.catalogs[catalog_name].spark_tables[data["table_name"]] = next_table
 
         if random.randint(1, 5) != 5:
-            self.logger.info(
-                f"Inserting data into {data["table_name"]} in catalog: {catalog_name}"
-            )
-            next_data_generator = LakeDataGenerator()
-            next_data_generator.insert_random_data(
-                next_session, catalog_name, next_table
-            )
+            self.data_generator.insert_random_data(next_session, next_table)
 
-        if one_time:
-            next_session.stop()
+    def update_lake_table(self, cluster, data):
+        catalog_name = data["database_name"]
+        next_session = self.catalogs[catalog_name].session
+
+        self.data_generator.update_table(
+            next_session, self.catalogs[catalog_name].spark_tables[data["table_name"]]
+        )
 
     def close_sessions(self):
         for _, val in self.catalogs.items():

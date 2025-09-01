@@ -55,7 +55,7 @@ class LakeFormat(Enum):
     def lakeformat_from_str(loc: str):
         if loc.lower() == "iceberg":
             return LakeFormat.Iceberg
-        if loc.lower() == "deltalake":
+        if loc.lower().startswith("delta"):
             return LakeFormat.DeltaLake
         return LakeFormat.Unkown
 
@@ -98,12 +98,18 @@ class SparkColumn:
 class SparkTable:
     def __init__(
         self,
+        _catalog_name: str,
         _table_name: str,
         _columns: dict[str, SparkColumn],
         _deterministic: bool,
         _location: str,
+        _lake_format: LakeFormat,
+        _file_format: FileFormat,
     ):
+        self.catalog_name = _catalog_name
         self.table_name = _table_name
         self.columns = _columns
         self.deterministic = _deterministic
         self.location = _location
+        self.lake_format = _lake_format
+        self.file_format = _file_format

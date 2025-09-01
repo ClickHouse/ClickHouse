@@ -468,6 +468,9 @@ def datalakehandler(path, data, headers):
         elif path == "/sparktable":
             spark_handler.create_lake_table(cluster, data)
             res = True
+        elif path == "/sparkupdate":
+            spark_handler.update_lake_table(cluster, data)
+            res = True
         random.setstate(state)
     except:
         random.setstate(state)
