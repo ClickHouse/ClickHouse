@@ -1244,7 +1244,6 @@ def test_schema_evolution_with_time_travel(
         TABLE_NAME,
         started_cluster,
         table_function=True,
-        allow_dynamic_metadata_for_data_lakes=True,
     )
 
     table_select_expression =  table_creation_expression
@@ -2429,7 +2428,6 @@ def test_minmax_pruning_for_arrays_and_maps_subfields_disabled(started_cluster, 
         TABLE_NAME,
         started_cluster,
         table_function=True,
-        allow_dynamic_metadata_for_data_lakes=True,
     )
 
     table_select_expression = table_creation_expression

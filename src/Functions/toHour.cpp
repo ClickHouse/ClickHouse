@@ -19,7 +19,7 @@ Returns the hour component (0-23) of a `DateTime` or `DateTime64` value.
     {
         {"datetime", "Date with time to get the hour from.", {"DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the hour of the given `Date` or `DateTime` value", {"UInt8"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the hour (0-23) of `datetime`.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",

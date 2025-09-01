@@ -238,6 +238,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_query_condition_cache", trueOrFalseSetting},
        {"use_skip_indexes", trueOrFalseSetting},
        {"use_skip_indexes_if_final", trueOrFalseSetting},
+       {"use_skip_indexes_on_data_read", trueOrFalseSetting},
        {"use_uncompressed_cache", trueOrFalseSetting}};
 
 std::unordered_map<String, CHSetting> serverSettings = {
@@ -438,7 +439,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"engine_file_empty_if_not_exists", trueOrFalseSettingNoOracle},
     {"engine_file_skip_empty_files", trueOrFalseSettingNoOracle},
     {"engine_url_skip_empty_files", trueOrFalseSettingNoOracle},
-    {"exact_rows_before_limit", trueOrFalseSetting},
+    //{"exact_rows_before_limit", trueOrFalseSetting}, cannot use with generateRandom
     {"except_default_mode", setSetting},
     /// {"external_table_functions_use_nulls", trueOrFalseSettingNoOracle},
     /// {"external_table_strict_query", CHSetting(trueOrFalse, {}, true)},
@@ -566,7 +567,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_parquet_filter_push_down", trueOrFalseSetting},
     {"input_format_parquet_preserve_order", trueOrFalseSettingNoOracle},
     {"input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference", trueOrFalseSettingNoOracle},
-    {"input_format_parquet_use_native_reader", trueOrFalseSettingNoOracle},
+    {"input_format_parquet_use_native_reader", trueOrFalseSetting},
     {"input_format_parquet_use_native_reader_v3", trueOrFalseSetting},
     {"input_format_parquet_page_filter_push_down", trueOrFalseSetting},
     {"input_format_parquet_use_offset_index", trueOrFalseSetting},
@@ -1100,6 +1101,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "join_output_by_rowlist_perkey_rows_threshold",
           "join_to_sort_maximum_table_rows",
           "join_to_sort_minimum_perkey_rows",
+          "max_iceberg_data_file_rows",
           "max_joined_block_size_rows",
           "max_limit_for_vector_search_queries",
           "max_number_of_partitions_for_independent_aggregation",
@@ -1155,6 +1157,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "max_bytes_before_external_sort",
           "max_bytes_before_remerge_sort",
           "max_download_buffer_size",
+          "max_iceberg_data_file_bytes",
           "max_joined_block_size_bytes",
           "max_read_buffer_size",
           "max_read_buffer_size_local_fs",
@@ -1355,7 +1358,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
 
 std::unique_ptr<SQLType> size_tp, null_tp;
 
-std::unordered_map<String, DB::Strings> systemTables;
+std::vector<SystemTable> systemTables;
 
 void loadSystemTables(FuzzConfig & fc)
 {
