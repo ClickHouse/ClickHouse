@@ -46,6 +46,7 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -170,12 +171,11 @@ void MergeTreeIndexReader::read(size_t mark, size_t current_granule_num, MergeTr
     if (granules == nullptr)
         granules = index->createIndexBulkGranules();
 
+    initStreamIfNeeded();
     if (streams.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Bulk filtering is not supported for indexes with multiple streams. Have {} streams for index {}", streams.size(), index->getFileName());
 
-    initStreamIfNeeded();
     auto * stream = streams.at(IndexSubstream::Type::Regular);
-
     if (stream_mark != mark)
         stream->seekToMark(mark);
 
