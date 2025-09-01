@@ -4,8 +4,12 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
@@ -78,10 +82,50 @@ bool shardContains(
     return data.shard_info.shard_num == shard_num;
 }
 
+/// Helper function used for sharding key expression DAG conversion into query tree node.
+///
+/// @param dag_node - actions to be converted
+/// @param allowed_inputs - column names and corresponding nodes, used for actions DAG inputs conversion
+/// @return query tree node representation of sharding key actions DAG
+QueryTreeNodePtr actionsDAGNodeToQueryTreeNode(
+    const ActionsDAG::Node & dag_node,
+    const std::map<std::string, QueryTreeNodePtr> & allowed_inputs)
+{
+    switch (dag_node.type)
+    {
+        case ActionsDAG::ActionType::INPUT: {
+            auto it = allowed_inputs.find(dag_node.result_name);
+            if (it == allowed_inputs.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Input {} is not is allowed list", dag_node.result_name);
+            return it->second;
+        }
+        case ActionsDAG::ActionType::COLUMN: {
+            if (!dag_node.column || !isColumnConst(*dag_node.column))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported conversion of non-constant COLUMN action");
+            return std::make_shared<ConstantNode>((*dag_node.column)[0]);
+        }
+        case ActionsDAG::ActionType::FUNCTION: {
+            auto function_node = std::make_shared<FunctionNode>(dag_node.function_base->getName());
+            auto & arguments = function_node->getArguments().getNodes();
+            for (const auto * child : dag_node.children)
+                arguments.push_back(actionsDAGNodeToQueryTreeNode(*child, allowed_inputs));
+            return function_node;
+        }
+        default:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported action type in actionsDAGNodeToQueryTreeNode: {}", dag_node.type);
+    }
+}
+
 }
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+}
 
 bool OptimizeShardingKeyRewriteInMatcher::needChildVisit(ASTPtr & /*node*/, const ASTPtr & /*child*/)
 {
@@ -152,9 +196,17 @@ public:
     void enterImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || function_node->getFunctionName() != "in")
+        if (!function_node)
             return;
 
+        if (function_node->getFunctionName() == "in" && data.allow_rewrite_in)
+            rewriteInPredicate(function_node);
+        else if (function_node->getFunctionName() == "globalIn" && data.allow_rewrite_global_in)
+            rewriteGlobalInPredicate(function_node);
+    }
+
+    void rewriteInPredicate(FunctionNode * function_node)
+    {
         auto & arguments = function_node->getArguments().getNodes();
         auto * column = arguments[0]->as<ColumnNode>();
         if (!column)
@@ -189,6 +241,61 @@ public:
                 rerunFunctionResolve(function_node, getContext());
             }
         }
+    }
+
+    void rewriteGlobalInPredicate(FunctionNode * function_node)
+    {
+        auto & arguments = function_node->getArguments().getNodes();
+
+        const auto & required_columns = data.sharding_key_expr->getRequiredColumns();
+        if (required_columns.size() != 1)
+            return;
+
+        const auto & required_column_name = required_columns.front();
+
+        auto * column_in = arguments[0]->as<ColumnNode>();
+        if (!column_in || column_in->getColumnName() != required_column_name)
+            return;
+
+        const auto & source_table = arguments[1];
+        if (!source_table->as<TableNode>())
+            return;
+
+        const auto * sharding_key_expr_node = data.sharding_key_expr->getActionsDAG().tryFindInOutputs(data.sharding_key_column_name);
+        if (!sharding_key_expr_node)
+            return;
+
+        const auto & subquery = buildSubqueryToReadColumnsFromTableExpression(source_table, getContext());
+        const auto & subquery_column = subquery->as<QueryNode &>().getProjection().getNodes().front();
+
+        std::map<std::string, QueryTreeNodePtr> allowed_inputs;
+        allowed_inputs[required_column_name] = subquery_column;
+
+        QueryTreeNodePtr sharding_key_filter;
+        try
+        {
+            sharding_key_filter = actionsDAGNodeToQueryTreeNode(*sharding_key_expr_node, allowed_inputs);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+                return;
+
+            throw;
+        }
+
+        const auto target_shard_expr = std::make_shared<FunctionNode>("modulo");
+        target_shard_expr->getArguments().getNodes().push_back(sharding_key_filter);
+        target_shard_expr->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(data.slots.size()));
+
+        const auto shard_filter_expr = std::make_shared<FunctionNode>("equals");
+        shard_filter_expr->getArguments().getNodes().push_back(target_shard_expr);
+        shard_filter_expr->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(data.shard_info.shard_num - 1));
+
+        subquery->as<QueryNode &>().getWhere() = shard_filter_expr;
+
+        arguments[1] = subquery;
+        rerunFunctionResolve(function_node, getContext());
     }
 
     OptimizeShardingKeyRewriteInVisitor::Data data;
