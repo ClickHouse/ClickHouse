@@ -109,7 +109,6 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_experimental_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
-extern const SettingsUInt64 iceberg_metadata_log_level;
 
 }
 
@@ -243,17 +242,14 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     if (clock_gettime(CLOCK_REALTIME, &spec))
         throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
 
-    if (static_cast<UInt64>(DB::IcebergMetadataLogLevel::Metadata) <= local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value)
-    {
-        Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
-            .current_time = spec.tv_sec,
-            .query_id = local_context->getCurrentQueryId(),
-            .content_type = DB::IcebergMetadataLogLevel::Metadata,
-            .path = configuration_ptr->getPathForRead().path,
-            .filename = metadata_file_path,
-            .metadata_content = removeEscapedSlashes(oss.str())
-        });
-    }
+    Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
+        .current_time = spec.tv_sec,
+        .query_id = local_context->getCurrentQueryId(),
+        .content_type = DB::IcebergMetadataLogLevel::Metadata,
+        .path = configuration_ptr->getPathForRead().path,
+        .filename = metadata_file_path,
+        .metadata_content = removeEscapedSlashes(oss.str())
+    });
 
     if (previous_snapshot_id != relevant_snapshot_id)
     {
@@ -326,21 +322,6 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
             timespec spec{};
             if (clock_gettime(CLOCK_REALTIME, &spec))
                 throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
-
-            for (const auto & manifest_list_entry : parsed_manifest_list)
-            {
-                if (static_cast<UInt64>(DB::IcebergMetadataLogLevel::ManifestListEntry) <= local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value)
-                {
-                    Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
-                        .current_time = spec.tv_sec,
-                        .query_id = local_context->getCurrentQueryId(),
-                        .content_type = DB::IcebergMetadataLogLevel::ManifestListEntry,
-                        .path = configuration_ptr->getPathForRead().path,
-                        .filename = manifest_list_path,
-                        .metadata_content = removeEscapedSlashes(manifest_list_entry.file_content)
-                    });
-                }
-            }
 
             relevant_snapshot = std::make_shared<IcebergDataSnapshot>(
                 parsed_manifest_list,

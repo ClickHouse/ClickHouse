@@ -27,7 +27,6 @@
 
 #include <IO/CompressedReadBufferWrapper.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/IcebergMetadataLog.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
@@ -67,7 +66,6 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool use_iceberg_partition_pruning;
-extern const SettingsUInt64 iceberg_metadata_log_level;
 };
 
 
@@ -289,9 +287,6 @@ IcebergIterator::IcebergIterator(
     , format(configuration_.lock()->format)
     , compression_method(configuration_.lock()->compression_method)
     , local_context(local_context_)
-    , query_id(local_context_->getCurrentQueryId())
-    , table_directory(configuration_.lock()->getRawPath().path)
-    , log_level(local_context_->getSettingsRef()[Setting::iceberg_metadata_log_level])
 {
     auto delete_file = deletes_iterator.next();
     while (delete_file.has_value())
@@ -317,34 +312,6 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     Iceberg::ManifestFileEntry manifest_file_entry;
     if (blocking_queue.pop(manifest_file_entry))
     {
-        timespec spec{};
-        if (clock_gettime(CLOCK_REALTIME, &spec))
-            throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
-
-        if (static_cast<UInt64>(IcebergMetadataLogLevel::ManifestEntry) <= log_level)
-        {
-            Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
-                .current_time = spec.tv_sec,
-                .query_id = query_id,
-                .content_type = DB::IcebergMetadataLogLevel::ManifestEntry,
-                .path = table_directory,
-                .filename = manifest_file_entry.path_to_manifest_file,
-                .metadata_content = manifest_file_entry.content
-            });
-        }
-
-        if (static_cast<UInt64>(DB::IcebergMetadataLogLevel::ManifestEntryMetadata) <= log_level)
-        {
-            Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
-                .current_time = spec.tv_sec,
-                .query_id = query_id,
-                .content_type = DB::IcebergMetadataLogLevel::ManifestEntryMetadata,
-                .path = table_directory,
-                .filename = manifest_file_entry.path_to_manifest_file,
-                .metadata_content = manifest_file_entry.metadata_content
-            });
-        }
-
         IcebergDataObjectInfoPtr object_info = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry);
         for (const auto & position_delete : defineDeletesSpan(manifest_file_entry, position_deletes_files, false))
         {

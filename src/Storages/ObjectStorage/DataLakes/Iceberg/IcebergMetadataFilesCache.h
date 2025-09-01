@@ -35,7 +35,6 @@ struct ManifestFileCacheKey
     Int64 added_sequence_number;
     Int64 added_snapshot_id;
     Iceberg::ManifestFileContentType content_type;
-    String file_content;
 };
 
 using ManifestFileCacheKeys = std::vector<ManifestFileCacheKey>;

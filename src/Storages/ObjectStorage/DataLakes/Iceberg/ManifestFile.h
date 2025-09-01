@@ -119,9 +119,7 @@ public:
         Int64 inherited_snapshot_id,
         const std::string & table_location,
         DB::ContextPtr context,
-        const String & path_to_manifest_file_,
-        const String & content_,
-        const String & metadata_content_);
+        const String & path_to_manifest_file_);
 
     const std::vector<ManifestFileEntry> & getFilesWithoutDeleted(FileContentType content_type) const;
 

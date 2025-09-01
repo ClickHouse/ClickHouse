@@ -146,9 +146,7 @@ ManifestFileContent::ManifestFileContent(
     Int64 inherited_snapshot_id,
     const String & table_location,
     DB::ContextPtr context,
-    const String & path_to_manifest_file_,
-    const String & content_,
-    const String & metadata_content_)
+    const String & path_to_manifest_file_)
     : path_to_manifest_file(path_to_manifest_file_)
 {
     for (const auto & column_name : {f_status, f_data_file})
@@ -389,10 +387,7 @@ ManifestFileContent::ManifestFileContent(
                     columns_infos,
                     file_format,
                     /*reference_data_file = */ std::nullopt,
-                    /*equality_ids*/ std::nullopt,
-                    content_,
-                    path_to_manifest_file_,
-                    metadata_content_);
+                    /*equality_ids*/ std::nullopt);
                 break;
             case FileContentType::POSITION_DELETE:
             {
@@ -418,10 +413,7 @@ ManifestFileContent::ManifestFileContent(
                     columns_infos,
                     file_format,
                     reference_file_path,
-                    /*equality_ids*/ std::nullopt,
-                    content_,
-                    path_to_manifest_file_,
-                    metadata_content_);
+                    /*equality_ids*/ std::nullopt);
                 break;
             }
             case FileContentType::EQUALITY_DELETE:
@@ -517,11 +509,11 @@ size_t ManifestFileContent::getSizeInMemory() const
     return total_size;
 }
 
-std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
+std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted(FileContentType file_content) const
 {
     Int64 result = 0;
 
-    for (const auto & file : getFilesWithoutDeleted(content))
+    for (const auto & file : getFilesWithoutDeleted(file_content))
     {
         /// Have at least one column with rows count
         bool found = false;

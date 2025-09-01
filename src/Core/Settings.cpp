@@ -4884,16 +4884,6 @@ The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELE
 The probability of a fault injection during table creation after creating metadata in ZooKeeper
 )", 0) \
     \
-    DECLARE(UInt64, iceberg_metadata_log_level, 0, R"(
-Possible values:
-
-- 0 - No metadata log.
-- 1 - Just metadata.json files
-- 2 - metadata.json + snapshots
-- 3 - metadata.json + snapshots + manifest entries
-- 4 - metadata.json + snapshots + manifest entries + metadata from avro manifest files
-)", 0) \
-    \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
 

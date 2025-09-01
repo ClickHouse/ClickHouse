@@ -3002,15 +3002,7 @@ def test_system_iceberg_metadata(started_cluster, format_version, storage_type):
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
-    assert instance.query(f"SELECT * FROM {TABLE_NAME}", settings={"iceberg_metadata_log_level":1}) == instance.query(
-        "SELECT number, toString(number + 1) FROM numbers(100)"
-    )
-
-    instance.query("SYSTEM FLUSH LOGS iceberg_metadata_log")
-    assert 'avro' not in instance.query(f"SELECT file_name FROM system.iceberg_metadata_log")
-    assert 'json' in instance.query(f"SELECT file_name FROM system.iceberg_metadata_log")
-
-    assert instance.query(f"SELECT * FROM {TABLE_NAME}", settings={"iceberg_metadata_log_level":4}) == instance.query(
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 

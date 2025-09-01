@@ -112,9 +112,6 @@ private:
     std::vector<Iceberg::ManifestFileEntry> equality_deletes_files;
 
     ContextPtr local_context;
-    String query_id;
-    String table_directory;
-    UInt64 log_level;
 };
 }
 

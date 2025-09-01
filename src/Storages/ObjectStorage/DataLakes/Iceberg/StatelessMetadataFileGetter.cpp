@@ -43,6 +43,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Interpreters/IcebergMetadataLog.h>
 
 
 #include <Common/ProfileEvents.h>
@@ -54,6 +55,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int CANNOT_CLOCK_GETTIME;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
@@ -82,6 +84,18 @@ Iceberg::ManifestFilePtr getManifestFile(
 
         auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
         Iceberg::AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
+        timespec spec{};
+        if (clock_gettime(CLOCK_REALTIME, &spec))
+            throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
+
+        Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
+            .current_time = spec.tv_sec,
+            .query_id = local_context->getCurrentQueryId(),
+            .content_type = DB::IcebergMetadataLogLevel::ManifestEntry,
+            .path = configuration->getRawPath().path,
+            .filename = filename,
+            .metadata_content = manifest_file_deserializer.getContent()
+        });
 
         return std::make_shared<Iceberg::ManifestFileContent>(
             manifest_file_deserializer,
@@ -93,9 +107,7 @@ Iceberg::ManifestFilePtr getManifestFile(
             inherited_snapshot_id,
             persistent_table_components.table_location,
             local_context,
-            filename,
-            manifest_file_deserializer.getContent(),
-            manifest_file_deserializer.getMetadataContent());
+            filename);
     };
 
     if (persistent_table_components.metadata_cache)
@@ -133,6 +145,10 @@ ManifestFileCacheKeys getManifestList(
 
         ManifestFileCacheKeys manifest_file_cache_keys;
 
+        timespec spec{};
+        if (clock_gettime(CLOCK_REALTIME, &spec))
+            throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
+
         for (size_t i = 0; i < manifest_list_deserializer.rows(); ++i)
         {
             const std::string file_path
@@ -157,7 +173,16 @@ ManifestFileCacheKeys getManifestList(
                     manifest_list_deserializer.getValueFromRowByName(i, f_content, TypeIndex::Int32).safeGet<Int32>());
             }
             manifest_file_cache_keys.emplace_back(
-                manifest_file_name, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type, manifest_list_deserializer.getContent());
+                manifest_file_name, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
+
+            Context::getGlobalContextInstance()->getIcebergMetadataLog()->add(DB::IcebergMetadataLogElement{
+                .current_time = spec.tv_sec,
+                .query_id = local_context->getCurrentQueryId(),
+                .content_type = DB::IcebergMetadataLogLevel::ManifestEntryMetadata,
+                .path = configuration_ptr->getRawPath().path,
+                .filename = file_path,
+                .metadata_content = manifest_list_deserializer.getContent()
+            });
         }
         /// We only return the list of {file name, seq number} for cache.
         /// Because ManifestList holds a list of ManifestFilePtr which consume much memory space.
