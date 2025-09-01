@@ -3063,7 +3063,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         scope,
                         false /*allow_lambda_expression*/,
                         false /*allow_table_expression*/);
-                    
+
                     if (apply_cast_to_common_type)
                     {
                         DataTypePtr common_type;
