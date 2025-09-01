@@ -30,10 +30,10 @@ if (OS_LINUX)
     # By enabling percpu_arena number of arenas is limited to the number of CPUs, and hence
     # this problem should go away.
     #
-    # muzzy_decay_ms -- use MADV_FREE when available on newer Linuxes, to
-    # avoid spurious latencies and additional work associated with
-    # MADV_DONTNEED. See
-    # https://github.com/ClickHouse/ClickHouse/issues/11121 for motivation.
+    # Profiling tools are enabled by default (prof:true) so it can be enabled during runtime by using config or query setting.
+    # To have a per-thread control over profiling, we rely on `prof_thread_active_init` instead of `prof_active`.
+    # I.e. we enable global jemalloc sampling but disable it for each thread with `prof_thread_active_init`.
+    # This way we can enable it for thread we want or for all threads (by setting `prof_thread_active_init` to true)
     #
     # lg_extent_max_active_fit:8 controls how jemalloc reuses memory blocks.
     # Value 8 means extents can be reused when their size is up to 2^8 (256) times larger than requested.

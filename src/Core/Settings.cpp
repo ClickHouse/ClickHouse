@@ -7597,7 +7597,7 @@ void Settings::addToClientOptions(Poco::Util::LayeredConfiguration &config, cons
     for (const auto & setting : impl->all())
     {
         const auto & name = setting.getName();
-        if (options.count(name))
+        if (options.contains(name))
         {
             if (repeated_settings)
                 config.setString(name, options[name].as<Strings>().back());

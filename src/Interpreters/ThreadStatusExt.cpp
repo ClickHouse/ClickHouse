@@ -343,9 +343,12 @@ void ThreadStatus::applyQuerySettings()
 #if USE_JEMALLOC
     if (settings[Setting::jemalloc_enable_profiler])
     {
+        jemalloc_profiler_enabled = true;
         Jemalloc::getThreadProfileActiveMib().setValue(true);
-        Jemalloc::setCollectLocalProfileSamplesInTraceLog(settings[Setting::jemalloc_collect_profile_samples_in_trace_log]);
     }
+
+    if (settings[Setting::jemalloc_collect_profile_samples_in_trace_log])
+        Jemalloc::setCollectLocalProfileSamplesInTraceLog(true);
 #endif
 }
 
@@ -394,6 +397,12 @@ void ThreadStatus::detachFromGroup()
     thread_group->unlinkThread(thread_attach_time.elapsedMilliseconds());
 
     thread_group.reset();
+
+#if USE_JEMALLOC
+    if (std::exchange(jemalloc_profiler_enabled, false))
+        Jemalloc::getThreadProfileActiveMib().setValue(Jemalloc::getThreadProfileInitMib().getValue());
+    Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
+#endif
 
     query_id.clear();
     query_context.reset();

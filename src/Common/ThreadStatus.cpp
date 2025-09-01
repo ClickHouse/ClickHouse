@@ -29,6 +29,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool jemalloc_enable_profiler;
+    extern const SettingsBool jemalloc_collect_profile_samples_in_trace_log;
 }
 
 #if !defined(SANITIZER)
@@ -183,19 +184,11 @@ void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
 {
     chassert(query_id.empty());
     query_id = std::move(new_query_id);
-
-#if USE_JEMALLOC
-    Jemalloc::setValue("thread.prof.name", query_id.c_str());
-#endif
 }
 
 void ThreadStatus::clearQueryId() noexcept
 {
     query_id.clear();
-
-#if USE_JEMALLOC
-    Jemalloc::setValue("thread.prof.name", "");
-#endif
 }
 
 const String & ThreadStatus::getQueryId() const
@@ -286,16 +279,6 @@ ThreadStatus::~ThreadStatus()
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
     assert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));
-
-#if USE_JEMALLOC
-    if (query_context_ptr && query_context_ptr->getSettingsRef()[Setting::jemalloc_enable_profiler])
-    {
-        Jemalloc::getThreadProfileActiveMib().setValue(Jemalloc::getThreadProfileInitMib().getValue());
-        Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
-    }
-
-    Jemalloc::setValue("thread.prof.name", "");
-#endif
 
     /// detachGroup if it was attached
     if (deleter)
