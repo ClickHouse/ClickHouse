@@ -139,7 +139,8 @@ JOIN
     (SELECT 1 AS id, 20 AS value
      UNION ALL
      SELECT 2, 50) AS c
-    ON a.id = c.id AND c.value - a.value < 40;
+    ON a.id = c.id AND c.value - a.value < 40
+ORDER BY a.id;
 "
 
 # ------------------------------
@@ -152,9 +153,13 @@ FROM
      UNION ALL
      SELECT 2, 20) AS t1
 JOIN
-    (SELECT id, val * 2 AS val2 FROM (SELECT 1 AS id, 10 AS val UNION ALL SELECT 2, 20) ) AS t2
+    (SELECT id, val * 2 AS val2
+     FROM (SELECT 1 AS id, 10 AS val UNION ALL SELECT 2, 20)) AS t2
     ON t1.id = t2.id
 JOIN
-    (SELECT id, val2 + 5 AS val3 FROM (SELECT id, val * 2 AS val2 FROM (SELECT 1 AS id, 10 AS val UNION ALL SELECT 2, 20))) AS t3
-    ON t1.id = t3.id;
+    (SELECT id, val2 + 5 AS val3
+     FROM (SELECT id, val * 2 AS val2
+           FROM (SELECT 1 AS id, 10 AS val UNION ALL SELECT 2, 20))) AS t3
+    ON t1.id = t3.id
+ORDER BY t1.id;
 "
