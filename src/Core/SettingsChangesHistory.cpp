@@ -46,6 +46,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_iceberg_data_file_rows", 100000, 100000, "New setting."},
             {"max_iceberg_data_file_bytes", 100000000, 100000000, "New setting."},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
+            {"promql_evaluation_time", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."},
+            {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {

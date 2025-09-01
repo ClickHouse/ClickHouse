@@ -7043,9 +7043,9 @@ Specifies the database name used by the 'promql' dialect. Empty string means the
 Specifies the name of a TimeSeries table used by the 'promql' dialect.
 )", EXPERIMENTAL) \
     \
-    DECLARE(FloatAuto, evaluation_time, Field("auto"), R"(
+    DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
 Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, evaluation_time) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
