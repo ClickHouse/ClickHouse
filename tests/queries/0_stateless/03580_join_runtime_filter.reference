@@ -10,6 +10,16 @@ BuildRuntimeFilter (Build runtime join filter on __table2.n_nationkey (_runtime_
 765
 Type: INNER
 Strictness: ANY
+3
+Type: LEFT
+Strictness: SEMI
 Filter column: filterContains(_runtime_filter_UNIQ_ID_0, __table1.c_nationkey) (removed)
 BuildRuntimeFilter (Build runtime join filter on __table2.n_nationkey (_runtime_filter_UNIQ_ID_0))
-3
+76500
+Type: RIGHT
+Strictness: SEMI
+Filter column: filterContains(_runtime_filter_UNIQ_ID_0, __table1.c_nationkey) (removed)
+BuildRuntimeFilter (Build runtime join filter on __table2.n_nationkey (_runtime_filter_UNIQ_ID_0))
+ETHIOPIA
+FRANCE
+GERMANY
