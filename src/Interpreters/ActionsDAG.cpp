@@ -2,6 +2,7 @@
 
 #include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -2948,9 +2949,24 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
         {
             /// Rejected set has only one predicate.
             /// Fix the result type and add an alias.
-            const auto * child = new_children.front();
-            if (!child->result_type->equals(*predicate->result_type))
-                child = &addCast(*child, predicate->result_type, {});
+            auto & child = new_children.front();
+
+            if (!removes_filter)
+            {
+                /// Preserve the original type if the column is needed in the result.
+                if (isFloat(removeLowCardinalityAndNullable(child->result_type)))
+                {
+                    /// For floating point types, it's not enouth to cast to just UInt8.
+                    /// Because counstants like 0.1 will be casted to 0, whis is inconsistent with e.g. "1 and 0.1"
+                    DataTypePtr cast_type = DataTypeFactory::instance().get("Bool");
+                    if (isNullableOrLowCardinalityNullable(child->result_type))
+                        cast_type = std::make_shared<DataTypeNullable>(std::move(cast_type));
+                    child = &addCast(*child, cast_type, {});
+                }
+
+                if (!child->result_type->equals(*predicate->result_type))
+                    child = &addCast(*child, predicate->result_type, {});
+            }
 
             Node node;
             node.type = ActionType::ALIAS;
