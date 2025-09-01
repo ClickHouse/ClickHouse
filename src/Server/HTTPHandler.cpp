@@ -1,5 +1,6 @@
 #include <Server/HTTPHandler.h>
 
+#include <Access/AccessControl.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ExternalTable.h>
@@ -267,16 +268,17 @@ void HTTPHandler::processQuery(
         if (reserved_param_names.contains(name))
             return true;
 
-        /// For external data we also want settings.
         if (has_external_data)
         {
-            /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
-            /// It is a bug and ambiguity with `date_time_input_format` and `low_cardinality_allow_in_native_format` formats/settings.
+            /// For external data we have unspecified parameters which literally are {'<temp_table_name>_format', '<temp_table_name>_types', '<temp_table_name>_structure'}.
+            /// That parameters are not supposed to be used in the query as a settings. They have to be skipped.
+            /// But we could not just skip all parameters with suffixes '_format', '_types', '_structure',
+            /// because some of them are used in the query as a settings, like 'date_time_input_format',
             static const Names reserved_param_suffixes = {"_format", "_types", "_structure"};
             for (const String & suffix : reserved_param_suffixes)
             {
                 if (endsWith(name, suffix))
-                    return true;
+                    return (!context->getAccessControl().isSettingNameAllowed(name));
             }
         }
 

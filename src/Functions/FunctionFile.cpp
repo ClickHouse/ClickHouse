@@ -152,7 +152,6 @@ public:
                     res_chars.insert(default_result.data(), default_result.data() + default_result.size());
             }
 
-            res_chars.push_back(0);
             res_offsets[row] = res_chars.size();
         }
 
@@ -166,7 +165,33 @@ public:
 
 REGISTER_FUNCTION(File)
 {
-    factory.registerFunction<FunctionFile>();
+    FunctionDocumentation::Description description = R"(
+Reads a file as a string and loads the data into the specified column.
+The file content is not interpreted.
+
+Also see the [`file`](../table-functions/file.md) table function.
+        )";
+    FunctionDocumentation::Syntax syntax = "file(path[, default])";
+    FunctionDocumentation::Arguments arguments = {
+        {"path", "The path of the file relative to the `user_files_path`. Supports wildcards `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` are numbers and `'abc', 'def'` are strings.", {"String"}},
+        {"default", "The value returned if the file does not exist or cannot be accessed.", {"String", "NULL"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the file content as a string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Insert files into a table",
+            R"(
+INSERT INTO table SELECT file('a.txt'), file('b.txt');
+            )",
+            R"(
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionFile>(documentation);
 }
 
 }
