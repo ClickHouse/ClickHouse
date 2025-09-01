@@ -2956,8 +2956,8 @@ void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
                 /// Preserve the original type if the column is needed in the result.
                 if (isFloat(removeLowCardinalityAndNullable(child->result_type)))
                 {
-                    /// For floating point types, it's not enouth to cast to just UInt8.
-                    /// Because counstants like 0.1 will be casted to 0, whis is inconsistent with e.g. "1 and 0.1"
+                    /// For floating point types, it's not enough to cast to just UInt8.
+                    /// Because counstants like 0.1 will be casted to 0, which is inconsistent with e.g. "1 and 0.1"
                     DataTypePtr cast_type = DataTypeFactory::instance().get("Bool");
                     if (isNullableOrLowCardinalityNullable(child->result_type))
                         cast_type = std::make_shared<DataTypeNullable>(std::move(cast_type));
