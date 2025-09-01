@@ -83,4 +83,9 @@ void insertRowToLogTable(
             .filename = filename,
             .metadata_content = row});
 }
+
+IcebergMetadataLogLevel getIcebergMetadataLogLevelFromSettings(const ContextPtr & local_context)
+{
+    return static_cast<IcebergMetadataLogLevel>(local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value);
+}
 }

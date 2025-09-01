@@ -1,8 +1,8 @@
 
-#include <sstream>
 #include "config.h"
 #if USE_AVRO
 
+#include <sstream>
 #include <cstddef>
 #include <memory>
 #include <optional>

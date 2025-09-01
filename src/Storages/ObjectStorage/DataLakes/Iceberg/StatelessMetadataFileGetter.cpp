@@ -60,11 +60,6 @@ extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
 }
 
-namespace Setting
-{
-extern const SettingsUInt64 iceberg_metadata_log_level;
-}
-
 namespace Iceberg
 {
 Iceberg::ManifestFilePtr getManifestFile(
@@ -77,7 +72,7 @@ Iceberg::ManifestFilePtr getManifestFile(
     Int64 inherited_sequence_number,
     Int64 inherited_snapshot_id)
 {
-    UInt64 log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
+    IcebergMetadataLogLevel log_level = getIcebergMetadataLogLevelFromSettings(local_context);
     auto create_fn = [&]()
     {
         RelativePathWithMetadata manifest_object_info(filename);
@@ -91,8 +86,18 @@ Iceberg::ManifestFilePtr getManifestFile(
         Iceberg::AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
 
 
-        insertRowToLogTable(local_context, manifest_file_deserializer.getContent(), DB::IcebergMetadataLogLevel::ManifestEntryMetadata, configuration->getRawPath().path, filename);
-        insertRowToLogTable(local_context, manifest_file_deserializer.getMetadataContent(), DB::IcebergMetadataLogLevel::ManifestEntryMetadata, configuration->getRawPath().path, filename);
+        insertRowToLogTable(
+            local_context,
+            manifest_file_deserializer.getContent(),
+            DB::IcebergMetadataLogLevel::ManifestFileEntry,
+            configuration->getRawPath().path,
+            filename);
+        insertRowToLogTable(
+            local_context,
+            manifest_file_deserializer.getMetadataContent(),
+            DB::IcebergMetadataLogLevel::ManifestFileMetadata,
+            configuration->getRawPath().path,
+            filename);
 
         return std::make_shared<Iceberg::ManifestFileContent>(
             manifest_file_deserializer,
@@ -107,7 +112,7 @@ Iceberg::ManifestFilePtr getManifestFile(
             filename);
     };
 
-    if (persistent_table_components.metadata_cache && log_level >= static_cast<UInt64>(DB::IcebergMetadataLogLevel::ManifestEntryMetadata))
+    if (persistent_table_components.metadata_cache && log_level >= DB::IcebergMetadataLogLevel::ManifestFileMetadata)
     {
         auto manifest_file = persistent_table_components.metadata_cache->getOrSetManifestFile(
             IcebergMetadataFilesCache::getKey(configuration, filename), create_fn);
@@ -128,7 +133,7 @@ ManifestFileCacheKeys getManifestList(
     if (configuration_ptr == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
 
-    UInt64 log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
+    IcebergMetadataLogLevel log_level = getIcebergMetadataLogLevelFromSettings(local_context);
     auto create_fn = [&]()
     {
         StorageObjectStorage::ObjectInfo object_info(filename);
@@ -178,7 +183,7 @@ ManifestFileCacheKeys getManifestList(
     };
 
     ManifestFileCacheKeys manifest_file_cache_keys;
-    if (persistent_table_components.metadata_cache && log_level >= static_cast<UInt64>(DB::IcebergMetadataLogLevel::ManifestEntryMetadata))
+    if (persistent_table_components.metadata_cache && log_level >= DB::IcebergMetadataLogLevel::ManifestListEntry)
         manifest_file_cache_keys = persistent_table_components.metadata_cache->getOrSetManifestFileCacheKeys(
             IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
     else

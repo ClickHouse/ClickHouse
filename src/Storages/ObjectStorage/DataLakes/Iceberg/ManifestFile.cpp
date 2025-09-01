@@ -509,11 +509,11 @@ size_t ManifestFileContent::getSizeInMemory() const
     return total_size;
 }
 
-std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted(FileContentType file_content) const
+std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
 {
     Int64 result = 0;
 
-    for (const auto & file : getFilesWithoutDeleted(file_content))
+    for (const auto & file : getFilesWithoutDeleted(content))
     {
         /// Have at least one column with rows count
         bool found = false;

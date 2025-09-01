@@ -12,8 +12,8 @@ enum class IcebergMetadataLogLevel : UInt8
     None = 0,
     Metadata = 1,
     ManifestListEntry = 2,
-    ManifestEntryMetadata = 3,
-    ManifestEntry = 4,
+    ManifestFileMetadata = 3,
+    ManifestFileEntry = 4,
 };
 
 struct IcebergMetadataLogElement
@@ -31,6 +31,8 @@ struct IcebergMetadataLogElement
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
 };
+
+IcebergMetadataLogLevel getIcebergMetadataLogLevelFromSettings(const ContextPtr & local_context);
 
 void insertRowToLogTable(
     const ContextPtr & local_context, String row, IcebergMetadataLogLevel row_log_level, const String & file_path, const String & filename);
