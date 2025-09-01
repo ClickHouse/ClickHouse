@@ -455,7 +455,7 @@ ClickHouse supports **temporary views** with the following characteristics (matc
   You do **not** need to specify `ENGINE`; if provided as `ENGINE = View`, it’s ignored/treated as the same logical view.
 
 * **Security / privileges**
-  Creating a temporary view requires the privilege to create views.
+  Creating a temporary view requires the privilege `CREATE TEMPORARY VIEW` which is implicitly granted by `CREATE VIEW`.
 
 * **SHOW CREATE**
   Use `SHOW CREATE TEMPORARY VIEW view_name;` to print the DDL of a temporary view.
@@ -493,7 +493,7 @@ SHOW CREATE TEMPORARY VIEW tview;
 Drop it:
 
 ```sql
-DROP TEMPORARY TABLE IF EXISTS tview;  -- temporary views are dropped with TEMPORARY TABLE syntax
+DROP TEMPORARY VIEW IF EXISTS tview;  -- temporary views are dropped with TEMPORARY TABLE syntax
 ```
 
 ### Disallowed / limitations
@@ -507,6 +507,28 @@ DROP TEMPORARY TABLE IF EXISTS tview;  -- temporary views are dropped with TEMPO
 ### Notes on distributed queries
 
 A temporary **view** is just a definition; there’s no data to pass around. If your temporary view references temporary **tables** (e.g., `Memory`), their data can be shipped to remote servers during distributed query execution the same way temporary tables work.
+
+#### Example
+
+```sql
+-- A session-scoped, in-memory table
+CREATE TEMPORARY TABLE temp_ids (id UInt64) ENGINE = Memory;
+
+INSERT INTO temp_ids VALUES (1), (5), (42);
+
+-- A session-scoped view over the temp table (purely logical)
+CREATE TEMPORARY VIEW v_ids AS
+SELECT id FROM temp_ids;
+
+-- Replace 'test' with your cluster name.
+-- GLOBAL JOIN forces ClickHouse to *ship* the small join-side (temp_ids via v_ids)
+-- to every remote server that executes the left side.
+SELECT count()
+FROM cluster('test', system.numbers) AS n
+GLOBAL ANY INNER JOIN v_ids USING (id)
+WHERE n.number < 100;
+
+```
 
 ---
 

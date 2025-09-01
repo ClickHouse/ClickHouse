@@ -115,9 +115,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
                 s_dictionary.ignore(pos, expected);
         }
         
-        // Set temporary flag if it was parsed earlier
-        if (temporary)
-            query->temporary = true;
+        query->temporary = temporary;
         
         if (!name_p.parse(pos, table, expected))
             return false;

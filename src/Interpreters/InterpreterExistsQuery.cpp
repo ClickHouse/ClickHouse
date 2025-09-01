@@ -59,8 +59,17 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
     {
         if (exists_query->temporary)
         {
-            result = static_cast<bool>(getContext()->tryResolveStorageID(
-                {"", exists_query->getTable()}, Context::ResolveExternal));
+            auto storage_id = getContext()->tryResolveStorageID(
+                {"", exists_query->getTable()}, Context::ResolveExternal);
+            if (storage_id)
+            {
+                auto table = DatabaseCatalog::instance().tryGetTable(storage_id, getContext());
+                result = table && table->isView();
+            }
+            else
+            {
+                result = false;
+            }
         }
         else
         {
