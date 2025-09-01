@@ -134,6 +134,7 @@ public:
             if (!hasChildColumnNodeWithTextIndex(node))
                 continue;
 
+            /// TODO: rework the analysis to support multiple functions.
             if (actions_dag.getOutputs().empty() || actions_dag.getOutputs().front()->result_name != node.result_name)
                 continue;
 
