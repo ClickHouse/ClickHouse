@@ -74,8 +74,7 @@ bool CachedObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t> read_hint) const
 {
     if (read_settings.enable_filesystem_cache)
     {
@@ -87,7 +86,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
 
             auto read_buffer_creator = [=, this]()
             {
-                return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
+                return object_storage->readObject(object, patchSettings(read_settings), read_hint);
             };
 
             return std::make_unique<CachedOnDiskReadBufferFromFile>(
@@ -110,7 +109,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
         }
     }
 
-    return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
+    return object_storage->readObject(object, patchSettings(read_settings), read_hint);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// NOLINT

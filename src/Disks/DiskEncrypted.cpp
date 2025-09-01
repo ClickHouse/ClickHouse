@@ -419,17 +419,13 @@ void DiskEncrypted::copyFile(
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t> read_hint) const
 {
     if (read_hint && *read_hint > 0)
         read_hint = *read_hint + FileEncryption::Header::kSize;
 
-    if (file_size && *file_size > 0)
-        file_size = *file_size + FileEncryption::Header::kSize;
-
     auto wrapped_path = wrappedPath(path);
-    auto buffer = delegate->readFile(wrapped_path, settings, read_hint, file_size);
+    auto buffer = delegate->readFile(wrapped_path, settings, read_hint);
     if (buffer->eof())
     {
         /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().

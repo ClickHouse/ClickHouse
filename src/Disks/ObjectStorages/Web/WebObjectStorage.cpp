@@ -230,7 +230,6 @@ WebObjectStorage::FileDataPtr WebObjectStorage::tryGetFileInfo(const String & pa
 std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>,
     std::optional<size_t>) const
 {
     return std::make_unique<ReadBufferFromWebServer>(
