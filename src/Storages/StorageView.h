@@ -40,7 +40,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    void drop(ContextPtr) override;
+    void drop() override;
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     static void replaceQueryParametersIfParameterizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values);

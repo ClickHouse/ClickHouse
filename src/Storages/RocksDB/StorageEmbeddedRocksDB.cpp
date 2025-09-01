@@ -333,7 +333,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     }
 }
 
-void StorageEmbeddedRocksDB::drop(ContextPtr)
+void StorageEmbeddedRocksDB::drop()
 {
     std::lock_guard lock(rocksdb_ptr_mx);
     rocksdb_ptr->Close();

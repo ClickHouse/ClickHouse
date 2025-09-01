@@ -450,7 +450,7 @@ void StorageFileLog::reduceStreams()
     running_streams -= 1;
 }
 
-void StorageFileLog::drop(ContextPtr)
+void StorageFileLog::drop()
 {
     try
     {

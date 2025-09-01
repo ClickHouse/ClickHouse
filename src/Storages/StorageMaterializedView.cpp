@@ -441,7 +441,7 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
 }
 
 
-void StorageMaterializedView::drop(ContextPtr)
+void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
     const auto & select_query = getInMemoryMetadataPtr()->getSelectQuery();

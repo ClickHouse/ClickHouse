@@ -466,7 +466,7 @@ public:
       * If some queries may still use the table, then it must be called under exclusive lock.
       * If you do not need any action other than deleting the directory with data, you can leave this method blank.
       */
-    virtual void drop(ContextPtr) {}
+    virtual void drop() {}
 
     virtual void dropInnerTableIfAny(bool /* sync */, ContextPtr /* context */) {}
 

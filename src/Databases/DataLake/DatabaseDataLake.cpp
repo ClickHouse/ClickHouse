@@ -451,7 +451,7 @@ void DatabaseDataLake::dropTable( /// NOLINT
 {
     auto table = tryGetTable(name, context_);
     if (table)
-        table->drop(context_);
+        table->drop();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot drop table {} because it does not exist", name);
 }

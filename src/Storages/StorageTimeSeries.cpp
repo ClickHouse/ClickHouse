@@ -194,7 +194,7 @@ void StorageTimeSeries::shutdown(bool)
 }
 
 
-void StorageTimeSeries::drop(ContextPtr)
+void StorageTimeSeries::drop()
 {
     /// Sync flag and the setting make sense for Atomic databases only.
     /// However, with Atomic databases, IStorage::drop() can be called only from a background task in DatabaseCatalog.

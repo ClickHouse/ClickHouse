@@ -378,7 +378,7 @@ void StorageMergeTree::checkTableCanBeDropped(ContextPtr query_context) const
     getContext()->checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
 }
 
-void StorageMergeTree::drop(ContextPtr)
+void StorageMergeTree::drop()
 {
     shutdown(true);
     dropAllData();

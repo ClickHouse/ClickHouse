@@ -471,7 +471,7 @@ void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel 
     }
 }
 
-void DatabaseMySQL::detachTablePermanently(ContextPtr local_context, const String & table_name)
+void DatabaseMySQL::detachTablePermanently(ContextPtr /*local_context*/, const String & table_name)
 {
     if (!persistent)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE is not supported for non-persistent MySQL database");
@@ -496,7 +496,7 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr local_context, const Strin
 
     try
     {
-        table_iter->second.second->drop(local_context);
+        table_iter->second.second->drop();
         db_disk->createFile(remove_flag);
     }
     catch (...)

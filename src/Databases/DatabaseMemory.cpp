@@ -69,7 +69,7 @@ void DatabaseMemory::dropTable(
         /// - it does not require it
         /// - it may cause lock-order-inversion if underlying storage need to
         ///   resolve tables (like StorageLiveView)
-        table->drop(nullptr);
+        table->drop();
 
         if (table->storesDataOnDisk())
         {

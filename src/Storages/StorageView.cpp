@@ -222,7 +222,7 @@ void StorageView::read(
     query_plan.addStep(std::move(converting));
 }
 
-void StorageView::drop(ContextPtr)
+void StorageView::drop()
 {
     auto table_id = getStorageID();
 

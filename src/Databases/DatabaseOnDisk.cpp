@@ -368,7 +368,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
         // The table might be not loaded for Lazy database engine.
         if (table)
         {
-            table->drop(local_context);
+            table->drop();
             table->is_dropped = true;
         }
         std::lock_guard lock(mutex);

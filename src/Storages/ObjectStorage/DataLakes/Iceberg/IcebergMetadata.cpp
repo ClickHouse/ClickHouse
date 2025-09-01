@@ -919,9 +919,9 @@ SinkToStoragePtr IcebergMetadata::write(
     }
 }
 
-void IcebergMetadata::drop(ContextPtr local_context)
+void IcebergMetadata::drop(ContextPtr context)
 {
-    if (local_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
+    if (context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
     {
         auto configuration_ptr = configuration.lock();
         auto files = listFiles(*object_storage, *configuration_ptr, configuration_ptr->getPathForRead().path, "");

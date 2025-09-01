@@ -441,7 +441,7 @@ void StorageKafka2::shutdown(bool)
     LOG_TRACE(log, "Consumers closed");
 }
 
-void StorageKafka2::drop(ContextPtr)
+void StorageKafka2::drop()
 {
     dropReplica();
 }

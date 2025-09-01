@@ -82,7 +82,7 @@ public:
         ContextPtr local_context,
         TableExclusiveLockHolder &) override;
 
-    void drop(ContextPtr) override;
+    void drop() override;
 
     bool supportsPartitionBy() const override { return true; }
 
