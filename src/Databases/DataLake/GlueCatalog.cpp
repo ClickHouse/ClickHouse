@@ -279,6 +279,13 @@ bool GlueCatalog::tryGetTableMetadata(
             {
                 const auto column_params = column.GetParameters();
                 bool can_be_nullable = column_params.contains("iceberg.field.optional") && column_params.at("iceberg.field.optional") == "true";
+
+                /// Skip field if it's not "current" (for example Renamed). No idea how someone can utilize "non current fields" but for some reason
+                /// they are returned by Glue API. So if you do "RENAME COLUMN a to new_a" glue will return two fields: a and new_a.
+                /// And a will be marked as "non current" field.
+                if (column_params.contains("iceberg.field.current") && column_params.at("iceberg.field.current") == "false")
+                    continue;
+
                 schema.push_back({column.GetName(), getType(column.GetType(), can_be_nullable)});
             }
             result.setSchema(schema);
