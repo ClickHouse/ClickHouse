@@ -48,6 +48,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
             {"delta_lake_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New setting."},
             {"delta_lake_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
+            {"optimize_sharding_key_global_in", false, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {

@@ -55,6 +55,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 offset;
+    extern const SettingsBool optimize_sharding_key_global_in;
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsUInt64 optimize_skip_unused_shards_nesting;
     extern const SettingsBool optimize_skip_unused_shards_rewrite_in;
@@ -369,15 +370,22 @@ void executeQuery(
             const auto & shard_info = cluster->getShardsInfo()[i];
 
             auto query_for_shard = query_info.query_tree->clone();
-            if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
-                /// TODO: support composite sharding key
-                sharding_key_expr->getRequiredColumns().size() == 1)
+
+            const auto rewrite_in = sharding_key_expr && query_info.optimized_cluster
+                && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1;
+            const auto rewrite_global_in
+                = sharding_key_expr && settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_sharding_key_global_in];
+
+            /// TODO: support composite sharding key
+            if ((rewrite_in || rewrite_global_in) && sharding_key_expr->getRequiredColumns().size() == 1)
             {
                 OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                     sharding_key_expr,
                     sharding_key_column_name,
                     shard_info,
                     not_optimized_cluster->getSlotToShard(),
+                    rewrite_in,
+                    rewrite_global_in,
                 };
                 optimizeShardingKeyRewriteIn(query_for_shard, std::move(visitor_data), new_context);
             }
@@ -416,6 +424,8 @@ void executeQuery(
                     sharding_key_column_name,
                     shard_info,
                     not_optimized_cluster->getSlotToShard(),
+                    /*allow_rewrite_in=*/true,
+                    /*allow_rewrite_global_in=*/false,
                 };
                 OptimizeShardingKeyRewriteInVisitor visitor(visitor_data);
                 visitor.visit(query_ast_for_shard);

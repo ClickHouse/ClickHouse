@@ -34,6 +34,10 @@ struct OptimizeShardingKeyRewriteInMatcher
         const Cluster::ShardInfo & shard_info;
         /// weight -> shard mapping
         const Cluster::SlotToShard & slots;
+        /// If rewriting IN functions allowed
+        const bool allow_rewrite_in;
+        /// If rewriting GLOBAL IN functions allowed
+        const bool allow_rewrite_global_in;
     };
 
     static bool needChildVisit(ASTPtr & /*node*/, const ASTPtr & /*child*/);
