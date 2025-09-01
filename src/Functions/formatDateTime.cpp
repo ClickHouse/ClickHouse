@@ -1095,7 +1095,7 @@ public:
         auto col_res = ColumnString::create();
         auto & res_data = col_res->getChars();
         auto & res_offsets = col_res->getOffsets();
-        res_data.resize(input_rows_count * (out_template_size + 1));
+        res_data.resize(input_rows_count * out_template_size);
         res_offsets.resize(input_rows_count);
 
         if constexpr (format_syntax == FormatSyntax::MySQL)
@@ -1110,8 +1110,8 @@ public:
 
                     if (pos < end)
                     {
-                        memcpy(pos, out_template.data(), out_template_size + 1); /// With zero terminator. mystring[mystring.size()] = '\0' is guaranteed since C++11.
-                        pos += out_template_size + 1;
+                        memcpy(pos, out_template.data(), out_template_size);
+                        pos += out_template_size;
                     }
 
                     /// Copy exponentially growing ranges.
@@ -1158,8 +1158,6 @@ public:
                 for (auto & instruction : instructions)
                     instruction.perform(pos, static_cast<T>(vec[i]), 0, 0, *time_zone);
             }
-            *pos++ = '\0';
-
             res_offsets[i] = pos - begin;
         }
 

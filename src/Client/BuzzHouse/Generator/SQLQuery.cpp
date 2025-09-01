@@ -319,10 +319,6 @@ void StatementGenerator::setTableFunction(
                 : (t.isIcebergLocalEngine() ? LocalFunc_FName::LocalFunc_FName_icebergLocal
                                             : LocalFunc_FName::LocalFunc_FName_deltaLakeLocal);
 
-            if (cluster.has_value() && (!allow_chaos || rg.nextSmallNumber() < 9))
-            {
-                lfunc->mutable_cluster()->set_cluster(cluster.value());
-            }
             lfunc->set_fname(val);
             lfunc->set_credential("local");
         }
@@ -378,7 +374,7 @@ void StatementGenerator::setTableFunction(
             rfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
             if (allow_chaos)
             {
-                setRandomShardKey(rg, t, rfunc->mutable_key());
+                setRandomShardKey(rg, std::make_optional<SQLTable>(t), rfunc->mutable_key());
             }
             structure = rg.nextMediumNumber() < 96 ? rfunc->mutable_structure() : nullptr;
             if (rg.nextBool())
@@ -470,7 +466,7 @@ void StatementGenerator::setTableFunction(
         if (rg.nextSmallNumber() < 4)
         {
             /// Optional sharding key
-            setRandomShardKey(rg, t, cdf->mutable_sharding_key());
+            setRandomShardKey(rg, std::make_optional<SQLTable>(t), cdf->mutable_sharding_key());
         }
     }
     else if (usage == TableFunctionUsage::RemoteCall || (usage == TableFunctionUsage::PeerTable && t.hasClickHousePeer()))
@@ -498,7 +494,7 @@ void StatementGenerator::setTableFunction(
         if (rg.nextSmallNumber() < 4)
         {
             /// Optional sharding key
-            setRandomShardKey(rg, t, rfunc->mutable_sharding_key());
+            setRandomShardKey(rg, std::make_optional<SQLTable>(t), rfunc->mutable_sharding_key());
         }
     }
     else
@@ -566,7 +562,7 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
             const uint32_t ncame = col_counter++;
             auto tp = std::unique_ptr<SQLType>(randomNextType(rg, this->next_type_mask, col_counter, nullptr));
 
-            buf += fmt::format("{}c{} {}", first ? "" : ", ", ncame, tp->typeName(false));
+            buf += fmt::format("{}c{} {}", first ? "" : ", ", ncame, tp->typeName(false, false));
             first = false;
             centries[ncame] = std::move(tp);
         }
@@ -844,11 +840,10 @@ bool StatementGenerator::joinedTableOrFunction(
         SQLRelation rel(rel_name);
         ExprSchemaTable * est = tof->mutable_est();
         const auto & ntable = rg.pickRandomly(systemTables);
-        const auto & tentries = systemTables.at(ntable);
 
-        est->mutable_database()->set_database("system");
-        est->mutable_table()->set_table(ntable);
-        for (const auto & entry : tentries)
+        est->mutable_database()->set_database(ntable.schema_name);
+        est->mutable_table()->set_table(ntable.table_name);
+        for (const auto & entry : ntable.columns)
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {entry}));
         }
@@ -1075,7 +1070,7 @@ bool StatementGenerator::joinedTableOrFunction(
             const String & bottomName = entry.getBottomName();
 
             url += fmt::format("{}{}", first ? "" : ",", bottomName);
-            buf += fmt::format("{}{} {}", first ? "" : ", ", bottomName, entry.getBottomType()->typeName(false));
+            buf += fmt::format("{}{} {}", first ? "" : ", ", bottomName, entry.getBottomType()->typeName(false, false));
             first = false;
         }
         this->remote_entries.clear();
@@ -1651,26 +1646,11 @@ uint32_t StatementGenerator::generateFromStatement(RandomGenerator & rg, const u
             }
             core->set_global(rg.nextSmallNumber() < 3);
             core->set_join_op(jt);
-            if (rg.nextSmallNumber() < 4)
+            const auto & maps = StatementGenerator::joinMappings.at(jt);
+            if (!maps.empty() && rg.nextSmallNumber() < 4)
             {
-                switch (jt)
-                {
-                    case JoinType::J_LEFT:
-                    case JoinType::J_INNER: {
-                        std::uniform_int_distribution<uint32_t> join_constr_range(1, static_cast<uint32_t>(JoinConst_MAX));
-                        core->set_join_const(static_cast<JoinConst>(join_constr_range(rg.generator)));
-                    }
-                    break;
-                    case JoinType::J_RIGHT:
-                        core->set_join_const(
-                            static_cast<JoinConst>((rg.nextRandomUInt32() % static_cast<uint32_t>(JoinConst::J_ANTI)) + 1));
-                        break;
-                    case JoinType::J_FULL:
-                        core->set_join_const(JoinConst::J_ALL);
-                        break;
-                    default:
-                        break;
-                }
+                core->set_join_const(rg.pickRandomly(maps));
+                core->set_const_on_right(rg.nextBool());
             }
             generateFromElement(rg, allowed_clauses, core->mutable_tos());
             generateJoinConstraint(rg, njoined == 2, core->mutable_join_constraint());
