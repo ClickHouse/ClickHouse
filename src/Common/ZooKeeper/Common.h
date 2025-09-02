@@ -7,6 +7,6 @@
 namespace zkutil
 {
 
-using GetZooKeeper = std::function<ZooKeeperPtr()>;
+using GetZooKeeper = std::function<ZooKeeperPtr(UInt64)>;
 
 }

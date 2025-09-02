@@ -44,7 +44,7 @@ std::string getOrCreateCustomDisk(
         Poco::XML::DOMParser dom_parser(name_pool);
 
         std::vector<std::pair<std::string, std::string>> substitutions;
-        zkutil::ZooKeeperNodeCache zk_node_cache([&]() { return context->getZooKeeper(); });
+        zkutil::ZooKeeperNodeCache zk_node_cache([&](UInt64 max_lock_milliseconds) { return context->getZooKeeper(max_lock_milliseconds); });
 
         ConfigProcessor::processIncludes(
             xml_document,

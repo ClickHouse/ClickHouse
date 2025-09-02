@@ -36,7 +36,7 @@ std::pair<zkutil::ZooKeeperPtr, ZooKeeperCachingGetter::SessionStatus> ZooKeeper
 {
     if (!cached_zookeeper_ptr || cached_zookeeper_ptr->expired())
     {
-        auto zookeeper = get_zookeeper();
+        auto zookeeper = get_zookeeper(0);
         if (!zookeeper)
             throw DB::Exception(DB::ErrorCodes::NO_ZOOKEEPER, "Can't get ZooKeeper session");
 

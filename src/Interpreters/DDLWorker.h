@@ -95,7 +95,7 @@ public:
     ZooKeeperWithFaultInjectionPtr getZooKeeper() const;
     /// If necessary, creates a new session and caches it.
     /// Should be called in `initializeMainThread` only, so if it is expired, `runMainThread` will reinitialized the state.
-    ZooKeeperWithFaultInjectionPtr getAndSetZooKeeper();
+    ZooKeeperWithFaultInjectionPtr getAndSetZooKeeper(UInt64 max_lock_milliseconds);
 
 protected:
 

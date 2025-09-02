@@ -1434,7 +1434,7 @@ try
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
 
-    zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
+    zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&](UInt64 max_lock_milliseconds) { return global_context->getZooKeeper(max_lock_milliseconds); });
     zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
     if (loaded_config.has_zk_includes)
     {
@@ -2407,7 +2407,7 @@ try
     auto & access_control = global_context->getAccessControl();
     try
     {
-        access_control.setupFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
+        access_control.setupFromMainConfig(config(), config_path, [&](UInt64 max_lock_milliseconds) { return global_context->getZooKeeper(max_lock_milliseconds); });
     }
     catch (...)
     {

@@ -88,7 +88,7 @@ void WithRetries::renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const
 
     if (!zookeeper || zookeeper->expired())
     {
-        zookeeper = get_zookeeper();
+        zookeeper = get_zookeeper(backup_settings ? backup_settings->retry_max_backoff_ms.count() : info->max_backoff_ms);
         my_faulty_zookeeper->setKeeper(zookeeper);
         if (callback)
             callback(my_faulty_zookeeper);

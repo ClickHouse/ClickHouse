@@ -41,6 +41,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.9",
         {
+            {"keeper_fault_injection_probability", 20, 5, "New setting"},
+            {"keeper_fault_injection_seed", 0, 0, "New setting"},
             {"use_skip_indexes_on_data_read", false, true, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
         });
@@ -65,8 +67,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_connect_backoff_max_ms", 50, 50, "New setting"},
             {"distributed_cache_read_request_max_tries", 20, 10, "Changed setting value"},
             {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
-            {"keeper_fault_injection_probability", 20, 5, "New setting"},
-            {"keeper_fault_injection_seed", 0, 0, "New setting"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"output_format_parquet_max_dictionary_size", 1024 * 1024, 1024 * 1024, "New setting"},
             {"input_format_parquet_use_native_reader_v3", false, true, "New setting"},

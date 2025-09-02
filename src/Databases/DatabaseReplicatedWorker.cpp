@@ -90,7 +90,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
         try
         {
             chassert(!database->is_probably_dropped);
-            auto zookeeper = getAndSetZooKeeper();
+            auto zookeeper = getAndSetZooKeeper(0);
             if (database->is_readonly)
                 database->tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel::ATTACH);
             if (database->is_probably_dropped)
@@ -158,7 +158,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
 
     auto with_retries = WithRetries(
         log,
-        [&] { return getAndSetZooKeeper()->getKeeper(); },
+        [&](UInt64 max_lock_milliseconds) { return getAndSetZooKeeper(max_lock_milliseconds)->getKeeper(); },
         {
             settings[Setting::keeper_max_retries],
             settings[Setting::keeper_retry_initial_backoff_ms],
@@ -317,7 +317,7 @@ void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
         const auto & settings = context->getSettingsRef();
         auto with_retries = WithRetries(
             log,
-            [&] { return getAndSetZooKeeper()->getKeeper(); },
+            [&](UInt64 max_lock_milliseconds) { return getAndSetZooKeeper(max_lock_milliseconds)->getKeeper(); },
             {
                 settings[Setting::keeper_max_retries],
                 settings[Setting::keeper_retry_initial_backoff_ms],
@@ -368,7 +368,7 @@ String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooK
     const auto & settings = context->getSettingsRef();
     auto with_retries = WithRetries(
         log,
-        [&] { return getAndSetZooKeeper()->getKeeper(); },
+        [&](UInt64 max_lock_milliseconds) { return getAndSetZooKeeper(max_lock_milliseconds)->getKeeper(); },
         info,
         settings[Setting::keeper_fault_injection_probability],
         settings[Setting::keeper_fault_injection_seed]);
@@ -693,7 +693,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (unsynced_after_recovery)
     {
-        UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
+        UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
         LOG_TRACE(log, "Replica was not fully synced after recovery: our_log_ptr={}, max_log_ptr={}", our_log_ptr, max_log_ptr);
         chassert(our_log_ptr < max_log_ptr);
         bool became_synced = our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;

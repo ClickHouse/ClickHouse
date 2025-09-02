@@ -479,7 +479,7 @@ zkutil::ZooKeeperPtr ZooKeeperReplicator::getZooKeeperNoLock()
 {
     if (!cached_zookeeper || cached_zookeeper->expired())
     {
-        auto zookeeper = get_zookeeper();
+        auto zookeeper = get_zookeeper(0);
         if (!zookeeper)
             throw Exception(ErrorCodes::NO_ZOOKEEPER, "Can't have Replicated access without ZooKeeper");
 

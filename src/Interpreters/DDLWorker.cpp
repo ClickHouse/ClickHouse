@@ -187,12 +187,12 @@ ZooKeeperWithFaultInjectionPtr DDLWorker::getZooKeeper() const
         nullptr);
 }
 
-ZooKeeperWithFaultInjectionPtr DDLWorker::getAndSetZooKeeper()
+ZooKeeperWithFaultInjectionPtr DDLWorker::getAndSetZooKeeper(UInt64 max_lock_milliseconds)
 {
     std::lock_guard lock(zookeeper_mutex);
 
     if (!current_zookeeper || current_zookeeper->expired())
-        current_zookeeper = context->getZooKeeper();
+        current_zookeeper = context->getZooKeeper(max_lock_milliseconds);
 
     const auto & settings = context->getSettingsRef();
     return ZooKeeperWithFaultInjection::createInstance(
@@ -1089,7 +1089,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &
     const Settings & settings = context->getSettingsRef();
     auto with_retries = WithRetries(
             log,
-            [&] { return context->getZooKeeper(); },
+            [&](UInt64 max_lock_milliseconds) { return context->getZooKeeper(max_lock_milliseconds); },
             retries_info,
             settings[Setting::keeper_fault_injection_probability],
             settings[Setting::keeper_fault_injection_seed]
@@ -1152,7 +1152,7 @@ bool DDLWorker::initializeMainThread()
     {
         try
         {
-            auto zookeeper = getAndSetZooKeeper();
+            auto zookeeper = getAndSetZooKeeper(0);
             zookeeper->createAncestors(fs::path(queue_dir) / "");
             initializeReplication();
             initialized = true;

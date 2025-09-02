@@ -111,6 +111,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
@@ -392,7 +393,7 @@ struct ContextSharedPart : boost::noncopyable
     /// under context lock.
     mutable std::mutex storage_policies_mutex;
     /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
-    mutable std::mutex zookeeper_mutex;
+    mutable std::shared_timed_mutex zookeeper_mutex;
 
     mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
@@ -4255,14 +4256,16 @@ DDLWorker & Context::getDDLWorker() const
     throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
 }
 
-zkutil::ZooKeeperPtr Context::getZooKeeper() const
+zkutil::ZooKeeperPtr Context::getZooKeeper(UInt64 max_lock_milliseconds) const
 {
-    std::lock_guard lock(shared->zookeeper_mutex);
-
-    const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
+    if (!shared->zookeeper_mutex.try_lock_for(std::chrono::milliseconds(max_lock_milliseconds)))
+        throw zkutil::KeeperException(Coordination::Error::ZOPERATIONTIMEOUT,
+            "Cannot get ZooKeeper connection, another thread is holding the lock for more than {} ms", max_lock_milliseconds);
+    std::lock_guard lock(shared->zookeeper_mutex, std::adopt_lock);
 
     if (!shared->zookeeper)
     {
+        const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
         shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
             zookeeper_connection_log->addConnected(

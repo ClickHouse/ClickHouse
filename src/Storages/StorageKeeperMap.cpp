@@ -1083,7 +1083,7 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         auto with_retries = std::make_shared<WithRetries>
         (
             getLogger(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
-            [&] { return getClient(); },
+            [&](UInt64) { return getClient(); },
             BackupKeeperSettings(backup_entries_collector.getContext()),
             backup_entries_collector.getContext()->getProcessListElement()
         );
@@ -1113,7 +1113,7 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
     auto with_retries = std::make_shared<WithRetries>
     (
         getLogger(fmt::format("StorageKeeperMapRestore ({})", getStorageID().getNameForLogs())),
-        [&] { return getClient(); },
+        [&](UInt64) { return getClient(); },
         BackupKeeperSettings(restorer.getContext()),
         restorer.getContext()->getProcessListElement()
     );

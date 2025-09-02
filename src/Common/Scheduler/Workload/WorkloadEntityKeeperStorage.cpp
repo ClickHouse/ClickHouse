@@ -32,7 +32,7 @@ namespace ErrorCodes
 WorkloadEntityKeeperStorage::WorkloadEntityKeeperStorage(
     const ContextPtr & global_context_, const String & zookeeper_path_)
     : WorkloadEntityStorageBase(global_context_)
-    , zookeeper_getter{[global_context_]() { return global_context_->getZooKeeper(); }}
+    , zookeeper_getter{[global_context_](UInt64 max_lock_milliseconds) { return global_context_->getZooKeeper(max_lock_milliseconds); }}
     , zookeeper_path{zookeeper_path_}
     , watch{std::make_shared<WatchEvent>()}
 {

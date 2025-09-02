@@ -496,7 +496,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
         const auto & settings = getContext()->getSettingsRef();
         auto with_retries = WithRetries(
             log,
-            [&] { return getContext()->getZooKeeper(); },
+            [&](UInt64 max_lock_milliseconds) { return getContext()->getZooKeeper(max_lock_milliseconds); },
             {
                 settings[Setting::keeper_max_retries],
                 settings[Setting::keeper_retry_initial_backoff_ms],
@@ -1265,7 +1265,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     const auto & settings = query_context->getSettingsRef();
     auto with_retries = WithRetries(
         log,
-        [&] { return query_context->getZooKeeper(); },
+        [&](UInt64 max_lock_milliseconds) { return query_context->getZooKeeper(max_lock_milliseconds); },
         {
             settings[Setting::keeper_max_retries],
             settings[Setting::keeper_retry_initial_backoff_ms],
@@ -1832,7 +1832,7 @@ void DatabaseReplicated::dropReplica(
 
     auto with_retries = WithRetries(
         getLogger("DatabaseReplicated::dropReplica"),
-        [&] { return context->getZooKeeper(); },
+        [&](UInt64 max_lock_milliseconds) { return context->getZooKeeper(max_lock_milliseconds); },
         {
             settings[Setting::keeper_max_retries],
             settings[Setting::keeper_retry_initial_backoff_ms],
@@ -1922,7 +1922,7 @@ void DatabaseReplicated::drop(ContextPtr context_)
     const auto & settings = context_->getSettingsRef();
     auto with_retries = WithRetries(
         getLogger("DatabaseReplicated::drop"),
-        [&] { return context_->getZooKeeper(); },
+        [&](UInt64 max_lock_milliseconds) { return context_->getZooKeeper(max_lock_milliseconds); },
         {
             settings[Setting::keeper_max_retries],
             settings[Setting::keeper_retry_initial_backoff_ms],

@@ -1098,7 +1098,7 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
     bool is_internal_backup = backup_settings.internal;
 
     String root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
-    auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
+    auto get_zookeeper = [global_context = context->getGlobalContext()](UInt64 max_lock_milliseconds) { return global_context->getZooKeeper(max_lock_milliseconds); };
     auto keeper_settings = BackupKeeperSettings(context);
 
     auto all_hosts = BackupSettings::Util::filterHostIDs(
@@ -1136,7 +1136,7 @@ BackupsWorker::makeRestoreCoordination(bool on_cluster, const RestoreSettings & 
     bool is_internal_restore = restore_settings.internal;
 
     String root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
-    auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
+    auto get_zookeeper = [global_context = context->getGlobalContext()](UInt64 max_lock_milliseconds) { return global_context->getZooKeeper(max_lock_milliseconds); };
     auto keeper_settings = BackupKeeperSettings(context);
 
     auto all_hosts = BackupSettings::Util::filterHostIDs(
