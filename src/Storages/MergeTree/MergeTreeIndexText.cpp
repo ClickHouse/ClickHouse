@@ -495,7 +495,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinary(WriteBuffer &) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings");
 }
 
-void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(IndexOutputStreams & streams, IndexSerializationState &) const
+void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(IndexOutputStreams & streams) const
 {
     auto * index_stream = streams.at(IndexSubstream::Type::Regular);
     auto * dictionary_stream = streams.at(IndexSubstream::Type::TextIndexDictionary);

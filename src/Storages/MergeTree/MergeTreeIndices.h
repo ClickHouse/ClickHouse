@@ -97,7 +97,7 @@ struct IMergeTreeIndexGranule
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
 
     /// Serialize with multiple streams.
-    virtual void serializeBinaryWithMultipleStreams(IndexOutputStreams & streams, IndexSerializationState & state) const;
+    virtual void serializeBinaryWithMultipleStreams(IndexOutputStreams & streams) const;
 
     /// Version of the index to deserialize:
     ///
