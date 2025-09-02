@@ -138,15 +138,6 @@ static std::pair<NameAndTypePair, bool> getColumn(
 {
     NameAndTypePair result_column = column;
 
-    /// columnMapping.mode == ''.
-    if (physical_names_map.empty())
-    {
-        LOG_TEST(log, "Name: {}, name in storage: {}, subcolumn name: {}",
-                 column.name, column.getNameInStorage(), column.getSubcolumnName());
-
-        return {result_column, true};
-    }
-
     auto physical_name = DeltaLake::getPhysicalName(get_name_in_storgae ? column.getNameInStorage() : column.name, physical_names_map);
     auto physical_name_and_type = read_schema.tryGetByName(physical_name);
 
@@ -205,6 +196,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// but is adjusted for delta-lake.
     ReadFromFormatInfo info;
 
+
     /// Read schema is different from table schema in case:
     /// 1. we have partition columns (they are not stored in the actual data)
     /// 2. columnMapping.mode = 'name' or 'id'.
@@ -231,6 +223,10 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     info.source_header = storage_snapshot->getSampleBlockForColumns(non_virtual_requested_columns);
     for (const auto & column : info.requested_virtual_columns)
         info.source_header.insert({column.type->createColumn(), column.type, column.name});
+
+    /// If only virtual columns were requested, just read the smallest column.
+    if (supports_subset_of_columns && non_virtual_requested_columns.empty())
+        non_virtual_requested_columns.push_back(ExpressionActions::getSmallestColumn(table_columns_description.getAll()).name);
 
     auto requested_table_columns = table_columns_description.getByNames(
         GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(),
@@ -266,7 +262,6 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     auto table_columns_to_read = table_columns_description.getByNames(
         GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(),
         column_names_to_read);
-    info.columns_description = storage_snapshot->getDescriptionForColumns(column_names_to_read);
 
     for (auto & column : table_columns_to_read)
     {
@@ -281,11 +276,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             info.format_header.insert(ColumnWithTypeAndName{result_column.type, result_column.name});
     }
 
-    /// If only virtual columns were requested, just read the smallest column.
-    if (supports_subset_of_columns && non_virtual_requested_columns.empty())
-        non_virtual_requested_columns.push_back(ExpressionActions::getSmallestColumn(table_columns_description.getAll()).name);
-
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
+    info.columns_description = storage_snapshot->getDescriptionForColumns(column_names_to_read);
 
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());

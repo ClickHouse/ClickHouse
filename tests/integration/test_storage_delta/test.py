@@ -3192,7 +3192,7 @@ def test_concurrent_queries(started_cluster, partitioned):
     TABLE_NAME = randomize_table_name("test_concurrent_queries")
     result_file = f"{TABLE_NAME}"
 
-    schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
+    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
     write_deltalake(
         f"s3://root/{result_file}",
