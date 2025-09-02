@@ -279,18 +279,6 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(IndexInputS
     analyzeDictionary(*dictionary_stream, state);
 }
 
-bool MergeTreeIndexGranuleText::processMissedToken(const StringRef & token, TextSearchMode global_search_mode)
-{
-    if (global_search_mode == TextSearchMode::All)
-    {
-        remaining_tokens.clear();
-        return true;
-    }
-
-    remaining_tokens.erase(token);
-    return false;
-}
-
 void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexCondition & condition)
 {
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(condition);
@@ -331,10 +319,11 @@ void MergeTreeIndexGranuleText::analyzeDictionary(IndexReaderStream & stream, In
     for (const auto & [token, _] : remaining_tokens)
     {
         size_t idx = sparse_index.upperBound(token);
-        if (idx == 0 && processMissedToken(token, global_search_mode))
-            return;
 
-        block_to_tokens[idx - 1].emplace_back(token);
+        if (idx != 0)
+            --idx;
+
+        block_to_tokens[idx].emplace_back(token);
     }
 
     auto * data_buffer = stream.getDataBuffer();
@@ -356,9 +345,15 @@ void MergeTreeIndexGranuleText::analyzeDictionary(IndexReaderStream & stream, In
             {
                 it->second = dictionary_block.token_infos.at(token_idx.value());
             }
-            else if (processMissedToken(token, global_search_mode))
+            else
             {
-                return;
+                if (global_search_mode == TextSearchMode::All)
+                {
+                    remaining_tokens.clear();
+                    return;
+                }
+
+                remaining_tokens.erase(it);
             }
         }
     }

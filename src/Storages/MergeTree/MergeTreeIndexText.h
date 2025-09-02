@@ -83,7 +83,7 @@ public:
     {
         UInt32 cardinality = 0;
         UInt8 delta_bits = 0;
-        UInt64 offset_in_file;
+        UInt64 offset_in_file = 0;
 
         UInt32 getCardinality() const { return cardinality; }
     };
@@ -164,9 +164,6 @@ private:
 
     void analyzeBloomFilter(const IMergeTreeIndexCondition & condition);
     void analyzeDictionary(IndexReaderStream & stream, IndexDeserializationState & state);
-
-    /// Returns true if granule can be skipped completely due to missed token.
-    bool processMissedToken(const StringRef & token, TextSearchMode global_search_mode);
 
     MergeTreeIndexTextParams params;
     size_t total_rows = 0;
