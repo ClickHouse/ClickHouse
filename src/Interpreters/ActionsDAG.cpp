@@ -3007,17 +3007,6 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes, allow_non_deterministic_functions);
     const bool has_or = predicateContainsOr(predicate);
 
-    if (has_or)
-    {
-        if (conjunction.allowed.empty())
-            return {};
-        return createActionsForConjunction(conjunction.allowed, all_inputs);
-    }
-
-    // Pure conjunction path (as before)
-    if (conjunction.allowed.empty())
-        return {};
-
     chassert(predicate->result_type);
 
     if (conjunction.rejected.size() == 1 && !conjunction.allowed.empty())
@@ -3302,13 +3291,29 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     /// and classify them using the same bottom-up allowedness rules as conjunctions
     NodeRawConstPtrs left_stream_allowed_disjunctions;
     NodeRawConstPtrs right_stream_allowed_disjunctions;
-    if (has_or)
+    if (has_or && !hasCorrelatedColumns())
     {
-        if (auto maybe_terms = extractTopLevelOrOfAndTerms(predicate))
+        auto left_stream_push_down_disjunctions
+            = getDisjunctionNodes(predicate, left_stream_allowed_nodes, /*allow_non_deterministic_functions*/ false);
+        auto right_stream_push_down_disjunctions
+            = getDisjunctionNodes(predicate, right_stream_allowed_nodes, /*allow_non_deterministic_functions*/ false);
+        auto both_streams_push_down_disjunctions
+            = getDisjunctionNodes(predicate, both_streams_allowed_nodes, /*allow_non_deterministic_functions*/ false);
+
+        left_stream_allowed_disjunctions = std::move(left_stream_push_down_disjunctions.allowed);
+        right_stream_allowed_disjunctions = std::move(right_stream_push_down_disjunctions.allowed);
+
+        std::unordered_set<const Node *> left_stream_allowed_disjunctions_set(
+            left_stream_allowed_disjunctions.begin(), left_stream_allowed_disjunctions.end());
+        std::unordered_set<const Node *> right_stream_allowed_disjunctions_set(
+            right_stream_allowed_disjunctions.begin(), right_stream_allowed_disjunctions.end());
+
+        for (const auto * n : both_streams_push_down_disjunctions.allowed)
         {
-            /// They are non-empty only if every OR-term has at least one atom from the corresponding side
-            left_stream_allowed_disjunctions = std::move(left_or_projection);
-            right_stream_allowed_disjunctions = std::move(right_or_projection);
+            if (!left_stream_allowed_disjunctions_set.contains(n))
+                left_stream_allowed_disjunctions.push_back(n);
+            if (!right_stream_allowed_disjunctions_set.contains(n))
+                right_stream_allowed_disjunctions.push_back(n);
         }
     }
 
