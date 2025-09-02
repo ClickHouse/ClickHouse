@@ -79,19 +79,32 @@ private:
 
 REGISTER_FUNCTION(GetServerSetting)
 {
-    factory.registerFunction<FunctionGetServerSetting>(FunctionDocumentation{
-        .description = R"(
-Returns the current value of server setting.
-)",
-        .syntax = "getServerSetting('custom_setting')",
-        .arguments = {
-            {"custom_setting", "The setting name.", {"String"}}
-        },
-        .returned_value = {"The setting's current value."},
-        .examples = {
-            {"getServerSetting", "SELECT getSetting('page_cache_size_ratio');", "SRLU"},
-        },
-        .category = FunctionDocumentation::Category::Other}, FunctionFactory::Case::Sensitive);
+    FunctionDocumentation::Description description_getServerSetting = R"(
+Returns the currently set value, given a server setting name.
+    )";
+    FunctionDocumentation::Syntax syntax_getServerSetting = "getServerSetting('server_setting')";
+    FunctionDocumentation::Arguments arguments_getServerSetting = {
+        {"server_setting", "The setting name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_getServerSetting = {"Returns the server setting's current value.", {}};
+    FunctionDocumentation::Examples examples_getServerSetting = {
+    {
+        "Usage example",
+        R"(
+SELECT getServerSetting('allow_use_jemalloc_memory');
+        )",
+        R"(
+┌─getServerSetting('allow_use_jemalloc_memory')─┐
+│ true                                          │
+└───────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_getServerSetting = {25, 6};
+    FunctionDocumentation::Category category_getServerSetting = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_getServerSetting = {description_getServerSetting, syntax_getServerSetting, arguments_getServerSetting, returned_value_getServerSetting, examples_getServerSetting, introduced_in_getServerSetting, category_getServerSetting};
+
+    factory.registerFunction<FunctionGetServerSetting>(documentation_getServerSetting, FunctionFactory::Case::Sensitive);
 }
 
 }

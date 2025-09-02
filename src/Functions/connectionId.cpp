@@ -33,7 +33,33 @@ public:
 
 REGISTER_FUNCTION(ConnectionId)
 {
-    factory.registerFunction<FunctionConnectionId>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description_connectionId = R"(
+Retrieves the connection ID of the client that submitted the current query and returns it as a `UInt64` integer.
+This function is most useful in debugging scenarios or for internal purposes within the MySQL handler.
+It was created for compatibility with MySQL's `CONNECTION_ID` function.
+It is not typically used in production queries.
+)";
+    FunctionDocumentation::Syntax syntax_connectionId = "connectionId()";
+    FunctionDocumentation::Arguments arguments_connectionId = {};
+    FunctionDocumentation::ReturnedValue returned_value_connectionId = {"Returns the connection ID of the current client.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_connectionId = {
+    {
+        "Usage example",
+        R"(
+SELECT connectionId();
+        )",
+        R"(
+┌─connectionId()─┐
+│              0 │
+└────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_connectionId = {21, 3};
+    FunctionDocumentation::Category category_connectionId = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_connectionId = {description_connectionId, syntax_connectionId, arguments_connectionId, returned_value_connectionId, examples_connectionId, introduced_in_connectionId, category_connectionId};
+
+    factory.registerFunction<FunctionConnectionId>(documentation_connectionId, FunctionFactory::Case::Insensitive);
     factory.registerAlias("connection_id", "connectionID", FunctionFactory::Case::Insensitive);
 }
 

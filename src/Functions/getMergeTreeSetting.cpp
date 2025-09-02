@@ -80,19 +80,32 @@ private:
 
 REGISTER_FUNCTION(GetMergeTreeSetting)
 {
-    factory.registerFunction<FunctionGetMergeTreeSetting>(FunctionDocumentation{
-        .description = R"(
-Returns the current value of merge tree setting.
-)",
-        .syntax = "getMergeTreeSetting('custom_setting')",
-        .arguments = {
-            {"custom_setting", "The setting name.", {"String"}}
-        },
-        .returned_value = {"The setting's current value."},
-        .examples = {
-            {"getMergeTreeSetting", "SELECT getMergeTreeSetting('index_granularity');", "8192"},
-        },
-        .category = FunctionDocumentation::Category::Other}, FunctionFactory::Case::Sensitive);
+    FunctionDocumentation::Description description_getMergeTreeSetting = R"(
+Returns the current value, given the name of a MergeTree setting.
+)";
+    FunctionDocumentation::Syntax syntax_getMergeTreeSetting = "getMergeTreeSetting('merge_tree_setting')";
+    FunctionDocumentation::Arguments arguments_getMergeTreeSetting = {
+        {"merge_tree_setting", "The setting name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_getMergeTreeSetting = {"Returns the merge tree setting's current value.", {}};
+    FunctionDocumentation::Examples examples_getMergeTreeSetting = {
+    {
+        "Usage example",
+        R"(
+SELECT getMergeTreeSetting('index_granularity');
+        )",
+        R"(
+┌─getMergeTreeSetting('index_granularity')─┐
+│                                     8192 │
+└──────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_getMergeTreeSetting = {25, 6};
+    FunctionDocumentation::Category category_getMergeTreeSetting = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_getMergeTreeSetting = {description_getMergeTreeSetting, syntax_getMergeTreeSetting, arguments_getMergeTreeSetting, returned_value_getMergeTreeSetting, examples_getMergeTreeSetting, introduced_in_getMergeTreeSetting, category_getMergeTreeSetting};
+
+    factory.registerFunction<FunctionGetMergeTreeSetting>(documentation_getMergeTreeSetting, FunctionFactory::Case::Sensitive);
 }
 
 }

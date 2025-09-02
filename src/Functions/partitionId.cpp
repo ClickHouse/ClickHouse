@@ -65,7 +65,54 @@ public:
 
 REGISTER_FUNCTION(PartitionId)
 {
-    factory.registerFunction<FunctionPartitionId>();
+    FunctionDocumentation::Description description_partitionId = R"(
+Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
+
+:::note
+This function is slow and should not be called for large numbers of rows.
+:::
+)";
+    FunctionDocumentation::Syntax syntax_partitionId = "partitionId(x[, y, ...])";
+    FunctionDocumentation::Arguments arguments_partitionId = {
+        {"x, y, ...", "Column for which to return the partition ID."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_partitionId = {"Returns the partition ID that the row would belong to.", {"String"}};
+    FunctionDocumentation::Examples examples_partitionId = {
+    {
+        "Usage example",
+        R"(
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+  i int,
+  j int
+)
+ENGINE = MergeTree
+PARTITION BY i
+ORDER BY tuple();
+
+INSERT INTO tab VALUES (1, 1), (1, 2), (1, 3), (2, 4), (2, 5), (2, 6);
+
+SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
+        )",
+        R"(
+┌─i─┬─j─┬─partitionId(i)─┬─_partition_id─┐
+│ 1 │ 1 │ 1              │ 1             │
+│ 1 │ 2 │ 1              │ 1             │
+│ 1 │ 3 │ 1              │ 1             │
+│ 2 │ 4 │ 2              │ 2             │
+│ 2 │ 5 │ 2              │ 2             │
+│ 2 │ 6 │ 2              │ 2             │
+└───┴───┴────────────────┴───────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_partitionId = {21, 4};
+    FunctionDocumentation::Category category_partitionId = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_partitionId = {description_partitionId, syntax_partitionId, arguments_partitionId, returned_value_partitionId, examples_partitionId, introduced_in_partitionId, category_partitionId};
+
+    factory.registerFunction<FunctionPartitionId>(documentation_partitionId);
     factory.registerAlias("partitionID", "partitionId");
 }
 

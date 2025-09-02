@@ -77,34 +77,44 @@ public:
 
 REGISTER_FUNCTION(GetClientHTTPHeader)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_getClientHTTPHeader = R"(
 Gets the value of an HTTP header.
-
 If there is no such header or the current request is not performed via the HTTP interface, the function returns an empty string.
 Certain HTTP headers (e.g., `Authentication` and `X-ClickHouse-*`) are restricted.
 
+:::note Setting `allow_get_client_http_header` required
 The function requires the setting `allow_get_client_http_header` to be enabled.
 The setting is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info.
+:::
 
 HTTP headers are case sensitive for this function.
-
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
 )";
-    FunctionDocumentation::Syntax syntax = "getClientHTTPHeader(name)";
-    FunctionDocumentation::Arguments arguments = {
+    FunctionDocumentation::Syntax syntax_getClientHTTPHeader = "getClientHTTPHeader(name)";
+    FunctionDocumentation::Arguments arguments_getClientHTTPHeader = {
         {"name", "The HTTP header name.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"The value of the header", {"String"}};
-    FunctionDocumentation::Examples example = {
-        {"Usage example", "SELECT getClientHTTPHeader('Content-Type')", "application/x-www-form-urlencoded"},
+    FunctionDocumentation::ReturnedValue returned_value_getClientHTTPHeader = {"Returns the value of the header.", {"String"}};
+    FunctionDocumentation::Examples examples_getClientHTTPHeader = {
+        {
+            "Usage example",
+            R"(
+SELECT getClientHTTPHeader('Content-Type');
+            )",
+            R"(
+┌─getClientHTTPHeader('Content-Type')─┐
+│ application/x-www-form-urlencoded   │
+└─────────────────────────────────────┘
+            )"
+        }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {24, 5};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_getClientHTTPHeader = {24, 5};
+    FunctionDocumentation::Category category_getClientHTTPHeader = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_getClientHTTPHeader = {description_getClientHTTPHeader, syntax_getClientHTTPHeader, arguments_getClientHTTPHeader, returned_value_getClientHTTPHeader, examples_getClientHTTPHeader, introduced_in_getClientHTTPHeader, category_getClientHTTPHeader};
 
     factory.registerFunction("getClientHTTPHeader",
         [](ContextPtr context) { return std::make_shared<FunctionGetClientHTTPHeader>(context); },
-        documentation);
+        documentation_getClientHTTPHeader);
 }
 
 }
