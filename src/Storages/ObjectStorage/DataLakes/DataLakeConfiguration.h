@@ -258,8 +258,8 @@ public:
 
     void drop(ContextPtr local_context) override
     {
-        assertInitialized();
-        current_metadata->drop(local_context);
+        if (current_metadata)
+            current_metadata->drop(local_context);
     }
 
     SinkToStoragePtr write(
