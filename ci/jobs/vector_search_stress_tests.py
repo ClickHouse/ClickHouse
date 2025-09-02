@@ -27,7 +27,7 @@ LIMIT_N = "limit"
 TRUTH_SET_FILES = "truth_set_files"
 QUANTIZATION = "quantization"
 HNSW_M = "hnsw_M"
-HNSW_EF_C = "hnsw_ef_c"
+HNSW_EF_CONSTRUCTION = "hnsw_ef_construction"
 HNSW_EF_SEARCH = "hnsw_ef_search"
 VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER = "vector_search_index_fetch_multiplier"
 GENERATE_TRUTH_SET = "generate_truth_set"
@@ -96,7 +96,7 @@ test_run_params_1 = {
     TRUTH_SET_FILES: ["laion_truth_set_1", "laion_truth_set_2", "laion_truth_set_3"],
     QUANTIZATION: "bf16", # 'b1' for binary quantization
     HNSW_M: 64,
-    HNSW_EF_C: 512,
+    HNSW_EF_CONSTRUCTION: 512,
     HNSW_EF_SEARCH: None, # Default in CH is 256, use higher value for maybe 'b1' indexes
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None, # Set a value for 'b1' indexes
     GENERATE_TRUTH_SET: False,
@@ -110,7 +110,7 @@ test_run_quick_test = {
     TRUTH_SET_FILES: None,
     QUANTIZATION: "bf16",
     HNSW_M: 16,
-    HNSW_EF_C: 256,
+    HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
     GENERATE_TRUTH_SET: True,
@@ -124,7 +124,6 @@ test_run_quick_test = {
 
 def get_new_connection():
     chclient = clickhouse_connect.get_client(send_receive_timeout = 1800)
-    # chclient = clickhouse_connect.get_client(host="krjjhprsio.eu-west-1.aws.clickhouse-staging.com", secure=True, user="default", password='_a4XpN3DrCjeV')
     return chclient
 
 def current_time_ms():
@@ -213,7 +212,7 @@ class RunTest:
         logger("Adding vector similarity index")
         quantization = self._test_params[QUANTIZATION]
         hnsw_M = self._test_params[HNSW_M]
-        hnsw_ef_C = self._test_params[HNSW_EF_C]
+        hnsw_ef_C = self._test_params[HNSW_EF_CONSTRUCTION]
 
         add_index = f"ALTER TABLE {self._table} ADD INDEX vector_index {self._vector_column} TYPE vector_similarity('hnsw','{self._distance_metric}', {self._dimension}, {quantization}, {hnsw_M}, {hnsw_ef_C})"
         self._chclient.query(add_index)
