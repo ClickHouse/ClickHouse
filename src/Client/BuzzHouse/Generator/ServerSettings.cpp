@@ -1093,6 +1093,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     /// Number of rows values
     for (const auto & entry :
          {"cross_join_min_rows_to_compress",
+          "delta_lake_insert_max_rows_in_data_file",
           "distributed_plan_max_rows_to_broadcast",
           "external_storage_max_read_rows",
           "function_range_max_elements_in_block",
@@ -1138,6 +1139,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "azure_max_single_part_upload_size",
           "cross_join_min_bytes_to_compress",
           "default_max_bytes_in_join",
+          "delta_lake_insert_max_bytes_in_data_file",
           "distributed_cache_alignment",
           "distributed_cache_min_bytes_for_seek",
           "distributed_cache_read_alignment",
