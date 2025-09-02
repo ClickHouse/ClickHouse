@@ -44,6 +44,21 @@ common_ft_job_config = Job.Config(
     result_name_for_cidb="Tests",
 )
 
+common_integration_test_job_config = Job.Config(
+    name=JobNames.INTEGRATION,
+    runs_on=[],  # from parametrize
+    command="python3 ./ci/jobs/integration_test_job.py",
+    digest_config=Job.CacheDigestConfig(
+        include_paths=[
+            "./ci/jobs/integration_test_job.py",
+            "./ci/jobs/scripts/integration_tests_runner.py",
+            "./tests/integration/",
+            "./ci/docker/integration",
+        ],
+    ),
+    run_in_docker="clickhouse/integration-tests-runner+--entrypoint=''+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+--volume=/run:/run/host:ro+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--volume=./ci/tmp/clickhouse:/clickhouse+-e PYTHONBUFFERED=0",
+)
+
 BINARY_DOCKER_COMMAND = (
     "clickhouse/binary-builder+--network=host+"
     f"--memory={Utils.physical_memory() * 95 // 100}+"
@@ -671,19 +686,7 @@ class JobConfigs:
         ),
     )
     # why it's master only?
-    integration_test_asan_master_jobs = Job.Config(
-        name=JobNames.INTEGRATION,
-        runs_on=["from PARAM"],
-        command="python3 ./ci/jobs/integration_test_check.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/integration_test_check.py",
-                "./ci/jobs/scripts/integration_tests_runner.py",
-                "./tests/integration/",
-                "./ci/docker/integration",
-            ],
-        ),
-    ).parametrize(
+    integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
                 parameter=f"amd_asan, {batch}/{total_batches}",
@@ -694,19 +697,7 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
-    integration_test_jobs_required = Job.Config(
-        name=JobNames.INTEGRATION,
-        runs_on=["from PARAM"],
-        command="python3 ./ci/jobs/integration_test_check.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/integration_test_check.py",
-                "./ci/jobs/scripts/integration_tests_runner.py",
-                "./tests/integration/",
-                "./ci/docker/integration",
-            ],
-        ),
-    ).parametrize(
+    integration_test_jobs_required = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
                 parameter=f"amd_asan, old analyzer, {batch}/{total_batches}",
@@ -735,20 +726,7 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
     )
-    integration_test_jobs_non_required = Job.Config(
-        name=JobNames.INTEGRATION,
-        runs_on=["from PARAM"],
-        command="python3 ./ci/jobs/integration_test_check.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/integration_test_check.py",
-                "./ci/jobs/scripts/integration_tests_runner.py",
-                "./tests/integration/",
-                "./ci/docker/integration",
-            ],
-        ),
-        allow_merge_on_failure=True,
-    ).parametrize(
+    integration_test_jobs_non_required = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
                 parameter=f"amd_tsan, {batch}/{total_batches}",
@@ -1053,4 +1031,29 @@ class JobConfigs:
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="cd ./tests/ci && python3 libfuzzer_test_check.py 'libFuzzer tests'",
         requires=["Build (fuzzers)"],
+    )
+
+    integration_test_new = Job.Config(
+        name=JobNames.INTEGRATION,
+        runs_on=["from PARAM"],
+        command="python3 ./ci/jobs/integration_test_job.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/integration_test_check.py",
+                "./ci/jobs/scripts/integration_tests_runner.py",
+                "./tests/integration/",
+                "./ci/docker/integration",
+            ],
+        ),
+        run_in_docker="clickhouse/integration-tests-runner+--entrypoint=''+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+--volume=/run:/run/host:ro+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--volume=./ci/tmp/clickhouse:/clickhouse+-e PYTHONBUFFERED=0",
+    ).parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"my_job, {batch}/{total_batches}",
+                runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                requires=[ArtifactNames.CH_AMD_ASAN],
+            )
+            for total_batches in (4,)
+            for batch in range(1, total_batches + 1)
+        ]
     )
