@@ -58,7 +58,43 @@ public:
 
 REGISTER_FUNCTION(ToColumnTypeName)
 {
-    factory.registerFunction<FunctionToColumnTypeName>();
+    FunctionDocumentation::Description description_toColumnTypeName = R"(
+Returns the internal name of the data type that represents the value.
+)";
+    FunctionDocumentation::Syntax syntax_toColumnTypeName = "toColumnTypeName(value)";
+    FunctionDocumentation::Arguments arguments_toColumnTypeName = {
+        {"value", "Value for which to return the internal data type name.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_toColumnTypeName = {"Returns the internal data type name used to represent the value.", {"String"}};
+    FunctionDocumentation::Examples examples_toColumnTypeName = {
+    {
+        "Difference between toTypeName and toColumnTypeName",
+        R"(
+SELECT toTypeName(CAST('2018-01-01 01:02:03' AS DateTime));
+        )",
+        R"(
+┌─toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
+│ DateTime                                            │
+└─────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Usage example",
+        R"(
+SELECT toColumnTypeName(CAST('2018-01-01 01:02:03' AS DateTime));
+        )",
+        R"(
+┌─toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
+│ Const(UInt32)                                             │
+└───────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_toColumnTypeName = {1, 1};
+    FunctionDocumentation::Category category_toColumnTypeName = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_toColumnTypeName = {description_toColumnTypeName, syntax_toColumnTypeName, arguments_toColumnTypeName, returned_value_toColumnTypeName, examples_toColumnTypeName, introduced_in_toColumnTypeName, category_toColumnTypeName};
+
+    factory.registerFunction<FunctionToColumnTypeName>(documentation_toColumnTypeName);
 }
 
 }

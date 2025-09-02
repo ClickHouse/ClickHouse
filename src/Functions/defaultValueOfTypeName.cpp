@@ -66,7 +66,44 @@ public:
 
 REGISTER_FUNCTION(DefaultValueOfTypeName)
 {
-    factory.registerFunction<FunctionDefaultValueOfTypeName>();
+    FunctionDocumentation::Description description_defaultValueOfTypeName = R"(
+Returns the default value for the given type name.
+Does not include default values for custom columns set by the user.
+)";
+    FunctionDocumentation::Syntax syntax_defaultValueOfTypeName = "defaultValueOfTypeName(type)";
+    FunctionDocumentation::Arguments arguments_defaultValueOfTypeName = {
+        {"type", "A string representing a type name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_defaultValueOfTypeName = {"Returns the default value for the given type name: `0` for numbers, empty string for strings, `NULL` for [Nullable](../../sql-reference/data-types/nullable.md).", {"(U)Int*", "String", "NULL"}};
+    FunctionDocumentation::Examples examples_defaultValueOfTypeName = {
+    {
+        "Int8 example",
+        R"(
+SELECT defaultValueOfTypeName('Int8');
+        )",
+        R"(
+┌─defaultValueOfTypeName('Int8')─┐
+│                              0 │
+└────────────────────────────────┘
+        )"
+    },
+    {
+        "Nullable Int8 example",
+        R"(
+SELECT defaultValueOfTypeName('Nullable(Int8)');
+        )",
+        R"(
+┌─defaultValueOfTypeName('Nullable(Int8)')─┐
+│                                     ᴺᵁᴸᴸ │
+└──────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_defaultValueOfTypeName = {1, 1};
+    FunctionDocumentation::Category category_defaultValueOfTypeName = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_defaultValueOfTypeName = {description_defaultValueOfTypeName, syntax_defaultValueOfTypeName, arguments_defaultValueOfTypeName, returned_value_defaultValueOfTypeName, examples_defaultValueOfTypeName, introduced_in_defaultValueOfTypeName, category_defaultValueOfTypeName};
+
+    factory.registerFunction<FunctionDefaultValueOfTypeName>(documentation_defaultValueOfTypeName);
 }
 
 }

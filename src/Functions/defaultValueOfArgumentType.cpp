@@ -59,7 +59,44 @@ public:
 
 REGISTER_FUNCTION(DefaultValueOfArgumentType)
 {
-    factory.registerFunction<FunctionDefaultValueOfArgumentType>();
+    FunctionDocumentation::Description description_defaultValueOfArgumentType = R"(
+Returns the default value for the given data type.
+Does not include default values for custom columns set by the user.
+)";
+    FunctionDocumentation::Syntax syntax_defaultValueOfArgumentType = "defaultValueOfArgumentType(expression)";
+    FunctionDocumentation::Arguments arguments_defaultValueOfArgumentType = {
+        {"expression", "Arbitrary type of value or an expression that results in a value of an arbitrary type.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_defaultValueOfArgumentType = {"Returns `0` for numbers, empty string for strings, `NULL` for [Nullable](../../sql-reference/data-types/nullable.md).", {"(U)Int8", "String", "NULL"}};
+    FunctionDocumentation::Examples examples_defaultValueOfArgumentType = {
+    {
+        "Int8 example",
+        R"(
+SELECT defaultValueOfArgumentType(CAST(1 AS Int8));
+        )",
+        R"(
+┌─defaultValueOfArgumentType(CAST(1, 'Int8'))─┐
+│                                           0 │
+└─────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Nullable Int8 example",
+        R"(
+SELECT defaultValueOfArgumentType(CAST(1 AS Nullable(Int8)));
+        )",
+        R"(
+┌─defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))─┐
+│                                                  ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_defaultValueOfArgumentType = {1, 1};
+    FunctionDocumentation::Category category_defaultValueOfArgumentType = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_defaultValueOfArgumentType = {description_defaultValueOfArgumentType, syntax_defaultValueOfArgumentType, arguments_defaultValueOfArgumentType, returned_value_defaultValueOfArgumentType, examples_defaultValueOfArgumentType, introduced_in_defaultValueOfArgumentType, category_defaultValueOfArgumentType};
+
+    factory.registerFunction<FunctionDefaultValueOfArgumentType>(documentation_defaultValueOfArgumentType);
 }
 
 }
