@@ -235,12 +235,6 @@ joinGetOrNull
 like
 lowCardinalityIndices
 lowCardinalityKeys
-map
-mapAdd
-mapFromArrays
-mapPopulateSeries
-mapSubtract
-mapUpdate
 materialize
 minSampleSizeContinuous
 minSampleSizeConversion
