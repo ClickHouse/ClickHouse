@@ -77,7 +77,7 @@ It only exists for the sake of compatibility with the implementation of this fun
     )";
     FunctionDocumentation::Syntax syntax = "currentSchemas(bool)";
     FunctionDocumentation::Arguments arguments = {
-        {"bool", "A boolean value. The argument is ignored and only exists for compatibility with PostgreSQL.", {"Bool"}}
+        {"bool", "A boolean value.", {"Bool"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a single-element array with the name of the current database.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {

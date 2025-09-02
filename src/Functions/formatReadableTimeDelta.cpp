@@ -358,9 +358,9 @@ private:
 REGISTER_FUNCTION(FormatReadableTimeDelta)
 {
     FunctionDocumentation::Description description = R"(
-Given a time interval (delta) in seconds, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as string.
+Given a time interval (delta) in seconds, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as a string.
 
-This function accepts any numeric type as input, but internally it casts them to Float64. Results might be suboptimal with large values.
+This function accepts any numeric type as input, but internally it casts them to `Float64`. Results might be suboptimal with large values.
     )";
     FunctionDocumentation::Syntax syntax = "formatReadableTimeDelta(column[, maximum_unit, minimum_unit])";
     FunctionDocumentation::Arguments arguments = {

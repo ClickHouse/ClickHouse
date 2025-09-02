@@ -142,11 +142,11 @@ The band is drawn with accuracy to one eighth of a symbol.
     FunctionDocumentation::Syntax syntax = "bar(x, min, max[, width])";
     FunctionDocumentation::Arguments arguments = {
         {"x", "Size to display.", {"(U)Int*", "Float*", "Decimal"}},
-        {"min", "Integer constant. The minimum value.", {"const Int64"}},
-        {"max", "Integer constant. The maximum value.", {"const Int64"}},
+        {"min", "The minimum value.", {"const Int64"}},
+        {"max", "The maximum value.", {"const Int64"}},
         {"width", "Optional. The width of the bar in characters. The default is `80`.", {"const (U)Int*", "const Float*", "const Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with Unicode-art bar.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a unicode-art bar string.", {"String"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",

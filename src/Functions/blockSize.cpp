@@ -70,7 +70,7 @@ This function returns the size (row count) of the block the function is called o
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of rows in the current block.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Get block size",
+        "Usage example",
         R"(
 SELECT blockSize()
 FROM system.numbers LIMIT 5

@@ -174,13 +174,13 @@ private:
 REGISTER_FUNCTION(FunctionColorOKLCHToSRGB)
 {
     FunctionDocumentation::Description description = R"(
-CConverts a colour from the **OKLCH** perceptual colour space to the familiar **sRGB** colour space.
+Converts a colour from the **OKLCH** perceptual colour space to the familiar **sRGB** colour space.
 
-If **L** is outside `[0...1]`, **C** is negative, or **H** is outside `[0...360]`, the result is implementation-defined.
+If `L` is outside the range `[0...1]`, `C` is negative, or `H` is outside the range `[0...360]`, the result is implementation-defined.
 
 :::note
 **OKLCH** is a cylindrical version of the OKLab colour space.
-Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`)**.
+It's three coordinates are `L` (the lightness in the range `[0...1]`), `C` (chroma `>= 0`) and `H` (hue in degrees  from `[0...360]`)**.
 OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
 :::
 
@@ -190,20 +190,14 @@ The conversion is the inverse of [`colorSRGBToOKLCH`](#colorSRGBToOKLCH):
 2) OKLab to Linear sRGB
 3) Linear sRGB to sRGB
 
-Second argument gamma is used at the last stage.
-Note: all three channels are clipped in range `[0...1]` right before computing linear sRGB, and then set in power `1 / gamma`.
-In case `gamma` is `0`, `1 / gamma` is changed for `1'000'000`.
-Thus, regardless of the input we normally will have returned floats in range `[0...255]`.
+The second argument gamma is used at the last stage.
 
-As in case of [`colorSRGBToOKLCH`](#colorSRGBToOKLCH), two other stages involve trigonometry conversions and matrix multiplication respectively.
-For more details on maths please see see an article on OKLab color space: https://bottosson.github.io/posts/oklab/
-
-In order to have some references for colors in OKLCH space, and how they correspond to sRGB colors please see https://oklch.com/
+For references of colors in OKLCH space, and how they correspond to sRGB colors please see [https://oklch.com/](https://oklch.com/).
     )";
     FunctionDocumentation::Syntax syntax = "colorOKLCHToSRGB(tuple [, gamma])";
     FunctionDocumentation::Arguments arguments = {
-        {"tuple", "Three numeric values **L**, **C**, **H**, where **L** is in range `[0...1]`, **C** `>= 0` and **H** is in range `[0...360]`.", {"Tuple"}},
-        {"gamma", "Optional numeric value. Exponent that is used to transform linear sRGB back to sRGB by applying `(x ^ (1 / gamma)) * 255` for each channel `x`. Defaults to `2.2`.", {"Float64"}}
+        {"tuple", "A tuple of three numeric values `L`, `C`, `H`, where `L` is in the range `[0...1]`, `C >= 0` and `H` is in the range `[0...360]`.", {"Tuple(Float64, Float64, Float64)"}},
+        {"gamma", "Optional. The exponent that is used to transform linear sRGB back to sRGB by applying `(x ^ (1 / gamma)) * 255` for each channel `x`. Defaults to `2.2`.", {"Float64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (R, G, B) representing sRGB color values.", {"Tuple(Float64, Float64, Float64)"}};
     FunctionDocumentation::Examples examples = {

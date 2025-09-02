@@ -22,7 +22,7 @@ namespace
 REGISTER_FUNCTION(FormatReadableQuantity)
 {
     FunctionDocumentation::Description description = R"(
-Given a number, this function returns a rounded number with suffix (thousand, million, billion, etc.) as string.
+Given a number, this function returns a rounded number with suffix (thousand, million, billion, etc.) as a string.
 
 This function accepts any numeric type as input, but internally it casts them to `Float64`.
 Results might be suboptimal with large values.

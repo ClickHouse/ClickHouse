@@ -186,7 +186,7 @@ If any input channel is outside `[0...255]` or the gamma value is non-positive, 
 
 :::note
 **OKLCH** is a cylindrical version of the OKLab colour space.
-Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`).
+It's three coordinates are `L` (the lightness in the range `[0...1]`), `C` (chroma `>= 0`) and `H` (the hue in degrees from `[0...360]`).
 OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
 :::
 
@@ -195,15 +195,8 @@ The conversion consists of three stages:
 2) Linear sRGB to OKLab
 3) OKLab to OKLCH.
 
-Gamma is used at the first stage, when computing linear sRGB.
-For that we normalize sRGB values and take them in power of gamma.
-Observe, that this lacks some precision due to floating-point rounding.
-This design choice was made in order to be able to quickly compute values for different gammas, and since the difference does not changed the perception of the color significantly.
 
-Two stages involve matrix multiplication and trigonometry conversions respectively.
-For more details on maths please see an article on OKLab color space: https://bottosson.github.io/posts/OKLab/
-
-In order to have some references for colors in OKLCH space, and how they correspond to sRGB colors please see https://OKLCH.com/
+For references of colors in the OKLCH space, and how they correspond to sRGB colors, please see [https://OKLCH.com/](https://OKLCH.com/).
     )";
     FunctionDocumentation::Syntax syntax = "colorSRGBToOKLCH(tuple[, gamma])";
     FunctionDocumentation::Arguments arguments = {

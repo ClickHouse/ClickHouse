@@ -38,7 +38,7 @@ REGISTER_FUNCTION(Basename)
 {
     FunctionDocumentation::Description description = R"(
 Extracts the tail of a string following its last slash or backslash.
-This function if often used to extract the filename from a path.
+This function is often used to extract the filename from a path.
     )";
     FunctionDocumentation::Syntax syntax = "basename(expr)";
     FunctionDocumentation::Arguments arguments = {

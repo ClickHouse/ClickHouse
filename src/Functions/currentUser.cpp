@@ -59,7 +59,7 @@ In case of a distributed query, the name of the user who initiated the query is 
     )";
     FunctionDocumentation::Syntax syntax = "currentUser()";
     FunctionDocumentation::Arguments arguments = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the name of the current user. In distributed queries, the login of the user who initiated the query.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the name of the current user, otherwise the login of the user who initiated the query.", {"String"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example", R"(

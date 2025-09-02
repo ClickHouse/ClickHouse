@@ -83,15 +83,15 @@ public:
 REGISTER_FUNCTION(ByteSize)
 {
     FunctionDocumentation::Description description = R"(
-Returns an estimation of uncompressed byte size of its arguments in memory.
+Returns an estimation of the uncompressed byte size of its arguments in memory.
 For `String` arguments, the function returns the string length + 8 (length).
 If the function has multiple arguments, the function accumulates their byte sizes.
     )";
     FunctionDocumentation::Syntax syntax = "byteSize(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments arguments = {
-        {"arg1[, arg2, ...]", "Values of any data type.", {"Any"}}
+        {"arg1[, arg2, ...]", "Values of any data type for which to estimate the uncompressed byte size.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns estimation of byte size of the arguments in memory.", {"UInt64"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an estimation of the byte size of the arguments in memory.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",

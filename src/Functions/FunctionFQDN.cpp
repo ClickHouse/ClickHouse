@@ -61,7 +61,7 @@ SELECT fqdn()
         )",
         R"(
 ┌─FQDN()──────────────────────────┐
-│ clickhouse.ru-central1.internal │
+│ clickhouse.us-east-2.internal │
 └─────────────────────────────────┘
         )"
     }

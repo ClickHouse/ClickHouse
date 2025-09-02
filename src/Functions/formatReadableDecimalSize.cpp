@@ -22,9 +22,9 @@ namespace
 REGISTER_FUNCTION(FormatReadableDecimalSize)
 {
     FunctionDocumentation::Description description = R"(
-Given a size (number of bytes), this function returns a readable, rounded size with suffix (KB, MB, etc.) as string.
+Given a size (number of bytes), this function returns a readable, rounded size with suffix (KB, MB, etc.) as a string.
 
-The opposite operations of this function are [parseReadableSize](#parseReadableSize), [parseReadableSizeOrZero](#parseReadableSizeOrZero), and [parseReadableSizeOrNull](#parseReadableSizeOrNull).
+The opposite operations of this function are [`parseReadableSize`](#parseReadableSize), [`parseReadableSizeOrZero`](#parseReadableSizeOrZero), and [`parseReadableSizeOrNull`](#parseReadableSizeOrNull).
     )";
     FunctionDocumentation::Syntax syntax = "formatReadableDecimalSize(x)";
     FunctionDocumentation::Arguments arguments = {

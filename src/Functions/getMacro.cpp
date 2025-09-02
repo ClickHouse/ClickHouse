@@ -90,7 +90,7 @@ If the function is executed in the context of a distributed table, it generates 
 )";
     FunctionDocumentation::Syntax syntax = "getMacro(name)";
     FunctionDocumentation::Arguments arguments = {
-        {"name", "The name of the macro to retrieve. Must be a constant string.", {"String"}}
+        {"name", "The name of the macro to retrieve.", {"const String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the value of the specified macro.", {"String"}};
     FunctionDocumentation::Examples examples = {
