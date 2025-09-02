@@ -186,11 +186,11 @@ If any input channel is outside `[0...255]` or the gamma value is non-positive, 
 
 :::note
 **OKLCH** is a cylindrical version of the OKLab colour space.
-Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`).  
+Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`).
 OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
 :::
 
-The conversion consists of three stages: 
+The conversion consists of three stages:
 1) sRGB to Linear sRGB
 2) Linear sRGB to OKLab
 3) OKLab to OKLCH.

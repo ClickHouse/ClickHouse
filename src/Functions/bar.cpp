@@ -141,10 +141,10 @@ The band is drawn with accuracy to one eighth of a symbol.
 )";
     FunctionDocumentation::Syntax syntax = "bar(x, min, max[, width])";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "Size to display.", {"Numeric"}},
-        {"min", "Integer constant. The minimum value.", {"Int64"}},
-        {"max", "Integer constant. The maximum value.", {"Int64"}},
-        {"width", "Constant, positive integer, can be fractional. Optional, default is 80.", {"(U)Int*", "Float*", "Decimal"}}
+        {"x", "Size to display.", {"(U)Int*", "Float*", "Decimal"}},
+        {"min", "Integer constant. The minimum value.", {"const Int64"}},
+        {"max", "Integer constant. The maximum value.", {"const Int64"}},
+        {"width", "Optional. The width of the bar in characters. The default is `80`.", {"const (U)Int*", "const Float*", "const Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with Unicode-art bar.", {"String"}};
     FunctionDocumentation::Examples examples = {
@@ -152,9 +152,9 @@ The band is drawn with accuracy to one eighth of a symbol.
         "Usage example",
         R"(
 SELECT
-  toHour(EventTime) AS h,
-  count() AS c,
-  bar(c, 0, 600000, 20) AS bar
+toHour(EventTime) AS h,
+count() AS c,
+bar(c, 0, 600000, 20) AS bar
 FROM test.hits
 GROUP BY h
 ORDER BY h ASC
