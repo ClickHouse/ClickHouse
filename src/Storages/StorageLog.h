@@ -96,6 +96,8 @@ private:
 
     /// Saves the sizes of the data and marks files.
     void saveFileSizes(const WriteLock &);
+    /// Reload files sizes from disk and saves the sizes of the data and marks files.
+    void reloadAndSaveFileSizes(const WriteLock &);
 
     /// Recalculates the number of rows stored in this table.
     void updateTotalRows(const WriteLock &);

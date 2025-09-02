@@ -1,3 +1,4 @@
+#include "Common/Exception.h"
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -55,7 +56,7 @@ String FileChecker::getPath() const
     return files_info_path;
 }
 
-void FileChecker::update(const String & full_file_path)
+void FileChecker::reloadSizeFromDisk(const String & full_file_path)
 {
     bool exists = fileReallyExists(full_file_path);
     auto real_size = exists ? getRealFileSize(full_file_path) : 0;  /// No race condition assuming no one else is working with these files.
@@ -112,7 +113,8 @@ std::optional<CheckResult> FileChecker::checkNextEntry(DataValidationTasksPtr & 
     return CheckResult(name, true, "");
 }
 
-void FileChecker::repair()
+void FileChecker::checkConsistency()
+try
 {
     for (const auto & name_size : map)
     {
@@ -128,10 +130,14 @@ void FileChecker::repair()
 
         if (real_size > expected_size)
         {
-            LOG_WARNING(log, "Will truncate file {} that has size {} to size {}", path, real_size, expected_size);
-            disk->truncateFile(path, expected_size);
+            throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Size of {} is larger than expected. Size is {} but should be {}.",
+                path, real_size, expected_size);
         }
     }
+}
+catch (...)
+{
+    tryLogCurrentException(__PRETTY_FUNCTION__);
 }
 
 void FileChecker::save() const

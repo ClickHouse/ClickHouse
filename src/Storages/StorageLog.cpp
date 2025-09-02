@@ -324,30 +324,20 @@ public:
 
     ~LogSink() override
     {
-        try
+        if (done)
+            return;
+
+        /// No more writing.
+        for (auto & [_, stream] : streams)
         {
-            if (!done)
-            {
-                /// Rollback partial writes.
-
-                /// No more writing.
-                for (auto & [_, stream] : streams)
-                {
-                    stream.cancel();
-                }
-                streams.clear();
-
-                /// Truncate files to the older sizes.
-                storage.file_checker.repair();
-
-                /// Remove excessive marks.
-                storage.removeUnsavedMarks(lock);
-            }
+            stream.cancel();
         }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        streams.clear();
+
+        storage.file_checker.checkConsistency();
+
+        /// Remove excessive marks.
+        storage.removeUnsavedMarks(lock);
     }
 
     void consume(Chunk & chunk) override;
@@ -671,14 +661,7 @@ StorageLog::StorageLog(
     }
     else
     {
-        try
-        {
-            file_checker.repair();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        file_checker.checkConsistency();
     }
 
     columns_with_collected_nested = ColumnsDescription{Nested::collect(columns_.getAll())};
@@ -808,17 +791,21 @@ void StorageLog::removeUnsavedMarks(const WriteLock & /* already locked for writ
     }
 }
 
-
 void StorageLog::saveFileSizes(const WriteLock & /* already locked for writing */)
 {
-    for (const auto & data_file : data_files)
-        file_checker.update(data_file.path);
-
-    if (use_marks_file)
-        file_checker.update(marks_file_path);
-
     file_checker.save();
     total_bytes = file_checker.getTotalSize();
+}
+
+void StorageLog::reloadAndSaveFileSizes(const WriteLock & lock)
+{
+    for (const auto & data_file : data_files)
+        file_checker.reloadSizeFromDisk(data_file.path);
+
+    if (use_marks_file)
+        file_checker.reloadSizeFromDisk(marks_file_path);
+
+    saveFileSizes(lock);
 }
 
 
@@ -1190,13 +1177,13 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
 
         /// Finish writing.
         saveMarks(lock);
-        saveFileSizes(lock);
+        reloadAndSaveFileSizes(lock);
         updateTotalRows(lock);
     }
     catch (...)
     {
         /// Rollback partial writes.
-        file_checker.repair();
+        file_checker.checkConsistency();
         removeUnsavedMarks(lock);
         throw;
     }

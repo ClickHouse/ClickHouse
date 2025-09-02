@@ -206,30 +206,20 @@ public:
 
     ~StripeLogSink() override
     {
-        try
-        {
-            if (!done)
-            {
-                /// Rollback partial writes.
+        if (done)
+            return;
 
-                /// No more writing.
-                data_out->cancel();
-                data_out.reset();
+        /// No more writing.
+        data_out->cancel();
+        data_out.reset();
 
-                data_out_compressed->cancel();
-                data_out_compressed.reset();
+        data_out_compressed->cancel();
+        data_out_compressed.reset();
 
-                /// Truncate files to the older sizes.
-                storage.file_checker.repair();
+        storage.file_checker.checkConsistency();
 
-                /// Remove excessive indices.
-                storage.removeUnsavedIndices(lock);
-            }
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        /// Remove excessive indices.
+        storage.removeUnsavedIndices(lock);
     }
 
     void consume(Chunk & chunk) override
@@ -321,14 +311,7 @@ StorageStripeLog::StorageStripeLog(
     }
     else
     {
-        try
-        {
-            file_checker.repair();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        file_checker.checkConsistency();
     }
 
     total_bytes = file_checker.getTotalSize();
@@ -518,8 +501,6 @@ void StorageStripeLog::removeUnsavedIndices(const WriteLock & /* already locked 
 
 void StorageStripeLog::saveFileSizes(const WriteLock & /* already locked for writing */)
 {
-    file_checker.update(data_file_path);
-    file_checker.update(index_file_path);
     file_checker.save();
     total_bytes = file_checker.getTotalSize();
 }
@@ -687,8 +668,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
     }
     catch (...)
     {
-        /// Rollback partial writes.
-        file_checker.repair();
+        file_checker.checkConsistency();
         removeUnsavedIndices(lock);
         throw;
     }

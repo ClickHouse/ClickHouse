@@ -25,7 +25,7 @@ public:
     void setPath(const String & file_info_path_);
     String getPath() const;
 
-    void update(const String & full_file_path);
+    void reloadSizeFromDisk(const String & full_file_path);
     void setEmpty(const String & full_file_path);
     void save() const;
     bool empty() const { return map.empty(); }
@@ -37,10 +37,7 @@ public:
     DataValidationTasksPtr getDataValidationTasks();
     std::optional<CheckResult> checkNextEntry(DataValidationTasksPtr & check_data_tasks) const;
 
-    /// Truncate files that have excessive size to the expected size.
-    /// Throw exception if the file size is less than expected.
-    /// The purpose of this function is to rollback a group of unfinished writes.
-    void repair();
+    void checkConsistency();
 
     /// Returns stored file size.
     size_t getFileSize(const String & full_file_path) const;

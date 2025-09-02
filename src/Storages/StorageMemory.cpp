@@ -480,7 +480,7 @@ namespace
                 {
                     if (i == sizes_json_pos)
                         continue;
-                    file_checker.update(temp_dir / fs::path{file_paths[i]}.filename());
+                    file_checker.reloadSizeFromDisk(temp_dir / fs::path{file_paths[i]}.filename());
                 }
                 file_checker.save();
                 backup_entries[sizes_json_pos] = {file_paths[sizes_json_pos], std::make_shared<BackupEntryFromSmallFile>(temp_disk, sizes_json_path, read_settings)};
