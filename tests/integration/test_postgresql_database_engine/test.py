@@ -456,10 +456,17 @@ def test_numeric_detach_attach(started_cluster):
 
     assert get_actual_clickhouse_column_types() == expected_clickhouse_column_types
 
+    create_ddl = node1.query("SHOW CREATE TABLE postgres_database.test_table")
+    for column, expected_type in expected_clickhouse_column_types.items():
+        assert f"`{column}` {expected_type}" in create_ddl
+
     node1.query("DETACH TABLE postgres_database.test_table")
     node1.query("ATTACH TABLE postgres_database.test_table")
 
     assert get_actual_clickhouse_column_types() == expected_clickhouse_column_types
+
+    node1.query("DROP DATABASE postgres_database")
+    cursor.execute(f"DROP TABLE test_table")
 
 def test_postgresql_password_leak(started_cluster):
     conn = get_postgres_conn(
