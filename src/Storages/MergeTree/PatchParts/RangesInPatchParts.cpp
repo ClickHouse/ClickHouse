@@ -23,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INVALID_SETTING_VALUE;
 }
 
 namespace
@@ -189,14 +188,6 @@ void RangesInPatchParts::optimize()
 
         for (auto & range : optimized_ranges)
         {
-            if (max_granules_in_range == 0)
-                throw Exception(
-                    ErrorCodes::INVALID_SETTING_VALUE,
-                    "The current value of max_granules_in_range is {}."
-                    "Check the setting `merge_tree_min_read_task_size`'s value."
-                    "Make sure that the value of 'merge_tree_min_read_task_size' is greater than 0.",
-                    max_granules_in_range);
-
             size_t num_full_splits = (range.end - range.begin) / max_granules_in_range;
             for (size_t i = 0; i < num_full_splits; ++i)
                 split_ranges.emplace_back(range.begin + max_granules_in_range * i, range.begin + max_granules_in_range * (i + 1));
