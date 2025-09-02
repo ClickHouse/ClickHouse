@@ -254,6 +254,10 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     if (!join && !filled_join && !logical_join)
         return 0;
 
+    // Do not attempt disjunction push-down across correlated joins
+    if (has_or && logical_join && logical_join->hasCorrelatedExpressions())
+        return 0;
+
     /// Only suppress re-entry for the disjunction flow
     if (has_or)
     {
