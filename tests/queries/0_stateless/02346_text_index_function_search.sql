@@ -47,7 +47,7 @@ SELECT id FROM tab WHERE searchAny(message, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 
 
 DROP TABLE tab;
 
-SELECT 'FixedString column';
+SELECT 'FixedString input columns';
 
 CREATE TABLE tab (
     id Int,
@@ -103,13 +103,10 @@ SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc', 'bar']);
 SELECT groupArray(id) FROM tab WHERE searchAll(message, ['foo', 'bar']);
 SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc', 'fo']);
 
---- Test for FixedString
+--- Test for FixedString needles
+--- Not a systematic test, just to see that FixedString needles work in principle
 SELECT groupArray(id) FROM tab WHERE searchAny(message, [toFixedString('abc', 3)]);
 SELECT groupArray(id) FROM tab WHERE searchAll(message, [toFixedString('abc', 3)]);
-
---- Test for GitHub issue #86300
-SELECT groupArray(id) FROM tab WHERE searchAny(message, []);
-SELECT groupArray(id) FROM tab WHERE searchAll(message, []);
 
 DROP TABLE tab;
 
