@@ -1,0 +1,17 @@
+-- { echo }
+  select * from mergeTreeAnalyzeIndexUUID('UUID');
+all_1_1_0	0	12
+select * from mergeTreeAnalyzeIndexUUID('UUID', '');
+all_1_1_0	0	12
+select * from mergeTreeAnalyzeIndexUUID('UUID', '', key = 8193);
+all_1_1_0	1	2
+select * from mergeTreeAnalyzeIndexUUID('UUID', '', key >= 8193);
+all_1_1_0	1	12
+select * from mergeTreeAnalyzeIndexUUID('UUID', 'all_1_1_0', key = 8193);
+all_1_1_0	1	2
+select * from mergeTreeAnalyzeIndexUUID('UUID', 'no_such_part', key = 8193);
+-- Columns not from PK is allowed and ignored.
+  select * from mergeTreeAnalyzeIndexUUID('UUID', '', value = 0);
+all_1_1_0	0	12
+select * from mergeTreeAnalyzeIndexUUID('UUID', '', key = 8193 and value = 0);
+all_1_1_0	1	2

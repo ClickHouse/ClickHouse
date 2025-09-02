@@ -1,0 +1,189 @@
+#include <IO/ReadHelpers.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Storages/StorageMergeTreeAnalyzeIndex.h>
+#include <TableFunctions/ITableFunction.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <Common/quoteString.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
+}
+
+class TableFunctionMergeTreeAnalyzeIndex : public ITableFunction
+{
+public:
+    explicit TableFunctionMergeTreeAnalyzeIndex(bool resolve_by_uuid_)
+        : resolve_by_uuid(resolve_by_uuid_)
+    {}
+
+    std::string getName() const override
+    {
+        if (resolve_by_uuid)
+            return "mergeTreeAnalyzeIndexUUID";
+        else
+            return "mergeTreeAnalyzeIndex";
+    }
+
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+
+private:
+    StoragePtr executeImpl(
+        const ASTPtr & ast_function,
+        ContextPtr context,
+        const std::string & table_name,
+        ColumnsDescription cached_columns,
+        bool is_insert_query) const override;
+
+    const char * getStorageEngineName() const override { return "MergeTreeAnalyzeIndex"; }
+
+    void parseArgumentsUUID(const ASTs & args_func, ContextPtr context);
+    void parseArgumentsDatabaseTable(const ASTs & args_func, ContextPtr context);
+
+    const bool resolve_by_uuid;
+    StorageID source_table_id{StorageID::createEmpty()};
+    String parts_regexp;
+    ASTPtr primary_key_predicate;
+};
+
+std::vector<size_t> TableFunctionMergeTreeAnalyzeIndex::skipAnalysisForArguments(const QueryTreeNodePtr & /* query_node_table_function */, ContextPtr /* context */) const
+{
+    /// Filter should not be analyzed
+    if (resolve_by_uuid)
+        return {2};
+    else
+        return {3};
+}
+
+void TableFunctionMergeTreeAnalyzeIndex::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+{
+    const ASTs & args_func = ast_function->children;
+    if (args_func.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function ({}) must have arguments.", quoteString(getName()));
+
+    if (resolve_by_uuid)
+        parseArgumentsUUID(args_func, context);
+    else
+        parseArgumentsDatabaseTable(args_func, context);
+}
+
+void TableFunctionMergeTreeAnalyzeIndex::parseArgumentsUUID(const ASTs & args_func, ContextPtr context)
+{
+    ASTs & args = args_func.at(0)->children;
+    /// clang-tidy suggest to use args.empty() over args.size() < 1, which looks wrong here, but OK, let's use empty()
+    if (args.empty() || args.size() > 3)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Table function '{}' must have at from 1 to 3 arguments (UUID, parts_regexp, condition), got: {}", getName(), args.size());
+
+    args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
+    auto uuid = parseFromString<UUID>(checkAndGetLiteralArgument<String>(args[0], "UUID"));
+
+    if (args.size() > 1)
+    {
+        args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], context);
+        parts_regexp = checkAndGetLiteralArgument<String>(args[1], "parts_regexp");
+    }
+
+    if (args.size() > 2)
+        primary_key_predicate = args[2]->clone();
+
+    source_table_id = StorageID{/*database=*/ "", /*table=*/ "", uuid};
+}
+
+void TableFunctionMergeTreeAnalyzeIndex::parseArgumentsDatabaseTable(const ASTs & args_func, ContextPtr context)
+{
+    ASTs & args = args_func.at(0)->children;
+    if (args.size() < 2 || args.size() > 4)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Table function '{}' must have at from 2 to 4 arguments (database, table, parts_regexp, condition), got: {}", getName(), args.size());
+
+    args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
+    auto database = checkAndGetLiteralArgument<String>(args[0], "database");
+
+    args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], context);
+    auto table = checkAndGetLiteralArgument<String>(args[1], "table");
+
+    if (args.size() > 2)
+    {
+        args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], context);
+        parts_regexp = checkAndGetLiteralArgument<String>(args[2], "parts_regexp");
+    }
+
+    if (args.size() > 3)
+        primary_key_predicate = args[3]->clone();
+
+    source_table_id = StorageID{database, table};
+}
+
+ColumnsDescription TableFunctionMergeTreeAnalyzeIndex::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
+{
+    return ColumnsDescription(NamesAndTypesList({
+        {"part_name", std::make_shared<DataTypeString>()},
+        {"range_start", std::make_shared<DataTypeUInt64>()},
+        {"range_end", std::make_shared<DataTypeUInt64>()},
+    }));
+}
+
+StoragePtr TableFunctionMergeTreeAnalyzeIndex::executeImpl(
+    const ASTPtr & /*ast_function*/,
+    ContextPtr context,
+    const std::string & table_name,
+    ColumnsDescription /*cached_columns*/,
+    bool is_insert_query) const
+{
+    StoragePtr source_table;
+    if (source_table_id.hasUUID())
+        source_table = DatabaseCatalog::instance().getByUUID(source_table_id.uuid).second;
+    else
+        source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
+    auto columns = getActualTableStructure(context, is_insert_query);
+    StorageID storage_id(getDatabaseName(), table_name);
+
+    auto res = std::make_shared<StorageMergeTreeAnalyzeIndex>(
+        std::move(storage_id),
+        std::move(source_table),
+        std::move(columns),
+        parts_regexp,
+        primary_key_predicate);
+    res->startup();
+    return res;
+}
+
+void registerTableFunctionMergeTreeAnalyzeIndex(TableFunctionFactory & factory)
+{
+    factory.registerFunction("mergeTreeAnalyzeIndex", TableFunctionFactoryData{
+        []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndex>(/* resolve_by_uuid_= */ false); },
+        TableFunctionProperties{
+            .documentation =
+            {
+                .description = "Internal function for index analysis",
+                .examples = {{"mergeTreeAnalyzeIndex", "SELECT * FROM mergeTreeAnalyzeIndex(currentDatabase(), mt_table, 'parts_regexp', pk_column = 1)", ""}},
+                .category = FunctionDocumentation::Category::TableFunction
+            },
+            .allow_readonly = true,
+        }
+    });
+
+    factory.registerFunction("mergeTreeAnalyzeIndexUUID", TableFunctionFactoryData{
+        []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndex>(/* resolve_by_uuid_= */ true); },
+        TableFunctionProperties{
+            .documentation =
+            {
+                .description = "Internal function for index analysis",
+                .examples = {{"mergeTreeAnalyzeIndex", "SELECT * FROM mergeTreeAnalyzeIndexUUID('table_uuid', 'parts_regexp', pk_column = 1)", ""}},
+                .category = FunctionDocumentation::Category::TableFunction
+            },
+            .allow_readonly = true,
+        }
+    });
+}
+
+}
