@@ -2,6 +2,7 @@
 #include <memory>
 #include <boost/core/noncopyable.hpp>
 #include <gtest/gtest.h>
+#include <Common/tests/gtest_global_register.h>
 
 #include <Poco/ConsoleChannel.h>
 #include <Poco/FormattingChannel.h>
@@ -23,7 +24,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/JoinInfo.h>
+#include <Interpreters/JoinOperator.h>
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
@@ -259,35 +260,28 @@ QueryPlan createHashJoinQueryPlan(const String & data_a, const String & data_b)
             return result;
         };
 
-        ColumnsWithTypeAndName all_columns =  header_a->getColumnsWithTypeAndName();
-        all_columns.insert(all_columns.end(), header_b->getColumnsWithTypeAndName().begin(), header_b->getColumnsWithTypeAndName().end());
         JoinExpressionActions join_expression_actions(
             remove_column_pointers(header_a->getColumnsWithTypeAndName()),
-            remove_column_pointers(header_b->getColumnsWithTypeAndName()),
-            remove_column_pointers(all_columns)
-        );
+            remove_column_pointers(header_b->getColumnsWithTypeAndName()));
 
-        JoinInfo join_info;
-        /// Construct contidion "a.c1 == b.c1 AND a.c2 == b.c2"
+        JoinOperator join_info(JoinKind::Inner);
+        /// Construct contidion "t1.c1 == t2.c1 AND t1.c2 == t2.c2"
         {
-            join_info.kind = JoinKind::Inner;
-            join_info.strictness = JoinStrictness::All;
-            join_info.locality = JoinLocality::Unspecified;
-            join_info.expression.condition.predicates.push_back(
-                JoinPredicate{
-                    .left_node = JoinActionRef(join_expression_actions.left_pre_join_actions->tryFindInOutputs("c1"), join_expression_actions.left_pre_join_actions.get()),
-                    .right_node = JoinActionRef(join_expression_actions.right_pre_join_actions->tryFindInOutputs("c1"), join_expression_actions.right_pre_join_actions.get()),
-                    .op=PredicateOperator::Equals
-                }) ;
-            join_info.expression.condition.predicates.push_back(
-                JoinPredicate{
-                    .left_node = JoinActionRef(join_expression_actions.left_pre_join_actions->tryFindInOutputs("c2"), join_expression_actions.left_pre_join_actions.get()),
-                    .right_node = JoinActionRef(join_expression_actions.right_pre_join_actions->tryFindInOutputs("c2"), join_expression_actions.right_pre_join_actions.get()),
-                    .op=PredicateOperator::Equals
-                }) ;
+            auto actions_dag = join_expression_actions.getActionsDAG();
+            actions_dag->getOutputs() = actions_dag->getInputs();
+
+            join_info.expression.push_back(JoinActionRef::transform({
+                JoinActionRef(actions_dag->tryFindInOutputs("t1.c1"), join_expression_actions),
+                JoinActionRef(actions_dag->tryFindInOutputs("t2.c1"), join_expression_actions),
+            }, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+            join_info.expression.push_back(JoinActionRef::transform({
+                JoinActionRef(actions_dag->tryFindInOutputs("t1.c2"), join_expression_actions),
+                JoinActionRef(actions_dag->tryFindInOutputs("t2.c2"), join_expression_actions),
+            }, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+
         }
 
-        Names required_output_columns = {"c1", "c2", "va", "vb"};
+        NameSet required_output_columns = {"t1.c1", "t1.c2", "t1.va", "t2.vb"};
         ContextPtr query_context = getContext().context;
 
         auto join_step = std::make_unique<JoinStepLogical>(
@@ -296,6 +290,7 @@ QueryPlan createHashJoinQueryPlan(const String & data_a, const String & data_b)
             std::move(join_info),
             std::move(join_expression_actions),
             std::move(required_output_columns),
+            std::unordered_map<String, const ActionsDAG::Node *>{},
             false,
             JoinSettings(query_context->getSettingsRef()),
             SortingStep::Settings(query_context->getSettingsRef()));
@@ -321,7 +316,7 @@ struct DistributedQueryPlanSettings
 };
 
 String data_a =
-            "c1\tc2\tva\n"
+            "t1.c1\tt1.c2\tt1.va\n"
             "String\tUInt64\tString\n"
             "a\t1\t1ab\n"
             "g\t2\t2ba\n"
@@ -341,7 +336,7 @@ String data_a =
             "c\t3\t9cc\n";
 
 String data_b =
-            "c1\tc2\tvb\n"
+            "t2.c1\tt2.c2\tt2.vb\n"
             "String\tUInt64\tString\n"
             "a\t2\t1baaa\n"
             "c\t3\t2bddd\n"
@@ -425,6 +420,7 @@ public:
         config = config_processor.loadConfig(false);
         context_holder.context->setConfig(config.configuration);
 
+        tryRegisterFunctions();
         auto & factory = ObjectStorageFactory::instance();
         registerS3ObjectStorage(factory);
         registerLocalObjectStorage(factory);
