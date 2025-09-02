@@ -36,9 +36,13 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
 
     return std::make_unique<MergeTreeReaderStreamSingleColumn>(
         part->getDataPartStoragePtr(),
-        stream_name, extension, marks_count,
-        all_mark_ranges, std::move(settings), uncompressed_cache,
-        part->getFileSizeOrZero(stream_name + extension), std::move(marks_loader),
+        stream_name,
+        extension, marks_count,
+        all_mark_ranges,
+        std::move(settings),
+        uncompressed_cache,
+        part->getFileSizeOrZero(stream_name + extension),
+        std::move(marks_loader),
         ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE);
 }
 

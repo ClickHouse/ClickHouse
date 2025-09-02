@@ -220,13 +220,12 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
         }
 
         const auto & future_postings = postings.getFuturePostings();
-        const auto & mark = future_postings.mark;
 
         auto * postings_stream = index_reader->getStreams().at(IndexSubstream::Type::TextIndexPostings);
         auto * data_buffer = postings_stream->getDataBuffer();
         auto * compressed_buffer = postings_stream->getCompressedDataBuffer();
 
-        compressed_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+        compressed_buffer->seek(future_postings.offset_in_file, 0);
         auto & compressed_postings = granule.postings_holders.emplace_back(future_postings.delta_bits, future_postings.cardinality);
         compressed_postings.deserialize(*data_buffer);
         granule.postings[token] = compressed_postings.getIterator();

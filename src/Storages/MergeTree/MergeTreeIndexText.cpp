@@ -26,29 +26,10 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
-namespace
-{
-
-size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t total_rows)
+static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t total_rows)
 {
     static constexpr size_t atom_size = 8;
     return (bits_per_row * total_rows + atom_size - 1) / atom_size;
-}
-
-UInt64 packMark(const MarkInCompressedFile & begin_mark, const MarkInCompressedFile & current_mark)
-{
-    UInt32 offset_in_compressed_file = current_mark.offset_in_compressed_file - begin_mark.offset_in_compressed_file;
-    UInt32 offset_in_decompressed_block = static_cast<UInt32>(current_mark.offset_in_decompressed_block);
-    return (static_cast<UInt64>(offset_in_compressed_file) << 32) | offset_in_decompressed_block;
-}
-
-MarkInCompressedFile unpackMark(const MarkInCompressedFile & begin_mark, UInt64 packed_mark)
-{
-    UInt32 offset_in_compressed_file = static_cast<UInt32>(packed_mark >> 32);
-    UInt32 offset_in_decompressed_block = static_cast<UInt32>(packed_mark & 0xFFFFFFFF);
-    return {begin_mark.offset_in_compressed_file + offset_in_compressed_file, offset_in_decompressed_block};
-}
-
 }
 
 static constexpr UInt8 EMBEDDED_POSTINGS_FLAG = static_cast<UInt8>(1 << 7);
@@ -177,14 +158,14 @@ std::optional<size_t> DictionaryBlockBase::binarySearch(const StringRef & token)
     return idx;
 }
 
-DictionarySparseIndex::DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr packed_marks_)
-    : DictionaryBlockBase(std::move(tokens_)), packed_marks(std::move(packed_marks_))
+DictionarySparseIndex::DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_)
+    : DictionaryBlockBase(std::move(tokens_)), offsets_in_file(std::move(offsets_in_file_))
 {
 }
 
-UInt64 DictionarySparseIndex::getMark(size_t idx) const
+UInt64 DictionarySparseIndex::getOffsetInFile(size_t idx) const
 {
-    return assert_cast<const ColumnUInt64 &>(*packed_marks).getData()[idx];
+    return assert_cast<const ColumnUInt64 &>(*offsets_in_file).getData()[idx];
 }
 
 DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenInfo> token_infos_)
@@ -260,14 +241,9 @@ static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
         }
         else
         {
-            UInt32 offset_in_compressed_file;
-            UInt32 offset_in_decompressed_block;
-
-            readVarUInt(offset_in_compressed_file, istr);
-            readVarUInt(offset_in_decompressed_block, istr);
-
-            MarkInCompressedFile mark{offset_in_compressed_file, offset_in_decompressed_block};
-            token_infos.emplace_back(TokenInfo::FuturePostings{cardinality, delta_bits, std::move(mark)});
+            UInt64 offset_in_file;
+            readVarUInt(offset_in_file, istr);
+            token_infos.emplace_back(TokenInfo::FuturePostings{cardinality, delta_bits, offset_in_file});
         }
     }
 
@@ -282,10 +258,10 @@ void MergeTreeIndexGranuleText::deserializeSparseIndex(ReadBuffer & istr)
     sparse_index.tokens = deserializeTokens(istr);
     size_t num_tokens = sparse_index.tokens->size();
 
-    auto packed_marks = ColumnUInt64::create();
+    auto offsets_in_file = ColumnUInt64::create();
     SerializationNumber<UInt64> serialization_number;
-    serialization_number.deserializeBinaryBulk(*packed_marks, istr, 0, num_tokens, 0.0);
-    sparse_index.packed_marks = std::move(packed_marks);
+    serialization_number.deserializeBinaryBulk(*offsets_in_file, istr, 0, num_tokens, 0.0);
+    sparse_index.offsets_in_file = std::move(offsets_in_file);
 }
 
 void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(IndexInputStreams & streams, IndexDeserializationState & state)
@@ -301,6 +277,18 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(IndexInputS
 
     analyzeBloomFilter(*state.condition);
     analyzeDictionary(*dictionary_stream, state);
+}
+
+bool MergeTreeIndexGranuleText::processMissedToken(const StringRef & token, TextSearchMode global_search_mode)
+{
+    if (global_search_mode == TextSearchMode::All)
+    {
+        remaining_tokens.clear();
+        return true;
+    }
+
+    remaining_tokens.erase(token);
+    return false;
 }
 
 void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexCondition & condition)
@@ -336,33 +324,26 @@ void MergeTreeIndexGranuleText::analyzeDictionary(IndexReaderStream & stream, In
     if (remaining_tokens.empty())
         return;
 
-    auto begin_dict_mark = state.current_marks.at(IndexSubstream::Type::TextIndexDictionary);
-    auto begin_postings_mark = state.current_marks.at(IndexSubstream::Type::TextIndexPostings);
-
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    auto global_search_mode = condition_text.getGlobalSearchMode();
     std::map<size_t, std::vector<StringRef>> block_to_tokens;
 
     for (const auto & [token, _] : remaining_tokens)
     {
         size_t idx = sparse_index.upperBound(token);
+        if (idx == 0 && processMissedToken(token, global_search_mode))
+            return;
 
-        if (idx != 0)
-            --idx;
-
-        block_to_tokens[idx].emplace_back(token);
+        block_to_tokens[idx - 1].emplace_back(token);
     }
 
     auto * data_buffer = stream.getDataBuffer();
     auto * compressed_buffer = stream.getCompressedDataBuffer();
 
-    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
-    auto global_search_mode = condition_text.getGlobalSearchMode();
-
     for (const auto & [block_idx, tokens] : block_to_tokens)
     {
-        UInt64 packed_dict_mark = sparse_index.getMark(block_idx);
-        MarkInCompressedFile dict_mark = unpackMark(begin_dict_mark, packed_dict_mark);
-
-        compressed_buffer->seek(dict_mark.offset_in_compressed_file, dict_mark.offset_in_decompressed_block);
+        UInt64 offset_in_file = sparse_index.getOffsetInFile(block_idx);
+        compressed_buffer->seek(offset_in_file, 0);
         auto dictionary_block = deserializeDictionaryBlock(*data_buffer);
 
         for (const auto & token : tokens)
@@ -374,20 +355,9 @@ void MergeTreeIndexGranuleText::analyzeDictionary(IndexReaderStream & stream, In
             if (token_idx.has_value())
             {
                 it->second = dictionary_block.token_infos.at(token_idx.value());
-
-                if (it->second.hasFuturePostings())
-                {
-                    auto & mark = it->second.getFuturePostings().mark;
-                    mark.offset_in_compressed_file += begin_postings_mark.offset_in_compressed_file;
-                }
             }
-            else if (global_search_mode == TextSearchMode::Any)
+            else if (processMissedToken(token, global_search_mode))
             {
-                remaining_tokens.erase(it);
-            }
-            else
-            {
-                remaining_tokens.clear();
                 return;
             }
         }
@@ -432,31 +402,29 @@ DictionarySparseIndex serializeTokensAndPostings(
     const std::vector<PostingList> & postings,
     Stream & dictionary_stream,
     Stream & postings_stream,
-    const IndexSerializationState & state,
     size_t block_size)
 {
     chassert(tokens.size() == postings.size());
-
-    auto begin_dictionary_mark = state.current_marks.at(IndexSubstream::Type::TextIndexDictionary);
-    auto begin_postings_mark = state.current_marks.at(IndexSubstream::Type::TextIndexPostings);
-
     size_t num_blocks = (tokens.size() + block_size - 1) / block_size;
 
     auto sparse_index_tokens = ColumnString::create();
     auto & sparse_index_str = assert_cast<ColumnString &>(*sparse_index_tokens);
     sparse_index_str.reserve(num_blocks);
 
-    auto sparse_index_marks = ColumnUInt64::create();
-    auto & sparse_index_marks_data = sparse_index_marks->getData();
-    sparse_index_marks_data.reserve(num_blocks);
+    auto sparse_index_offsets = ColumnUInt64::create();
+    auto & sparse_index_offsets_data = sparse_index_offsets->getData();
+    sparse_index_offsets_data.reserve(num_blocks);
 
     for (size_t block_idx = 0; block_idx < num_blocks; ++block_idx)
     {
         size_t block_begin = block_idx * block_size;
         size_t block_end = std::min(block_begin + block_size, tokens.size());
 
+        dictionary_stream.compressed_hashing.next();
         auto current_mark = dictionary_stream.getCurrentMark();
-        sparse_index_marks_data.emplace_back(packMark(begin_dictionary_mark, current_mark));
+        chassert(current_mark.offset_in_decompressed_block == 0);
+
+        sparse_index_offsets_data.emplace_back(current_mark.offset_in_compressed_file);
         sparse_index_str.insertData(tokens[block_begin].data, tokens[block_begin].size);
 
         size_t num_tokens = block_end - block_begin;
@@ -488,20 +456,17 @@ DictionarySparseIndex serializeTokensAndPostings(
             }
             else
             {
+                postings_stream.compressed_hashing.next();
                 auto postings_mark = postings_stream.getCurrentMark();
+                UInt64 offset_in_file = postings_mark.offset_in_compressed_file + postings_mark.offset_in_decompressed_block;
 
-                UInt32 offset_in_compressed_file = postings_mark.offset_in_compressed_file - begin_postings_mark.offset_in_compressed_file;
-                UInt32 offset_in_decompressed_block = static_cast<UInt32>(postings_mark.offset_in_decompressed_block);
-
-                writeVarUInt(offset_in_compressed_file, dictionary_stream.compressed_hashing);
-                writeVarUInt(offset_in_decompressed_block, dictionary_stream.compressed_hashing);
-
+                writeVarUInt(offset_in_file, dictionary_stream.compressed_hashing);
                 compressed_postings.serialize(postings_stream.compressed_hashing);
             }
         }
     }
 
-    return DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_marks));
+    return DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
 }
 
 template <typename Stream>
@@ -515,14 +480,14 @@ void serializeBloomFilter(size_t total_rows, const BloomFilter & bloom_filter, S
 template <typename Stream>
 void serializeSparseIndex(const DictionarySparseIndex & sparse_index, Stream & stream)
 {
-    chassert(sparse_index.tokens->size() == sparse_index.packed_marks->size());
+    chassert(sparse_index.tokens->size() == sparse_index.offsets_in_file->size());
 
     SerializationString serialization_string;
     SerializationNumber<UInt64> serialization_number;
 
     writeVarUInt(sparse_index.tokens->size(), stream.compressed_hashing);
     serialization_string.serializeBinaryBulk(*sparse_index.tokens, stream.compressed_hashing, 0, sparse_index.tokens->size());
-    serialization_number.serializeBinaryBulk(*sparse_index.packed_marks, stream.compressed_hashing, 0, sparse_index.packed_marks->size());
+    serialization_number.serializeBinaryBulk(*sparse_index.offsets_in_file, stream.compressed_hashing, 0, sparse_index.offsets_in_file->size());
 }
 
 void MergeTreeIndexGranuleTextWritable::serializeBinary(WriteBuffer &) const
@@ -530,7 +495,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinary(WriteBuffer &) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings");
 }
 
-void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(IndexOutputStreams & streams, IndexSerializationState & state) const
+void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(IndexOutputStreams & streams, IndexSerializationState &) const
 {
     auto * index_stream = streams.at(IndexSubstream::Type::Regular);
     auto * dictionary_stream = streams.at(IndexSubstream::Type::TextIndexDictionary);
@@ -539,7 +504,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Index
     if (!index_stream || !dictionary_stream || !postings_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
-    auto sparse_index_block = serializeTokensAndPostings(tokens, posting_lists, *dictionary_stream, *postings_stream, state, dictionary_block_size);
+    auto sparse_index_block = serializeTokensAndPostings(tokens, posting_lists, *dictionary_stream, *postings_stream, dictionary_block_size);
     serializeBloomFilter(total_rows, bloom_filter, *index_stream);
     serializeSparseIndex(sparse_index_block, *index_stream);
 }

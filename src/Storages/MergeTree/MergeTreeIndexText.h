@@ -83,7 +83,7 @@ public:
     {
         UInt32 cardinality = 0;
         UInt8 delta_bits = 0;
-        MarkInCompressedFile mark;
+        UInt64 offset_in_file;
 
         UInt32 getCardinality() const { return cardinality; }
     };
@@ -126,10 +126,10 @@ struct DictionaryBlockBase
 struct DictionarySparseIndex : public DictionaryBlockBase
 {
     DictionarySparseIndex() = default;
-    DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr packed_marks_);
-    UInt64 getMark(size_t idx) const;
+    DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_);
+    UInt64 getOffsetInFile(size_t idx) const;
 
-    ColumnPtr packed_marks;
+    ColumnPtr offsets_in_file;
 };
 
 struct DictionaryBlock : public DictionaryBlockBase
@@ -164,6 +164,9 @@ private:
 
     void analyzeBloomFilter(const IMergeTreeIndexCondition & condition);
     void analyzeDictionary(IndexReaderStream & stream, IndexDeserializationState & state);
+
+    /// Returns true if granule can be skipped completely due to missed token.
+    bool processMissedToken(const StringRef & token, TextSearchMode global_search_mode);
 
     MergeTreeIndexTextParams params;
     size_t total_rows = 0;

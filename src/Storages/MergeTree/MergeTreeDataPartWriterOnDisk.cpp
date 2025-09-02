@@ -162,7 +162,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 index_substream.extension,
                 stream_name,
                 marks_file_extension,
-                default_codec,
+                getIndexComressionCodec(index_substream.type, default_codec),
                 settings.max_compress_block_size,
                 marks_compression_codec,
                 settings.marks_compress_block_size,
