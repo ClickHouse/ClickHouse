@@ -242,10 +242,19 @@ ManifestFileContent::ManifestFileContent(
             snapshot_id = snapshot_id_value.safeGet<Int64>();
         }
 
+        const auto schema_id_opt = schema_processor.tryGetSchemaIdForSnapshot(snapshot_id);
+        if (!schema_id_opt.has_value())
+        {
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot read Iceberg table: manifest file '{}' has entry with snapshot_id '{}' for which write file schema is unknown",
+                manifest_file_name,
+                snapshot_id);
+        }
+        const auto schema_id = schema_id_opt.value();
 
-        const auto schema_id = schema_processor.getSchemaIdForSnapshot(snapshot_id);
-
-        const auto file_path_key = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>();
+        const auto file_path_key
+            = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>();
         const auto file_path = getProperFilePathFromMetadataInfo(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>(), common_path, table_location);
 
         /// NOTE: This is weird, because in manifest file partition looks like this:
