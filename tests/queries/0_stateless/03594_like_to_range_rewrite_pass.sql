@@ -1,6 +1,7 @@
 -- Test for LikeToRangeRewritePass optimization in analyzer
 -- This pass should rewrite LIKE 'prefix%' expressions to range conditions for better performance
 
+SET enable_analyzer = 1;
 SET optimize_rewrite_like_to_range = 1;
 
 DROP TABLE IF EXISTS test_like_rewrite;
