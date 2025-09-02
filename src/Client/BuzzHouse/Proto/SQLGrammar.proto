@@ -3234,6 +3234,7 @@ enum TableEngineValues {
     ExternalDistributed = 40;
     MaterializedPostgreSQL = 41;
     ArrowFlight = 42;
+    Alias = 43;
 }
 
 enum TableEngineOption {

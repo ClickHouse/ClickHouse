@@ -1085,63 +1085,6 @@ void StatementGenerator::generateEngineDetails(
             columnPathRef(entries[i], te->add_params()->mutable_cols());
         }
     }
-    else if (te->has_engine() && b.isBufferEngine())
-    {
-        const uint32_t buf_table = 15 * static_cast<uint32_t>(has_tables);
-        const uint32_t buf_view = 5 * static_cast<uint32_t>(has_views);
-        const uint32_t buf_dictionary = 5 * static_cast<uint32_t>(has_dictionaries);
-        const uint32_t prob_space = buf_table + buf_view + buf_dictionary;
-        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-        const uint32_t nopt = next_dist(rg.generator);
-
-        if (buf_table && nopt < (buf_table + 1))
-        {
-            const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(hasTableOrView<SQLTable>(b)));
-
-            t.setName(te);
-            b.sub = t.teng;
-        }
-        else if (buf_view && nopt < (buf_table + buf_view + 1))
-        {
-            const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(hasTableOrView<SQLView>(b)));
-
-            v.setName(te);
-            b.sub = v.teng;
-        }
-        else if (buf_dictionary && nopt < (buf_table + buf_view + buf_dictionary + 1))
-        {
-            const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(hasTableOrView<SQLDictionary>(b)));
-
-            d.setName(te);
-            b.sub = d.teng;
-        }
-        else
-        {
-            chassert(0);
-        }
-        /// num_layers
-        te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 101));
-        /// min_time, max_time, min_rows, max_rows, min_bytes, max_bytes
-        for (int i = 0; i < 6; i++)
-        {
-            te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 1001));
-        }
-        if (rg.nextSmallNumber() < 7)
-        {
-            /// flush_time
-            te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 61));
-        }
-        if (rg.nextSmallNumber() < 7)
-        {
-            /// flush_rows
-            te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 1001));
-        }
-        if (rg.nextSmallNumber() < 7)
-        {
-            /// flush_bytes
-            te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 1001));
-        }
-    }
     else if (
         te->has_engine()
         && (b.isMySQLEngine() || b.isPostgreSQLEngine() || b.isMaterializedPostgreSQLEngine() || b.isSQLiteEngine() || b.isMongoDBEngine()
@@ -1172,7 +1115,7 @@ void StatementGenerator::generateEngineDetails(
         }
         te->add_params()->set_svalue(std::move(mergeDesc));
     }
-    else if (te->has_engine() && b.isDistributedEngine())
+    else if (te->has_engine() && (b.isDistributedEngine() || b.isBufferEngine() || b.isAliasEngine()))
     {
         const uint32_t dist_table = 15 * static_cast<uint32_t>(has_tables);
         const uint32_t dist_view = 5 * static_cast<uint32_t>(has_views);
@@ -1181,7 +1124,10 @@ void StatementGenerator::generateEngineDetails(
         std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
         const uint32_t nopt = next_dist(rg.generator);
 
-        te->add_params()->set_svalue(rg.pickRandomly(fc.clusters));
+        if (b.isDistributedEngine())
+        {
+            te->add_params()->set_svalue(rg.pickRandomly(fc.clusters));
+        }
         if (dist_table && nopt < (dist_table + 1))
         {
             const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(hasTableOrView<SQLTable>(b)));
@@ -1209,7 +1155,7 @@ void StatementGenerator::generateEngineDetails(
             chassert(0);
         }
 
-        if (rg.nextBool())
+        if (b.isDistributedEngine() && rg.nextBool())
         {
             /// Optional sharding key
             SQLTable * t = dynamic_cast<SQLTable *>(&b);
@@ -1221,7 +1167,31 @@ void StatementGenerator::generateEngineDetails(
                 te->add_params()->set_svalue(rg.pickRandomly(fc.storage_policies));
             }
         }
-        this->remote_entries.clear();
+        else if (b.isBufferEngine())
+        {
+            /// num_layers
+            te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 101));
+            /// min_time, max_time, min_rows, max_rows, min_bytes, max_bytes
+            for (int i = 0; i < 6; i++)
+            {
+                te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 1001));
+            }
+            if (rg.nextSmallNumber() < 7)
+            {
+                /// flush_time
+                te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 61));
+            }
+            if (rg.nextSmallNumber() < 7)
+            {
+                /// flush_rows
+                te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 1001));
+            }
+            if (rg.nextSmallNumber() < 7)
+            {
+                /// flush_bytes
+                te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 1001));
+            }
+        }
     }
     else if (te->has_engine() && b.isDictionaryEngine())
     {
@@ -1892,6 +1862,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         if (!fc.clusters.empty() && (fc.engine_mask & allow_distributed) != 0)
         {
             this->ids.emplace_back(Distributed);
+        }
+        if ((fc.engine_mask & allow_alias) != 0)
+        {
+            this->ids.emplace_back(Alias);
         }
     }
     if ((fc.engine_mask & allow_dictionary) != 0 && has_dictionaries)

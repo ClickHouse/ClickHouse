@@ -318,6 +318,8 @@ public:
 
     bool isArrowFlightEngine() const { return teng == TableEngineValues::ArrowFlight; }
 
+    bool isAliasEngine() const { return teng == TableEngineValues::Alias; }
+
     bool isNotTruncableEngine() const;
 
     bool isEngineReplaceable() const;
