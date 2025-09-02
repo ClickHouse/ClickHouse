@@ -809,7 +809,7 @@ ObjectIterator IcebergMetadata::iterate(
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Can't extract iceberg table state from storage snapshot for table location {}, is s",
+            "Can't extract iceberg table state from storage snapshot for table location {}",
             persistent_components.table_location);
     }
     chassert(iceberg_table_state != nullptr);
