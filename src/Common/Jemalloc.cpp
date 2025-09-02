@@ -74,7 +74,7 @@ std::string flushProfile(const std::string & file_prefix)
     if (!n && std::string_view(prefix_buffer) != "jeprof")
     {
         mallctl("prof.dump", nullptr, nullptr, nullptr, 0);
-        return prefix_buffer;
+        return std::string{getLastFlushProfileForThread()};
     }
 
     static std::atomic<size_t> profile_counter{0};
@@ -82,7 +82,7 @@ std::string flushProfile(const std::string & file_prefix)
     const auto * profile_dump_path_str = profile_dump_path.c_str();
 
     mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str)); // NOLINT
-    return profile_dump_path;
+    return std::string{getLastFlushProfileForThread()};
 }
 
 void setBackgroundThreads(bool enabled)
