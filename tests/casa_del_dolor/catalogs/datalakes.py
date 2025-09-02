@@ -127,9 +127,9 @@ spark_properties = {
         ["INT96", "TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"]
     ),
     "spark.sql.parquet.writeLegacyFormat": true_false_lambda,
-    "spark.sql.shuffle.partitions": lambda: random.choice(
-        ["8", "16", "32", "64", "200", "400"]
-    ),
+    #"spark.sql.shuffle.partitions": lambda: random.choice( don't set this too low
+    #    ["8", "16", "32", "64", "200", "400"]
+    #),
     "spark.sql.sources.partitionOverwriteMode": lambda: random.choice(
         ["static", "dynamic"]
     ),
@@ -200,6 +200,8 @@ def get_spark(
         "spark.executor.extraJavaOptions",
         f"-Dlog4j.configurationFile=file:{sparklogfile} -Dderby.stream.error.file={derbylogfile}",
     )
+    builder.config("spark.driver.memory", "16g")
+    builder.config("spark.driver.memoryOverhead", "2g")
 
     # ============================================================
     # CATALOG CONFIGURATIONS

@@ -1174,7 +1174,6 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isDistributedEngine())
     {
-        const SQLTable * t = nullptr;
         const uint32_t dist_table = 15 * static_cast<uint32_t>(has_tables);
         const uint32_t dist_view = 5 * static_cast<uint32_t>(has_views);
         const uint32_t dist_dictionary = 5 * static_cast<uint32_t>(has_dictionaries);
@@ -1185,11 +1184,11 @@ void StatementGenerator::generateEngineDetails(
         te->add_params()->set_svalue(rg.pickRandomly(fc.clusters));
         if (dist_table && nopt < (dist_table + 1))
         {
-            t = &rg.pickRandomly(filterCollection<SQLTable>(hasTableOrView<SQLTable>(b))).get();
+            const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(hasTableOrView<SQLTable>(b)));
 
-            t->setName(te);
+            t.setName(te);
             /// For the sharding key
-            b.sub = t->teng;
+            b.sub = t.teng;
         }
         else if (dist_view && nopt < (dist_table + dist_view + 1))
         {
@@ -1213,6 +1212,8 @@ void StatementGenerator::generateEngineDetails(
         if (rg.nextBool())
         {
             /// Optional sharding key
+            SQLTable * t = dynamic_cast<SQLTable *>(&b);
+
             setRandomShardKey(rg, t ? std::make_optional<SQLTable>(*t) : std::nullopt, te->add_params()->mutable_expr());
             /// Optional policy name
             if (!fc.storage_policies.empty() && rg.nextBool())

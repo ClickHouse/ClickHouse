@@ -562,21 +562,21 @@ class IcebergTableGenerator(LakeTableGenerator):
         ).strftime("%Y-%m-%d %H:%M:%S.%f")
 
         if next_option == 1:
-            return f"CALL {table.catalog_name}.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{restore_to}');"
+            return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{restore_to}')"
         if next_option == 2:
-            res = f"CALL {table.catalog_name}.system.remove_orphan_files(table => '{table.get_namespace_path()}'"
+            res = f"CALL `{table.catalog_name}`.system.remove_orphan_files(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
                 res += f", dry_run => {random.choice(["true", "false"])})"
             if random.randint(1, 2) == 1:
                 res += f", prefix_listing => {random.choice(["true", "false"])})"
             if random.randint(1, 2) == 1:
                 res += f", older_than => TIMESTAMP '{restore_to}'"
-            res += ");"
+            res += ")"
             return res
         if next_option == 3:
             next_strategy = random.choice(["sort", "binpack"])
 
-            res = f"CALL {table.catalog_name}.system.rewrite_data_files(table => '{table.get_namespace_path()}', strategy => '{next_strategy}'"
+            res = f"CALL `{table.catalog_name}`.system.rewrite_data_files(table => '{table.get_namespace_path()}', strategy => '{next_strategy}'"
             if next_strategy == "sort" and random.randint(1, 4) != 4:
                 zorder = random.randint(1, 2) == 1
                 res += ", sort_order => '"
@@ -586,18 +586,18 @@ class IcebergTableGenerator(LakeTableGenerator):
                 if zorder:
                     res += ")"
                 res += "'"
-            res += ");"
+            res += ")"
             return res
         if next_option == 4:
-            res = f"CALL {table.catalog_name}.system.rewrite_manifests(table => '{table.get_namespace_path()}'"
+            res = f"CALL `{table.catalog_name}`.system.rewrite_manifests(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
                 res += f", use_caching => {random.choice(["true", "false"])})"
-            res += ");"
+            res += ")"
             return res
         if next_option == 5:
-            return f"CALL {table.catalog_name}.system.rewrite_position_delete_files(table => '{table.get_namespace_path()}');"
+            return f"CALL `{table.catalog_name}`.system.rewrite_position_delete_files(table => '{table.get_namespace_path()}')"
         if next_option == 6:
-            res = f"CALL {table.catalog_name}.system.expire_snapshots(table => '{table.get_namespace_path()}'"
+            res = f"CALL `{table.catalog_name}`.system.expire_snapshots(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
                 res += f", older_than => TIMESTAMP '{restore_to}'"
             if random.randint(1, 2) == 1:
@@ -606,14 +606,14 @@ class IcebergTableGenerator(LakeTableGenerator):
                 res += f", clean_expired_metadata => {random.choice(["true", "false"])}"
             if random.randint(1, 2) == 1:
                 res += f", retain_last => {random.randint(1, 10)}"
-            res += ");"
+            res += ")"
             return res
         if next_option == 7:
-            return f"CALL {table.catalog_name}.system.compute_table_stats(table => '{table.get_namespace_path()}');"
+            return f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}')"
         if next_option == 8:
-            return f"CALL {table.catalog_name}.system.compute_partition_stats(table => '{table.get_namespace_path()}');"
+            return f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}')"
         if next_option == 9:
-            return f"CALL {table.catalog_name}.system.set_current_snapshot(table => '{table.get_namespace_path()}');"
+            return f"CALL `{table.catalog_name}`.system.set_current_snapshot(table => '{table.get_namespace_path()}', snapshot_id => {random.randint(1, 10)})"
         return ""
 
 
