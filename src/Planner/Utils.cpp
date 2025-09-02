@@ -47,8 +47,8 @@
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
+
+#include <stack>
 
 namespace DB
 {
@@ -622,45 +622,6 @@ ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)
         }
     }
     return conjuncts;
-}
-
-bool optimizePlanForExists(QueryPlan & query_plan)
-{
-    auto * node = query_plan.getRootNode();
-    while (true)
-    {
-        if (typeid_cast<ExpressionStep *>(node->step.get()))
-        {
-            node = node->children[0];
-            continue;
-        }
-        if (auto * aggregation = typeid_cast<AggregatingStep *>(node->step.get()))
-        {
-            const auto & params = aggregation->getParams();
-            if (params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
-            {
-                /// Subquery will always produce at least one row
-                return true;
-            }
-            node = node->children[0];
-            continue;
-        }
-        if (typeid_cast<LimitStep *>(node->step.get()))
-        {
-            /// TODO: Support LimitStep in decorrelation process.
-            /// For now, we just remove it, because it only increases the number of rows in the result.
-            /// It doesn't affect the result of correlated subquery.
-            node = node->children[0];
-            continue;
-        }
-        break;
-    }
-
-    if (node != query_plan.getRootNode())
-    {
-        query_plan = query_plan.extractSubplan(node);
-    }
-    return false;
 }
 
 }

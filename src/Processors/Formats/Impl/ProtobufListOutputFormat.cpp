@@ -53,7 +53,7 @@ void registerOutputFormatProtobufList(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "ProtobufList",
-        [](WriteBuffer & buf, const Block & header, const FormatSettings & settings, FormatFilterInfoPtr /*format_filter_info*/)
+        [](WriteBuffer & buf, const Block & header, const FormatSettings & settings)
         {
             return std::make_shared<ProtobufListOutputFormat>(
                 buf,

@@ -19,74 +19,77 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-extern const int LOGICAL_ERROR;
 }
 
 #if USE_ARROW
-const std::string * extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata)
+std::optional<Poco::JSON::Object::Ptr> extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata)
 {
     if (!metadata)
-        return nullptr;
+        return std::nullopt;
 
     for (Int64 i = 0; i < metadata->size(); ++i)
+    {
         if (metadata->key(i) == "geo")
-            return &metadata->value(i);
-
-    return nullptr;
+        {
+            const auto & value = metadata->value(i);
+            Poco::JSON::Parser parser;
+            Poco::Dynamic::Var result = parser.parse(value);
+            Poco::JSON::Object::Ptr obj = result.extract<Poco::JSON::Object::Ptr>();
+            return obj;
+        }
+    }
+    return std::nullopt;
 }
 #endif
 
-std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::string * geo_json_str)
+std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(std::optional<Poco::JSON::Object::Ptr> geo_json)
 {
-    if (!geo_json_str)
-        return {};
-
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var result = parser.parse(*geo_json_str);
-    const Poco::JSON::Object::Ptr & obj = result.extract<Poco::JSON::Object::Ptr>();
-
-    if (!obj->has("columns"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect geo json metadata: missing \"columns\"");
-    const Poco::JSON::Object::Ptr & columns = obj->getObject("columns");
-
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
 
-    for (const auto & column_entry : *columns)
+    if (geo_json.has_value())
     {
-        const std::string & column_name = column_entry.first;
-        Poco::JSON::Object::Ptr column_obj = column_entry.second.extract<Poco::JSON::Object::Ptr>();
+        const Poco::JSON::Object::Ptr & obj = geo_json.value();
+        if (!obj->has("columns"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect geo json metadata");
 
-        String encoding_name = column_obj->getValue<std::string>("encoding");
-        GeoEncoding geo_encoding;
+        const Poco::JSON::Object::Ptr & columns = obj->getObject("columns");
+        for (const auto & column_entry : *columns)
+        {
+            const std::string & column_name = column_entry.first;
+            Poco::JSON::Object::Ptr column_obj = column_entry.second.extract<Poco::JSON::Object::Ptr>();
 
-        if (encoding_name == "WKB")
-            geo_encoding = GeoEncoding::WKB;
-        else if (encoding_name == "WKT")
-            geo_encoding = GeoEncoding::WKT;
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect encoding name in geo json metadata: {}", encoding_name);
+            String encoding_name = column_obj->getValue<std::string>("encoding");
+            GeoEncoding geo_encoding;
 
-        Poco::JSON::Array::Ptr types = column_obj->getArray("geometry_types");
-        if (types->size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse does not support multiple geo types in one column");
+            if (encoding_name == "WKB")
+                geo_encoding = GeoEncoding::WKB;
+            else if (encoding_name == "WKT")
+                geo_encoding = GeoEncoding::WKT;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect encoding name in geo json metadata: {}", encoding_name);
 
-        String type = types->getElement<std::string>(0);
-        GeoType result_type;
+            Poco::JSON::Array::Ptr types = column_obj->getArray("geometry_types");
+            if (types->size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse does not support different types in one column");
 
-        if (type == "Point")
-            result_type = GeoType::Point;
-        else if (type == "LineString")
-            result_type = GeoType::LineString;
-        else if (type == "Polygon")
-            result_type = GeoType::Polygon;
-        else if (type == "MultiLineString")
-            result_type = GeoType::MultiLineString;
-        else if (type == "MultiPolygon")
-            result_type = GeoType::MultiPolygon;
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geo type {}", type);
+            String type = types->getElement<std::string>(0);
+            GeoType result_type;
 
-        geo_columns[column_name] = GeoColumnMetadata{.encoding = geo_encoding, .type = result_type};
+            if (type == "Point")
+                result_type = GeoType::Point;
+            else if (type == "LineString")
+                result_type = GeoType::LineString;
+            else if (type == "Polygon")
+                result_type = GeoType::Polygon;
+            else if (type == "MultiLineString")
+                result_type = GeoType::MultiLineString;
+            else if (type == "MultiPolygon")
+                result_type = GeoType::MultiPolygon;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geo type {}", type);
+
+            geo_columns[column_name] = GeoColumnMetadata{.encoding = geo_encoding, .type = result_type};
+        }
     }
 
     return geo_columns;
@@ -232,103 +235,220 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: type {}", type);
 }
 
-DataTypePtr getGeoDataType(GeoType type)
+PointColumnBuilder::PointColumnBuilder(const String & name_)
+    : point_column_x(ColumnFloat64::create())
+    , point_column_y(ColumnFloat64::create())
+    , point_column_data_x(point_column_x->getData())
+    , point_column_data_y(point_column_y->getData())
+    , name(name_)
 {
-    switch (type)
-    {
-        case GeoType::Point: return DataTypeFactory::instance().get("Point");
-        case GeoType::LineString: return DataTypeFactory::instance().get("LineString");
-        case GeoType::Polygon: return DataTypeFactory::instance().get("Polygon");
-        case GeoType::MultiLineString: return DataTypeFactory::instance().get("MultiLineString");
-        case GeoType::MultiPolygon: return DataTypeFactory::instance().get("MultiPolygon");
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid GeoType: {}", uint8_t(type));
 }
 
-static void appendPointToGeoColumn(const CartesianPoint & point, IColumn & col)
+void PointColumnBuilder::appendObject(const GeometricObject & object)
 {
-    auto & tuple = assert_cast<ColumnTuple &>(col);
-    assert_cast<ColumnFloat64 &>(tuple.getColumn(0)).getData().push_back(point.x());
-    assert_cast<ColumnFloat64 &>(tuple.getColumn(1)).getData().push_back(point.y());
+    if (!std::holds_alternative<CartesianPoint>(object))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected point");
+
+    const auto & point = std::get<CartesianPoint>(object);
+    point_column_data_x.push_back(point.x());
+    point_column_data_y.push_back(point.y());
 }
 
-static void appendLineStringToGeoColumn(const LineString<CartesianPoint> & line, IColumn & col)
+void PointColumnBuilder::appendDefault()
 {
-    auto & array = assert_cast<ColumnArray &>(col);
+    point_column_data_x.push_back(0);
+    point_column_data_y.push_back(0);
+}
 
+ColumnWithTypeAndName PointColumnBuilder::getResultColumn()
+{
+    ColumnPtr result_x = point_column_x->getPtr();
+    ColumnPtr result_y = point_column_y->getPtr();
+    auto column = ColumnTuple::create(Columns{result_x, result_y});
+
+    auto tuple_type = DataTypeFactory::instance().get("Point");
+    return {std::move(column), tuple_type, name};
+}
+
+LineColumnBuilder::LineColumnBuilder(const String & name_)
+    : offsets_column(ColumnVector<ColumnArray::Offset>::create())
+    , offsets(offsets_column->getData())
+    , point_column_builder("")
+    , name(name_)
+{
+}
+
+void LineColumnBuilder::appendObject(const GeometricObject & object)
+{
+    if (!std::holds_alternative<LineString<CartesianPoint>>(object))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected line string");
+
+    const auto & line = std::get<LineString<CartesianPoint>>(object);
     for (const auto & point : line)
-        appendPointToGeoColumn(point, array.getData());
-
-    auto & offsets = array.getOffsets();
-    offsets.push_back(offsets.back() + line.size());
+    {
+        point_column_builder.appendObject(point);
+    }
+    offset += line.size();
+    offsets.push_back(offset);
 }
 
-static void appendPolygonToGeoColumn(const Polygon<CartesianPoint> & polygon, IColumn & col)
+void LineColumnBuilder::appendDefault()
 {
-    auto & array = assert_cast<ColumnArray &>(col);
+    offsets.push_back(offset);
+}
 
-    appendLineStringToGeoColumn(LineString<CartesianPoint>(polygon.outer().begin(), polygon.outer().end()), array.getData());
+ColumnWithTypeAndName LineColumnBuilder::getResultColumn()
+{
+    auto all_points_column = point_column_builder.getResultColumn();
+    auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
+
+    auto array_type = DataTypeFactory::instance().get("LineString");
+    return {std::move(array_column), array_type, name};
+}
+
+PolygonColumnBuilder::PolygonColumnBuilder(const String & name_)
+    : offsets_column(ColumnVector<ColumnArray::Offset>::create())
+    , offsets(offsets_column->getData())
+    , line_column_builder("")
+    , name(name_)
+{
+}
+
+void PolygonColumnBuilder::appendObject(const GeometricObject & object)
+{
+    if (!std::holds_alternative<Polygon<CartesianPoint>>(object))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected polygon");
+
+    const auto & polygon = std::get<Polygon<CartesianPoint>>(object);
+    line_column_builder.appendObject(LineString<CartesianPoint>(polygon.outer().begin(), polygon.outer().end()));
 
     for (const auto & inner_circle : polygon.inners())
-        appendLineStringToGeoColumn(LineString<CartesianPoint>(inner_circle.begin(), inner_circle.end()), array.getData());
-
-    auto & offsets = array.getOffsets();
-    offsets.push_back(offsets.back() + polygon.inners().size() + 1);
+        line_column_builder.appendObject(LineString<CartesianPoint>(inner_circle.begin(), inner_circle.end()));
+    offset += polygon.inners().size() + 1;
+    offsets.push_back(offset);
 }
 
-static void appendMultiLineStringToGeoColumn(const MultiLineString<CartesianPoint> & multilinestring, IColumn & col)
+void PolygonColumnBuilder::appendDefault()
 {
-    auto & array = assert_cast<ColumnArray &>(col);
+    offsets.push_back(offset);
+}
 
+ColumnWithTypeAndName PolygonColumnBuilder::getResultColumn()
+{
+    auto all_points_column = line_column_builder.getResultColumn();
+    auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
+
+    auto array_type = DataTypeFactory::instance().get("Polygon");
+    return {std::move(array_column), array_type, name};
+}
+
+MultiLineStringColumnBuilder::MultiLineStringColumnBuilder(const String & name_)
+    : offsets_column(ColumnVector<ColumnArray::Offset>::create())
+    , offsets(offsets_column->getData())
+    , line_column_builder("")
+    , name(name_)
+{
+}
+
+void MultiLineStringColumnBuilder::appendObject(const GeometricObject & object)
+{
+    if (!std::holds_alternative<MultiLineString<CartesianPoint>>(object))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multiline");
+
+    const auto & multilinestring = std::get<MultiLineString<CartesianPoint>>(object);
     for (const auto & line : multilinestring)
-        appendLineStringToGeoColumn(line, array.getData());
+        line_column_builder.appendObject(line);
 
-    auto & offsets = array.getOffsets();
-    offsets.push_back(offsets.back() + multilinestring.size());
+    offset += multilinestring.size();
+    offsets.push_back(offset);
 }
 
-static void appendMultiPolygonToGeoColumn(const MultiPolygon<CartesianPoint> & multipolygon, IColumn & col)
+void MultiLineStringColumnBuilder::appendDefault()
 {
-    auto & array = assert_cast<ColumnArray &>(col);
+    offsets.push_back(offset);
+}
 
+ColumnWithTypeAndName MultiLineStringColumnBuilder::getResultColumn()
+{
+    auto all_points_column = line_column_builder.getResultColumn();
+    auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
+
+    auto array_type = DataTypeFactory::instance().get("MultiLineString");
+    return {std::move(array_column), array_type, name};
+}
+
+MultiPolygonColumnBuilder::MultiPolygonColumnBuilder(const String & name_)
+    : offsets_column(ColumnVector<ColumnArray::Offset>::create())
+    , offsets(offsets_column->getData())
+    , polygon_column_builder("")
+    , name(name_)
+{
+}
+
+void MultiPolygonColumnBuilder::appendObject(const GeometricObject & object)
+{
+    if (!std::holds_alternative<MultiPolygon<CartesianPoint>>(object))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multi polygon");
+
+    const auto & multipolygon = std::get<MultiPolygon<CartesianPoint>>(object);
     for (const auto & polygon : multipolygon)
-        appendPolygonToGeoColumn(polygon, array.getData());
+        polygon_column_builder.appendObject(polygon);
 
-    auto & offsets = array.getOffsets();
-    offsets.push_back(offsets.back() + multipolygon.size());
+    offset += multipolygon.size();
+    offsets.push_back(offset);
 }
 
-void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColumn & col)
+void MultiPolygonColumnBuilder::appendDefault()
 {
-    switch (type)
+    offsets.push_back(offset);
+}
+
+ColumnWithTypeAndName MultiPolygonColumnBuilder::getResultColumn()
+{
+    auto all_points_column = polygon_column_builder.getResultColumn();
+    auto array_column = ColumnArray::create(all_points_column.column, offsets_column->getPtr());
+
+    auto array_type = DataTypeFactory::instance().get("MultiPolygon");
+    return {std::move(array_column), array_type, name};
+}
+
+GeoColumnBuilder::GeoColumnBuilder(const String & name_, GeoType type_)
+    : name(name_)
+{
+    switch (type_)
     {
         case GeoType::Point:
-            if (!std::holds_alternative<CartesianPoint>(object))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected point");
-            appendPointToGeoColumn(std::get<CartesianPoint>(object), col);
-            return;
+            geomery_column_builder = std::make_unique<PointColumnBuilder>(name);
+            break;
         case GeoType::LineString:
-            if (!std::holds_alternative<LineString<CartesianPoint>>(object))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected line string");
-            appendLineStringToGeoColumn(std::get<LineString<CartesianPoint>>(object), col);
-            return;
+            geomery_column_builder = std::make_unique<LineColumnBuilder>(name);
+            break;
         case GeoType::Polygon:
-            if (!std::holds_alternative<Polygon<CartesianPoint>>(object))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multiline");
-            appendPolygonToGeoColumn(std::get<Polygon<CartesianPoint>>(object), col);
-            return;
+            geomery_column_builder = std::make_unique<PolygonColumnBuilder>(name);
+            break;
         case GeoType::MultiLineString:
-            if (!std::holds_alternative<MultiLineString<CartesianPoint>>(object))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multiline");
-            appendMultiLineStringToGeoColumn(std::get<MultiLineString<CartesianPoint>>(object), col);
-            return;
+            geomery_column_builder = std::make_unique<MultiLineStringColumnBuilder>(name);
+            break;
         case GeoType::MultiPolygon:
-            if (!std::holds_alternative<MultiPolygon<CartesianPoint>>(object))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multi polygon");
-            appendMultiPolygonToGeoColumn(std::get<MultiPolygon<CartesianPoint>>(object), col);
-            return;
+            geomery_column_builder = std::make_unique<MultiPolygonColumnBuilder>(name);
+            break;
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid GeoType: {}", uint8_t(type));
+}
+
+void GeoColumnBuilder::appendObject(const GeometricObject & object)
+{
+    geomery_column_builder->appendObject(object);
+}
+
+void GeoColumnBuilder::appendDefault()
+{
+    geomery_column_builder->appendDefault();
+}
+
+
+ColumnWithTypeAndName GeoColumnBuilder::getResultColumn()
+{
+    return geomery_column_builder->getResultColumn();
 }
 
 }

@@ -5,10 +5,10 @@ ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
 # If the cctools is updated, then first build it in the CI, then update here in a different commit
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /cctools /cctools
+COPY --from=clickhouse/cctools:425d6927d1efbd790bdb /cctools /cctools
 
 # We need OpenSSL FIPS in permissive mode for build on MasterCI
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
+COPY --from=clickhouse/cctools:425d6927d1efbd790bdb \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \

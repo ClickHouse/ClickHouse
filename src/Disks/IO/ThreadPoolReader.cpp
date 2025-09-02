@@ -113,9 +113,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
     /// disable pread with nowait.
     static const bool has_pread_nowait_support = !hasBugInPreadV2();
 
-    /// RWF_NOWAIT is ignored for O_DIRECT (mostly, it may return EAGAIN if it cannot lock the inode in case of ext4, see [1])
-    ///   [1]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=548feebec7e93e58b647dba70b3303dcb569c914
-    if (has_pread_nowait_support && !request.direct_io)
+    if (has_pread_nowait_support)
     {
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).

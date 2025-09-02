@@ -124,6 +124,13 @@ class CacheRunnerHooks:
                             workflow_config.cache_jobs[job.name]
                         )
 
+        print(f"Write config to GH's job output")
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"DATA={workflow_config.to_json()}",
+                file=f,
+            )
+        print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
         print(
             "Dump WorkflowConfig to fs, the next hooks in this job might want to see it"
         )

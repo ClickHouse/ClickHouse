@@ -85,7 +85,7 @@ public:
 
     /// Check access right, validate definer statement and replace `CURRENT USER` with actual name.
     static void processSQLSecurityOption(
-        ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, bool skip_check_permissions = false);
+        ContextPtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, bool skip_check_permissions = false);
 
 private:
     struct TableProperties
