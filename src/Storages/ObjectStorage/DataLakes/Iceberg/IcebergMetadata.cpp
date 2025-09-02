@@ -2,6 +2,7 @@
 #include "config.h"
 #if USE_AVRO
 
+#include <sstream>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -33,6 +34,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -107,6 +109,16 @@ extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_experimental_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool iceberg_delete_data_on_drop;
+}
+
+namespace
+{
+String dumpMetadataObjectToString(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::JSON::Stringifier::stringify(metadata_object, oss);
+    return removeEscapedSlashes(oss.str());
+}
 }
 
 
@@ -232,6 +244,14 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 
     updateState(local_context, metadata_object);
 
+    insertRowToLogTable(
+        local_context,
+        dumpMetadataObjectToString(metadata_object),
+        DB::IcebergMetadataLogLevel::Metadata,
+        configuration_ptr->getRawPath().path,
+        metadata_file_path,
+        std::nullopt);
+
     if (previous_snapshot_id != relevant_snapshot_id)
     {
         return true;
@@ -292,13 +312,13 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
 
             relevant_snapshot = std::make_shared<IcebergDataSnapshot>(
                 getManifestList(
-                    object_storage,
-                    configuration_ptr,
-                    persistent_components,
-                    local_context,
-                    getProperFilePathFromMetadataInfo(
-                        snapshot->getValue<String>(f_manifest_list), configuration_ptr->getPathForRead().path, persistent_components.table_location),
-                    log),
+                object_storage,
+                configuration_ptr,
+                persistent_components,
+                local_context,
+                getProperFilePathFromMetadataInfo(
+                snapshot->getValue<String>(f_manifest_list), configuration_ptr->getPathForRead().path, persistent_components.table_location),
+                log),
                 relevant_snapshot_id,
                 total_rows,
                 total_bytes,
@@ -561,6 +581,14 @@ DataLakeMetadataPtr IcebergMetadata::create(
     Poco::JSON::Object::Ptr object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
 
     auto format_version = object->getValue<int>(f_format_version);
+
+    insertRowToLogTable(
+        local_context,
+        dumpMetadataObjectToString(object),
+        DB::IcebergMetadataLogLevel::Metadata,
+        configuration_ptr->getRawPath().path,
+        metadata_file_path,
+        std::nullopt);
     return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object, cache_ptr, compression_method);
 }
 
