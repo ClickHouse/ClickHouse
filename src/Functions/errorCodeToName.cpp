@@ -57,7 +57,32 @@ public:
 
 REGISTER_FUNCTION(ErrorCodeToName)
 {
-    factory.registerFunction<FunctionErrorCodeToName>();
+    FunctionDocumentation::Description description_errorCodeToName = R"(
+Returns the textual name of a ClickHouse error code.
+)";
+    FunctionDocumentation::Syntax syntax_errorCodeToName = "errorCodeToName(error_code)";
+    FunctionDocumentation::Arguments arguments_errorCodeToName = {
+        {"error_code", "ClickHouse error code.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_errorCodeToName = {"Returns the textual name of an error code.", {"LowCardinality(String)"}};
+    FunctionDocumentation::Examples examples_errorCodeToName = {
+    {
+        "Usage example",
+        R"(
+SELECT errorCodeToName(1);
+        )",
+        R"(
+┌─errorCodeToName(1)─┐
+│ UNSUPPORTED_METHOD │
+└────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_errorCodeToName = {20, 12};
+    FunctionDocumentation::Category category_errorCodeToName = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_errorCodeToName = {description_errorCodeToName, syntax_errorCodeToName, arguments_errorCodeToName, returned_value_errorCodeToName, examples_errorCodeToName, introduced_in_errorCodeToName, category_errorCodeToName};
+
+    factory.registerFunction<FunctionErrorCodeToName>(documentation_errorCodeToName);
 }
 
 }
