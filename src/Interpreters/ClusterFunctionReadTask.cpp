@@ -27,7 +27,7 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     auto * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object.get());
     if (iceberg_object_info)
     {
-        is_iceberg_object = 1;
+        is_iceberg_object = true;
         data_object_file_path_key = iceberg_object_info->data_object_file_path_key;
         read_schema_id = iceberg_object_info->read_schema_id;
         position_deletes_objects_range = iceberg_object_info->position_deletes_objects_range;

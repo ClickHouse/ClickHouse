@@ -105,16 +105,15 @@ static ColumnWithTypeAndName readColumnWithNumericData(const std::shared_ptr<arr
 
 /// Inserts chars and offsets right into internal column data to reduce an overhead.
 /// Internal offsets are shifted by one to the right in comparison with Arrow ones. So the last offset should map to the end of all chars.
-/// Also internal strings are null terminated.
 template <typename ArrowArray>
 static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
     auto internal_type = std::make_shared<DataTypeString>();
     auto internal_column = internal_type->createColumn();
-    PaddedPODArray<UInt8> & column_chars_t = assert_cast<ColumnString &>(*internal_column).getChars();
+    PaddedPODArray<UInt8> & column_chars = assert_cast<ColumnString &>(*internal_column).getChars();
     PaddedPODArray<UInt64> & column_offsets = assert_cast<ColumnString &>(*internal_column).getOffsets();
 
-    size_t chars_t_size = 0;
+    size_t chars_size = 0;
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         ArrowArray & chunk = dynamic_cast<ArrowArray &>(*(arrow_column->chunk(chunk_i)));
@@ -122,12 +121,12 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
 
         if (chunk_length > 0)
         {
-            chars_t_size += chunk.value_offset(chunk_length - 1) + chunk.value_length(chunk_length - 1);
-            chars_t_size += chunk_length; /// additional space for null bytes
+            chars_size += chunk.value_offset(chunk_length - 1) + chunk.value_length(chunk_length - 1);
+            chars_size += chunk_length;
         }
     }
 
-    column_chars_t.reserve(chars_t_size);
+    column_chars.reserve(chars_size);
     column_offsets.reserve(arrow_column->length());
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -142,10 +141,8 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
             for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
             {
                 const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
-                column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
-                column_chars_t.emplace_back('\0');
-
-                column_offsets.emplace_back(column_chars_t.size());
+                column_chars.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
+                column_offsets.emplace_back(column_chars.size());
             }
         }
         else
@@ -155,11 +152,9 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
                 if (!chunk.IsNull(offset_i) && buffer)
                 {
                     const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
-                    column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
+                    column_chars.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
                 }
-                column_chars_t.emplace_back('\0');
-
-                column_offsets.emplace_back(column_chars_t.size());
+                column_offsets.emplace_back(column_chars.size());
             }
         }
     }
@@ -219,14 +214,14 @@ static ColumnWithTypeAndName readColumnWithFixedStringData(const std::shared_ptr
     size_t fixed_len = fixed_type->byte_width();
     auto internal_type = std::make_shared<DataTypeFixedString>(fixed_len);
     auto internal_column = internal_type->createColumn();
-    PaddedPODArray<UInt8> & column_chars_t = assert_cast<ColumnFixedString &>(*internal_column).getChars();
-    column_chars_t.reserve(arrow_column->length() * fixed_len);
+    PaddedPODArray<UInt8> & column_chars = assert_cast<ColumnFixedString &>(*internal_column).getChars();
+    column_chars.reserve(arrow_column->length() * fixed_len);
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::FixedSizeBinaryArray & chunk = dynamic_cast<arrow::FixedSizeBinaryArray &>(*(arrow_column->chunk(chunk_i)));
         const uint8_t * raw_data = chunk.raw_values();
-        column_chars_t.insert_assume_reserved(raw_data, raw_data + fixed_len * chunk.length());
+        column_chars.insert_assume_reserved(raw_data, raw_data + fixed_len * chunk.length());
     }
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
@@ -520,7 +515,8 @@ static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::Chunked
 
 static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, GeoColumnMetadata geo_metadata)
 {
-    auto column_builder = GeoColumnBuilder(column_name, geo_metadata.type);
+    DataTypePtr type = getGeoDataType(geo_metadata.type);
+    MutableColumnPtr column = type->createColumn();
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::BinaryArray & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
@@ -532,7 +528,7 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
             auto * raw_data = buffer->mutable_data() + chunk.value_offset(offset_i);
             if (chunk.IsNull(offset_i))
             {
-                column_builder.appendDefault();
+                column->insertDefault();
                 continue;
             }
             ReadBuffer in_buffer(reinterpret_cast<char*>(raw_data), chunk.value_length(offset_i), 0);
@@ -546,11 +542,11 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
                     result_object = parseWKTFormat(in_buffer);
                     break;
             }
-            column_builder.appendObject(result_object);
+            appendObjectToGeoColumn(result_object, geo_metadata.type, *column);
         }
     }
 
-    return column_builder.getResultColumn();
+    return {std::move(column), type, column_name};
 }
 
 template <typename T>
@@ -1487,8 +1483,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 
     ColumnsWithTypeAndName sample_columns;
 
-    auto geo_json = extractGeoMetadata(metadata);
-    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json);
+    const std::string * geo_json_str = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
 
     for (const auto & field : schema.fields())
     {
@@ -1597,8 +1593,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
 
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
 
-    auto geo_metadata = extractGeoMetadata(metadata);
-    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_metadata);
+    const std::string * geo_json_str = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
 
     for (size_t column_i = 0, header_columns = header.columns(); column_i < header_columns; ++column_i)
     {

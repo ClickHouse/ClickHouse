@@ -8,6 +8,7 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/ObjectInfo.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 #include <base/defines.h>
 
 
@@ -26,39 +27,24 @@ struct IcebergDataObjectInfo : public DB::ObjectInfoOneFile, std::enable_shared_
     /// Full path to the data object file
     /// It is used to filter position deletes objects by data file path.
     /// It is also used to create a filter for the data object in the position delete transform.
-    explicit IcebergDataObjectInfo(
-        Iceberg::ManifestFileEntry data_manifest_file_entry_,
-        const std::vector<Iceberg::ManifestFileEntry> & all_position_delete_entries_,
-        String format);
-
     explicit IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_);
+
+    void addPositionDeleteObject(Iceberg::ManifestFileEntry position_delete_object)
+    {
+        position_deletes_objects.emplace_back(
+            position_delete_object.file_path, position_delete_object.file_format, position_delete_object.reference_data_file_path);
+    }
+
+    void addEqualityDeleteObject(const Iceberg::ManifestFileEntry & equality_delete_object)
+    {
+        equality_deletes_objects.emplace_back(equality_delete_object);
+    }
 
     String data_object_file_path_key; // Full path to the data object file
     Int32 underlying_format_read_schema_id;
-    std::vector<Iceberg::ManifestFileEntry> position_deletes_objects;
+    std::vector<Iceberg::PositionDeleteObject> position_deletes_objects;
+    std::vector<Iceberg::ManifestFileEntry> equality_deletes_objects;
     Int64 sequence_number;
-
-    std::optional<DataLakeObjectMetadata> & getDataLakeMetadata() override
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not supported for plain object info");
-    }
-    const std::optional<DataLakeObjectMetadata> & getDataLakeMetadata() const override
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not supported for plain object info");
-    }
-    void setDataLakeMetadata(std::optional<DataLakeObjectMetadata>) override
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not supported for plain object info");
-    }
-
-    bool suitableForNumsRowCache() const override { return false; }
-    bool hasPositionDeleteTransformer() const override { return !position_deletes_objects.empty(); }
-
-    std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        ObjectStoragePtr object_storage,
-        const SharedHeader & header,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context_) override;
 };
 
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
