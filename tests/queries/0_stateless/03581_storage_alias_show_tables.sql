@@ -8,7 +8,7 @@ create table alias_table Engine=Alias(currentDatabase(), ref_table);
 show tables;
 select name from system.tables where database=currentDatabase() order by name;
 
-drop table alias_table;
+drop table ref_table;
 
 show tables;
 select name from system.tables where database=currentDatabase() order by name;
