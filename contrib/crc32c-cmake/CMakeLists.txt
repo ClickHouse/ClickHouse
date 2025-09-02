@@ -13,10 +13,8 @@ set(CRC32C_SOURCES
 )
 
 # crc32c_arm64.cc uses the vmull_p64 instruction, which is only available when building
-# with the `aes` flag, which is included among others under the `crypto` flag.
-# We only add the `crypto` flag when building on modern ARM CPUs, so we can't
-# build that file on older ARM CPUs.
-if(ARCH_AARCH64 AND (NOT NO_ARMV81_OR_HIGHER))
+# with the `aes` flag.
+if(ARCH_AARCH64 AND ENABLE_AES)
   include_directories(${CRC32C_CMAKE_DIR}/aarch64)
   list(APPEND CRC32C_SOURCES "${CRC32C_DIR}/src/crc32c_arm64.cc")
 elseif(ARCH_AMD64)
