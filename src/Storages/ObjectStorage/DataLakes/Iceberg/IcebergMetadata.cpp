@@ -805,6 +805,13 @@ ObjectIterator IcebergMetadata::iterate(
     ContextPtr local_context) const
 {
     auto iceberg_table_state = extractIcebergSnapshotIdFromMetadataObject(storage_snapshot);
+    if (iceberg_table_state == nullptr)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Can't extract iceberg table state from storage snapshot for table location {}, is s",
+            persistent_components.table_location);
+    }
     chassert(iceberg_table_state != nullptr);
 
     return std::make_shared<IcebergIterator>(

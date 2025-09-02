@@ -198,11 +198,6 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     ClusterPtr cluster,
     StorageSnapshotPtr storage_snapshot) const
 {
-    if (storage_snapshot == nullptr)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage snapshot can't be null before iterator creation");
-    }
-
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         configuration->getQuerySettings(local_context),
