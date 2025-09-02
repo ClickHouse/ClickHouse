@@ -73,9 +73,12 @@ WHERE query_id = '{previous_query_id}';
 
 See more information in the description of the [`iceberg_metadata_log_level`](../../operations/settings/settings.md#iceberg_metadata_log_level) setting.
 
-### Tips {#tips}
+### Good To Know {#good-to-know}
 
 - Use `iceberg_metadata_log_level` at the query level only when you need to investigate your Iceberg table in detail. Otherwise, you may populate the log table with excessive metadata and experience performance degradation.
+- The table may contain duplicate entries, as it is intended primarily for debugging and does not guarantee uniqueness per entity.
+- If you use a `content_type` more verbose than `ManifestListMetadata`, the Iceberg metadata cache is disabled for manifest lists.
+- Similarly, if you use a `content_type` more verbose than `ManifestFileMetadata`, the Iceberg metadata cache is disabled for manifest files.
 
 ## See also {#see-also}
 - [Iceberg Table Engine](../../engines/table-engines/integrations/iceberg.md)

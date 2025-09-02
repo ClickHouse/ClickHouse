@@ -3000,7 +3000,9 @@ def test_system_iceberg_metadata(started_cluster, format_version, storage_type):
         instance = started_cluster.instances["node1"]
         result = dict()
         for name in ['content', 'content_type', 'table_path', 'file_path', 'row_in_file']:
-            query_result = instance.query(f"SELECT {name} FROM (SELECT DISTINCT(*) FROM system.iceberg_metadata_log WHERE query_id = '{query_id}' ORDER BY ALL)")
+            # We are ok with duplicates in the table itself but for test purposes we want to remove duplicates here
+            select_distinct_expression = f"SELECT DISTINCT(*) FROM (SELECT content, content_type, table_path, file_path, row_in_file FROM system.iceberg_metadata_log WHERE query_id = '{query_id}') ORDER BY ALL"
+            query_result = instance.query(f"SELECT {name} FROM ({select_distinct_expression})")
             result[name] = query_result.split('\n')
             result[name] = list(filter(lambda x: len(x) > 0, result[name]))
         result['row_in_file'] = list(map(lambda x : int(x) if x.isdigit() else None, result['row_in_file']))
