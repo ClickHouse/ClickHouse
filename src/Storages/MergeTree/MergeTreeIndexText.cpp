@@ -113,12 +113,18 @@ UInt32 CompressedPostings::getDelta(size_t idx) const
 
 void CompressedPostings::serialize(WriteBuffer & ostr) const
 {
-    ostr.write(reinterpret_cast<const char *>(deltas_buffer.data()), sizeof(UInt64) * deltas_buffer.size());
+    if (hasRawDeltas())
+        ostr.write(reinterpret_cast<const char *>(deltas_buffer.data()), sizeof(UInt32) * cardinality);
+    else
+        ostr.write(reinterpret_cast<const char *>(deltas_buffer.data()), sizeof(UInt64) * deltas_buffer.size());
 }
 
 void CompressedPostings::deserialize(ReadBuffer & istr)
 {
-    istr.readStrict(reinterpret_cast<char *>(deltas_buffer.data()), sizeof(UInt64) * deltas_buffer.size());
+    if (hasRawDeltas())
+        istr.readStrict(reinterpret_cast<char *>(deltas_buffer.data()), sizeof(UInt32) * cardinality);
+    else
+        istr.readStrict(reinterpret_cast<char *>(deltas_buffer.data()), sizeof(UInt64) * deltas_buffer.size());
 }
 
 UInt32 TokenInfo::getCardinality() const

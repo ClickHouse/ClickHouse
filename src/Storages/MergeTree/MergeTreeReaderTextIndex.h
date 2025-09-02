@@ -43,7 +43,7 @@ private:
     {
         MergeTreeIndexGranulePtr granule;
         PostingsMap postings;
-        std::vector<CompressedPostings> postings_holders;
+        std::list<CompressedPostings> postings_holders;
         bool may_be_true = true;
         bool need_read_postings = true;
     };

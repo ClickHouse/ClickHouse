@@ -275,7 +275,7 @@ void applyPostingsAll(
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     PaddedPODArray<UInt16> counters(num_rows, 0);
 
-    for (auto & [_, postings_it] : postings_map)
+    for (auto & [token, postings_it] : postings_map)
     {
         for (; postings_it.isValid(); postings_it.next())
         {
