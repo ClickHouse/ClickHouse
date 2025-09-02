@@ -13,6 +13,14 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
     list(APPEND RUSTFLAGS_CPU "-C" "target-feature=native")
 
+    macro(GET_CPU_FEATURES TEST_FEATURE_RESULT)
+       execute_process(
+            COMMAND sh -c "clang -E - -march=native -###"
+            INPUT_FILE /dev/null
+            OUTPUT_QUIET
+            ERROR_VARIABLE ${TEST_FEATURE_RESULT})
+    endmacro()
+
     macro(TEST_CPU_FEATURE TEST_FEATURE_RESULT feat flag)
         if (${TEST_FEATURE_RESULT} MATCHES "\"\\+${feat}\"")
             set(${flag} ON)
@@ -21,20 +29,12 @@ if (ARCH_NATIVE)
         endif ()
     endmacro()
 
-    macro(RUN_TEST_CPU_FEATURE TEST_FEATURE_RESULT)
-       execute_process(
-            COMMAND sh -c "clang -E - -march=native -###"
-            INPUT_FILE /dev/null
-            OUTPUT_QUIET
-            ERROR_VARIABLE ${TEST_FEATURE_RESULT})
-    endmacro()
-
     # Populate the ENABLE_ option flags. This is required for the build of some third-party dependencies, specifically snappy, which
     # (somewhat weirdly) expects the relative SNAPPY_HAVE_ preprocessor variables to be populated, in addition to the microarchitecture
     # feature flags being enabled in the compiler. This fixes the ARCH_NATIVE flag by automatically populating the ENABLE_ option flags
     # according to the current CPU's capabilities, detected using clang.
     if (ARCH_AMD64)
-        RUN_TEST_CPU_FEATURE (TEST_FEATURE_RESULT)
+        GET_CPU_FEATURES (TEST_FEATURE_RESULT)
         message(FATAL_ERROR "PMO: ${TEST_FEATURE_RESULT}")
 
         TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} ssse3 ENABLE_SSSE3)
@@ -50,7 +50,7 @@ if (ARCH_NATIVE)
         TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} bmi2 ENABLE_BMI2)
         TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} aes ENABLE_AES)
     elseif (ARCH_AARCH64)
-        RUN_TEST_CPU_FEATURE (TEST_FEATURE_RESULT)
+        GET_CPU_FEATURES (TEST_FEATURE_RESULT)
         TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} aes ENABLE_AES)
     endif ()
 
