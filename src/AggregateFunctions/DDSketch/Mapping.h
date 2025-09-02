@@ -61,6 +61,19 @@ public:
 
     [[maybe_unused]] Float64 getMaxPossible() const { return max_possible; }
 
+    bool operator==(const DDSketchLogarithmicMapping & other) const
+    {
+        if (gamma == other.gamma)
+        {
+            return true;
+        }
+
+        auto [min, max] = std::minmax(gamma, other.gamma);
+        const Float64 difference = max - min;
+        const Float64 acceptable = (std::nextafter(min, max) - min) * min;
+        return difference <= acceptable;
+    }
+
     void serialize(WriteBuffer & buf) const
     {
         writeBinary(gamma, buf);

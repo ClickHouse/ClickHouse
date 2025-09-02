@@ -111,7 +111,7 @@ public:
 
     void merge(const DDSketchDenseLogarithmic & other)
     {
-        if (mapping->getGamma() != other.mapping->getGamma())
+        if (*mapping != *other.mapping)
         {
             // modify the one with higher precision to match the one with lower precision
             if (mapping->getGamma() > other.mapping->getGamma())
