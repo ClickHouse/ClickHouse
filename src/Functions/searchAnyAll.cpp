@@ -108,7 +108,7 @@ constexpr size_t arg_needles = 1;
 
 template <typename StringColumnType>
 void executeSearchAny(
-    const ITokenExtractor* token_extractor,
+    const ITokenExtractor * token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
     const FunctionSearchNeedles & needles,
@@ -134,7 +134,7 @@ void executeSearchAny(
 
 template <typename StringColumnType>
 void executeSearchAll(
-    const ITokenExtractor* token_extractor,
+    const ITokenExtractor * token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
     const FunctionSearchNeedles & needles,
@@ -169,22 +169,12 @@ void executeSearchAll(
 
 template <class SearchTraits, typename StringColumnType>
 void execute(
-    const ITokenExtractor* token_extractor,
+    const ITokenExtractor * token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
     const FunctionSearchNeedles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
-    col_result.resize(input_rows_count);
-
-    if (needles.empty())
-    {
-        /// No needles mean we don't filter and all rows pass
-        for (size_t i = 0; i < input_rows_count; ++i)
-            col_result[i] = true;
-        return;
-    }
-
     switch (SearchTraits::search_mode)
     {
         case GinSearchMode::Any:
@@ -222,10 +212,18 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
             name,
             col_needles->getFamilyName());
 
-    if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
+    col_result->getData().resize(input_rows_count);
+    if (needles->empty())
+    {
+        /// No needles mean we don't filter and all rows pass
+        for (size_t i = 0; i < input_rows_count; ++i)
+            col_result->getData()[i] = true;
+    }
+    else
+    {
+        const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get());
         execute<SearchTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
-    else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-        execute<SearchTraits>(token_extractor.get(), *column_fixed_string, input_rows_count, needles.value(), col_result->getData());
+    }
 
     return col_result;
 }
