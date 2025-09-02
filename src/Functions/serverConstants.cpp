@@ -189,16 +189,19 @@ Otherwise it produces a constant value.
     FunctionDocumentation::Arguments arguments = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the host name as a", {"String"}};
     FunctionDocumentation::Examples examples = {
-        {"Get host name", R"(
+    {
+        "Usage example",
+        R"(
 SELECT hostName()
         )",
         R"(
 ┌─hostName()─┐
 │ clickhouse │
 └────────────┘
-        )"}
+        )"
+    }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 

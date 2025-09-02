@@ -62,7 +62,7 @@ Replaces literals, sequences of literals and complex aliases (containing whitesp
     FunctionDocumentation::Arguments normalizeQuery_arguments = {
         {"x", "Sequence of characters.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue normalizeQuery_returned_value = {Returns the given sequence of characters with placeholders.", {"String"}};
+    FunctionDocumentation::ReturnedValue normalizeQuery_returned_value = {"Returns the given sequence of characters with placeholders.", {"String"}};
     FunctionDocumentation::Examples normalizeQuery_examples = {
     {
         "Basic usage",

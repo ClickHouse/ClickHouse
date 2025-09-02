@@ -318,7 +318,7 @@ Parse a sequence of numbers followed by something resembling a time unit.
 
 The time delta string uses these time unit specifications:
 - `years`, `year`, `yr`, `y`
-- `months`, `month`, `mo` 
+- `months`, `month`, `mo`
 - `weeks`, `week`, `w`
 - `days`, `day`, `d`
 - `hours`, `hour`, `hr`, `h`

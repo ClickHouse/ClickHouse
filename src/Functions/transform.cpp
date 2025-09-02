@@ -843,8 +843,8 @@ Requirements:
         "transform(T, Array(T), Array(U), U) -> U",
         R"(
 SELECT
-  transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
-  count() AS c
+transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
+count() AS c
 FROM test.hits
 WHERE SearchEngineID != 0
 GROUP BY title
@@ -862,8 +862,7 @@ ORDER BY c DESC
         "transform(T, Array(T), Array(T)) -> T",
         R"(
 SELECT
-  transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s,
-  count() AS c
+transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s, count() AS c
 FROM test.hits
 GROUP BY domain(Referer)
 ORDER BY count() DESC

@@ -272,14 +272,14 @@ SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
 │      7 │                        9 │
 │      8 │                      999 │
 │      9 │                      999 │
-└────────┴─────────────────────────┘
+└────────┴──────────────────────────┘
             )"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {};
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
+
     factory.registerFunction<FunctionNeighbor>(documentation);
 }
 

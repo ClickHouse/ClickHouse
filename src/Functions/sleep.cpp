@@ -176,39 +176,53 @@ public:
 
 REGISTER_FUNCTION(Sleep)
 {
-    FunctionDocumentation::Description description = R"(
-Sleeps for the specified number of seconds. The function can operate in two modes:
-- `sleep` sleeps for the specified duration once per data block
+    FunctionDocumentation::Description description_sleep = R"(
+Sleeps for the specified number of seconds once per data block.
 - `sleepEachRow` sleeps for the specified duration for each row in the data block
 
 This function is primarily intended for development, debugging, and demonstration purposes.
 For security reasons, the function can only be executed in the default user profile (with `allow_sleep` enabled).
 )";
-    FunctionDocumentation::Syntax syntax = "sleep(seconds)\nsleepEachRow(seconds)";
-    FunctionDocumentation::Arguments arguments = {
-        {"seconds", "The number of seconds to sleep. Must be a constant value.", {"Float", "UInt"}}
+    FunctionDocumentation::Syntax syntax_sleep = "sleep(seconds)";
+    FunctionDocumentation::Arguments arguments_sleep = {
+        {"seconds", "The number of seconds to sleep.", {"const Float*", "const UInt*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns 0.", {"UInt8"}};
-    FunctionDocumentation::Examples examples = {
-        {
-            "Basic usage",
-            R"(
+    FunctionDocumentation::ReturnedValue returned_value_sleep = {"Returns `0`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_sleep = {
+    {
+        "Usage example",
+        R"(
 SELECT sleep(2);
-            )",
-            R"(
-SELECT sleep(2)
-
-Query id: 8aa9943e-a686-45e1-8317-6e8e3a5596ac
-
+        )",
+        R"(
 0 rows in set. Elapsed: 2.001 sec.
-            )"
-        },
-        {
-            "sleepEachRow usage",
-            R"(
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_sleep = {1, 1};
+    FunctionDocumentation::Category category_sleep = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_sleep = {description_sleep, syntax_sleep, arguments_sleep, returned_value_sleep, examples_sleep, introduced_in_sleep, category_sleep};
+
+    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerBlock>>(documentation_sleep);
+
+    FunctionDocumentation::Description description_sleepEachRow = R"(
+Sleeps for the specified number of seconds for each row in the data block
+
+This function is primarily intended for development, debugging, and demonstration purposes.
+For security reasons, the function can only be executed in the default user profile (with `allow_sleep` enabled).
+)";
+    FunctionDocumentation::Syntax syntax_sleepEachRow = "sleepEachRow(seconds)";
+    FunctionDocumentation::Arguments arguments_sleepEachRow = {
+        {"seconds", "The number of seconds to sleep for each row in the data block.", {"const Float*", "const UInt*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_sleepEachRow = {"Returns `0`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_sleepEachRow = {
+    {
+        "Usage example",
+        R"(
 SELECT number, sleepEachRow(0.5) FROM system.numbers LIMIT 5;
-            )",
-            R"(
+        )",
+        R"(
 ┌─number─┬─sleepEachRow(0.5)─┐
 │      0 │                 0 │
 │      1 │                 0 │
@@ -216,15 +230,15 @@ SELECT number, sleepEachRow(0.5) FROM system.numbers LIMIT 5;
 │      3 │                 0 │
 │      4 │                 0 │
 └────────┴───────────────────┘
-            )"
-        }
+
+5 rows in set. Elapsed: 2.513 sec.
+        )"
+    }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
-    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerBlock>>(documentation);
-    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerRow>>();
+    FunctionDocumentation::IntroducedIn introduced_in_sleepEachRow = {1, 1};
+    FunctionDocumentation::Category category_sleepEachRow = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_sleepEachRow = {description_sleepEachRow, syntax_sleepEachRow, arguments_sleepEachRow, returned_value_sleepEachRow, examples_sleepEachRow, introduced_in_sleepEachRow, category_sleepEachRow};
+    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerRow>>(documentation_sleepEachRow);
 }
 
 }
