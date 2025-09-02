@@ -36,7 +36,6 @@ class Workflow:
         # do a best effort to merge the PR if all jobs are successful
         enable_automerge: bool = False
         enable_merge_ready_status: bool = False
-        enable_gh_summary_comment: bool = False
         enable_commit_status_on_failure: bool = False
         enable_cidb: bool = False
         enable_merge_commit: bool = False
@@ -106,15 +105,6 @@ class Workflow:
                 names.append(secret.name)
             print(f"ERROR: Failed to find secret [{name}], workflow secrets [{names}]")
             raise
-
-        def _enabled_workflow_config(self):
-            return (
-                self.enable_cache
-                or self.enable_report
-                or self.dockers
-                or self.enable_merge_ready_status
-                or self.pre_hooks
-            )
 
         @dataclass
         class InputConfig:

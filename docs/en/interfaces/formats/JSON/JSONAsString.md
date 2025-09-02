@@ -12,6 +12,7 @@ title: 'JSONAsString'
 |-------|---------|-------|
 | ✔     | ✗       |       |
 
+
 ## Description {#description}
 
 In this format, a single JSON object is interpreted as a single value. 
@@ -26,9 +27,9 @@ or be omitted.
 
 Once you serialize the entire JSON object to a String you can use the [JSON functions](/sql-reference/functions/json-functions.md) to process it.
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-### Basic example {#basic-example}
+### Basic Example {#basic-example}
 
 ```sql title="Query"
 DROP TABLE IF EXISTS json_as_string;
@@ -61,4 +62,4 @@ SELECT * FROM json_square_brackets;
 └────────────────────────────┘
 ```
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}

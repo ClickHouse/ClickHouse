@@ -62,7 +62,6 @@ void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory &);
 void registerAggregateFunctionTopK(AggregateFunctionFactory &);
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory &);
 void registerAggregateFunctionsBitmap(AggregateFunctionFactory &);
-void registerAggregateFunctionsNumericIndexedVector(AggregateFunctionFactory &);
 void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory &);
 void registerAggregateFunctionHistogram(AggregateFunctionFactory &);
 void registerAggregateFunctionRetention(AggregateFunctionFactory &);
@@ -96,7 +95,7 @@ void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory
 
 void registerAggregateFunctionLast2Samples(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory);
-void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & factory);
+
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -176,7 +175,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionContingency(factory);
         registerAggregateFunctionCramersVBiasCorrected(factory);
         registerAggregateFunctionsBitmap(factory);
-        registerAggregateFunctionsNumericIndexedVector(factory);
         registerAggregateFunctionsMaxIntersections(factory);
         registerAggregateFunctionHistogram(factory);
         registerAggregateFunctionRetention(factory);
@@ -205,7 +203,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionDistinctJSONPathsAndTypes(factory);
         registerAggregateFunctionLast2Samples(factory);
         registerAggregateFunctionTimeseries(factory);
-        registerAggregateFunctionTimeseriesGroupArray(factory);
 
         registerWindowFunctions(factory);
     }

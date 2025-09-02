@@ -73,7 +73,7 @@ void ASTPartition::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
     }
     else
     {
-        ostr << "ID ";
+        ostr << (settings.hilite ? hilite_keyword : "") << "ID " << (settings.hilite ? hilite_none : "");
         id->format(ostr, settings, state, frame);
     }
 }

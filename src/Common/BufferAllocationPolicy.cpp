@@ -1,7 +1,5 @@
-#include <Common/BufferAllocationPolicy.h>
-#include <base/defines.h>
+#include "BufferAllocationPolicy.h"
 
-#include <algorithm>
 #include <memory>
 
 namespace DB

@@ -29,10 +29,6 @@ void registerStorageLoop(StorageFactory & factory);
 void registerStorageFuzzQuery(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory);
 
-#if USE_ARROWFLIGHT
-void registerStorageArrowFlight(StorageFactory & factory);
-#endif
-
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerStorageFuzzJSON(StorageFactory & factory);
 #endif
@@ -70,9 +66,6 @@ void registerStorageMySQL(StorageFactory & factory);
 
 #if USE_MONGODB
 void registerStorageMongoDB(StorageFactory & factory);
-#endif
-#if USE_YTSAURUS
-void registerStorageYTsaurus(StorageFactory & factory);
 #endif
 
 void registerStorageRedis(StorageFactory & factory);
@@ -138,10 +131,6 @@ void registerStorages()
     registerStorageFuzzQuery(factory);
     registerStorageTimeSeries(factory);
 
-#if USE_ARROWFLIGHT
-    registerStorageArrowFlight(factory);
-#endif
-
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerStorageFuzzJSON(factory);
 #endif
@@ -180,7 +169,6 @@ void registerStorages()
     registerStorageMongoDB(factory);
 #endif
 
-    registerStorageYTsaurus(factory);
     registerStorageRedis(factory);
 
 #if USE_RDKAFKA

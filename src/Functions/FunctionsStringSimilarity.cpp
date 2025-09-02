@@ -26,7 +26,7 @@
 #endif
 
 #if (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#include <vec_crc32.h>
+#include "vec_crc32.h"
 #endif
 
 namespace DB
@@ -334,9 +334,9 @@ struct NgramDistanceImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const char * haystack = reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]);
-            const size_t haystack_size = haystack_offsets[i] - prev_haystack_offset;
+            const size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
             const char * needle = reinterpret_cast<const char *>(&needle_data[prev_needle_offset]);
-            const size_t needle_size = needle_offsets[i] - prev_needle_offset;
+            const size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
 
             if (needle_size <= max_string_size && haystack_size <= max_string_size)
             {
@@ -415,7 +415,7 @@ struct NgramDistanceImpl
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const char * needle = reinterpret_cast<const char *>(&needle_data[prev_offset]);
-                const size_t needle_size = needle_offsets[i] - prev_offset;
+                const size_t needle_size = needle_offsets[i] - prev_offset - 1;
 
                 if (needle_size <= max_string_size && haystack_size <= max_string_size)
                 {
@@ -476,7 +476,7 @@ struct NgramDistanceImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * haystack = &data[prev_offset];
-            const size_t haystack_size = offsets[i] - prev_offset;
+            const size_t haystack_size = offsets[i] - prev_offset - 1;
             if (haystack_size <= max_string_size)
             {
                 size_t haystack_stats_size = dispatchSearcher(

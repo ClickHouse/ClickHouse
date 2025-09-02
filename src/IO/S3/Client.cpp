@@ -1,12 +1,8 @@
 #include <IO/S3/Client.h>
-
-#if USE_AWS_S3
-
-#include <algorithm>
-#include <aws/core/utils/crypto/Hash.h>
-#include <Poco/MD5Engine.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+
+#if USE_AWS_S3
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/CoreErrors.h>
@@ -50,12 +46,7 @@ namespace ProfileEvents
     extern const Event S3ReadRequestRetryableErrors;
 
     extern const Event DiskS3WriteRequestsErrors;
-    extern const Event DiskS3WriteRequestAttempts;
-    extern const Event DiskS3WriteRequestRetryableErrors;
-
     extern const Event DiskS3ReadRequestsErrors;
-    extern const Event DiskS3ReadRequestAttempts;
-    extern const Event DiskS3ReadRequestRetryableErrors;
 
     extern const Event S3Clients;
     extern const Event TinyS3Clients;
@@ -82,11 +73,12 @@ namespace ErrorCodes
 namespace S3
 {
 
-Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_)
-    : config(config_)
+Client::RetryStrategy::RetryStrategy(uint32_t maxRetries_, uint32_t scaleFactor_, uint32_t maxDelayMs_)
+    : maxRetries(maxRetries_)
+    , scaleFactor(scaleFactor_)
+    , maxDelayMs(maxDelayMs_)
 {
-    chassert(config.max_delay_ms <= (1.0 + config.jitter_factor) * config.initial_delay_ms * (1ul << 31l));
-    chassert(config.jitter_factor >= 0 && config.jitter_factor <= 1);
+    chassert(maxDelayMs <= uint64_t(scaleFactor) * (1ul << 31l));
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
@@ -95,7 +87,7 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
     if (error.GetResponseCode() == Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
         return false;
 
-    if (attemptedRetries >= config.max_retries)
+    if (attemptedRetries >= maxRetries)
         return false;
 
     if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
@@ -121,26 +113,13 @@ long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWS
 {
     chassert(attemptedRetries >= 0);
     uint64_t backoffLimitedPow = 1ul << std::clamp(attemptedRetries, 0l, 31l);
-
-    uint64_t res;
-    if (config.jitter_factor > 0)
-    {
-        auto dist = std::uniform_real_distribution<double>(1.0, 1.0 + config.jitter_factor);
-        double jitter = dist(thread_local_rng);
-        res = static_cast<std::uint64_t>(
-            std::min(jitter * config.initial_delay_ms * backoffLimitedPow, static_cast<double>(config.max_delay_ms)));
-    }
-    else
-        res = std::min<uint64_t>(config.initial_delay_ms * backoffLimitedPow, config.max_delay_ms);
-
-    LOG_TEST(getLogger("RetryStrategy"), "Next retry in {} ms", res);
-    return res;
+    return std::min<uint64_t>(scaleFactor * backoffLimitedPow, maxDelayMs);
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
 long Client::RetryStrategy::GetMaxAttempts() const
 {
-    return config.max_retries + 1;
+    return maxRetries + 1;
 }
 
 namespace
@@ -227,6 +206,7 @@ Client::Client(
     , max_redirects(max_redirects_)
     , sse_kms_config(std::move(sse_kms_config_))
     , log(getLogger("S3Client"))
+    , limited_log(std::make_shared<LogSeriesLimiter>(log, 1, 100))
 {
     auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(accessEndpointProvider().get());
     endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
@@ -704,14 +684,13 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
     auto with_retries = [this, request_fn_ = std::move(request_fn)] (const RequestType & request_)
     {
         chassert(client_configuration.retryStrategy);
-        const Int64 max_attempts = client_configuration.retry_strategy.max_retries + 1;
+        const Int64 max_attempts = client_configuration.s3_retry_attempts + 1;
         chassert(max_attempts > 0);
         std::exception_ptr last_exception = nullptr;
         for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
-            incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
-            if (isClientForDisk())
-                incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestAttempts, ProfileEvents::DiskS3WriteRequestAttempts);
+            if (!isClientForDisk())
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
             slowDownAfterRetryableError();
@@ -737,11 +716,9 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
                     && client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
                 {
-                    incrementProfileEvents<IsReadMethod>(
-                        ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
-                    if (isClientForDisk())
+                    if (!isClientForDisk())
                         incrementProfileEvents<IsReadMethod>(
-                            ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
+                            ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
 
                     updateNextTimeToRetryAfterRetryableError(outcome.GetError(), attempt_no);
                     continue;
@@ -752,9 +729,10 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             {
                 /// This includes "connection reset", "malformed message", and possibly other exceptions.
 
-                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
                 if (isClientForDisk())
                     incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
+                else
+                    incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
 
                 tryLogCurrentException(log, "Will retry");
                 last_exception = std::current_exception();
@@ -812,7 +790,7 @@ void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws:
     {
         if (next_time_to_retry_after_retryable_error.compare_exchange_weak(stored_next_time, next_time_ms))
         {
-            LOG_TRACE(log, "Updated next retry time to {} ms forward after retryable error with code {} ('{}')", sleep_ms, error.GetResponseCode(), error.GetMessage());
+            LOG_TRACE(log, "Updated next retry time to {} ms forward", sleep_ms);
             break;
         }
     }
@@ -831,7 +809,7 @@ void Client::slowDownAfterRetryableError() const
         if (current_time_ms >= next_time_ms)
         {
             if (next_time_ms != 0)
-                LOG_TEST(log, "Retry time has passed; proceeding without delay");
+                LOG_TEST(limited_log, "Retry time has passed; proceeding without delay");
             break;
         }
         UInt64 sleep_ms = next_time_ms - current_time_ms;
@@ -1094,31 +1072,12 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     client_configuration.extra_headers = std::move(headers);
 
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
-
-    // we need to force environment credentials if explicit credentials are empty and we have role_arn
-    // this is a crutch because we know that we have environment credentials on our Cloud
-    credentials_configuration.use_environment_credentials =
-        credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
-
-    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider = std::make_shared<S3CredentialsProviderChain>(
+    auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
             client_configuration,
             std::move(credentials),
             credentials_configuration);
 
-    if (!credentials_configuration.role_arn.empty())
-        credentials_provider = std::make_shared<AwsAuthSTSAssumeRoleCredentialsProvider>(credentials_configuration.role_arn,
-            credentials_configuration.role_session_name, credentials_configuration.expiration_window_seconds,
-            std::move(credentials_provider), client_configuration, credentials_configuration.sts_endpoint_override);
-
-    /// Disable per-thread retry loops if global retry coordination is in use.
-    if (client_configuration.s3_slow_all_threads_after_retryable_error)
-    {
-        auto configuration = client_configuration.retry_strategy;
-        configuration.max_retries = 1;
-        client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(configuration);
-    }
-    else
-        client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.retry_strategy);
+    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.s3_retry_attempts);
 
     /// Use virtual addressing if endpoint is not specified.
     if (client_configuration.endpointOverride.empty())
@@ -1138,7 +1097,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     const String & force_region,
     const RemoteHostFilter & remote_host_filter,
     unsigned int s3_max_redirects,
-    const PocoHTTPClientConfiguration::RetryStrategy & retry_strategy,
+    unsigned int s3_retry_attempts,
     bool s3_slow_all_threads_after_network_error,
     bool s3_slow_all_threads_after_retryable_error,
     bool enable_s3_requests_logging,
@@ -1159,7 +1118,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         force_region,
         remote_host_filter,
         s3_max_redirects,
-        retry_strategy,
+        s3_retry_attempts,
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,

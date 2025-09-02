@@ -1,4 +1,4 @@
-#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include "AsynchronousBoundedReadBuffer.h"
 
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -40,7 +40,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int BAD_ARGUMENTS;
 }
 
 AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
@@ -68,9 +67,6 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     , prefetches_log(prefetches_log_)
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
-
-    if (buffer_size == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Buffer size cannot be zero");
 }
 
 String AsynchronousBoundedReadBuffer::getInfoForLog()
@@ -333,7 +329,9 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
         {
             ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
             if (read_settings.enable_filesystem_read_prefetches_log)
+            {
                 appendToPrefetchLog(FilesystemPrefetchState::CANCELLED_WITH_SEEK, -1, nullptr);
+            }
         }
 
         break;

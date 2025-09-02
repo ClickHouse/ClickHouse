@@ -142,7 +142,6 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr pr
                 .remove_filter_column = true,
                 .need_filter = true,
                 .perform_alter_conversions = true,
-                .mutation_version = std::nullopt,
             };
 
             prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(row_level_filter_step)));
@@ -159,7 +158,6 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(PrewhereInfoPtr pr
                 .remove_filter_column = prewhere_info->remove_prewhere_column,
                 .need_filter = prewhere_info->need_filter,
                 .perform_alter_conversions = true,
-                .mutation_version = std::nullopt,
             };
 
             prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(prewhere_step)));

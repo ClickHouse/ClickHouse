@@ -46,14 +46,6 @@ TypeIndex ColumnDecimal<T>::getDataType() const
     return TypeToTypeIndex<T>;
 }
 
-template <is_decimal T>
-std::span<char> ColumnDecimal<T>::insertRawUninitialized(size_t count)
-{
-    size_t start = data.size();
-    data.resize(start + count);
-    return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
-}
-
 
 template <is_decimal T>
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -534,13 +526,6 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 
     min = NearestFieldType<T>(cur_min, scale);
     max = NearestFieldType<T>(cur_max, scale);
-}
-
-template <is_decimal T>
-void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
-{
-    const auto & src_data = assert_cast<const Self &>(src).getData();
-    data[dst_pos] = src_data[src_pos];
 }
 
 template class ColumnDecimal<Decimal32>;

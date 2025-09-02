@@ -35,11 +35,7 @@ public:
 
     CHColumnToArrowColumn(const Block & header, const std::string & format_name_, const Settings & settings_);
 
-    void chChunkToArrowTable(
-        std::shared_ptr<arrow::Table> & res,
-        const std::vector<Chunk> & chunk,
-        size_t columns_num,
-        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id = std::nullopt);
+    void chChunkToArrowTable(std::shared_ptr<arrow::Table> & res, const std::vector<Chunk> & chunk, size_t columns_num);
 
 private:
     ColumnsWithTypeAndName header_columns;
