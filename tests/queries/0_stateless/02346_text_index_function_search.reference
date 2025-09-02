@@ -1,4 +1,7 @@
 Negative tests
+FixedString column
+[1]
+[1]
 -- Default tokenizer
 [1,2,3,4,5,6]
 []

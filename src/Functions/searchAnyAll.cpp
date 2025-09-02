@@ -205,13 +205,6 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     auto col_needles = arguments[arg_needles].column;
     auto col_result = ColumnVector<UInt8>::create();
 
-    if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()); !col_needles_const)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Needles argument of function '{}' must be Array(String), got: {}",
-            name,
-            col_needles->getFamilyName());
-
     col_result->getData().resize(input_rows_count);
     if (needles->empty())
     {
@@ -221,8 +214,10 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     }
     else
     {
-        const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get());
-        execute<SearchTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
+        if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
+            execute<SearchTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
+        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
+            execute<SearchTraits>(token_extractor.get(), *column_fixed_string, input_rows_count, needles.value(), col_result->getData());
     }
 
     return col_result;

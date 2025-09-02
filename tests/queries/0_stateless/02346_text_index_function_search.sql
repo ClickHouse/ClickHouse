@@ -47,6 +47,23 @@ SELECT id FROM tab WHERE searchAny(message, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 
 
 DROP TABLE tab;
 
+SELECT 'FixedString column';
+
+CREATE TABLE tab (
+    id Int,
+    text FixedString(16),
+    INDEX idx_text(text) TYPE text(tokenizer = 'default')
+)
+ENGINE=MergeTree()
+ORDER BY (id);
+
+INSERT INTO tab VALUES(1, toFixedString('bar', 3)), (2, toFixedString('foo', 3));
+
+SELECT groupArray(id) FROM tab WHERE searchAny(text, ['bar']);
+SELECT groupArray(id) FROM tab WHERE searchAll(text, ['bar']);
+
+DROP TABLE tab;
+
 SELECT '-- Default tokenizer';
 
 CREATE TABLE tab
