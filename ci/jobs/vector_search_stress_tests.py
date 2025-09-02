@@ -1,14 +1,15 @@
 # vector_search_stress_tests.py : Stress testing of ClickHouse Vector Search
 # Documentation : https://clickhouse.com/docs/engines/table-engines/mergetree-family/annindexes
 
-import sys
 import os
-from datetime import datetime
+import sys
+import traceback
 import clickhouse_connect
 import random
 import time
 import threading
 import numpy as np
+from praktika.result import Result
 
 TABLE = "table"
 S3_URLS = "s3urls"
@@ -378,36 +379,41 @@ class RunTest:
 
 
 def run_single_test(test_name, dataset, test_params):
-    chclient = get_new_connection()
-    test_runner = RunTest(chclient, dataset, test_params)
+    try:
+        chclient = get_new_connection()
+        test_runner = RunTest(chclient, dataset, test_params)
 
-    test_runner.load_data()
-    test_runner.optimize_table()
+        test_runner.load_data()
+        test_runner.optimize_table()
 
-    # Run KNN queries first before building the index.
-    if test_runner._test_params[GENERATE_TRUTH_SET]:
-        test_runner.generate_truth_set()
-        test_runner.save_truth_set(test_runner._test_params[NEW_TRUTH_SET_FILE])
+        # Run KNN queries first before building the index.
+        if test_runner._test_params[GENERATE_TRUTH_SET]:
+            test_runner.generate_truth_set()
+            test_runner.save_truth_set(test_runner._test_params[NEW_TRUTH_SET_FILE])
 
-    test_runner.build_index()
+        test_runner.build_index()
 
-    if test_runner._test_params[GENERATE_TRUTH_SET]:
-        result_set = test_runner.run_search_for_truth_set()
-        test_runner.calculate_recall(result_set)
-
-    # Run ANN search using pre-generated truth sets and calculate recall
-    if test_runner._test_params[TRUTH_SET_FILES] and len(test_runner._test_params[TRUTH_SET_FILES]):
-        for tf in test_runner._test_params[TRUTH_SET_FILES]:
-            generated_truth_set = test_runner.load_truth_set(tf)
-            test_runner._truth_set = generated_truth_set
+        if test_runner._test_params[GENERATE_TRUTH_SET]:
             result_set = test_runner.run_search_for_truth_set()
             test_runner.calculate_recall(result_set)
 
-    # Run concurrency test on the current truth set
-    if test_runner._test_params[CONCURRENCY_TEST]:
-        test_runner.concurrency_test()
-    
+        # Run ANN search using pre-generated truth sets and calculate recall
+        if test_runner._test_params[TRUTH_SET_FILES] and len(test_runner._test_params[TRUTH_SET_FILES]):
+            for tf in test_runner._test_params[TRUTH_SET_FILES]:
+                generated_truth_set = test_runner.load_truth_set(tf)
+                test_runner._truth_set = generated_truth_set
+                result_set = test_runner.run_search_for_truth_set()
+                test_runner.calculate_recall(result_set)
+
+        # Run concurrency test on the current truth set
+        if test_runner._test_params[CONCURRENCY_TEST]:
+            test_runner.concurrency_test()
+    except Exception as e:
+        print(traceback.format_exc(), file=sys.stdout)
+        return False
+
     return True
+
 
 # Array of (dataset, test_params)
 TESTS_TO_RUN = [
@@ -417,7 +423,7 @@ TESTS_TO_RUN = [
 def main():
     test_results = []
     for test in TESTS_TO_RUN:
-        test_results.append(Result.from_callable(name=test[0], callable=lambda: run_single_test(test[0], test[1], test[2])))
+        test_results.append(Result.from_commands_run(name=test[0], command=lambda: run_single_test(test[0], test[1], test[2])))
 
     Result.create_from(results=test_results, files=[], info="my info").complete_job()
 
