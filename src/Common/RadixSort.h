@@ -277,6 +277,17 @@ private:
     }
 
     template <bool DIRECT_WRITE_TO_DESTINATION>
+    static NO_INLINE void radixSortLSDInternalHelper(Element * arr, size_t size, bool reverse, Result * destination)
+    {
+        if (size <= std::numeric_limits<UInt8>::max())
+            radixSortLSDInternal<DIRECT_WRITE_TO_DESTINATION, UInt8>(arr, size, reverse, destination);
+        else if (size <= std::numeric_limits<UInt16>::max())
+            radixSortLSDInternal<DIRECT_WRITE_TO_DESTINATION, UInt16>(arr, size, reverse, destination);
+        else
+            radixSortLSDInternal<DIRECT_WRITE_TO_DESTINATION, UInt32>(arr, size, reverse, destination);
+    }
+
+    template <bool DIRECT_WRITE_TO_DESTINATION, typename CountType>
     static NO_INLINE void radixSortLSDInternal(Element * arr, size_t size, bool reverse, Result * destination)
     {
         /// If the array is smaller than 256, then it is better to use another algorithm.
@@ -572,7 +583,7 @@ private:
             return;
         }
 
-        radixSortLSDInternal<DIRECT_WRITE_TO_DESTINATION>(arr, size, reverse, destination);
+        radixSortLSDInternalHelper<DIRECT_WRITE_TO_DESTINATION>(arr, size, reverse, destination);
     }
 
 public:
@@ -581,12 +592,12 @@ public:
       */
     static void executeLSD(Element * arr, size_t size)
     {
-        radixSortLSDInternal<false>(arr, size, false, nullptr);
+        radixSortLSDInternalHelper<false>(arr, size, false, nullptr);
     }
 
     static void executeLSD(Element * arr, size_t size, bool reverse)
     {
-        radixSortLSDInternal<false>(arr, size, reverse, nullptr);
+        radixSortLSDInternalHelper<false>(arr, size, reverse, nullptr);
     }
 
     /** This function will start to sort inplace (modify 'arr')
@@ -597,7 +608,7 @@ public:
       */
     static void executeLSD(Element * arr, size_t size, bool reverse, Result * destination)
     {
-        radixSortLSDInternal<true>(arr, size, reverse, destination);
+        radixSortLSDInternalHelper<true>(arr, size, reverse, destination);
     }
 
     /** Tries to fast sort elements for common sorting patterns (unstable).
