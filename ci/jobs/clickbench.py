@@ -33,7 +33,7 @@ def main():
         def start():
             return ch.start() and (
                 ch.start_log_exports(check_start_time=stop_watch.start_time)
-                if not Info().is_local_run
+                if False  # not Info().is_local_run # NOTE (strtgbb): We don't use this log export mechanism
                 else True
             )
 
