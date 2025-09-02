@@ -248,6 +248,12 @@ parser.add_argument(
     help="Add 'allow_experimental_transactions' server setting",
 )
 parser.add_argument(
+    "--without-log-tables",
+    action="store_false",
+    dest="add_log_tables",
+    help="Add log tables server settings",
+)
+parser.add_argument(
     "--without-distributed-ddl",
     action="store_false",
     dest="add_distributed_ddl",

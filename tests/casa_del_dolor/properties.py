@@ -904,6 +904,45 @@ class SharedCatalogPropertiesGroup(PropertiesGroup):
         apply_properties_recursively(property_element, shared_settings, 0)
 
 
+class LogTablePropertiesGroup(PropertiesGroup):
+
+    def __init__(self, _log_table: str):
+        super().__init__()
+        self.log_table: str = _log_table
+
+    def apply_properties(
+        self,
+        top_root: ET.Element,
+        property_element: ET.Element,
+        args,
+        cluster: ClickHouseCluster,
+        is_private_binary: bool,
+    ):
+        number_policies = 0
+        database_xml = ET.SubElement(property_element, "database")
+        database_xml.text = "system"
+        table_xml = ET.SubElement(property_element, "table")
+        table_xml.text = self.log_table
+
+        log_table_properties = {
+            "buffer_size_rows_flush_threshold": threshold_generator(0.2, 0.2, 0, 10000),
+            "flush_on_crash": true_false_lambda,
+            "max_size_rows": threshold_generator(0.2, 0.2, 0, 10000),
+            "reserved_size_rows": threshold_generator(0.2, 0.2, 0, 10000),
+        }
+        storage_configuration_xml = top_root.find("storage_configuration")
+        if storage_configuration_xml is not None:
+            policies_xml = storage_configuration_xml.find("policies")
+            if policies_xml is not None:
+                number_policies = len([c for c in policies_xml])
+        if number_policies > 0 and random.randint(1, 100) <= 75:
+            policy_choices = [f"policy{i}" for i in range(0, number_policies)]
+            log_table_properties["storage_policy"] = lambda: random.choice(
+                policy_choices
+            )
+        apply_properties_recursively(property_element, log_table_properties, 0)
+
+
 def add_ssl_settings(next_ssl: ET.Element):
     certificate_xml = ET.SubElement(next_ssl, "certificateFile")
     private_key_xml = ET.SubElement(next_ssl, "privateKeyFile")
@@ -1062,6 +1101,37 @@ def modify_server_settings(
     # Add distributed_ddl
     if args.add_distributed_ddl and root.find("distributed_ddl") is None:
         selected_properties["distributed_ddl"] = DistributedDDLPropertiesGroup()
+
+    # Add log tables
+    if args.add_log_tables:
+        all_log_entries = [
+            "asynchronous_insert_log",
+            "asynchronous_metric_log",
+            "backup_log",
+            "blob_storage_log",
+            "crash_log",
+            "dead_letter_queue",
+            "error_log",
+            "metric_log",
+            "opentelemetry_span_log",
+            "part_log",
+            "processors_profile_log",
+            "query_log",
+            "query_metric_log",
+            "query_thread_log",
+            "query_views_log",
+            "s3queue_log",
+            "text_log",
+            "trace_log",
+        ]
+        if random.randint(1, 100) <= 70:
+            all_log_entries = random.sample(
+                all_log_entries, random.randint(1, len(all_log_entries))
+            )
+        random.shuffle(all_log_entries)
+        for entry in all_log_entries:
+            if root.find(entry) is None:
+                selected_properties[entry] = LogTablePropertiesGroup(entry)
 
     # Add shared_database_catalog settings, required for shared catalog to work
     if (
