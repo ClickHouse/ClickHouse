@@ -156,7 +156,7 @@ struct GetShardCount
 REGISTER_FUNCTION(GetScalar)
 {
     factory.registerFunction<FunctionGetScalar>();
-    
+
     FunctionDocumentation::Description description_shardNum = R"(
 Returns the index of a shard which processes a part of data in a distributed query.
 Indices begin from `1`.

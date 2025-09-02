@@ -55,7 +55,6 @@ buildId
 byteSize
 caseWithExpression
 catboostEvaluate
-connectionId
 countDigits
 countSubstrings
 countSubstringsCaseInsensitive
@@ -108,7 +107,6 @@ fromUnixTimestamp64Nano
 fromUnixTimestamp64Second
 generateUUIDv4
 getMacro
-getOSKernelVersion
 getServerPort
 getSizeOfEnumType
 getTypeSerializationStreams
@@ -213,7 +211,6 @@ parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
 parseTimeDelta
-partitionId
 path
 pathFull
 polygonAreaCartesian
@@ -280,9 +277,6 @@ runningConcurrency
 runningDifference
 runningDifferenceStartingWithFirstValue
 serverUUID
-shardCount
-shardNum
-showCertificate
 sigmoid
 sleep
 sleepEachRow
@@ -431,4 +425,3 @@ version
 visibleWidth
 windowID
 wkt
-zookeeperSessionUptime

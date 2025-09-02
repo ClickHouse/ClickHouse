@@ -146,13 +146,11 @@ REGISTER_FUNCTION(ShowCertificate)
     FunctionDocumentation::Description description_showCertificate = R"(
 Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured.
 See [Configuring SSL-TLS](/guides/sre/configuring-ssl) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
-)";
+    )";
     FunctionDocumentation::Syntax syntax_showCertificate = "showCertificate()";
     FunctionDocumentation::Arguments arguments_showCertificate = {};
     FunctionDocumentation::ReturnedValue returned_value_showCertificate = {"Returns map of key-value pairs relating to the configured SSL certificate.", {"Map(String, String)"}};
-    FunctionDocumentation::Examples examples_showCertificate = {
-    {
-        "Usage example",
+    FunctionDocumentation::Examples examples_showCertificate = {{"Usage example",
         R"(
 SELECT showCertificate() FORMAT LineAsString;
         )",
