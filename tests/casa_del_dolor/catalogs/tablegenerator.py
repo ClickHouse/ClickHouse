@@ -257,8 +257,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         properties = {}
 
         # Default file format
-        format_version = random.choice(["1", "2"])
-        properties["format-version"] = format_version
+        properties["format-version"] = random.choice(["1", "2"])
 
         # Parquet specific properties
         if self.write_format == FileFormat.Parquet:
@@ -547,13 +546,6 @@ class IcebergTableGenerator(LakeTableGenerator):
 
         # Schema evolution
         properties["schema.auto-evolve"] = random.choice(["true", "false"])
-        properties["schema.name-mapping.default"] = random.choice(["v1", "v2", None])
-        if properties["schema.name-mapping.default"]:
-            properties["schema.name-mapping.default"] = str(
-                properties["schema.name-mapping.default"]
-            )
-        else:
-            del properties["schema.name-mapping.default"]
 
         # Data locality
         properties["write.data.locality.enabled"] = random.choice(["true", "false"])
