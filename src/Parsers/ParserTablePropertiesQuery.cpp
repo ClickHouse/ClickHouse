@@ -44,7 +44,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         {
             if (s_temporary.ignore(pos, expected))
                 temporary = true;
-            
+
             if (s_view.ignore(pos, expected))
             {
                 query = std::make_shared<ASTExistsViewQuery>();
@@ -71,7 +71,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         // Check for TEMPORARY keyword after SHOW [CREATE]
         if (s_temporary.ignore(pos, expected))
             temporary = true;
-            
+
         if (s_database.ignore(pos, expected))
         {
             parse_only_database_name = true;
@@ -114,9 +114,9 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             if (!s_table.ignore(pos, expected))
                 s_dictionary.ignore(pos, expected);
         }
-        
+
         query->temporary = temporary;
-        
+
         if (!name_p.parse(pos, table, expected))
             return false;
         if (s_dot.ignore(pos, expected))
