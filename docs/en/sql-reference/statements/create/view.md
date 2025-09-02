@@ -529,7 +529,3 @@ GLOBAL ANY INNER JOIN v_ids USING (id)
 WHERE n.number < 100;
 
 ```
-
----
-
-**See also:** [Temporary Tables](#temporary-tables) for shared semantics and caveats.
