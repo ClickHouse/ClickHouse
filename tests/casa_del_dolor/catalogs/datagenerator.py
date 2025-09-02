@@ -31,6 +31,7 @@ from .laketables import SparkTable
 
 
 SOME_STRINGS = [
+    "",
     "is",
     "was",
     "are",
@@ -149,12 +150,13 @@ SOME_STRINGS = [
 
 
 class LakeDataGenerator:
-    def __init__(self):
+    def __init__(self, query_logger):
         self._min_nested = 0
         self._max_nested = 100
         self._min_str_len = 0
         self._max_str_len = 100
         self.logger = logging.getLogger(__name__)
+        self.spark_query_logger = query_logger
 
     # ============================================================
     # Random data
@@ -323,7 +325,7 @@ class LakeDataGenerator:
             )
         return dtype
 
-    def _create_random_df(self, spark: SparkSession, table: SparkTable):
+    def _create_random_df(self, spark: SparkSession, table: SparkTable, n_rows: int):
         """
         Build a DataFrame of random rows for the given schema (types as strings are fine).
         """
@@ -332,7 +334,6 @@ class LakeDataGenerator:
         self._max_nested = max(self._min_nested, random.randint(0, 100))
         self._min_str_len = random.randint(0, 100)
         self._max_str_len = max(self._min_str_len, random.randint(0, 100))
-        n_rows = random.randint(0, 100)
         null_rate: float = 0.05 if random.randint(1, 2) == 1 else 0.0
 
         struct1 = StructType(
@@ -366,12 +367,20 @@ class LakeDataGenerator:
         return spark.createDataFrame(rows, schema=struct2)
 
     def insert_random_data(self, spark: SparkSession, table: SparkTable):
-        df = self._create_random_df(spark, table)
-        self.logger.info(f"Inserting data into {table.get_table_full_path()}")
+        nrows: int = random.randint(0, 100)
+        df = self._create_random_df(spark, table, nrows)
+        self.logger.info(f"Inserting {nrows} row(s) into {table.get_table_full_path()}")
         df.writeTo(table.get_table_full_path()).append()
 
+    def run_query(self, session, query: str):
+        self.logger.info(f"Running query: {query}")
+        with open(self.spark_query_logger, "a") as f:
+            f.write(query + "\n")
+        session.sql(query)
+
     def merge_into_table(self, spark: SparkSession, table: SparkTable):
-        df = self._create_random_df(spark, table)
+        nrows: int = random.randint(0, 100)
+        df = self._create_random_df(spark, table, nrows)
         df.createOrReplaceTempView("updates")
 
         to_update = list(table.columns.keys())
@@ -390,16 +399,12 @@ class LakeDataGenerator:
             f"UPDATE SET {",".join([f"t.{cname} = s.{cname}" for cname in to_update])}",
         ]
 
-        self.logger.info(f"Merge into table {table.get_table_full_path()}")
-        spark.sql(
-            f"""
-        MERGE INTO {table.get_table_full_path()} AS t
-        USING updates AS s
-        ON t.{next_pick} = s.{next_pick}
-        WHEN MATCHED THEN {random.choice(match_options)}
-        {" WHEN NOT MATCHED BY TARGET THEN INSERT *" if random.randint(1, 4) == 1 else ""}
-        {f" WHEN NOT MATCHED BY SOURCE THEN {random.choice(not_match_options)}" if random.randint(1, 4) == 1 else ""}
-        """
+        self.logger.info(f"Merging {nrows} row(s) into {table.get_table_full_path()}")
+        self.run_query(
+            spark,
+            f"""MERGE INTO {table.get_table_full_path()} AS t USING updates AS s ON t.{next_pick} = s.{next_pick}
+WHEN MATCHED THEN {random.choice(match_options)}{" WHEN NOT MATCHED BY TARGET THEN INSERT *" if random.randint(1, 4) == 1 else ""}
+{f" WHEN NOT MATCHED BY SOURCE THEN {random.choice(not_match_options)}" if random.randint(1, 4) == 1 else ""}""",
         )
 
     def delete_table(self, spark: SparkSession, table: SparkTable):
@@ -407,11 +412,13 @@ class LakeDataGenerator:
         predicate = f"{delete_key} IS{random.choice([""," NOT"])} NULL"
 
         self.logger.info(f"Delete from table {table.get_table_full_path()}")
-        spark.sql(f"DELETE FROM {table.get_table_full_path()} WHERE {predicate}")
+        self.run_query(
+            spark, f"DELETE FROM {table.get_table_full_path()} WHERE {predicate}"
+        )
 
     def truncate_table(self, spark: SparkSession, table: SparkTable):
         self.logger.info(f"Truncate table {table.get_table_full_path()}")
-        spark.sql(f"DELETE FROM {table.get_table_full_path()}")
+        self.run_query(spark, f"DELETE FROM {table.get_table_full_path()}")
 
     def update_table(self, spark: SparkSession, table: SparkTable):
         next_operation = random.randint(1, 1000)

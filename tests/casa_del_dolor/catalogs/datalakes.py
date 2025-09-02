@@ -434,7 +434,6 @@ def wait_for_port(host, port, timeout=90):
 class SparkHandler:
     def __init__(self, cluster, args):
         self.logger = logging.getLogger(__name__)
-        self.data_generator = LakeDataGenerator()
         self.uc_server = None
         self.catalogs = {}
         self.uc_server_dir = None
@@ -447,6 +446,7 @@ class SparkHandler:
         self.spark_query_logger = self.spark_log_dir / "query.log"
         self.derby_logger = self.spark_log_dir / "derby.log"
         self.metastore_db = self.spark_log_dir / "metastore_db"
+        self.data_generator = LakeDataGenerator(self.spark_query_logger)
         spark_log = f"""
 # ----- log4j2.properties -----
 status = error
