@@ -202,21 +202,13 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         {
             chassert(element.query_strings_for_set.size() == 1);
             const std::vector<GinQueryString> & query_strings = element.query_strings_for_set.front();
-            bool exists_in_gin_filter = false;
-            if (query_strings.empty())
+            bool exists_in_gin_filter = query_strings.empty() ? true : false;
+            for (const GinQueryString & query_string : query_strings)
             {
-                /// Match granule in case of empty needles.
-                exists_in_gin_filter = true;
-            }
-            else
-            {
-                for (const GinQueryString & query_string : query_strings)
+                if (granule->gin_filter.contains(query_string, postings_lists_cache_for_store, GinSearchMode::Any))
                 {
-                    if (granule->gin_filter.contains(query_string, postings_lists_cache_for_store, GinSearchMode::Any))
-                    {
-                        exists_in_gin_filter = true;
-                        break;
-                    }
+                    exists_in_gin_filter = true;
+                    break;
                 }
             }
             rpn_stack.emplace_back(exists_in_gin_filter, true);
@@ -226,20 +218,12 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             chassert(element.query_strings_for_set.size() == 1);
             const std::vector<GinQueryString> & query_strings = element.query_strings_for_set.front();
             bool exists_in_gin_filter = true;
-            if (query_strings.empty())
+            for (const GinQueryString & query_string : query_strings)
             {
-                /// Match granule in case of empty needles.
-                exists_in_gin_filter = true;
-            }
-            else
-            {
-                for (const GinQueryString & query_string : query_strings)
+                if (!granule->gin_filter.contains(query_string, postings_lists_cache_for_store, GinSearchMode::All))
                 {
-                    if (!granule->gin_filter.contains(query_string, postings_lists_cache_for_store, GinSearchMode::All))
-                    {
-                        exists_in_gin_filter = false;
-                        break;
-                    }
+                    exists_in_gin_filter = false;
+                    break;
                 }
             }
             rpn_stack.emplace_back(exists_in_gin_filter, true);

@@ -148,11 +148,11 @@ void executeSearchAll(
     std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        const auto value = col_input.getDataAt(i);
+        const std::string_view value = col_input.getDataAt(i).toView();
         col_result[i] = false;
 
         mask = 0;
-        tokens = token_extractor->getTokensView(value.data, value.size);
+        tokens = token_extractor->getTokensView(value.data(), value.size());
         for (const auto & token : tokens)
         {
             if (auto it = needles.find(token); it != needles.end())
@@ -179,6 +179,7 @@ void execute(
 
     if (needles.empty())
     {
+        /// No needles mean we don't filter and all rows pass
         for (size_t i = 0; i < input_rows_count; ++i)
             col_result[i] = true;
         return;
