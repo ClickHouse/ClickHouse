@@ -6,6 +6,8 @@ slug: /operations/system-tables/iceberg_metadata_log
 title: 'system.iceberg_metadata_log'
 ---
 
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
 # system.iceberg_metadata_log
 
 The `system.iceberg_metadata_log` table records metadata access and parsing events for Iceberg tables read by ClickHouse. It provides detailed information about each metadata file or entry processed, which is useful for debugging, auditing, and understanding Iceberg table structure evolution.
