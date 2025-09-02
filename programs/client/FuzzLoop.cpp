@@ -642,7 +642,7 @@ bool Client::buzzHouse()
                     = 20 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
                 const uint32_t restart_client = 1 * static_cast<uint32_t>(fuzz_config->allow_client_restarts);
                 const uint32_t external_call
-                    = 20 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call));
+                    = 10 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call));
                 const uint32_t run_query = 910;
                 const uint32_t prob_space
                     = correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + external_call + run_query;
