@@ -240,6 +240,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
+    extern const ServerSettingsBool jemalloc_enable_global_profiler;
+    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
+    extern const ServerSettingsBool jemalloc_enable_background_threads;
+    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
     extern const ServerSettingsSeconds keep_alive_timeout;
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
@@ -1037,7 +1041,11 @@ try
     server_settings.loadSettingsFromConfig(config());
 
 #if USE_JEMALLOC
-    Jemalloc::setup(server_settings);
+    Jemalloc::setup(
+        server_settings[ServerSetting::jemalloc_enable_global_profiler],
+        server_settings[ServerSetting::jemalloc_enable_background_threads],
+        server_settings[ServerSetting::jemalloc_max_background_threads_num],
+        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
 #endif
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);

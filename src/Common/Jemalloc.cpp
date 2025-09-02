@@ -20,14 +20,6 @@ namespace ProfileEvents
 namespace DB
 {
 
-namespace ServerSetting
-{
-    extern const ServerSettingsBool jemalloc_enable_global_profiler;
-    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
-    extern const ServerSettingsBool jemalloc_enable_background_threads;
-    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -162,20 +154,24 @@ void setCollectLocalProfileSamplesInTraceLog(bool value)
     collect_local_profiles_in_trace_log = value;
 }
 
-void setup(const DB::ServerSettings & server_settings)
+void setup(
+    bool enable_global_profiler,
+    bool enable_background_threads,
+    size_t max_background_threads_num,
+    bool collect_global_profile_samples_in_trace_log)
 {
-    if (server_settings[DB::ServerSetting::jemalloc_enable_global_profiler])
+    if (enable_global_profiler)
     {
         getThreadProfileInitMib().setValue(true);
         getThreadProfileActiveMib().setValue(true);
     }
 
-    setBackgroundThreads(server_settings[DB::ServerSetting::jemalloc_enable_background_threads].value);
+    setBackgroundThreads(enable_background_threads);
 
-    if (server_settings[ServerSetting::jemalloc_max_background_threads_num])
-        setValue("max_background_threads", server_settings[ServerSetting::jemalloc_max_background_threads_num].value);
+    if (max_background_threads_num)
+        setValue("max_background_threads", max_background_threads_num);
 
-    collect_global_profiles_in_trace_log = server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log];
+    collect_global_profiles_in_trace_log = collect_global_profile_samples_in_trace_log;
     setValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
     setValue("experimental.hooks.prof_sample_free", &jemallocDeallocationTracker);
     setValue("experimental.hooks.prof_dump", &setLastFlushProfile);
