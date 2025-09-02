@@ -5,8 +5,8 @@ from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, RunnerLabels
 vector_search_stress_job = Job.Config(
     name="Vector Search Stress",
     runs_on=RunnerLabels.ARM_SMALL,
-    # run_in_docker="clickhouse/stateless-test+--shm-size=16g+--network=host",  # remove if run in docker is not required
-    command="python3 ./ci/jobs/vector_search_stress_job.py",
+    run_in_docker="clickhouse/fuzzer",
+    command="python3 ./ci/jobs/vector_search_stress_tests.py",
 )
 
 workflow = Workflow.Config(
@@ -16,7 +16,7 @@ workflow = Workflow.Config(
     jobs=[vector_search_stress_job],
     artifacts=[],
     secrets=SECRETS,
-    # dockers=DOCKERS,
+    dockers=DOCKERS,
     enable_report=True,
     enable_cidb=True,
     # enable_cache=True,

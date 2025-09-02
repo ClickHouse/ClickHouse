@@ -406,6 +406,8 @@ def run_single_test(test_name, dataset, test_params):
     # Run concurrency test on the current truth set
     if test_runner._test_params[CONCURRENCY_TEST]:
         test_runner.concurrency_test()
+    
+    return True
 
 # Array of (dataset, test_params)
 TESTS_TO_RUN = [
@@ -413,8 +415,11 @@ TESTS_TO_RUN = [
         ]
 
 def main():
+    test_results = []
     for test in TESTS_TO_RUN:
-        run_single_test(test[0], test[1], test[2])
+        test_results.append(Result.from_callable(name=test[0], callable=lambda: run_single_test(test[0], test[1], test[2])))
+
+    Result.create_from(results=test_results, files=[], info="my info").complete_job()
 
 if __name__ == "__main__":
     main()
