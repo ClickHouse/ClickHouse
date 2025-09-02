@@ -10,14 +10,15 @@ title: 'system.iceberg_metadata_log'
 
 The `system.iceberg_metadata_log` table records metadata access and parsing events for Iceberg tables read by ClickHouse. It provides detailed information about each metadata file or entry processed, which is useful for debugging, auditing, and understanding Iceberg table structure evolution.
 
-## Purpose
+## Purpose {#purpose}
 
 This table logs every metadata file and entry read from Iceberg tables, including root metadata files, manifest lists, and manifest entries. It helps users trace how ClickHouse interprets Iceberg table metadata and diagnose issues related to schema evolution, file resolution, or query planning.
 
-**Note:** This table is primarily intended for debugging purposes.
+:::note
+This table is primarily intended for debugging purposes.
+:::note
 
-## Columns
-
+## Columns {#columns}
 | Name           | Type      | Description                                                                                   |
 |----------------|-----------|----------------------------------------------------------------------------------------------|
 | `event_date`   | [Date](../../sql-reference/data-types/date.md)      | Date of the log entry.                                                                       |
@@ -29,7 +30,7 @@ This table logs every metadata file and entry read from Iceberg tables, includin
 | `content`      | [String](../../sql-reference/data-types/string.md)    | Content in JSON format (raw metadata from .json, Avro metadata, or Avro entry).              |
 | `row_in_file`  | [Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md)) | Row number in the file, if applicable. Present for `ManifestListEntry` and `ManifestFileEntry` content types. |
 
-## `content_type` values
+## `content_type` values {#content-type-values}
 
 - `None`: No content.
 - `Metadata`: Root metadata file.
@@ -40,7 +41,7 @@ This table logs every metadata file and entry read from Iceberg tables, includin
 
 <SystemTableCloud/>
 
-## Controlling Log Verbosity
+## Controlling log verbosity {#controlling-log-verbosity}
 
 You can control which metadata events are logged using the [`iceberg_metadata_log_level`](../../operations/settings/settings.md#iceberg_metadata_log_level) setting.
 
@@ -70,11 +71,11 @@ WHERE query_id = '{previous_query_id}';
 
 See more information in the description of the [`iceberg_metadata_log_level`](../../operations/settings/settings.md#iceberg_metadata_log_level) setting.
 
-### Tips
+### Tips {#tips}
 
 - Use `iceberg_metadata_log_level` at the query level only when you need to investigate your Iceberg table in detail. Otherwise, you may populate the log table with excessive metadata and experience performance degradation.
 
-## See Also
+## See also {#see-also}
 - [Iceberg Table Engine](../../engines/table-engines/integrations/iceberg.md)
 - [Iceberg Table Function](../../sql-reference/table-functions/iceberg.md)
 - [system.iceberg_history](./iceberg_history.md)
