@@ -186,19 +186,4 @@ void AddedColumns<true>::appendFromBlock(const RowRefList * row_ref_list, bool)
     }
 }
 
-
-template<>
-void AddedColumns<false>::appendDefaultRow()
-{
-    ++lazy_defaults_count;
-}
-
-template<>
-void AddedColumns<true>::appendDefaultRow()
-{
-    if (has_columns_to_add)
-    {
-        lazy_output.addDefault();
-    }
-}
 }

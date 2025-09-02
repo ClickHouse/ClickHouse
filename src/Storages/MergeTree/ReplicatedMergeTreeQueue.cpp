@@ -310,6 +310,36 @@ bool ReplicatedMergeTreeQueue::isMergeOfPatchPartsBlocked(const LogEntry & entry
     return false;
 }
 
+bool ReplicatedMergeTreeQueue::isDropOfPatchPartBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const
+{
+    if (entry.type != LogEntry::DROP_PART || !storage.supportsLightweightUpdate())
+        return false;
+
+    auto dropped_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+
+    if (!dropped_info.isPatch())
+        return false;
+
+    auto original_partition_id = dropped_info.getOriginalPartitionId();
+
+    for (const auto & merge_mutate_entry : queue)
+    {
+        if (merge_mutate_entry->type != LogEntry::MERGE_PARTS && merge_mutate_entry->type != LogEntry::MUTATE_PART)
+            continue;
+
+        auto new_part_info = MergeTreePartInfo::fromPartName(merge_mutate_entry->new_part_name, format_version);
+
+        if (new_part_info.getPartitionId() == original_partition_id && new_part_info.getDataVersion() > dropped_info.getDataVersion())
+        {
+            constexpr auto fmt_string = "Not executing log entry {} for patch part {} because the merge or mutation (with result part {}) that triggered the drop of the patch part has not been executed yet.";
+            LOG_DEBUG(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.new_part_name, merge_mutate_entry->new_part_name);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool ReplicatedMergeTreeQueue::havePendingPatchPartsForMutation(
     const LogEntry & entry,
     String & out_reason,
@@ -1783,6 +1813,9 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 }
             }
         }
+
+        if (isDropOfPatchPartBlocked(entry, out_postpone_reason, state_lock))
+            return false;
     }
 
     return true;

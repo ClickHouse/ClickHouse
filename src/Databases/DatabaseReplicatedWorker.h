@@ -1,6 +1,7 @@
 #pragma once
 #include <Interpreters/DDLWorker.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Core/QualifiedTableName.h>
 
 namespace DB
 {
@@ -41,6 +42,8 @@ public:
 
     bool isUnsyncedAfterRecovery() const { return unsynced_after_recovery; }
 
+    static constexpr const char * FORCE_AUTO_RECOVERY_DIGEST = "42";
+
 private:
     bool initializeMainThread() override;
     void initializeReplication() override;
@@ -54,6 +57,9 @@ private:
     bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat) override;
 
     bool checkParentTableExists(const UUID & uuid) const;
+
+    bool shouldSkipCreatingRMVTempTable(const ZooKeeperPtr & zookeeper, UUID parent_uuid, UUID create_uuid, int64_t ddl_log_ctime);
+    bool shouldSkipRenamingRMVTempTable(const ZooKeeperPtr & zookeeper, UUID parent_uuid, const QualifiedTableName & rename_from_table);
 
     DatabaseReplicated * const database;
     mutable std::mutex mutex;
