@@ -267,18 +267,18 @@ class IcebergTableGenerator(LakeTableGenerator):
             properties["write.parquet.compression-level"] = str(random.randint(1, 9))
             properties["write.parquet.dict-size-bytes"] = str(
                 random.choice(
-                    [1, 16, 32, 128, 1024, 2097152, 4194304, 8388608]
-                )  # 2MB, 4MB, 8MB
+                    [1048576, 2097152, 4194304, 8388608]
+                )  # 1MB, 2MB, 4MB, 8MB
             )
             properties["write.parquet.page-size-bytes"] = str(
                 random.choice(
-                    [1, 16, 32, 128, 1024, 65536, 131072, 1048576]
-                )  # 64KB, 128KB, 1MB
+                    [1048576, 2097152, 4194304, 8388608]
+                )  # 1MB, 2MB, 4MB, 8MB
             )
             properties["write.parquet.row-group-size-bytes"] = str(
                 random.choice(
-                    [1, 16, 32, 128, 1024, 134217728, 268435456, 536870912]
-                )  # 128MB, 256MB, 512MB
+                    [1048576, 2097152, 4194304, 8388608]
+                )  # 1MB, 2MB, 4MB, 8MB
             )
 
         # ORC specific properties
@@ -291,13 +291,13 @@ class IcebergTableGenerator(LakeTableGenerator):
             )
             properties["write.orc.stripe-size-bytes"] = str(
                 random.choice(
-                    [1, 16, 32, 128, 1024, 67108864, 134217728, 268435456]
-                )  # 64MB, 128MB, 256MB
+                    [1048576, 2097152, 4194304, 8388608]
+                )  # 1MB, 2MB, 4MB, 8MB
             )
             properties["write.orc.block-size-bytes"] = str(
                 random.choice(
-                    [1, 16, 32, 128, 1024, 262144, 524288, 1048576]
-                )  # 256KB, 512KB, 1MB
+                    [1048576, 2097152, 4194304, 8388608]
+                )  # 1MB, 2MB, 4MB, 8MB
             )
 
         # AVRO specific properties
@@ -316,9 +316,8 @@ class IcebergTableGenerator(LakeTableGenerator):
         properties["write.target-file-size-bytes"] = str(
             random.choice(
                 [
-                    1,
-                    128,
-                    1024,
+                    1048576,  # 1MB
+                    2097152,  # 2MB
                     134217728,  # 128MB
                     268435456,  # 256MB
                     536870912,  # 512MB
@@ -330,8 +329,8 @@ class IcebergTableGenerator(LakeTableGenerator):
         # Compaction settings
         properties["commit.manifest.target-size-bytes"] = str(
             random.choice(
-                [1, 16, 32, 128, 1024, 2048, 8388608, 16777216, 33554432]
-            )  # 8MB, 16MB, 32MB
+                [1048576, 2097152, 4194304, 8388608, 16777216, 33554432]
+            )  # 1MB, 2MB, 4MB, 8MB, 16MB, 32MB
         )
         properties["commit.manifest.min-count-to-merge"] = str(
             random.choice([1, 2, 8, 50, 100, 200, 500])
@@ -502,12 +501,12 @@ class IcebergTableGenerator(LakeTableGenerator):
         # Split size
         properties["read.split.target-size"] = str(
             random.choice(
-                [1, 16, 32, 128, 1024, 2048, 134217728, 268435456, 536870912]
+                [1048576, 2097152, 4194304, 8388608, 134217728, 268435456, 536870912]
             )  # 128MB  # 256MB  # 512MB
         )
         properties["read.split.metadata-target-size"] = str(
             random.choice(
-                [1, 16, 32, 128, 1024, 2048, 33554432, 67108864, 134217728]
+                [1048576, 2097152, 4194304, 8388608, 33554432, 67108864, 134217728]
             )  # 32MB  # 64MB  # 128MB
         )
         properties["read.split.planning-lookback"] = str(random.choice([10, 50, 100]))
@@ -556,7 +555,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         self,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 9)
+        next_option = random.randint(1, 8)
         restore_to = (
             datetime.now() - timedelta(seconds=random.choice([1, 5, 10, 60]))
         ).strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -566,9 +565,9 @@ class IcebergTableGenerator(LakeTableGenerator):
         if next_option == 2:
             res = f"CALL `{table.catalog_name}`.system.remove_orphan_files(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
-                res += f", dry_run => {random.choice(["true", "false"])})"
-            if random.randint(1, 2) == 1:
-                res += f", prefix_listing => {random.choice(["true", "false"])})"
+                res += f", dry_run => {random.choice(["true", "false"])}"
+            #if random.randint(1, 2) == 1: not yet supported
+            #    res += f", prefix_listing => {random.choice(["true", "false"])}"
             if random.randint(1, 2) == 1:
                 res += f", older_than => TIMESTAMP '{restore_to}'"
             res += ")"
@@ -591,7 +590,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         if next_option == 4:
             res = f"CALL `{table.catalog_name}`.system.rewrite_manifests(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
-                res += f", use_caching => {random.choice(["true", "false"])})"
+                res += f", use_caching => {random.choice(["true", "false"])}"
             res += ")"
             return res
         if next_option == 5:
@@ -612,8 +611,8 @@ class IcebergTableGenerator(LakeTableGenerator):
             return f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}')"
         if next_option == 8:
             return f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}')"
-        if next_option == 9:
-            return f"CALL `{table.catalog_name}`.system.set_current_snapshot(table => '{table.get_namespace_path()}', snapshot_id => {random.randint(1, 10)})"
+        #if next_option == 9:
+        #    return f"CALL `{table.catalog_name}`.system.set_current_snapshot(table => '{table.get_namespace_path()}', snapshot_id => {random.randint(1, 10)})"
         return ""
 
 
@@ -787,7 +786,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         # Target file size
         properties["spark.databricks.delta.optimize.maxFileSize"] = random.choice(
-            ["1kb", "1mb", "64mb", "128mb", "256mb", "512mb", "1gb"]
+            ["1mb", "2mb", "8mb", "64mb", "128mb", "256mb", "512mb", "1gb"]
         )
 
         # Parquet compression
@@ -851,7 +850,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         # Isolation level
         properties["delta.isolationLevel"] = str(
-            random.choice(["Serializable", "WriteSerializable"])
+            random.choice(["Serializable"])  # , "WriteSerializable" is not supported
         )
 
         # Checkpoint interval

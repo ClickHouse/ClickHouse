@@ -127,9 +127,9 @@ spark_properties = {
         ["INT96", "TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"]
     ),
     "spark.sql.parquet.writeLegacyFormat": true_false_lambda,
-    #"spark.sql.shuffle.partitions": lambda: random.choice( don't set this too low
+    # "spark.sql.shuffle.partitions": lambda: random.choice( don't set this too low
     #    ["8", "16", "32", "64", "200", "400"]
-    #),
+    # ),
     "spark.sql.sources.partitionOverwriteMode": lambda: random.choice(
         ["static", "dynamic"]
     ),
