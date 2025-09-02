@@ -625,7 +625,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         }
     }
 
-    UNUSED(residual_filter);
+    if (!residual_filter.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Residual filter is not supported in join reorder");
 }
 
 static std::vector<DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntryPtr root)
@@ -661,6 +662,8 @@ static std::vector<DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntryPtr ro
     return result;
 }
 
+/// Find single input node that is parent of the node
+/// Only aliases and cast/toNullable functions are allowed in the path, otherwise an logical error is thrown
 static const ActionsDAG::Node * trackInputColumn(const ActionsDAG::Node * node)
 {
     while (!node->children.empty())
@@ -795,6 +798,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
         auto * entry = sequence[entry_idx];
         if (entry->isLeaf())
         {
+            /// Base relation, use this step as input node
             size_t relation_id = safe_cast<size_t>(entry->relation_id);
             if (relation_id >= input_nodes.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid relation id: {}, input nodes size: {}", relation_id, input_nodes.size());
@@ -802,6 +806,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
         }
         else
         {
+            /// Combine two nodes from the stack into a single join operation
             auto * left_child_node = nodeStack.top();
             nodeStack.pop();
             auto * right_child_node = nodeStack.top();
@@ -954,6 +959,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 dag_outputs.push_back(mapped_it->second);
             }
 
+            /// Last step, output should correspond to the global actions DAG
             if (entry_idx == sequence.size() - 1)
             {
                 dag_outputs.clear();
@@ -1008,9 +1014,10 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal join sequence produced: [{}]",
             fmt::join(sequence | std::views::transform([](const auto * e) { return e ? e->dump() : "null"; }), ", "));
 
+    /// Return the current node by value and remove it from the nodes list
+    /// Caller may put the node back into the list if needed or replace existing node
     auto result = std::move(nodes.back());
     nodes.pop_back();
-
     return result;
 }
 

@@ -113,6 +113,7 @@ static void addToNullableIfNeeded(
 
         String original_name = node->result_name;
 
+        /// The `changed_types` map is used to handle type changes occured in `USING` clause
         if (auto it = changed_types.find(node->result_name); it != changed_types.end())
         {
             node = it->second;
