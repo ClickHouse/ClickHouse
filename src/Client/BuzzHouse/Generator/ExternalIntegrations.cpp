@@ -1779,8 +1779,11 @@ void ExternalIntegrations::performRandomCommand(const uint64_t seed, const Integ
             chassert(0);
             break;
     }
-    auto u = next->performRandomCommand(seed, dname, tname);
-    UNUSED(u);
+    if (next)
+    {
+        const auto u = next->performRandomCommand(seed, dname, tname);
+        UNUSED(u);
+    }
 }
 
 ClickHouseIntegratedDatabase * ExternalIntegrations::getPeerPtr(const PeerTableDatabase pt) const

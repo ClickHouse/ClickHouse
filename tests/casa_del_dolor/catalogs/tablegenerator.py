@@ -566,7 +566,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             res = f"CALL `{table.catalog_name}`.system.remove_orphan_files(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
                 res += f", dry_run => {random.choice(["true", "false"])}"
-            #if random.randint(1, 2) == 1: not yet supported
+            # if random.randint(1, 2) == 1: not yet supported
             #    res += f", prefix_listing => {random.choice(["true", "false"])}"
             if random.randint(1, 2) == 1:
                 res += f", older_than => TIMESTAMP '{restore_to}'"
@@ -611,7 +611,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             return f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}')"
         if next_option == 8:
             return f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}')"
-        #if next_option == 9:
+        # if next_option == 9:
         #    return f"CALL `{table.catalog_name}`.system.set_current_snapshot(table => '{table.get_namespace_path()}', snapshot_id => {random.randint(1, 10)})"
         return ""
 
