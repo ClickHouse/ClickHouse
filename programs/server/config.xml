@@ -1293,7 +1293,7 @@
     <iceberg_metadata_log>
         <database>system</database>
         <table>iceberg_metadata_log</table>
-        <flush_interval_milliseconds>7000</flush_interval_milliseconds>
+        <flush_interval_milliseconds>2000</flush_interval_milliseconds>
         <max_size_rows>1048576</max_size_rows>
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>

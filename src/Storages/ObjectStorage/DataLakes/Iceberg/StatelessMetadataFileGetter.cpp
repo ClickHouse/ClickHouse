@@ -148,13 +148,13 @@ ManifestFileCacheKeys getManifestList(
 
         ManifestFileCacheKeys manifest_file_cache_keys;
 
-    insertRowToLogTable(
-        local_context,
-        manifest_list_deserializer.getMetadataContent(),
-        DB::IcebergMetadataLogLevel::ManifestListMetadata,
-        configuration_ptr->getRawPath().path,
-        filename,
-        std::nullopt); 
+        insertRowToLogTable(
+            local_context,
+            manifest_list_deserializer.getMetadataContent(),
+            DB::IcebergMetadataLogLevel::ManifestListMetadata,
+            configuration_ptr->getRawPath().path,
+            filename,
+            std::nullopt);
 
         for (size_t i = 0; i < manifest_list_deserializer.rows(); ++i)
         {

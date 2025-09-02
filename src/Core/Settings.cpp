@@ -4884,7 +4884,7 @@ The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELE
 The probability of a fault injection during table creation after creating metadata in ZooKeeper
 )", 0) \
     DECLARE(IcebergMetadataLogLevel, iceberg_metadata_log_level, IcebergMetadataLogLevel::None, R"(
-Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log. 
+Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log.
 Usually this setting can be modified for debugging purposes.
 
 Possible values:
