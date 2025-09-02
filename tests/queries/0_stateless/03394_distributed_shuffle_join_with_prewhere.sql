@@ -6,6 +6,7 @@ INSERT INTO test SELECT 'path' || number::String, 'de', number FROM numbers(10);
 INSERT INTO test SELECT 'path' || number::String, 'ua', number FROM numbers(15);
 INSERT INTO test SELECT 'path' || number::String, 'jp', number FROM numbers(20);
 
+SET query_plan_join_swap_table = 0;
 
 SET
     make_distributed_plan = 1,

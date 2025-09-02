@@ -1,4 +1,6 @@
 SET distributed_plan_optimize_exchanges = 1;
+
+DROP TABLE IF EXISTS test;
 CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree() ORDER BY tuple();
 
 INSERT INTO test SELECT 'path_' || number::String, 'en', number FROM numbers(5);
@@ -7,6 +9,7 @@ INSERT INTO test SELECT 'path_' || (number%3)::String, 'de', number%4 FROM numbe
 INSERT INTO test SELECT 'path_' || number::String, 'en', number FROM numbers(5);
 INSERT INTO test SELECT 'path_' || (number%3)::String, 'de', number%4 FROM numbers(10);
 
+SET query_plan_join_swap_table = 0;
 
 SET
     make_distributed_plan = 1,

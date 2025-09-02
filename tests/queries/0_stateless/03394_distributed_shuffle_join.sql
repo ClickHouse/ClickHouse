@@ -1,6 +1,7 @@
 # Tags: no-fasttest
 # no-fasttest: requires object storage
 
+DROP TABLE IF EXISTS test_3;
 CREATE TABLE test_3(id UInt64, a Array(Int64)) ENGINE = MergeTree ORDER BY id;
 
 insert into test_3 select number, [number] from numbers(0, 100000);

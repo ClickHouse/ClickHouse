@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Processors/QueryPlan/BroadcastExchangeStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
 
@@ -27,8 +28,7 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = false);
-
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = false);
 
 /// Replaces LogicalJoin step with a subtree like this:
 ///
@@ -52,49 +52,20 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         return;
 
     /// Check if join is possible to be distributed
-    const auto & join_info = join_step->getJoinInfo();
+    const auto & join_info = join_step->getJoinOperator();
     if (join_info.kind != JoinKind::Inner ||
         join_info.strictness != JoinStrictness::All ||
         (join_info.locality != JoinLocality::Unspecified && join_info.locality != JoinLocality::Global) ||
-        !join_info.expression.disjunctive_conditions.empty())
+        std::ranges::all_of(join_info.expression, [](const auto & expr) { return !expr.isFunction(JoinConditionOperator::Equals); }))
     {
         return;
     }
 
+
     QueryPlan::Node * source_a = node.children[0];
     QueryPlan::Node * source_b = node.children[1];
 
-    auto row_count_b = estimateReadRowsCount(*source_b);
-
-    /// Extract expressions for calculating join on keys
-    /// Move them into separate nodes
-    /// Replace pre-join actions in the join step with pass-through (no-op) actions
-    {
-        const auto & actions = join_step->getExpressionActions();
-
-        /// Replaces the internals of ActionsDAG with no-op actions that just pass specified columns without any transformations
-        /// This is done in-place because JoinActionRef-s store column names and pointers to ActionsDAG-s
-        auto replace_with_pass_through_actions = [](ActionsDAG & actions_dag, const Block & header)
-        {
-            actions_dag = ActionsDAG(); /// Clear the actions DAG
-            for (const auto & column : header.getColumnsWithTypeAndName())
-                actions_dag.addOrReplaceInOutputs(actions_dag.addInput(column));
-        };
-
-        if (actions.left_pre_join_actions)
-        {
-            source_a = makeExpressionNodeOnTopOf(source_a, std::move(*actions.left_pre_join_actions), {}, nodes);
-            replace_with_pass_through_actions(*actions.left_pre_join_actions, *source_a->step->getOutputHeader());
-            join_step->updateInputHeader(source_a->step->getOutputHeader(), 0);
-        }
-
-        if (actions.right_pre_join_actions)
-        {
-            source_b = makeExpressionNodeOnTopOf(source_b, std::move(*actions.right_pre_join_actions), {}, nodes);
-            replace_with_pass_through_actions(*actions.right_pre_join_actions, *source_b->step->getOutputHeader());
-            join_step->updateInputHeader(source_b->step->getOutputHeader(), 1);
-        }
-    }
+    auto row_count_b = estimateReadRowsCount(*source_b).estimated_rows;
 
     enum DistributedJoinStrategy
     {
@@ -137,19 +108,18 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
             row_count_b.transform(toString<UInt64>).value_or("unknown"),
             bucket_count);
 
-        Names join_keys_a;
-        Names join_keys_b;
+        /// Extract expressions for calculating join on keys
+        auto key_dags = join_step->preCalculateKeys(source_a->step->getOutputHeader(), source_b->step->getOutputHeader());
+        if (!key_dags)
+            return;
 
-        /// Only equi-join is supported
-        const auto & join_condition = join_info.expression.condition;
-        for (const auto & predicate : join_condition.predicates)
-        {
-            if (predicate.op != PredicateOperator::Equals)
-                return;
-
-            join_keys_a.push_back(predicate.left_node.getColumnName());
-            join_keys_b.push_back(predicate.right_node.getColumnName());
-        }
+        auto get_node_name = [](const auto * e) { return e->result_name; };
+        auto join_keys_a = std::ranges::to<Names>(key_dags->first.keys | std::views::transform(get_node_name));
+        auto join_keys_b = std::ranges::to<Names>(key_dags->second.keys | std::views::transform(get_node_name));
+        if (!isPassthroughActions(key_dags->first.actions_dag))
+            makeExpressionNodeOnTopOf(*source_a, std::move(key_dags->first.actions_dag), nodes, "Calculate left join keys");
+        if (!isPassthroughActions(key_dags->second.actions_dag))
+            makeExpressionNodeOnTopOf(*source_b, std::move(key_dags->second.actions_dag), nodes, "Calculate right join keys");
 
         /// Add scatter exchange step above read from left source
         exchange_scatter_a_node = &nodes.emplace_back();
