@@ -116,5 +116,8 @@ class SparkTable:
         self.file_format = _file_format
         self.storage = _storage
 
+    def get_namespace_path(self) -> str:
+        return f"test.{self.table_name}"
+
     def get_table_full_path(self) -> str:
         return f"{self.catalog_name}.test.{self.table_name}"

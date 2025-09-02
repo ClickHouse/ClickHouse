@@ -403,9 +403,9 @@ class LakeDataGenerator:
         self.logger.info(f"Merging {nrows} row(s) into {table.get_table_full_path()}")
         self.run_query(
             spark,
-            f"""MERGE INTO {table.get_table_full_path()} AS t USING updates AS s ON t.{next_pick} = s.{next_pick}
-WHEN MATCHED THEN {random.choice(match_options)}{" WHEN NOT MATCHED BY TARGET THEN INSERT *" if random.randint(1, 4) == 1 else ""}
-{f" WHEN NOT MATCHED BY SOURCE THEN {random.choice(not_match_options)}" if random.randint(1, 4) == 1 else ""}""",
+            f"MERGE INTO {table.get_table_full_path()} AS t USING updates AS s ON t.{next_pick} = s.{next_pick}\
+ WHEN MATCHED THEN {random.choice(match_options)}{" WHEN NOT MATCHED BY TARGET THEN INSERT *" if random.randint(1, 4) == 1 else ""}\
+{f" WHEN NOT MATCHED BY SOURCE THEN {random.choice(not_match_options)}" if random.randint(1, 4) == 1 else ""};",
         )
 
     def delete_table(self, spark: SparkSession, table: SparkTable):
@@ -414,12 +414,12 @@ WHEN MATCHED THEN {random.choice(match_options)}{" WHEN NOT MATCHED BY TARGET TH
 
         self.logger.info(f"Delete from table {table.get_table_full_path()}")
         self.run_query(
-            spark, f"DELETE FROM {table.get_table_full_path()} WHERE {predicate}"
+            spark, f"DELETE FROM {table.get_table_full_path()} WHERE {predicate};"
         )
 
     def truncate_table(self, spark: SparkSession, table: SparkTable):
         self.logger.info(f"Truncate table {table.get_table_full_path()}")
-        self.run_query(spark, f"DELETE FROM {table.get_table_full_path()}")
+        self.run_query(spark, f"DELETE FROM {table.get_table_full_path()};")
 
     def update_table(self, spark: SparkSession, table: SparkTable):
         next_operation = random.randint(1, 900)
