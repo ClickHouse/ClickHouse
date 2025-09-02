@@ -137,21 +137,19 @@ class LakeTableGenerator:
 
     def generate_alter_table_statements(
         self,
-        table_name: str,
-        columns_spark: dict[str, SparkColumn],
-        deterministic: bool,
+        table: SparkTable,
     ) -> str:
         """Generate random ALTER TABLE statements for testing"""
-        properties = self.generate_table_properties(columns_spark, deterministic)
+        properties = self.generate_table_properties(table.columns, table.deterministic)
 
         if properties and random.randint(1, 2) == 1:
             # Set random properties
             key = random.choice(list(properties.keys()))
-            return f"ALTER TABLE {table_name} SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
+            return f"ALTER TABLE {table.get_table_full_path()} SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
         elif properties:
             # Unset a property
             key = random.choice(list(properties.keys()))
-            return f"ALTER TABLE {table_name} UNSET TBLPROPERTIES ('{key}');"
+            return f"ALTER TABLE {table.get_table_full_path()} UNSET TBLPROPERTIES ('{key}');"
         return ""
 
 

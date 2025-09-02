@@ -26,6 +26,7 @@ from pyspark.sql.types import (
     MapType,
     DataType,
 )
+from .tablegenerator import LakeTableGenerator
 
 from .laketables import SparkTable
 
@@ -431,3 +432,10 @@ WHEN MATCHED THEN {random.choice(match_options)}{" WHEN NOT MATCHED BY TARGET TH
             self.delete_table(spark, table)
         elif next_operation <= 675:
             self.truncate_table(spark, table)
+        elif next_operation <= 800:
+            next_table_generator = LakeTableGenerator.get_next_generator(
+                table.lake_format
+            )
+            next_statement = next_table_generator.generate_alter_table_statements(table)
+            if next_statement != "":
+                self.run_query(spark, next_statement)
