@@ -11,7 +11,6 @@
 
 #if USE_AVRO
 
-#include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
@@ -22,12 +21,6 @@
 
 namespace Iceberg
 {
-
-void writeMessageToFile(
-    const String & data,
-    const String & filename,
-    DB::ObjectStoragePtr object_storage,
-    DB::ContextPtr context);
 
 std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location);
 
@@ -59,13 +52,6 @@ struct MetadataFileWithInfo
     String path;
     CompressionMethod compression_method;
 };
-
-/// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
-std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
-    String path_location,
-    const ColumnsDescription & columns,
-    ASTPtr partition_by,
-    UInt64 format_version = 2);
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,

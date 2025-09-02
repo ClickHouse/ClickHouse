@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatFilterInfo.h>
-#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatParserGroup.h>
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -105,8 +104,6 @@ protected:
     String http_method; /// For insert can choose Put instead of default Post.
     ASTPtr partition_by;
     bool distributed_processing;
-    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-    NamesAndTypesList file_columns;
 
     virtual std::string getReadMethod() const;
 
@@ -158,7 +155,7 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context);
+        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
 
         String next();
         size_t size();
@@ -183,8 +180,7 @@ public:
         UInt64 max_block_size,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
-        FormatParserSharedResourcesPtr parser_shared_resources_,
-        FormatFilterInfoPtr format_filter_info_,
+        FormatParserGroupPtr parser_group_,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false,
@@ -196,7 +192,7 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_shared_resources->finishStream(); }
+    void onFinish() override { parser_group->finishStream(); }
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
@@ -231,12 +227,10 @@ private:
     std::optional<size_t> current_file_size;
     String format;
     const std::optional<FormatSettings> & format_settings;
-    FormatParserSharedResourcesPtr parser_shared_resources;
-    FormatFilterInfoPtr format_filter_info;
+    FormatParserGroupPtr parser_group;
     HTTPHeaderEntries headers;
     bool need_only_count;
     size_t total_rows_in_file = 0;
-    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     Poco::Net::HTTPBasicCredentials credentials;
 

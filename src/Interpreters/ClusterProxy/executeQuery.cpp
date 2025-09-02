@@ -37,6 +37,7 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
+#include <base/defines.h>
 
 
 namespace DB
@@ -76,7 +77,6 @@ namespace Setting
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
-    extern const SettingsString cluster_for_parallel_replicas;
 }
 
 namespace DistributedSetting
@@ -206,28 +206,15 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     /// disable parallel replicas if cluster contains only shards with 1 replica
     if (context->canUseTaskBasedParallelReplicas())
     {
-        bool disable_parallel_replicas = false;
-        if (is_remote_function)
+        bool disable_parallel_replicas = true;
+        for (const auto & shard : cluster.getShardsInfo())
         {
-            if (cluster.getName().empty()) // disable parallel replicas with remote() table functions w/o configured cluster
-                disable_parallel_replicas = true;
-            else
-                new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
-        }
-
-        if (!disable_parallel_replicas)
-        {
-            disable_parallel_replicas = true;
-            for (const auto & shard : cluster.getShardsInfo())
+            if (shard.getAllNodeCount() > 1)
             {
-                if (shard.getAllNodeCount() > 1)
-                {
-                    disable_parallel_replicas = false;
-                    break;
-                }
+                disable_parallel_replicas = false;
+                break;
             }
         }
-
         if (disable_parallel_replicas)
             new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
     }
@@ -390,7 +377,7 @@ void executeQuery(
             // decide for each shard if parallel reading from replicas should be enabled
             // according to settings and number of replicas declared per shard
             const auto & addresses = cluster->getShardsAddresses().at(i);
-            const bool parallel_replicas_enabled = addresses.size() > 1 && new_context->canUseTaskBasedParallelReplicas();
+            bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseTaskBasedParallelReplicas();
 
             stream_factory.createForShard(
                 shard_info,

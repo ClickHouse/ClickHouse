@@ -12,6 +12,7 @@ title: 'Form'
 |-------|--------|-------|
 | ✔     | ✗      |       |
 
+
 ## Description {#description}
 
 The `Form` format can be used to read a single record in the application/x-www-form-urlencoded format 

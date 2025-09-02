@@ -334,16 +334,8 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTrans
     return result;
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::commit(const TransactionCommitOptionsVariant & options)
+void MetadataStorageFromPlainObjectStorageTransaction::commit()
 {
-    MetadataOperationsHolder::commitImpl(options, metadata_storage.metadata_mutex);
+    MetadataOperationsHolder::commitImpl(metadata_storage.metadata_mutex);
 }
-
-
-std::optional<StoredObjects>
-MetadataStorageFromPlainObjectStorageTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
-{
-    return metadata_storage.getStorageObjectsIfExist(path);
-}
-
 }

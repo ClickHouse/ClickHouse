@@ -26,8 +26,7 @@ public:
 
     DeltaLakeMetadataDeltaKernel(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationWeakPtr configuration_,
-        ContextPtr context);
+        StorageObjectStorageConfigurationWeakPtr configuration_);
 
     bool supportsUpdate() const override { return true; }
 
@@ -48,10 +47,10 @@ public:
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationWeakPtr configuration,
-        ContextPtr context)
+        ContextPtr /* context */)
     {
         auto configuration_ptr = configuration.lock();
-        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, context);
+        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration);
     }
 
     ObjectIterator iterate(

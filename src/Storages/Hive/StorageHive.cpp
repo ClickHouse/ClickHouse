@@ -288,7 +288,7 @@ public:
                     context,
                     max_block_size,
                     updateFormatSettings(current_file),
-                    FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
+                    FormatParserGroup::singleThreaded(context->getSettingsRef()));
 
                 Pipe pipe(input_format);
                 if (columns_description.hasDefaults())
@@ -443,7 +443,7 @@ StorageHive::StorageHive(
     storage_metadata.setComment(comment_);
     storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, getContext());
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, getContext()));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -626,7 +626,7 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
         context,
         context->getSettingsRef()[Setting::max_block_size],
         std::nullopt,
-        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
+        FormatParserGroup::singleThreaded(context->getSettingsRef()));
     auto pipeline = QueryPipeline(std::move(format));
     auto reader = std::make_unique<PullingPipelineExecutor>(pipeline);
     Block block;
