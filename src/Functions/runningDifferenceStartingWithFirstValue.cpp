@@ -19,13 +19,9 @@ You can use setting `allow_deprecated_error_prone_window_functions` to allow usa
 :::
 )";
     FunctionDocumentation::Syntax syntax_runningDifferenceStartingWithFirstValue = "runningDifferenceStartingWithFirstValue(x)";
-    FunctionDocumentation::Arguments arguments_runningDifferenceStartingWithFirstValue = {
-        {"x", "Column for which to calculate the running difference.", {"Any"}}
-    };
+    FunctionDocumentation::Arguments arguments_runningDifferenceStartingWithFirstValue = {{"x", "Column for which to calculate the running difference.", {"Any"}}};
     FunctionDocumentation::ReturnedValue returned_value_runningDifferenceStartingWithFirstValue = {"Returns the difference between consecutive values, with the first row's value for the first row.", {"Any"}};
-    FunctionDocumentation::Examples examples_runningDifferenceStartingWithFirstValue = {
-    {
-        "Usage example",
+    FunctionDocumentation::Examples examples_runningDifferenceStartingWithFirstValue = {{"Usage example",
         R"(
 SELECT
     number,

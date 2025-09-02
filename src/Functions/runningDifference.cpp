@@ -26,13 +26,9 @@ Please note that the block size affects the result.
 The internal state of `runningDifference` state is reset for each new block.
 )";
     FunctionDocumentation::Syntax syntax_runningDifference = "runningDifference(x)";
-    FunctionDocumentation::Arguments arguments_runningDifference = {
-        {"x", "Column for which to calculate the running difference.", {"Any"}}
-    };
+    FunctionDocumentation::Arguments arguments_runningDifference = {{"x", "Column for which to calculate the running difference.", {"Any"}}};
     FunctionDocumentation::ReturnedValue returned_value_runningDifference = {"Returns the difference between consecutive values, with 0 for the first row.", {}};
-    FunctionDocumentation::Examples examples_runningDifference = {
-    {
-        "Usage example",
+    FunctionDocumentation::Examples examples_runningDifference = {{"Usage example",
         R"(
 SELECT
     EventID,

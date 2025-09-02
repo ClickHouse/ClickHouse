@@ -35,9 +35,6 @@ JSONSharedDataPathsWithTypes
 JSON_EXISTS
 JSON_QUERY
 JSON_VALUE
-MACNumToString
-MACStringToNum
-MACStringToOUI
 URLHierarchy
 URLPathHierarchy
 UUIDNumToString
@@ -59,14 +56,12 @@ asin
 bar
 basename
 blockNumber
-blockSerializedSize
 blockSize
 buildId
 byteSize
 caseWithExpression
 catboostEvaluate
 connectionId
-countDigits
 countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
@@ -97,8 +92,6 @@ decodeURLComponent
 decodeURLFormComponent
 defaultProfiles
 defaultRoles
-defaultValueOfArgumentType
-defaultValueOfTypeName
 dictGet
 dictGetAll
 dictGetChildren
@@ -146,7 +139,6 @@ domainRFC
 domainWithoutWWW
 domainWithoutWWWRFC
 dotProduct
-dumpColumnStructure
 dynamicElement
 dynamicType
 enabledProfiles
@@ -195,7 +187,6 @@ getServerPort
 getServerSetting
 getSetting
 getSettingOrDefault
-getSizeOfEnumType
 getSubcolumn
 getTypeSerializationStreams
 globalIn
@@ -220,12 +211,10 @@ ignore
 ilike
 in
 inIgnoreSet
-indexHint
 initialQueryID
 initialQueryStartTime
 initializeAggregation
 isConstant
-isDecimalOverflow
 isDynamicElementInSharedData
 isIPAddressInRange
 isIPv4String
@@ -370,14 +359,10 @@ reinterpretAsUInt32
 reinterpretAsUInt64
 reinterpretAsUInt8
 reinterpretAsUUID
-replicate
 revision
 rowNumberInAllBlocks
 rowNumberInBlock
 runningAccumulate
-runningConcurrency
-runningDifference
-runningDifferenceStartingWithFirstValue
 serverUUID
 shardCount
 shardNum
@@ -397,7 +382,6 @@ toBFloat16
 toBFloat16OrNull
 toBFloat16OrZero
 toBool
-toColumnTypeName
 toDate
 toDate32
 toDate32OrDefault
