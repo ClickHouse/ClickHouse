@@ -1807,7 +1807,7 @@ static void buildIndexes(
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse ignore_data_skipping_indices ('{}')", indices);
     }
 
-    UsefulSkipIndexes skip_indexes;
+    std::shared_ptr<UsefulSkipIndexes> skip_indexes = std::make_shared<UsefulSkipIndexes>();
     using Key = std::pair<String, size_t>;
     std::map<Key, size_t> merged;
 
@@ -1821,14 +1821,14 @@ static void buildIndexes(
         if (index_helper->isMergeable())
         {
             auto [it, inserted]
-                = merged.emplace(Key{index_helper->index.type, index_helper->getGranularity()}, skip_indexes.merged_indices.size());
+                = merged.emplace(Key{index_helper->index.type, index_helper->getGranularity()}, skip_indexes->merged_indices.size());
             if (inserted)
             {
-                skip_indexes.merged_indices.emplace_back();
-                skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
+                skip_indexes->merged_indices.emplace_back();
+                skip_indexes->merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
             }
 
-            skip_indexes.merged_indices[it->second].addIndex(index_helper);
+            skip_indexes->merged_indices[it->second].addIndex(index_helper);
             continue;
         }
 
@@ -1851,28 +1851,29 @@ static void buildIndexes(
         }
 
         if (!condition->alwaysUnknownOrTrue())
-            skip_indexes.useful_indices.emplace_back(index_helper, condition);
+            skip_indexes->useful_indices.emplace_back(index_helper, condition);
     }
 
     {
         std::vector<size_t> index_sizes;
-        index_sizes.reserve(skip_indexes.useful_indices.size());
+        index_sizes.reserve(skip_indexes->useful_indices.size());
         for (const auto& part : parts)
         {
-            auto &index_order = skip_indexes.per_part_index_orders.emplace_back();
-            index_order.resize(skip_indexes.useful_indices.size());
+            auto &index_order = skip_indexes->per_part_index_orders.emplace_back();
+            index_order.resize(skip_indexes->useful_indices.size());
             std::iota(index_order.begin(), index_order.end(), 0);
 
             index_sizes.clear();
 
-            for (const auto &idx : skip_indexes.useful_indices)
+            for (const auto &idx : skip_indexes->useful_indices)
             {
                 const auto *extension = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName()).extension;
                 auto sz = part.data_part->getFileSizeOrZero(idx.index->getFileName() + extension);
                 index_sizes.emplace_back(sz);
             }
             // Move minmax indices to first positions, so they will be applied first as cheapest ones
-            std::stable_sort(index_order.begin(), index_order.end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
+            std::stable_sort(index_order.begin(), index_order.end(),
+                [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes->useful_indices)](const auto & l, const auto & r)
             {
                 const auto l_index = useful_indices[l].index;
                 const auto r_index = useful_indices[r].index;
@@ -1906,7 +1907,7 @@ static void buildIndexes(
         }
     }
 
-    indexes->skip_indexes = std::move(skip_indexes);
+    indexes->skip_indexes = skip_indexes;
 }
 
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -2062,7 +2063,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, vector_search_parameters, context_, log);
 
-        if (indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
+        if (indexes->use_skip_indexes && !indexes->skip_indexes->empty() && query_info_.isFinal()
             && settings[Setting::use_skip_indexes_if_final_exact_mode])
         {
             result.parts_with_ranges
@@ -2547,14 +2548,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// Optionally initializes index build context to filter on data reading. This context is shared across multiple
     /// MergeTreeSelectProcessor instances, and is used to construct and apply index filters in a thread-safe manner.
     MergeTreeIndexBuildContextPtr index_build_context;
-    bool build_skip_index_reader = indexes && indexes->use_skip_indexes && !indexes->skip_indexes.empty()
+    bool build_skip_index_reader = indexes && indexes->use_skip_indexes && !indexes->skip_indexes->empty()
         && (!query_info.isFinal() || !settings[Setting::use_skip_indexes_if_final_exact_mode])
         && settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
 
     if (build_skip_index_reader)
     {
         /// Vector similarity indexes are not applicable on data reads.
-        UsefulSkipIndexes applicable_skip_indexes = indexes->skip_indexes;
+        UsefulSkipIndexes applicable_skip_indexes = *indexes->skip_indexes;
         std::erase_if(applicable_skip_indexes.useful_indices, [](const auto & idx) { return idx.index->isVectorSimilarityIndex(); });
 
         if (!applicable_skip_indexes.empty())
@@ -3010,6 +3011,43 @@ void ReadFromMergeTree::describeProjections(JSONBuilder::JSONMap & map) const
 
         map.add("Projections", std::move(projections_array));
     }
+}
+
+
+void ReadFromMergeTree::registerColumnsChanges(const Names & removed_columns, const Names & added_columns)
+{
+    size_t changes = 0;
+
+    /// Remove the columns. As defensive strategy I ensure that the columns exist
+    for (const auto & removed_column : removed_columns)
+    {
+        const auto it = std::ranges::find(all_column_names, removed_column);
+        chassert(it != all_column_names.end());
+
+        all_column_names.erase(it);
+        ++changes;
+    }
+
+    /// Now insert the new columns. Unlike the previous ones, these bay exist, in that case I do nothing.
+    for (const auto & added_column : added_columns)
+    {
+        const auto it = std::ranges::find(all_column_names, added_column);
+        if (it != all_column_names.end())
+            continue;
+
+        all_column_names.emplace(it, added_column);
+        ++changes;
+    }
+
+    if (output_header != nullptr && changes > 0)
+    {
+        output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+            storage_snapshot->getSampleBlockForColumns(all_column_names),
+            lazily_read_info, query_info.prewhere_info));
+    }
+
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
 }
 
 void ReadFromMergeTree::clearParallelReadingExtension()

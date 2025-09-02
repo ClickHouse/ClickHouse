@@ -174,7 +174,8 @@ bool MergeTreeIndexConditionGin::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_SEARCH_ALL,
          RPNElement::FUNCTION_IN,
          RPNElement::FUNCTION_NOT_IN,
-         RPNElement::FUNCTION_MATCH});
+         RPNElement::FUNCTION_MATCH,
+         RPNElement::FUNCTION_EQUALS_INDEX});
 }
 
 bool MergeTreeIndexConditionGin::mayBeTrueOnGranule([[maybe_unused]] MergeTreeIndexGranulePtr idx_granule) const
@@ -231,7 +232,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         else if (element.function == RPNElement::FUNCTION_EQUALS
              || element.function == RPNElement::FUNCTION_NOT_EQUALS)
         {
-            rpn_stack.emplace_back(granule->gin_filter.contains(*element.query_string, postings_lists_cache_for_store), true);
+            rpn_stack.emplace_back(granule->gin_filter.contains(*element.gin_query_string, postings_lists_cache_for_store), true);
 
             if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
                 rpn_stack.back() = !rpn_stack.back();
@@ -266,9 +267,9 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
 
                 rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
             }
-            else if (element.query_string)
+            else if (element.gin_query_string)
             {
-                rpn_stack.emplace_back(granule->gin_filter.contains(*element.query_string, postings_lists_cache_for_store), true);
+                rpn_stack.emplace_back(granule->gin_filter.contains(*element.gin_query_string, postings_lists_cache_for_store), true);
             }
 
         }
@@ -297,6 +298,12 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         else if (element.function == RPNElement::ALWAYS_TRUE)
         {
             rpn_stack.emplace_back(true, false);
+        }
+        else if (element.function == RPNElement::FUNCTION_EQUALS_INDEX)
+        {
+            // TODO: This is totally arbitrary at the moment. needs polishing
+            // rpn_stack.emplace_back(true, true);
+            rpn_stack.emplace_back(granule->gin_filter.contains(*element.gin_query_string, postings_lists_cache_for_store), true);
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in GinFilterCondition::RPNElement");
@@ -339,18 +346,25 @@ bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node
 
     if (node.isFunction())
     {
-        const auto function = node.toFunctionNode();
-        // auto arguments_size = function.getArgumentsSize();
-        auto function_name = function.getFunctionName();
+        const RPNBuilderFunctionTreeNode function = node.toFunctionNode();
+
+        if (function.isReplacedFullTextSearchFunction())
+            return traverseASTEqualsIndex(function, out);
+
+        const std::string function_name = function.getFunctionName();
 
         size_t function_arguments_size = function.getArgumentsSize();
-        if (function_arguments_size != 2)
+        if (function_arguments_size < 2)
             return false;
+
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
         if (functionIsInOrGlobalInOperator(function_name))
         {
+            if (function_arguments_size != 2)
+                return false;
+
             if (tryPrepareSetGinFilter(lhs_argument, rhs_argument, out))
             {
                 if (function_name == "notIn")
@@ -377,6 +391,9 @@ bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node
                  function_name == "searchAll" ||
                  function_name == "match")
         {
+            if (function_arguments_size != 2)
+                return false;
+
             Field const_value;
             DataTypePtr const_type;
             if (rhs_argument.tryGetConstant(const_value, const_type))
@@ -416,17 +433,17 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     if (function_name == "notEquals")
     {
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.query_string = std::make_unique<GinQueryString>();
+        out.gin_query_string = std::make_unique<GinQueryString>();
         const auto & value = const_value.safeGet<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.query_string);
+        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_query_string);
         return true;
     }
     if (function_name == "equals")
     {
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.query_string = std::make_unique<GinQueryString>();
+        out.gin_query_string = std::make_unique<GinQueryString>();
         const auto & value = const_value.safeGet<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.query_string);
+        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_query_string);
         return true;
     }
     if (function_name == "searchAny" || function_name == "searchAll")
@@ -470,42 +487,42 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.query_string = std::make_unique<GinQueryString>();
+        out.gin_query_string = std::make_unique<GinQueryString>();
         const auto & value = const_value.safeGet<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.query_string);
+        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_query_string);
         return true;
     }
     if (function_name == "startsWith")
     {
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.query_string = std::make_unique<GinQueryString>();
+        out.gin_query_string = std::make_unique<GinQueryString>();
         const auto & value = const_value.safeGet<String>();
-        token_extractor->substringToGinFilter(value.data(), value.size(), *out.query_string, true, false);
+        token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_query_string, true, false);
         return true;
     }
     if (function_name == "endsWith")
     {
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.query_string = std::make_unique<GinQueryString>();
+        out.gin_query_string = std::make_unique<GinQueryString>();
         const auto & value = const_value.safeGet<String>();
-        token_extractor->substringToGinFilter(value.data(), value.size(), *out.query_string, false, true);
+        token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_query_string, false, true);
         return true;
     }
     /// Currently, not all token extractors support LIKE-style matching.
     if (function_name == "like" && token_extractor->supportsStringLike())
     {
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.query_string = std::make_unique<GinQueryString>();
+        out.gin_query_string = std::make_unique<GinQueryString>();
         const auto & value = const_value.safeGet<String>();
-        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.query_string);
+        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_query_string);
         return true;
     }
     if (function_name == "notLike" && token_extractor->supportsStringLike())
     {
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.query_string = std::make_unique<GinQueryString>();
+        out.gin_query_string = std::make_unique<GinQueryString>();
         const auto & value = const_value.safeGet<String>();
-        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.query_string);
+        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_query_string);
         return true;
     }
     if (function_name == "match" && token_extractor->supportsStringLike())
@@ -532,14 +549,70 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
         }
         else
         {
-            out.query_string = std::make_unique<GinQueryString>();
-            token_extractor->substringToGinFilter(result.required_substring.data(), result.required_substring.size(), *out.query_string, false, false);
+            out.gin_query_string = std::make_unique<GinQueryString>();
+            token_extractor->substringToGinFilter(result.required_substring.data(), result.required_substring.size(), *out.gin_query_string, false, false);
         }
 
         return true;
     }
 
     return false;
+}
+
+bool MergeTreeIndexConditionGin::traverseASTEqualsIndex(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out)
+{
+    const String& function_name = function_node.getFunctionName();
+
+    if (!function_name.ends_with("_index"))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function: {}, Does not seem to be an index function", function_name);
+
+    const size_t function_arguments_size = function_node.getArgumentsSize();
+    if (function_arguments_size < 4)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function: {} has only {} arguments", function_name, function_arguments_size);
+
+    auto index_argument = function_node.getArgumentAt(0);
+    auto token_argument = function_node.getArgumentAt(1);
+    //auto part_argument = function_node.getArgumentAt(2);
+    //auto offset_argument = function_node.getArgumentAt(3);
+
+    /// TODO: assert that the column is text
+    Field index_value;
+    DataTypePtr index_type;
+    if (!index_argument.tryGetConstant(index_value, index_type))
+        return false;
+
+    Field token_value;
+    DataTypePtr token_type;
+    if (!token_argument.tryGetConstant(token_value, token_type))
+        return false;
+
+    // TODO: temporal solution
+    /// TODO: Implement this properly with all the needed checks and filtering
+    // This forces the index to be inserted in the useful_indexes set.
+    out.function = RPNElement::FUNCTION_EQUALS_INDEX;
+    out.gin_query_string = std::make_unique<GinQueryString>();
+    const String & token = token_value.safeGet<String>();
+    token_extractor->stringToGinFilter(token.data(), token.size(), *out.gin_query_string);
+    return true;
+
+    // size_t key_column_num = 0;
+    // bool key_exists = header.has(key_ast.getColumnName());
+    // bool map_key_exists = header.has(fmt::format("mapKeys({})", key_ast.getColumnName()));
+
+    // if (!key_exists && !map_key_exists)
+    //     return false;
+
+    // if (function_name == "hasTokenIndex")
+    // {
+    //     out.key_column = key_column_num;
+    //     out.function = RPNElement::FUNCTION_EQUALS;
+    //     out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
+    //     const auto & value = const_value.safeGet<String>();
+    //     token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_filter);
+    //     return true;
+    // }
+
+    // return false;
 }
 
 bool MergeTreeIndexConditionGin::tryPrepareSetGinFilter(
@@ -613,6 +686,23 @@ bool MergeTreeIndexConditionGin::tryPrepareSetGinFilter(
     out.query_strings_for_set = std::move(gin_query_infos);
 
     return true;
+}
+
+std::shared_ptr<const GinQueryString> MergeTreeIndexConditionGin::getGinFilter(const std::string & token) const
+{
+    const auto it = std::find_if(rpn.begin(), rpn.end(),
+        [&token](const RPNElement &element) -> bool
+        {
+            // TODO: This condition should check also the `index` argument
+            return (element.function == RPNElement::FUNCTION_EQUALS_INDEX
+                    && element.gin_query_string != nullptr
+                    && element.gin_query_string->getQueryString() == token);
+        });
+
+    if (it == rpn.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find condition for token: {}", token);
+
+    return it->gin_query_string;
 }
 
 MergeTreeIndexGin::MergeTreeIndexGin(

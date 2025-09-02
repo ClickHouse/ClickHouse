@@ -9,6 +9,7 @@
 #include <Disks/DiskLocal.h>
 #include <Interpreters/GinFilter.h>
 #include <Storages/MergeTree/GinIndexStore.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <city.h>
@@ -190,7 +191,7 @@ bool GinFilter::contains(const GinQueryString & query_string, GinPostingsListsCa
     if (query_string.getTokens().empty())
         return true;
 
-    GinPostingsListsCachePtr postings_lists_cache = postings_lists_cache_for_store.getPostingsLists(query_string.getQueryString());
+    GinPostingsListsCachePtr postings_lists_cache = postings_lists_cache_for_store.getOrRetrievePostings(query_string);
     if (postings_lists_cache == nullptr)
     {
         GinIndexStoreDeserializer deserializer(postings_lists_cache_for_store.store);
@@ -207,6 +208,68 @@ bool GinFilter::contains(const GinQueryString & query_string, GinPostingsListsCa
     }
 }
 
+
+std::vector<uint32_t> GinFilter::getMatchingRows(
+    const GinQueryString & gin_query_string,
+    const GinPostingsListsCacheForStore * cache_store,
+    const MarkRanges & ranges) const
+{
+    chassert(!ranges.empty());
+
+    if (gin_query_string.getTokens().empty())
+        return {};
+
+    const UInt32 full_start = ranges.front().begin + 1;
+    const UInt32 full_end = ranges.back().end + 1;
+
+    const GinPostingsListsCachePtr postings_cache = cache_store->getCachedPostings(gin_query_string);
+    if (postings_cache == nullptr || postings_cache->empty())
+        return {};
+
+    std::vector<UInt32> row_numbers;
+
+    for (const GinSegmentWithRowIdRange & rowid_range : segments_with_rowid_range)
+    {
+        if (rowid_range.range_rowid_end < full_start)
+            continue;
+
+        if (rowid_range.range_rowid_start > full_end)
+            break;
+
+        const UInt32 start = std::max(rowid_range.range_rowid_start, full_start);
+        const UInt32 end = std::min(rowid_range.range_rowid_end + 1, full_end);
+        chassert(start <= end);
+
+        GinPostingsList range_matches;
+        range_matches.addRange(start, end);
+
+        for (const auto & token_posting_list : * postings_cache)
+        {
+            /// Check if it is in the same segment by searching for segment_id
+            const GinSegmentPostingsLists & postings_list = token_posting_list.second;
+            auto container_it = postings_list.find(rowid_range.segment_id);
+
+            if (container_it == postings_list.end()
+                || container_it->second->maximum() < start
+                || container_it->second->minimum() > end)
+            {
+                range_matches.removeRange(start, end);
+                break;
+            }
+
+            range_matches &= *container_it->second;
+        }
+
+        const size_t cardinality = range_matches.cardinality();
+        if (cardinality > 0)
+        {
+            const size_t last_size = row_numbers.size();
+            row_numbers.resize(last_size + cardinality);
+            range_matches.toUint32Array(&row_numbers[last_size]);
+        }
+    }
+    return row_numbers;
+}
 
 size_t GinFilter::memoryUsageBytes() const
 {

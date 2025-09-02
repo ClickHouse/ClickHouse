@@ -47,6 +47,9 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
+        // We don't use it here... but we need it.
+        std::shared_ptr<GinPostingsListsCacheForStore> cache_in_store;
+
         ranges = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition,
@@ -57,7 +60,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             mark_cache.get(),
             uncompressed_cache.get(),
             vector_similarity_index_cache.get(),
-            log).first;
+            log,
+            cache_in_store).first;
     }
 
     for (const auto & indices_and_condition : skip_indexes.merged_indices)

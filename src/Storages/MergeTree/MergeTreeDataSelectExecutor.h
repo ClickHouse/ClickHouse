@@ -14,6 +14,7 @@ namespace DB
 class KeyCondition;
 struct QueryIdHolder;
 class VectorSimilarityIndexCache;
+struct GinPostingsListsCacheForStore;
 
 /** Executes SELECT queries on data from the merge tree.
   */
@@ -84,7 +85,8 @@ public:
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
-        LoggerPtr log);
+        LoggerPtr log,
+        std::shared_ptr<GinPostingsListsCacheForStore> &cache_in_store);
 
     static MarkRanges filterMarksUsingMergedIndex(
         MergeTreeIndices indices,
@@ -199,7 +201,7 @@ public:
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,
         const std::optional<KeyCondition> & total_offset_condition,
-        const UsefulSkipIndexes & skip_indexes,
+        std::shared_ptr<UsefulSkipIndexes> skip_indexes,
         const MergeTreeReaderSettings & reader_settings,
         LoggerPtr log,
         size_t num_streams,

@@ -386,20 +386,28 @@ private:
     LoggerPtr logger = getLogger("TextIndex");
 };
 
-/// GinPostingsListsCacheForStore contains postings lists from 'store' which are retrieved from Gin index files for the tokens in query strings
+class GinQueryString;
+
+/// GinPostingsListsCacheForStore contains postings lists from 'store' which are retrieved from Gin index files for the terms in query strings
 /// GinPostingsListsCache is per query string (one query can have multiple query strings): when skipping index (row ID ranges) is used for the part during the
 /// query, the postings cache is created and associated with the store where postings lists are read
 /// for the tokenized query string. The postings caches are released automatically when the query is done.
 struct GinPostingsListsCacheForStore
 {
+    GinPostingsListsCacheForStore() = default;
+    GinPostingsListsCacheForStore(const String & name, DataPartStoragePtr storage);
+
     /// Which store to retrieve postings lists
     GinIndexStorePtr store;
 
     /// Map of <query, postings lists>
     std::unordered_map<String, GinPostingsListsCachePtr> cache;
 
+    /// Get postings lists for query string IF cached, return nullptr if not found
+    GinPostingsListsCachePtr getCachedPostings(const GinQueryString & gin_query_string) const;
+
     /// Get postings lists for query string, return nullptr if not found
-    GinPostingsListsCachePtr getPostingsLists(const String & query_string) const;
+    GinPostingsListsCachePtr getOrRetrievePostings(const GinQueryString & gin_query_string);
 };
 
 /// A singleton for storing GinIndexStores
