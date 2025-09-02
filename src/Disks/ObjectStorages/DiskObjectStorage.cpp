@@ -886,7 +886,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     WriteMode mode,
     const WriteSettings & settings)
 {
-    LOG_TEST(log, "Write file: {}", path);
+    LOG_TEST(log, "Write file: {} with mode {}", path, (mode == WriteMode::Rewrite) ? "Rewrite" : "Append");
 
     WriteSettings write_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto transaction = createObjectStorageTransaction();

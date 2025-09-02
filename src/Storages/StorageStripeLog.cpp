@@ -219,9 +219,6 @@ public:
                 data_out_compressed->cancel();
                 data_out_compressed.reset();
 
-                /// Truncate files to the older sizes.
-                storage.file_checker.repair();
-
                 /// Remove excessive indices.
                 storage.removeUnsavedIndices(lock);
             }
@@ -318,17 +315,6 @@ StorageStripeLog::StorageStripeLog(
     {
         /// create directories if they do not exist
         disk->createDirectories(table_path);
-    }
-    else
-    {
-        try
-        {
-            file_checker.repair();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
     }
 
     total_bytes = file_checker.getTotalSize();
@@ -687,8 +673,6 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
     }
     catch (...)
     {
-        /// Rollback partial writes.
-        file_checker.repair();
         removeUnsavedIndices(lock);
         throw;
     }

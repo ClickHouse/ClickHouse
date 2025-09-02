@@ -40,7 +40,7 @@ public:
     /// Truncate files that have excessive size to the expected size.
     /// Throw exception if the file size is less than expected.
     /// The purpose of this function is to rollback a group of unfinished writes.
-    void repair();
+    void checkСonsistency();
 
     /// Returns stored file size.
     size_t getFileSize(const String & full_file_path) const;
