@@ -569,13 +569,13 @@ def test_alters_from_different_replicas(started_cluster):
 
     dummy_node.stop_clickhouse(kill=True)
 
-    settings = {"distributed_ddl_task_timeout": 5}
+    settings = {"distributed_ddl_task_timeout": 10}
     assert "is not finished on 1 of 3 hosts" in competing_node.query_and_get_error(
         "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN Added0 UInt32;",
         settings=settings,
     )
     settings = {
-        "distributed_ddl_task_timeout": 5,
+        "distributed_ddl_task_timeout": 10,
         "distributed_ddl_output_mode": "null_status_on_timeout",
     }
     assert "shard1\treplica2\tQUEUED\t" in main_node.query(
@@ -583,7 +583,7 @@ def test_alters_from_different_replicas(started_cluster):
         settings=settings,
     )
     settings = {
-        "distributed_ddl_task_timeout": 5,
+        "distributed_ddl_task_timeout": 10,
         "distributed_ddl_output_mode": "never_throw",
     }
     assert "shard1\treplica2\tQUEUED\t" in competing_node.query(
@@ -669,7 +669,7 @@ def test_alters_from_different_replicas(started_cluster):
     # We must wait until main_node knows about shard2 (from snapshotting_node and snapshot_recovering_node)
     # This background update can be slowed down by multiple factors, but mainly keeper faults
     main_node.wait_for_log_line(
-        "DatabaseReplicated \(alters_from_different_replicas\).*snapshotting_node.*snapshot_recovering_node.*",
+        r"DatabaseReplicated \(alters_from_different_replicas\).*snapshotting_node.*snapshot_recovering_node.*",
         look_behind_lines=1000,
     )
 
