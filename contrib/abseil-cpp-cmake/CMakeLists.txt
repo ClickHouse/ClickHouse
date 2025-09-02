@@ -1755,6 +1755,7 @@ absl_cc_library(
     absl::log_internal_proto
     absl::log_internal_log_sink_set
     absl::log_internal_nullguard
+    absl::log_internal_structured_proto
     absl::log_globals
     absl::log_entry
     absl::log_severity
@@ -2123,6 +2124,25 @@ absl_cc_library(
     absl::config
     absl::log_internal_message
     absl::strings
+)
+
+absl_cc_library(
+  NAME
+    log_internal_structured_proto
+  SRCS
+    "${DIR}/internal/structured_proto.h"
+  HDRS
+    "${DIR}/internal/structured_proto.cc"
+  COPTS
+    ${ABSL_DEFAULT_COPTS}
+  LINKOPTS
+    ${ABSL_DEFAULT_LINKOPTS}
+  DEPS
+    absl::log_internal_proto
+    absl::config
+    absl::span
+    absl::strings
+    absl::variant
 )
 
 absl_cc_library(
