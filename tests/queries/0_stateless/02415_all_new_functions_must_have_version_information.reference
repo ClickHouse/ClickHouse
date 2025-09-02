@@ -61,7 +61,6 @@ basename
 blockNumber
 blockSerializedSize
 blockSize
-buildId
 byteSize
 caseWithExpression
 catboostEvaluate
@@ -153,7 +152,6 @@ enabledProfiles
 enabledRoles
 encodeURLComponent
 encodeURLFormComponent
-errorCodeToName
 evalMLMethod
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
@@ -193,8 +191,6 @@ getMergeTreeSetting
 getOSKernelVersion
 getServerPort
 getServerSetting
-getSetting
-getSettingOrDefault
 getSizeOfEnumType
 getSubcolumn
 getTypeSerializationStreams
@@ -214,14 +210,12 @@ hasSubsequenceUTF8
 hasThreadFuzzer
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
-hostName
 identity
 ignore
 ilike
 in
 inIgnoreSet
 indexHint
-initialQueryID
 initialQueryStartTime
 initializeAggregation
 isConstant
@@ -264,10 +258,6 @@ multiSearchFirstPositionUTF8
 neighbor
 nested
 netloc
-normalizeQuery
-normalizeQueryKeepNames
-normalizedQueryHash
-normalizedQueryHashKeepNames
 notILike
 notIn
 notInIgnoreSet
@@ -303,9 +293,6 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
-parseReadableSize
-parseReadableSizeOrNull
-parseReadableSizeOrZero
 parseTimeDelta
 partitionId
 path
@@ -330,7 +317,6 @@ port
 portRFC
 proportionsZTest
 protocol
-queryID
 queryString
 queryStringAndFragment
 readWKTLineString
@@ -371,7 +357,6 @@ reinterpretAsUInt64
 reinterpretAsUInt8
 reinterpretAsUUID
 replicate
-revision
 rowNumberInAllBlocks
 rowNumberInBlock
 runningAccumulate
@@ -384,14 +369,11 @@ shardNum
 showCertificate
 sigmoid
 sin
-sleep
-sleepEachRow
 snowflakeToDateTime
 snowflakeToDateTime64
 structureToCapnProtoSchema
 structureToProtobufSchema
 svg
-tcpPort
 throwIf
 toBFloat16
 toBFloat16OrNull
@@ -537,11 +519,9 @@ transactionOldestSnapshot
 transform
 tuple
 tupleNames
-uptime
 validateNestedArraySizes
 variantElement
 variantType
-version
 visibleWidth
 widthBucket
 windowID

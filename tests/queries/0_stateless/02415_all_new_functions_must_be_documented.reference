@@ -51,7 +51,6 @@ basename
 blockNumber
 blockSerializedSize
 blockSize
-buildId
 byteSize
 caseWithExpression
 catboostEvaluate
@@ -85,7 +84,6 @@ enabledProfiles
 enabledRoles
 encodeURLComponent
 encodeURLFormComponent
-errorCodeToName
 evalMLMethod
 extractURLParameter
 extractURLParameterNames
@@ -126,14 +124,12 @@ hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
 hasThreadFuzzer
-hostName
 identity
 ignore
 ilike
 in
 inIgnoreSet
 indexHint
-initialQueryID
 initializeAggregation
 isConstant
 isDecimalOverflow
@@ -173,10 +169,6 @@ multiSearchFirstPositionCaseInsensitiveUTF8
 multiSearchFirstPositionUTF8
 neighbor
 netloc
-normalizeQuery
-normalizeQueryKeepNames
-normalizedQueryHash
-normalizedQueryHashKeepNames
 notILike
 notIn
 notInIgnoreSet
@@ -234,7 +226,6 @@ polygonsWithinCartesian
 polygonsWithinSpherical
 proportionsZTest
 protocol
-queryID
 queryString
 queryStringAndFragment
 readWKTMultiPolygon
@@ -272,7 +263,6 @@ reinterpretAsUInt64
 reinterpretAsUInt8
 reinterpretAsUUID
 replicate
-revision
 rowNumberInAllBlocks
 rowNumberInBlock
 runningAccumulate
@@ -284,12 +274,9 @@ shardCount
 shardNum
 showCertificate
 sigmoid
-sleep
-sleepEachRow
 snowflakeToDateTime
 snowflakeToDateTime64
 svg
-tcpPort
 throwIf
 toBool
 toColumnTypeName
@@ -425,9 +412,7 @@ transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
 transform
-uptime
 validateNestedArraySizes
-version
 visibleWidth
 windowID
 wkt
