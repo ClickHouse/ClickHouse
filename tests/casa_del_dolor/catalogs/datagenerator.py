@@ -422,7 +422,7 @@ WHEN MATCHED THEN {random.choice(match_options)}{" WHEN NOT MATCHED BY TARGET TH
         self.run_query(spark, f"DELETE FROM {table.get_table_full_path()}")
 
     def update_table(self, spark: SparkSession, table: SparkTable):
-        next_operation = random.randint(1, 1000)
+        next_operation = random.randint(1, 900)
 
         if next_operation <= 400:
             self.insert_random_data(spark, table)
@@ -430,12 +430,17 @@ WHEN MATCHED THEN {random.choice(match_options)}{" WHEN NOT MATCHED BY TARGET TH
             self.merge_into_table(spark, table)
         elif next_operation <= 650:
             self.delete_table(spark, table)
-        elif next_operation <= 675:
+        elif next_operation <= 700:
             self.truncate_table(spark, table)
         elif next_operation <= 800:
             next_table_generator = LakeTableGenerator.get_next_generator(
                 table.lake_format
             )
-            next_statement = next_table_generator.generate_alter_table_statements(table)
-            if next_statement != "":
-                self.run_query(spark, next_statement)
+            self.run_query(spark, next_table_generator.generate_extra_statement(table))
+        elif next_operation <= 900:
+            next_table_generator = LakeTableGenerator.get_next_generator(
+                table.lake_format
+            )
+            self.run_query(
+                spark, next_table_generator.generate_alter_table_statements(table)
+            )
