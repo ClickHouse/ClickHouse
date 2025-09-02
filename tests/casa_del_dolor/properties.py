@@ -927,8 +927,8 @@ class LogTablePropertiesGroup(PropertiesGroup):
         log_table_properties = {
             "buffer_size_rows_flush_threshold": threshold_generator(0.2, 0.2, 0, 10000),
             "flush_on_crash": true_false_lambda,
-            "max_size_rows": threshold_generator(0.2, 0.2, 0, 10000),
-            "reserved_size_rows": threshold_generator(0.2, 0.2, 0, 10000),
+            "max_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
+            "reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
         }
         storage_configuration_xml = top_root.find("storage_configuration")
         if storage_configuration_xml is not None:
@@ -944,14 +944,17 @@ class LogTablePropertiesGroup(PropertiesGroup):
         # max_size_rows cannot be smaller than reserved_size_rows
         max_size_rows_xml = property_element.find("max_size_rows")
         reserved_size_rows_xml = property_element.find("reserved_size_rows")
-        if (
-            max_size_rows_xml is not None
-            and max_size_rows_xml.text
-            and reserved_size_rows_xml is not None
-            and reserved_size_rows_xml.text
-        ):
+        if max_size_rows_xml is not None and max_size_rows_xml.text:
             max_size_rows_xml.text = str(
-                max(int(max_size_rows_xml.text), int(reserved_size_rows_xml.text))
+                max(
+                    int(max_size_rows_xml.text),
+                    (
+                        8192
+                        if reserved_size_rows_xml is None
+                        or not reserved_size_rows_xml.text
+                        else int(reserved_size_rows_xml.text)
+                    ),
+                )
             )
 
 
