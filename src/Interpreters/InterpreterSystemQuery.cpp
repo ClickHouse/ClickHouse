@@ -961,7 +961,7 @@ void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
     const String database_name = query.getDatabase();
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, database_name);
 
-    const auto db_ptr = DatabaseCatalog::instance().getDatabase(database_name, getContext());
+    const auto db_ptr = DatabaseCatalog::instance().getDatabaseOrThrow(database_name, getContext());
 
     auto* replicated_db = dynamic_cast<DatabaseReplicated*>(db_ptr.get());
     if (!replicated_db)
@@ -1131,7 +1131,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     else if (query.database)
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase());
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase(), getContext());
+        DatabasePtr database = DatabaseCatalog::instance().getDatabaseOrThrow(query.getDatabase(), getContext());
         for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             dropReplicaImpl(query, iterator->table());
         LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
@@ -1261,7 +1261,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     if (query.database)
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase());
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase(), getContext());
+        DatabasePtr database = DatabaseCatalog::instance().getDatabaseOrThrow(query.getDatabase(), getContext());
         if (auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get()))
         {
             check_not_local_replica(replicated, query);
@@ -1434,7 +1434,7 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
-    auto database = DatabaseCatalog::instance().getDatabase(database_name, getContext());
+    auto database = DatabaseCatalog::instance().getDatabaseOrThrow(database_name, getContext());
 
     if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
     {

@@ -112,7 +112,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
         }
 
-        DatabasePtr database = database_catalog.getDatabase(elem.from_database_name, getContext());
+        DatabasePtr database = database_catalog.getDatabaseOrThrow(elem.from_database_name, getContext());
         if (database->shouldReplicateQuery(getContext(), query_ptr))
         {
             if (1 < descriptions.size())
@@ -156,7 +156,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             database->renameTable(
                 getContext(),
                 elem.from_table_name,
-                *database_catalog.getDatabase(elem.to_database_name, getContext()),
+                *database_catalog.getDatabaseOrThrow(elem.to_database_name, getContext()),
                 elem.to_table_name,
                 exchange_tables,
                 rename.dictionary);
@@ -188,7 +188,7 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     const auto & new_name = descriptions.back().to_database_name;
     auto & catalog = DatabaseCatalog::instance();
 
-    auto db = descriptions.front().if_exists ? catalog.tryGetDatabase(old_name) : catalog.getDatabase(old_name, getContext());
+    auto db = descriptions.front().if_exists ? catalog.tryGetDatabase(old_name) : catalog.getDatabaseOrThrow(old_name, getContext());
 
     if (db)
     {

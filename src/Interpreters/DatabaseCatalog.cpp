@@ -730,7 +730,7 @@ void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
     }
 }
 
-DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, ContextPtr local_context) const
+DatabasePtr DatabaseCatalog::getDatabaseOrThrow(const String & database_name, ContextPtr local_context) const
 {
     assert(!database_name.empty());
     DatabasePtr db;
@@ -821,12 +821,12 @@ void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id, Context
 
 DatabasePtr DatabaseCatalog::getDatabaseForTemporaryTables() const
 {
-    return getDatabase(TEMPORARY_DATABASE, getContext());
+    return getDatabaseOrThrow(TEMPORARY_DATABASE, getContext());
 }
 
 DatabasePtr DatabaseCatalog::getSystemDatabase() const
 {
-    return getDatabase(SYSTEM_DATABASE, getContext());
+    return getDatabaseOrThrow(SYSTEM_DATABASE, getContext());
 }
 
 void DatabaseCatalog::addUUIDMapping(const UUID & uuid)
@@ -955,6 +955,12 @@ void DatabaseCatalog::shutdown(std::function<void()> shutdown_system_logs)
     {
         database_catalog->shutdownImpl(std::move(shutdown_system_logs));
     }
+}
+
+DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, ContextPtr local_context) const
+{
+    String resolved_database = local_context->resolveDatabase(database_name);
+    return getDatabase(resolved_database);
 }
 
 void DatabaseCatalog::removeViewDependency(const StorageID & source_table_id, const StorageID & view_id)
@@ -1138,7 +1144,7 @@ String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) co
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
 {
-    auto database = getDatabase(table_id.getDatabaseName(), getContext());
+    auto database = getDatabaseOrThrow(table_id.getDatabaseName(), getContext());
     auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
 
     if (!database_ptr)
@@ -1236,7 +1242,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 
 void DatabaseCatalog::undropTable(StorageID table_id)
 {
-    auto db_disk = getDatabase(table_id.database_name, getContext())->getDisk();
+    auto db_disk = getDatabaseOrThrow(table_id.database_name, getContext())->getDisk();
 
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;

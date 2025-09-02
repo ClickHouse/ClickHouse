@@ -57,7 +57,7 @@ namespace ActionLocks
 
 static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists, ContextPtr context_)
 {
-    return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabase(database_name, context_);
+    return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabaseOrThrow(database_name, context_);
 }
 
 

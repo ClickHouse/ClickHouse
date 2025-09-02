@@ -166,12 +166,15 @@ public:
     void updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database);
 
     /// database_name must be not empty
-    DatabasePtr getDatabase(const String & database_name, ContextPtr local_context) const;
+    DatabasePtr getDatabaseOrThrow(const String & database_name, ContextPtr local_context) const;
     DatabasePtr tryGetDatabase(const String & database_name) const;
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(const String & database_name) const;
     Databases getDatabases() const;
+
+    /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
+    DatabasePtr getDatabase(const String & database_name, ContextPtr local_context) const;
 
     /// For all of the following methods database_name in table_id must be not empty (even for temporary tables).
     void assertTableDoesntExist(const StorageID & table_id, ContextPtr context) const;

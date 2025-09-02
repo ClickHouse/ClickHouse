@@ -1167,7 +1167,7 @@ void StorageObjectStorageQueue::alter(
                 enable_hash_ring_filtering = change.value.safeGet<bool>();
         }
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name, local_context)->alterTable(local_context, table_id, new_metadata);
+        DatabaseCatalog::instance().getDatabaseOrThrow(table_id.database_name, local_context)->alterTable(local_context, table_id, new_metadata);
         setInMemoryMetadata(new_metadata);
     }
 }
@@ -1296,7 +1296,7 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
     else
     {
         if (database_uuid == UUIDHelpers::Nil)
-            database_uuid = DatabaseCatalog::instance().getDatabase(table_id.database_name, context_)->getUUID();
+            database_uuid = DatabaseCatalog::instance().getDatabaseOrThrow(table_id.database_name, context_)->getUUID();
 
         result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
     }
