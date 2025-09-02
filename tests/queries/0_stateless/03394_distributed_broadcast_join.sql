@@ -7,6 +7,8 @@ CREATE TABLE big(bid UInt64, b Array(Int64)) ENGINE = MergeTree ORDER BY bid;
 insert into small select number, [number] from numbers(0, 1000);
 insert into big select number, [number] from numbers(0, 100000);
 
+SET query_plan_join_swap_table = 0;
+
 SET
     make_distributed_plan=1,
     enable_parallel_replicas=0,

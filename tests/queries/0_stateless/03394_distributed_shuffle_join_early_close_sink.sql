@@ -1,5 +1,7 @@
 # Tags: long, no-fasttest
 
+SET query_plan_join_swap_table = 0;
+
 CREATE TABLE test(id UInt64, data String) ENGINE=MergeTree() ORDER BY id SETTINGS index_granularity=10000;
 
 INSERT INTO test SELECT number, '' FROM numbers(10000000);
