@@ -1,84 +1,104 @@
 SELECT
     __table1.id AS id,
     __table1.name AS name,
-    __table1.category AS category
+    __table1.category AS category,
+    __table1.code AS code
 FROM default.test_like_rewrite AS __table1
 WHERE (__table1.name >= \'app\') AND (__table1.name < \'apq\')
 3
 SELECT
     __table1.id AS id,
     __table1.name AS name,
-    __table1.category AS category
+    __table1.category AS category,
+    __table1.code AS code
 FROM default.test_like_rewrite AS __table1
 WHERE (__table1.name >= \'test\') AND (__table1.name < \'tesu\')
 2
 SELECT
     __table1.id AS id,
     __table1.name AS name,
-    __table1.category AS category
+    __table1.category AS category,
+    __table1.code AS code
 FROM default.test_like_rewrite AS __table1
 WHERE (__table1.category >= \'fruit\') AND (__table1.category < \'fruiu\')
 2
 SELECT
     __table1.id AS id,
     __table1.name AS name,
-    __table1.category AS category
+    __table1.category AS category,
+    __table1.code AS code
 FROM default.test_like_rewrite AS __table1
 WHERE (__table1.name < \'app\') OR (__table1.name >= \'apq\')
 4
 SELECT
     __table1.id AS id,
     __table1.name AS name,
-    __table1.category AS category
+    __table1.category AS category,
+    __table1.code AS code
 FROM default.test_like_rewrite AS __table1
 WHERE __table1.name LIKE \'app_ication%\'
 1
 SELECT
     __table1.id AS id,
     __table1.name AS name,
-    __table1.category AS category
+    __table1.category AS category,
+    __table1.code AS code
 FROM default.test_like_rewrite AS __table1
 WHERE __table1.name LIKE \'%app%\'
 3
 SELECT
     __table1.id AS id,
     __table1.name AS name,
-    __table1.category AS category
+    __table1.category AS category,
+    __table1.code AS code
 FROM default.test_like_rewrite AS __table1
 WHERE __table1.name LIKE \'_est%\'
 2
 SELECT
     __table1.id AS id,
     __table1.name AS name,
-    __table1.category AS category
+    __table1.category AS category,
+    __table1.code AS code
 FROM default.test_like_rewrite AS __table1
 WHERE __table1.name LIKE \'test\'
 1
 SELECT
     __table1.id AS id,
     __table1.name AS name,
-    __table1.category AS category
+    __table1.category AS category,
+    __table1.code AS code
 FROM default.test_like_rewrite AS __table1
 WHERE __table1.name LIKE \'%\'
 7
 SELECT
     __table1.id AS id,
     __table1.name AS name,
-    __table1.category AS category
+    __table1.category AS category,
+    __table1.code AS code
 FROM default.test_like_rewrite AS __table1
 WHERE (lower(__table1.name) >= \'app\') AND (lower(__table1.name) < \'apq\')
 3
 SELECT
     __table1.id AS id,
     __table1.name AS name,
-    __table1.category AS category
+    __table1.category AS category,
+    __table1.code AS code
 FROM default.test_like_rewrite AS __table1
 WHERE ((__table1.name >= \'app\') AND (__table1.name < \'apq\')) AND ((__table1.category >= \'fruit\') AND (__table1.category < \'fruiu\'))
 1
 SELECT
     __table1.id AS id,
     __table1.name AS name,
-    __table1.category AS category
+    __table1.category AS category,
+    __table1.code AS code
 FROM default.test_like_rewrite AS __table1
 WHERE __table1.name NOT LIKE \'app_ication%\'
 6
+SELECT
+    __table1.id AS id,
+    __table1.name AS name,
+    __table1.category AS category,
+    __table1.code AS code
+FROM default.test_like_rewrite AS __table1
+WHERE __table1.code LIKE \'a%\'
+3

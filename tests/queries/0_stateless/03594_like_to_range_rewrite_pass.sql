@@ -8,18 +8,19 @@ DROP TABLE IF EXISTS test_like_rewrite;
 CREATE TABLE test_like_rewrite (
     id UInt32,
     name String,
-    category FixedString(10)
+    category FixedString(10),
+    code LowCardinality(String)
 ) ENGINE = MergeTree()
 ORDER BY name;
 
 INSERT INTO test_like_rewrite VALUES 
-    (1, 'apple', 'fruit'),
-    (2, 'application', 'software'),
-    (3, 'apply', 'verb'),
-    (4, 'banana', 'fruit'),
-    (5, 'band', 'music'),
-    (6, 'test', 'other'),
-    (7, 'testing', 'other');
+    (1, 'apple', 'fruit', 'aaa'),
+    (2, 'application', 'software', 'bbb'),
+    (3, 'apply', 'verb', 'ccc'),
+    (4, 'banana', 'fruit', 'aaa'),
+    (5, 'band', 'music', 'bbb'),
+    (6, 'test', 'other', 'ccc'),
+    (7, 'testing', 'other', 'aaa');
 
 -- Test perfect prefix patterns - should be rewritten
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name LIKE 'app%';
@@ -66,5 +67,9 @@ SELECT count() FROM test_like_rewrite WHERE name LIKE 'app%' AND category LIKE '
 -- Test NOT LIKE with imperfect prefix - should NOT be rewritten
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE name NOT LIKE 'app_ication%';
 SELECT count() FROM test_like_rewrite WHERE name NOT LIKE 'app_ication%';
+
+-- Test low cardinality attribute - should NOT be rewritten
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM test_like_rewrite WHERE code LIKE 'a%';
+SELECT count() from test_like_rewrite WHERE code LIKE 'a%';
 
 DROP TABLE test_like_rewrite;

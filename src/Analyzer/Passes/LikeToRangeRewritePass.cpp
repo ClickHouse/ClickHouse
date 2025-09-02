@@ -47,6 +47,11 @@ public:
         if (args.size() != 2)
             return;
 
+        /// Do not rewrite attributes of low cardinality
+        auto col_type = args[0]->getResultType();
+        if (WhichDataType(col_type).isLowCardinality())
+            return;
+
         /// Extract prefix and check if it's suitable for rewrite
         auto * pattern_constant = args[1]->as<ConstantNode>();
         if (!pattern_constant || !isString(pattern_constant->getResultType()))
