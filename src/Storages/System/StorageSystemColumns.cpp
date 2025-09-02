@@ -21,7 +21,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-
+#include <Common/Exception.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
@@ -30,6 +30,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+}
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_DATABASE;
 }
 
 namespace ServerSetting
@@ -157,7 +161,19 @@ protected:
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
                 if (columns_mask[7] || columns_mask[8] || columns_mask[9])
-                    column_sizes = storage->getColumnSizes();
+                {
+                    /// Can throw UNKNOWN_DATABASE in case of Merge table
+                    try
+                    {
+                        column_sizes = storage->getColumnSizes();
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+                            throw;
+                        tryLogCurrentException(getLogger("SystemColumns"), fmt::format("While obtaining columns sizes for {}", storage->getStorageID().getNameForLogs()), LogsLevel::debug);
+                    }
+                }
 
                 if (columns_mask[11])
                     cols_required_for_partition_key = metadata_snapshot->getColumnsRequiredForPartitionKey();

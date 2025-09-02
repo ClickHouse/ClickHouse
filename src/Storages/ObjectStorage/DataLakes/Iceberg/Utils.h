@@ -20,7 +20,7 @@
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
 void writeMessageToFile(
@@ -28,6 +28,7 @@ void writeMessageToFile(
     const String & filename,
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context,
+    std::function<void()> cleanup,
     DB::CompressionMethod compression_method = DB::CompressionMethod::None);
 
 std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location);
@@ -39,11 +40,6 @@ struct TransformAndArgument
 };
 
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src);
-
-}
-
-namespace DB
-{
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
@@ -60,6 +56,9 @@ struct MetadataFileWithInfo
     String path;
     CompressionMethod compression_method;
 };
+
+std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
+Poco::Dynamic::Var getAvroType(DataTypePtr type);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(

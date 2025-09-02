@@ -4,7 +4,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
-#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -24,6 +23,11 @@ namespace Setting
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 select_sequential_consistency;
+    extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsBool parallel_replicas_support_projection;
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool optimize_aggregation_in_order;
+    extern const SettingsBool force_aggregation_in_order;
 }
 
 namespace ErrorCodes
@@ -45,13 +49,24 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     if (reading->isQueryWithSampling())
         return false;
 
-    if (reading->isParallelReadingEnabled())
-        return false;
-
     if (reading->readsInOrder())
         return false;
 
     const auto & query_settings = reading->getContext()->getSettingsRef();
+
+    if (reading->isParallelReadingEnabled())
+    {
+        bool support_projection = query_settings[Setting::allow_experimental_analyzer]
+            && query_settings[Setting::parallel_replicas_local_plan]
+            && query_settings[Setting::parallel_replicas_support_projection];
+
+        /// AggregationInOrder may cause local and remote replicas to use different CoordinationModes, which is currently unsupported.
+        bool enable_aggregation_in_order = query_settings[Setting::optimize_aggregation_in_order]
+            || query_settings[Setting::force_aggregation_in_order];
+
+        if (!support_projection || enable_aggregation_in_order)
+            return false;
+    }
 
     // Currently projection don't support deduplication when moving parts between shards.
     if (query_settings[Setting::allow_experimental_query_deduplication])
@@ -397,6 +412,20 @@ void filterPartsUsingProjection(
         stats.selected_rows = projection_result_ptr->selected_rows;
         stats.filtered_parts = filtered_parts;
     }
+}
+
+void fallbackToLocalProjectionReading(const QueryPlanStepPtr & projection_reading)
+{
+    /// When parallel replicas is enabled, if the result may contains both the projection stream and the parent part stream.
+    /// -------------------------------------------------------------------------------------------
+    ///                                                 AggregatingProjection
+    ///  ReadFromMergeTree  ---is replaced by--->           ReadFromMergeTree (part)
+    ///                                                     ReadFromMergeTree (projection)
+    /// -------------------------------------------------------------------------------------------
+    /// The coordinator does not support reading from two streams at the moment, so read projections are performed directly on the initial replica.
+    auto * reading_from_projection = typeid_cast<ReadFromMergeTree *>(projection_reading.get());
+    if (reading_from_projection && reading_from_projection->isParallelReadingEnabled())
+        reading_from_projection->clearParallelReadingExtension();
 }
 
 }
