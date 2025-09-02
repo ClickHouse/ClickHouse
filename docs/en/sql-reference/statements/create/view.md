@@ -460,7 +460,7 @@ ClickHouse supports **temporary views** with the following characteristics (matc
 * **SHOW CREATE**
   Use `SHOW CREATE TEMPORARY VIEW view_name;` to print the DDL of a temporary view.
 
-### Syntax
+### Syntax {#temporary-views-syntax}
 
 ```sql
 CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
@@ -468,7 +468,7 @@ CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
 
 `OR REPLACE` is **not** supported for temporary views (to match temporary tables). If you need to “replace” a temporary view, drop it and create it again.
 
-### Examples
+### Examples {#temporary-views-examples}
 
 Create a temporary source table and a temporary view on top:
 
@@ -496,7 +496,7 @@ Drop it:
 DROP TEMPORARY VIEW IF EXISTS tview;  -- temporary views are dropped with TEMPORARY TABLE syntax
 ```
 
-### Disallowed / limitations
+### Disallowed / limitations {#temporary-views-limitations}
 
 * `CREATE OR REPLACE TEMPORARY VIEW ...` → **not allowed** (use `DROP` + `CREATE`).
 * `CREATE TEMPORARY MATERIALIZED VIEW ...` / `LIVE VIEW` / `WINDOW VIEW` → **not allowed**.
@@ -504,11 +504,11 @@ DROP TEMPORARY VIEW IF EXISTS tview;  -- temporary views are dropped with TEMPOR
 * `CREATE TEMPORARY VIEW view ON CLUSTER 'name' AS ...` → **not allowed** (temporary objects are session-local).
 * `POPULATE`, `REFRESH`, `TO [db.table]`, inner engines, and all MV-specific clauses → **not applicable** to temporary views.
 
-### Notes on distributed queries
+### Notes on distributed queries {#temporary-views-distributed-notes}
 
 A temporary **view** is just a definition; there’s no data to pass around. If your temporary view references temporary **tables** (e.g., `Memory`), their data can be shipped to remote servers during distributed query execution the same way temporary tables work.
 
-#### Example
+#### Example {#temporary-views-distributed-example}
 
 ```sql
 -- A session-scoped, in-memory table
