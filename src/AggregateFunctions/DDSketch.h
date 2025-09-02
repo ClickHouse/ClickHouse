@@ -97,6 +97,10 @@ public:
         return quantile_value;
     }
 
+    Float64 getGamma() const { return mapping->getGamma(); }
+
+    Float64 getCount() const { return count; }
+
     void copy(const DDSketchDenseLogarithmic & other)
     {
         Float64 rel_acc = (other.mapping->getGamma() - 1) / (other.mapping->getGamma() + 1);

@@ -20,6 +20,11 @@ constexpr UInt32 CHUNK_SIZE = 128;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int INCORRECT_DATA;
+}
+
 class DDSketchDenseStore
 {
 public:
@@ -148,6 +153,8 @@ public:
 
     void deserialize(ReadBuffer & buf)
     {
+        count = 0;
+
         UInt8 encoding_mode;
         readBinary(encoding_mode, buf);
         if (encoding_mode == enc.BinEncodingContiguousCounts)
@@ -167,7 +174,7 @@ public:
                 start_key += index_delta;
             }
         }
-        else
+        else if (encoding_mode == enc.BinEncodingIndexDeltasAndCounts)
         {
             UInt64 num_non_empty_bins;
             readVarUInt(num_non_empty_bins, buf);
@@ -181,6 +188,10 @@ public:
                 previous_index += index_delta;
                 add(previous_index, bin_count);
             }
+        }
+        else
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag for encoding mode");
         }
     }
 
