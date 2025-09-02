@@ -81,3 +81,23 @@ select x from tab;
 select y, y.b.first, y.b.second from tab array join x as y;
 ('a1',[1,2,3],['b1','b2','b3'])	[1,2,3]	['b1','b2','b3']
 ('a2',[4,5,6],['b4','b5','b6'])	[4,5,6]	['b4','b5','b6']
+select y, y.first, y.second from tab array join x.b as y;
+[(1,'b1'),(2,'b2'),(3,'b3')]	[1,2,3]	['b1','b2','b3']
+[(4,'b4'),(5,'b5'),(6,'b6')]	[4,5,6]	['b4','b5','b6']
+select y.b from tab array join x as y;
+[(1,'b1'),(2,'b2'),(3,'b3')]
+[(4,'b4'),(5,'b5'),(6,'b6')]
+select z.first, z.second from tab array join x as y array join y.b as z;
+1	b1
+2	b2
+3	b3
+4	b4
+5	b5
+6	b6
+select z.first, z.second from tab array join x array join x.b as z;
+1	b1
+2	b2
+3	b3
+4	b4
+5	b5
+6	b6
