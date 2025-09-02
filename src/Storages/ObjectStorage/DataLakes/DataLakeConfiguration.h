@@ -21,7 +21,6 @@
 #include <Common/ErrorCodes.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 
 #include <fmt/ranges.h>
 
@@ -67,12 +66,6 @@ public:
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
 
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
-
-    StorageObjectStorageConfiguration::Path getRawPath() const override
-    {
-        auto result = BaseStorageConfiguration::getRawPath().path;
-        return StorageObjectStorageConfiguration::Path(result.ends_with('/') ? result : result + "/");
-    }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
     bool update(
@@ -247,15 +240,9 @@ public:
         current_metadata->modifyFormatSettings(settings_);
     }
 
-    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override
+    ColumnMapperPtr getColumnMapper() const override
     {
-        assertInitialized();
-        return current_metadata->getColumnMapperForObject(object_info);
-    }
-    ColumnMapperPtr getColumnMapperForCurrentSchema() const override
-    {
-        assertInitialized();
-        return current_metadata->getColumnMapperForCurrentSchema();
+        return current_metadata->getColumnMapper();
     }
 
     SinkToStoragePtr write(

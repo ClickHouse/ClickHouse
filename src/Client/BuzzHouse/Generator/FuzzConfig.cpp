@@ -25,14 +25,14 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
 {
     String client_hostname = "localhost";
     String server_hostname = "localhost";
-    String path;
+    String endpoint = "test";
     String region = default_region;
     uint32_t port = default_port;
 
     static const SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
            {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
-           {"path", [&](const JSONObjectType & value) { path = String(value.getString()); }},
+           {"endpoint", [&](const JSONObjectType & value) { endpoint = String(value.getString()); }},
            {"region", [&](const JSONObjectType & value) { region = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }}};
 
@@ -47,7 +47,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
         configEntries.at(nkey)(value);
     }
 
-    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, path, region, port));
+    return std::optional<Catalog>(Catalog(client_hostname, server_hostname, endpoint, region, port));
 }
 
 static std::optional<ServerCredentials> loadServerCredentials(
@@ -68,7 +68,6 @@ static std::optional<ServerCredentials> loadServerCredentials(
     std::optional<Catalog> glue_catalog;
     std::optional<Catalog> hive_catalog;
     std::optional<Catalog> rest_catalog;
-    std::optional<Catalog> unity_catalog;
 
     static const SettingEntries configEntries
         = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
@@ -85,8 +84,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
            {"query_log_file", [&](const JSONObjectType & value) { query_log_file = std::filesystem::path(String(value.getString())); }},
            {"glue", [&](const JSONObjectType & value) { glue_catalog = loadCatalog(value, "us-east-1", 3000); }},
            {"hive", [&](const JSONObjectType & value) { hive_catalog = loadCatalog(value, "", 9083); }},
-           {"rest", [&](const JSONObjectType & value) { rest_catalog = loadCatalog(value, "", 8181); }},
-           {"unity", [&](const JSONObjectType & value) { unity_catalog = loadCatalog(value, "", 8181); }}};
+           {"rest", [&](const JSONObjectType & value) { rest_catalog = loadCatalog(value, "", 8181); }}};
 
     for (const auto [key, value] : jobj.getObject())
     {
@@ -114,8 +112,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
         query_log_file,
         glue_catalog,
         hive_catalog,
-        rest_catalog,
-        unity_catalog));
+        rest_catalog));
 }
 
 static PerformanceMetric
@@ -234,9 +231,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"int16", allow_int16},
            {"int64", allow_int64},
            {"int128", allow_int128},
-           {"bfloat16", allow_bfloat16},
-           {"float32", allow_float32},
-           {"float64", allow_float64},
+           {"float", allow_floating_points},
            {"date", allow_dates},
            {"date32", allow_date32},
            {"time", allow_time},
@@ -375,7 +370,6 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"minio", [&](const JSONObjectType & value) { minio_server = loadServerCredentials(value, "minio", 9000); }},
         {"http", [&](const JSONObjectType & value) { http_server = loadServerCredentials(value, "http", 80); }},
         {"azurite", [&](const JSONObjectType & value) { azurite_server = loadServerCredentials(value, "azurite", 0); }},
-        {"dolor", [&](const JSONObjectType & value) { dolor_server = loadServerCredentials(value, "dolor", 8080); }},
         {"remote_servers", [&](const JSONObjectType & value) { remote_servers = loadArray(value); }},
         {"remote_secure_servers", [&](const JSONObjectType & value) { remote_secure_servers = loadArray(value); }},
         {"http_servers", [&](const JSONObjectType & value) { http_servers = loadArray(value); }},

@@ -822,13 +822,11 @@ The location and format of log messages.
 | `stream_compress`      | Compress log messages using LZ4. Set to `1` or `true` to enable.                                                                                                   |
 | `console`              | Enable logging to the console. Set to `1` or `true` to enable. Default is `1` if Clickhouse does not run in daemon mode, `0` otherwise.                            |
 | `console_log_level`    | Log level for console output. Defaults to `level`.                                                                                                                 |
-| `formatting.type`      | Log format for console output. Currently, only `json` is supported                                                                                                 |
+| `formatting`           | Log format for console output. Currently, only `json` is supported                                                                                                 |
 | `use_syslog`           | Also forward log output to syslog.                                                                                                                                 |
 | `syslog_level`         | Log level for logging to syslog.                                                                                                                                   |
 | `async`                | When `true` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG           |
 | `async_queue_max_size` | When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped                       |
-| `startupLevel`         | Startup level is used to set the root logger level at server startup. After startup log level is reverted to the `level` setting                                   |
-| `shutdownLevel`        | Shutdown level is used to set the root logger level at server Shutdown.                                                                                            |
 
 **Log format specifiers**
 

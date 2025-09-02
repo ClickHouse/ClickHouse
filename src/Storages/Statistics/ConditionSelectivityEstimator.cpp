@@ -1,4 +1,3 @@
-#include <Interpreters/misc.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <stack>
@@ -6,8 +5,6 @@
 
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/PreparedSets.h>
-#include <Interpreters/Set.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 namespace DB
@@ -127,37 +124,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode
 
         if (num_args == 2)
         {
-            const bool is_in_operator = functionIsInOperator(func_name);
-
-            /// If the second argument is built from `ASTNode`, it should fall into next branch, which directly
-            /// extracts constant value from `ASTLiteral`. Otherwise we try to build `Set` from `ActionsDAG::Node`,
-            /// and extract constant value from it.
-            if (is_in_operator && !func.getArgumentAt(1).getASTNode())
-            {
-                const auto & rhs = func.getArgumentAt(1);
-                if (!rhs.isConstant())
-                    return false;
-
-                auto future_set = rhs.tryGetPreparedSet();
-                if (!future_set)
-                    return false;
-
-                auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
-                if (!prepared_set || !prepared_set->hasExplicitSetElements())
-                    return false;
-
-                Columns columns = prepared_set->getSetElements();
-                if (columns.size() != 1)
-                    return false;
-
-                Tuple tuple(columns[0]->size());
-                for (size_t i = 0; i < columns[0]->size(); ++i)
-                    tuple[i] = (*columns[0])[i];
-
-                const_value = std::move(tuple);
-                column_name = func.getArgumentAt(0).getColumnName();
-            }
-            else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
+            if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
             {
                 if (const_value.isNull())
                 {
@@ -173,7 +140,6 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode
                     out.function = RPNElement::ALWAYS_FALSE;
                     return true;
                 }
-
                 column_name = func.getArgumentAt(1).getColumnName();
                 if (func_name == "less")
                     func_name = "greater";
@@ -186,7 +152,6 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode
             }
             else
                 return false;
-
             const auto atom_it = atom_map.find(func_name);
             atom_it->second(out, column_name, const_value);
             return true;
@@ -362,63 +327,57 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
 {
     if (finalized)
         return;
-
     finalized = true;
-
     if (function == FUNCTION_UNKNOWN)
     {
         selectivity = default_unknown_cond_factor;
         return;
     }
-
-    auto estimate_unknown_ranges = [&](const PlainRanges & ranges)
+    auto estimateUnknownRanges = [&](const PlainRanges & ranges)
     {
         Float64 equal_selectivity = 0;
         for (const Range & range : ranges.ranges)
         {
             if (range.isInfinite())
                 return 1.0;
-
             if (range.left == range.right)
                 equal_selectivity += default_cond_equal_factor;
             else
                 return default_cond_range_factor;
         }
-        return std::min(equal_selectivity, 1.0);
+        return equal_selectivity;
     };
-
     std::vector<Float64> estimate_results;
     for (const auto & [column_name, ranges] : column_ranges)
     {
         auto it = column_estimators_.find(column_name);
         if (it == column_estimators_.end())
         {
-            estimate_results.emplace_back(estimate_unknown_ranges(ranges));
+            estimate_results.emplace_back(estimateUnknownRanges(ranges));
         }
         else
             estimate_results.emplace_back(it->second.estimateRanges(ranges));
     }
-
     for (const auto & [column_name, ranges] : column_not_ranges)
     {
         auto it = column_estimators_.find(column_name);
         if (it == column_estimators_.end())
         {
-            estimate_results.emplace_back(1 - estimate_unknown_ranges(ranges));
+            estimate_results.emplace_back(1-estimateUnknownRanges(ranges));
         }
         else
-            estimate_results.emplace_back(1.0 - it->second.estimateRanges(ranges));
+            estimate_results.emplace_back(1.0-it->second.estimateRanges(ranges));
     }
-
     selectivity = 1.0;
     for (const auto & estimate_result : estimate_results)
     {
         if (function == FUNCTION_OR)
-            selectivity *= 1 - estimate_result;
+            selectivity *= 1-estimate_result;
         else
             selectivity *= estimate_result;
     }
     if (function == FUNCTION_OR)
-        selectivity = 1 - selectivity;
+        selectivity = 1-selectivity;
 }
+
 }

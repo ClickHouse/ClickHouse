@@ -22,7 +22,6 @@
 #include <IO/NullWriteBuffer.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/StorageAlias.h>
 #include <Poco/Timestamp.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
@@ -664,10 +663,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, 
                 {
                     /// It's not CREATE DATABASE
                     auto table_id = context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
-                    /// The settings may affect the behavior of `DatabaseCatalog::tryGetTable`.
-                    auto query_context = Context::createCopy(context);
-                    StorageAlias::modifyContextByQueryAST(task.query, query_context);
-                    storage = DatabaseCatalog::instance().tryGetTable(table_id, query_context);
+                    storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 }
 
                 task.execute_on_leader = storage && taskShouldBeExecutedOnLeader(task.query, storage) && !task.is_circular_replicated;
