@@ -1262,15 +1262,15 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     entry.tracing_context = OpenTelemetry::CurrentContext();
     entry.is_backup_restore = flags.distributed_backup_restore;
 
-    const auto & settings = getContext()->getSettingsRef();
+    const auto & settings = query_context->getSettingsRef();
     auto with_retries = WithRetries(
         log,
-        [&] { return getContext()->getZooKeeper(); },
+        [&] { return query_context->getZooKeeper(); },
         {
             settings[Setting::keeper_max_retries],
             settings[Setting::keeper_retry_initial_backoff_ms],
             settings[Setting::keeper_retry_max_backoff_ms],
-            getContext()->getProcessListElement()
+            query_context->getProcessListElement()
         },
         settings[Setting::keeper_fault_injection_probability],
         settings[Setting::keeper_fault_injection_seed]
