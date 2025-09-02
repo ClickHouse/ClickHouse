@@ -479,7 +479,6 @@ void buildRenamingForScalarSubquery(
     {
         new_outputs.push_back(&dag.addAlias(dag.findInOutputs(column_name), fmt::format("{}.{}", correlated_subquery.action_node_name, column_name)));
     }
-    new_outputs.push_back(result_node);
 
     dag.getOutputs() = std::move(new_outputs);
 
@@ -520,47 +519,6 @@ void buildExistsResultExpression(
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
     expression_step->setStepDescription("Create result for always true EXISTS expression");
     query_plan.addStep(std::move(expression_step));
-}
-
-/// Remove query plan steps that don't affect the number of rows in the result.
-/// Returns true if the query always returns at least 1 row.
-bool optimizeCorrelatedPlanForExists(QueryPlan & correlated_query_plan)
-{
-    auto * node = correlated_query_plan.getRootNode();
-    while (true)
-    {
-        if (typeid_cast<ExpressionStep *>(node->step.get()))
-        {
-            node = node->children[0];
-            continue;
-        }
-        if (auto * aggregation = typeid_cast<AggregatingStep *>(node->step.get()))
-        {
-            const auto & params = aggregation->getParams();
-            if (params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
-            {
-                /// Subquery will always produce at least one row
-                return true;
-            }
-            node = node->children[0];
-            continue;
-        }
-        if (typeid_cast<LimitStep *>(node->step.get()))
-        {
-            /// TODO: Support LimitStep in decorrelation process.
-            /// For now, we just remove it, because it only increases the number of rows in the result.
-            /// It doesn't affect the result of correlated subquery.
-            node = node->children[0];
-            continue;
-        }
-        break;
-    }
-
-    if (node != correlated_query_plan.getRootNode())
-    {
-        correlated_query_plan = correlated_query_plan.extractSubplan(node);
-    }
-    return false;
 }
 
 QueryPlan buildLogicalJoin(
@@ -778,7 +736,7 @@ void buildQueryPlanForCorrelatedSubquery(
             /// It may also result in non-correlated subquery plan
             /// Example:
             /// SELECT * FROM numbers(1) WHERE EXISTS (SELECT a = number FROM table)
-            if (optimizeCorrelatedPlanForExists(correlated_query_plan))
+            if (optimizePlanForExists(correlated_query_plan))
             {
                 /// Subquery always produces at least 1 row.
                 buildExistsResultExpression(query_plan, correlated_subquery, /*project_only_correlated_columns=*/false);

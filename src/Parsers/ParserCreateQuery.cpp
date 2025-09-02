@@ -1871,6 +1871,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserToken s_left_paren(TokenType::OpeningRoundBracket);
     ParserToken s_right_paren(TokenType::ClosingRoundBracket);
     ParserToken s_dot(TokenType::Dot);
+    ParserToken s_comma(TokenType::Comma);
     ParserDictionaryAttributeDeclarationList attributes_p;
     ParserDictionary dictionary_p;
 
@@ -1922,6 +1923,10 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
 
         if (!attributes_p.parse(pos, attributes, expected))
             return false;
+
+        /// We allow a trailing comma in the columns list for user convenience.
+        /// Although it diverges from the SQL standard slightly.
+        s_comma.ignore(pos, expected);
 
         if (!s_right_paren.ignore(pos, expected))
             return false;

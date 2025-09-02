@@ -5,7 +5,6 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <IO/HTTPCommon.h>  // Add this include at the top
-#include <Common/LatencyBuckets.h>
 #include <Common/NetException.h>
 #include <Common/Throttler.h>
 #include <Common/logger_useful.h>
@@ -60,28 +59,6 @@ namespace ProfileEvents
     extern const Event DiskAzureGetRequestThrottlerSleepMicroseconds;
     extern const Event DiskAzurePutRequestThrottlerCount;
     extern const Event DiskAzurePutRequestThrottlerSleepMicroseconds;
-}
-
-namespace LatencyBuckets
-{
-    extern const LatencyEvent AzureFirstByteReadAttempt1Microseconds;
-    extern const LatencyEvent AzureFirstByteReadAttempt2Microseconds;
-    extern const LatencyEvent AzureFirstByteReadAttemptNMicroseconds;
-
-    extern const LatencyEvent AzureFirstByteWriteAttempt1Microseconds;
-    extern const LatencyEvent AzureFirstByteWriteAttempt2Microseconds;
-    extern const LatencyEvent AzureFirstByteWriteAttemptNMicroseconds;
-
-    extern const LatencyEvent DiskAzureFirstByteReadAttempt1Microseconds;
-    extern const LatencyEvent DiskAzureFirstByteReadAttempt2Microseconds;
-    extern const LatencyEvent DiskAzureFirstByteReadAttemptNMicroseconds;
-
-    extern const LatencyEvent DiskAzureFirstByteWriteAttempt1Microseconds;
-    extern const LatencyEvent DiskAzureFirstByteWriteAttempt2Microseconds;
-    extern const LatencyEvent DiskAzureFirstByteWriteAttemptNMicroseconds;
-
-    extern const LatencyEvent AzureConnectMicroseconds;
-    extern const LatencyEvent DiskAzureConnectMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -201,30 +178,66 @@ PocoAzureHTTPClient::AzureMetricKind PocoAzureHTTPClient::getMetricKind(const st
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported request method: {}", method);
 }
 
-void PocoAzureHTTPClient::addLatency(const std::string & method, AzureLatencyType type, LatencyBuckets::Count amount) const
+void PocoAzureHTTPClient::observeLatency(const std::string & method, AzureLatencyType type, Histogram::Value latency) const
 {
-    if (amount == 0)
+    if (type == AzureLatencyType::Connect)
+    {
+        const Histogram::Buckets connect_buckets = {100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000};
+        static Histogram::MetricFamily & azure_blob_connect = Histogram::Factory::instance().registerMetric(
+            "azure_connect_microseconds",
+            "Time to establish connection with Azure Blob Storage, in microseconds.",
+            connect_buckets,
+            {}
+        );
+        azure_blob_connect.withLabels({}).observe(latency);
+
+        if (for_disk_azure)
+        {
+            static Histogram::MetricFamily & disk_azure_connect = Histogram::Factory::instance().registerMetric(
+                "disk_azure_connect_microseconds",
+                "Time to establish connection with DiskAzure, in microseconds.",
+                connect_buckets,
+                {}
+            );
+            disk_azure_connect.withLabels({}).observe(latency);
+        }
         return;
+    }
 
-    static const LatencyBuckets::LatencyEvent events_map[static_cast<size_t>(AzureLatencyType::EnumSize)][static_cast<size_t>(AzureMetricKind::EnumSize)] = {
-        {LatencyBuckets::AzureFirstByteReadAttempt1Microseconds, LatencyBuckets::AzureFirstByteWriteAttempt1Microseconds},
-        {LatencyBuckets::AzureFirstByteReadAttempt2Microseconds, LatencyBuckets::AzureFirstByteWriteAttempt2Microseconds},
-        {LatencyBuckets::AzureFirstByteReadAttemptNMicroseconds, LatencyBuckets::AzureFirstByteWriteAttemptNMicroseconds},
-        {LatencyBuckets::AzureConnectMicroseconds, LatencyBuckets::AzureConnectMicroseconds},
-    };
+    const String attempt_label = [](const AzureLatencyType t)
+    {
+        switch (t)
+        {
+            case AzureLatencyType::FirstByteAttempt1: return "1";
+            case AzureLatencyType::FirstByteAttempt2: return "2";
+            case AzureLatencyType::FirstByteAttemptN: return "N";
+            default: return "UNKNOWN";
+        }
+    }(type);
 
-    static const LatencyBuckets::LatencyEvent disk_azure_events_map[static_cast<size_t>(AzureLatencyType::EnumSize)][static_cast<size_t>(AzureMetricKind::EnumSize)] = {
-        {LatencyBuckets::DiskAzureFirstByteReadAttempt1Microseconds, LatencyBuckets::DiskAzureFirstByteWriteAttempt1Microseconds},
-        {LatencyBuckets::DiskAzureFirstByteReadAttempt2Microseconds, LatencyBuckets::DiskAzureFirstByteWriteAttempt2Microseconds},
-        {LatencyBuckets::DiskAzureFirstByteReadAttemptNMicroseconds, LatencyBuckets::DiskAzureFirstByteWriteAttemptNMicroseconds},
-        {LatencyBuckets::DiskAzureConnectMicroseconds, LatencyBuckets::DiskAzureConnectMicroseconds},
-    };
+    const Histogram::Buckets first_byte_buckets = {100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000};
+    const Histogram::Labels first_byte_labels = {"http_method", "attempt"};
+    const Histogram::LabelValues first_byte_label_values = {method, attempt_label};
 
-    auto kind = getMetricKind(method);
+    static Histogram::MetricFamily & azure_first_byte = Histogram::Factory::instance().registerMetric(
+        "azure_first_byte_microseconds",
+        "Time to receive the first byte from an Azure Blob Storage request, in microseconds.",
+        first_byte_buckets,
+        first_byte_labels
+    );
+    azure_first_byte.withLabels(first_byte_label_values).observe(latency);
 
-    LatencyBuckets::increment(events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
+
     if (for_disk_azure)
-        LatencyBuckets::increment(disk_azure_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
+    {
+        static Histogram::MetricFamily & disk_azure_first_byte = Histogram::Factory::instance().registerMetric(
+            "disk_azure_first_byte_microseconds",
+            "Time to receive the first byte from a DiskAzure request, in microseconds.",
+            first_byte_buckets,
+            first_byte_labels
+        );
+        disk_azure_first_byte.withLabels(first_byte_label_values).observe(latency);
+    }
 }
 
 
@@ -413,8 +426,8 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         Stopwatch watch;
         std::ostream & request_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
 
-        addLatency(method, AzureLatencyType::Connect, connect_time);
-        addLatency(method, first_byte_latency_type, first_byte_time);
+        observeLatency(method, AzureLatencyType::Connect, connect_time);
+        observeLatency(method, first_byte_latency_type, first_byte_time);
         latency_recorded = true;
 
         if (auto * body_stream = request.GetBodyStream(); body_stream != nullptr && body_stream->Length() > 0)
@@ -498,8 +511,8 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     {
         if (!latency_recorded)
         {
-            addLatency(method, AzureLatencyType::Connect, connect_time);
-            addLatency(method, first_byte_latency_type, first_byte_time);
+            observeLatency(method, AzureLatencyType::Connect, connect_time);
+            observeLatency(method, first_byte_latency_type, first_byte_time);
         }
 
         auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
@@ -516,8 +529,8 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     {
         if (!latency_recorded)
         {
-            addLatency(method, AzureLatencyType::Connect, connect_time);
-            addLatency(method, first_byte_latency_type, first_byte_time);
+            observeLatency(method, AzureLatencyType::Connect, connect_time);
+            observeLatency(method, first_byte_latency_type, first_byte_time);
         }
 
         auto response = std::make_unique<Azure::Core::Http::RawResponse>(

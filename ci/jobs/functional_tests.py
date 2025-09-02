@@ -139,7 +139,7 @@ def main():
     is_parallel_replicas = False
     runner_options = ""
     # optimal value for most of the jobs
-    nproc = int(Utils.cpu_count() * 0.8)
+    nproc = int(Utils.cpu_count() * 0.6)
     info = Info()
 
     for to in test_options:
@@ -179,8 +179,11 @@ def main():
     if is_database_replicated or is_shared_catalog or is_parallel_replicas:
         pass
     else:
-        if "binary" in args.options:
+        if "binary" in args.options and len(test_options) < 3:
+            # plain binary job works fast with high concurrency
             nproc = int(Utils.cpu_count() * 1.2)
+        elif is_database_replicated:
+            nproc = int(Utils.cpu_count() * 0.4)
         else:
             pass
 
@@ -291,6 +294,10 @@ def main():
                 )
             os.environ["GLOBAL_TAGS"] = "no-random-settings"
 
+        os.environ["MALLOC_CONF"] = (
+            f"prof_active:true,prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
+        )
+
         commands.append(configure_log_export)
 
         results.append(
@@ -371,7 +378,7 @@ def main():
         if is_bugfix_validation:
             has_failure = False
             for r in results[-1].results:
-                if not r.is_ok():
+                if r.status == Result.StatusExtended.FAIL:
                     has_failure = True
                     break
             if not has_failure:
@@ -441,7 +448,7 @@ def main():
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
         info=job_info,
-    ).complete_job(force_ok_exit=force_ok_exit)
+    ).complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import typing
 
 from environment import get_system_timezones
 from integration.helpers.cluster import ClickHouseCluster
+from integration.helpers.config_cluster import minio_secret_key
 
 
 def generate_xml_safe_string(length: int = 10) -> str:
@@ -128,8 +129,6 @@ possible_properties = {
     "bcrypt_workfactor": threshold_generator(0.2, 0.2, 0, 20, 31),
     "cache_size_to_ram_max_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     # "cannot_allocate_thread_fault_injection_probability": threshold_generator(0.2, 0.2, 0.0, 1.0), the server may not start
-    "cgroup_memory_watcher_hard_limit_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "cgroup_memory_watcher_soft_limit_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "compiled_expression_cache_elements_size": threshold_generator(0.2, 0.2, 0, 10000),
     "compiled_expression_cache_size": threshold_generator(0.2, 0.2, 0, 10000),
     "concurrent_threads_scheduler": lambda: random.choice(
@@ -230,7 +229,7 @@ possible_properties = {
     "primary_index_cache_prewarm_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "primary_index_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "primary_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "prefetch_threadpool_pool_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "prefetch_threadpool_pool_size": threshold_generator(0.2, 0.2, 1, 1000),
     "prefetch_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "prefixes_deserialization_thread_pool_thread_pool_queue_size": threshold_generator(
         0.2, 0.2, 0, 1000
@@ -602,23 +601,23 @@ def add_single_disk(
         # Add endpoint info
         if object_storage_type in ("s3", "s3_with_keeper"):
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
-            endpoint_xml.text = f"http://minio1:9001/root/data{i}"
+            endpoint_xml.text = f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/data{i}"
             access_key_id_xml = ET.SubElement(next_disk, "access_key_id")
             access_key_id_xml.text = "minio"
             secret_access_key_xml = ET.SubElement(next_disk, "secret_access_key")
-            secret_access_key_xml.text = "ClickHouse_Minio_P@ssw0rd"
+            secret_access_key_xml.text = minio_secret_key
         elif object_storage_type == "azure":
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
-            endpoint_xml.text = (
-                f"http://azurite1:{cluster.azurite_port}/devstoreaccount1/data{i}"
-            )
+            endpoint_xml.text = f"http://{cluster.azurite_host}:{cluster.azurite_port}/{cluster.azurite_account}/data{i}"
             account_name_xml = ET.SubElement(next_disk, "account_name")
-            account_name_xml.text = "devstoreaccount1"
+            account_name_xml.text = cluster.azurite_account
             account_key_xml = ET.SubElement(next_disk, "account_key")
-            account_key_xml.text = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+            account_key_xml.text = cluster.azurite_key
         elif object_storage_type == "web":
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
-            endpoint_xml.text = f"http://nginx:80/data{i}/"
+            endpoint_xml.text = (
+                f"http://{cluster.nginx_host}:{cluster.nginx_port}/data{i}/"
+            )
         elif object_storage_type == "local":
             path_xml = ET.SubElement(next_disk, "path")
             path_xml.text = f"/var/lib/clickhouse/disk{i}/"
@@ -963,8 +962,12 @@ def modify_server_settings(
         secure_port_xml.text = "9440"
     if root.find("https_port") is None:
         modified = True
-        secure_port_xml = ET.SubElement(root, "https_port")
-        secure_port_xml.text = "8443"
+        https_port_xml = ET.SubElement(root, "https_port")
+        https_port_xml.text = "8443"
+    if root.find("arrowflight_port") is None:
+        modified = True
+        arrowflight_port_xml = ET.SubElement(root, "arrowflight_port")
+        arrowflight_port_xml.text = "8888"
     if root.find("openSSL") is None:
         modified = True
         openssl_xml = ET.SubElement(root, "openSSL")
@@ -979,6 +982,29 @@ def modify_server_settings(
             name_xml.text = random.choice(
                 ["AcceptCertificateHandler", "RejectCertificateHandler"]
             )
+
+    if root.find("named_collections") is None:
+        modified = True
+        named_collections_xml = ET.SubElement(root, "named_collections")
+        if args.with_minio:
+            s3_xml = ET.SubElement(named_collections_xml, "s3")
+            url_xml = ET.SubElement(s3_xml, "url")
+            url_xml.text = f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/"
+            access_key_id_xml = ET.SubElement(s3_xml, "access_key_id")
+            access_key_id_xml.text = "minio"
+            secret_access_key_xml = ET.SubElement(s3_xml, "secret_access_key")
+            secret_access_key_xml.text = minio_secret_key
+        if args.with_azurite:
+            azure_xml = ET.SubElement(named_collections_xml, "azure")
+            account_name_xml = ET.SubElement(azure_xml, "account_name")
+            account_name_xml.text = cluster.azurite_account
+            account_key_xml = ET.SubElement(azure_xml, "account_key")
+            account_key_xml.text = cluster.azurite_key
+            container_xml = ET.SubElement(azure_xml, "container")
+            container_xml.text = cluster.azure_container_name
+            storage_account_url_xml = ET.SubElement(azure_xml, "storage_account_url")
+            storage_account_url_xml.text = f"http://{cluster.azurite_host}:{cluster.azurite_port}/{cluster.azurite_account}"
+        ET.SubElement(named_collections_xml, "local")
 
     if "timezone" not in possible_properties:
         possible_timezones = get_system_timezones()
@@ -1065,7 +1091,7 @@ def modify_server_settings(
         distributed_ddl_xml = root.find("distributed_ddl")
         if distributed_ddl_xml is not None and distributed_ddl_xml.find("path") is None:
             path_xml = ET.SubElement(distributed_ddl_xml, "path")
-            path_xml.text = "/var/lib/clickhouse/task_queue/ddl"
+            path_xml.text = "/clickhouse/task_queue/ddl"
         # Make sure `zookeeper_path` in transaction_log is set
         transaction_log_xml = root.find("transaction_log")
         if (
@@ -1073,12 +1099,12 @@ def modify_server_settings(
             and transaction_log_xml.find("zookeeper_path") is None
         ):
             zookeeper_path_xml = ET.SubElement(transaction_log_xml, "zookeeper_path")
-            zookeeper_path_xml.text = "/var/lib/clickhouse/txn"
+            zookeeper_path_xml.text = "/clickhouse/txn"
 
     # Get number of clusters if generated, to be used in `users.xml` if needed
     remote_servers = root.find("remote_servers")
     if remote_servers is not None:
-        number_clusters = len(list(remote_servers))
+        number_clusters = len([c for c in remote_servers if "remove" not in c.attrib])
 
     if modified:
         ET.indent(tree, space="    ", level=0)  # indent tree
@@ -1212,7 +1238,7 @@ keeper_settings = {
         "raft_limits_response_limit": threshold_generator(0.2, 0.2, 0, 40),
         "reserved_log_items": threshold_generator(0.2, 0.2, 0, 100000),
         "rocksdb_load_batch_size": threshold_generator(0.2, 0.2, 0, 2000),
-        "rotate_log_storage_interval": threshold_generator(0.2, 0.2, 0, 100000),
+        "rotate_log_storage_interval": threshold_generator(0.2, 0.2, 1, 100000),
         "snapshot_distance": threshold_generator(0.2, 0.2, 0, 100000),
         "snapshots_to_keep": threshold_generator(0.2, 0.2, 0, 5),
         "stale_log_gap": threshold_generator(0.2, 0.2, 0, 10000),
@@ -1227,6 +1253,7 @@ keeper_settings = {
         "create_if_not_exists": true_false_lambda,
         "filtered_list": true_false_lambda,
         "multi_read": true_false_lambda,
+        "multi_watches": true_false_lambda,
         "remove_recursive": true_false_lambda,
     },
     "force_recovery": true_false_lambda,
