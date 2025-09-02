@@ -59,54 +59,67 @@ hackernews_dataset = {
     VECTOR_COLUMN: "vector",
     DISTANCE_METRIC: "cosineDistance",
     DIMENSION: 384,
-    }
+}
 
 laion5b_100m_dataset = {
     TABLE: "laion5b_100m",
     # individual files, so that load progress can be seen
-    S3_URLS: ['https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet', 'https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_2_of_10.parquet', 'https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_3_of_10.parquet', 'https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_4_of_10.parquet', 'https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_5_of_10.parquet', 'https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_6_of_10.parquet', 'https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_7_of_10.parquet', 'https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_8_of_10.parquet', 'https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_9_of_10.parquet', 'https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_10_of_10.parquet'],
+    S3_URLS: [
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet",
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_2_of_10.parquet",
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_3_of_10.parquet",
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_4_of_10.parquet",
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_5_of_10.parquet",
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_6_of_10.parquet",
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_7_of_10.parquet",
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_8_of_10.parquet",
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_9_of_10.parquet",
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_10_of_10.parquet",
+    ],
     SCHEMA: """
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
     DISTANCE_METRIC: "cosineDistance",
     DIMENSION: 768,
-    FETCH_COLUMNS_LIST: "url, width, height", # fetch additional columns in ANN
-    }
+    FETCH_COLUMNS_LIST: "url, width, height",  # fetch additional columns in ANN
+}
 
 # Dataset with <= 10 million subset of LAION
 laion_5b_mini_for_quick_test = {
     TABLE: "laion_test",
-    S3_URLS: ['https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet'],
+    S3_URLS: [
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet"
+    ],
     SCHEMA: """
         id Int32,
         vector Array(Float32)
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
-    SOURCE_SELECT_LIST: "id, vector", # Columns to select from the source Parquet file
+    SOURCE_SELECT_LIST: "id, vector",  # Columns to select from the source Parquet file
     DISTANCE_METRIC: "cosineDistance",
     DIMENSION: 768,
-    }
+}
 
 test_run_params_1 = {
     # Pass a filename to reuse a pre-generated truth set, else test will generate truth set (default)
     # Running 10000 brute force KNN queries over a 100 million dataset could take time.
     LIMIT_N: None,
     TRUTH_SET_FILES: ["laion_truth_set_1", "laion_truth_set_2", "laion_truth_set_3"],
-    QUANTIZATION: "bf16", # 'b1' for binary quantization
+    QUANTIZATION: "bf16",  # 'b1' for binary quantization
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 512,
-    HNSW_EF_SEARCH: None, # Default in CH is 256, use higher value for maybe 'b1' indexes
-    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None, # Set a value for 'b1' indexes
+    HNSW_EF_SEARCH: None,  # Default in CH is 256, use higher value for maybe 'b1' indexes
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,  # Set a value for 'b1' indexes
     GENERATE_TRUTH_SET: False,
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
-    }
+}
 
 test_run_quick_test = {
-    LIMIT_N: 100000, # Adds a LIMIT clause to load exact number of rows
+    LIMIT_N: 100000,  # Adds a LIMIT clause to load exact number of rows
     TRUTH_SET_FILES: None,
     QUANTIZATION: "bf16",
     HNSW_M: 16,
@@ -114,32 +127,37 @@ test_run_quick_test = {
     HNSW_EF_SEARCH: None,
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
     GENERATE_TRUTH_SET: True,
-    TRUTH_SET_COUNT: 100, # Quick test! 10000 or 1000 is a good value
+    TRUTH_SET_COUNT: 100,  # Quick test! 10000 or 1000 is a good value
     RECALL_K: 100,
     NEW_TRUTH_SET_FILE: "laion_100k_100",
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
-    }
+}
+
 
 def get_new_connection():
-    chclient = clickhouse_connect.get_client(send_receive_timeout = 1800)
+    chclient = clickhouse_connect.get_client(send_receive_timeout=1800)
     return chclient
+
 
 def current_time_ms():
     return round(time.time() * 1000)
 
+
 def current_time():
     return time.ctime(time.time())
 
+
 def logger(s):
     print(current_time(), " : ", s)
+
 
 class RunTest:
 
     def __init__(self, chclient, dataset, test_params):
         self._chclient = chclient
-        self._dataset = dataset 
+        self._dataset = dataset
         self._test_params = test_params
 
         self._table = dataset[TABLE]
@@ -171,7 +189,10 @@ class RunTest:
             insert = f"INSERT INTO {self._table} SELECT {select_list} FROM s3('{url}')"
 
             if self._test_params[LIMIT_N] is not None:
-                insert = insert + f" ORDER BY {self._id_column} LIMIT {self._test_params[LIMIT_N]}"
+                insert = (
+                    insert
+                    + f" ORDER BY {self._id_column} LIMIT {self._test_params[LIMIT_N]}"
+                )
             self._chclient.query(insert)
 
             result = self._chclient.query(f"SELECT count() FROM {self._table}")
@@ -183,26 +204,34 @@ class RunTest:
         logger("Optimizing table...")
         # Wait for existing merges to complete
         while True:
-            result = self._chclient.query(f"SELECT COUNT(*) FROM system.merges WHERE table = '{self._table}'")
-            if (result.result_rows[0][0] == 0):
+            result = self._chclient.query(
+                f"SELECT COUNT(*) FROM system.merges WHERE table = '{self._table}'"
+            )
+            if result.result_rows[0][0] == 0:
                 break
             logger("Waiting for existing merges to complete...")
             time.sleep(5)
 
         try:
-            self._chclient.query(f"OPTIMIZE TABLE {self._table} FINAL SETTINGS mutations_sync=0")
+            self._chclient.query(
+                f"OPTIMIZE TABLE {self._table} FINAL SETTINGS mutations_sync=0"
+            )
         except Exception as e:
             logger(f"optimize table error {e}")
 
         # Wait for OPTIMIZE to complete
         while True:
-            result = self._chclient.query(f"SELECT COUNT(*) FROM system.merges WHERE table = '{self._table}'")
-            if (result.result_rows[0][0] == 0):
+            result = self._chclient.query(
+                f"SELECT COUNT(*) FROM system.merges WHERE table = '{self._table}'"
+            )
+            if result.result_rows[0][0] == 0:
                 break
             logger("Waiting for optimize table to complete...")
             time.sleep(5)
 
-        result = self._chclient.query(f"SELECT name, formatReadableSize(bytes) FROM system.parts WHERE table = '{self._table}' AND active=1")
+        result = self._chclient.query(
+            f"SELECT name, formatReadableSize(bytes) FROM system.parts WHERE table = '{self._table}' AND active=1"
+        )
         logger(f"Current active parts found for {self._table} -> ")
         for row in result.result_rows:
             logger(f"{row[0]}\t\t{row[1]} bytes")
@@ -223,14 +252,18 @@ class RunTest:
 
         # wait for the materialize to complete
         while True:
-            result = self._chclient.query(f"SELECT COUNT(*) FROM system.mutations WHERE table = '{self._table}' AND is_done = 0")
+            result = self._chclient.query(
+                f"SELECT COUNT(*) FROM system.mutations WHERE table = '{self._table}' AND is_done = 0"
+            )
             if result.result_rows[0][0] == 0:
                 break
             logger("Waiting for materialize index to complete...")
             time.sleep(30)
 
         logger("Done building the vector index")
-        result = self._chclient.query(f"SELECT name, type, formatReadableSize(data_compressed_bytes), formatReadableSize(data_uncompressed_bytes) FROM system.data_skipping_indices WHERE table = '{self._table}'")
+        result = self._chclient.query(
+            f"SELECT name, type, formatReadableSize(data_compressed_bytes), formatReadableSize(data_uncompressed_bytes) FROM system.data_skipping_indices WHERE table = '{self._table}'"
+        )
         logger(f"Index size for {self._table} -> ")
         for row in result.result_rows:
             logger(f"{row[0]}\t\t{row[1]}\t\t{row[2]}\t\t{row[3]}")
@@ -242,7 +275,9 @@ class RunTest:
         truth_set = {}
 
         # Get the MAX id value
-        result = self._chclient.query(f"SELECT max({self._id_column}) FROM {self._table}")
+        result = self._chclient.query(
+            f"SELECT max({self._id_column}) FROM {self._table}"
+        )
         max_id = result.result_rows[0][0]
 
         while i < self._query_count:
@@ -250,7 +285,7 @@ class RunTest:
             subquery = f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = {query_vector_id})"
 
             q_start = current_time_ms()
-            knn_search_query =  f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {subquery} ) AS distance LIMIT {self._k} SETTINGS use_skip_indexes = 0" 
+            knn_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {subquery} ) AS distance LIMIT {self._k} SETTINGS use_skip_indexes = 0"
             result = self._chclient.query(knn_search_query)
             q_end = current_time_ms()
             runtime = runtime + (q_end - q_start)
@@ -309,7 +344,7 @@ class RunTest:
         np.save(name + "_distances", distances)
 
     # Run ANN on the query vectors in the truth set
-    def run_search_for_truth_set(self, use_chclient = None):
+    def run_search_for_truth_set(self, use_chclient=None):
         runtime = 0
         result_set = {}
         if use_chclient is not None:
@@ -321,7 +356,7 @@ class RunTest:
         for vector_id, result in self._truth_set.items():
             subquery = f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = {vector_id})"
             q_start = current_time_ms()
-            ann_search_query =  f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {subquery} ) AS distance LIMIT {self._k} SETTINGS use_skip_indexes = 1, max_parallel_replicas = 1" 
+            ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {subquery} ) AS distance LIMIT {self._k} SETTINGS use_skip_indexes = 1, max_parallel_replicas = 1"
             result = chclient.query(ann_search_query)
             q_end = current_time_ms()
             runtime = runtime + (q_end - q_start)
@@ -354,7 +389,7 @@ class RunTest:
 
             # Recall = How many of the neighbours in the truth set(KNN) do we have in the result set(ANN)?
             intersection = list(set(result[0]) & set(search_result[0]))
-            recall = recall + (len(intersection)/self._k)
+            recall = recall + (len(intersection) / self._k)
 
         # Average
         recall = recall / self._query_count
@@ -367,14 +402,15 @@ class RunTest:
         logger(f"Running concurrency test with {nthreads} threads...")
         threads = []
         for i in range(nthreads):
-            t = threading.Thread(target = self.run_search_and_calculate_recall_mt, args = (i,))
+            t = threading.Thread(
+                target=self.run_search_and_calculate_recall_mt, args=(i,)
+            )
             threads.append(t)
 
         for t in threads:
             t.start()
         for t in threads:
             t.join()
-
 
 
 def run_single_test(test_name, dataset, test_params):
@@ -397,7 +433,9 @@ def run_single_test(test_name, dataset, test_params):
             test_runner.calculate_recall(result_set)
 
         # Run ANN search using pre-generated truth sets and calculate recall
-        if test_runner._test_params[TRUTH_SET_FILES] and len(test_runner._test_params[TRUTH_SET_FILES]):
+        if test_runner._test_params[TRUTH_SET_FILES] and len(
+            test_runner._test_params[TRUTH_SET_FILES]
+        ):
             for tf in test_runner._test_params[TRUTH_SET_FILES]:
                 generated_truth_set = test_runner.load_truth_set(tf)
                 test_runner._truth_set = generated_truth_set
@@ -416,15 +454,21 @@ def run_single_test(test_name, dataset, test_params):
 
 # Array of (dataset, test_params)
 TESTS_TO_RUN = [
-        ("Test using the laion dataset", laion_5b_mini_for_quick_test, test_run_quick_test)
-        ]
+    ("Test using the laion dataset", laion_5b_mini_for_quick_test, test_run_quick_test)
+]
+
 
 def main():
     test_results = []
     for test in TESTS_TO_RUN:
-        test_results.append(Result.from_commands_run(name=test[0], command=lambda: run_single_test(test[0], test[1], test[2])))
+        test_results.append(
+            Result.from_commands_run(
+                name=test[0], command=lambda: run_single_test(test[0], test[1], test[2])
+            )
+        )
 
     Result.create_from(results=test_results, files=[], info="my info").complete_job()
+
 
 if __name__ == "__main__":
     main()
