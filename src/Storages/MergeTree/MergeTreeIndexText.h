@@ -1,7 +1,9 @@
 #pragma once
+#include <vector>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Columns/IColumn.h>
 #include <Formats/MarkInCompressedFile.h>
+#include "Common/PODArray_fwd.h"
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/GinQueryString.h>
 #include <Interpreters/BloomFilter.h>
@@ -23,27 +25,126 @@ struct MergeTreeIndexTextParams
 
 using PostingList = roaring::Roaring;
 
-struct DictionaryBlock
+struct CompressedPostings
 {
-    DictionaryBlock() = default;
-    DictionaryBlock(ColumnPtr tokens_, ColumnPtr marks_);
+public:
+    static constexpr size_t max_raw_deltas = 4;
+    static constexpr size_t num_cells_for_raw_deltas = max_raw_deltas * sizeof(UInt32) / sizeof(UInt64);
+    using RawDeltas = std::array<UInt32, max_raw_deltas>;
 
+    CompressedPostings(UInt8 delta_bits_, UInt32 cardinality_);
+    explicit CompressedPostings(const roaring::Roaring & postings);
+
+    UInt32 getDelta(size_t idx) const;
+    UInt32 getCardinality() const { return cardinality; }
+    bool empty() const { return cardinality == 0; }
+    UInt8 getDeltaBits() const { return delta_bits; }
+    bool hasRawDeltas() const { return cardinality <= max_raw_deltas; }
+
+    void serialize(WriteBuffer & ostr) const;
+    void deserialize(ReadBuffer & istr);
+
+    struct Iterator
+    {
+    public:
+        explicit Iterator(const CompressedPostings & postings_)
+            : postings(&postings_), row(postings->empty() ? 0 : postings->getDelta(0))
+        {
+        }
+
+        Iterator() : postings(nullptr), idx(0), row(0) {}
+
+        UInt32 getRow() const { return row; }
+        bool isValid() const { return idx < postings->getCardinality(); }
+
+        void next()
+        {
+            ++idx;
+            row += postings->getDelta(idx);
+        }
+
+    private:
+        const CompressedPostings * postings;
+        UInt32 idx = 0;
+        UInt32 row = 0;
+    };
+
+    Iterator getIterator() const { return Iterator(*this); }
+
+private:
+    UInt8 delta_bits;
+    UInt32 cardinality;
+    std::vector<UInt64> deltas_buffer;
+};
+
+struct TokenInfo
+{
+public:
+    struct FuturePostings
+    {
+        UInt32 cardinality = 0;
+        UInt8 delta_bits = 0;
+        MarkInCompressedFile mark;
+
+        UInt32 getCardinality() const { return cardinality; }
+    };
+
+    TokenInfo() : postings(FuturePostings{}) {}
+    explicit TokenInfo(CompressedPostings postings_) : postings(std::move(postings_)) {}
+    explicit TokenInfo(FuturePostings postings_) : postings(std::move(postings_)) {}
+
+    UInt32 getCardinality() const;
+    bool empty() const { return getCardinality() == 0; }
+
+    bool hasEmbeddedPostings() const { return std::holds_alternative<CompressedPostings>(postings); }
+    bool hasFuturePostings() const { return std::holds_alternative<FuturePostings>(postings); }
+
+    CompressedPostings & getEmbeddedPostings() { return std::get<CompressedPostings>(postings); }
+    FuturePostings & getFuturePostings() { return std::get<FuturePostings>(postings); }
+
+    const CompressedPostings & getEmbeddedPostings() const { return std::get<CompressedPostings>(postings); }
+    const FuturePostings & getFuturePostings() const { return std::get<FuturePostings>(postings); }
+
+private:
+    std::variant<CompressedPostings, FuturePostings> postings;
+};
+
+struct DictionaryBlockBase
+{
     ColumnPtr tokens;
-    ColumnPtr marks;
+
+    DictionaryBlockBase() = default;
+    explicit DictionaryBlockBase(ColumnPtr tokens_) : tokens(std::move(tokens_)) {}
 
     bool empty() const;
     size_t size() const;
-    UInt64 getPackedMark(size_t idx) const;
 
     size_t lowerBound(const StringRef & token) const;
     size_t upperBound(const StringRef & token) const;
     std::optional<size_t> binarySearch(const StringRef & token) const;
 };
 
+struct DictionarySparseIndex : public DictionaryBlockBase
+{
+    DictionarySparseIndex() = default;
+    DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr packed_marks_);
+    UInt64 getMark(size_t idx) const;
+
+    ColumnPtr packed_marks;
+};
+
+struct DictionaryBlock : public DictionaryBlockBase
+{
+    DictionaryBlock() = default;
+    DictionaryBlock(ColumnPtr tokens_, std::vector<TokenInfo> token_infos_);
+
+    std::vector<TokenInfo> token_infos;
+};
+
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
-    using TokenToMarkMap = absl::flat_hash_map<StringRef, MarkInCompressedFile>;
+    using TokensMap = absl::flat_hash_map<StringRef, TokenInfo>;
 
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
     ~MergeTreeIndexGranuleText() override = default;
@@ -55,19 +156,21 @@ public:
     bool empty() const override { return total_rows == 0; }
     size_t memoryUsageBytes() const override { return 0; }
     bool hasAllTokensFromQuery(const GinQueryString & query) const;
-    const TokenToMarkMap & getRemainingTokens() const { return remaining_tokens; }
+    const TokensMap & getRemainingTokens() const { return remaining_tokens; }
     void resetAfterAnalysis();
 
 private:
     void deserializeBloomFilter(ReadBuffer & istr);
+    void deserializeSparseIndex(ReadBuffer & istr);
+
     void analyzeBloomFilter(const IMergeTreeIndexCondition & condition);
     void analyzeDictionary(IndexReaderStream & stream, IndexDeserializationState & state);
 
     MergeTreeIndexTextParams params;
     size_t total_rows = 0;
     BloomFilter bloom_filter;
-    DictionaryBlock sparse_index;
-    TokenToMarkMap remaining_tokens;
+    DictionarySparseIndex sparse_index;
+    TokensMap remaining_tokens;
 };
 
 struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule

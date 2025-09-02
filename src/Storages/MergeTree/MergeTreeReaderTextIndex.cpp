@@ -212,27 +212,25 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
     const auto & granule_text = assert_cast<const MergeTreeIndexGranuleText &>(*granule.granule);
     const auto & remaining_tokens = granule_text.getRemainingTokens();
 
-    for (const auto & [token, mark] : remaining_tokens)
+    for (const auto & [token, postings] : remaining_tokens)
     {
+        if (postings.hasEmbeddedPostings())
+        {
+            granule.postings[token] = postings.getEmbeddedPostings().getIterator();
+            continue;
+        }
+
+        const auto & future_postings = postings.getFuturePostings();
+        const auto & mark = future_postings.mark;
+
         auto * postings_stream = index_reader->getStreams().at(IndexSubstream::Type::TextIndexPostings);
         auto * data_buffer = postings_stream->getDataBuffer();
         auto * compressed_buffer = postings_stream->getCompressedDataBuffer();
 
         compressed_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
-
-        UInt32 total_tokens;
-        readPODBinary(total_tokens, *data_buffer);
-
-        auto postings_column = ColumnUInt32::create();
-        auto & postings_data = postings_column->getData();
-        postings_data.resize(total_tokens);
-
-        size_t size = data_buffer->readBig(reinterpret_cast<char*>(postings_data.data()), sizeof(UInt32) * total_tokens);
-
-        if (size != total_tokens * sizeof(UInt32))
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read postings lists for token: {}", token.toString());
-
-        granule.postings[token] = std::move(postings_column);
+        auto & compressed_postings = granule.postings_holders.emplace_back(future_postings.delta_bits, future_postings.cardinality);
+        compressed_postings.deserialize(*data_buffer);
+        granule.postings[token] = compressed_postings.getIterator();
     }
 
     granule.need_read_postings = false;
@@ -240,22 +238,22 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
 
 void applyPostingsAny(
     IColumn & column,
-    const PostingsMap & postings_map,
+    PostingsMap & postings_map,
     size_t column_offset,
     size_t granule_offset,
     size_t num_rows)
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
 
-    for (const auto & [_, postings_column] : postings_map)
+    for (auto & [_, postings_it] : postings_map)
     {
-        const auto & postings_data = assert_cast<const ColumnUInt32 &>(*postings_column).getData();
-        const auto * begin = std::lower_bound(postings_data.begin(), postings_data.end(), granule_offset);
-
-        for (const auto * it = begin; it != postings_data.end(); ++it)
+        for (; postings_it.isValid(); postings_it.next())
         {
-            size_t relative_row_number = *it - granule_offset;
+            size_t row = postings_it.getRow();
+            if (row < granule_offset)
+                continue;
 
+            size_t relative_row_number = row - granule_offset;
             if (relative_row_number >= num_rows)
                 break;
 
@@ -266,7 +264,7 @@ void applyPostingsAny(
 
 void applyPostingsAll(
     IColumn & column,
-    const PostingsMap & postings_map,
+    PostingsMap & postings_map,
     size_t column_offset,
     size_t granule_offset,
     size_t num_rows)
@@ -277,15 +275,15 @@ void applyPostingsAll(
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     PaddedPODArray<UInt16> counters(num_rows, 0);
 
-    for (const auto & [_, postings_column] : postings_map)
+    for (auto & [_, postings_it] : postings_map)
     {
-        const auto & postings_data = assert_cast<const ColumnUInt32 &>(*postings_column).getData();
-        const auto * begin = std::lower_bound(postings_data.begin(), postings_data.end(), granule_offset);
-
-        for (const auto * it = begin; it != postings_data.end(); ++it)
+        for (; postings_it.isValid(); postings_it.next())
         {
-            size_t relative_row_number = *it - granule_offset;
+            size_t row = postings_it.getRow();
+            if (row < granule_offset)
+                continue;
 
+            size_t relative_row_number = row - granule_offset;
             if (relative_row_number >= num_rows)
                 break;
 
@@ -298,7 +296,7 @@ void applyPostingsAll(
         column_data[column_offset + i] = static_cast<UInt8>(counters[i] == total_tokens);
 }
 
-void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const Granule & granule, TextSearchMode search_mode, size_t granule_offset, size_t num_rows)
+void MergeTreeReaderTextIndex::fillColumn(IColumn & column, Granule & granule, TextSearchMode search_mode, size_t granule_offset, size_t num_rows)
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     size_t old_size = column_data.size();

@@ -4,11 +4,12 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 
 namespace DB
 {
 
-using PostingsMap = absl::flat_hash_map<StringRef, ColumnPtr>;
+using PostingsMap = absl::flat_hash_map<StringRef, CompressedPostings::Iterator>;
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
 
 class MergeTreeReaderTextIndex : public IMergeTreeReader
@@ -42,13 +43,14 @@ private:
     {
         MergeTreeIndexGranulePtr granule;
         PostingsMap postings;
+        std::vector<CompressedPostings> postings_holders;
         bool may_be_true = true;
         bool need_read_postings = true;
     };
 
     void readPostingsIfNeeded(Granule & granule);
     void fillSkippedColumn(IColumn & column, size_t num_rows);
-    void fillColumn(IColumn & column, const Granule & granule, TextSearchMode search_mode, size_t granule_offset, size_t num_rows);
+    void fillColumn(IColumn & column, Granule & granule, TextSearchMode search_mode, size_t granule_offset, size_t num_rows);
 
     /// Delegates to the main reader to determine if reading incomplete index granules is supported.
     const IMergeTreeReader * main_reader;
