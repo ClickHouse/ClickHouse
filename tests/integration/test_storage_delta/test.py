@@ -3525,3 +3525,39 @@ deltaLake(
         "2025-06-04\t('100022','2025-06-04 18:40:56.000000','2025-06-09 21:19:00.364000')\t100022"
         == node.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
     )
+
+
+def test_write_column_order(started_cluster):
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_write_column_order")
+    result_file = f"{table_name}_data"
+    schema = pa.schema([("c1", pa.int32()), ("c0", pa.string())])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (c0 String, c1 Int32) ENGINE = DeltaLakeLocal('/{result_file}') SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+    num_rows = 10
+    instance.query(
+        f"INSERT INTO {table_name} (c1, c0) SELECT number as c1, toString(number % 2) as c0 FROM numbers(10)"
+    )
+
+    assert num_rows == int(instance.query(f"SELECT count() FROM {table_name}"))
+    assert (
+        "0\t0\n1\t1\n0\t2\n1\t3\n0\t4\n1\t5\n0\t6\n1\t7\n0\t8\n1\t9"
+        == instance.query(f"SELECT c0, c1 FROM {table_name}").strip()
+    )
+
+    instance.query(
+        f"INSERT INTO {table_name} (c1, c0) SELECT c1, c0 FROM generateRandom('c1 Int32, c0 String', 16920040705558589162, 7706, 3) LIMIT {num_rows}"
+    )
+
+    assert num_rows * 2 == int(instance.query(f"SELECT count() FROM {table_name}"))
