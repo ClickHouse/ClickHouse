@@ -48,6 +48,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
             {"delta_lake_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New setting."},
             {"delta_lake_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
+            {"promql_evaluation_time", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."},
+            {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
