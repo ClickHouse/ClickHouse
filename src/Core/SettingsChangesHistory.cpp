@@ -866,6 +866,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, false, "New setting"},
             {"shared_merge_tree_empty_partition_lifetime", 86400, 86400, "New setting"},
             {"shared_merge_tree_outdated_parts_group_size", 2, 2, "New setting"},
+            {"shared_merge_tree_use_outdated_parts_compact_format", false, true, "Enable outdated parts v3 by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
