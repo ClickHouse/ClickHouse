@@ -13,6 +13,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <boost/algorithm/string.hpp>
 
 namespace CurrentMetrics
 {
@@ -215,6 +216,7 @@ void IDisk::startup(bool skip_access_check)
         else
             checkAccess();
     }
+    checkCaseSensitivity();
     startupImpl();
 }
 
@@ -284,6 +286,25 @@ catch (Exception & e)
 {
     e.addMessage(fmt::format("While checking access for disk {}", name));
     throw;
+}
+
+void IDisk::checkCaseSensitivity()
+{
+    DB::UUID server_uuid = DB::ServerUUID::get();
+    if (server_uuid == DB::UUIDHelpers::Nil)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
+    const String path = fmt::format("clickhouse_case_sensitivity_check_{}", toString(server_uuid));
+    try
+    {
+        createFile(path);
+        is_case_insensitive = existsFile(boost::to_upper_copy(path));
+        removeFile(path);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("While checking case sensitivity for disk {}", name));
+        throw;
+    }
 }
 
 void IDisk::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr /*context*/, const String & config_prefix, const DisksMap & /*map*/)

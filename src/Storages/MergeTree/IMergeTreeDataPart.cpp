@@ -262,7 +262,7 @@ void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, St
 String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_)
 {
     String stream_name = escapeForFileName(column_name);
-    if (storage_settings_ && (*storage_settings_)[MergeTreeSetting::replace_long_file_name_to_hash] && stream_name.size() > (*storage_settings_)[MergeTreeSetting::max_file_name_length])
+    if (getDataPartStorage().isCaseInsensitive() || (storage_settings_ && (*storage_settings_)[MergeTreeSetting::replace_long_file_name_to_hash] && stream_name.size() > (*storage_settings_)[MergeTreeSetting::max_file_name_length]))
         stream_name = sipHash128String(stream_name);
     return stream_name;
 }
