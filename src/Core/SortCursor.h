@@ -27,6 +27,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/logger_useful.h>
 
 #include "config.h"
 
@@ -500,6 +501,16 @@ public:
             updateBatchSize();
     }
 
+    size_t getUpdateHeapCompareCount() const
+    {
+        return update_heap_compare_count;
+    }
+
+    size_t getUpdateBatchSizeCompareCount() const
+    {
+        return update_batch_size_compare_count;
+    }
+
 private:
     using Container = std::vector<Cursor>;
     Container queue;
@@ -507,6 +518,8 @@ private:
     /// Cache comparison between first and second child if the order in queue has not been changed.
     size_t next_child_idx = 0;
     size_t batch_size = 0;
+    size_t update_heap_compare_count = 0;
+    size_t update_batch_size_compare_count = 0;
 
     size_t ALWAYS_INLINE nextChildIndex()
     {
@@ -533,10 +546,12 @@ private:
 
         auto begin = queue.begin();
 
+        update_heap_compare_count += (size > 2);
         size_t child_idx = nextChildIndex();
         auto child_it = begin + child_idx;
 
         /// Check if we are in order.
+        update_heap_compare_count += check_in_order;
         if (check_in_order && (*child_it).greater(*begin))
         {
             if constexpr (strategy == SortingQueueStrategy::Batch)
@@ -562,12 +577,14 @@ private:
 
             child_it = begin + child_idx;
 
+            update_heap_compare_count += ((child_idx + 1) < size);
             if ((child_idx + 1) < size && (*child_it).greater(*(child_it + 1)))
             {
                 /// Right child exists and is greater than left child.
                 ++child_it;
                 ++child_idx;
             }
+            update_heap_compare_count += 1;
 
             /// Check if we are in order.
         } while (!((*child_it).greater(top)));
@@ -593,9 +610,11 @@ private:
         }
 
         batch_size = 1;
+        update_batch_size_compare_count += (queue.size() > 2);
         size_t child_idx = nextChildIndex();
         auto & next_child_cursor = *(queue.begin() + child_idx);
 
+        update_batch_size_compare_count += (min_cursor_pos + batch_size < min_cursor_size);
         if (min_cursor_pos + batch_size < min_cursor_size && next_child_cursor.greaterWithOffset(begin_cursor, 0, batch_size))
             ++batch_size;
         else
@@ -610,6 +629,7 @@ private:
         {
             ++batch_size;
             ++i;
+            update_batch_size_compare_count += 1;
         }
 
         if (i < max_linear_detection)
@@ -620,6 +640,7 @@ private:
         size_t end_offset = min_cursor_size - min_cursor_pos;
         while (start_offset < end_offset)
         {
+            update_batch_size_compare_count += 1;
             size_t mid_offset = start_offset + (end_offset - start_offset) / 2;
             if (next_child_cursor.greaterWithOffset(begin_cursor, 0, mid_offset))
                 start_offset = mid_offset + 1;
