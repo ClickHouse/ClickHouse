@@ -256,7 +256,8 @@ public:
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           client_file_path = std::filesystem::temp_directory_path() / "db",
                           server_file_path = std::filesystem::temp_directory_path() / "db",
-                          fuzz_client_out = client_file_path / "fuzz.data", fuzz_server_out = server_file_path / "fuzz.data";
+                          fuzz_client_out = client_file_path / "fuzz.data", fuzz_server_out = server_file_path / "fuzz.data",
+                          lakes_path = std::filesystem::temp_directory_path() / "lakes";
 
     FuzzConfig()
         : cb(nullptr)

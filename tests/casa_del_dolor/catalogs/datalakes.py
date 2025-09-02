@@ -47,8 +47,8 @@ from integration.helpers.config_cluster import minio_access_key, minio_secret_ke
 """
 
 
-def get_local_base_path(cluster, catalog_name: str) -> str:
-    return f"{Path(cluster.instances_dir) / "node0" / "database" / "user_files" / "lakehouse" / f"{catalog_name}"}"
+def get_local_base_path(catalog_name: str) -> str:
+    return f"/lakehouses/{catalog_name}"
 
 
 Parameter = typing.Callable[[], int | float]
@@ -363,18 +363,18 @@ def get_spark(
             f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}",
         )
     elif storage == TableStorage.Local:
-        os.makedirs(get_local_base_path(cluster, catalog_name), exist_ok=True)
+        os.makedirs(get_local_base_path(catalog_name), exist_ok=True)
 
         builder.config(
             "spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem"
         )
         builder.config(
             "spark.sql.warehouse.dir",
-            f"file://{get_local_base_path(cluster, catalog_name)}",
+            f"file://{get_local_base_path(catalog_name)}",
         )
         builder.config(
             f"spark.sql.catalog.{catalog_name}.warehouse",
-            f"file://{get_local_base_path(cluster, catalog_name)}",
+            f"file://{get_local_base_path(catalog_name)}",
         )
     else:
         raise Exception("Unknown storage")
@@ -629,9 +629,7 @@ logger.jetty.level = warn
                     )
                     next_warehouse = f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}"
                 elif next_storage == TableStorage.Local:
-                    next_warehouse = (
-                        f"file://{get_local_base_path(cluster, catalog_name)}"
-                    )
+                    next_warehouse = f"file://{get_local_base_path(catalog_name)}"
                 next_catalog_impl = RestCatalog(
                     catalog_name,
                     uri="http://localhost:8182",
@@ -729,7 +727,7 @@ logger.jetty.level = warn
         elif next_storage == TableStorage.Azure:
             next_location = f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}"
         elif next_storage == TableStorage.Local:
-            next_location = f"file://{get_local_base_path(cluster, catalog_name)}"
+            next_location = f"file://{get_local_base_path(catalog_name)}"
         next_location += f"/test/{data["table_name"]}"
 
         next_sql, next_table = next_table_generator.generate_create_table_ddl(

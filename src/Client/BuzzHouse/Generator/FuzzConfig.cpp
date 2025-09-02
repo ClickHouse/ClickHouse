@@ -320,6 +320,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
              server_file_path = std::filesystem::path(String(value.getString()));
              fuzz_server_out = client_file_path / "fuzz.data";
          }},
+        {"lakes_path", [&](const JSONObjectType & value) { lakes_path = std::filesystem::path(String(value.getString())); }},
         {"log_path", [&](const JSONObjectType & value) { log_path = std::filesystem::path(String(value.getString())); }},
         {"read_log", [&](const JSONObjectType & value) { read_log = value.getBool(); }},
         {"seed", [&](const JSONObjectType & value) { seed = value.getUInt64(); }},
