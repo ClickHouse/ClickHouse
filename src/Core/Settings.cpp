@@ -6828,7 +6828,7 @@ File/S3 engines/table function will parse paths with '::' as `<archive> :: <file
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
 )", BETA) \
-    DECLARE(UInt64, max_iceberg_data_file_rows, 100000, R"(
+    DECLARE(UInt64, max_iceberg_data_file_rows, 1000, R"(
 Max rows of iceberg parquet data file on insert operation.
 )", 0) \
     DECLARE(UInt64, max_iceberg_data_file_bytes, 1_GiB, R"(
