@@ -35,7 +35,6 @@ if (ARCH_NATIVE)
     # according to the current CPU's capabilities, detected using clang.
     if (ARCH_AMD64)
         GET_CPU_FEATURES (TEST_FEATURE_RESULT)
-        message(FATAL_ERROR "PMO: ${TEST_FEATURE_RESULT}")
 
         TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} ssse3 ENABLE_SSSE3)
         TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} sse4.1 ENABLE_SSE41)
