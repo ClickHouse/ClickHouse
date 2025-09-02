@@ -21,7 +21,6 @@
 ### <a id="258"></a> ClickHouse release 25.8, 2025-08-28
 
 #### Backward Incompatible Change
-* All the allocations done by external libraries are now visible to ClickHouse's memory tracker and accounted properly. This may result in "increased" reported memory usage for certain queries or failures with `MEMORY_LIMIT_EXCEEDED`. [#84082](https://github.com/ClickHouse/ClickHouse/pull/84082) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 * Infer `Array(Dynamic)` instead of unnamed `Tuple` for arrays of values with different types in JSON. To use the previous behaviour, disable setting `input_format_json_infer_array_of_dynamic_from_array_of_different_types`. [#80859](https://github.com/ClickHouse/ClickHouse/pull/80859) ([Pavel Kruglov](https://github.com/Avogar)).
 * Move S3 latency metrics to histograms for homogeneity and simplicity. [#82305](https://github.com/ClickHouse/ClickHouse/pull/82305) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
 * Require backticks around identifiers with dots in default expressions to prevent them from being parsed as compound identifiers. [#83162](https://github.com/ClickHouse/ClickHouse/pull/83162) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
@@ -203,6 +202,7 @@
 * Add a `parameter` column to `system.grants` to determine source type for `GRANT READ/WRITE` and the table engine for `GRANT TABLE ENGINE`. [#85643](https://github.com/ClickHouse/ClickHouse/pull/85643) ([MikhailBurdukov](https://github.com/MikhailBurdukov)).
 * Fix parsing of a trailing comma in columns of the CREATE DICTIONARY query after a column with parameters, for example, Decimal(8). Closes [#85586](https://github.com/ClickHouse/ClickHouse/issues/85586). [#85653](https://github.com/ClickHouse/ClickHouse/pull/85653) ([Nikolay Degterinsky](https://github.com/evillique)).
 * Support inner arrays for the function `nested`. [#85719](https://github.com/ClickHouse/ClickHouse/pull/85719) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* All the allocations done by external libraries are now visible to ClickHouse's memory tracker and accounted properly. This may result in "increased" reported memory usage for certain queries or failures with `MEMORY_LIMIT_EXCEEDED`. [#84082](https://github.com/ClickHouse/ClickHouse/pull/84082) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 
 #### Bug Fix (user-visible misbehavior in an official stable release)
 
