@@ -2143,6 +2143,7 @@ absl_cc_library(
     absl::span
     absl::strings
     absl::variant
+  PUBLIC
 )
 
 absl_cc_library(
