@@ -1,4 +1,7 @@
 <test>
+    <settings>
+        <max_threads>2</max_threads>
+    </settings>
     <create_query>CREATE TABLE str_sort (a String, b UInt64, c FixedString(5), d String, e UInt32, f UInt32) ENGINE = Memory</create_query>
     <fill_query>
         INSERT INTO str_sort
