@@ -5,6 +5,7 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
 
+
 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
     job.name
     for job in JobConfigs.functional_tests_jobs
@@ -104,6 +105,8 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
+        # TODO: test, remove
+        JobConfigs.vector_search_stress_job,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,

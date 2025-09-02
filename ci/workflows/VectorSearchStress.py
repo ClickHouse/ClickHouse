@@ -1,19 +1,13 @@
-from praktika import Job, Workflow
+from praktika import Workflow
 
-from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, RunnerLabels
-
-vector_search_stress_job = Job.Config(
-    name="Vector Search Stress",
-    runs_on=RunnerLabels.ARM_SMALL,
-    run_in_docker="clickhouse/fuzzer",
-    command="python3 ./ci/jobs/vector_search_stress_tests.py",
-)
+from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS
+from ci.defs.job_configs import JobConfigs
 
 workflow = Workflow.Config(
     name="VectorSearchStress",
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
-    jobs=[vector_search_stress_job],
+    jobs=[JobConfigs.vector_search_stress_job],
     artifacts=[],
     secrets=SECRETS,
     dockers=DOCKERS,

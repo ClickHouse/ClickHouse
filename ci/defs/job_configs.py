@@ -1054,3 +1054,9 @@ class JobConfigs:
         command="cd ./tests/ci && python3 libfuzzer_test_check.py 'libFuzzer tests'",
         requires=["Build (fuzzers)"],
     )
+    vector_search_stress_job = Job.Config(
+        name="Vector Search Stress",
+        runs_on=RunnerLabels.ARM_SMALL,
+        run_in_docker="clickhouse/fuzzer",
+        command="python3 ./ci/jobs/vector_search_stress_tests.py",
+    )
