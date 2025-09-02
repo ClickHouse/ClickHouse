@@ -664,6 +664,15 @@ def test_alters_from_different_replicas(started_cluster):
     main_node.query(
         "ALTER TABLE alters_from_different_replicas.concurrent_test UPDATE StartDate = addYears(StartDate, 1) WHERE 1"
     )
+
+    # We only get text output from alter if the query is replicated, and for that at least 2 shards need to be active
+    # We must wait until main_node knows about shard2 (from snapshotting_node and snapshot_recovering_node)
+    # This background update can be slowed down by multiple factors, but mainly keeper faults
+    main_node.wait_for_log_line(
+        "DatabaseReplicated \(alters_from_different_replicas\).*snapshotting_node.*snapshot_recovering_node.*",
+        look_behind_lines=1000,
+    )
+
     res = main_node.query(
         "ALTER TABLE alters_from_different_replicas.concurrent_test DELETE WHERE UserID % 2"
     )
