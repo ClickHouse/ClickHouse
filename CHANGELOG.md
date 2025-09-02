@@ -1,5 +1,5 @@
 ### Table of Contents
-**[ClickHouse release v25.8, 2025-08-28](#258)**<br/>
+**[ClickHouse release v25.8 LTS, 2025-08-28](#258)**<br/>
 **[ClickHouse release v25.7, 2025-07-24](#257)**<br/>
 **[ClickHouse release v25.6, 2025-06-26](#256)**<br/>
 **[ClickHouse release v25.5, 2025-05-22](#255)**<br/>
@@ -18,7 +18,7 @@
 
 # 2025 Changelog
 
-### <a id="258"></a> ClickHouse release 25.8, 2025-08-28
+### <a id="258"></a> ClickHouse release 25.8 LTS, 2025-08-28
 
 #### Backward Incompatible Change
 * Infer `Array(Dynamic)` instead of unnamed `Tuple` for arrays of values with different types in JSON. To use the previous behaviour, disable setting `input_format_json_infer_array_of_dynamic_from_array_of_different_types`. [#80859](https://github.com/ClickHouse/ClickHouse/pull/80859) ([Pavel Kruglov](https://github.com/Avogar)).
