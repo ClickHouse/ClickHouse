@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Columns/IColumn.h>
 #include <Formats/MarkInCompressedFile.h>
-#include "Common/PODArray_fwd.h"
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/GinQueryString.h>
 #include <Interpreters/BloomFilter.h>

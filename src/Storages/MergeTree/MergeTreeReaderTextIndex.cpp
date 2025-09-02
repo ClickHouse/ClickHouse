@@ -20,7 +20,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int CANNOT_READ_ALL_DATA;
 }
 
 MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
@@ -275,7 +274,7 @@ void applyPostingsAll(
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     PaddedPODArray<UInt16> counters(num_rows, 0);
 
-    for (auto & [token, postings_it] : postings_map)
+    for (auto & [_, postings_it] : postings_map)
     {
         for (; postings_it.isValid(); postings_it.next())
         {

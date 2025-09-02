@@ -13,7 +13,7 @@
 namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
-    extern const Event TextIndexSkipDictionaryBlocks;
+    extern const Event TextIndexReadDictionarySparseIndexBlocks;
 }
 
 namespace DB
@@ -235,6 +235,8 @@ static ColumnPtr deserializeTokens(ReadBuffer & istr)
 /// TODO: add cache for dictionary blocks
 static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
 {
+    ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
+
     auto tokens_column = deserializeTokens(istr);
     size_t num_tokens = tokens_column->size();
 
@@ -275,6 +277,8 @@ static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
 /// TODO: add cache for dictionary sparse index
 void MergeTreeIndexGranuleText::deserializeSparseIndex(ReadBuffer & istr)
 {
+    ProfileEvents::increment(ProfileEvents::TextIndexReadDictionarySparseIndexBlocks);
+
     sparse_index.tokens = deserializeTokens(istr);
     size_t num_tokens = sparse_index.tokens->size();
 
