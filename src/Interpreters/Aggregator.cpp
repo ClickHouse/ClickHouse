@@ -29,6 +29,7 @@
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <base/defines.h>
 #include <base/sort.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -192,22 +193,23 @@ UInt64 & getInlinedStateUInt64(DB::AggregateDataPtr & ptr)
     M(Int32) \
     M(Int64)
 
-UInt64 extractColumnValueAsUInt64(const DB::IColumn* column, size_t row_index)
+template <typename T>
+UInt64 ALWAYS_INLINE extractAndSumTyped(const DB::IColumn* column, size_t row_begin, size_t row_end)
 {
-    // Unwrap if it's a sparse column.
-    if (const auto * sparse_column = typeid_cast<const DB::ColumnSparse *>(column))
-    {
-        const auto * values_column = &sparse_column->getValuesColumn();
-        size_t value_index = sparse_column->getValueIndex(row_index);
-        return extractColumnValueAsUInt64(values_column, value_index);
-    }
+    using ColVecType = DB::ColumnVectorOrDecimal<T>;
+    const auto & typed_column = assert_cast<const ColVecType &>(*column);
+    DB::AggregateFunctionSumData<UInt64> sum_data;
+    sum_data.addMany(typed_column.getData().data(), row_begin, row_end);
+    return sum_data.get();
+}
 
+UInt64 ALWAYS_INLINE extractAndSum(const DB::IColumn* column, size_t row_begin, size_t row_end)
+{
     DB::WhichDataType which(column->getDataType());
     if (false) {} // NOLINT
 #define M(TYPE) \
     else if (which.idx == DB::TypeIndex::TYPE) { \
-        const auto & typed_column = assert_cast<const DB::ColumnVectorOrDecimal<TYPE> &>(*column); \
-        return static_cast<UInt64>(typed_column.getData()[row_index]); \
+        return extractAndSumTyped<TYPE>(column, row_begin, row_end); \
     }
 
     FOR_INLINABLE_UINT_TYPES(M)
@@ -215,7 +217,7 @@ UInt64 extractColumnValueAsUInt64(const DB::IColumn* column, size_t row_index)
 
     auto name = column->getName();
     auto type = column->getDataType();
-    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsupported column {} type {} for simple sum optimization", name, type);
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsupported column {} type {} for batch sum optimization", name, type);
 }
 
 }
@@ -1198,7 +1200,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     increment_for_inline_uint64([&](size_t i)
                     {
                         const IColumn * sum_column = aggregate_instructions[0].batch_arguments[0];
-                        return extractColumnValueAsUInt64(sum_column, i);
+                        return extractAndSum(sum_column, i, i + 1);
                     });
                     return;
                 }
@@ -1320,14 +1322,14 @@ void NO_INLINE Aggregator::executeImplBatch(
             execute_inline_u64_batch([&]()
             {
                 if (row_end > row_begin)
-                    return extractColumnValueAsUInt64(sum_column, 0) * (row_end - row_begin);
+                    return extractAndSum(sum_column, 0, 1) * (row_end - row_begin);
                 return UInt64(0);
             });
         }
         else
             execute_row_by_row_aggregation([&](size_t i)
             {
-                return extractColumnValueAsUInt64(sum_column, i);
+                return extractAndSum(sum_column, i, i + 1);
             });
         return;
     }
@@ -1524,9 +1526,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     if (is_simple_sum)
     {
         const IColumn * sum_column = aggregate_instructions[0].batch_arguments[0];
-        UInt64 total_sum = 0;
-        for (size_t i = row_begin; i < row_end; ++i)
-            total_sum += extractColumnValueAsUInt64(sum_column, i);
+        UInt64 total_sum = extractAndSum(sum_column, row_begin, row_end);
         getStateUInt64(res) += total_sum;
         return;
     }
@@ -1639,9 +1639,7 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
     if (is_simple_sum)
     {
         const IColumn * sum_column = aggregate_instructions[0].batch_arguments[0];
-        UInt64 total_sum = 0;
-        for (size_t i = row_begin; i < row_end; ++i)
-            total_sum += extractColumnValueAsUInt64(sum_column, i);
+        UInt64 total_sum = extractAndSum(sum_column, row_begin, row_end);
         getStateUInt64(res) += total_sum;
         return;
     }
