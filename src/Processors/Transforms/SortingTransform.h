@@ -17,6 +17,8 @@ class MergeSorter
 public:
     MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_);
 
+    ~MergeSorter();
+
     Chunk read();
 
 private:
