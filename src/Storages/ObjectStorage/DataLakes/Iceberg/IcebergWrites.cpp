@@ -1032,7 +1032,6 @@ size_t ChunkPartitioner::PartitionKeyHasher::operator()(const PartitionKey & key
 std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>>
 ChunkPartitioner::partitionChunk(const Chunk & chunk)
 {
-    std::cerr << "bytes of chunk " << chunk.bytes() << '\n';
     std::unordered_map<String, ColumnWithTypeAndName> name_to_column;
     for (size_t i = 0; i < sample_block->columns(); ++i)
     {
@@ -1233,6 +1232,7 @@ void MultipleFileWriter::consume(const Chunk & chunk)
             configuration->format, *buffer, *sample_block, context, format_settings);
     }
     output_format->write(sample_block->cloneWithColumns(chunk.getColumns()));
+    output_format->flush();
     *current_file_num_rows += chunk.getNumRows();
     *current_file_num_bytes += chunk.bytes();
     stats.update(chunk);
