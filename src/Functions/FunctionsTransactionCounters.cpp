@@ -75,7 +75,7 @@ Enable experimental transaction support by adding this setting to your configura
 
 ```xml
 <clickhouse>
-  <allow_experimental_transactions>1</allow_experimental_transactions>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
 </clickhouse>
 ```
 
