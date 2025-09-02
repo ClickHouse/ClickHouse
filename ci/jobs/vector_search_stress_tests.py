@@ -1,5 +1,8 @@
 # vector_search_stress_tests.py : Stress testing of ClickHouse Vector Search
+# Documentation : https://clickhouse.com/docs/engines/table-engines/mergetree-family/annindexes
+
 import sys
+import os
 from datetime import datetime
 import clickhouse_connect
 import random
@@ -12,14 +15,14 @@ S3_URLS = "s3urls"
 SCHEMA = "schema"
 ID_COLUMN = "id_column"
 VECTOR_COLUMN = "vector_column"
-DISTANCE = "distance_metric"
+DISTANCE_METRIC = "distance_metric"
 DIMENSION = "dimension"
 SOURCE_SELECT_LIST = "source_select_list"
 FETCH_COLUMNS_LIST = "fetch_columns_list"
 MERGE_TREE_SETTINGS = "merge_tree_settings"
 OTHER_SETTINGS = "other_settings"
 
-LIMIT_ROWS = "limit"
+LIMIT_N = "limit"
 TRUTH_SET_FILES = "truth_set_files"
 QUANTIZATION = "quantization"
 HNSW_M = "hnsw_M"
@@ -30,7 +33,7 @@ GENERATE_TRUTH_SET = "generate_truth_set"
 TRUTH_SET_COUNT = "truth_set_count"
 RECALL_K = "recall_k"
 NEW_TRUTH_SET_FILE = "new_truth_set_file"
-RUN_CONCURRENT_TEST_THREADS = "concurrent_testing_threads"
+CONCURRENCY_TEST = "concurrency_test"
 
 hackernews_dataset = {
     TABLE: "hackernews_bq",
@@ -53,7 +56,7 @@ hackernews_dataset = {
      """,
     ID_COLUMN: "doc_id",
     VECTOR_COLUMN: "vector",
-    DISTANCE: "cosineDistance",
+    DISTANCE_METRIC: "cosineDistance",
     DIMENSION: 384,
     }
 
@@ -65,7 +68,7 @@ laion5b_100m_dataset = {
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
-    DISTANCE: "cosineDistance",
+    DISTANCE_METRIC: "cosineDistance",
     DIMENSION: 768,
     FETCH_COLUMNS_LIST: "url, width, height", # fetch additional columns in ANN
     }
@@ -81,15 +84,15 @@ laion_5b_mini_for_quick_test = {
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
     SOURCE_SELECT_LIST: "id, vector", # Columns to select from the source Parquet file
-    DISTANCE: "cosineDistance",
+    DISTANCE_METRIC: "cosineDistance",
     DIMENSION: 768,
     }
 
 test_run_params_1 = {
     # Pass a filename to reuse a pre-generated truth set, else test will generate truth set (default)
     # Running 10000 brute force KNN queries over a 100 million dataset could take time.
-    LIMIT_ROWS: None,
-    TRUTH_SET_FILES: ["laion_truth_set_1", "laion_truth_set_2", "laion_truth_set_2"]
+    LIMIT_N: None,
+    TRUTH_SET_FILES: ["laion_truth_set_1", "laion_truth_set_2", "laion_truth_set_3"],
     QUANTIZATION: "bf16", # 'b1' for binary quantization
     HNSW_M: 64,
     HNSW_EF_C: 512,
@@ -98,11 +101,11 @@ test_run_params_1 = {
     GENERATE_TRUTH_SET: False,
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
-    RUN_CONCURRENT_TEST_THREADS: 16
+    CONCURRENCY_TEST: True,
     }
 
 test_run_quick_test = {
-    LIMIT_ROWS: 100000, # Adds a LIMIT clause to load exact number of rows
+    LIMIT_N: 100000, # Adds a LIMIT clause to load exact number of rows
     TRUTH_SET_FILES: None,
     QUANTIZATION: "bf16",
     HNSW_M: 16,
@@ -115,7 +118,7 @@ test_run_quick_test = {
     NEW_TRUTH_SET_FILE: "laion_100k_100",
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
-    RUN_CONCURRENT_TEST_THREADS: 16
+    CONCURRENCY_TEST: True,
     }
 
 def get_new_connection():
@@ -142,7 +145,7 @@ class RunTest:
         self._table = dataset[TABLE]
         self._id_column = dataset[ID_COLUMN]
         self._vector_column = dataset[VECTOR_COLUMN]
-        self._distance_metric = dataset[DISTANCE]
+        self._distance_metric = dataset[DISTANCE_METRIC]
         self._dimension = dataset[DIMENSION]
 
         self._query_count = int(test_params[TRUTH_SET_COUNT])
@@ -167,8 +170,8 @@ class RunTest:
 
             insert = f"INSERT INTO {self._table} SELECT {select_list} FROM s3('{url}')"
 
-            if self._test_params[LIMIT_ROWS] is not None:
-                insert = insert + f" ORDER BY {self._id_column} LIMIT {self._test_params[LIMIT_ROWS]}"
+            if self._test_params[LIMIT_N] is not None:
+                insert = insert + f" ORDER BY {self._id_column} LIMIT {self._test_params[LIMIT_N]}"
             self._chclient.query(insert)
 
             result = self._chclient.query(f"SELECT count() FROM {self._table}")
@@ -359,7 +362,8 @@ class RunTest:
         return recall
 
     # Run ANN search from multiple threads - test concurreny of CH + usearch
-    def concurrency_test(self, nthreads):
+    def concurrency_test(self):
+        nthreads = int(os.cpu_count() * 0.80)
         logger(f"Running concurrency test with {nthreads} threads...")
         threads = []
         for i in range(nthreads):
@@ -375,7 +379,7 @@ class RunTest:
 
 def run_single_test(test_name, dataset, test_params):
     chclient = get_new_connection()
-    test_runner = RunTest(chclient, laion_5b_mini_for_quick_test, test_run_quick_test)
+    test_runner = RunTest(chclient, dataset, test_params)
 
     test_runner.load_data()
     test_runner.optimize_table()
@@ -400,8 +404,8 @@ def run_single_test(test_name, dataset, test_params):
             test_runner.calculate_recall(result_set)
 
     # Run concurrency test on the current truth set
-    if test_runner._test_params[RUN_CONCURRENT_TEST_THREADS]:
-        test_runner.concurrency_test(test_runner._test_params[RUN_CONCURRENT_TEST_THREADS])
+    if test_runner._test_params[CONCURRENCY_TEST]:
+        test_runner.concurrency_test()
 
 # Array of (dataset, test_params)
 TESTS_TO_RUN = [
