@@ -17,6 +17,7 @@
 #include <Common/SharedMutex.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+#include <Storages/ObjectStorage/ObjectInfo.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
@@ -37,12 +38,12 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 };
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_)
-    : RelativePathWithMetadata(data_manifest_file_entry_.file_path)
+    : ObjectInfoOneFile(data_manifest_file_entry_.file_path)
     , data_object_file_path_key(data_manifest_file_entry_.file_path_key)
     , underlying_format_read_schema_id(data_manifest_file_entry_.schema_id)
     , sequence_number(data_manifest_file_entry_.added_sequence_number)
 {
-    auto toupper = [](String & str)
+    auto toupper = [](String str)
     {
         std::transform(str.begin(), str.end(), str.begin(), ::toupper);
         return str;
@@ -56,18 +57,6 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_man
     }
 }
 
-std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransformer(
-    ObjectStoragePtr object_storage,
-    const SharedHeader & header,
-    const std::optional<FormatSettings> & format_settings,
-    ContextPtr context_)
-{
-    IcebergDataObjectInfoPtr self = shared_from_this();
-    if (!context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
-        return std::make_shared<IcebergStreamingPositionDeleteTransform>(header, self, object_storage, format_settings, context_);
-    else
-        return std::make_shared<IcebergBitmapPositionDeleteTransform>(header, self, object_storage, format_settings, context_);
-}
 }
 
 #endif

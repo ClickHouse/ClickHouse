@@ -123,4 +123,17 @@ extern const SettingsBool use_cache_for_count_from_files;
 extern const SettingsString filesystem_cache_name;
 extern const SettingsUInt64 filesystem_cache_boundary_alignment;
 }
+
+ObjectInfos convertRelativePathsToPlainObjectInfos(RelativePathsWithMetadata && relative_paths_with_metadata)
+{
+    ObjectInfos object_infos;
+    object_infos.reserve(relative_paths_with_metadata.size());
+
+    for (const auto & relative_path : relative_paths_with_metadata)
+    {
+        object_infos.emplace_back(std::make_shared<ObjectInfoPlain>(std::move(relative_path->relative_path)));
+    }
+
+    return object_infos;
+}
 }

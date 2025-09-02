@@ -21,6 +21,11 @@ struct ClusterFunctionReadTaskResponse
     /// Object metadata path, in case of data lake object.
     DataLakeObjectMetadata data_lake_metadata;
 
+    bool is_iceberg_object = false;
+    String data_object_file_path_key;
+    Int32 read_schema_id;
+    std::vector<ManifestFileEntry> position_deletes_objects_range;
+
     /// Convert received response into ObjectInfo.
     ObjectInfoPtr getObjectInfo() const;
 
