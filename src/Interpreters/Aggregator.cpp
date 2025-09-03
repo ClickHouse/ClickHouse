@@ -194,30 +194,54 @@ UInt64 & getInlinedStateUInt64(DB::AggregateDataPtr & ptr)
     M(Int64)
 
 template <typename T>
-UInt64 ALWAYS_INLINE extractAndSumTyped(const DB::IColumn* column, size_t row_begin, size_t row_end)
+UInt64 ALWAYS_INLINE extractAndSumTyped(const DB::IColumn* column, size_t row_begin, size_t row_end, bool has_sparse_column)
 {
     using ColVecType = DB::ColumnVectorOrDecimal<T>;
-    const auto & typed_column = assert_cast<const ColVecType &>(*column);
-    DB::AggregateFunctionSumData<UInt64> sum_data;
-    sum_data.addMany(typed_column.getData().data(), row_begin, row_end);
-    return sum_data.get();
+    if (has_sparse_column)
+    {
+        const auto & column_sparse = assert_cast<const DB::ColumnSparse &>(*column);
+        const auto * values = &column_sparse.getValuesColumn();
+        const auto & offsets = column_sparse.getOffsetsData();
+
+        size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
+        size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
+        const auto & typed_column = assert_cast<const ColVecType &>(*values);
+        const auto & data = typed_column.getData();
+        UInt64 result = 0;
+        for (size_t i = from; i < to; ++i)
+            result += static_cast<UInt64>(data[i+1]);
+        return result;
+    }
+    else
+    {
+        const auto & typed_column = assert_cast<const ColVecType &>(*column);
+        DB::AggregateFunctionSumData<UInt64> sum_data;
+        sum_data.addMany(typed_column.getData().data(), row_begin, row_end);
+        return sum_data.get();
+    }
 }
 
-UInt64 ALWAYS_INLINE extractAndSum(const DB::IColumn* column, size_t row_begin, size_t row_end)
+UInt64 ALWAYS_INLINE extractAndSum(DB::Aggregator::AggregateFunctionInstruction * inst, size_t row_begin, size_t row_end)
 {
-    DB::WhichDataType which(column->getDataType());
+    const DB::IColumn* column = inst->batch_arguments[0];
+    auto type = column->getDataType();
+    DB::WhichDataType which(type);
+
     if (false) {} // NOLINT
 #define M(TYPE) \
     else if (which.idx == DB::TypeIndex::TYPE) { \
-        return extractAndSumTyped<TYPE>(column, row_begin, row_end); \
+        return extractAndSumTyped<TYPE>(column, row_begin, row_end, inst->has_sparse_arguments); \
     }
 
     FOR_INLINABLE_UINT_TYPES(M)
 #undef M
 
-    auto name = column->getName();
-    auto type = column->getDataType();
-    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsupported column {} type {} for batch sum optimization", name, type);
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsupported column {} type {} for inline sum optimization", column->getName(), type);
+}
+
+UInt64 ALWAYS_INLINE extractAndSumByRow(DB::Aggregator::AggregateFunctionInstruction * inst, size_t row)
+{
+    return extractAndSum(inst, row, row + 1);
 }
 
 }
@@ -1199,8 +1223,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 {
                     increment_for_inline_uint64([&](size_t i)
                     {
-                        const IColumn * sum_column = aggregate_instructions[0].batch_arguments[0];
-                        return extractAndSum(sum_column, i, i + 1);
+                        return extractAndSumByRow(&aggregate_instructions[0], i);
                     });
                     return;
                 }
@@ -1316,20 +1339,19 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     if (is_simple_sum)
     {
-        const IColumn * sum_column = aggregate_instructions[0].batch_arguments[0];
         if (all_keys_are_const)
         {
             execute_inline_u64_batch([&]()
             {
                 if (row_end > row_begin)
-                    return extractAndSum(sum_column, 0, 1) * (row_end - row_begin);
+                    return extractAndSumByRow(&aggregate_instructions[0], 0) * (row_end - row_begin);
                 return UInt64(0);
             });
         }
         else
             execute_row_by_row_aggregation([&](size_t i)
             {
-                return extractAndSum(sum_column, i, i + 1);
+                return extractAndSumByRow(&aggregate_instructions[0], i);
             });
         return;
     }
@@ -1525,8 +1547,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 
     if (is_simple_sum)
     {
-        const IColumn * sum_column = aggregate_instructions[0].batch_arguments[0];
-        UInt64 total_sum = extractAndSum(sum_column, row_begin, row_end);
+        UInt64 total_sum = extractAndSum(&aggregate_instructions[0], row_begin, row_end);
         getStateUInt64(res) += total_sum;
         return;
     }
@@ -1638,8 +1659,7 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
 
     if (is_simple_sum)
     {
-        const IColumn * sum_column = aggregate_instructions[0].batch_arguments[0];
-        UInt64 total_sum = extractAndSum(sum_column, row_begin, row_end);
+        UInt64 total_sum = extractAndSum(&aggregate_instructions[0], row_begin, row_end);
         getStateUInt64(res) += total_sum;
         return;
     }
