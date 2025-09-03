@@ -2389,10 +2389,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         if (create.replace_view)
             required_access.emplace_back(AccessType::DROP_VIEW | AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
         else if (create.temporary)
-            if (create.storage && create.storage->engine && create.storage->engine->name != "Memory")
-                required_access.emplace_back(AccessType::CREATE_ARBITRARY_TEMPORARY_VIEW);
-            else
-                required_access.emplace_back(AccessType::CREATE_TEMPORARY_VIEW);
+            required_access.emplace_back(AccessType::CREATE_TEMPORARY_VIEW);
         else
             required_access.emplace_back(AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
     }

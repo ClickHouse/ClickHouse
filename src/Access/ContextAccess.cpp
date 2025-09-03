@@ -128,11 +128,6 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         if ((level == 0) && (max_flags_with_children & create_view))
             res |= create_temporary_view;
 
-        /// CREATE VIEW (on any database/table) => CREATE_ARBITRARY_TEMPORARY_VIEW (global)
-        static const AccessFlags create_arbitrary_temporary_view = AccessType::CREATE_ARBITRARY_TEMPORARY_VIEW;
-        if ((level == 0) && (max_flags_with_children & create_view))
-            res |= create_arbitrary_temporary_view;
-
         /// ALTER_TTL => ALTER_MATERIALIZE_TTL
         static const AccessFlags alter_ttl = AccessType::ALTER_TTL;
         static const AccessFlags alter_materialize_ttl = AccessType::ALTER_MATERIALIZE_TTL;

@@ -5,9 +5,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -nm -q "
-DROP TEMPORARY VIEW IF EXISTS tview_basic;
-DROP TEMPORARY TABLE IF EXISTS t_src;
-
 CREATE TEMPORARY TABLE t_src (id UInt32, val String) ENGINE = Memory;
 INSERT INTO t_src VALUES (1,'a'), (2,'b'), (3,'c');
 

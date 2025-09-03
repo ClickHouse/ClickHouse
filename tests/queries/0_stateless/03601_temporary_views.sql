@@ -1,6 +1,3 @@
-DROP TEMPORARY VIEW IF EXISTS tview_basic;
-DROP TEMPORARY TABLE IF EXISTS t_src;
-
 CREATE TEMPORARY TABLE t_src (id UInt32, val String) ENGINE = Memory;
 INSERT INTO t_src VALUES (1,'a'), (2,'b'), (3,'c');
 
