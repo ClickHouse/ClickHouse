@@ -19,6 +19,10 @@ SELECT timeSeriesResampleToGridWithStaleness(10, 120, 10, 10)(timestamps, values
 SELECT timeSeriesResampleToGridWithStalenessIf(10, 120, 10, 10)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
 SELECT timeSeriesResampleToGridWithStalenessIf(10, 120, 10, 10)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
 
+SELECT timeSeriesResampleToGridWithStaleness(10, 120, 10, 60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
+SELECT timeSeriesResampleToGridWithStalenessIf(10, 120, 10, 60)(timestamps, values, toNullable(true)) FROM ts_data WHERE length(timestamps) = length(values);
+SELECT timeSeriesResampleToGridWithStalenessIf(10, 120, 10, 60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
+
 SELECT timeSeriesRateToGrid(10, 120, 10, 60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
 SELECT timeSeriesRateToGridIf(10, 120, 10, 60)(timestamps, values, toNullable(true)) FROM ts_data WHERE length(timestamps) = length(values);
 SELECT timeSeriesRateToGridIf(10, 120, 10, 60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
