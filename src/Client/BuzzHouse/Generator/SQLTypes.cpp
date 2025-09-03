@@ -56,7 +56,7 @@ static inline String nextFloatingPoint(RandomGenerator & rg, const bool extremes
     return ret;
 }
 
-String BoolType::typeName(const bool) const
+String BoolType::typeName(const bool, const bool) const
 {
     return "Bool";
 }
@@ -86,7 +86,7 @@ String BoolType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
     return rg.nextBool() ? "TRUE" : "FALSE";
 }
 
-String IntType::typeName(const bool) const
+String IntType::typeName(const bool, const bool) const
 {
     return fmt::format("{}Int{}", is_unsigned ? "U" : "", size);
 }
@@ -170,7 +170,7 @@ String IntType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &)
     }
 }
 
-String FloatType::typeName(const bool) const
+String FloatType::typeName(const bool, const bool) const
 {
     return fmt::format("{}Float{}", size == 16 ? "B" : "", size);
 }
@@ -200,7 +200,7 @@ String FloatType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator 
     return nextFloatingPoint(rg, true);
 }
 
-String DateType::typeName(const bool) const
+String DateType::typeName(const bool, const bool) const
 {
     return fmt::format("Date{}", extended ? "32" : "");
 }
@@ -230,7 +230,7 @@ String DateType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
     return "'" + (extended ? rg.nextDate32() : rg.nextDate()) + "'";
 }
 
-String TimeType::typeName(const bool) const
+String TimeType::typeName(const bool, const bool) const
 {
     String ret;
 
@@ -273,7 +273,7 @@ String TimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
     return "'" + (extended ? rg.nextTime64(precision.has_value()) : rg.nextTime()) + "'";
 }
 
-String DateTimeType::typeName(const bool escape) const
+String DateTimeType::typeName(const bool escape, const bool simplified) const
 {
     String ret;
 
@@ -282,14 +282,14 @@ String DateTimeType::typeName(const bool escape) const
     {
         ret += "64";
     }
-    if (precision.has_value() || timezone.has_value())
+    if (precision.has_value() || (!simplified && timezone.has_value()))
     {
         ret += "(";
         if (precision.has_value())
         {
             ret += std::to_string(precision.value());
         }
-        if (timezone.has_value())
+        if (!simplified && timezone.has_value())
         {
             if (precision.has_value())
             {
@@ -337,7 +337,7 @@ String DateTimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerat
     return "'" + (extended ? rg.nextDateTime64(rg.nextSmallNumber() < 8) : rg.nextDateTime(precision.has_value())) + "'";
 }
 
-String DecimalType::typeName(const bool) const
+String DecimalType::typeName(const bool, const bool) const
 {
     String ret;
 
@@ -413,7 +413,7 @@ String DecimalType::appendRandomRawValue(RandomGenerator & rg, StatementGenerato
     return appendDecimalValue(rg, true, this);
 }
 
-String StringType::typeName(const bool) const
+String StringType::typeName(const bool, const bool) const
 {
     if (precision.has_value())
     {
@@ -464,7 +464,7 @@ String StringType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator
     return rg.nextString("'", true, precision.value_or(rg.nextStrlen()));
 }
 
-String UUIDType::typeName(const bool) const
+String UUIDType::typeName(const bool, const bool) const
 {
     return "UUID";
 }
@@ -476,7 +476,7 @@ String UUIDType::MySQLtypeName(RandomGenerator & rg, const bool) const
 
 String UUIDType::PostgreSQLtypeName(RandomGenerator &, const bool escape) const
 {
-    return typeName(escape);
+    return typeName(escape, false);
 }
 
 String UUIDType::SQLitetypeName(RandomGenerator & rg, const bool) const
@@ -494,10 +494,14 @@ String UUIDType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
     return "'" + rg.nextUUID() + "'";
 }
 
-String EnumType::typeName(const bool escape) const
+String EnumType::typeName(const bool escape, const bool simplified) const
 {
     String ret;
 
+    if (simplified)
+    {
+        return "String";
+    }
     ret += "Enum";
     ret += std::to_string(size);
     ret += "(";
@@ -586,7 +590,7 @@ String EnumType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
     return rg.pickRandomly(values).val;
 }
 
-String IPv4Type::typeName(const bool) const
+String IPv4Type::typeName(const bool, const bool) const
 {
     return "IPv4";
 }
@@ -616,7 +620,7 @@ String IPv4Type::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
     return "'" + rg.nextIPv4() + "'";
 }
 
-String IPv6Type::typeName(const bool) const
+String IPv6Type::typeName(const bool, const bool) const
 {
     return "IPv6";
 }
@@ -646,7 +650,7 @@ String IPv6Type::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
     return "'" + rg.nextIPv6() + "'";
 }
 
-String DynamicType::typeName(const bool) const
+String DynamicType::typeName(const bool, const bool) const
 {
     return fmt::format("Dynamic{}", ntypes.has_value() ? ("(max_types=" + std::to_string(ntypes.value()) + ")") : "");
 }
@@ -684,15 +688,19 @@ String DynamicType::appendRandomRawValue(RandomGenerator & rg, StatementGenerato
     if (rg.nextMediumNumber() < 4)
     {
         ret += "::";
-        ret += next->typeName(false);
+        ret += next->typeName(false, false);
     }
     return ret;
 }
 
-String JSONType::typeName(const bool escape) const
+String JSONType::typeName(const bool escape, const bool simplified) const
 {
     String ret;
 
+    if (simplified)
+    {
+        return "String";
+    }
     ret += "JSON";
     for (const auto & c : desc)
     {
@@ -785,9 +793,9 @@ JSONType::~JSONType()
     }
 }
 
-String Nullable::typeName(const bool escape) const
+String Nullable::typeName(const bool escape, const bool simplified) const
 {
-    return fmt::format("Nullable({})", subtype->typeName(escape));
+    return fmt::format("Nullable({})", subtype->typeName(escape, simplified));
 }
 
 String Nullable::MySQLtypeName(RandomGenerator & rg, const bool escape) const
@@ -815,9 +823,9 @@ String Nullable::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
     return rg.nextMediumNumber() < 6 ? "NULL" : subtype->appendRandomRawValue(rg, gen);
 }
 
-String LowCardinality::typeName(const bool escape) const
+String LowCardinality::typeName(const bool escape, const bool simplified) const
 {
-    return fmt::format("LowCardinality({})", subtype->typeName(escape));
+    return fmt::format("LowCardinality({})", subtype->typeName(escape, simplified));
 }
 
 String LowCardinality::MySQLtypeName(RandomGenerator & rg, const bool escape) const
@@ -845,7 +853,7 @@ String LowCardinality::appendRandomRawValue(RandomGenerator & rg, StatementGener
     return subtype->appendRandomRawValue(rg, gen);
 }
 
-String GeoType::typeName(const bool) const
+String GeoType::typeName(const bool, const bool) const
 {
     return GeoTypes_Name(geotype);
 }
@@ -875,9 +883,9 @@ String GeoType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &)
     return strAppendGeoValue(rg, geotype);
 }
 
-String ArrayType::typeName(const bool escape) const
+String ArrayType::typeName(const bool escape, const bool simplified) const
 {
-    return fmt::format("Array({})", subtype->typeName(escape));
+    return fmt::format("Array({})", subtype->typeName(escape, simplified));
 }
 
 String ArrayType::MySQLtypeName(RandomGenerator &, const bool) const
@@ -949,9 +957,9 @@ String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator 
     return appendRandomRawValue(rg, gen, subtype, rows_dist(rg.generator));
 }
 
-String MapType::typeName(const bool escape) const
+String MapType::typeName(const bool escape, const bool simplified) const
 {
-    return fmt::format("Map({},{})", key->typeName(escape), value->typeName(escape));
+    return fmt::format("Map({},{})", key->typeName(escape, simplified), value->typeName(escape, simplified));
 }
 
 String MapType::MySQLtypeName(RandomGenerator &, const bool) const
@@ -1000,7 +1008,7 @@ MapType::~MapType()
     delete value;
 }
 
-String TupleType::typeName(const bool escape) const
+String TupleType::typeName(const bool escape, const bool simplified) const
 {
     String ret;
 
@@ -1019,7 +1027,7 @@ String TupleType::typeName(const bool escape) const
             ret += std::to_string(sub.cname.value());
             ret += " ";
         }
-        ret += sub.subtype->typeName(escape);
+        ret += sub.subtype->typeName(escape, simplified);
     }
     ret += ")";
     return ret;
@@ -1072,7 +1080,7 @@ TupleType::~TupleType()
     }
 }
 
-String VariantType::typeName(const bool escape) const
+String VariantType::typeName(const bool escape, const bool simplified) const
 {
     String ret;
 
@@ -1083,7 +1091,7 @@ String VariantType::typeName(const bool escape) const
         {
             ret += ",";
         }
-        ret += subtypes[i]->typeName(escape);
+        ret += subtypes[i]->typeName(escape, simplified);
     }
     ret += ")";
     return ret;
@@ -1129,7 +1137,7 @@ VariantType::~VariantType()
     }
 }
 
-String NestedType::typeName(const bool escape) const
+String NestedType::typeName(const bool escape, const bool simplified) const
 {
     String ret;
 
@@ -1145,7 +1153,7 @@ String NestedType::typeName(const bool escape) const
         ret += "c";
         ret += std::to_string(sub.cname);
         ret += " ";
-        ret += sub.subtype->typeName(escape);
+        ret += sub.subtype->typeName(escape, simplified);
     }
     ret += ")";
     return ret;
@@ -1659,7 +1667,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
                 SQLType * jtp = randomNextType(rg, this->next_type_mask, col_counter, tp ? jpt->mutable_type() : nullptr);
                 this->next_type_mask = type_mask_backup;
 
-                desc += jtp->typeName(false);
+                desc += jtp->typeName(false, false);
                 subcols.emplace_back(JSubType(npath, jtp));
             }
         }
@@ -2209,7 +2217,7 @@ String StatementGenerator::strAppendAnyValue(RandomGenerator & rg, const bool al
     if (allow_cast && rg.nextSmallNumber() < 7)
     {
         ret += "::";
-        ret += tp->typeName(false);
+        ret += tp->typeName(false, false);
     }
     return ret;
 }

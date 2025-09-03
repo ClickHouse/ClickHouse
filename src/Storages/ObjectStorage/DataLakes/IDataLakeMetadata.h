@@ -3,17 +3,17 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Processors/ISimpleTransform.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Storages/prepareReadingFromFormat.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
-#include <Storages/MutationCommands.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/StorageID.h>
-#include <Databases/DataLake/ICatalog.h>
+#include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MutationCommands.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/prepareReadingFromFormat.h>
 
 
 namespace DataLake
@@ -74,11 +74,11 @@ public:
     virtual bool supportsUpdate() const { return false; }
     /// Update metadata to the latest version.
     virtual bool update(const ContextPtr &) { return false; }
-        
+
     virtual bool supportsSchemaEvolution() const { return false; }
     virtual bool supportsWrites() const { return false; }
 
-    virtual void modifyFormatSettings(FormatSettings &) const {}
+    virtual void modifyFormatSettings(FormatSettings &) const { }
 
     virtual void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr /**/) { }
 
@@ -97,32 +97,39 @@ public:
         StorageObjectStorageConfigurationPtr /*configuration*/,
         const std::optional<FormatSettings> & /*format_settings*/,
         ContextPtr /*context*/,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/) { throwNotImplemented("write"); }
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
+    {
+        throwNotImplemented("write");
+    }
 
-    virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    virtual bool optimize(
+        const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
         return false;
     }
 
     virtual bool supportsDelete() const { return false; }
-    virtual void mutate(const MutationCommands & /*commands*/,
+    virtual void mutate(
+        const MutationCommands & /*commands*/,
         ContextPtr /*context*/,
         const StorageID & /*storage_id*/,
         StorageMetadataPtr /*metadata_snapshot*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-        const std::optional<FormatSettings> & /*format_settings*/) { throwNotImplemented("mutations"); }
+        const std::optional<FormatSettings> & /*format_settings*/)
+    {
+        throwNotImplemented("mutations");
+    }
 
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
 
-    virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, ContextPtr) const {}
+    virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, ContextPtr) const { }
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
+    virtual void drop(ContextPtr) { }
 
 protected:
-    virtual ObjectIterator createKeysIterator(
-        Strings && data_files_,
-        ObjectStoragePtr object_storage_,
-        IDataLakeMetadata::FileProgressCallback callback_) const;
+    virtual ObjectIterator
+    createKeysIterator(Strings && data_files_, ObjectStoragePtr object_storage_, IDataLakeMetadata::FileProgressCallback callback_) const;
 
     ObjectIterator createKeysIterator(
         Strings && data_files_,

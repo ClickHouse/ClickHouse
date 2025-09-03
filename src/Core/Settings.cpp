@@ -1505,7 +1505,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, use_skip_indexes_on_data_read, true, R"(
+    DECLARE(Bool, use_skip_indexes_on_data_read, false, R"(
 Enable using data skipping indexes during data reading.
 
 When enabled, skip indexes are evaluated dynamically at the time each data granule is being read, rather than being analyzed in advance before query execution begins. This can reduce query startup latency.
@@ -4883,7 +4883,22 @@ The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELE
     DECLARE(Float, create_replicated_merge_tree_fault_injection_probability, 0.0f, R"(
 The probability of a fault injection during table creation after creating metadata in ZooKeeper
 )", 0) \
+    DECLARE(IcebergMetadataLogLevel, iceberg_metadata_log_level, IcebergMetadataLogLevel::None, R"(
+Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log.
+Usually this setting can be modified for debugging purposes.
+
+Possible values:
+- none - No metadata log.
+- metadata - Root metadata.json file.
+- manifest_list_metadata - Everything above + metadata from avro manifest list which corresponds to a snapshot.
+- manifest_list_entry - Everything above + avro manifest list entries.
+- manifest_file_metadata - Everything above + metadata from traversed avro manifest files.
+- manifest_file_entry - Everything above + traversed avro manifest files entries.
+)", 0) \
     \
+    DECLARE(Bool, iceberg_delete_data_on_drop, false, R"(
+Whether to delete all iceberg files on drop or not.
+)", 0) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
 
@@ -6476,11 +6491,11 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
 )", 0) \
-    DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
-Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
-)", 0) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, true, R"(
 Enables showing data lake catalogs in system tables.
+)", 0) \
+    DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
+Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
 )", 0) \
     DECLARE(Int64, delta_lake_snapshot_version, -1, R"(
 Version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
@@ -6490,6 +6505,12 @@ Enables throwing an exception if there was an error when analyzing scan predicat
 )", 0) \
     DECLARE(Bool, delta_lake_enable_engine_predicate, true, R"(
 Enables delta-kernel internal data pruning.
+)", 0) \
+    DECLARE(NonZeroUInt64, delta_lake_insert_max_rows_in_data_file, 100000, R"(
+Defines a rows limit for a single inserted data file in delta lake.
+)", 0) \
+    DECLARE(NonZeroUInt64, delta_lake_insert_max_bytes_in_data_file, 1_GiB, R"(
+Defines a bytes limit for a single inserted data file in delta lake.
 )", 0) \
     DECLARE(Bool, allow_experimental_delta_lake_writes, false, R"(
 Enables delta-kernel writes feature.
@@ -6807,7 +6828,7 @@ File/S3 engines/table function will parse paths with '::' as `<archive> :: <file
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
 )", BETA) \
-    DECLARE(UInt64, max_iceberg_data_file_rows, 100000, R"(
+    DECLARE(UInt64, max_iceberg_data_file_rows, 1000, R"(
 Max rows of iceberg parquet data file on insert operation.
 )", 0) \
     DECLARE(UInt64, max_iceberg_data_file_bytes, 1_GiB, R"(
@@ -6859,7 +6880,6 @@ Possible values:
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
 Use roaring bitmap for iceberg positional deletes.
 )", 0) \
-    \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
     /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \
@@ -7043,9 +7063,9 @@ Specifies the database name used by the 'promql' dialect. Empty string means the
 Specifies the name of a TimeSeries table used by the 'promql' dialect.
 )", EXPERIMENTAL) \
     \
-    DECLARE(FloatAuto, evaluation_time, Field("auto"), R"(
+    DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
 Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, evaluation_time) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

@@ -251,7 +251,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     if (is_archive)
     {
-        return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(iterator), local_context, read_keys, ignore_archive_globs);
+        return std::make_shared<ArchiveIterator>(
+            object_storage, configuration, std::move(iterator), local_context, read_keys, ignore_archive_globs);
     }
 
     return iterator;

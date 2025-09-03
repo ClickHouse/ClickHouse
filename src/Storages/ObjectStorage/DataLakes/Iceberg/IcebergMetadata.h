@@ -14,7 +14,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
-#include <tuple>
 #include <optional>
 #include <base/defines.h>
 
@@ -114,18 +113,7 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands) override;
     void alter(const AlterCommands & params, ContextPtr context) override;
 
-    void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr storage_snapshot) override
-    {
-        std::optional<Iceberg::IcebergTableStateSnapshot> snapshot_data = last_table_state_snapshot.get();
-        if (storage_snapshot)
-        {
-            if (!snapshot_data)
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg state should be initialized when creating a storage snapshot");
-            }
-            storage_snapshot->data = std::make_unique<Iceberg::IcebergSpecificSnapshotData>(std::move(snapshot_data.value()));
-        }
-    }
+    void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr storage_snapshot) override;
 
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
@@ -133,6 +121,8 @@ public:
         size_t list_batch_size,
         StorageSnapshotPtr storage_snapshot,
         ContextPtr local_context) const override;
+
+    void drop(ContextPtr context) override;
 
 private:
     Iceberg::PersistentTableComponents initializePersistentTableComponents(

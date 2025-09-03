@@ -176,7 +176,13 @@ public:
     }
 
     // This method should work even if metadata is not initialized
-    bool neverNeedUpdateOnReadWrite() const override { return std::is_same_v<IcebergMetadata, DataLakeMetadata>; }
+    bool neverNeedUpdateOnReadWrite() const override
+    {
+#if USE_AVRO
+        return std::is_same_v<IcebergMetadata, DataLakeMetadata>;
+#endif
+        return false;
+    }
 
     std::optional<size_t> totalBytes(ContextPtr local_context) override
     {
@@ -265,6 +271,12 @@ public:
     {
         assertInitialized();
         return current_metadata->getColumnMapperForCurrentSchema(storage_snapshot, context);
+    }
+
+    void drop(ContextPtr local_context) override
+    {
+        if (current_metadata)
+            current_metadata->drop(local_context);
     }
 
     SinkToStoragePtr write(
