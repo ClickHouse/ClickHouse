@@ -494,6 +494,22 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"http_skip_not_found_url_for_globs", trueOrFalseSettingNoOracle},
     {"http_wait_end_of_query", trueOrFalseSettingNoOracle},
     {"http_write_exception_in_output_format", trueOrFalseSettingNoOracle},
+    {"iceberg_delete_data_on_drop", trueOrFalseSettingNoOracle},
+    {"iceberg_metadata_log_level",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             static const DB::Strings & choices
+                 = {"'none'",
+                    "'metadata'",
+                    "'manifest_list_metadata'",
+                    "'manifest_list_entry'",
+                    "'manifest_file_metadata'",
+                    "'manifest_file_entry'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     /// ClickHouse cloud setting
     {"ignore_cold_parts_seconds",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 60)); }, {}, false)},
