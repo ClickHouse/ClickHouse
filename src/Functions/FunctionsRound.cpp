@@ -51,6 +51,7 @@ If rounding causes an overflow (for example, `floor(-128, -1)`), the result is u
     {
         FunctionDocumentation::Description description = R"(
 Like [`floor`](#floor) but returns the smallest rounded number greater than or equal to `x`.
+If rounding causes an overflow (for example, `ceiling(255, -1)`), the result is undefined.
 )";
         FunctionDocumentation::Syntax syntax = "ceiling(x[, N])";
         FunctionDocumentation::Arguments arguments = {
