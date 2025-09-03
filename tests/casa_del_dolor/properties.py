@@ -918,7 +918,6 @@ class LogTablePropertiesGroup(PropertiesGroup):
         cluster: ClickHouseCluster,
         is_private_binary: bool,
     ):
-        number_policies = 0
         database_xml = ET.SubElement(property_element, "database")
         database_xml.text = "system"
         table_xml = ET.SubElement(property_element, "table")
@@ -930,16 +929,18 @@ class LogTablePropertiesGroup(PropertiesGroup):
             "max_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
             "reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
         }
-        storage_configuration_xml = top_root.find("storage_configuration")
-        if storage_configuration_xml is not None:
-            policies_xml = storage_configuration_xml.find("policies")
-            if policies_xml is not None:
-                number_policies = len([c for c in policies_xml])
-        if number_policies > 0 and random.randint(1, 100) <= 75:
-            policy_choices = [f"policy{i}" for i in range(0, number_policies)]
-            log_table_properties["storage_policy"] = lambda: random.choice(
-                policy_choices
-            )
+        # Can't use this without the engine parameter?
+        #number_policies = 0
+        #storage_configuration_xml = top_root.find("storage_configuration")
+        #if storage_configuration_xml is not None:
+        #    policies_xml = storage_configuration_xml.find("policies")
+        #    if policies_xml is not None:
+        #        number_policies = len([c for c in policies_xml])
+        #if number_policies > 0 and random.randint(1, 100) <= 75:
+        #    policy_choices = [f"policy{i}" for i in range(0, number_policies)]
+        #    log_table_properties["storage_policy"] = lambda: random.choice(
+        #        policy_choices
+        #    )
         apply_properties_recursively(property_element, log_table_properties, 0)
         # max_size_rows cannot be smaller than reserved_size_rows
         max_size_rows_xml = property_element.find("max_size_rows")

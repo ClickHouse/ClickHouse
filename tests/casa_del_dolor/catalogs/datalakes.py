@@ -396,6 +396,8 @@ def get_spark(
     # Support very old dates
     builder.config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED")
     builder.config("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED")
+    # Allow to retain 0 hours on vacuum
+    builder.config("spark.databricks.delta.retentionDurationCheck.enabled", "false")
 
     # Random properties
     if random.randint(1, 100) <= 70:

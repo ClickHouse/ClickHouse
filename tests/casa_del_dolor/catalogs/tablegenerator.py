@@ -896,7 +896,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         next_option = random.randint(1, 100)
 
         if next_option <= 50:
-            return f"VACUUM {table.get_table_full_path()} RETAIN INTERVAL {random.choice(["1 SECONDS", "5 SECONDS", "1 MINUTES"])};"
+            return f"VACUUM {table.get_table_full_path()} RETAIN 0 HOURS;"
 
         restore_to = (
             datetime.now() - timedelta(seconds=random.choice([1, 5, 10, 60]))
