@@ -52,6 +52,7 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
         { "database",           std::make_shared<DataTypeString>(), "Database name."},
         { "table",              std::make_shared<DataTypeString>(), "Table name."},
         { "name",               std::make_shared<DataTypeString>(), "Column name."},
+        { "uuid",               std::make_shared<DataTypeString>(), "Column uuid."},
         { "type",               std::make_shared<DataTypeString>(), "Column type."},
         { "position",           std::make_shared<DataTypeUInt64>(), "Ordinal position of a column in a table starting with 1."},
         { "default_kind",       std::make_shared<DataTypeString>(), "Expression type (DEFAULT, MATERIALIZED, ALIAS) for the default value, or an empty string if it is not defined."},
@@ -76,7 +77,6 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
         { "datetime_precision",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Decimal precision of DateTime64 data type. For other data types, the NULL value is returned."},
         { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."},
-        { "uuid",               std::make_shared<DataTypeString>(), "Column uuid."},
     });
 
     description.setAliases({
@@ -207,6 +207,15 @@ protected:
                     res_columns[res_index++]->insert(table_name);
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.name);
+
+                if (columns_mask[src_index++])
+                {
+                    if (context->getGlobalContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
+                        res_columns[res_index++]->insert(UUIDHelpers::uuidToStr(column.uuid));
+                    else
+                        res_columns[res_index++]->insert(UUIDHelpers::uuidToStr(UUIDHelpers::Nil));
+                }
+
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.type->getName());
                 if (columns_mask[src_index++])
@@ -335,14 +344,6 @@ protected:
                 {
                     if (auto it = serialization_hints.find(column.name); it != serialization_hints.end())
                         res_columns[res_index++]->insert(ISerialization::kindToString(it->second->getKind()));
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
-                if (columns_mask[src_index++])
-                {
-                    if (context->getGlobalContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
-                        res_columns[res_index++]->insert(UUIDHelpers::uuidToStr(column.uuid));
                     else
                         res_columns[res_index++]->insertDefault();
                 }
