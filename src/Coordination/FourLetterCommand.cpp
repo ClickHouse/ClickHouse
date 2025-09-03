@@ -652,7 +652,7 @@ String JemallocDumpStats::run()
 
 String JemallocFlushProfile::run()
 {
-    return flushJemallocProfile("/tmp/jemalloc_keeper");
+    return flushJemallocProfile("/tmp/jemalloc_keeper", /* log= */ true);
 }
 
 String JemallocEnableProfile::run()

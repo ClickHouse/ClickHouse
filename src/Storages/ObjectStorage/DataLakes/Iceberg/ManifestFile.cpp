@@ -5,6 +5,8 @@
 #include <compare>
 #include <optional>
 
+#include <Interpreters/IcebergMetadataLog.h>
+
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
@@ -149,6 +151,14 @@ ManifestFileContent::ManifestFileContent(
     const String & path_to_manifest_file_)
     : path_to_manifest_file(path_to_manifest_file_)
 {
+    insertRowToLogTable(
+        context,
+        manifest_file_deserializer.getMetadataContent(),
+        DB::IcebergMetadataLogLevel::ManifestFileMetadata,
+        common_path,
+        path_to_manifest_file,
+        std::nullopt);
+
     for (const auto & column_name : {f_status, f_data_file})
     {
         if (!manifest_file_deserializer.hasPath(column_name))
@@ -214,6 +224,13 @@ ManifestFileContent::ManifestFileContent(
 
     for (size_t i = 0; i < manifest_file_deserializer.rows(); ++i)
     {
+        insertRowToLogTable(
+            context,
+            manifest_file_deserializer.getContent(i),
+            DB::IcebergMetadataLogLevel::ManifestFileEntry,
+            common_path,
+            path_to_manifest_file,
+            i);
         FileContentType content_type = FileContentType::DATA;
         if (format_version_ > 1)
             content_type = FileContentType(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
@@ -242,10 +259,19 @@ ManifestFileContent::ManifestFileContent(
             snapshot_id = snapshot_id_value.safeGet<Int64>();
         }
 
+        const auto schema_id_opt = schema_processor.tryGetSchemaIdForSnapshot(snapshot_id);
+        if (!schema_id_opt.has_value())
+        {
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot read Iceberg table: manifest file '{}' has entry with snapshot_id '{}' for which write file schema is unknown",
+                manifest_file_name,
+                snapshot_id);
+        }
+        const auto schema_id = schema_id_opt.value();
 
-        const auto schema_id = schema_processor.getSchemaIdForSnapshot(snapshot_id);
-
-        const auto file_path_key = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>();
+        const auto file_path_key
+            = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>();
         const auto file_path = getProperFilePathFromMetadataInfo(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>(), common_path, table_location);
 
         /// NOTE: This is weird, because in manifest file partition looks like this:
