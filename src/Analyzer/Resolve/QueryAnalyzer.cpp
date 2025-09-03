@@ -2995,6 +2995,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         if (constant_condition.has_value())
         {
+            bool use_variant_when_no_common_type = scope.context->getSettingsRef()[Setting::use_variant_as_common_type];
+
             if (if_function_arguments.size() == 3)
             {
                 QueryTreeNodePtr constant_if_result_node;
@@ -3011,36 +3013,35 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     constant_if_result_node = if_function_arguments[2];
                 }
 
-                bool apply_constant_if_optimization = false;
+                bool current_only_analyze = only_analyze;
+                only_analyze = true;
+                resolveExpressionNode(possibly_invalid_argument_node,
+                    scope,
+                    false /*allow_lambda_expression*/,
+                    false /*allow_table_expression*/);
+                only_analyze = current_only_analyze;
 
-                try
-                {
-                    resolveExpressionNode(possibly_invalid_argument_node,
-                        scope,
-                        false /*allow_lambda_expression*/,
-                        false /*allow_table_expression*/);
-                }
-                catch (...)
-                {
-                    apply_constant_if_optimization = true;
-                }
+                auto result_projection_names = resolveExpressionNode(constant_if_result_node,
+                    scope,
+                    false /*allow_lambda_expression*/,
+                    false /*allow_table_expression*/);
 
-                if (apply_constant_if_optimization)
+                if (!possibly_invalid_argument_node->getResultType()->equals(*constant_if_result_node->getResultType()))
                 {
-                    auto result_projection_names = resolveExpressionNode(constant_if_result_node,
-                        scope,
-                        false /*allow_lambda_expression*/,
-                        false /*allow_table_expression*/);
+                    DataTypePtr common_type;
+                    if (use_variant_when_no_common_type)
+                        common_type = getLeastSupertypeOrVariant(DataTypes{possibly_invalid_argument_node->getResultType(), constant_if_result_node->getResultType()});
+                    else
+                        common_type = getLeastSupertype(DataTypes{possibly_invalid_argument_node->getResultType(), constant_if_result_node->getResultType()});
+                    node = buildCastFunction(constant_if_result_node, common_type, scope.context, true);
+                }
+                else
                     node = std::move(constant_if_result_node);
 
-                    return result_projection_names;
-                }
+                return result_projection_names;
             }
             else if (if_function_arguments.size() > 3)
             {
-                bool apply_cast_to_common_type = true;
-                bool use_variant_when_no_common_type = scope.context->getSettingsRef()[Setting::use_variant_as_common_type];
-
                 if (*constant_condition)
                 {
                     auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
@@ -3048,28 +3049,23 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         multi_if_function->getArguments().getNodes().push_back(if_function_arguments[n]);
 
                     QueryTreeNodePtr function_query_node = multi_if_function;
-                    try
-                    {
-                        resolveFunction(function_query_node, scope);
-                    }
-                    catch (...)
-                    {
-                        apply_cast_to_common_type = false;
-                    }
+                    bool current_only_analyze = only_analyze;
+                    only_analyze = true;
+                    resolveFunction(function_query_node, scope);
+                    only_analyze = current_only_analyze;
 
                     auto result_projection_names = resolveExpressionNode(if_function_arguments[1],
                         scope,
                         false /*allow_lambda_expression*/,
                         false /*allow_table_expression*/);
 
-                    if (apply_cast_to_common_type)
+                    if (!function_query_node->getResultType()->equals(*if_function_arguments[1]->getResultType()))
                     {
                         DataTypePtr common_type;
                         if (use_variant_when_no_common_type)
                             common_type = getLeastSupertypeOrVariant(DataTypes{if_function_arguments[1]->getResultType(), function_query_node->getResultType()});
                         else
                             common_type = getLeastSupertype(DataTypes{if_function_arguments[1]->getResultType(), function_query_node->getResultType()});
-
                         node = buildCastFunction(if_function_arguments[1], common_type, scope.context, true);
                     }
                     else
@@ -3079,17 +3075,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 }
                 else
                 {
-                    try
-                    {
-                        resolveExpressionNode(if_function_arguments[1],
-                            scope,
-                            false /*allow_lambda_expression*/,
-                            false /*allow_table_expression*/);
-                    }
-                    catch (...)
-                    {
-                        apply_cast_to_common_type = false;
-                    }
+                    bool current_only_analyze = only_analyze;
+                    only_analyze = true;
+                    resolveExpressionNode(if_function_arguments[1],
+                        scope,
+                        false /*allow_lambda_expression*/,
+                        false /*allow_table_expression*/);
+                    only_analyze = current_only_analyze;
 
                     auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
                     for (size_t n = 2; n < if_function_arguments.size(); ++n)
@@ -3097,14 +3089,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     node = std::move(multi_if_function);
                     auto result_projection_names = resolveFunction(node, scope);
 
-                    if (apply_cast_to_common_type)
+                    if (node->getResultType()->equals(*if_function_arguments[1]->getResultType()))
                     {
                         DataTypePtr common_type;
                         if (use_variant_when_no_common_type)
                             common_type = getLeastSupertypeOrVariant(DataTypes{if_function_arguments[1]->getResultType(), node->getResultType()});
                         else
                             common_type = getLeastSupertype(DataTypes{if_function_arguments[1]->getResultType(), node->getResultType()});
-
                         node = buildCastFunction(node, common_type, scope.context, true);
                     }
 
@@ -3856,7 +3847,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 size_t num_rows = 1;
                 if (!argument_columns.empty())
                     num_rows = argument_columns.front().column->size();
-                column = executable_function->execute(argument_columns, result_type, num_rows, true);
+
+                if (only_analyze)
+                    column = result_type->createColumnConstWithDefaultValue(num_rows);
+                else
+                    column = executable_function->execute(argument_columns, result_type, num_rows, true);
             }
             else
             {
