@@ -469,14 +469,13 @@ def datalakehandler(path, data, headers):
     try:
         random.seed(data["seed"])
         if path == "/sparkdatabase":
-            spark_handler.create_lake_database(cluster, data)
-            res = True
+            res = spark_handler.create_lake_database(cluster, data)
         elif path == "/sparktable":
-            spark_handler.create_lake_table(cluster, data)
-            res = True
-        elif path == "/sparkupdate":
-            spark_handler.update_lake_table(cluster, data)
-            res = True
+            res = spark_handler.create_lake_table(cluster, data)
+        elif path in ("/sparkupdate", "/sparkcheck"):
+            res = spark_handler.update_or_check_table(
+                cluster, data, path == "/sparkupdate"
+            )
         random.setstate(state)
     except:
         random.setstate(state)

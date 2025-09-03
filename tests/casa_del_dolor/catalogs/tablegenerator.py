@@ -65,6 +65,7 @@ class LakeTableGenerator:
     def generate_create_table_ddl(
         self,
         catalog_name: str,
+        database_name: str,
         table_name: str,
         columns: list[dict[str, str]],
         file_format: str,
@@ -126,6 +127,7 @@ class LakeTableGenerator:
             ddl + ";",
             SparkTable(
                 catalog_name,
+                database_name,
                 table_name,
                 columns_spark,
                 deterministic,

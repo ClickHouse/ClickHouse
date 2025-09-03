@@ -18,6 +18,7 @@ from .laketables import (
 )
 from .tablegenerator import LakeTableGenerator
 from .datagenerator import LakeDataGenerator
+from .tablecheck import SparkAndClickHouseCheck
 
 from integration.helpers.config_cluster import minio_access_key, minio_secret_key
 
@@ -451,6 +452,7 @@ class SparkHandler:
         self.derby_logger = self.spark_log_dir / "derby.log"
         self.metastore_db = self.spark_log_dir / "metastore_db"
         self.data_generator = LakeDataGenerator(self.spark_query_logger)
+        self.table_check = SparkAndClickHouseCheck()
         spark_log = f"""
 # ----- log4j2.properties -----
 status = error
@@ -598,7 +600,7 @@ logger.jetty.level = warn
         next_sql = f"CREATE DATABASE IF NOT EXISTS {catalog_name}.test;"
         self.run_query(session, next_sql)
 
-    def create_lake_database(self, cluster, data):
+    def create_lake_database(self, cluster, data) -> bool:
         catalog = data["catalog"]
         catalog_name = data["database_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
@@ -701,9 +703,10 @@ logger.jetty.level = warn
             next_session.stop()
             raise
         next_session.stop()
+        return True
 
-    def create_lake_table(self, cluster, data):
-        catalog_name = data["database_name"]
+    def create_lake_table(self, cluster, data) -> bool:
+        catalog_name = data["catalog_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
         next_lake = LakeFormat.lakeformat_from_str(data["lake"])
         next_table_generator = LakeTableGenerator.get_next_generator(next_lake)
@@ -736,6 +739,7 @@ logger.jetty.level = warn
 
         next_sql, next_table = next_table_generator.generate_create_table_ddl(
             catalog_name,
+            data["database_name"],
             data["table_name"],
             data["columns"],
             data["format"],
@@ -760,9 +764,11 @@ logger.jetty.level = warn
             next_session.stop()
             raise
         next_session.stop()
+        return True
 
-    def update_lake_table(self, cluster, data):
-        catalog_name = data["database_name"]
+    def update_or_check_table(self, cluster, data, update: bool) -> bool:
+        res = False
+        catalog_name = data["catalog_name"]
         next_table = self.catalogs[catalog_name].spark_tables[data["table_name"]]
 
         next_session = self.get_next_session(
@@ -773,11 +779,16 @@ logger.jetty.level = warn
             self.catalogs[catalog_name].catalog_type,
         )
         try:
-            self.data_generator.update_table(next_session, next_table)
+            res = (
+                self.data_generator.update_table(next_session, next_table)
+                if update
+                else self.table_check.check_table(cluster, next_session, next_table)
+            )
         except:
             next_session.stop()
             raise
         next_session.stop()
+        return res
 
     def close_sessions(self):
         if self.uc_server is not None and self.uc_server.poll() is None:

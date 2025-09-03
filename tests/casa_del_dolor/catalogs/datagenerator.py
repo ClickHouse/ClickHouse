@@ -433,7 +433,7 @@ class LakeDataGenerator:
         self.logger.info(f"Truncate table {table.get_table_full_path()}")
         self.run_query(spark, f"DELETE FROM {table.get_table_full_path()};")
 
-    def update_table(self, spark: SparkSession, table: SparkTable):
+    def update_table(self, spark: SparkSession, table: SparkTable) -> bool:
         next_operation = random.randint(1, 900)
 
         if next_operation <= 400:
@@ -456,3 +456,4 @@ class LakeDataGenerator:
             self.run_query(
                 spark, next_table_generator.generate_alter_table_statements(table)
             )
+        return True

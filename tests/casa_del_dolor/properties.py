@@ -928,13 +928,13 @@ class LogTablePropertiesGroup(PropertiesGroup):
             "reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
         }
         # Can't use this without the engine parameter?
-        #number_policies = 0
-        #storage_configuration_xml = top_root.find("storage_configuration")
-        #if storage_configuration_xml is not None:
+        # number_policies = 0
+        # storage_configuration_xml = top_root.find("storage_configuration")
+        # if storage_configuration_xml is not None:
         #    policies_xml = storage_configuration_xml.find("policies")
         #    if policies_xml is not None:
         #        number_policies = len([c for c in policies_xml])
-        #if number_policies > 0 and random.randint(1, 100) <= 75:
+        # if number_policies > 0 and random.randint(1, 100) <= 75:
         #    policy_choices = [f"policy{i}" for i in range(0, number_policies)]
         #    log_table_properties["storage_policy"] = lambda: random.choice(
         #        policy_choices

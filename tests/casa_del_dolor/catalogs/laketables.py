@@ -99,6 +99,7 @@ class SparkTable:
     def __init__(
         self,
         _catalog_name: str,
+        _database_name: str,
         _table_name: str,
         _columns: dict[str, SparkColumn],
         _deterministic: bool,
@@ -108,6 +109,7 @@ class SparkTable:
         _storage: TableStorage,
     ):
         self.catalog_name = _catalog_name
+        self.database_name = _database_name
         self.table_name = _table_name
         self.columns = _columns
         self.deterministic = _deterministic
@@ -121,3 +123,6 @@ class SparkTable:
 
     def get_table_full_path(self) -> str:
         return f"{self.catalog_name}.test.{self.table_name}"
+
+    def get_clickhouse_path(self) -> str:
+        return f"{self.database_name}.{self.table_name}"

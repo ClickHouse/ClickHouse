@@ -518,6 +518,18 @@ bool Client::fuzzLoopReconnect()
     return tryToReconnect(fuzz_config->max_reconnection_attempts, fuzz_config->time_to_sleep_between_reconnects);
 }
 
+static void runExternalCommand(
+    std::unique_ptr<BuzzHouse::ExternalIntegrations> & external_integrations,
+    const uint64_t seed,
+    const String & cname,
+    const String & tname)
+{
+    if (!external_integrations->performExternalCommand(seed, BuzzHouse::IntegrationCall::Dolor, cname, tname))
+    {
+        throw Exception(ErrorCodes::BUZZHOUSE, "External command failed for {} on catalog {}", tname, cname);
+    }
+}
+
 /// Returns false when server is not available.
 bool Client::buzzHouse()
 {
@@ -556,7 +568,7 @@ bool Client::buzzHouse()
                 const auto x = std::from_chars(first, last, seed, 10);
 
                 UNUSED(x);
-                external_integrations->performRandomCommand(seed, BuzzHouse::IntegrationCall::Dolor, m[2].str(), m[3].str());
+                runExternalCommand(external_integrations, seed, m[2].str(), m[3].str());
             }
             else
             {
@@ -833,7 +845,7 @@ bool Client::buzzHouse()
                     const auto & ntname = tbl.getTableName(false);
 
                     fuzz_config->outf << "--External command with seed " << nseed << " to " << ndname << "." << ntname << std::endl;
-                    external_integrations->performRandomCommand(nseed, tbl.integration, ndname, ntname);
+                    runExternalCommand(external_integrations, nseed, ndname, ntname);
                 }
                 else if (
                     run_query
