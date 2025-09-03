@@ -29,7 +29,6 @@ struct CompressedPostings
 public:
     static constexpr size_t max_raw_deltas = 4;
     static constexpr size_t num_cells_for_raw_deltas = max_raw_deltas * sizeof(UInt32) / sizeof(UInt64);
-    using RawDeltas = std::array<UInt32, max_raw_deltas>;
 
     CompressedPostings(UInt8 delta_bits_, UInt32 cardinality_);
     explicit CompressedPostings(const roaring::Roaring & postings);

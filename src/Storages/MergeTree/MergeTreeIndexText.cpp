@@ -32,7 +32,7 @@ static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t total_rows)
     return (bits_per_row * total_rows + atom_size - 1) / atom_size;
 }
 
-static constexpr UInt8 EMBEDDED_POSTINGS_FLAG = static_cast<UInt8>(1 << 7);
+static constexpr UInt8 EMBEDDED_POSTINGS_FLAG = static_cast<UInt8>(1 << 6);
 static constexpr UInt32 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 64;
 
 CompressedPostings::CompressedPostings(UInt8 delta_bits_, UInt32 cardinality_)

@@ -126,7 +126,7 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         {
             chassert(element.gin_query_strings_for_set.size() == 1);
             const auto & gin_query_strings = element.gin_query_strings_for_set.front();
-            bool exists_in_granule = false;
+            bool exists_in_granule = gin_query_strings.empty();
 
             for (const auto & gin_query : gin_query_strings)
             {

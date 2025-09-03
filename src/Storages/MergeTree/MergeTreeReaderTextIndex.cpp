@@ -36,11 +36,11 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     MergeTreeIndexWithCondition index_)
     : IMergeTreeReader(
         main_reader_->data_part_info_for_read,
-        /*columns=*/ columns_,
+        columns_,
         /*virtual_fields=*/ {},
         main_reader_->storage_snapshot,
-        /*uncompressed_cache=*/ Context::getGlobalContextInstance()->getIndexUncompressedCache().get(),
-        /*mark_cache=*/ Context::getGlobalContextInstance()->getIndexMarkCache().get(),
+        Context::getGlobalContextInstance()->getIndexUncompressedCache().get(),
+        Context::getGlobalContextInstance()->getIndexMarkCache().get(),
         main_reader_->all_mark_ranges,
         main_reader_->settings)
     , main_reader(main_reader_)
