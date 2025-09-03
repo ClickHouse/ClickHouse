@@ -109,7 +109,8 @@ struct JoinInfoBuildContext
                 const auto column_left = column_node_sources.getNodes().at(0);
                 if (!column_left->as<ColumnNode>())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "JOIN USING clause expected column identifier. Actual {}",
+                        "JOIN USING clause expected column identifier. Actual {}: {}",
+                        column_left->getNodeTypeName(),
                         column_left->formatASTForErrorMessage());
 
                 changed_types.emplace(
@@ -119,7 +120,8 @@ struct JoinInfoBuildContext
                 const auto column_right = column_node_sources.getNodes().at(1);
                 if (!column_right->as<ColumnNode>())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "JOIN USING clause expected column identifier. Actual {}",
+                        "JOIN USING clause expected column identifier. Actual {}: {}",
+                        column_right->getNodeTypeName(),
                         column_right->formatASTForErrorMessage());
 
                 changed_types.emplace(
