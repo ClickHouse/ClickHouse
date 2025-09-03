@@ -144,7 +144,7 @@ Iceberg::IcebergTableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject
 }
 
 Iceberg::PersistentTableComponents
-IcebergMetadata::initializePersistentTableComponents(IcebergMetadataFilesCachePtr cache_ptr, ContextPtr context_) 
+IcebergMetadata::initializePersistentTableComponents(IcebergMetadataFilesCachePtr cache_ptr, ContextPtr context_)
 {
     const auto [metadata_version, metadata_file_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration.lock(), cache_ptr, context_, log.get());
@@ -169,7 +169,7 @@ IcebergMetadata::IcebergMetadata(
     : object_storage(std::move(object_storage_))
     , configuration(std::move(configuration_))
     , log(getLogger("IcebergMetadata"))
-    , persistent_components(initializePersistentTableComponents(cache_ptr, context_)) 
+    , persistent_components(initializePersistentTableComponents(cache_ptr, context_))
 {
     const auto [metadata_version, metadata_file_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration.lock(), cache_ptr, context_, log.get());
@@ -178,7 +178,7 @@ IcebergMetadata::IcebergMetadata(
 }
 
 Int32 IcebergMetadata::parseTableSchema(
-    const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger) 
+    const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger)
 {
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
     if (format_version == 2)
