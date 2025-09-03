@@ -57,19 +57,20 @@ REGISTER_FUNCTION(IsConstant)
     FunctionDocumentation::Description description = R"(
 Returns whether the argument is a constant expression.
 A constant expression is an expression whose result is known during query analysis, i.e. before execution.
-For example, expressions over literals are constant expressions.
+For example, expressions over [literals](/sql-reference/syntax#literals) are constant expressions.
 This function is mostly intended for development, debugging and demonstration.
     )";
     FunctionDocumentation::Syntax syntax = "isConstant(x)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "An expression to check.", {"const Any"}}
+        {"x", "An expression to check.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `x` is constant, `0` if `x` is non-constant.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
     {
         "Constant expression",
         R"(
-SELECT isConstant(x + 1) FROM (SELECT 43 AS x)
+SELECT isConstant(x + 1)
+FROM (SELECT 43 AS x)
         )",
         R"(
 ┌─isConstant(plus(x, 1))─┐
@@ -80,7 +81,8 @@ SELECT isConstant(x + 1) FROM (SELECT 43 AS x)
     {
         "Constant with function",
         R"(
-WITH 3.14 AS pi SELECT isConstant(cos(pi))
+WITH 3.14 AS pi
+SELECT isConstant(cos(pi))
         )",
         R"(
 ┌─isConstant(cos(pi))─┐
@@ -91,12 +93,24 @@ WITH 3.14 AS pi SELECT isConstant(cos(pi))
     {
         "Non-constant expression",
         R"(
-SELECT isConstant(number) FROM numbers(1)
+SELECT isConstant(number)
+FROM numbers(1)
         )",
         R"(
 ┌─isConstant(number)─┐
 │                  0 │
 └────────────────────┘
+        )"
+    },
+    {
+        "Behavior of the now() function",
+        R"(
+SELECT isConstant(now())
+        )",
+        R"(
+┌─isConstant(now())─┐
+│                 1 │
+└───────────────────┘
         )"
     }
     };

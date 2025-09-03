@@ -49,8 +49,8 @@ public:
 REGISTER_FUNCTION(HasThreadFuzzer)
 {
     FunctionDocumentation::Description description = R"(
-Returns whether Thread Fuzzer is effective.
-It can be used in tests to prevent runs from being too long.
+Returns whether the thread fuzzer is enabled.
+THis function is only useful for testing and debugging.
     )";
     FunctionDocumentation::Syntax syntax = "hasThreadFuzzer()";
     FunctionDocumentation::Arguments arguments = {};

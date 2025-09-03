@@ -174,6 +174,7 @@ REGISTER_FUNCTION(ThrowIf)
 {
     FunctionDocumentation::Description description = R"(
 Throw an exception if argument x is true.
+To use the `error_code` argument, configuration parameter `allow_custom_error_code_in_throw` must be enabled.
 )";
     FunctionDocumentation::Syntax syntax = "throwIf(x[, message[, error_code]])";
     FunctionDocumentation::Arguments arguments = {

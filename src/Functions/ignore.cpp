@@ -60,7 +60,6 @@ REGISTER_FUNCTION(Ignore)
 {
     FunctionDocumentation::Description description = R"(
 Accepts arbitrary arguments and unconditionally returns `0`.
-The argument is still evaluated internally, making it useful for benchmarking for example.
     )";
     FunctionDocumentation::Syntax syntax = "ignore(x)";
     FunctionDocumentation::Arguments arguments = {
