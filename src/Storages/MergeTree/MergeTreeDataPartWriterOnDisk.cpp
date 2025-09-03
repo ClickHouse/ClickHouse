@@ -496,8 +496,9 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
             skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed_hashing);
 
         /// Register additional files written only by the text index. Required because otherwise DROP TABLE complains about unknown
-        /// files. Note that the provided actual checksums are bogus. The problem is that the files have not been created or finalized yet. See
-        /// StorageSystemDataSkipIndices.cpp for a hack that reads and displays the file sizes later, and consider making a nicer fix in the future.
+        /// files. Note that the provided actual checksums are bogus. The problem is that the files have not been created or finalized yet.
+        /// See StorageSystemDataSkipIndices.cpp for a hack that reads and displays the file sizes later, and consider making a nicer fix
+        /// in the future.
         if (typeid_cast<const MergeTreeIndexGin *>(&*skip_indices[i]) != nullptr)
         {
             String file_stem = skip_indices[i]->getFileName();
