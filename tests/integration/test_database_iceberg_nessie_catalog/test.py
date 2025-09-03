@@ -98,6 +98,14 @@ def load_catalog_impl(started_cluster):
     minio_ip = started_cluster.get_instance_ip('minio')
     s3_endpoint = f"http://{minio_ip}:9000"
 
+    # Add minio hostname mapping so PyIceberg can resolve 'minio' hostnames in table metadata
+    import subprocess
+    try:
+        subprocess.run(['bash', '-c', f'echo "{minio_ip} minio" >> /etc/hosts'], check=True)
+        print(f"Added minio hostname mapping: {minio_ip} minio")
+    except Exception as e:
+        print(f"Failed to add hostname mapping: {e}")
+
     return RestCatalog(
         name="my_catalog",
         warehouse=WAREHOUSE_NAME,
