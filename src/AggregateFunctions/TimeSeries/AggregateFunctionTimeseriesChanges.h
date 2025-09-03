@@ -121,16 +121,26 @@ private:
             return;
         }
 
-        UInt64 change_count = 0;
-        std::pair<TimestampType, ValueType> prev_sample = samples_in_window.front();
+        UInt64 count = 0;
+        ValueType prev_sample_value = samples_in_window.front().second;
         for (const auto& sample : samples_in_window)
         {
-            if ((is_resets && sample.second < prev_sample.second) || (!is_resets && sample.second != prev_sample.second))
-                change_count++;
-            prev_sample = sample;
+            if constexpr (is_resets)
+            {
+                bool is_reset = (sample.second < prev_sample_value);
+                if (is_reset)
+                    count++;
+            }
+            else
+            {
+                bool is_change = (sample.second != prev_sample_value);
+                if (is_change)
+                    count++;
+            }
+            prev_sample_value = sample.second;
         }
 
-        result = static_cast<ValueType>(change_count);
+        result = static_cast<ValueType>(count);
         null = 0;
     }
 
@@ -185,7 +195,7 @@ public:
             }
 
             /// Remove samples that are out of the window
-            while (!samples_in_window.empty() && samples_in_window.front().first + Base::window < current_timestamp)
+            while (!samples_in_window.empty() && samples_in_window.front().first + Base::window <= current_timestamp)
             {
                 samples_in_window.pop_front();
             }

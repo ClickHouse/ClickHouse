@@ -11,13 +11,13 @@ SELECT timeSeriesChangesToGrid(10, 120, 10, 10)(timestamps, values) FROM ts_data
 SELECT timeSeriesResetsToGrid(10, 120, 10, 10)(timestamps, values) FROM ts_data; -- {serverError BAD_ARGUMENTS}
 
 -- Filter out invalid rows where timestamp and values arrays lengths do not match
-SELECT timeSeriesChangesToGrid(10, 120, 10, 60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
-SELECT timeSeriesChangesToGridIf(10, 120, 10, 60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
-SELECT timeSeriesChangesToGridIf(10, 120, 10, 60)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
+SELECT timeSeriesChangesToGrid(10, 120, 10, 70)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
+SELECT timeSeriesChangesToGridIf(10, 120, 10, 70)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
+SELECT timeSeriesChangesToGridIf(10, 120, 10, 70)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
 
-SELECT timeSeriesResetsToGrid(10, 120, 10, 60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
-SELECT timeSeriesResetsToGridIf(10, 120, 10, 60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
-SELECT timeSeriesResetsToGridIf(10, 120, 10, 60)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
+SELECT timeSeriesResetsToGrid(10, 120, 10, 70)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
+SELECT timeSeriesResetsToGridIf(10, 120, 10, 70)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
+SELECT timeSeriesResetsToGridIf(10, 120, 10, 70)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
 
 
 SELECT * FROM ts_data_nullable WHERE value IS NULL AND id < 5;
