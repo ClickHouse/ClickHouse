@@ -11,6 +11,7 @@ import signal
 import string
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 from integration_test_images import get_docker_env
@@ -311,6 +312,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--read-tests-from-file",
+        action="store_true",
+        default=False,
+        dest="read_tests_from_file",
+        help="To read list of test cases to run from ./tests/integration/test_names.txt",
+    )
+
+    parser.add_argument(
         "-k",
         "--keyword_expression",
         action="store",
@@ -470,9 +479,15 @@ if __name__ == "__main__":
     pytest_opts = " ".join(
         map(lambda x: shlex.quote(x).replace('"', '\\"'), args.pytest_args)
     )
-    tests_list = " ".join(
-        map(lambda x: shlex.quote(x).replace('"', '\\"'), args.tests_list)
-    )
+
+    tests_list = ""
+    if args.tests_list:
+        tests_list = " ".join(
+            map(lambda x: shlex.quote(x).replace('"', '\\"'), args.tests_list)
+        )
+    elif args.read_tests_from_file:
+        assert Path(f"{args.cases_dir}/test_names.txt").exists(), f"test_names.txt with tests to run not found in {args.cases_dir}"
+        tests_list = "< /ClickHouse/tests/integration/test_names.txt"
 
     # Mount debug root into container if debug flag is set
     debug_mount = f"--volume={CLICKHOUSE_ROOT}:/debug:ro" if args.debug else ""
@@ -491,7 +506,7 @@ if __name__ == "__main__":
         f"--volume={args.utils_dir}/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 "
         f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
         f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_old_analyzer} {use_distributed_plan} -e PYTHONUNBUFFERED=1 "
-        f'-e PYTEST_ADDOPTS="{parallel_args} {repeat_args} {pytest_opts} {tests_list} {rand_args} -vvv "'
+        f'-e PYTEST_ADDOPTS="{parallel_args} {repeat_args} {pytest_opts} {rand_args} -vvv {tests_list}"'
         f" {DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version}"
     )
 
