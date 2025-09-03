@@ -85,6 +85,7 @@
 
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Storages/StorageTableFunction.h>
 
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/IStorageCluster.h>
@@ -2202,7 +2203,49 @@ void registerStorageDistributed(StorageFactory & factory)
             }
         }
 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TieredDistributedMerge engine is not implemented yet");
+        // Create the underlying StorageDistributed using the table function
+        const ContextPtr & context = args.getContext();
+
+        auto table_function = TableFunctionFactory::instance().get(first_arg, context);
+        if (!table_function)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid table function in TieredDistributedMerge engine");
+
+        // Execute the table function to get the underlying storage
+        StoragePtr storage = table_function->execute(
+            first_arg,
+            context,
+            args.table_id.table_name,
+            args.columns,
+            false, // use_global_context = false
+            false); // is_insert_query = false
+
+        // table function execution wraps the actual storage in a StorageTableFunctionProxy, to make initialize it lazily
+        // so we need to get the nested storage
+        if (auto proxy = std::dynamic_pointer_cast<StorageTableFunctionProxy>(storage))
+        {
+            storage = proxy->getNested();
+        }
+
+        // Cast to StorageDistributed to access its methods
+        auto distributed_storage = std::dynamic_pointer_cast<StorageDistributed>(storage);
+        if (!distributed_storage)
+        {
+            // Debug: Print the actual type we got
+            std::string actual_type = storage ? storage->getName() : "nullptr";
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "TableFunctionRemote did not return a StorageDistributed or StorageProxy, got: {}", actual_type);
+        }
+
+        // Fix the database and table names - this is the same pattern used in InterpreterCreateQuery
+        // The TableFunctionRemote creates a StorageDistributed with "_table_function" database,
+        // but we need to rename it to the correct database and table names
+        distributed_storage->renameInMemory({args.table_id.database_name, args.table_id.table_name, args.table_id.uuid});
+
+        // Store the filter expression for later use in read operations
+        // For now, we'll just return the distributed storage
+        // TODO: Implement filter application in read() method
+
+        return distributed_storage;
     },
     {
         .supports_settings = false,

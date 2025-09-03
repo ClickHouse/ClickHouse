@@ -6,3 +6,6 @@ CREATE TABLE test_tiered_distributed_merge_invalid_first_arg ( `id` UInt32, `nam
 CREATE TABLE test_tiered_distributed_merge_invalid_first_arg ( `id` UInt32, `name` String) ENGINE = TieredDistributedMerge(url('http://google.com', 'RawBLOB'), 1); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE test_tiered_distributed_merge_invalid_first_arg ( `id` UInt32, `name` String) ENGINE = TieredDistributedMerge(urlCluster('test_cluster', 'http://example.com')); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE test_tiered_distributed_merge_invalid_second_arg (`id` UInt32, `name` String) ENGINE = TieredDistributedMerge(remote('test_cluster', 'db', 'table'), 'invalid_predicate');-- { serverError BAD_ARGUMENTS }
+
+-- Test 8: TieredDistributedMerge with 2 arguments (valid table function + SQL expression) should work
+CREATE TABLE test_tiered_distributed_merge_valid (`id` UInt32, `name` String) ENGINE = TieredDistributedMerge(remote('test_cluster', 'db', 'table'), id > 0);
