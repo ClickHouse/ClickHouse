@@ -55,7 +55,6 @@ __scalarSubqueryResult
 accurateCast
 accurateCastOrDefault
 accurateCastOrNull
-and
 asin
 bar
 basename
@@ -269,7 +268,6 @@ normalizeQuery
 normalizeQueryKeepNames
 normalizedQueryHash
 normalizedQueryHashKeepNames
-not
 notILike
 notIn
 notInIgnoreSet
@@ -278,7 +276,6 @@ notNullIn
 notNullInIgnoreSet
 nullIn
 nullInIgnoreSet
-or
 parseDateTime
 parseDateTime32BestEffort
 parseDateTime32BestEffortOrNull
@@ -549,5 +546,4 @@ visibleWidth
 widthBucket
 windowID
 wkt
-xor
 zookeeperSessionUptime

@@ -30,6 +30,8 @@
 #include <Generic.hh>
 #include <Stream.hh>
 #include <ValidSchema.hh>
+#include <new>
+
 
 namespace DB
 {
@@ -142,8 +144,8 @@ private:
     std::optional<size_t> current_file_num_rows = std::nullopt;
     std::optional<size_t> current_file_num_bytes = std::nullopt;
     std::vector<String> data_file_names;
-    std::vector<std::unique_ptr<WriteBufferFromFileBase>> buffers;
-    std::vector<OutputFormatPtr> output_formats;
+    std::unique_ptr<WriteBufferFromFileBase> buffer;
+    OutputFormatPtr output_format;
     FileNamesGenerator & filename_generator;
     ObjectStoragePtr object_storage;
     ContextPtr context;
