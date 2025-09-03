@@ -25,7 +25,7 @@ const MergeTreePartInfo MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION = {"al
 
 MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context)
     : table_id{table_id_}
-    , partition_id{future_part->part_info.getPartitionId()}
+    , partition_id{future_part->part_info.partition_id}
     , result_part_name{future_part->name}
     , result_part_path{future_part->path}
     , result_part_info{future_part->part_info}
@@ -74,7 +74,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} source parts for mutation {}: {}", future_part->parts.size(),
                         result_part_info.getPartNameV1(), fmt::join(source_part_names, ", "));
 
-    thread_group = ThreadGroup::createForMergeMutate(context);
+    thread_group = ThreadGroup::createForBackgroundProcess(context);
 }
 
 MergeInfo MergeListElement::getInfo() const

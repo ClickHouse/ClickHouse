@@ -44,9 +44,9 @@ REGISTER_FUNCTION(InitialQueryStartTime)
     factory.registerFunction<FunctionInitialQueryStartTime>(FunctionDocumentation{
         .description = "Returns the start time of the initial current query.",
         .syntax = {"initialQueryStartTime()"},
-        .returned_value = {"Start time of the initial query."},
+        .returned_value = "Start time of the initial query.",
         .examples = {{"simple", "SELECT initialQueryStartTime()", "2025-01-28 11:38:04"}},
-        .category = FunctionDocumentation::Category::Other,
+        .category{"Other"},
     });
     factory.registerAlias("initial_query_start_time", FunctionInitialQueryStartTime::name, FunctionFactory::Case::Insensitive);
 }

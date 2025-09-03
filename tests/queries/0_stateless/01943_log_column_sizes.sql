@@ -1,4 +1,3 @@
--- Tags: log-engine
 DROP TABLE IF EXISTS test_log;
 DROP TABLE IF EXISTS test_tiny_log;
 

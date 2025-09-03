@@ -1,7 +1,3 @@
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
-SET use_query_condition_cache = 0;
-
 DROP TABLE IF EXISTS t_skip_index_insert;
 
 CREATE TABLE t_skip_index_insert
@@ -45,7 +41,7 @@ EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 110 AND a
 
 DROP TABLE IF EXISTS t_skip_index_insert;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT count(), sum(ProfileEvents['MergeTreeDataWriterSkipIndicesCalculationMicroseconds'])
 FROM system.query_log

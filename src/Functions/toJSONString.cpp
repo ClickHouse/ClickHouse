@@ -46,6 +46,7 @@ namespace
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 serializer->serializeTextJSON(*arguments[0].column, i, json, format_settings);
+                writeChar(0, json);
                 offsets_to[i] = json.count();
             }
 

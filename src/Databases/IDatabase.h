@@ -2,7 +2,6 @@
 
 #include <Core/UUID.h>
 #include <Databases/LoadingStrictnessLevel.h>
-#include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/QueryFlags.h>
 #include <Parsers/IAST_fwd.h>
@@ -22,14 +21,12 @@
 namespace DB
 {
 
-
 struct Settings;
 struct ConstraintsDescription;
 struct IndicesDescription;
 struct StorageInMemoryMetadata;
 struct StorageID;
 class ASTCreateQuery;
-struct AlterCommand;
 class AlterCommands;
 class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
@@ -176,8 +173,6 @@ public:
     virtual bool canContainMergeTreeTables() const { return true; }
 
     virtual bool canContainDistributedTables() const { return true; }
-
-    virtual bool canContainRocksDBTables() const { return true; }
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
@@ -378,9 +373,6 @@ public:
         return database_name;
     }
 
-    // Alter comment of database.
-    virtual void alterDatabaseComment(const AlterCommand &);
-
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
 
@@ -427,9 +419,6 @@ public:
 
     /// Creates a table restored from backup.
     virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms);
-
-    /// Get the disk storing metedata files of the tables
-    virtual DiskPtr getDisk() const;
 
     virtual ~IDatabase();
 
