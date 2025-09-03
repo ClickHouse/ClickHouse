@@ -633,10 +633,10 @@ def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
     # Clean up
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
-
+@pytest.mark.parametrize("infer_format", [True, False])
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_schema_inference(started_cluster, format_version, storage_type):
+def test_schema_inference(started_cluster, format_version, storage_type, infer_format):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     for format in ["Parquet", "ORC", "Avro"]:
@@ -666,10 +666,14 @@ def test_schema_inference(started_cluster, format_version, storage_type):
             f"/iceberg_data/default/{TABLE_NAME}/",
         )
 
-        create_iceberg_table(
-            storage_type, instance, TABLE_NAME, started_cluster, format=format
-        )
-
+        if infer_format:
+            create_iceberg_table(
+                storage_type, instance, TABLE_NAME, started_cluster
+            )
+        else:
+            create_iceberg_table(
+                storage_type, instance, TABLE_NAME, started_cluster, format=format
+            )
         res = instance.query(
             f"DESC {TABLE_NAME} FORMAT TSVRaw", settings={"print_pretty_type_names": 0}
         )
