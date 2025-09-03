@@ -36,7 +36,7 @@ struct IFilterDescription
 struct FilterDescription final : public IFilterDescription
 {
     const IColumnFilter * data = nullptr; /// Pointer to filter when it is not always true or always false.
-    ColumnPtr data_holder;                  /// If new column was generated, it will be owned by holder.
+    ColumnPtr data_holder;                /// If new column was generated, it will be owned by holder.
 
     explicit FilterDescription(const IColumn & column);
 

@@ -62,53 +62,60 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
     }
 }
 
+// FilterDescription::~FilterDescription() = default;
 
 FilterDescription::FilterDescription(const IColumn & column_)
 {
-    ColumnPtr holder;
+    ColumnPtr column = column_.getPtr();
     if (column_.isSparse())
-        holder = recursiveRemoveSparse(column_.getPtr());
+        column = column_.convertToFullColumnIfSparse();
 
     if (column_.lowCardinality())
-        holder = column_.convertToFullColumnIfLowCardinality();
+        column = column_.convertToFullColumnIfLowCardinality();
 
-    const auto * column = holder ? holder.get() : &column_;
+    bool was_normalized = column != column_.getPtr();
 
     ColumnPtr null_map_column;
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column))
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
     {
-        column = &nullable_column->getNestedColumn();
+        column = nullable_column->getNestedColumnPtr();
         null_map_column = nullable_column->getNullMapColumnPtr();
     }
 
-    const ColumnUInt8 * filter_column = typeid_cast<const ColumnUInt8 *>(column);
-    if (!filter_column)
+    std::optional<IColumnFilter> column_filter;
+
+    if (const auto * column_uint8 = typeid_cast<const ColumnUInt8 *>(column.get()))
     {
-        auto col = ColumnUInt8::create();
-        col->getData().resize(column->size());
-        if (!tryConvertAnyColumnToBool(*column, col->getData()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                "Illegal type {} of column for filter. Must be Number or Nullable(Number).", column->getName());
-        filter_column = col.get();
-        data_holder = std::move(col);
+        if (was_normalized)
+        {
+            auto mut_col = IColumn::mutate(std::move(column));
+            column_filter = std::move(assert_cast<ColumnUInt8 &>(*mut_col).getData());
+            data = &*column_filter;
+        }
+        else
+            data = &column_uint8->getData();
     }
     else
-        data_holder = std::move(holder);
-
-    data = &filter_column->getData();
+    {
+        IColumnFilter col(column->size());
+        if (!tryConvertAnyColumnToBool(*column, col))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                "Illegal type {} of column for filter. Must be Number or Nullable(Number).", column_.getName());
+        column_filter = std::move(col);
+        data = &*column_filter;
+    }
 
     if (null_map_column)
     {
-        ColumnPtr uint8_column = (data_holder && data_holder.get() == filter_column) ? std::move(data_holder) : filter_column->getPtr();
-        MutableColumnPtr mutable_holder = IColumn::mutate(std::move(uint8_column));
-
-        ColumnUInt8 * concrete_column = typeid_cast<ColumnUInt8 *>(mutable_holder.get());
-        if (!concrete_column)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                "Illegal type {} of column for filter. Must be UInt8 or Nullable(UInt8).", column_.getName());
+        if (!column_filter)
+        {
+            auto mut_col = IColumn::mutate(std::move(column));
+            column_filter = std::move(assert_cast<ColumnUInt8 &>(*mut_col).getData());
+            data = &*column_filter;
+        }
 
         const NullMap & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
-        IColumn::Filter & res = concrete_column->getData();
+        IColumn::Filter & res = *column_filter;
 
         const auto size = res.size();
         assert(size == null_map.size());
@@ -119,9 +126,14 @@ FilterDescription::FilterDescription(const IColumn & column_)
             /// Instead of the logical AND operator(&&), the bitwise one(&) is utilized for the auto vectorization.
             res[i] = has_val & not_null;
         }
+    }
 
-        data = &res;
-        data_holder = std::move(mutable_holder);
+    if (column_filter)
+    {
+        auto col = ColumnUInt8::create();
+        col->getData() = std::move(*column_filter);
+        data = &col->getData();
+        data_holder = std::move(col);
     }
 }
 
