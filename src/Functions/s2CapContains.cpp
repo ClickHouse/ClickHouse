@@ -11,7 +11,7 @@
 #include <Common/NaNUtils.h>
 #include <base/range.h>
 
-#include <Functions/s2_fwd.h>
+#include "s2_fwd.h"
 
 namespace DB
 {
