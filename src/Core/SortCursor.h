@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cassert>
+#include <utility>
 #include <vector>
 #include <algorithm>
 
@@ -651,9 +652,258 @@ private:
     }
 };
 
+template <typename Cursor, SortingQueueStrategy strategy>
+class LoserTreeSortingQueueImpl
+{
+public:
+    LoserTreeSortingQueueImpl() = default;
+
+    template <typename Cursors>
+    explicit LoserTreeSortingQueueImpl(Cursors & cursors)
+    {
+        size_t size = cursors.size();
+        queue.reserve(size);
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (cursors[i].empty())
+                continue;
+            
+            queue.emplace_back(&cursors[i]);
+        }
+        if (queue.empty())
+            return;
+
+        size = queue.size();
+        loser_tree.assign(size, -1);
+        buildLoserTree();
+
+        if constexpr (strategy == SortingQueueStrategy::Batch)
+        {
+            updateBatchSize();
+        }
+    }
+
+    bool isValid() const { return !queue.empty() && loser_tree[0] >= 0; }
+
+    Cursor & current() requires (strategy == SortingQueueStrategy::Default)
+    {
+        return queue[loser_tree[0]];
+    }
+
+    std::pair<Cursor *, size_t> current() requires (strategy == SortingQueueStrategy::Batch)
+    {
+        return {&queue[loser_tree[0]], current_batch_size};
+    }
+
+    size_t size() { return queue.size(); }
+
+    Cursor & nextChild()
+    {
+        auto winner = loser_tree[0];
+        auto next_child_index = (winner + this->size()) / 2;
+        while (next_child_index > 1)
+        {
+            auto parent = next_child_index / 2;
+            auto & next_child = queue[loser_tree[next_child_index]];
+            auto & parent_child = queue[loser_tree[parent]];
+            if (!next_child.greater(parent_child))
+                return next_child;
+        }
+        return queue[loser_tree[1]];
+    }
+
+    void ALWAYS_INLINE next() requires (strategy == SortingQueueStrategy::Default)
+    {
+        assert(isValid());
+
+        size_t winner = loser_tree[0];
+        if (!queue[winner]->isLast())
+        {
+            queue[winner]->next();
+            adjustLoserTree(winner);
+        }
+        else
+            removeTop();
+    }
+
+    void ALWAYS_INLINE next(size_t batch_size_value) requires (strategy == SortingQueueStrategy::Batch)
+    {
+        assert(isValid());
+        assert(batch_size_value <= current_batch_size);
+        assert(batch_size_value > 0);
+
+        current_batch_size -= batch_size_value;
+        auto winner = loser_tree[0];
+        if (current_batch_size > 0)
+        {
+            queue[winner]->next(batch_size_value);
+            return;
+        }
+
+        if (!queue[winner]->isLast(batch_size_value))
+        {
+            queue[winner]->next(batch_size_value);
+            adjustLoserTree(winner);
+        }
+        else
+        {
+            removeTop();
+        }
+    }
+
+    void replaceTop(Cursor new_top)
+    {
+        size_t winner = loser_tree[0];
+        queue[winner] = new_top;
+        adjustLoserTree(winner);
+    }
+
+    void removeTop()
+    {
+        size_t size = this->size();
+        if (size == 1)
+        {
+            loser_tree[0] = -1;
+            if constexpr (strategy == SortingQueueStrategy::Batch)
+                current_batch_size = 0;
+            return;
+        }
+
+        // The tree structure is changed after removing the top element.
+        // So we need to rebuild the loser tree.
+        queue[loser_tree[0]] = std::move(queue.back());
+        size -= 1;
+        loser_tree.resize(size, -1);
+        buildLoserTree();
+
+        if constexpr (strategy == SortingQueueStrategy::Batch)
+            updateBatchSize();
+    }
+
+    void push(SortCursorImpl & cursor)
+    {
+        queue.emplace_back(&cursor);
+        loser_tree.resize(this->size(), -1);
+        buildLoserTree();
+
+        if constexpr (strategy == SortingQueueStrategy::Batch)
+            updateBatchSize();
+    }
+
+    size_t getUpdateHeapCompareCount() const
+    {
+        return 0;
+    }
+    size_t getUpdateBatchSizeCompareCount() const
+    {
+        return 0;
+    }
+
+private:
+    using Container = std::vector<Cursor>;
+    Container queue;
+    size_t current_batch_size = 0;
+    // loser_tree[0] is the index of the overall winner
+    std::vector<Int32> loser_tree;
+
+    void buildLoserTree()
+    {
+        Int32 k = this->size();
+        for (int i = k - 1; i >= 0; --i)
+            adjustLoserTree(i);
+    }
+
+    void adjustLoserTree(Int32 winner)
+    {
+        if (this->size() <= 1)
+        {
+            loser_tree[0] = (this->size() == 1) ? 0 : -1;
+            return;
+        }
+
+        int t = (winner + this->size()) / 2;
+        while (t > 0)
+        {
+            if (loser_tree[t] == -1)
+            {
+                loser_tree[t] = winner;
+                winner = -1;
+                break;
+            }
+            else
+            {
+                int & loser = loser_tree[t];
+                if (!isWinner(winner, loser))
+                    std::swap(loser, winner);
+            }
+
+            t /= 2;
+        }
+
+        if (winner != -1)
+            loser_tree[0] = winner;
+    }
+
+    bool isWinner(Int32 a, Int32 b)
+    {
+        if (a == -1)
+            return false;
+        if (b == -1)
+            return true;
+
+        if (!queue[a]->isValid())
+            return false;
+        if (!queue[b]->isValid())
+            return true;
+
+        return !queue[a].greater(queue[b]);
+    }
+
+    void updateBatchSize()
+    {
+        auto & winner_cursor = queue[loser_tree[0]];
+        size_t min_cursor_size = winner_cursor->getSize();
+        size_t min_cursor_pos = winner_cursor->getPosRef();
+        if (this->size() == 1)
+        {
+            current_batch_size = min_cursor_size - min_cursor_pos;
+            return;
+        }
+
+        current_batch_size = 1;
+        auto & next_child_cursor = nextChild();
+        if (min_cursor_pos + current_batch_size < min_cursor_size && next_child_cursor.greaterWithOffset(winner_cursor, 0, current_batch_size))
+            ++current_batch_size;
+        else
+            return;
+
+        constexpr size_t max_linear_detection = 16;
+        size_t i = 0;
+        while (i < max_linear_detection && min_cursor_pos + current_batch_size < min_cursor_size
+               && next_child_cursor.greaterWithOffset(winner_cursor, 0, current_batch_size))
+        {
+            ++current_batch_size;
+            ++i;
+        }
+        if (i < max_linear_detection)
+            return;
+        size_t start_offset = current_batch_size;
+        size_t end_offset = min_cursor_size - min_cursor_pos;
+        while (start_offset < end_offset)
+        {
+            size_t mid_offset = start_offset + (end_offset - start_offset) / 2;
+            if (next_child_cursor.greaterWithOffset(winner_cursor, 0, mid_offset))
+                start_offset = mid_offset + 1;
+            else
+                end_offset = mid_offset;
+        }
+        current_batch_size = start_offset;
+    }
+};
+
 template <typename Cursor>
 using SortingQueue = SortingQueueImpl<Cursor, SortingQueueStrategy::Default>;
-
+ 
 template <typename Cursor>
 using SortingQueueBatch = SortingQueueImpl<Cursor, SortingQueueStrategy::Batch>;
 
@@ -828,7 +1078,8 @@ private:
 
         SortingQueueImpl<SimpleSortCursor, strategy>,
         SortingQueueImpl<SortCursor, strategy>,
-        SortingQueueImpl<SortCursorWithCollation, strategy>>;
+        SortingQueueImpl<SortCursorWithCollation, strategy>,
+        LoserTreeSortingQueueImpl<SortCursor, strategy>>;
 
     using DefaultQueueVariants = QueueVariants<SortingQueueStrategy::Default>;
     using BatchQueueVariants = QueueVariants<SortingQueueStrategy::Batch>;
