@@ -11,7 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Coordination/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 
 
 namespace Coordination
@@ -109,6 +109,8 @@ public:
             std::span<const RequestPtr> requests,
             MultiCallback callback) override;
 
+    void getACL(const String & path, GetACLCallback callback) override;
+
     void finalize(const String & reason) override;
 
     bool isFeatureEnabled(DB::KeeperFeatureFlag) const override
@@ -158,7 +160,7 @@ private:
     RequestsQueue requests_queue{1};
 
     void pushRequest(RequestInfo && request);
-
+    void exprireRequest(RequestInfo && request);
 
     ThreadFromGlobalPool processing_thread;
 

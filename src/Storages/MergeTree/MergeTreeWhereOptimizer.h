@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -82,6 +81,21 @@ private:
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
         /// column in this condition because this condition have bigger chances to be already satisfied by PK analysis.
         Int64 min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
+
+        /// For debugging purposes
+        String toString() const
+        {
+            return fmt::format(
+                "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
+                "columns_size: {}, table_columns.size: {})",
+                node.getColumnName(),
+                viable,
+                good,
+                min_position_in_primary_key,
+                estimated_row_count,
+                columns_size,
+                table_columns.size());
+        }
 
         auto tuple() const
         {

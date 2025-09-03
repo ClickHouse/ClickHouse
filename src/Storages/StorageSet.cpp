@@ -72,7 +72,7 @@ SetOrJoinSink::SetOrJoinSink(
     const String & backup_tmp_path_,
     const String & backup_file_name_,
     bool persistent_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , WithContext(ctx)
     , table(table_)
     , metadata_snapshot(metadata_snapshot_)
@@ -81,7 +81,7 @@ SetOrJoinSink::SetOrJoinSink(
     , backup_file_name(backup_file_name_)
     , backup_buf(table_.disk->writeFile(fs::path(backup_tmp_path) / backup_file_name))
     , compressed_backup_buf(*backup_buf)
-    , backup_stream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock())
+    , backup_stream(compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()))
     , persistent(persistent_)
 {
 }
@@ -213,7 +213,7 @@ size_t StorageSet::getSize(ContextPtr) const
     return current_set->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageSet::totalRows(const Settings &) const
+std::optional<UInt64> StorageSet::totalRows(ContextPtr) const
 {
     SetPtr current_set;
     {
@@ -223,7 +223,7 @@ std::optional<UInt64> StorageSet::totalRows(const Settings &) const
     return current_set->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageSet::totalBytes(const Settings &) const
+std::optional<UInt64> StorageSet::totalBytes(ContextPtr) const
 {
     SetPtr current_set;
     {
@@ -306,7 +306,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
     NativeReader backup_stream(compressed_backup_buf, 0);
 
     ProfileInfo info;
-    while (Block block = backup_stream.read())
+    for (Block block = backup_stream.read(); !block.empty(); block = backup_stream.read())
     {
         info.update(block);
         insertBlock(block, ctx);
@@ -346,7 +346,7 @@ void registerStorageSet(StorageFactory & factory)
         DiskPtr disk = args.getContext()->getDisk(set_settings[SetSetting::disk]);
         return std::make_shared<StorageSet>(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
-    }, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    }, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, });
 }
 
 

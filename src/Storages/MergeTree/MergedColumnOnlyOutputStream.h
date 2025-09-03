@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/Statistics/Statistics.h>
+#include <Storages/MergeTree/ColumnsSubstreams.h>
 
 namespace DB
 {
@@ -22,14 +23,16 @@ public:
         const ColumnsStatistics & stats_to_recalc,
         CompressionCodecPtr default_codec,
         MergeTreeIndexGranularityPtr index_granularity_ptr,
-        WrittenOffsetColumns * offset_columns = nullptr,
-        bool save_marks_in_cache = false);
+        size_t part_uncompressed_bytes,
+        WrittenOffsetColumns * offset_columns = nullptr);
 
     void write(const Block & block) override;
 
     MergeTreeData::DataPart::Checksums
     fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
 
+    const Block & getColumnsSample() const { return writer->getColumnsSample(); }
+    const ColumnsSubstreams & getColumnsSubstreams() const { return writer->getColumnsSubstreams(); }
     void finish(bool sync);
     void cancel() noexcept override;
 };

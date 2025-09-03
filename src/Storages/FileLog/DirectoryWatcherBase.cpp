@@ -1,3 +1,4 @@
+#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
@@ -155,7 +156,7 @@ void DirectoryWatcherBase::start()
 void DirectoryWatcherBase::stop()
 {
     stopped = true;
-    ::write(event_pipe.fds_rw[1], "\0", 1);
+    (void)::write(event_pipe.fds_rw[1], "\0", 1);
     if (watch_task)
         watch_task->deactivate();
 }

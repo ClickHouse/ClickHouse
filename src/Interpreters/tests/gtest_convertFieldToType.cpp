@@ -6,8 +6,8 @@
 #include <DataTypes/DataTypeFactory.h>
 
 #include <gtest/gtest.h>
-#include "base/Decimal.h"
-#include "base/types.h"
+#include <base/Decimal.h>
+#include <base/types.h>
 
 using namespace DB;
 
@@ -66,39 +66,39 @@ INSTANTIATE_TEST_SUITE_P(
             "Date",
             Field(0),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(0), 0)
+            DecimalField<DateTime64>(DateTime64(0), 0)
         },
         // Max value of Date
         {
             "Date",
             Field(std::numeric_limits<UInt16>::max()),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(std::numeric_limits<UInt16>::max() * Day), 0)
+            DecimalField<DateTime64>(DateTime64(std::numeric_limits<UInt16>::max() * Day), 0)
         },
         // check that scale is respected
         {
             "Date",
             Field(123),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(123 * Day), 0)
+            DecimalField<DateTime64>(DateTime64(123 * Day), 0)
         },
         {
             "Date",
             Field(1),
             "DateTime64(1, 'UTC')",
-            DecimalField(DateTime64(Day * 10), 1)
+            DecimalField<DateTime64>(DateTime64(Day * 10), 1)
         },
         {
             "Date",
             Field(123),
             "DateTime64(3, 'UTC')",
-            DecimalField(DateTime64(123 * Day * 1000), 3)
+            DecimalField<DateTime64>(DateTime64(123 * Day * 1000), 3)
         },
         {
             "Date",
             Field(123),
             "DateTime64(6, 'UTC')",
-            DecimalField(DateTime64(123 * Day * 1'000'000), 6)
+            DecimalField<DateTime64>(DateTime64(123 * Day * 1'000'000), 6)
         },
     })
 );
@@ -112,39 +112,39 @@ INSTANTIATE_TEST_SUITE_P(
             "Date32",
             Field(-25'567),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(-25'567 * Day), 0)
+            DecimalField<DateTime64>(DateTime64(-25'567 * Day), 0)
         },
         // max value of Date32: 31 Dec 2299 (see DATE_LUT_MAX_YEAR)
         {
             "Date32",
             Field(120'529),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(120'529 * Day), 0)
+            DecimalField<DateTime64>(DateTime64(120'529 * Day), 0)
         },
         // check that scale is respected
         {
             "Date32",
             Field(123),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(123 * Day), 0)
+            DecimalField<DateTime64>(DateTime64(123 * Day), 0)
         },
         {
             "Date32",
             Field(123),
             "DateTime64(1, 'UTC')",
-            DecimalField(DateTime64(123 * Day * 10), 1)
+            DecimalField<DateTime64>(DateTime64(123 * Day * 10), 1)
         },
         {
             "Date32",
             Field(123),
             "DateTime64(3, 'UTC')",
-            DecimalField(DateTime64(123 * Day * 1000), 3)
+            DecimalField<DateTime64>(DateTime64(123 * Day * 1000), 3)
         },
         {
             "Date32",
             Field(123),
             "DateTime64(6, 'UTC')",
-            DecimalField(DateTime64(123 * Day * 1'000'000), 6)
+            DecimalField<DateTime64>(DateTime64(123 * Day * 1'000'000), 6)
         }
     })
 );
@@ -157,25 +157,25 @@ INSTANTIATE_TEST_SUITE_P(
             "DateTime",
             Field(1),
             "DateTime64(0, 'UTC')",
-            DecimalField(DateTime64(1), 0)
+            DecimalField<DateTime64>(DateTime64(1), 0)
         },
         {
             "DateTime",
             Field(1),
             "DateTime64(1, 'UTC')",
-            DecimalField(DateTime64(1'0), 1)
+            DecimalField<DateTime64>(DateTime64(1'0), 1)
         },
         {
             "DateTime",
             Field(123),
             "DateTime64(3, 'UTC')",
-            DecimalField(DateTime64(123'000), 3)
+            DecimalField<DateTime64>(DateTime64(123'000), 3)
         },
         {
             "DateTime",
             Field(123),
             "DateTime64(6, 'UTC')",
-            DecimalField(DateTime64(123'000'000), 6)
+            DecimalField<DateTime64>(DateTime64(123'000'000), 6)
         },
     })
 );

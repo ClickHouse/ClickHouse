@@ -1,7 +1,10 @@
 #pragma once
+
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Common/logger_useful.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
@@ -49,7 +52,7 @@ protected:
     bool loaded = false;
     std::atomic<bool> shutdown_called = false;
     std::unique_ptr<NamedCollectionsMetadataStorage> metadata_storage;
-    BackgroundSchedulePool::TaskHolder update_task;
+    BackgroundSchedulePoolTaskHolder update_task;
 
     bool loadIfNot(std::lock_guard<std::mutex> & lock);
 

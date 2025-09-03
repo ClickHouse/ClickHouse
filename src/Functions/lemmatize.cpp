@@ -41,11 +41,13 @@ struct LemmatizeImpl
         res_offsets.assign(offsets);
 
         UInt64 data_size = 0;
+        String buffer;
         for (UInt64 i = 0; i < offsets.size(); ++i)
         {
-            /// lemmatize() uses the fact the fact that each string ends with '\0'
-            auto result = lemmatizer->lemmatize(reinterpret_cast<const char *>(data.data() + offsets[i - 1]));
-            size_t new_size = strlen(result.get()) + 1;
+            /// `lemmatize` requires terminating zero
+            buffer.assign(reinterpret_cast<const char *>(data.data() + offsets[i - 1]), offsets[i] - offsets[i - 1]);
+            auto result = lemmatizer->lemmatize(buffer.c_str());
+            size_t new_size = strlen(result.get());
 
             if (data_size + new_size > res_data.size())
                 res_data.resize(data_size + new_size);

@@ -14,7 +14,7 @@ template <typename Base, typename... Args>
 class RowOutputFormatWithExceptionHandlerAdaptor : public Base
 {
 public:
-    RowOutputFormatWithExceptionHandlerAdaptor(const Block & header, WriteBuffer & out_, bool handle_exceptions, Args... args)
+    RowOutputFormatWithExceptionHandlerAdaptor(SharedHeader header, WriteBuffer & out_, bool handle_exceptions, Args... args)
         : Base(header, out_, std::forward<Args>(args)...)
     {
         if (handle_exceptions)
@@ -60,12 +60,12 @@ public:
     void write(const Columns & columns, size_t row_num) override { Base::write(columns, row_num); }
     void writeRowBetweenDelimiter() override { Base::writeRowBetweenDelimiter(); }
 
-    void flush() override
+    void flushImpl() override
     {
         if (peekable_out)
             peekable_out->next();
 
-        Base::flush();
+        Base::flushImpl();
     }
 
     void finalizeBuffers() override

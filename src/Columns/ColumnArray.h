@@ -45,11 +45,11 @@ private:
     using ComparatorCollationEqual = ComparatorEqualImpl<ComparatorCollationBase>;
 
 public:
+    using Base = COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
+
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
-    using Base = COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
-
     static Ptr create(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
     {
         return ColumnArray::create(nested_column->assumeMutable(), offsets_column->assumeMutable());
@@ -74,6 +74,7 @@ public:
     size_t size() const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
     StringRef getDataAt(size_t n) const override;
     bool isDefaultAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
@@ -119,7 +120,7 @@ public:
                                     size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns) override;
+    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -159,19 +160,33 @@ public:
     /// For example, `getDataInRange(0, size())` is the same as `getDataPtr()->clone()`.
     MutableColumnPtr getDataInRange(size_t start, size_t length) const;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     ColumnCheckpointPtr getCheckpoint() const override;
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override
     {
         callback(offsets);
         callback(data);
     }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    {
+        callback(*offsets);
+        offsets->forEachMutableSubcolumnRecursively(callback);
+        callback(*data);
+        data->forEachMutableSubcolumnRecursively(callback);
+    }
+
+    void forEachSubcolumn(ColumnCallback callback) const override
+    {
+        callback(offsets);
+        callback(data);
+    }
+
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
         callback(*offsets);
         offsets->forEachSubcolumnRecursively(callback);

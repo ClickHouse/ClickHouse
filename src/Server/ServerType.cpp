@@ -3,7 +3,7 @@
 #include <vector>
 #include <algorithm>
 
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
 
 namespace DB
@@ -47,6 +47,7 @@ bool ServerType::shouldStart(Type server_type, const std::string & server_custom
         switch (current_type)
         {
             case Type::TCP:
+            case Type::TCP_SSH:
             case Type::TCP_WITH_PROXY:
             case Type::TCP_SECURE:
             case Type::HTTP:
@@ -57,6 +58,7 @@ bool ServerType::shouldStart(Type server_type, const std::string & server_custom
             case Type::PROMETHEUS:
             case Type::INTERSERVER_HTTP:
             case Type::INTERSERVER_HTTPS:
+            case Type::ARROW_FLIGHT:
                 return true;
             default:
                 return false;
@@ -110,6 +112,9 @@ bool ServerType::shouldStop(const std::string & port_name) const
     else if (port_name == "tcp_port")
         port_type = Type::TCP;
 
+    else if (port_name == "tcp_ssh_port")
+        port_type = Type::TCP_SSH;
+
     else if (port_name == "tcp_with_proxy_port")
         port_type = Type::TCP_WITH_PROXY;
 
@@ -118,6 +123,9 @@ bool ServerType::shouldStop(const std::string & port_name) const
 
     else if (port_name == "mysql_port")
         port_type = Type::MYSQL;
+
+    else if (port_name == "arrowflight_port")
+        port_type = Type::ARROW_FLIGHT;
 
     else if (port_name == "postgresql_port")
         port_type = Type::POSTGRESQL;

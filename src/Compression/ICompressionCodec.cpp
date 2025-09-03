@@ -1,4 +1,4 @@
-#include "ICompressionCodec.h"
+#include <Compression/ICompressionCodec.h>
 
 #include <cassert>
 
@@ -6,7 +6,7 @@
 #include <base/unaligned.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
-#include <Parsers/queryToString.h>
+#include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Compression/CompressionCodecMultiple.h>
 

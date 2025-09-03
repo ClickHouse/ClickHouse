@@ -41,7 +41,7 @@ def test_system_logs_recreate():
             assert "ENGINE = MergeTree" in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
-            assert "ENGINE = Null" not in node.query(
+            assert "ENGINE = `Null`" not in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
             assert (
@@ -78,7 +78,7 @@ def test_system_logs_recreate():
             assert "ENGINE = MergeTree" not in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
-            assert "ENGINE = Null" in node.query(f"SHOW CREATE TABLE system.{table}")
+            assert "ENGINE = `Null`" in node.query(f"SHOW CREATE TABLE system.{table}")
             assert (
                 len(
                     node.query(f"SHOW TABLES FROM system LIKE '{table}%'")
@@ -118,7 +118,7 @@ def test_system_logs_recreate():
                 create_table_sql,
             )
             assert "ENGINE = MergeTree" in create_table_sql
-            assert "ENGINE = Null" not in create_table_sql
+            assert "ENGINE = `Null`" not in create_table_sql
             assert "SETTINGS storage_policy = 'system_tables'" in create_table_sql
             assert (
                 len(
@@ -140,7 +140,7 @@ def test_system_logs_recreate():
             assert "ENGINE = MergeTree" in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
-            assert "ENGINE = Null" not in node.query(
+            assert "ENGINE = `Null`" not in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
             assert (

@@ -3,8 +3,8 @@
 #include "config.h"
 
 #if USE_MONGODB
-#include "DictionaryStructure.h"
-#include "IDictionarySource.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionarySource.h>
 
 #include <Core/Block.h>
 #include <Storages/StorageMongoDB.h>
@@ -23,7 +23,7 @@ public:
     MongoDBDictionarySource(
         const DictionaryStructure & dict_struct_,
         std::shared_ptr<MongoDBConfiguration> configuration_,
-        Block sample_block_);
+        SharedHeader sample_block_);
 
     MongoDBDictionarySource(const MongoDBDictionarySource & other);
 
@@ -53,9 +53,11 @@ public:
     std::string toString() const override;
 
 private:
+    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
+
     const DictionaryStructure dict_struct;
     const std::shared_ptr<MongoDBConfiguration> configuration;
-    Block sample_block;
+    SharedHeader sample_block;
 };
 
 }

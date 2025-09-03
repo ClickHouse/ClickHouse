@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/NpyOutputFormat.h>
 
+#include <Common/assert_cast.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -10,8 +11,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatFactory.h>
-
-#include <Common/assert_cast.h>
+#include <Processors/Port.h>
 
 
 namespace DB
@@ -63,11 +63,11 @@ String NpyOutputFormat::shapeStr() const
     return shape.str();
 }
 
-NpyOutputFormat::NpyOutputFormat(WriteBuffer & out_, const Block & header_) : IOutputFormat(header_, out_)
+NpyOutputFormat::NpyOutputFormat(WriteBuffer & out_, SharedHeader header_) : IOutputFormat(header_, out_)
 {
     const auto & header = getPort(PortKind::Main).getHeader();
     auto data_types = header.getDataTypes();
-    if (data_types.size() > 1)
+    if (data_types.size() != 1)
         throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "Expected single column for Npy output format, got {}", data_types.size());
     data_type = data_types[0];
 
@@ -188,7 +188,7 @@ void NpyOutputFormat::updateSizeIfTypeString(const ColumnPtr & column)
         const auto & string_offsets = assert_cast<const ColumnString *>(column.get())->getOffsets();
         for (size_t i = 0; i < string_offsets.size(); ++i)
         {
-            size_t string_length = static_cast<size_t>(string_offsets[i] - 1 - string_offsets[i - 1]);
+            size_t string_length = static_cast<size_t>(string_offsets[i] - string_offsets[i - 1]);
             if (numpy_data_type->getSize() < string_length)
                 numpy_data_type->setSize(string_length);
         }
@@ -259,11 +259,14 @@ void registerOutputFormatNpy(FormatFactory & factory)
     factory.registerOutputFormat("Npy",[](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings &)
+        const FormatSettings &,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<NpyOutputFormat>(buf, sample);
+        return std::make_shared<NpyOutputFormat>(buf, std::make_shared<const Block>(sample));
     });
     factory.markFormatHasNoAppendSupport("Npy");
+    factory.markOutputFormatNotTTYFriendly("Npy");
+    factory.setContentType("Npy", "application/octet-stream");
 }
 
 }

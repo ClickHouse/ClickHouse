@@ -82,15 +82,15 @@ public:
     bool hasSecretParts() const override;
 
 protected:
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 private:
-    void finishFormatWithWindow(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
+    void finishFormatWithWindow(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
 };
 
 
 template <typename... Args>
-std::shared_ptr<ASTFunction> makeASTFunction(const String & name, Args &&... args)
+std::shared_ptr<ASTFunction> makeASTFunction(std::string_view name, Args &&... args)
 {
     auto function = std::make_shared<ASTFunction>();
 

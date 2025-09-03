@@ -7,6 +7,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <IO/Operators.h>
+#include <Common/SipHash.h>
 
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -48,6 +49,12 @@ String DataTypeObjectDeprecated::doGetName() const
     return out.str();
 }
 
+void DataTypeObjectDeprecated::updateHashImpl(SipHash & hash) const
+{
+    hash.update(schema_format);
+    hash.update(is_nullable);
+}
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
@@ -72,7 +79,7 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
             "Object data type family must have a const string as its schema name parameter");
 
-    return std::make_shared<DataTypeObjectDeprecated>(literal->value.safeGet<const String &>(), is_nullable);
+    return std::make_shared<DataTypeObjectDeprecated>(literal->value.safeGet<String>(), is_nullable);
 }
 
 void registerDataTypeObjectDeprecated(DataTypeFactory & factory)

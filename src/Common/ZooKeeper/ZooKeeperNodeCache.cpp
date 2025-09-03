@@ -1,4 +1,4 @@
-#include "ZooKeeperNodeCache.h"
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
 namespace DB
 {
@@ -103,6 +103,11 @@ ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coor
     result.exists = zookeeper->tryGet(path, result.contents, &result.stat);
     path_to_cached_znode.emplace(path, result);
     return result;
+}
+
+void ZooKeeperNodeCache::sync()
+{
+    get_zookeeper()->sync("/");
 }
 
 }

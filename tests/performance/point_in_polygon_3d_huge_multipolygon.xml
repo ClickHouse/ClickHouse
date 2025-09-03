@@ -1,0 +1,89 @@
+<test>
+    <settings>
+        <validate_polygons>0</validate_polygons>
+    </settings>
+    <drop_query>
+        DROP TABLE IF EXISTS random_polys;
+    </drop_query>
+
+    <create_query>
+        CREATE TABLE random_polys
+        (
+            id  UInt32,
+            poly Array(Array(Tuple(Int32,Int32)))
+        ) ENGINE = MergeTree ORDER BY id;
+    </create_query>
+    <create_query>
+        INSERT INTO random_polys
+        SELECT
+            number AS id,
+                [
+                  /* outer ring */
+                  arrayMap(i -> tuple(
+                      toInt32(rand64(number*17 + i) % 2001 - 1000),
+                      toInt32(rand64(number*19 + i) % 2001 - 1000)
+                  ), range(5)),
+                  /* hole 1 */
+                  arrayMap(i -> tuple(
+                      toInt32(rand64(number*23 + i) % 2001 - 1000),
+                      toInt32(rand64(number*29 + i) % 2001 - 1000)
+                  ), range(5)),
+                  /* hole 2 */
+                  arrayMap(i -> tuple(
+                      toInt32(rand64(number*31 + i) % 2001 - 1000),
+                      toInt32(rand64(number*37 + i) % 2001 - 1000)
+                  ), range(5))
+            ] AS poly
+        FROM numbers(1000);
+    </create_query>
+    <drop_query>
+        DROP TABLE IF EXISTS multipoly_holder;
+    </drop_query>
+    <create_query>
+        CREATE TABLE multipoly_holder
+        (
+            poly Array(Array(Array(Tuple(Int32,Int32))))
+        ) ENGINE = TinyLog;
+    </create_query>
+    
+    <create_query>
+        INSERT INTO multipoly_holder
+        SELECT groupArray(poly) AS poly
+        FROM   random_polys;
+    </create_query>
+    
+    <drop_query>
+        DROP TABLE IF EXISTS random_pts;
+    </drop_query>
+    
+    <create_query>
+        CREATE TABLE random_pts
+        (
+            id UInt32,
+            pt Tuple(Int32,Int32)
+        ) ENGINE = MergeTree ORDER BY id;
+    </create_query>
+  
+    <create_query>
+        INSERT INTO random_pts
+        SELECT
+            number AS id,
+            tuple(
+                toInt32(rand64(number*41) % 2001 - 1000),
+                toInt32(rand64(number*43) % 2001 - 1000)
+            ) AS pt
+        FROM numbers(200_000);
+    </create_query>
+
+    <query>
+        WITH
+            (SELECT poly FROM multipoly_holder LIMIT 1) AS mp,
+            arrayShuffle(mp) AS mp_shuffled
+        SELECT count()
+        FROM random_pts
+        WHERE NOT ignore(pointInPolygon(pt, mp_shuffled));
+    </query>
+    <drop_query>DROP TABLE IF EXISTS random_polys;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS multipoly_holder;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS random_pts;</drop_query>
+</test>

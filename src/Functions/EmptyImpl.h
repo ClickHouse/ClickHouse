@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/memcmpSmall.h>
+#include <base/memcmpSmall.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -23,11 +23,12 @@ struct EmptyImpl
 
     static void vector(const ColumnString::Chars & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res, size_t input_rows_count)
     {
-        ColumnString::Offset prev_offset = 1;
+        ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            res[i] = negative ^ (offsets[i] == prev_offset);
-            prev_offset = offsets[i] + 1;
+            ColumnString::Offset next_offset = offsets[i];
+            res[i] = negative ^ (next_offset == prev_offset);
+            prev_offset = next_offset;
         }
     }
 

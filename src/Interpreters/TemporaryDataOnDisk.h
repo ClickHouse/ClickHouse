@@ -130,6 +130,7 @@ public:
     operator bool() const { return impl != nullptr; } /// NOLINT
 
     Holder * getHolder() { return holder.get(); }
+    const Holder * getHolder() const { return holder.get(); }
 
     void reset()
     {
@@ -213,7 +214,7 @@ using TemporaryBlockStreamReaderHolder = WrapperGuard<NativeReader, ReadBuffer>;
 class TemporaryBlockStreamHolder : public WrapperGuard<NativeWriter, TemporaryDataBuffer>
 {
 public:
-    TemporaryBlockStreamHolder(const Block & header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size = 0);
+    TemporaryBlockStreamHolder(SharedHeader header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size = 0);
 
     TemporaryBlockStreamReaderHolder getReadStream() const;
 

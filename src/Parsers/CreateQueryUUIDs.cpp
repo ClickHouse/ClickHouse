@@ -1,13 +1,20 @@
 #include <Parsers/CreateQueryUUIDs.h>
 
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
+#include <Core/ServerSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+extern const ServerSettingsBool storage_shared_set_join_use_inner_uuid;
+}
 
 CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool force_random)
 {
@@ -31,7 +38,7 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
         /// If we generate random UUIDs for already existing tables then those UUIDs will not be correct making those inner target table inaccessible.
         /// Thus it's not safe for example to replace
         /// "ATTACH MATERIALIZED VIEW mv AS SELECT a FROM b" with
-        /// "ATTACH MATERIALIZED VIEW mv TO INNER UUID "248372b7-02c4-4c88-a5e1-282a83cc572a" AS SELECT a FROM b"
+        /// "ATTACH MATERIALIZED VIEW mv TO INNER UUID '123e4567-e89b-12d3-a456-426614174000' AS SELECT a FROM b"
         /// This replacement is safe only for CREATE queries when inner target tables don't exist yet.
         if (!query.attach)
         {
@@ -46,6 +53,16 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
             /// An exception is refreshable MV that replaces inner table by renaming, changing UUID on each refresh.
             if (query.is_materialized_view && !(query.refresh_strategy && !query.refresh_strategy->append))
                 generate_target_uuid(ViewTarget::To);
+
+
+            /// We should generate UUID of inner table for `SharedSet` or `SharedJoin` table here
+            if (query.storage && query.storage->engine
+                && (query.storage->engine->name == "SharedSet" || query.storage->engine->name == "SharedJoin")
+                && Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::storage_shared_set_join_use_inner_uuid])
+            {
+                if (query.getTargetInnerUUID(ViewTarget::To) == UUIDHelpers::Nil)
+                    setTargetInnerUUID(ViewTarget::To, UUIDHelpers::generateV4());
+            }
 
             if (query.is_time_series_table)
             {

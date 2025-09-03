@@ -71,6 +71,7 @@ def _get_result_with_parallel_replicas(
             "cluster_for_parallel_replicas": f"{cluster_name}",
             "parallel_replicas_mark_segment_size": parallel_replicas_mark_segment_size,
             "query_id": query_id,
+            "parallel_replicas_index_analysis_only_on_coordinator": False,
         },
     )
 
@@ -89,7 +90,7 @@ def _get_expected_amount_of_marks_to_read(query):
 
 def _get_number_of_marks_read_by_replicas(query_id):
     nodes[0].query("SYSTEM FLUSH LOGS")
-    return (
+    return int(
         nodes[0]
         .query(
             f"""

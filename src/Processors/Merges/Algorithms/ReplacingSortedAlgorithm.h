@@ -1,4 +1,6 @@
 #pragma once
+
+#include <Columns/ColumnsNumber.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
@@ -36,7 +38,7 @@ class ReplacingSortedAlgorithm final : public IMergingAlgorithmWithSharedChunks
 {
 public:
     ReplacingSortedAlgorithm(
-        const Block & header, size_t num_inputs,
+        SharedHeader header, size_t num_inputs,
         SortDescription description_,
         const String & is_deleted_column,
         const String & version_column,

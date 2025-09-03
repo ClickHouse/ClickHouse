@@ -2,7 +2,6 @@
 #include <base/sort.h>
 #include <Common/Exception.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
 
 #include <boost/container/small_vector.hpp>
 #include <list>
@@ -43,8 +42,8 @@ namespace
             if (left.is_partial_revoke != right.is_partial_revoke)
                 return right.is_partial_revoke; /// if left is grant, right is partial revoke, we assume left < right
 
-            /// Grants with grant option after other grants.
-            /// Revoke grant option after normal revokes.
+            /// Grants with a grant option after other grants.
+            /// Revoke the grant option after normal revokes.
             if (left.grant_option != right.grant_option)
                 return right.grant_option; /// if left is without grant option, and right is with grant option, we assume left < right
 
@@ -72,8 +71,16 @@ namespace
                 }
                 case 2:
                 {
-                    res.database = full_name[0];
-                    res.table = full_name[1];
+                    if (access_flags.isGlobalWithParameter())
+                    {
+                        res.parameter = full_name[0];
+                        res.filter = full_name[1];
+                    }
+                    else
+                    {
+                        res.database = full_name[0];
+                        res.table = full_name[1];
+                    }
                     break;
                 }
                 case 3:
@@ -232,7 +239,7 @@ namespace
         {
             case GLOBAL_LEVEL: return AccessFlags::allFlagsGrantableOnGlobalLevel();
             case DATABASE_LEVEL: return AccessFlags::allFlagsGrantableOnDatabaseLevel() | AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
-            case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel();
+            case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel() | AccessFlags::allSourceFlags();
             case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel();
         }
         chassert(false);
@@ -253,7 +260,7 @@ namespace
   * node3: GRANT ON db.table*  (matches db.table, db.table1)
   * node4: GRANT ON db.table   (matches db.table)
   *
-  * If too paths have the same prefix, the tree splits in between:
+  * If two paths have the same prefix, the tree splits in between:
   *
   * GRANT ON team.*
   * GRANT ON test.table
@@ -559,7 +566,7 @@ public:
 
     void makeUnion(const Node & other)
     {
-        /// We need these tmp nodes because union/intersect operations are use `getLeaf` function which can't be made const.
+        /// We need these tmp nodes because union/intersect operations use the `getLeaf` function, which can't be made const.
         /// Potentially, we can use tryGetLeaf, but it's very complicated to traverse both trees at the same time:
         ///
         /// Tree1:
@@ -639,6 +646,16 @@ public:
             for (auto & child : *children)
                 child.dumpTree(buffer, title, depth + 1);
         }
+    }
+
+    std::vector<Filter> getFilters(std::string_view parameter)
+    {
+        std::vector<Filter> res;
+        auto & node = getLeaf(parameter, GLOBAL_WITH_PARAMETER);
+        for (auto it = node.begin(); it != node.end(); ++it)
+            res.emplace_back(it->flags, it.getPath());
+
+        return res;
     }
 
 private:
@@ -1155,7 +1172,13 @@ private:
 
         calculateMinMaxFlags();
 
-        auto new_flags = function(flags, min_flags_with_children, max_flags_with_children, level, grant_option);
+        auto new_flags = function(
+            flags,
+            min_flags_with_children,
+            max_flags_with_children,
+            level,
+            grant_option,
+            isLeaf() || wildcard_grant);
 
         if (new_flags != flags)
         {
@@ -1183,6 +1206,9 @@ AccessRights::AccessRights(const AccessRights & src)
 
 AccessRights & AccessRights::operator =(const AccessRights & src)
 {
+    if (&src == this)
+        return *this;
+
     if (src.root)
         root = std::make_unique<Node>(*src.root);
     else
@@ -1209,7 +1235,13 @@ AccessRights::AccessRights(const AccessRightsElement & element)
 
 AccessRights::AccessRights(const AccessRightsElements & elements)
 {
-    grant(elements);
+    for (const auto & element : elements)
+    {
+        if (element.is_partial_revoke)
+            revoke(element);
+        else
+            grant(element);
+    }
 }
 
 
@@ -1253,6 +1285,8 @@ void AccessRights::grantImplHelper(const AccessRightsElement & element)
     {
         if (element.anyParameter())
             grantImpl<with_grant_option, wildcard>(element.access_flags);
+        else if (element.hasFilter())
+            grantImpl<with_grant_option, wildcard>(element.access_flags, element.parameter, element.filter);
         else
             grantImpl<with_grant_option, wildcard>(element.access_flags, element.parameter);
     }
@@ -1457,18 +1491,18 @@ bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args
 template <bool grant_option>
 bool AccessRights::containsImpl(const AccessRights & other) const
 {
-    auto helper = [&](const std::unique_ptr<Node> & root_node) -> bool
+    auto helper = [&](const std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node) -> bool
     {
         if (!root_node)
-            return !other.root;
-        if (!other.root)
+            return !other_root_node;
+        if (!other_root_node)
             return true;
-        return root_node->contains(*other.root);
+        return root_node->contains(*other_root_node);
     };
     if constexpr (grant_option)
-        return helper(root_with_grant_option);
+        return helper(root_with_grant_option, other.root);
     else
-        return helper(root);
+        return helper(root, other.root) && helper(root_with_grant_option, other.root_with_grant_option);
 }
 
 
@@ -1626,12 +1660,22 @@ void AccessRights::makeDifference(const AccessRights & other)
 }
 
 
+std::vector<AccessRights::Filter> AccessRights::getFilters(std::string_view parameter) const
+{
+    if (root)
+        return root->getFilters(parameter);
+
+    return {};
+}
+
+
 void AccessRights::modifyFlags(const ModifyFlagsFunction & function)
 {
     if (!root)
         return;
 
-    bool flags_added, flags_removed;
+    bool flags_added;
+    bool flags_removed;
     root->modifyFlags(function, false, flags_added, flags_removed);
     if (flags_removed && root_with_grant_option)
         root_with_grant_option->makeIntersection(*root);

@@ -4,8 +4,10 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 
-#include <Poco/JSON/Object.h>
-
+namespace Poco::JSON
+{
+class Object;
+}
 
 namespace DB
 {
@@ -67,7 +69,7 @@ public:
     virtual void serialializeKindBinary(WriteBuffer & out) const;
     virtual void deserializeFromKindsBinary(ReadBuffer & in);
 
-    virtual Poco::JSON::Object toJSON() const;
+    virtual void toJSON(Poco::JSON::Object & object) const;
     virtual void fromJSON(const Poco::JSON::Object & object);
 
     void setKind(ISerialization::Kind kind_) { kind = kind_; }
@@ -119,6 +121,10 @@ public:
 
     static SerializationInfoByName readJSON(
         const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in);
+
+    static SerializationInfoByName readJSONFromString(
+        const NamesAndTypesList & columns, const Settings & settings, const std::string & str);
+
 };
 
 }

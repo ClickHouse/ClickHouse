@@ -42,6 +42,7 @@ create table Dates
 
 Insert into Dates VALUES ('2015-10-12') , ('2016-10-12');
 Select '-- test summarize --' ;
+set allow_experimental_kusto_dialect=1;
 set dialect='kusto';
 Customers | summarize count(), min(Age), max(Age), avg(Age), sum(Age);
 Customers | summarize count(), min(Age), max(Age), avg(Age), sum(Age) by Occupation | order by Occupation;

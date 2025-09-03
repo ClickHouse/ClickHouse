@@ -11,6 +11,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/ShellCommand.h>
+#include <Common/ShellCommandsHolder.h>
 #include <IO/ConnectionTimeouts.h>
 #include <base/range.h>
 #include <BridgeHelper/IBridgeHelper.h>
@@ -144,7 +145,7 @@ protected:
 
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override
     {
-        getContext()->addBridgeCommand(std::move(cmd));
+       ShellCommandsHolder::instance().addCommand(std::move(cmd));
     }
 
 
@@ -272,9 +273,9 @@ struct JDBCBridgeMixin
         return "JDBC";
     }
 
-    static AccessType getSourceAccessType()
+    static std::optional<AccessTypeObjects::Source> getSourceAccessObject()
     {
-        return AccessType::JDBC;
+        return AccessTypeObjects::Source::JDBC;
     }
 
     static bool startBridgeManually()
@@ -303,9 +304,9 @@ struct ODBCBridgeMixin
         return "ODBC";
     }
 
-    static AccessType getSourceAccessType()
+    static std::optional<AccessTypeObjects::Source> getSourceAccessObject()
     {
-        return AccessType::ODBC;
+        return AccessTypeObjects::Source::ODBC;
     }
 
     static bool startBridgeManually()

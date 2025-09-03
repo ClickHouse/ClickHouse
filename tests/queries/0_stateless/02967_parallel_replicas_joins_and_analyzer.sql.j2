@@ -10,6 +10,7 @@ insert into tab1 select number, number, number from numbers(16);
 insert into tab2 select number * 2, number * 2 from numbers(8);
 insert into tab3 select number * 4, number * 4 from numbers(4);
 
+set query_plan_join_swap_table = 0; -- changes query plan
 set enable_analyzer = 1;
 set enable_parallel_replicas = 2, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_local_plan = 1;
 
@@ -98,7 +99,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub2 r any right join sub1 l on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, l.y, y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5;
+select * from sub5 order by all;
 
 explain description=0
 with sub1 as (select x, y from tab1 where x != 2),

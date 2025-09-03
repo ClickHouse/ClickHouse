@@ -15,6 +15,8 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <shared_mutex>
+
 namespace DB
 {
 
@@ -32,7 +34,8 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
         if (!request.hasCredentials())
             return server_credentials->isValidUser("", "");
 
-        String scheme, info;
+        String scheme;
+        String info;
         request.getCredentials(scheme, info);
 
         if (scheme != "Basic")
@@ -58,7 +61,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
 
-    auto & body = request.getStream();
+    auto input_stream_with_body = request.getStream();
 
     auto endpoint = server.context()->getInterserverIOHandler().getEndpoint(endpoint_name);
     /// Locked for read while query processing
@@ -69,12 +72,12 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     if (compress)
     {
         CompressedWriteBuffer compressed_out(*output);
-        endpoint->processQuery(params, body, compressed_out, response);
+        endpoint->processQuery(params, *input_stream_with_body, compressed_out, response);
         compressed_out.finalize();
     }
     else
     {
-        endpoint->processQuery(params, body, *output, response);
+        endpoint->processQuery(params, *input_stream_with_body, *output, response);
     }
 }
 

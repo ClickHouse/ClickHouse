@@ -1,6 +1,0 @@
-label: 'Manage Cloud'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  title: Manage ClickHouse Cloud

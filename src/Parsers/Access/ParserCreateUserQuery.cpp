@@ -17,13 +17,21 @@
 #include <Parsers/ParserDatabaseOrNone.h>
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
+
 #include "config.h"
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -35,7 +43,7 @@ namespace
                 return false;
 
             String maybe_new_name;
-            if (!parseUserName(pos, expected, maybe_new_name))
+            if (!parseUserName(pos, expected, maybe_new_name, /*allow_query_parameter=*/true))
                 return false;
 
             new_name.emplace(std::move(maybe_new_name));
@@ -82,6 +90,9 @@ namespace
                 {
                     type = check_type;
 
+                    if (check_type == AuthenticationType::NO_AUTHENTICATION)
+                        return true;
+
                     if (check_type == AuthenticationType::LDAP)
                         expect_ldap_server_name = true;
                     else if (check_type == AuthenticationType::KERBEROS)
@@ -92,6 +103,8 @@ namespace
                         expect_public_ssh_key = true;
                     else if (check_type == AuthenticationType::HTTP)
                         expect_http_auth_server = true;
+                    else if (check_type == AuthenticationType::JWT)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "CREATE USER is not supported for JWT");
                     else if (check_type != AuthenticationType::NO_PASSWORD)
                         expect_password = true;
 
@@ -117,6 +130,11 @@ namespace
                 if (ParserKeyword{Keyword::SHA256_HASH}.ignore(pos, expected))
                 {
                     type = AuthenticationType::SHA256_PASSWORD;
+                    expect_hash = true;
+                }
+                else if (ParserKeyword{Keyword::SCRAM_SHA256_HASH}.ignore(pos, expected))
+                {
+                    type = AuthenticationType::SCRAM_SHA256_PASSWORD;
                     expect_hash = true;
                 }
                 else if (ParserKeyword{Keyword::DOUBLE_SHA1_HASH}.ignore(pos, expected))
@@ -153,7 +171,7 @@ namespace
                 if (!ParserKeyword{Keyword::BY}.ignore(pos, expected) || !ParserStringAndSubstitution{}.parse(pos, value, expected))
                     return false;
 
-                if (expect_hash && type == AuthenticationType::SHA256_PASSWORD)
+                if (expect_hash && (type == AuthenticationType::SHA256_PASSWORD || type == AuthenticationType::SCRAM_SHA256_PASSWORD))
                 {
                     if (ParserKeyword{Keyword::SALT}.ignore(pos, expected))
                     {
@@ -427,20 +445,31 @@ namespace
     }
 
 
-    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::vector<std::shared_ptr<ASTSettingsProfileElement>> & settings)
+    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTSettingsProfileElements> & settings)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{Keyword::SETTINGS}.ignore(pos, expected))
-                return false;
-
-            ASTPtr new_settings_ast;
+            ASTPtr ast;
             ParserSettingsProfileElements elements_p;
             elements_p.useIDMode(id_mode);
-            if (!elements_p.parse(pos, new_settings_ast, expected))
+            if (!elements_p.parse(pos, ast, expected))
                 return false;
 
-            settings = std::move(new_settings_ast->as<ASTSettingsProfileElements &>().elements);
+            settings = typeid_cast<std::shared_ptr<ASTSettingsProfileElements>>(ast);
+            return true;
+        });
+    }
+
+    bool parseAlterSettings(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTAlterSettingsProfileElements> & alter_settings)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            ASTPtr ast;
+            ParserAlterSettingsProfileElements elements_p;
+            if (!elements_p.parse(pos, ast, expected))
+                return false;
+
+            alter_settings = typeid_cast<std::shared_ptr<ASTAlterSettingsProfileElements>>(ast);
             return true;
         });
     }
@@ -544,10 +573,11 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
 
     ASTPtr names_ast;
-    if (!ParserUserNamesWithHost{}.parse(pos, names_ast, expected))
+    if (!ParserUserNamesWithHost(/*allow_query_parameter=*/true).parse(pos, names_ast, expected))
         return false;
     auto names = typeid_cast<std::shared_ptr<ASTUserNamesWithHost>>(names_ast);
-    auto names_ref = names->names;
+
+    auto pos_after_parsing_names = pos;
 
     std::optional<String> new_name;
     std::optional<AllowedClientHosts> hosts;
@@ -556,6 +586,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::vector<std::shared_ptr<ASTAuthenticationData>> auth_data;
     std::shared_ptr<ASTRolesOrUsersSet> default_roles;
     std::shared_ptr<ASTSettingsProfileElements> settings;
+    std::shared_ptr<ASTAlterSettingsProfileElements> alter_settings;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
     std::shared_ptr<ASTDatabaseOrNone> default_database;
     ASTPtr global_valid_until;
@@ -604,14 +635,27 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             continue;
         }
 
-        std::vector<std::shared_ptr<ASTSettingsProfileElement>> new_settings;
-        if (parseSettings(pos, expected, attach_mode, new_settings))
+        if (alter)
         {
-            if (!settings)
-                settings = std::make_shared<ASTSettingsProfileElements>();
-
-            insertAtEnd(settings->elements, std::move(new_settings));
-            continue;
+            std::shared_ptr<ASTAlterSettingsProfileElements> new_alter_settings;
+            if (parseAlterSettings(pos, expected, new_alter_settings))
+            {
+                if (!alter_settings)
+                    alter_settings = std::make_shared<ASTAlterSettingsProfileElements>();
+                alter_settings->add(std::move(*new_alter_settings));
+                continue;
+            }
+        }
+        else
+        {
+            std::shared_ptr<ASTSettingsProfileElements> new_settings;
+            if (parseSettings(pos, expected, attach_mode, new_settings))
+            {
+                if (!settings)
+                    settings = std::make_shared<ASTSettingsProfileElements>();
+                settings->add(std::move(*new_settings));
+                continue;
+            }
         }
 
         if (!default_roles && parseDefaultRoles(pos, expected, attach_mode, default_roles))
@@ -666,13 +710,15 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         String common_host_pattern;
         if (names->getHostPatternIfCommon(common_host_pattern) && !common_host_pattern.empty())
-        {
             hosts.emplace().addLikePattern(common_host_pattern);
-            names->concatParts();
-        }
     }
-    else if (alter)
-        names->concatParts();
+
+    bool alter_query_with_no_changes = alter && pos_after_parsing_names == pos;
+
+    if (alter_query_with_no_changes)
+    {
+        return false;
+    }
 
     auto query = std::make_shared<ASTCreateUserQuery>();
     node = query;
@@ -691,6 +737,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->remove_hosts = std::move(remove_hosts);
     query->default_roles = std::move(default_roles);
     query->settings = std::move(settings);
+    query->alter_settings = std::move(alter_settings);
     query->grantees = std::move(grantees);
     query->default_database = std::move(default_database);
     query->global_valid_until = std::move(global_valid_until);

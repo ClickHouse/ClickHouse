@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/Operators.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Common/JSONBuilder.h>
@@ -77,16 +78,23 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const PrewhereInfo
     return block;
 }
 
+void SourceStepWithFilterBase::applyFilters(ActionDAGNodes added_filter_nodes)
+{
+    auto dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, {});
+    filter_actions_dag = dag ? std::make_shared<const ActionsDAG>(std::move(*dag)) : nullptr;
+}
+
 void SourceStepWithFilter::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, query_info.buildNodeNameToInputNodeColumn());
+    auto dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, query_info.buildNodeNameToInputNodeColumn());
+    filter_actions_dag = dag ? std::make_shared<const ActionsDAG>(std::move(*dag)) : nullptr;
 }
 
 void SourceStepWithFilter::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     query_info.prewhere_info = prewhere_info_value;
     prewhere_info = prewhere_info_value;
-    output_header = applyPrewhereActions(*output_header, prewhere_info);
+    output_header = std::make_shared<const Block>(applyPrewhereActions(*output_header, prewhere_info));
 }
 
 void SourceStepWithFilter::describeActions(FormatSettings & format_settings) const

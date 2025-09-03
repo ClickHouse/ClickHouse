@@ -43,7 +43,7 @@ namespace
         const std::vector<AuthenticationData> authentication_methods,
         const std::shared_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_default_roles,
-        const std::optional<SettingsProfileElements> & override_settings,
+        const std::optional<AlterSettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_grantees,
         const std::optional<time_t> & global_valid_until,
         bool reset_authentication_methods,
@@ -58,7 +58,7 @@ namespace
         else if (query.new_name)
             user.setName(*query.new_name);
         else if (query.names->size() == 1)
-            user.setName(query.names->front()->toString());
+            user.setName(query.names->toStrings().at(0));
 
         if (!query.attach && !query.alter && authentication_methods.empty() && !allow_implicit_no_password)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -142,10 +142,10 @@ namespace
             }
         }
 
-        if (override_name && !override_name->host_pattern.empty())
+        if (override_name && !override_name->getHostPattern().empty())
         {
             user.allowed_client_hosts = AllowedClientHosts{};
-            user.allowed_client_hosts.addLikePattern(override_name->host_pattern);
+            user.allowed_client_hosts.addLikePattern(override_name->getHostPattern());
         }
         else if (query.hosts)
             user.allowed_client_hosts = *query.hosts;
@@ -172,9 +172,11 @@ namespace
             user.default_database = query.default_database->database_name;
 
         if (override_settings)
-            user.settings = *override_settings;
+            user.settings.applyChanges(*override_settings);
+        else if (query.alter_settings)
+            user.settings.applyChanges(AlterSettingsProfileElements{*query.alter_settings});
         else if (query.settings)
-            user.settings = *query.settings;
+            user.settings.applyChanges(AlterSettingsProfileElements{*query.settings});
 
         if (override_grantees)
             user.grantees = *override_grantees;
@@ -190,7 +192,13 @@ BlockIO InterpreterCreateUserQuery::execute()
 
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
-    access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
+
+    for (const auto & name : query.names->toStrings())
+        access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER, name);
+
+    if (query.new_name && !query.alter)
+        access->checkAccess(AccessType::CREATE_USER, *query.new_name);
+
     bool implicit_no_password_allowed = access_control.isImplicitNoPasswordAllowed();
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
@@ -219,14 +227,14 @@ BlockIO InterpreterCreateUserQuery::execute()
         }
     }
 
-    std::optional<SettingsProfileElements> settings_from_query;
-    if (query.settings)
-    {
-        settings_from_query = SettingsProfileElements{*query.settings, access_control};
+    std::optional<AlterSettingsProfileElements> settings_from_query;
+    if (query.alter_settings)
+        settings_from_query = AlterSettingsProfileElements{*query.alter_settings, access_control};
+    else if (query.settings)
+        settings_from_query = AlterSettingsProfileElements{*query.settings, access_control};
 
-        if (!query.attach)
-            getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
-    }
+    if (settings_from_query && !query.attach)
+        getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
 
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
@@ -272,8 +280,9 @@ BlockIO InterpreterCreateUserQuery::execute()
         for (const auto & name : *query.names)
         {
             auto new_user = std::make_shared<User>();
+            const auto & name_with_host = typeid_cast<std::shared_ptr<ASTUserNameWithHost>>(name);
             updateUserFromQueryImpl(
-                *new_user, query, authentication_methods, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
+                *new_user, query, authentication_methods, name_with_host, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
                 plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);

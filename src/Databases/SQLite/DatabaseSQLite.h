@@ -12,6 +12,8 @@
 
 namespace DB
 {
+struct AlterCommand;
+
 class DatabaseSQLite final : public IDatabase, WithContext
 {
 public:
@@ -26,6 +28,8 @@ public:
 
     bool canContainDistributedTables() const override { return false; }
 
+    bool canContainRocksDBTables() const override { return false; }
+
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     bool isTableExist(const String & name, ContextPtr context) const override;
@@ -39,6 +43,8 @@ public:
     ASTPtr getCreateDatabaseQuery() const override;
 
     void shutdown() override {}
+
+    void alterDatabaseComment(const AlterCommand & command) override;
 
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;

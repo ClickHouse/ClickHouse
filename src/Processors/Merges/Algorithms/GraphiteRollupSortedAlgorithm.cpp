@@ -3,7 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/DateLUT.h>
-#include <DataTypes/DataTypeDateTime.h>
+#include <Core/Block.h>
 
 
 namespace DB
@@ -39,7 +39,7 @@ static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
 }
 
 GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
-    const Block & header_,
+    SharedHeader header_,
     size_t num_inputs,
     SortDescription description_,
     size_t max_block_size_rows_,
@@ -64,7 +64,7 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
     }
 
     graphite_rollup_merged_data.allocMemForAggregates(max_size_of_aggregate_state, max_alignment_of_aggregate_state);
-    columns_definition = defineColumns(header_, params);
+    columns_definition = defineColumns(*header_, params);
 }
 
 UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions & retentions, time_t time) const
@@ -270,7 +270,7 @@ void GraphiteRollupSortedAlgorithm::GraphiteRollupMergedData::insertRow(
 
     auto & value_column = columns[def.value_column_num];
     const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(current_rule);
-    if (aggregate_state_created)
+    if (aggregate_state_created && aggregation_pattern)
     {
         aggregation_pattern->function->insertResultInto(place_for_aggregate_state.data(), *value_column, nullptr);
         aggregation_pattern->function->destroy(place_for_aggregate_state.data());
@@ -289,7 +289,7 @@ void GraphiteRollupSortedAlgorithm::GraphiteRollupMergedData::insertRow(
 void GraphiteRollupSortedAlgorithm::GraphiteRollupMergedData::accumulateRow(RowRef & row, ColumnsDefinition & def)
 {
     const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(current_rule);
-    if (aggregate_state_created)
+    if (aggregate_state_created && aggregation_pattern)
     {
         auto & column = (*row.all_columns)[def.value_column_num];
         aggregation_pattern->function->add(place_for_aggregate_state.data(), &column, row.row_num, nullptr);
@@ -298,8 +298,9 @@ void GraphiteRollupSortedAlgorithm::GraphiteRollupMergedData::accumulateRow(RowR
 
 GraphiteRollupSortedAlgorithm::GraphiteRollupMergedData::~GraphiteRollupMergedData()
 {
-    if (aggregate_state_created)
-        std::get<1>(current_rule)->function->destroy(place_for_aggregate_state.data());
+    const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(current_rule);
+    if (aggregate_state_created && aggregation_pattern)
+        aggregation_pattern->function->destroy(place_for_aggregate_state.data());
 }
 
 }

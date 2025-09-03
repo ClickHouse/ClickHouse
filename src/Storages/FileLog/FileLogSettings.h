@@ -35,6 +35,7 @@ struct FileLogSettingsImpl;
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
@@ -53,6 +54,8 @@ struct FileLogSettings
     FILELOG_SETTINGS_SUPPORTED_TYPES(FileLogSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     void loadFromQuery(ASTStorage & storage_def);
+
+    static bool hasBuiltin(std::string_view name);
 
 private:
     std::unique_ptr<FileLogSettingsImpl> impl;

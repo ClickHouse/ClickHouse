@@ -3,6 +3,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Interpreters/Context.h>
+#include <Core/BackgroundSchedulePool.h>
 
 namespace CurrentMetrics
 {
@@ -36,6 +38,11 @@ ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicat
 ReplicatedMergeTreeAttachThread::~ReplicatedMergeTreeAttachThread()
 {
     shutdown();
+}
+
+void ReplicatedMergeTreeAttachThread::start()
+{
+    task->activateAndSchedule();
 }
 
 void ReplicatedMergeTreeAttachThread::shutdown()
@@ -130,6 +137,21 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     auto zookeeper = storage.getZooKeeper();
     const auto & zookeeper_path = storage.zookeeper_path;
     bool metadata_exists = zookeeper->exists(zookeeper_path + "/metadata");
+    if (!metadata_exists && skip_sanity_checks)
+    {
+        LOG_INFO(log, "Missing metadata in keeper. Force restoring it");
+        try
+        {
+            storage.restoreMetadataInZooKeeper({}, true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            return;
+        }
+        metadata_exists = zookeeper->exists(zookeeper_path + "/metadata");
+    }
+
     if (!metadata_exists)
     {
         LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will stay in readonly mode.", zookeeper_path);
@@ -166,23 +188,24 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     /// Just in case it was not removed earlier due to connection loss
     zookeeper->tryRemove(replica_path + "/flags/force_restore_data");
 
-    storage.checkTableStructure(replica_path, metadata_snapshot);
+    /// Here `zookeeper_retries_info = {}` because the attach thread has its own retries (see ReplicatedMergeTreeAttachThread::run()).
+    storage.checkTableStructure(replica_path, metadata_snapshot, /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {});
     storage.checkParts(skip_sanity_checks);
 
     /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
     /// don't allow to reinitialize them, delete each of them immediately.
     storage.clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
 
-    storage.createNewZooKeeperNodes();
-    storage.syncPinnedPartUUIDs();
+    storage.createNewZooKeeperNodes(/* zookeeper_retries_info = */ {});
+    storage.syncPinnedPartUUIDs(/* zookeeper_retries_info = */ {});
 
     std::lock_guard lock(storage.table_shared_id_mutex);
-    storage.createTableSharedID();
+    storage.createTableSharedID(/* zookeeper_retries_info = */ {});
 };
 
 void ReplicatedMergeTreeAttachThread::finalizeInitialization() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    storage.startupImpl(/* from_attach_thread */ true);
+    storage.startupImpl(/* from_attach_thread */ true, /* zookeeper_retries_info = */ {});
     storage.initialization_done = true;
     LOG_INFO(log, "Table is initialized");
 }

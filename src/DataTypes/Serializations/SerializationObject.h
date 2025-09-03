@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/Serializations/SerializationObjectSharedData.h>
 #include <list>
 
 namespace DB
@@ -15,7 +16,7 @@ class SerializationObject : public ISerialization
 {
 public:
     /// Serialization can change in future. Let's introduce serialization version.
-    struct ObjectSerializationVersion
+    struct SerializationVersion
     {
         enum Value
         {
@@ -33,22 +34,39 @@ public:
             V1 = 0,
             /// V2 serialization: the same as V1 but without max_dynamic_paths parameter in ObjectStructure stream.
             V2 = 2,
+            /// V3 serialization: the same as V2 but with 2 additions:
+            ///   - additional information about shared data serialization version that goes after list of dynamic paths.
+            ///   - additional bool flag before statistics that indicates if there are any statistics serialized.
+            V3 = 4,
+
+            /// Serializations used only in Native format:
             /// String serialization:
             ///  - ObjectData stream with single String column containing serialized JSON.
             STRING = 1,
+            /// FLATTENED serialization:
+            /// - ObjectStructure stream:
+            ///     <list of all paths stored in Object column (except typed paths)>
+            /// - ObjectData stream:
+            ///   - ObjectTypedPath stream for each column in typed paths
+            ///   - ObjectDynamicPath stream for each column in dynamic paths and flattened shared data
+            /// This serialization is used in Native format only for easier support for Object type in clients.
+            FLATTENED = 3,
         };
 
         Value value;
 
         static void checkVersion(UInt64 version);
 
-        explicit ObjectSerializationVersion(UInt64 version);
+        explicit SerializationVersion(UInt64 version);
+        explicit SerializationVersion(MergeTreeObjectSerializationVersion version);
+        explicit SerializationVersion(Value value_) : value(value_) {}
     };
 
     SerializationObject(
         std::unordered_map<String, SerializationPtr> typed_path_serializations_,
         const std::unordered_set<String> & paths_to_skip_,
-        const std::vector<String> & path_regexps_to_skip_);
+        const std::vector<String> & path_regexps_to_skip_,
+        const DataTypePtr & dynamic_type_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -78,6 +96,7 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -99,13 +118,27 @@ private:
     /// State of an Object structure. Can be also used during deserializing of Object subcolumns.
     struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
     {
-        ObjectSerializationVersion serialization_version;
-        std::vector<String> sorted_dynamic_paths;
-        std::unordered_set<String> dynamic_paths;
+        SerializationVersion serialization_version;
+        std::shared_ptr<std::vector<String>> sorted_dynamic_paths; /// Use shared_ptr to avoid copying during state clone.
+        std::unordered_set<std::string_view> dynamic_paths;
+        SerializationObjectSharedData::SerializationVersion shared_data_serialization_version;
+        size_t shared_data_buckets = 1;
         /// Paths statistics. Map (dynamic path) -> (number of non-null values in this path).
         ColumnObject::StatisticsPtr statistics;
 
-        explicit DeserializeBinaryBulkStateObjectStructure(UInt64 serialization_version_) : serialization_version(serialization_version_) {}
+        /// For flattened serialization only.
+        std::vector<String> flattened_paths;
+
+        explicit DeserializeBinaryBulkStateObjectStructure(UInt64 serialization_version_)
+            : serialization_version(serialization_version_)
+            , shared_data_serialization_version(SerializationObjectSharedData::SerializationVersion::MAP)
+        {
+        }
+
+        DeserializeBinaryBulkStatePtr clone() const override
+        {
+            return std::make_shared<DeserializeBinaryBulkStateObjectStructure>(*this);
+        }
     };
 
     static DeserializeBinaryBulkStatePtr deserializeObjectStructureStatePrefix(
@@ -120,7 +153,7 @@ private:
 
         DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
         ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev) const override;
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
     };
 
 protected:
@@ -130,11 +163,11 @@ protected:
     std::unordered_set<String> paths_to_skip;
     std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;
+    DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
 
 private:
     std::vector<String> sorted_typed_paths;
-    SerializationPtr shared_data_serialization;
 };
 
 }

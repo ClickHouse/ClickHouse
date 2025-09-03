@@ -10,21 +10,30 @@ using FunctionToMillisecond = FunctionDateOrDateTimeToSomething<DataTypeUInt16, 
 
 REGISTER_FUNCTION(ToMillisecond)
 {
-    factory.registerFunction<FunctionToMillisecond>(
+    FunctionDocumentation::Description description = R"(
+Returns the millisecond component (0-999) of a `DateTime` or `DateTime64` value.
+    )";
+    FunctionDocumentation::Syntax syntax = "toMillisecond(datetime)";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"datetime", "Date with time to get the millisecond from.", {"DateTime", "DateTime64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the millisecond in the minute (0 - 59) of `datetime`.", {"UInt16"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", R"(
+SELECT toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3));
+        )",
+        R"(
+┌──toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3))─┐
+│                                                        456 │
+└────────────────────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-
-        FunctionDocumentation{
-            .description=R"(
-Returns the millisecond component (0-999) of a date with time.
-    )",
-            .syntax="toMillisecond(value)",
-            .arguments={{"value", "DateTime or DateTime64"}},
-            .returned_value="The millisecond in the minute (0 - 59) of the given date/time",
-            .examples{
-                {"toMillisecond", "SELECT toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3)", "456"}},
-            .categories{"Dates and Times"}
-        }
-            );
+    factory.registerFunction<FunctionToMillisecond>(documentation);
 
     /// MySQL compatibility alias.
     factory.registerAlias("MILLISECOND", "toMillisecond", FunctionFactory::Case::Insensitive);

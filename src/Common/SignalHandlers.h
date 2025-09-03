@@ -33,10 +33,7 @@ void closeLogsSignalHandler(int sig, siginfo_t *, void *);
 
 void terminateRequestedSignalHandler(int sig, siginfo_t *, void *);
 
-
-/** Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
-  */
-void signalHandler(int sig, siginfo_t * info, void * context);
+void childSignalHandler(int sig, siginfo_t * info, void *);
 
 
 /** To use with std::set_terminate.
@@ -64,18 +61,14 @@ class SignalListener : public Poco::Runnable
 public:
     static constexpr int StdTerminate = -1;
     static constexpr int StopThread = -2;
-    static constexpr int SanitizerTrap = -3;
 
-    explicit SignalListener(BaseDaemon * daemon_, LoggerPtr log_)
-        : daemon(daemon_), log(log_)
-    {
-    }
-
+    explicit SignalListener(BaseDaemon * daemon_, LoggerPtr log_);
     void run() override;
 
 private:
     BaseDaemon * daemon;
     LoggerPtr log;
+    std::function<String()> build_id;
 
     void onTerminate(std::string_view message, UInt32 thread_num) const;
 
@@ -104,7 +97,7 @@ struct HandledSignals
 
     void addSignalHandler(const std::vector<int> & signals, signal_function handler, bool register_signal);
 
-    void reset();
+    void reset(bool close_pipe = true);
 
     static HandledSignals & instance();
 };

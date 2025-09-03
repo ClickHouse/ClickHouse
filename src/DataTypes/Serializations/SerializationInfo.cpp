@@ -1,8 +1,9 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
+
 #include <Columns/ColumnSparse.h>
+#include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/VarInt.h>
 #include <Core/Block.h>
 #include <base/EnumReflection.h>
 
@@ -162,13 +163,11 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
     kind = *maybe_kind;
 }
 
-Poco::JSON::Object SerializationInfo::toJSON() const
+void SerializationInfo::toJSON(Poco::JSON::Object & object) const
 {
-    Poco::JSON::Object object;
     object.set(KEY_KIND, ISerialization::kindToString(kind));
     object.set(KEY_NUM_DEFAULTS, data.num_defaults);
     object.set(KEY_NUM_ROWS, data.num_rows);
-    return object;
 }
 
 void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
@@ -276,7 +275,8 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     Poco::JSON::Array column_infos;
     for (const auto & [name, info] : *this)
     {
-        auto info_json = info->toJSON();
+        Poco::JSON::Object info_json;
+        info->toJSON(info_json);
         info_json.set(KEY_NAME, name);
         column_infos.add(std::move(info_json)); /// NOLINT
     }
@@ -290,12 +290,9 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     writeString(oss.str(), out);
 }
 
-SerializationInfoByName SerializationInfoByName::readJSON(
-    const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in)
+SerializationInfoByName SerializationInfoByName::readJSONFromString(
+    const NamesAndTypesList & columns, const Settings & settings, const std::string & json_str)
 {
-    String json_str;
-    readString(json_str, in);
-
     Poco::JSON::Parser parser;
     auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
 
@@ -337,6 +334,15 @@ SerializationInfoByName SerializationInfoByName::readJSON(
     }
 
     return infos;
+}
+
+
+SerializationInfoByName SerializationInfoByName::readJSON(
+    const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in)
+{
+    String json_str;
+    readString(json_str, in);
+    return readJSONFromString(columns, settings, json_str);
 }
 
 }

@@ -1,7 +1,7 @@
 #include <limits>
 #include <Functions/FunctionFactory.h>
 #include <Common/BitHelpers.h>
-#include "hilbertDecode2DLUT.h"
+#include <Functions/hilbertDecode2DLUT.h>
 
 
 namespace DB
@@ -75,49 +75,81 @@ public:
 
 REGISTER_FUNCTION(HilbertDecode)
 {
-    factory.registerFunction<FunctionHilbertDecode>(FunctionDocumentation{
-    .description=R"(
+    FunctionDocumentation::Description description = R"(
 Decodes a Hilbert curve index back into a tuple of unsigned integers, representing coordinates in multi-dimensional space.
 
-The function has two modes of operation:
-- Simple
-- Expanded
+As with the `hilbertEncode` function, this function has two modes of operation:
+- **Simple**
+- **Expanded**
 
-Simple Mode: Accepts the desired tuple size as the first argument (up to 2) and the Hilbert index as the second argument. This mode decodes the index into a tuple of the specified size.
-[example:simple]
-Will decode into: `(8, 0)`
-The resulting tuple size cannot be more than 2
+**Simple mode**
 
-Expanded Mode: Takes a range mask (tuple) as the first argument and the Hilbert index as the second argument.
-Each number in the mask specifies the number of bits by which the corresponding decoded argument will be right-shifted, effectively scaling down the output values.
-[example:range_shrank]
-Note: see hilbertEncode() docs on why range change might be beneficial.
-Still limited to 2 numbers at most.
+Accepts up to 2 unsigned integers as arguments and produces a `UInt64` code.
 
-Hilbert code for one argument is always the argument itself (as a tuple).
-[example:identity]
-Produces: `(1)`
+**Expanded mode**
 
-A single argument with a tuple specifying bit shifts will be right-shifted accordingly.
-[example:identity_shrank]
-Produces: `(128)`
+Accepts a range mask (tuple) as a first argument and up to 2 unsigned integers as
+other arguments. Each number in the mask configures the number of bits by which
+the corresponding argument will be shifted left, effectively scaling the argument
+within its range.
 
-The function accepts a column of codes as a second argument:
-[example:from_table]
+Range expansion can be beneficial when you need a similar distribution for
+arguments with wildly different ranges (or cardinality) For example: 'IP Address' `(0...FFFFFFFF)`
+and 'Country code' `(0...FF)`. As with the encode function, this is limited to 8
+numbers at most.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+hilbertDecode(tuple_size, code)
+)";
+    FunctionDocumentation::Arguments arguments = {
+        {"tuple_size", "Integer value of no more than `2`.", {"UInt8/16/32/64", "Tuple(UInt8/16/32/64)"}},
+        {"code", "`UInt64` code.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple of the specified size.", {"Tuple(UInt64)"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Simple mode",
+            "SELECT hilbertDecode(2, 31)",
+            R"(["3", "4"])"
+        },
+        {
+            "Single argument", R"(
+-- Hilbert code for one argument is always the argument itself (as a tuple).
+SELECT hilbertDecode(1, 1)
+            )",
+            R"(["1"])"
+        },
+        {
+            "Expanded mode",
+            R"(
+-- A single argument with a tuple specifying bit shifts will be right-shifted accordingly.
+SELECT hilbertDecode(tuple(2), 32768)
+            )",
+            R"(["128"])"
+        },
+        {
+            "Column usage",
+            R"(
+-- First create the table and insert some data
+CREATE TABLE hilbert_numbers(
+    n1 UInt32,
+    n2 UInt32
+)
+ENGINE=MergeTree()
+ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+insert into hilbert_numbers (*) values(1,2);
 
-The range tuple must be a constant:
-[example:from_table_range]
-)",
-        .examples{
-            {"simple", "SELECT hilbertDecode(2, 64)", ""},
-            {"range_shrank", "SELECT hilbertDecode((1,2), 1572864)", ""},
-            {"identity", "SELECT hilbertDecode(1, 1)", ""},
-            {"identity_shrank", "SELECT hilbertDecode(tuple(2), 512)", ""},
-            {"from_table", "SELECT hilbertDecode(2, code) FROM table", ""},
-            {"from_table_range", "SELECT hilbertDecode((1,2), code) FROM table", ""},
-            },
-        .categories {"Hilbert coding", "Hilbert Curve"}
-    });
+-- Use column names instead of constants as function arguments
+SELECT untuple(hilbertDecode(2, hilbertEncode(n1, n2))) FROM hilbert_numbers;
+            )",
+            "1    2"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionHilbertDecode>(documentation);
 }
 
 }

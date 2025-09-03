@@ -32,11 +32,11 @@ struct SetSettingsImpl : public BaseSettings<SetSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) SetSettings##TYPE NAME = &SetSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) SetSettings##TYPE NAME = &SetSettingsImpl ::NAME;
 
 namespace SetSetting
 {
-LIST_OF_SET_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+LIST_OF_SET_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -80,4 +80,8 @@ void SetSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
+bool SetSettings::hasBuiltin(std::string_view name)
+{
+    return SetSettingsImpl::hasBuiltin(name);
+}
 }

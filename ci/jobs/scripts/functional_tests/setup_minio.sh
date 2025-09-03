@@ -67,8 +67,8 @@ find_os() {
 download_minio() {
   local os
   local arch
-  local minio_server_version=${MINIO_SERVER_VERSION:-2024-08-03T04-33-23Z}
-  local minio_client_version=${MINIO_CLIENT_VERSION:-2024-07-31T15-58-33Z}
+  local minio_server_version=${MINIO_SERVER_VERSION:-2025-06-13T11-33-47Z}
+  local minio_client_version=${MINIO_CLIENT_VERSION:-2025-05-21T01-59-54Z}
 
   os=$(find_os)
   arch=$(find_arch)
@@ -120,6 +120,12 @@ setup_aws_credentials() {
   local minio_root_user=${MINIO_ROOT_USER:-clickhouse}
   local minio_root_password=${MINIO_ROOT_PASSWORD:-clickhouse}
   mkdir -p ~/.aws
+  if [[ -f ~/.aws/credentials ]]; then
+    if grep -q "^\[default\]" ~/.aws/credentials; then
+        echo "The credentials file contains a [default] section."
+        return
+    fi
+  fi
   cat <<EOT >> ~/.aws/credentials
 [default]
 aws_access_key_id=${minio_root_user}
@@ -153,10 +159,10 @@ main() {
   if ! (minio --version && mc --version); then
     download_minio
   fi
+  setup_aws_credentials
   start_minio
   setup_minio "$1"
   upload_data "${query_dir}" "$TEST_DIR"
-  setup_aws_credentials
 }
 
 main "$@"

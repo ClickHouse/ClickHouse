@@ -8,6 +8,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 
+#include <Processors/Port.h>
+
 namespace DB
 {
 
@@ -16,7 +18,7 @@ using namespace MySQLProtocol::Generic;
 using namespace MySQLProtocol::ProtocolText;
 using namespace MySQLProtocol::ProtocolBinary;
 
-MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
     , client_capabilities(settings_.mysql_wire.client_capabilities)
 {
@@ -83,7 +85,7 @@ void MySQLOutputFormat::consume(Chunk chunk)
         }
     }
 
-    flush();
+    flushImpl();
 }
 
 void MySQLOutputFormat::finalizeImpl()
@@ -131,7 +133,7 @@ void MySQLOutputFormat::finalizeImpl()
     }
 }
 
-void MySQLOutputFormat::flush()
+void MySQLOutputFormat::flushImpl()
 {
     packet_endpoint->out->next();
 }
@@ -142,7 +144,10 @@ void registerOutputFormatMySQLWire(FormatFactory & factory)
         "MySQLWire",
         [](WriteBuffer & buf,
            const Block & sample,
-           const FormatSettings & settings) { return std::make_shared<MySQLOutputFormat>(buf, sample, settings); });
+           const FormatSettings & settings,
+           FormatFilterInfoPtr /*format_filter_info*/) { return std::make_shared<MySQLOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
+    factory.markOutputFormatNotTTYFriendly("MySQLWire");
+    factory.setContentType("MySQLWire", "application/octet-stream");
 }
 
 }

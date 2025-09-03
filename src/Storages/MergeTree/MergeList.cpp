@@ -8,6 +8,11 @@
 
 #include <Common/logger_useful.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric MergeParts;
+}
+
 namespace DB
 {
 
@@ -20,7 +25,7 @@ const MergeTreePartInfo MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION = {"al
 
 MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context)
     : table_id{table_id_}
-    , partition_id{future_part->part_info.partition_id}
+    , partition_id{future_part->part_info.getPartitionId()}
     , result_part_name{future_part->name}
     , result_part_path{future_part->path}
     , result_part_info{future_part->part_info}
@@ -28,6 +33,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     , thread_id{getThreadId()}
     , merge_type{future_part->merge_type}
     , merge_algorithm{MergeAlgorithm::Undecided}
+    , num_parts_metric_increment(CurrentMetrics::MergeParts, num_parts)
 {
     auto format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     if (result_part_name != result_part_info.getPartNameV1())
@@ -60,16 +66,15 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         source_data_version = future_part->parts[0]->info.getDataVersion();
         is_mutation = (result_part_info.level == future_part->parts[0]->info.level) && !is_fake_projection_part;
 
-        WriteBufferFromString out(partition);
         const auto & part = future_part->parts[0];
-        part->partition.serializeText(part->storage, out, {});
+        partition = part->partition.serializeToString(part->getMetadataSnapshot());
     }
 
     if (!is_fake_projection_part && is_mutation && normal_parts_count != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} source parts for mutation {}: {}", future_part->parts.size(),
                         result_part_info.getPartNameV1(), fmt::join(source_part_names, ", "));
 
-    thread_group = ThreadGroup::createForBackgroundProcess(context);
+    thread_group = ThreadGroup::createForMergeMutate(context);
 }
 
 MergeInfo MergeListElement::getInfo() const
@@ -106,6 +111,11 @@ MergeInfo MergeListElement::getInfo() const
         res.source_part_paths.emplace_back(source_part_path);
 
     return res;
+}
+
+const MemoryTracker & MergeListElement::getMemoryTracker() const
+{
+    return thread_group->memory_tracker;
 }
 
 MergeListElement::~MergeListElement()

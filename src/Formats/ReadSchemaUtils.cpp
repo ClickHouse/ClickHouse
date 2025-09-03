@@ -240,6 +240,13 @@ try
 
             if (format_name)
             {
+                if (!FormatFactory::instance().checkIfFormatHasSchemaReader(*format_name))
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "{} file format doesn't support schema inference. You must specify the structure manually",
+                        *format_name);
+                }
                 SchemaReaderPtr schema_reader;
 
                 try
@@ -439,7 +446,6 @@ try
         {
             Names names_order; /// Try to save original columns order;
             std::unordered_map<String, DataTypePtr> names_to_types;
-
 
             for (const auto & [schema, file_name] : schemas_for_union_mode)
             {

@@ -28,7 +28,7 @@ struct AsciiImpl
         ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            res[i] = doAscii(data, prev_offset, offsets[i] - prev_offset - 1);
+            res[i] = doAscii(data, prev_offset, offsets[i] - prev_offset);
             prev_offset = offsets[i];
         }
     }
@@ -75,16 +75,30 @@ using FunctionAscii = FunctionStringOrArrayToT<AsciiImpl, AsciiName, AsciiImpl::
 
 REGISTER_FUNCTION(Ascii)
 {
-    factory.registerFunction<FunctionAscii>(
-        FunctionDocumentation{
-        .description=R"(
-Returns the ASCII code point of the first character of str.  The result type is Int32.
+    FunctionDocumentation::Description description = R"(
+Returns the ASCII code point of the first character of string `s` as an `Int32`.
+)";
+    FunctionDocumentation::Syntax syntax = "ascii(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "String input.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the ASCII code point of the first character. If `s` is empty, the result is `0`. If the first character is not an ASCII character or not part of the Latin-1 supplement range of UTF-16, the result is undefined.", {"Int32"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT ascii('234')",
+        R"(
+┌─ascii('234')─┐
+│           50 │
+└──────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-If s is empty, the result is 0. If the first character is not an ASCII character or not part of the Latin-1 Supplement range of UTF-16, the result is undefined)
-        )",
-        .examples{{"ascii", "SELECT ascii('234')", ""}},
-        .categories{"String"}
-        }, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionAscii>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

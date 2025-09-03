@@ -2,7 +2,7 @@
     <named_collections>
         <postgres1>
             <user>postgres</user>
-            <password>mysecretpassword</password>
+            <password>ClickHouse_PostgreSQL_P@ssw0rd</password>
             <host>postgres1</host>
             <port>5432</port>
             <database>postgres_database</database>
@@ -10,16 +10,16 @@
         </postgres1>
         <postgres2>
             <user>postgres</user>
-            <password>mysecretpassword</password>
+            <password>ClickHouse_PostgreSQL_P@ssw0rd</password>
             <host>postgres1</host>
             <port>5432</port>
             <database>postgres_database</database>
             <table>test_table</table>
-            <schema>test_schema</schema>
+            <schema>test_schema_2</schema>
         </postgres2>
         <postgres3>
             <user>postgres</user>
-            <password>mysecretpassword</password>
+            <password>ClickHouse_PostgreSQL_P@ssw0rd</password>
             <host>postgres1</host>
             <port>1111</port>
             <database>postgres</database>
@@ -27,7 +27,7 @@
         </postgres3>
         <postgres4>
             <user>postgres</user>
-            <password>mysecretpassword</password>
+            <password>ClickHouse_PostgreSQL_P@ssw0rd</password>
             <host>postgres1</host>
         </postgres4>
     </named_collections>

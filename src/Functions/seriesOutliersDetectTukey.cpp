@@ -192,61 +192,41 @@ private:
 
 REGISTER_FUNCTION(SeriesOutliersDetectTukey)
 {
-    factory.registerFunction<FunctionSeriesOutliersDetectTukey>(FunctionDocumentation{
-        .description = R"(
+    FunctionDocumentation::Description description = R"(
 Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences).
-
-**Syntax**
-
-``` sql
-seriesOutliersDetectTukey(series);
-seriesOutliersDetectTukey(series, min_percentile, max_percentile, k);
-```
-
-**Arguments**
-
-- `series` - An array of numeric values.
-- `min_quantile` - The minimum quantile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [0.02,0.98]. The default is 0.25.
-- `max_quantile` - The maximum quantile to be used to calculate inter-quantile range (IQR). The value must be in range [0.02, 0.98]. The default is 0.75.
-- `k` - Non-negative constant value to detect mild or stronger outliers. The default value is 1.5
-
-At least four data points are required in `series` to detect outliers.
-
-**Returned value**
-
-- Returns an array of the same length as the input array where each value represents score of possible anomaly of corresponding element in the series. A non-zero score indicates a possible anomaly.
-
-Type: [Array](../../sql-reference/data-types/array.md).
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4, 5, 12, 45, 12, 3, 3, 4, 5, 6]) AS print_0;
-```
-
-Result:
-
-``` text
+    )";
+    FunctionDocumentation::Syntax syntax = "seriesOutliersDetectTukey(series[, min_percentile, max_percentile, K])";
+    FunctionDocumentation::Arguments arguments = {
+        {"series", "An array of numeric values.", {"Array((UInt8/16/32/64))", "Array(Float*)"}},
+        {"min_percentile", "Optional. The minimum percentile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [0.02,0.98]. The default is 0.25.", {"Float*"}},
+        {"max_percentile", "Optional. The maximum percentile to be used to calculate inter-quantile range (IQR). The value must be in range [0.02,0.98]. The default is 0.75.", {"Float*"}},
+        {"K", "Optional. Non-negative constant value to detect mild or stronger outliers. The default value is 1.5.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the same length as the input array where each value represents score of possible anomaly of corresponding element in the series. A non-zero score indicates a possible anomaly.", {"Array(Float32)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Basic outlier detection",
+        "SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4, 5, 12, 45, 12, 3, 3, 4, 5, 6]) AS print_0",
+        R"(
 ┌───────────print_0─────────────────┐
 │[0,0,0,0,0,0,0,0,0,27,0,0,0,0,0,0] │
 └───────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 0.2, 0.8, 1.5) AS print_0;
-```
-
-Result:
-
-``` text
+        )"
+    },
+    {
+        "Custom parameters outlier detection",
+        "SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 0.2, 0.8, 1.5) AS print_0",
+        R"(
 ┌─print_0──────────────────────────────┐
 │ [0,0,0,0,0,0,0,0,0,19.5,0,0,0,0,0,0] │
 └──────────────────────────────────────┘
-```)",
-        .categories{"Time series analysis"}});
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionSeriesOutliersDetectTukey>(documentation);
 }
 }

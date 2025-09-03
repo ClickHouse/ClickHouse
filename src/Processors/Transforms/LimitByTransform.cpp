@@ -1,11 +1,12 @@
 #include <Processors/Transforms/LimitByTransform.h>
+#include <Columns/IColumn.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 
 namespace DB
 {
 
-LimitByTransform::LimitByTransform(const Block & header, UInt64 group_length_, UInt64 group_offset_, const Names & columns)
+LimitByTransform::LimitByTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & columns)
     : ISimpleTransform(header, header, true)
     , group_length(group_length_)
     , group_offset(group_offset_)
@@ -14,8 +15,8 @@ LimitByTransform::LimitByTransform(const Block & header, UInt64 group_length_, U
 
     for (const auto & name : columns)
     {
-        auto position = header.getPositionByName(name);
-        const auto & column = header.getByPosition(position).column;
+        auto position = header->getPositionByName(name);
+        const auto & column = header->getByPosition(position).column;
 
         /// Ignore all constant columns.
         if (!(column && isColumnConst(*column)))
@@ -62,6 +63,9 @@ void LimitByTransform::transform(Chunk & chunk)
             else
                 column = column->filter(filter, inserted_count);
     }
+
+    if (rows_before_limit_at_least)
+        rows_before_limit_at_least->add(inserted_count);
 
     chunk.setColumns(std::move(columns), inserted_count);
 }

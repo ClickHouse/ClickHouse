@@ -20,8 +20,8 @@ using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 /// Copies a file from AzureBlobStorage to AzureBlobStorage.
 /// The parameters `src_offset` and `src_size` specify a part in the source to copy.
 void copyAzureBlobStorageFile(
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> src_client,
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> dest_client,
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client,
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & src_container_for_logging,
     const String & src_blob,
     size_t src_offset,
@@ -30,6 +30,7 @@ void copyAzureBlobStorageFile(
     const String & dest_blob,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
     const ReadSettings & read_settings,
+    bool same_credentials = true,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
 
 
@@ -42,7 +43,7 @@ void copyDataToAzureBlobStorageFile(
     const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
     size_t offset,
     size_t size,
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client,
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> client,
     const String & dest_container_for_logging,
     const String & dest_blob,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,

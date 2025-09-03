@@ -2,9 +2,11 @@
 #include <Core/Settings.h>
 
 #include <boost/noncopyable.hpp>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/Context.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
@@ -22,10 +24,6 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 
-#include <Common/FileChecker.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedReadBufferFromFile.h>
-#include <Compression/CompressedWriteBuffer.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
 #include <Backups/BackupEntryFromMemory.h>
@@ -33,9 +31,16 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntriesLazyBatch.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/copyData.h>
+#include <Common/FailPoint.h>
+#include <Common/FileChecker.h>
+
 
 namespace DB
 {
@@ -58,6 +63,12 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
+    extern const int BACKUP_ENTRY_NOT_FOUND;
+}
+
+namespace FailPoints
+{
+    extern const char backup_add_empty_memory_table[];
 }
 
 class MemorySink : public SinkToStorage
@@ -67,7 +78,7 @@ public:
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         ContextPtr context)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage(storage_)
         , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context))
     {
@@ -91,8 +102,7 @@ public:
         {
             Block compressed_block;
             for (const auto & elem : block)
-                compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
-
+                compressed_block.insert({elem.column->compress(/*force_compression=*/true), elem.type, elem.name});
             new_blocks.push_back(std::move(compressed_block));
         }
         else
@@ -180,7 +190,7 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
     snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
 
-    if (!hasDynamicSubcolumns(metadata_snapshot->getColumns()))
+    if (!hasDynamicSubcolumnsDeprecated(metadata_snapshot->getColumns()))
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
 
     auto object_columns = getConcreteObjectColumns(
@@ -259,7 +269,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     {
         if ((*memory_settings)[MemorySetting::compress])
             for (auto & elem : block)
-                elem.column = elem.column->compress();
+                elem.column = elem.column->compress(/*force_compression=*/true);
 
         out.push_back(block);
     }
@@ -425,7 +435,7 @@ namespace
                 auto data_file_path = temp_dir / fs::path{file_paths[data_bin_pos]}.filename();
                 auto data_out_compressed = temp_disk->writeFile(data_file_path);
                 auto data_out = std::make_unique<CompressedWriteBuffer>(*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
-                NativeWriter block_out{*data_out, 0, metadata_snapshot->getSampleBlock(), std::nullopt, false, &index};
+                NativeWriter block_out{*data_out, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()), std::nullopt, false, &index};
                 for (const auto & block : *blocks)
                     block_out.write(block);
                 data_out->finalize();
@@ -497,6 +507,14 @@ namespace
 
 void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
+    if (totalBytes(backup_entries_collector.getContext()) == 0)
+    {
+        bool skip_empty_entry = true;
+        fiu_do_on(FailPoints::backup_add_empty_memory_table, { skip_empty_entry = false; });
+        if (skip_empty_entry)
+            return;
+    }
+
     auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
     const auto & read_settings = backup_entries_collector.getReadSettings();
     auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
@@ -540,7 +558,25 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         if (!backup->fileExists(index_file_path))
             throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_file_path);
 
-        auto in = backup->readFile(index_file_path);
+        auto file_size = backup->getFileSize(index_file_path);
+        std::unique_ptr<ReadBufferFromFileBase> in = nullptr;
+        try
+        {
+            in = backup->readFile(index_file_path);
+        }
+        catch (const DB::Exception & e)
+        {
+            if (e.code() == ErrorCodes::BACKUP_ENTRY_NOT_FOUND && file_size == 0)
+            {
+                LOG_ERROR(
+                    getLogger("StorageMemory"),
+                    "File '{}' with size 0 is listed in backup metadata but is not found in the backup, skipping",
+                    index_file_path);
+                return;
+            }
+            else
+                throw;
+        }
         CompressedReadBuffer compressed_in{*in};
         index.read(compressed_in);
     }
@@ -561,20 +597,20 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
             temp_data_file.emplace(temporary_disk);
             auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
             copyData(*in, *out);
-            out.reset();
+            out->finalize();
             in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
         }
         std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
         CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
         NativeReader block_in{compressed_in, 0, index.blocks.begin(), index.blocks.end()};
 
-        while (auto block = block_in.read())
+        for (auto block = block_in.read(); !block.empty(); block = block_in.read())
         {
             if ((*memory_settings)[MemorySetting::compress])
             {
                 Block compressed_block;
                 for (const auto & elem : block)
-                    compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
+                    compressed_block.insert({elem.column->compress(/*force_compression=*/true), elem.type, elem.name});
 
                 new_blocks.push_back(std::move(compressed_block));
             }
@@ -612,14 +648,14 @@ void StorageMemory::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 }
 
-std::optional<UInt64> StorageMemory::totalRows(const Settings &) const
+std::optional<UInt64> StorageMemory::totalRows(ContextPtr) const
 {
     /// All modifications of these counters are done under mutex which automatically guarantees synchronization/consistency
     /// When run concurrently we are fine with any value: "before" or "after"
     return total_size_rows.load(std::memory_order_relaxed);
 }
 
-std::optional<UInt64> StorageMemory::totalBytes(const Settings &) const
+std::optional<UInt64> StorageMemory::totalBytes(ContextPtr) const
 {
     return total_size_bytes.load(std::memory_order_relaxed);
 }
@@ -645,6 +681,7 @@ void registerStorageMemory(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_parallel_insert = true,
+        .has_builtin_setting_fn = MemorySettings::hasBuiltin,
     });
 }
 

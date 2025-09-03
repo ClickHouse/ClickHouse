@@ -1,5 +1,6 @@
 #include <Functions/FunctionsAES.h>
 #include <Interpreters/Context.h>
+#include <Common/OpenSSLHelpers.h>
 
 #if USE_SSL
 
@@ -16,12 +17,11 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
-
 namespace OpenSSLDetails
 {
 void onError(std::string error_message)
 {
-    throw Exception(ErrorCodes::OPENSSL_ERROR, "{}. OpenSSL error code: {}", error_message, ERR_get_error());
+    throw Exception(ErrorCodes::OPENSSL_ERROR, "{} failed: {}", error_message, getOpenSSLErrors());
 }
 
 StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, StringRef key, std::array<char, EVP_MAX_KEY_LENGTH> & folded_key)
@@ -42,7 +42,9 @@ const EVP_CIPHER * getCipherByName(StringRef cipher_name)
     // NOTE: cipher obtained not via EVP_CIPHER_fetch() would cause extra work on each context reset
     // with EVP_CIPHER_CTX_reset() or EVP_EncryptInit_ex(), but using EVP_CIPHER_fetch()
     // causes data race, so we stick to the slower but safer alternative here.
-    return EVP_get_cipherbyname(cipher_name.data);
+
+    /// We need zero-terminated string here:
+    return EVP_get_cipherbyname(cipher_name.toString().c_str());
 }
 
 }

@@ -2,8 +2,6 @@ from multiprocessing.dummy import Pool
 from time import sleep
 
 import pytest
-from kazoo.client import KazooClient
-from minio.deleteobjects import DeleteObject
 
 from helpers import keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -12,23 +10,28 @@ from helpers.retry_decorator import retry
 # from kazoo.protocol.serialization import Connect, read_buffer, write_buffer
 
 cluster = ClickHouseCluster(__file__)
+
+# Disable `with_remote_database_disk` as the test does not use the default Keeper.
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/keeper_config1.xml"],
     stay_alive=True,
     with_minio=True,
+    with_remote_database_disk=False,
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/keeper_config2.xml"],
     stay_alive=True,
     with_minio=True,
+    with_remote_database_disk=False,
 )
 node3 = cluster.add_instance(
     "node3",
     main_configs=["configs/keeper_config3.xml"],
     stay_alive=True,
     with_minio=True,
+    with_remote_database_disk=False,
 )
 
 
@@ -46,11 +49,7 @@ def started_cluster():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 def destroy_zk_client(zk):

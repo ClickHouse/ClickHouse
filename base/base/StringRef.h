@@ -1,19 +1,14 @@
 #pragma once
 
 #include <cassert>
-#include <stdexcept> // for std::logic_error
+
 #include <string>
-#include <type_traits>
 #include <vector>
-#include <functional>
-#include <iosfwd>
 
 #include <base/defines.h>
+#include <base/simd.h>
 #include <base/types.h>
 #include <base/unaligned.h>
-#include <base/simd.h>
-#include <fmt/core.h>
-#include <fmt/ostream.h>
 
 #include <city.h>
 
@@ -40,6 +35,10 @@
 #if defined(__s390x__)
     #include <base/crc32c_s390x.h>
     #define CRC_INT s390x_crc32c
+#endif
+
+#if !defined(CRC_INT)
+#include <stdexcept> // for std::logic_error
 #endif
 
 /**
@@ -311,7 +310,7 @@ inline size_t hashLessThan16(const char * data, size_t size)
 
 struct CRC32Hash
 {
-    unsigned operator() (StringRef x) const
+    size_t operator() (StringRef x) const
     {
         const char * pos = x.data;
         size_t size = x.size;
@@ -327,7 +326,7 @@ struct CRC32Hash
         }
 
         const char * end = pos + size;
-        unsigned res = -1U;
+        size_t res = -1U;
 
         do
         {
@@ -340,7 +339,11 @@ struct CRC32Hash
         UInt64 word = unalignedLoadLittleEndian<UInt64>(end - 8);    /// I'm not sure if this is normal.
         res = static_cast<unsigned>(CRC_INT(res, word));
 
-        return res;
+        // abseil-cpp and std require hash functions to return 64-bit values,
+        // though we intentionally use crc32 for the sake of speed.
+        //
+        // Fill upper bits with the same value as the lower ones.
+        return (res << 32) | res;
     }
 };
 
@@ -391,5 +394,3 @@ namespace PackedZeroTraits
 
 
 std::ostream & operator<<(std::ostream & os, const StringRef & str);
-
-template<> struct fmt::formatter<StringRef> : fmt::ostream_formatter {};

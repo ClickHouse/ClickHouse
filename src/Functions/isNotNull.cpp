@@ -4,6 +4,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -143,7 +144,44 @@ private:
 
 REGISTER_FUNCTION(IsNotNull)
 {
-    factory.registerFunction<FunctionIsNotNull>();
+    FunctionDocumentation::Description description = R"(
+Checks if the argument is not `NULL`.
+
+Also see: operator [`IS NOT NULL`](/sql-reference/operators#is_not_null).
+    )";
+    FunctionDocumentation::Syntax syntax = "isNotNull(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "A value of non-compound data type.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `x` is not `NULL`, otherwise `0`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE t_null
+(
+  x Int32,
+  y Nullable(Int32)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO t_null VALUES (1, NULL), (2, 3);
+
+SELECT x FROM t_null WHERE isNotNull(y);
+        )",
+        R"(
+┌─x─┐
+│ 2 │
+└───┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionIsNotNull>(documentation);
 }
 
 }

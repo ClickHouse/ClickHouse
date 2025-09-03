@@ -1,7 +1,12 @@
 ---
-slug: /en/operations/system-tables/one
+description: 'System table containing a single row with a single `dummy` UInt8 column
+  containing the value 0. Similar to the `DUAL` table found in other DBMSs.'
+keywords: ['system table', 'one']
+slug: /operations/system-tables/one
+title: 'system.one'
 ---
-# one
+
+# system.one
 
 This table contains a single row with a single `dummy` UInt8 column containing the value 0.
 

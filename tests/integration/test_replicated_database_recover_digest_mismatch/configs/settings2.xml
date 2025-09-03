@@ -1,0 +1,19 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_drop_detached>1</allow_drop_detached>
+            <allow_experimental_alter_materialized_view_structure>1</allow_experimental_alter_materialized_view_structure>
+            <allow_experimental_object_type>0</allow_experimental_object_type>
+            <allow_suspicious_codecs>0</allow_suspicious_codecs>
+            <database_replicated_allow_replicated_engine_arguments>3</database_replicated_allow_replicated_engine_arguments>
+            <database_replicated_allow_explicit_uuid>3</database_replicated_allow_explicit_uuid>
+
+            <throw_on_unsupported_query_inside_transaction>0</throw_on_unsupported_query_inside_transaction>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <profile>default</profile>
+        </default>
+    </users>
+</clickhouse>

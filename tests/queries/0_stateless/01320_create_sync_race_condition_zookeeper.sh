@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-parallel
+# Tags: race, zookeeper, no-parallel, no-shared-merge-tree
+# no-shared-merge-tree: database ordinary not supported for shared merge tree
 
 # Creation of a database with Ordinary engine emits a warning.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal

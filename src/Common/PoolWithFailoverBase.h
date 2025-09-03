@@ -153,6 +153,9 @@ protected:
 
     inline void updateSharedErrorCounts(std::vector<ShuffledPool> & shuffled_pools);
 
+    inline void incrementErrorCount(NestedPoolPtr pool);
+
+
     auto getPoolExtendedStates() const
     {
         std::lock_guard lock(pool_states_mutex);
@@ -212,6 +215,29 @@ inline void PoolWithFailoverBase<TNestedPool>::updateSharedErrorCounts(std::vect
         auto & pool_state = shared_pool_states[pool.index];
         pool_state.error_count = std::min<UInt64>(max_error_cap, pool_state.error_count + pool.error_count);
         pool_state.slowdown_count += pool.slowdown_count;
+    }
+}
+
+template <typename TNestedPool>
+inline void PoolWithFailoverBase<TNestedPool>::incrementErrorCount(NestedPoolPtr pool)
+{
+    chassert(pool);
+    std::optional<size_t> index;
+    for (size_t i = 0; i < nested_pools.size(); ++i)
+    {
+        if (nested_pools[i] == pool)
+        {
+            index = i;
+            break;
+        }
+    }
+    chassert(index.has_value());
+
+    {
+        std::lock_guard lock(pool_states_mutex);
+
+        auto & pool_state = shared_pool_states[index.value()];
+        pool_state.error_count = std::min<UInt64>(max_error_cap, pool_state.error_count + 1);
     }
 }
 

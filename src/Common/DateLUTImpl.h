@@ -5,10 +5,10 @@
 #include <base/types.h>
 
 #include <ctime>
-#include <cassert>
 #include <string>
 #include <type_traits>
 
+/// NOLINTBEGIN(modernize-macro-to-enum)
 #define DATE_SECONDS_PER_DAY 86400 /// Number of seconds in a day, 60 * 60 * 24
 
 #define DATE_LUT_MIN_YEAR 1900 /// 1900 since majority of financial organizations consider 1900 as an initial year.
@@ -28,6 +28,7 @@
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
 #define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_YEAR) * 366L * 86400)
+/// NOLINTEND(modernize-macro-to-enum)
 
 
 /// Flags for toYearWeek() function.
@@ -61,7 +62,7 @@ class DateLUTImpl
 {
 private:
     friend class DateLUT;
-    explicit DateLUTImpl(const std::string & time_zone);
+    explicit DateLUTImpl(std::string_view time_zone);
 
     DateLUTImpl(const DateLUTImpl &) = delete; /// NOLINT
     DateLUTImpl & operator=(const DateLUTImpl &) = delete; /// NOLINT
@@ -282,7 +283,7 @@ private:
     DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
-        assert(divisor > 0);
+        chassert(divisor > 0);
 
         if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
         {
@@ -657,6 +658,9 @@ public:
     template <typename DateOrTime>
     Int16 toYear(DateOrTime v) const { return lut[toLUTIndex(v)].year; }
 
+    template <typename DateOrTime>
+    Int16 toYearSinceEpoch(DateOrTime v) const { return lut[toLUTIndex(v)].year - 1970; }
+
     /// 1-based, starts on Monday
     template <typename DateOrTime>
     UInt8 toDayOfWeek(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_week; }
@@ -951,6 +955,13 @@ public:
     }
 
     template <typename DateOrTime>
+    Int32 toMonthNumSinceEpoch(DateOrTime v) const
+    {
+        const LUTIndex i = toLUTIndex(v);
+        return (lut[i].year - 1970) * 12 + lut[i].month - 1;
+    }
+
+    template <typename DateOrTime>
     Int32 toRelativeQuarterNum(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
@@ -975,7 +986,7 @@ public:
     }
 
     /// The same formula is used for positive time (after Unix epoch) and negative time (before Unix epoch).
-    /// It’s needed for correct work of dateDiff function.
+    /// It's needed for correct work of dateDiff function.
     Time toStableRelativeHourNum(Time t) const
     {
         return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
@@ -1193,6 +1204,16 @@ public:
         return lut[index].date + time_offset;
     }
 
+    Time makeTime(int64_t hour, UInt8 minute, UInt8 second) const
+    {
+        Time time_offset = hour * 3600 + minute * 60 + second;
+
+        if (time_offset >= lut[1].time_at_offset_change())
+            time_offset -= lut[0].amount_of_offset_change();
+
+        return time_offset;
+    }
+
     template <typename DateOrTime>
     const Values & getValues(DateOrTime v) const { return lut[toLUTIndex(v)]; }
 
@@ -1230,7 +1251,8 @@ public:
 
     struct TimeComponents
     {
-        uint8_t hour;
+        bool is_negative = false;
+        uint64_t hour;
         uint8_t minute;
         uint8_t second;
     };
@@ -1278,6 +1300,31 @@ public:
         /// In case time was changed backwards at the start of next day, we will repeat the hour 23.
         if (unlikely(res.time.hour > 23))
             res.time.hour = 23;
+
+        return res;
+    }
+
+    TimeComponents toTimeComponents(Time t) const
+    {
+        TimeComponents res;
+
+        bool is_negative = false;
+
+        if (unlikely(t < 0))
+        {
+            is_negative = true;
+            t = -t;
+        }
+
+        // Cap at 3599999 seconds (999:59:59)
+        if (unlikely(t > 3599999))
+            t = 3599999;
+
+        res.second = t % 60;
+        res.minute = t / 60 % 60;
+        res.hour = t / 3600;
+
+        res.is_negative = is_negative;
 
         return res;
     }

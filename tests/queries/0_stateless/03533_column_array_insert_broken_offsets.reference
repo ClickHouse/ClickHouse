@@ -1,0 +1,1 @@
+Arrays offsets are not monotonically increasing (starting at 0, value 2): (in file/uri (fd = 0)): While executing Native: data for INSERT was parsed from stdin. (INCORRECT_DATA

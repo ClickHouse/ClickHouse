@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/FieldVisitors.h>
 #include <Storages/ColumnsDescription.h>
@@ -11,6 +10,7 @@
 namespace DB
 {
 
+class Block;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 class ColumnsDescription;
@@ -63,7 +63,7 @@ DataTypePtr createConcreteEmptyDynamicColumn(const DataTypePtr & type_in_storage
 void extendObjectColumns(NamesAndTypesList & columns_list, const ColumnsDescription & object_columns, bool with_subcolumns);
 
 /// Checks whether @columns contain any column with dynamic subcolumns.
-bool hasDynamicSubcolumns(const ColumnsDescription & columns);
+bool hasDynamicSubcolumnsDeprecated(const ColumnsDescription & columns);
 
 /// Updates types of objects in @object_columns inplace
 /// according to types in new_columns.

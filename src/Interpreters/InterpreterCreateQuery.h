@@ -16,7 +16,6 @@ namespace DB
 class ASTCreateQuery;
 class ASTColumnDeclaration;
 class ASTExpressionList;
-class ASTConstraintDeclaration;
 class ASTStorage;
 class IDatabase;
 class DDLGuard;
@@ -86,7 +85,7 @@ public:
 
     /// Check access right, validate definer statement and replace `CURRENT USER` with actual name.
     static void processSQLSecurityOption(
-        ContextPtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, bool skip_check_permissions = false);
+        ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, bool skip_check_permissions = false);
 
 private:
     struct TableProperties
@@ -122,7 +121,8 @@ private:
 
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
 
-    void throwIfTooManyEntities(ASTCreateQuery & create, StoragePtr storage) const;
+    void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
+    void throwIfTooManyEntities(ASTCreateQuery & create) const;
 
     ASTPtr query_ptr;
 

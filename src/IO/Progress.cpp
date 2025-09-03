@@ -1,4 +1,4 @@
-#include "Progress.h"
+#include <IO/Progress.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -21,6 +21,20 @@ namespace
         return static_cast<UInt64>(std::ceil(static_cast<double>(total_bytes_to_read) / bytes_per_row));
     }
 }
+
+
+bool Progress::empty() const
+{
+    return read_rows == 0
+        && read_bytes == 0
+        && written_rows == 0
+        && written_bytes == 0
+        && total_rows_to_read == 0
+        && result_rows == 0
+        && result_bytes == 0;
+    /// We deliberately don't include "elapsed_ns" as a volatile value.
+}
+
 
 void ProgressValues::read(ReadBuffer & in, UInt64 server_revision)
 {
@@ -69,29 +83,35 @@ void ProgressValues::write(WriteBuffer & out, UInt64 client_revision) const
     }
 }
 
-void ProgressValues::writeJSON(WriteBuffer & out) const
+void ProgressValues::writeJSON(WriteBuffer & out, bool write_zero_values) const
 {
     /// Numbers are written in double quotes (as strings) to avoid loss of precision
     ///  of 64-bit integers after interpretation by JavaScript.
 
+    bool has_value = false;
+
+    auto write = [&](const char * name, UInt64 value)
+    {
+        if (!value && !write_zero_values)
+            return;
+        if (has_value)
+            writeChar(',', out);
+        writeCString(name, out);
+        writeCString(":\"", out);
+        writeIntText(value, out);
+        writeChar('"', out);
+        has_value = true;
+    };
+
     writeCString("{", out);
-    writeCString("\"read_rows\":\"", out);
-    writeText(read_rows, out);
-    writeCString("\",\"read_bytes\":\"", out);
-    writeText(read_bytes, out);
-    writeCString("\",\"written_rows\":\"", out);
-    writeText(written_rows, out);
-    writeCString("\",\"written_bytes\":\"", out);
-    writeText(written_bytes, out);
-    writeCString("\",\"total_rows_to_read\":\"", out);
-    writeText(total_rows_to_read, out);
-    writeCString("\",\"result_rows\":\"", out);
-    writeText(result_rows, out);
-    writeCString("\",\"result_bytes\":\"", out);
-    writeText(result_bytes, out);
-    writeCString("\",\"elapsed_ns\":\"", out);
-    writeText(elapsed_ns, out);
-    writeCString("\"", out);
+    write("\"read_rows\"", read_rows);
+    write("\"read_bytes\"", read_bytes);
+    write("\"written_rows\"", written_rows);
+    write("\"written_bytes\"", written_bytes);
+    write("\"total_rows_to_read\"", total_rows_to_read);
+    write("\"result_rows\"", result_rows);
+    write("\"result_bytes\"", result_bytes);
+    write("\"elapsed_ns\"", elapsed_ns);
     writeCString("}", out);
 }
 
@@ -234,9 +254,9 @@ void Progress::write(WriteBuffer & out, UInt64 client_revision) const
     getValues().write(out, client_revision);
 }
 
-void Progress::writeJSON(WriteBuffer & out) const
+void Progress::writeJSON(WriteBuffer & out, DisplayMode mode) const
 {
-    getValues().writeJSON(out);
+    getValues().writeJSON(out, mode == DisplayMode::Verbose);
 }
 
 void Progress::incrementElapsedNs(UInt64 elapsed_ns_)

@@ -8,6 +8,8 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/TableFunctionPrometheusQuery.h>
+#include <TableFunctions/TableFunctionTimeSeriesSelector.h>
 
 
 namespace DB
@@ -97,7 +99,7 @@ ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStr
 }
 
 template <ViewTarget::Kind target_kind>
-const char * TableFunctionTimeSeriesTarget<target_kind>::getStorageTypeName() const
+const char * TableFunctionTimeSeriesTarget<target_kind>::getStorageEngineName() const
 {
     return target_table_type_name.c_str();
 }
@@ -109,19 +111,37 @@ void registerTableFunctionTimeSeries(TableFunctionFactory & factory)
         {.documentation = {
             .description=R"(Provides direct access to the 'data' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesData", "SELECT * from timeSeriesData('mydb', 'time_series_table');", ""}},
-            .categories{"Time Series"}}
+            .category = FunctionDocumentation::Category::TableFunction}
         });
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Tags>>(
         {.documentation = {
             .description=R"(Provides direct access to the 'tags' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesTags", "SELECT * from timeSeriesTags('mydb', 'time_series_table');", ""}},
-            .categories{"Time Series"}}
+            .category = FunctionDocumentation::Category::TableFunction}
         });
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Metrics>>(
         {.documentation = {
             .description=R"(Provides direct access to the 'metrics' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesMetrics", "SELECT * from timeSeriesMetrics('mydb', 'time_series_table');", ""}},
-            .categories{"Time Series"}}
+            .category = FunctionDocumentation::Category::TableFunction}
+        });
+    factory.registerFunction<TableFunctionTimeSeriesSelector>(
+        {.documentation = {
+            .description=R"(Reads time series from a specified TimeSeries table.)",
+            .examples{{"timeSeriesSelector", "SELECT * from timeSeriesSelector('mydb', 'time_series_table', 'http_requests{job=\"prometheus\"}', now() - INTERVAL 10 MINUTES, now());", ""}},
+            .category = FunctionDocumentation::Category::TableFunction}
+        });
+    factory.registerFunction<TableFunctionPrometheusQuery</* range = */ false>>(
+        {.documentation = {
+            .description=R"(Evaluates a prometheus query using data from a specified TimeSeries table.)",
+            .examples{{"prometheusQuery", "SELECT * from prometheusQuery('mydb', 'time_series_table', 'rate(http_requests_total[5m])[30m:1m]', now());", ""}},
+            .category = FunctionDocumentation::Category::TableFunction}
+        });
+    factory.registerFunction<TableFunctionPrometheusQuery</* range = */ true>>(
+        {.documentation = {
+            .description=R"(Evaluates a prometheus query using data from a specified TimeSeries table over a range of timestamps.)",
+            .examples{{"prometheusQueryRange", "SELECT * from prometheusQueryRange('mydb', 'time_series_table', 'http_requests{job=\"prometheus\"}', now() - INTERVAL 10 MINUTES, now(), INTERVAL 1 MINUTE);", ""}},
+            .category = FunctionDocumentation::Category::TableFunction}
         });
 }
 

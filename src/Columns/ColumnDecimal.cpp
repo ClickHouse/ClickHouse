@@ -46,6 +46,14 @@ TypeIndex ColumnDecimal<T>::getDataType() const
     return TypeToTypeIndex<T>;
 }
 
+template <is_decimal T>
+std::span<char> ColumnDecimal<T>::insertRawUninitialized(size_t count)
+{
+    size_t start = data.size();
+    data.resize(start + count);
+    return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
+}
+
 
 template <is_decimal T>
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -478,7 +486,7 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
 }
 
 template <is_decimal T>
-ColumnPtr ColumnDecimal<T>::compress() const
+ColumnPtr ColumnDecimal<T>::compress(bool force_compression) const
 {
     const size_t data_size = data.size();
     const size_t source_size = data_size * sizeof(T);
@@ -487,7 +495,7 @@ ColumnPtr ColumnDecimal<T>::compress() const
     if (source_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, false);
+    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, force_compression);
 
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());
@@ -528,10 +536,18 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
     max = NearestFieldType<T>(cur_max, scale);
 }
 
+template <is_decimal T>
+void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
+{
+    const auto & src_data = assert_cast<const Self &>(src).getData();
+    data[dst_pos] = src_data[src_pos];
+}
+
 template class ColumnDecimal<Decimal32>;
 template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;
 template class ColumnDecimal<Decimal256>;
 template class ColumnDecimal<DateTime64>;
+template class ColumnDecimal<Time64>;
 
 }

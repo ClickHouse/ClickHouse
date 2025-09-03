@@ -1,8 +1,9 @@
 #pragma once
 
+#include <IO/WriteBufferFromString.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/IMessageProducer.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -26,7 +27,7 @@ class MessageQueueSink : public SinkToStorage
 {
 public:
     MessageQueueSink(
-        const Block & header,
+        SharedHeader header,
         const String & format_name_,
         size_t max_rows_per_message_,
         std::unique_ptr<IMessageProducer> producer_,

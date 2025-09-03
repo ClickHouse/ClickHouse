@@ -64,15 +64,11 @@ public:
         IObjectStorage & object_storage_to,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
-    std::unique_ptr<IObjectStorage> cloneObjectStorage(
-        const std::string & new_namespace,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
-
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
+
+    ObjectStorageConnectionInfoPtr getConnectionInfo() const override { return object_storage->getConnectionInfo(); }
 
     void shutdown() override;
 
@@ -92,6 +88,8 @@ public:
 
     ObjectStorageKey
     generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
+
+    bool areObjectKeysRandom() const override;
 
     void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { object_storage->setKeysGenerator(gen); }
 
@@ -118,9 +116,14 @@ public:
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
 #if USE_AZURE_BLOB_STORAGE
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() const override
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override
     {
         return object_storage->getAzureBlobStorageClient();
+    }
+
+    AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override
+    {
+        return object_storage->getAzureBlobStorageAuthMethod();
     }
 #endif
 

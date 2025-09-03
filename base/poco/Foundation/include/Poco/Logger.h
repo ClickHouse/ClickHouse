@@ -127,6 +127,7 @@ public:
     /// The "channel" and "level" properties are set-only.
 
     void log(const Message & msg);
+    void log(Message && msg);
     /// Logs the given message if its priority is
     /// greater than or equal to the Logger's log level.
 
@@ -952,8 +953,6 @@ private:
     static std::pair<LoggerMapIterator, bool> add(Logger * pLogger);
     static std::optional<LoggerMapIterator> find(const std::string & name);
     static Logger * findRawPtr(const std::string & name);
-    void unsafeSetChannel(Channel * pChannel);
-    Channel* unsafeGetChannel() const;
 
     Logger();
     Logger(const Logger &);
