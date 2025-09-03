@@ -55,11 +55,11 @@ SET prefer_localhost_replica = 1; -- avoid getting different plans due to that s
 EXPLAIN SELECT * FROM test_tiered_real_connection WHERE value > 150;
 
 -- Test EXPLAIN with more complex query
-EXPLAIN SELECT 
+EXPLAIN SELECT
     name,
     count() as count,
     avg(value) as avg_value
-FROM test_tiered_real_connection 
+FROM test_tiered_real_connection
 WHERE event_time >= '2022-01-02'
 GROUP BY name
 ORDER BY avg_value DESC;
