@@ -12,11 +12,14 @@ set(CRC32C_SOURCES
     "${CRC32C_DIR}/src/crc32c.cc"
 )
 
-# crc32c_arm64.cc uses the vmull_p64 instruction, which is only available when building
-# with the `aes` flag.
-if(ARCH_AARCH64 AND ENABLE_AES)
+if(ARCH_AARCH64)
   include_directories(${CRC32C_CMAKE_DIR}/aarch64)
-  list(APPEND CRC32C_SOURCES "${CRC32C_DIR}/src/crc32c_arm64.cc")
+
+  # crc32c_arm64.cc uses the vmull_p64 instruction, which is only available when building
+  # with the `aes` flag.
+  if (ENABLE_AES)
+    list(APPEND CRC32C_SOURCES "${CRC32C_DIR}/src/crc32c_arm64.cc")
+  endif()
 elseif(ARCH_AMD64)
   if(ENABLE_SSE42)
     include_directories(${CRC32C_CMAKE_DIR}/x86_64/sse42)
