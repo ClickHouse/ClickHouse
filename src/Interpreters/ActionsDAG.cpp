@@ -3224,6 +3224,34 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
     const bool has_or = predicateContainsOr(predicate);
 
+    /// Check for special predicates
+    auto has_special_inputs = [](const Node * node) -> bool
+    {
+        std::stack<const Node *> stack;
+        stack.push(node);
+        std::unordered_set<const Node *> visited;
+        
+        while (!stack.empty())
+        {
+            const auto * n = stack.top();
+            stack.pop();
+            
+            if (!visited.insert(n).second)
+                continue;
+                
+            if (n->type == ActionType::INPUT)
+            {
+                if (n->result_name.find("exists(") != std::string::npos ||
+                    n->result_name.find("__exists") != std::string::npos)
+                    return true;
+            }
+            
+            for (const auto * child : n->children)
+                stack.push(child);
+        }
+        return false;
+    };
+
     auto left_stream_allowed_nodes = get_input_nodes(left_stream_available_columns_to_push_down);
     auto right_stream_allowed_nodes = get_input_nodes(right_stream_available_columns_to_push_down);
     auto both_streams_allowed_nodes = get_input_nodes(equivalent_columns_to_push_down);
@@ -3311,7 +3339,32 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     /// and classify them using the same bottom-up allowedness rules as conjunctions
     NodeRawConstPtrs left_stream_allowed_disjunctions;
     NodeRawConstPtrs right_stream_allowed_disjunctions;
-    if (has_or && !hasCorrelatedColumns())
+    if (has_or && has_special_inputs(predicate))
+    {
+        /// Only extract top-level conjunctions that are safe to push
+        left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes, false);
+        right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
+        
+        std::optional<ActionsForFilterPushDown> left_filter;
+        std::optional<ActionsForFilterPushDown> right_filter;
+        
+        if (!left_stream_push_down_conjunctions.allowed.empty())
+            left_filter = createActionsForConjunction(left_stream_push_down_conjunctions.allowed, 
+                                                      left_stream_header.getColumnsWithTypeAndName());
+        
+        if (!right_stream_push_down_conjunctions.allowed.empty())
+            right_filter = createActionsForConjunction(right_stream_push_down_conjunctions.allowed,
+                                                       right_stream_header.getColumnsWithTypeAndName());
+        
+        // Never remove the original filter when we have OR with special predicates
+        return ActionsForJOINFilterPushDown{
+            .left_stream_filter_to_push_down = left_filter ? std::move(left_filter->dag) : std::optional<ActionsDAG>{},
+            .left_stream_filter_removes_filter = false,  // Keep original filter
+            .right_stream_filter_to_push_down = right_filter ? std::move(right_filter->dag) : std::optional<ActionsDAG>{},
+            .right_stream_filter_removes_filter = false   // Keep original filter
+        };
+    }
+    else if (has_or)
     {
         auto left_stream_push_down_disjunctions
             = getDisjunctionNodes(predicate, left_stream_allowed_nodes, /*allow_non_deterministic_functions*/ false);

@@ -270,9 +270,45 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     if (!join && !filled_join && !logical_join)
         return 0;
 
-    // Do not attempt disjunction push-down across correlated joins
-    if (has_or && logical_join && logical_join->hasCorrelatedExpressions())
+    /// Add a function to check if filter contains special predicates
+    auto contains_special_predicates = [](const ActionsDAG & dag, const std::string & filter_col) -> bool
+    {
+        const auto * root = dag.tryFindInOutputs(filter_col);
+        if (!root) return false;
+        
+        std::stack<const ActionsDAG::Node *> st;
+        st.push(root);
+        std::unordered_set<const ActionsDAG::Node *> seen;
+        
+        while (!st.empty())
+        {
+            const auto * n = st.top(); st.pop();
+            if (!seen.insert(n).second) continue;
+            
+            // Check for special inputs that indicate correlated predicates
+            if (n->type == ActionsDAG::ActionType::INPUT)
+            {
+                const auto & name = n->result_name;
+                if (name.find("exists(") != std::string::npos ||
+                    name.find("__exists") != std::string::npos ||
+                    name.find("__subquery") != std::string::npos ||
+                    name.find("__correlated") != std::string::npos)
+                    return true;
+            }
+            
+            for (const auto * ch : n->children) 
+                st.push(ch);
+        }
+        return false;
+    };
+
+    // If we have OR with special predicates, don't push down
+    if (has_or && contains_special_predicates(filter->getExpression(), filter->getFilterColumnName()))
+    {
+        LOG_DEBUG(getLogger("QueryPlanOptimizations"), 
+                  "Skipping OR pushdown due to special predicates (EXISTS, correlated subqueries)");
         return 0;
+    }
 
     /// Only suppress re-entry for the disjunction flow
     if (has_or)
