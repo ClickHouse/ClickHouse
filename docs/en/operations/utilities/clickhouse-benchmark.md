@@ -97,13 +97,13 @@ In the report you can find:
 
 - Status string containing (in order):
 
-    - Endpoint of ClickHouse server.
-    - Number of processed queries.
-    - QPS: How many queries the server performed per second during a period specified in the `--delay` argument.
-    - RPS: How many rows the server reads per second during a period specified in the `--delay` argument.
-    - MiB/s: How many mebibytes the server reads per second during a period specified in the `--delay` argument.
-    - result RPS: How many rows placed by the server to the result of a query per second during a period specified in the `--delay` argument.
-    - result MiB/s. How many mebibytes placed by the server to the result of a query per second during a period specified in the `--delay` argument.
+  - Endpoint of ClickHouse server.
+  - Number of processed queries.
+  - QPS: How many queries the server performed per second during a period specified in the `--delay` argument.
+  - RPS: How many rows the server reads per second during a period specified in the `--delay` argument.
+  - MiB/s: How many mebibytes the server reads per second during a period specified in the `--delay` argument.
+  - result RPS: How many rows placed by the server to the result of a query per second during a period specified in the `--delay` argument.
+  - result MiB/s. How many mebibytes placed by the server to the result of a query per second during a period specified in the `--delay` argument.
 
 - Percentiles of queries execution time.
 

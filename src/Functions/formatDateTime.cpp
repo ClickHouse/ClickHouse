@@ -1095,7 +1095,7 @@ public:
         auto col_res = ColumnString::create();
         auto & res_data = col_res->getChars();
         auto & res_offsets = col_res->getOffsets();
-        res_data.resize(input_rows_count * (out_template_size + 1));
+        res_data.resize(input_rows_count * out_template_size);
         res_offsets.resize(input_rows_count);
 
         if constexpr (format_syntax == FormatSyntax::MySQL)
@@ -1110,8 +1110,8 @@ public:
 
                     if (pos < end)
                     {
-                        memcpy(pos, out_template.data(), out_template_size + 1); /// With zero terminator. mystring[mystring.size()] = '\0' is guaranteed since C++11.
-                        pos += out_template_size + 1;
+                        memcpy(pos, out_template.data(), out_template_size);
+                        pos += out_template_size;
                     }
 
                     /// Copy exponentially growing ranges.
@@ -1158,8 +1158,6 @@ public:
                 for (auto & instruction : instructions)
                     instruction.perform(pos, static_cast<T>(vec[i]), 0, 0, *time_zone);
             }
-            *pos++ = '\0';
-
             res_offsets[i] = pos - begin;
         }
 
@@ -2239,7 +2237,7 @@ It can be called in two ways:
 
 When given a single argument of type [`Integer`](../data-types/int-uint.md), it returns a value of type [`DateTime`](../data-types/datetime.md), i.e. behaves like [`toDateTime`](../../sql-reference/functions/type-conversion-functions.md#todatetime).
 
-When given two or three arguments where the first argument is a value of type [`Integer`](../data-types/int-uint.md), [`Date`](../data-types/date.md), [`Date32`](../data-types/date32.md), [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md), the second argument is a constant format string and the third argument is an optional constant time zone string, the function returns a value of type [`String`](../data-types/string.md), i.e. it behaves like [`formatDateTimeInJodaSyntax`](#formatdatetimeinjodasyntax). In this case, [Joda datetime format style](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) is used.
+When given two or three arguments where the first argument is a value of type [`Integer`](../data-types/int-uint.md), [`Date`](../data-types/date.md), [`Date32`](../data-types/date32.md), [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md), the second argument is a constant format string and the third argument is an optional constant time zone string, the function returns a value of type [`String`](../data-types/string.md), i.e. it behaves like [`formatDateTimeInJodaSyntax`](#formatDateTimeInJodaSyntax). In this case, [Joda datetime format style](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) is used.
     )";
     FunctionDocumentation::Syntax syntax_fromUnixTimestampInJodaSyntax = R"(
 fromUnixTimestampInJodaSyntax(timestamp)

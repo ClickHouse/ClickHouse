@@ -1338,6 +1338,8 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             size_t end = shared_data_offsets[row];
             auto dynamic_type = std::make_shared<DataTypeDynamic>();
             auto dynamic_serialization = dynamic_type->getDefaultSerialization();
+
+            FormatSettings format_settings;
             for (size_t i = start; i != end; ++i)
             {
                 String path = shared_paths->getDataAt(i).toString();
@@ -1345,7 +1347,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 ReadBufferFromMemory buf(value_data.data, value_data.size);
                 auto tmp_column = dynamic_type->createColumn();
                 tmp_column->reserve(1);
-                dynamic_serialization->deserializeBinary(*tmp_column, buf, {});
+                dynamic_serialization->deserializeBinary(*tmp_column, buf, format_settings);
                 object[path] = getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, dynamic_type, true);
             }
 

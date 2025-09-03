@@ -36,13 +36,18 @@ public:
 
     ~BackupCoordinationOnCluster() override;
 
+    void startup() override;
+
     void setBackupQueryIsSentToOtherHosts() override;
     bool isBackupQuerySentToOtherHosts() const override;
     Strings setStage(const String & new_stage, const String & message, bool sync) override;
-    bool setError(std::exception_ptr exception, bool throw_if_error) override;
-    bool waitOtherHostsFinish(bool throw_if_error) const override;
-    bool finish(bool throw_if_error) override;
-    bool cleanup(bool throw_if_error) override;
+    void setError(std::exception_ptr exception, bool throw_if_error) override;
+    bool isErrorSet() const override;
+    void waitOtherHostsFinish(bool throw_if_error) const override;
+    void finish(bool throw_if_error) override;
+    bool finished() const override;
+    bool allHostsFinished() const override;
+    void cleanup(bool throw_if_error) override;
 
     void addReplicatedPartNames(
         const String & table_zk_path,

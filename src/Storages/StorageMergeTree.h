@@ -163,7 +163,7 @@ private:
     mutable std::condition_variable committing_blocks_cv;
 
     void removeCommittingBlock(CommittingBlock block);
-    CommittingBlock allocateBlockNumber(CommittingBlock::Op op);
+    std::unique_ptr<PlainCommittingBlockHolder> allocateBlockNumber(CommittingBlock::Op op);
     void waitForCommittingInsertsAndMutations(Int64 max_block_number, size_t timeout_ms) const;
     CommittingBlocksSet getCommittingBlocks() const;
 

@@ -1047,7 +1047,6 @@ If URL is not reachable on disk load when the server is starting up tables, then
 
 Use [http_max_single_read_retries](/operations/storing-data#web-storage) setting to limit the maximum number of retries during a single HTTP read.
 
-
 ### Zero-copy Replication (not ready for production) {#zero-copy}
 
 Zero-copy replication is possible, but not recommended, with  `S3` and `HDFS` (unsupported) disks. Zero-copy replication means that if the data is stored remotely on several machines and needs to be synchronized, then only the metadata is replicated (paths to the data parts), but not the data itself.

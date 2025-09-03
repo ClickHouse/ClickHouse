@@ -12,7 +12,6 @@ def test_extra_yaml_mix():
         "configs/config.d/access_control.yaml",
         "configs/config.d/error_log.xml",
         "configs/config.d/keeper_port.xml",
-        "configs/config.d/latency_log.xml",
         "configs/config.d/logging_no_rotate.xml",
         "configs/config.d/log_to_console.yaml",
         "configs/config.d/macros.yaml",

@@ -125,7 +125,6 @@ SELECT * FROM database1.`schema2.table2`;
 
 Warning: for this case dots in table name are not allowed.
 
-
 ## Requirements {#requirements}
 
 1. The [wal_level](https://www.postgresql.org/docs/current/runtime-config-wal.html) setting must have a value `logical` and `max_replication_slots` parameter must have a value at least `2` in the PostgreSQL config file.

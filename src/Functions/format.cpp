@@ -104,13 +104,13 @@ public:
                 auto full_column = column->convertToFullIfNeeded();
                 auto serialization = arguments[i].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
-                ColumnStringHelpers::WriteHelper write_helper(*converted_col_str, column->size());
+                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
                 for (size_t row = 0; row < column->size(); ++row)
                 {
                     serialization->serializeText(*full_column, row, write_buffer, format_settings);
-                    write_helper.rowWritten();
+                    write_helper.finishRow();
                 }
                 write_helper.finalize();
 
@@ -147,7 +147,44 @@ using FunctionFormat = FormatFunction;
 
 REGISTER_FUNCTION(Format)
 {
-    factory.registerFunction<FunctionFormat>();
+    FunctionDocumentation::Description description = R"(
+Format the `pattern` string with the values (strings, integers, etc.) listed in the arguments, similar to formatting in Python.
+The pattern string can contain replacement fields surrounded by curly braces `{}`.
+Anything not contained in braces is considered literal text and copied verbatim into the output.
+Literal brace character can be escaped by two braces: `{{` and `}}`.
+Field names can be numbers (starting from zero) or empty (then they are implicitly given monotonically increasing numbers).
+)";
+    FunctionDocumentation::Syntax syntax = "format(pattern, s0[, s1, ...])";
+    FunctionDocumentation::Arguments arguments = {
+        {"pattern", "The format string containing placeholders.", {"String"}},
+        {"s0[, s1, ...]", "One or more values to substitute into the pattern.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a formatted string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Numbered placeholders",
+        "SELECT format('{1} {0} {1}', 'World', 'Hello')",
+        R"(
+┌─format('{1} {0} {1}', 'World', 'Hello')─┐
+│ Hello World Hello                       │
+└─────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Implicit numbering",
+        "SELECT format('{} {}', 'Hello', 'World')",
+        R"(
+┌─format('{} {}', 'Hello', 'World')─┐
+│ Hello World                       │
+└───────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionFormat>(documentation);
 }
 
 }

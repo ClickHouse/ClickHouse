@@ -27,6 +27,19 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+bool stringToBool(const String & str)
+{
+    if (str == "0")
+        return false;
+    if (str == "1")
+        return true;
+    if (boost::iequals(str, "false"))
+        return false;
+    if (boost::iequals(str, "true"))
+        return true;
+    throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
+}
+
 namespace
 {
     template<typename T>
@@ -45,15 +58,7 @@ namespace
     {
         if constexpr (std::is_same_v<T, bool>)
         {
-            if (str == "0")
-                return false;
-            if (str == "1")
-                return true;
-            if (boost::iequals(str, "false"))
-                return false;
-            if (boost::iequals(str, "true"))
-                return true;
-            throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
+            return stringToBool(str);
         }
         else
         {

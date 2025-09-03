@@ -168,6 +168,9 @@ public:
 
     String getName() const override { return "ProjectionDataSink"; }
 
+    /// Accumulated data can be empty if DELETE query deleted all the rows from block
+    bool isAccumulatedSomething() const { return accumulated_chunk && accumulated_chunk.getNumRows() > 0; }
+
     Columns detachAccumulatedColumns() { return accumulated_chunk.detachColumns(); }
 
 protected:
@@ -500,19 +503,22 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
     pipeline.complete(sink);
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
-    auto projection_block = sink->getPort().getHeader().cloneWithColumns(sink->detachAccumulatedColumns());
-    chassert(projection_block.rows() > 0);
-
-    /// Rename parent _part_offset to _parent_part_offset column
-    if (with_parent_part_offset)
+    Block projection_block;
+    if (sink->isAccumulatedSomething())
     {
-        chassert(projection_block.has("_part_offset"));
-        chassert(!projection_block.has("_parent_part_offset"));
+      projection_block = sink->getPort().getHeader().cloneWithColumns(sink->detachAccumulatedColumns());
 
-        auto new_column = projection_block.getByName("_part_offset");
-        new_column.name = "_parent_part_offset";
-        projection_block.erase("_part_offset");
-        projection_block.insert(std::move(new_column));
+      /// Rename parent _part_offset to _parent_part_offset column
+      if (with_parent_part_offset)
+      {
+          chassert(projection_block.has("_part_offset"));
+          chassert(!projection_block.has("_parent_part_offset"));
+
+          auto new_column = projection_block.getByName("_part_offset");
+          new_column.name = "_parent_part_offset";
+          projection_block.erase("_part_offset");
+          projection_block.insert(std::move(new_column));
+      }
     }
 
     return projection_block;

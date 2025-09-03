@@ -13,6 +13,12 @@
                 <path>cached_s3/</path>
                 <disk>s3</disk>
             </cached_s3>
+            <cached_s3_encrypted>
+                <type>encrypted</type>
+                <disk>cached_s3</disk>
+                <key>1234567812345678</key>
+                <path>cached_s3_encrypted/</path>
+            </cached_s3_encrypted>
         </disks>
         <policies>
             <s3>
@@ -20,10 +26,11 @@
                     <main><disk>cached_s3</disk></main>
                 </volumes>
             </s3>
+            <s3_encrypted>
+                <volumes>
+                    <main><disk>cached_s3_encrypted</disk></main>
+                </volumes>
+            </s3_encrypted>
         </policies>
     </storage_configuration>
-    <merge_tree>
-        <storage_policy>s3</storage_policy>
-    </merge_tree>
-    <temporary_data_in_cache>cached_s3</temporary_data_in_cache>
 </clickhouse>

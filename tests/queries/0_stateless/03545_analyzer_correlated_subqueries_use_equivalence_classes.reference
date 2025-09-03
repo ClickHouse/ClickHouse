@@ -23,7 +23,7 @@ Positions: 2
                COLUMN Const(String) -> \'Nullable(UInt64)\'_String String : 2
                ALIAS __table3.number :: 1 -> __table1.__table3.number UInt64 : 3
                FUNCTION _CAST(count() :: 0, \'Nullable(UInt64)\'_String :: 2) -> __table1 Nullable(UInt64) : 1
-      Positions: 1 3 1
+      Positions: 1 3
         Aggregating
         Keys: __table3.number
         Aggregates:

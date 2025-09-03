@@ -32,10 +32,13 @@ public:
     void setBackupQueryIsSentToOtherHosts() override {}
     bool isBackupQuerySentToOtherHosts() const override { return false; }
     Strings setStage(const String &, const String &, bool) override { return {}; }
-    bool setError(std::exception_ptr, bool) override { return true; }
-    bool waitOtherHostsFinish(bool) const override { return true; }
-    bool finish(bool) override { return true; }
-    bool cleanup(bool) override { return true; }
+    void setError(std::exception_ptr, bool) override { is_error_set = true; }  /// BackupStarter::onException() has already logged the error.
+    bool isErrorSet() const override { return is_error_set; }
+    void waitOtherHostsFinish(bool) const override {}
+    void finish(bool) override { is_finished = true; }
+    bool finished() const override { return is_finished; }
+    bool allHostsFinished() const override { return finished(); }
+    void cleanup(bool) override {}
 
     void addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name,
                                 const std::vector<PartNameAndChecksum> & part_names_and_checksums) override;
@@ -81,6 +84,9 @@ private:
     mutable std::mutex file_infos_mutex;
     mutable std::mutex writing_files_mutex;
     mutable std::mutex keeper_map_tables_mutex;
+
+    std::atomic<bool> is_finished = false;
+    std::atomic<bool> is_error_set = false;
 };
 
 }

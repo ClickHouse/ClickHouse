@@ -18,7 +18,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int DECIMAL_OVERFLOW;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -64,6 +63,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; } // indexing from 0
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -106,48 +106,18 @@ public:
             ColumnString::Chars & chars_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
 
-            size_t col_in_rows = col_in->getOffsets().size();
-
-            if (col_in_rows >= input_rows_count)
-            {
-                chars_to.resize(col_in->getChars().size());
-                // TODO: Maybe we can share `col_in->getOffsets()` to `offsets_to.resize` like clever pointers? They are same
-                offsets_to.resize(input_rows_count);
-
-                const auto * ptr_in = col_in->getChars().data();
-                auto * ptr_to = chars_to.data();
-                fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
-
-                for (size_t i = 0; i < input_rows_count; ++i)
-                {
-                    offsets_to[i] = col_in->getOffsets()[i];
-                    ptr_to[offsets_to[i] - 1] = 0;
-                }
-            }
-            else
-            {
-                assert(col_in_rows == 1);
-                chars_to.resize(col_in->getChars().size() * input_rows_count);
-                offsets_to.resize(input_rows_count);
-                size_t offset = col_in->getOffsets()[0];
-
-                const auto * ptr_in = col_in->getChars().data();
-                auto * ptr_to = chars_to.data();
-
-                for (size_t i = 0; i < input_rows_count; ++i)
-                {
-                    fuzzBits(ptr_in, ptr_to + i * offset, offset, inverse_probability);
-                    offsets_to[i] = (i + 1) * offset;
-                    ptr_to[offsets_to[i] - 1] = 0;
-                }
-            }
+            chars_to.resize(col_in->getChars().size());
+            const auto * ptr_in = col_in->getChars().data();
+            auto * ptr_to = chars_to.data();
+            fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
+            offsets_to.assign(col_in->getOffsets().begin(), col_in->getOffsets().end());
 
             return col_to;
         }
+
         if (const ColumnFixedString * col_in_fixed = checkAndGetColumn<ColumnFixedString>(col_in_untyped.get()))
         {
             const auto n = col_in_fixed->getN();
-            const auto col_in_rows = col_in_fixed->size();
             auto col_to = ColumnFixedString::create(n);
             ColumnFixedString::Chars & chars_to = col_to->getChars();
 
@@ -159,15 +129,7 @@ public:
 
             const auto * ptr_in = col_in_fixed->getChars().data();
             auto * ptr_to = chars_to.data();
-
-            if (col_in_rows >= input_rows_count)
-                fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
-            else if (col_in_rows != 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "1 != col_in_rows {} < input_rows_count {}", col_in_rows, input_rows_count);
-            else
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    fuzzBits(ptr_in, ptr_to + i * n, n, inverse_probability);
-
+            fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
             return col_to;
         }
 
@@ -180,6 +142,35 @@ public:
 
 REGISTER_FUNCTION(FuzzBits)
 {
-    factory.registerFunction<FunctionFuzzBits>();
+    FunctionDocumentation::Description description = R"(
+Flips the bits of the input string `s`, with probability `p` for each bit.
+    )";
+    FunctionDocumentation::Syntax syntax = "fuzzBits(s, p)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "String or FixedString to perform bit fuzzing on", {"String", "FixedString"}},
+        {"p", "Probability of flipping each bit as a number between `0.0` and `1.0`", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a Fuzzed string with same type as `s`.", {"String", "FixedString"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT fuzzBits(materialize('abacaba'), 0.1)
+FROM numbers(3)
+        )",
+        R"(
+┌─fuzzBits(materialize('abacaba'), 0.1)─┐
+│ abaaaja                               │
+│ a*cjab+                               │
+│ aeca2A                                │
+└───────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionFuzzBits>(documentation);
 }
 }

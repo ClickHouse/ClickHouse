@@ -31,7 +31,6 @@ namespace Setting
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 filesystem_prefetch_step_bytes;
     extern const SettingsUInt64 filesystem_prefetch_step_marks;
-    extern const SettingsUInt64 filesystem_prefetches_limit;
     extern const SettingsUInt64 prefetch_buffer_size;
 }
 
@@ -423,13 +422,13 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
         sum_marks,
         threads,
         min_marks_per_thread,
-        settings[Setting::filesystem_prefetches_limit].value,
+        reader_settings.filesystem_prefetches_limit,
         total_size_approx);
 
     size_t allowed_memory_usage = settings[Setting::filesystem_prefetch_max_memory_usage];
 
     std::optional<size_t> allowed_prefetches_num
-        = settings[Setting::filesystem_prefetches_limit] ? std::optional<size_t>(settings[Setting::filesystem_prefetches_limit]) : std::nullopt;
+        = reader_settings.filesystem_prefetches_limit ? std::optional<size_t>(reader_settings.filesystem_prefetches_limit) : std::nullopt;
 
     per_thread_tasks.clear();
     size_t total_tasks = 0;

@@ -10,18 +10,18 @@ workflow = Workflow.Config(
     event=Workflow.Event.PUSH,
     branches=[BASE_BRANCH],
     jobs=[
-        *JobConfigs.tidy_build_jobs,
+        *JobConfigs.tidy_build_arm_jobs,
         *JobConfigs.build_jobs,
         *[
             job.set_dependency(
-                REGULAR_BUILD_NAMES + [JobConfigs.tidy_build_jobs[0].name]
+                REGULAR_BUILD_NAMES + [JobConfigs.tidy_build_arm_jobs[0].name]
             )
             for job in JobConfigs.special_build_jobs
         ],
         *JobConfigs.unittest_jobs,
         JobConfigs.docker_sever,
         JobConfigs.docker_keeper,
-        *JobConfigs.install_check_jobs,
+        *JobConfigs.install_check_master_jobs,
         *JobConfigs.compatibility_test_jobs,
         *JobConfigs.functional_tests_jobs,
         *JobConfigs.functional_tests_jobs_azure_master_only,

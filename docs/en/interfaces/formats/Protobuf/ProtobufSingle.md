@@ -23,4 +23,3 @@ The `ProtobufSingle` format is the same as the [`Protobuf`](./Protobuf.md) forma
 ## Example usage {#example-usage}
 
 ## Format settings {#format-settings}
-

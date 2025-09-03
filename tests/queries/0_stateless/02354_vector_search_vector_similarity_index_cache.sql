@@ -3,7 +3,6 @@
 
 -- Tests the vector index cache.
 
-SET enable_vector_similarity_index = 1;
 SET parallel_replicas_local_plan = 1;
 
 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE;

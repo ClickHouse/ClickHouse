@@ -81,7 +81,6 @@ The output will be in JSON format:
 ["2022-05-07", "2021", "Walsall", "Swindon Town", "0", "3"]
 ```
 
-
 ## Format settings {#format-settings}
 
 :::note

@@ -51,7 +51,7 @@ void deleteFileFromS3(
     }
     else
     {
-        LOG_TRACE(log, "No blob storage log, not writing blob {}", key);
+        LOG_TEST(log, "No blob storage log, not writing blob {}", key);
     }
 
     if (outcome.IsSuccess())
@@ -159,7 +159,7 @@ void deleteFilesFromS3(
             }
             else
             {
-                LOG_TRACE(log, "No blob storage log, not writing blobs [{}]", comma_separated_keys);
+                LOG_TEST(log, "No blob storage log, not writing blobs [{}]", comma_separated_keys);
             }
 
             if (outcome.IsSuccess())

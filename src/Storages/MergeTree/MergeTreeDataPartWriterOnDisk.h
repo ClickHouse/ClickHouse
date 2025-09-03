@@ -10,8 +10,6 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MarkCache.h>
-#include <Columns/IColumn_fwd.h>
-#include <Compression/ICompressionCodec.h>
 
 namespace DB
 {
@@ -170,16 +168,13 @@ protected:
     /// Get unique non ordered skip indices column.
     Names getSkipIndicesColumns() const;
 
-    virtual void addStreams(const NameAndTypePair & name_and_type, const ColumnPtr & column, const ASTPtr & effective_codec_desc) = 0;
+    virtual void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) = 0;
 
     /// On first block create all required streams for columns with dynamic subcolumns and remember the block sample.
     /// On each next block check if dynamic structure of the columns equals to the dynamic structure of the same
     /// columns in the sample block. If for some column dynamic structure is different, adjust it so it matches
     /// the structure from the sample.
     void initOrAdjustDynamicStructureIfNeeded(Block & block);
-
-    /// This is useful only for vector codecs (like SZ3).
-    static void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);
 
     const MergeTreeIndices skip_indices;
 
@@ -220,7 +215,6 @@ protected:
     Block block_sample;
 
     /// List of substreams for each column in order of serialization.
-    /// Right now used only in Compact parts.
     ColumnsSubstreams columns_substreams;
 
 private:

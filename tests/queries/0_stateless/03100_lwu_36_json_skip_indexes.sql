@@ -1,3 +1,9 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the result of EXPLAIN differs with parallel replicas
+
+-- Force using skip indexes in planning to proper test `force_data_skipping_indices` setting.
+SET use_skip_indexes_on_data_read = 0;
+
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test (
@@ -14,7 +20,7 @@ INSERT INTO test VALUES (1, '{"name":"foo", "age":15}');
 INSERT INTO test VALUES (2, '{"name":"boo", "age":15}');
 INSERT INTO test VALUES (3, '{"name":"bar", "age":15}');
 
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 
 UPDATE test SET document = '{"name":"aaa", "age":15, "country": "USA"}' WHERE id = 1;
 
@@ -23,26 +29,47 @@ WHERE document.name = 'aaa' OR document.name = 'boo'
 ORDER BY id
 SETTINGS apply_patch_parts = 1;
 
-SELECT * FROM test
-WHERE document.name = 'aaa' OR document.name = 'boo'
-ORDER BY id
-SETTINGS apply_patch_parts = 1, force_data_skipping_indices = 'ix_name'; -- { serverError INDEX_NOT_USED }
+SELECT trim(explain) AS s FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM test
+    WHERE document.name = 'aaa' OR document.name = 'boo'
+    ORDER BY id
+    SETTINGS apply_patch_parts = 1
+) WHERE s LIKE 'Granules: %';
 
 SELECT * FROM test
 WHERE document.name = 'aaa' OR document.name = 'boo'
 ORDER BY id
-SETTINGS apply_patch_parts = 0, force_data_skipping_indices = 'ix_name';
+SETTINGS apply_patch_parts = 0;
+
+SELECT trim(explain) AS s FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM test
+    WHERE document.name = 'aaa' OR document.name = 'boo'
+    ORDER BY id
+    SETTINGS apply_patch_parts = 0
+) WHERE s LIKE 'Granules: %';
 
 SELECT count()FROM test
 WHERE document.country::String = 'USA'
 SETTINGS apply_patch_parts = 1;
 
-SELECT count() FROM test
-WHERE document.country::String = 'USA'
-SETTINGS apply_patch_parts = 1, force_data_skipping_indices = 'ix_country'; -- { serverError INDEX_NOT_USED }
+SELECT trim(explain) AS s FROM (
+    EXPLAIN indexes = 1
+    SELECT count()FROM test
+    WHERE document.country::String = 'USA'
+    SETTINGS apply_patch_parts = 1
+) WHERE s LIKE 'Granules: %';
 
 SELECT count() FROM test
 WHERE document.country::String = 'USA'
-SETTINGS apply_patch_parts = 0, force_data_skipping_indices = 'ix_country';
+SETTINGS apply_patch_parts = 0;
+
+SELECT trim(explain) AS s FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM test
+    WHERE document.country::String = 'USA'
+    SETTINGS apply_patch_parts = 0
+) WHERE s LIKE 'Granules: %';
 
 DROP TABLE IF EXISTS test;

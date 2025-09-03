@@ -20,9 +20,6 @@ af	text
 101	x Alick a01 y
 106	x Alick a06 y
 1
-101	x Alick a01 y
-111	x Alick b01 y
-1
 Test text(tokenizer = "ngram", ngram_size = 2) on a column with two parts
 af	text
 101	Alick a01

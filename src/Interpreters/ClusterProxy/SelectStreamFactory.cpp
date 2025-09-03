@@ -181,7 +181,7 @@ void SelectStreamFactory::createForShardImpl(
 
         const auto & settings = context->getSettingsRef();
 
-        /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColums,
+        /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColumns,
         /// But distributed_group_by_no_merge requires Complete.
         if (settings[Setting::allow_experimental_analyzer] && settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {

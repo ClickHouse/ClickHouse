@@ -125,15 +125,20 @@ static DataTypePtr createTime(const ASTPtr & arguments)
     const auto scale = getArgument<UInt64, ArgumentKind::Optional>(arguments, 0, "scale", "Time");
     const auto timezone = getArgument<String, ArgumentKind::Optional>(arguments, scale ? 1 : 0, "timezone", "Time");
 
+    if (timezone && !timezone->empty())
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Specifying timezone for Time type is not allowed");
+
     if (!scale && !timezone)
         throw Exception(getExceptionMessage(" has wrong type: ", 0, "scale", "Time", Field::Types::Which::UInt64),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     /// If scale is defined, the data type is Time when scale = 0 otherwise the data type is Time64
     if (scale && scale.value() != 0)
-        return std::make_shared<DataTypeTime64>(scale.value(), timezone.value_or(String{}));
+        return std::make_shared<DataTypeTime64>(scale.value());
 
-    return std::make_shared<DataTypeTime>(timezone.value_or(String{}));
+    return std::make_shared<DataTypeTime>();
 }
 
 static DataTypePtr createTime64(const ASTPtr & arguments)
@@ -143,12 +148,17 @@ static DataTypePtr createTime64(const ASTPtr & arguments)
 
     if (arguments->children.size() > 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Time64 data type can optionally have two argument - scale and time zone name");
+                        "Time64 data type can optionally have only one argument - scale");
 
     const auto scale = getArgument<UInt64, ArgumentKind::Mandatory>(arguments, 0, "scale", "Time64");
     const auto timezone = getArgument<String, ArgumentKind::Optional>(arguments, 1, "timezone", "Time64");
 
-    return std::make_shared<DataTypeTime64>(scale, timezone.value_or(String{}));
+    if (timezone && !timezone->empty())
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Specifying timezone for Time64 type is not allowed");
+
+    return std::make_shared<DataTypeTime64>(scale);
 }
 
 void registerDataTypeTime(DataTypeFactory & factory)

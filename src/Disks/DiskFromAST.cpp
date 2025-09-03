@@ -15,7 +15,6 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <queue>
 
 namespace DB
 {
@@ -31,10 +30,14 @@ std::string getOrCreateCustomDisk(
     ContextPtr context,
     bool attach)
 {
+    std::string default_path = "/etc/metrika.xml";
+
     const auto & server_config = context->getConfigRef();
     std::string include_from_path;
     if (server_config.has("include_from"))
         include_from_path = server_config.getString("include_from");
+    else if (fs::exists(default_path))
+        include_from_path = default_path;
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
     {

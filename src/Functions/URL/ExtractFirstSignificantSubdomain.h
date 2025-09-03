@@ -23,8 +23,8 @@ struct ExtractFirstSignificantSubdomain
 
     static void execute(const Pos data, const size_t size, Pos & res_data, size_t & res_size, Pos * out_domain_end = nullptr)
     {
-        FirstSignificantSubdomainDefaultLookup loookup;
-        return execute(loookup, data, size, res_data, res_size, out_domain_end);
+        FirstSignificantSubdomainDefaultLookup lookup;
+        return execute(lookup, data, size, res_data, res_size, out_domain_end);
     }
 
     template <class Lookup>

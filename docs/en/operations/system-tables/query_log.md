@@ -41,10 +41,10 @@ Columns:
 
 - `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of an event that occurred when executing the query. Values:
-    - `'QueryStart' = 1` — Successful start of query execution.
-    - `'QueryFinish' = 2` — Successful end of query execution.
-    - `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
-    - `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
+  - `'QueryStart' = 1` — Successful start of query execution.
+  - `'QueryFinish' = 2` — Successful end of query execution.
+  - `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
+  - `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Query starting date.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query starting time.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Query starting time with microseconds precision.
@@ -73,8 +73,8 @@ Columns:
 - `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.
 - `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [Stack trace](https://en.wikipedia.org/wiki/Stack_trace). An empty string, if the query was completed successfully.
 - `is_initial_query` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Query type. Possible values:
-    - 1 — Query was initiated by the client.
-    - 0 — Query was initiated by another query as part of distributed query execution.
+  - 1 — Query was initiated by the client.
+  - 0 — Query was initiated by another query as part of distributed query execution.
 - `user` ([String](../../sql-reference/data-types/string.md)) — Name of the user who initiated the current query.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the query.
 - `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address that was used to make the query.
@@ -86,8 +86,8 @@ Columns:
 - `initial_query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Initial query starting time (for distributed query execution).
 - `initial_query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Initial query starting time with microseconds precision (for distributed query execution).
 - `interface` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Interface that the query was initiated from. Possible values:
-    - 1 — TCP.
-    - 2 — HTTP.
+  - 1 — TCP.
+  - 2 — HTTP.
 - `os_user` ([String](../../sql-reference/data-types/string.md)) — Operating system username who runs [clickhouse-client](../../interfaces/cli.md).
 - `client_hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the client machine where the [clickhouse-client](../../interfaces/cli.md) or another TCP client is run.
 - `client_name` ([String](../../sql-reference/data-types/string.md)) — The [clickhouse-client](../../interfaces/cli.md) or another TCP client name.
@@ -98,9 +98,9 @@ Columns:
 - `script_query_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The query number in a script with multiple queries for [clickhouse-client](../../interfaces/cli.md).
 - `script_line_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The line number of the query start in a script with multiple queries for [clickhouse-client](../../interfaces/cli.md).
 - `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
-    - 0 — The query was launched from the TCP interface.
-    - 1 — `GET` method was used.
-    - 2 — `POST` method was used.
+  - 0 — The query was launched from the TCP interface.
+  - 1 — `GET` method was used.
+  - 2 — `POST` method was used.
 - `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — HTTP header `UserAgent` passed in the HTTP query.
 - `http_referer` ([String](../../sql-reference/data-types/string.md)) — HTTP header `Referer` passed in the HTTP query (contains an absolute or partial address of the page making the query).
 - `forwarded_for` ([String](../../sql-reference/data-types/string.md)) — HTTP header `X-Forwarded-For` passed in the HTTP query.
@@ -125,10 +125,10 @@ Columns:
 - `used_privileges` ([Array(String)](../../sql-reference/data-types/array.md)) - Privileges which were successfully checked during query execution.
 - `missing_privileges` ([Array(String)](../../sql-reference/data-types/array.md)) - Privileges that are missing during query execution.
 - `query_cache_usage` ([Enum8](../../sql-reference/data-types/enum.md)) — Usage of the [query cache](../query-cache.md) during query execution. Values:
-    - `'Unknown'` = Status unknown.
-    - `'None'` = The query result was neither written into nor read from the query cache.
-    - `'Write'` = The query result was written into the query cache.
-    - `'Read'` = The query result was read from the query cache.
+  - `'Unknown'` = Status unknown.
+  - `'None'` = The query result was neither written into nor read from the query cache.
+  - `'Write'` = The query result was written into the query cache.
+  - `'Read'` = The query result was read from the query cache.
 
 **Example**
 

@@ -72,6 +72,5 @@ registration_time:      2022-12-29 17:49:52
 schema:                 id Nullable(Float64), age Nullable(Float64), name Nullable(String), hobbies Array(Nullable(String))
 ```
 
-
 **See also**
 - [Automatic schema inference from input data](/interfaces/schema-inference.md)

@@ -1,3 +1,4 @@
+#include <optional>
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -37,8 +38,12 @@ namespace ErrorCodes
     DECLARE(UInt64, polling_backoff_ms, 30 * 1000, "Polling backoff", 0) \
     DECLARE(UInt32, cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
     DECLARE(UInt32, cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
+    DECLARE(Bool, use_persistent_processing_nodes, false, "Whether persistent nodes should be used for processing nodes in keeper", 0) \
+    DECLARE(UInt32, persistent_processing_node_ttl_seconds, 60 * 60, "Cleanup period for abandoned processing nodes", 0) \
     DECLARE(UInt64, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
     DECLARE(UInt64, list_objects_batch_size, 1000, "Size of a list batch in object storage", 0) \
+    DECLARE(UInt64, min_insert_block_size_rows_for_materialized_views, 0, "Override for profile setting min_insert_block_size_rows_for_materialized_views", 0) \
+    DECLARE(UInt64, min_insert_block_size_bytes_for_materialized_views, 0, "Override for profile setting min_insert_block_size_bytes_for_materialized_views", 0) \
     DECLARE(Bool, enable_hash_ring_filtering, 0, "Enable filtering files among replicas according to hash ring for Unordered mode", 0) \
     DECLARE(UInt64, max_processed_files_before_commit, 100, "Number of files which can be processed before being committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
     DECLARE(UInt64, max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
@@ -130,6 +135,34 @@ void ObjectStorageQueueSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
+namespace
+{
+
+std::optional<std::string_view> adjustSettingName(std::string_view name)
+{
+    static constexpr std::string_view s3queue_prefix = "s3queue_";
+
+    bool modified = false;
+    if (name.starts_with(s3queue_prefix))
+    {
+        modified = true;
+        name = name.substr(s3queue_prefix.size());
+    }
+
+    if (name == "enable_logging_to_s3queue_log")
+    {
+        modified = true;
+        name = "enable_logging_to_queue_log";
+    }
+
+    if (modified)
+        return name;
+
+    return std::nullopt;
+}
+
+}
+
 void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is_attach, const StorageID & storage_id)
 {
     if (storage_def.settings)
@@ -144,11 +177,8 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is
             /// We support settings starting with s3_ for compatibility.
             for (auto & change : settings_changes)
             {
-                if (change.name.starts_with("s3queue_"))
-                    change.name = change.name.substr(std::strlen("s3queue_"));
-
-                if (change.name == "enable_logging_to_s3queue_log")
-                    change.name = "enable_logging_to_queue_log";
+                if (auto maybe_new_name = adjustSettingName(change.name); maybe_new_name.has_value())
+                    change.name = std::string{*maybe_new_name};
 
                 if (change.name == "current_shard_num")
                     ignore_settings.push_back(change.name);
@@ -204,6 +234,8 @@ Field ObjectStorageQueueSettings::get(const std::string & name)
 
 bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
 {
+    if (auto maybe_new_name = adjustSettingName(name); maybe_new_name.has_value())
+        name = *maybe_new_name;
     return ObjectStorageQueueSettingsImpl::hasBuiltin(name);
 }
 }

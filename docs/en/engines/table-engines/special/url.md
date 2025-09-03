@@ -96,9 +96,9 @@ SELECT * FROM url_engine_table
 
 - Reads and writes can be parallel
 - Not supported:
-    - `ALTER` and `SELECT...SAMPLE` operations.
-    - Indexes.
-    - Replication.
+  - `ALTER` and `SELECT...SAMPLE` operations.
+  - Indexes.
+  - Replication.
 
 ## Virtual columns {#virtual-columns}
 

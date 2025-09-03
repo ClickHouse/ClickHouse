@@ -48,7 +48,6 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 | INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
 | ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
 
-
 ## Examples of use {#examples-of-use}
 
 Database in ClickHouse, exchanging data with the PostgreSQL server:
