@@ -261,11 +261,18 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     auto & parent = parent_node->step;
     QueryPlanStepPtr & child = child_node->step;
     auto * filter = assert_cast<FilterStep *>(parent.get());
-    const bool has_or = dagContainsOr(filter->getExpression(), filter->getFilterColumnName());
+    bool has_or = dagContainsOr(filter->getExpression(), filter->getFilterColumnName());
 
     auto * logical_join = typeid_cast<JoinStepLogical *>(child.get());
     auto * join = typeid_cast<JoinStep *>(child.get());
     auto * filled_join = typeid_cast<FilledJoinStep *>(child.get());
+
+    const bool disj_pushdown_enabled = (join && join->useDisjunctionsPushDown()) || (logical_join && logical_join->getSettings().use_disjunctions_push_down);
+
+    if (has_or && !disj_pushdown_enabled)
+    {
+        return 0;
+    }
 
     if (!join && !filled_join && !logical_join)
         return 0;
@@ -275,16 +282,16 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     {
         const auto * root = dag.tryFindInOutputs(filter_col);
         if (!root) return false;
-        
+
         std::stack<const ActionsDAG::Node *> st;
         st.push(root);
         std::unordered_set<const ActionsDAG::Node *> seen;
-        
+
         while (!st.empty())
         {
             const auto * n = st.top(); st.pop();
             if (!seen.insert(n).second) continue;
-            
+
             // Check for special inputs that indicate correlated predicates
             if (n->type == ActionsDAG::ActionType::INPUT)
             {
@@ -295,8 +302,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                     name.find("__correlated") != std::string::npos)
                     return true;
             }
-            
-            for (const auto * ch : n->children) 
+
+            for (const auto * ch : n->children)
                 st.push(ch);
         }
         return false;

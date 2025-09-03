@@ -26,8 +26,6 @@
 #include <stack>
 #include <unordered_map>
 #include <base/sort.h>
-#include "Common/StackTrace.h"
-#include "Common/logger_useful.h"
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeSet.h>
@@ -3052,7 +3050,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
         if (!actions)
             return {};
 
-        /// We only manipulate rejected conjunctions here,  don't try to rewrite the OR subtree itself
+        /// We only manipulate rejected conjunctions here, don't try to rewrite the OR subtree itself
         if (disjunction.allowed.empty() || !conjunction.rejected.empty())
             removeUnusedConjunctions(std::move(conjunction.rejected), predicate, removes_filter);
     }
@@ -3072,8 +3070,6 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForMixed(
     NodeRawConstPtrs conjunction_nodes, NodeRawConstPtrs disjunction_nodes, const ColumnsWithTypeAndName & all_inputs)
 {
-    StackTrace stack_trace;
-    LOG_TRACE(getLogger("ActionsDAG"), "createActionsForMixed: {}", stack_trace.toString());
     if (disjunction_nodes.empty())
         return createActionsForConjunction(conjunction_nodes, all_inputs);
     if (conjunction_nodes.empty())
@@ -3187,8 +3183,6 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column)
 {
-    StackTrace stack_trace;
-    LOG_DEBUG(&Poco::Logger::get("ActionsDAG"), "splitActionsForJOINFilterPushDown: {}", stack_trace.toString());
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -3230,22 +3224,22 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         std::stack<const Node *> stack;
         stack.push(node);
         std::unordered_set<const Node *> visited;
-        
+
         while (!stack.empty())
         {
             const auto * n = stack.top();
             stack.pop();
-            
+
             if (!visited.insert(n).second)
                 continue;
-                
+
             if (n->type == ActionType::INPUT)
             {
                 if (n->result_name.find("exists(") != std::string::npos ||
                     n->result_name.find("__exists") != std::string::npos)
                     return true;
             }
-            
+
             for (const auto * child : n->children)
                 stack.push(child);
         }
@@ -3344,18 +3338,18 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         /// Only extract top-level conjunctions that are safe to push
         left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes, false);
         right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
-        
+
         std::optional<ActionsForFilterPushDown> left_filter;
         std::optional<ActionsForFilterPushDown> right_filter;
-        
+
         if (!left_stream_push_down_conjunctions.allowed.empty())
-            left_filter = createActionsForConjunction(left_stream_push_down_conjunctions.allowed, 
+            left_filter = createActionsForConjunction(left_stream_push_down_conjunctions.allowed,
                                                       left_stream_header.getColumnsWithTypeAndName());
-        
+
         if (!right_stream_push_down_conjunctions.allowed.empty())
             right_filter = createActionsForConjunction(right_stream_push_down_conjunctions.allowed,
                                                        right_stream_header.getColumnsWithTypeAndName());
-        
+
         // Never remove the original filter when we have OR with special predicates
         return ActionsForJOINFilterPushDown{
             .left_stream_filter_to_push_down = left_filter ? std::move(left_filter->dag) : std::optional<ActionsDAG>{},
