@@ -202,7 +202,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         {
             chassert(element.query_strings_for_set.size() == 1);
             const std::vector<GinQueryString> & query_strings = element.query_strings_for_set.front();
-            bool exists_in_gin_filter = false;
+            bool exists_in_gin_filter = query_strings.empty() ? true : false;
             for (const GinQueryString & query_string : query_strings)
             {
                 if (granule->gin_filter.contains(query_string, postings_lists_cache_for_store, GinSearchMode::Any))
