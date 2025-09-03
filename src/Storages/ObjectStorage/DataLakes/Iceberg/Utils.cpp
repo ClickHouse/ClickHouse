@@ -468,7 +468,22 @@ Poco::JSON::Object::Ptr getPartitionField(
 {
     const auto * partition_function = partition_by_element->as<ASTFunction>();
     if (!partition_function)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function in partition. Please use functions for iceberg partitioning, for example (identity(x), TRUNCATE(3, y))");
+    {
+        const auto * ast_identifier = partition_by_element->as<ASTIdentifier>();
+        if (!ast_identifier)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown expression for partitioning: {}", partition_by_element->formatForLogging());
+
+        Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
+        auto field = ast_identifier->name();
+        auto it = column_name_to_source_id.find(field);
+        if (it == column_name_to_source_id.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown field to partition {}", field);
+        result->set(Iceberg::f_name, field);
+        result->set(Iceberg::f_source_id, it->second);
+        result->set(Iceberg::f_field_id, ++partition_iter);
+        result->set(Iceberg::f_transform, "identity");
+        return result;
+    }
 
     std::optional<String> field;
     std::optional<Int64> param;
@@ -552,11 +567,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     Int32 partition_iter = 1000;
     if (partition_by)
     {
-        const auto * partition_function = partition_by->as<ASTFunction>();
-        if (!partition_function)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function in partitioning");
-
-        if (partition_function->name == "tuple")
+        if (const auto * partition_function = partition_by->as<ASTFunction>(); partition_function && partition_function->name == "tuple")
         {
             for (const auto & child : partition_function->children)
             {
