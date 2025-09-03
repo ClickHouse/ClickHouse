@@ -46,7 +46,6 @@ __scalarSubqueryResult
 accurateCast
 accurateCastOrDefault
 accurateCastOrNull
-and
 bar
 basename
 blockNumber
@@ -58,8 +57,6 @@ caseWithExpression
 catboostEvaluate
 connectionId
 countDigits
-countMatches
-countMatchesCaseInsensitive
 countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
@@ -90,8 +87,6 @@ encodeURLComponent
 encodeURLFormComponent
 errorCodeToName
 evalMLMethod
-extract
-extractAll
 extractURLParameter
 extractURLParameterNames
 extractURLParameters
@@ -127,7 +122,6 @@ globalNullIn
 globalNullInIgnoreSet
 globalVariable
 hasColumnInTable
-hasSubsequence
 hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
@@ -157,7 +151,6 @@ mapFromArrays
 mapPopulateSeries
 mapSubtract
 mapUpdate
-match
 materialize
 minSampleSizeContinuous
 minSampleSizeConversion
@@ -166,13 +159,8 @@ multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
 multiMatchAllIndices
-multiMatchAny
 multiMatchAnyIndex
-multiSearchAllPositions
-multiSearchAllPositionsCaseInsensitive
 multiSearchAllPositionsCaseInsensitiveUTF8
-multiSearchAllPositionsUTF8
-multiSearchAny
 multiSearchAnyCaseInsensitive
 multiSearchAnyCaseInsensitiveUTF8
 multiSearchAnyUTF8
@@ -180,25 +168,15 @@ multiSearchFirstIndex
 multiSearchFirstIndexCaseInsensitive
 multiSearchFirstIndexCaseInsensitiveUTF8
 multiSearchFirstIndexUTF8
-multiSearchFirstPosition
 multiSearchFirstPositionCaseInsensitive
 multiSearchFirstPositionCaseInsensitiveUTF8
 multiSearchFirstPositionUTF8
 neighbor
 netloc
-ngramDistance
-ngramDistanceCaseInsensitive
-ngramDistanceCaseInsensitiveUTF8
-ngramDistanceUTF8
-ngramSearch
-ngramSearchCaseInsensitive
-ngramSearchCaseInsensitiveUTF8
-ngramSearchUTF8
 normalizeQuery
 normalizeQueryKeepNames
 normalizedQueryHash
 normalizedQueryHashKeepNames
-not
 notILike
 notIn
 notInIgnoreSet
@@ -207,7 +185,6 @@ notNullIn
 notNullInIgnoreSet
 nullIn
 nullInIgnoreSet
-or
 parseDateTime
 parseDateTime32BestEffort
 parseDateTime32BestEffortOrNull
@@ -255,10 +232,6 @@ polygonsUnionCartesian
 polygonsUnionSpherical
 polygonsWithinCartesian
 polygonsWithinSpherical
-position
-positionCaseInsensitive
-positionCaseInsensitiveUTF8
-positionUTF8
 proportionsZTest
 protocol
 queryID
@@ -458,5 +431,4 @@ version
 visibleWidth
 windowID
 wkt
-xor
 zookeeperSessionUptime
