@@ -7,6 +7,8 @@ title: 'timeSeriesResampleToGridWithStaleness'
 
 Aggregate function that takes time series data as pairs of timestamps and values and re-samples this data to a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the most recent (within the specified time window) sample is chosen.
 
+Alias: `timeSeriesLastToGrid`.
+
 Parameters:
 - `start timestamp` - specifies start of the grid
 - `end timestamp` - specifies end of the grid

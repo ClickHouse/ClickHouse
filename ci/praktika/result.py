@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
-from .info import Info
 from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
@@ -64,7 +63,7 @@ class Result(MetaClasses.Serializable):
     start_time: Optional[float] = None
     duration: Optional[float] = None
     results: List["Result"] = dataclasses.field(default_factory=list)
-    files: List[str] = dataclasses.field(default_factory=list)
+    files: List[Union[str, Path]] = dataclasses.field(default_factory=list)
     links: List[str] = dataclasses.field(default_factory=list)
     info: str = ""
     ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
@@ -177,6 +176,9 @@ class Result(MetaClasses.Serializable):
             Result.StatusExtended.OK,
             Result.StatusExtended.SKIPPED,
         )
+
+    def is_failure(self):
+        return self.status in (Result.Status.FAILED)
 
     def is_error(self):
         return self.status in (Result.Status.ERROR,)
@@ -488,10 +490,8 @@ class Result(MetaClasses.Serializable):
         command_kwargs = command_kwargs or {}
 
         # Set log file path if logging is enabled
-        if with_log:
+        if with_log or with_info or with_info_on_failure:
             log_file = f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(name)}.log"
-        elif with_info or with_info_on_failure:
-            log_file = f"/tmp/praktika_{Utils.normalize_string(name)}.log"
         else:
             log_file = None
 
@@ -553,20 +553,24 @@ class Result(MetaClasses.Serializable):
                 ]
                 + info_lines[-MAX_LINES_IN_INFO:]
             ),
-            files=[log_file] if with_log else None,
+            files=(
+                [log_file] if with_log or len(info_lines) >= MAX_LINES_IN_INFO else None
+            ),
         )
 
-    def skip_dependee_jobs_dropping(self):
-        return self.ext.get("skip_dependee_jobs_dropping", False)
+    def do_not_block_pipeline_on_failure(self):
+        return self.ext.get("do_not_block_pipeline_on_failure", False)
 
-    def complete_job(self, with_job_summary_in_info=True, force_ok_exit=False):
+    def complete_job(
+        self, with_job_summary_in_info=True, do_not_block_pipeline_on_failure=False
+    ):
         if with_job_summary_in_info:
             self._add_job_summary_to_info()
-        if force_ok_exit:
-            self.ext["skip_dependee_jobs_dropping"] = True
+        if do_not_block_pipeline_on_failure and not self.is_ok():
+            self.ext["do_not_block_pipeline_on_failure"] = True
         self.dump()
         print(self.to_stdout_formatted())
-        if not self.is_ok() and not force_ok_exit:
+        if not self.is_ok():
             sys.exit(1)
         else:
             sys.exit(0)
@@ -717,7 +721,16 @@ class _ResultS3:
         if not _uploaded_file_link:
             _uploaded_file_link = {}
 
+        # Deduplicate files by normalizing paths to absolute strings
+        unique_files = {}
         for file in result.files:
+            # Convert to Path and resolve to absolute path
+            file_path = Path(file).resolve()
+            file_str = str(file_path)
+            if file_str not in unique_files:
+                unique_files[file_str] = file  # Keep original file reference
+
+        for file_str, file in unique_files.items():
             if not Path(file).is_file():
                 print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
                 result.set_info(f"WARNING: File [{file}] was not found")
