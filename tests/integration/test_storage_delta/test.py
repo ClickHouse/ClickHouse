@@ -2325,26 +2325,31 @@ def test_concurrent_reads(started_cluster):
     result_file = f"{TABLE_NAME}"
     partition_columns = []
 
-    schema = StructType(
-        [
-            StructField("id", IntegerType(), nullable=False),
-            StructField("name", StringType(), nullable=False),
-            StructField("age", IntegerType(), nullable=False),
-            StructField("country", StringType(), nullable=False),
-            StructField("year", StringType(), nullable=False),
-        ]
-    )
+    arrow_schema = pa.schema([
+        ("id", pa.int32(), False),
+        ("name", pa.string(), False),
+        ("age", pa.int32(), False),
+        ("country", pa.string(), False),
+        ("year", pa.string(), False),
+    ])
 
     num_rows = 500000
     now = datetime.now()
-    data = [
-        (i, f"name_{i}", 32, "".join("a" for _ in range(100)), "2025")
-        for i in range(num_rows)
-    ]
-    df = spark.createDataFrame(data=data, schema=schema)
-    df.printSchema()
-    df.write.mode("append").format("delta").partitionBy(partition_columns).save(
-        f"/{TABLE_NAME}"
+    ids = list(range(num_rows))
+    names = [f"name_{i}" for i in range(num_rows)]
+    ages = [32] * num_rows
+    countries = ["".join("a" for _ in range(100))] * num_rows
+    years = ["2025"] * num_rows
+
+    arrow_table = pa.Table.from_arrays(
+        [ids, names, ages, countries, years],
+        schema=arrow_schema
+    )
+    write_deltalake(
+        f"/{TABLE_NAME}",
+        arrow_table,
+        mode="append",
+        partition_by=partition_columns,
     )
 
     minio_client = started_cluster.minio_client
@@ -2989,7 +2994,7 @@ def test_writes(started_cluster):
     table_name = randomize_table_name("test_writes")
     result_file = f"{table_name}_data"
 
-    schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
+    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
     write_deltalake(
         f"s3://root/{result_file}",
@@ -3071,7 +3076,7 @@ def test_partitioned_writes(started_cluster):
     partition_columns = ["id", "comment"]
 
     schema = pa.schema(
-        [("id", pa.int32()), ("name", pa.string()), ("comment", pa.string())]
+        [("id", pa.int32(), False), ("name", pa.string(), False), ("comment", pa.string(), False)]
     )
     empty_arrays = [
         pa.array([], type=pa.int32()),
@@ -3345,7 +3350,7 @@ def test_write_limits(started_cluster, partitioned, limit_enabled):
     table_name = randomize_table_name("test_write_limits")
     result_file = f"{table_name}_data"
 
-    schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
+    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
     write_deltalake(
         f"file:///{result_file}",

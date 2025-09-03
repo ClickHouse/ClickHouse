@@ -120,7 +120,7 @@ void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_
 static void checkTypesAndNestedTypesEqual(DataTypePtr type, DataTypePtr expected_type, const std::string & column_name)
 {
     /// Checks types recursively if needed.
-    if (expected_type && !type->equals(*expected_type))
+    if (!type->equals(*expected_type))
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Types mismatch for column `{}`. Got: {}, expected: {}",
@@ -128,8 +128,25 @@ static void checkTypesAndNestedTypesEqual(DataTypePtr type, DataTypePtr expected
     }
 }
 
+/// Returns non virtual column names, and virtual columns names and types.
+static std::pair<Names, NamesAndTypesList> splitVirtualColumns(
+    const Names & columns,
+    VirtualsDescriptionPtr virtual_columns_description)
+{
+    Names non_virtual_columns;
+    NamesAndTypesList virtual_columns;
+    for (const auto & column_name : columns)
+    {
+        if (auto virtual_column = virtual_columns_description->tryGet(column_name))
+            virtual_columns.emplace_back(std::move(*virtual_column));
+        else
+            non_virtual_columns.push_back(column_name);
+    }
+    return {non_virtual_columns, virtual_columns};
+}
+
 /// Returns column and whether it is readable from data file.
-static std::pair<NameAndTypePair, bool> getColumn(
+static std::pair<NameAndTypePair, bool> getPhysicalColumn(
     const NameAndTypePair & column,
     const NamesAndTypesList & read_schema,
     const NameToNameMap & physical_names_map,
@@ -144,13 +161,14 @@ static std::pair<NameAndTypePair, bool> getColumn(
     /// Not a readable column.
     if (!physical_name_and_type.has_value())
     {
-        LOG_TEST(log, "Name: {}, name in storage: {}, subcolumn name: {}, physical name: {}",
-                 column.name, column.getNameInStorage(), column.getSubcolumnName(), physical_name);
+        LOG_TEST(
+            log, "Name: {}, name in storage: {}, " "subcolumn name: {}, physical name: {}",
+            column.name, column.getNameInStorage(), column.getSubcolumnName(), physical_name);
 
         /// Not a readable column, but if columnMapping.mode == 'name'
         /// we will still have it named as col-<uuid> in metadata.
         result_column.name = physical_name;
-        return {result_column, false};
+        return {result_column, /* readable */false};
     }
 
     std::string physical_subcolumn_name;
@@ -182,7 +200,7 @@ static std::pair<NameAndTypePair, bool> getColumn(
         result_column = NameAndTypePair(physical_name, physical_name_and_type->type);
     }
 
-    return {result_column, true};
+    return {result_column, /* readable */true};
 }
 
 ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
@@ -195,7 +213,6 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// The below code is similar to what can be found in `prepareReadingFromFormat.cpp`,
     /// but is adjusted for delta-lake.
     ReadFromFormatInfo info;
-
 
     /// Read schema is different from table schema in case:
     /// 1. we have partition columns (they are not stored in the actual data)
@@ -211,26 +228,20 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     }
 
     Names non_virtual_requested_columns;
-    for (const auto & column_name : requested_columns)
-    {
-        if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
-            info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
-        else
-            non_virtual_requested_columns.push_back(column_name);
-    }
-    /// Create header for Source that will contain all requested columns including virtual at the end
+    std::tie(non_virtual_requested_columns, info.requested_virtual_columns) =
+        splitVirtualColumns(requested_columns, storage_snapshot->virtual_columns);
+
+    /// Create header for Source with non virtual columns
+    /// and add virtual columns at the end of the header.
     /// (because they will be added to the chunk after reading regular columns).
     info.source_header = storage_snapshot->getSampleBlockForColumns(non_virtual_requested_columns);
     for (const auto & column : info.requested_virtual_columns)
         info.source_header.insert({column.type->createColumn(), column.type, column.name});
 
-    /// If only virtual columns were requested, just read the smallest column.
-    if (supports_subset_of_columns && non_virtual_requested_columns.empty())
-        non_virtual_requested_columns.push_back(ExpressionActions::getSmallestColumn(table_columns_description.getAll()).name);
-
     auto requested_table_columns = table_columns_description.getByNames(
         GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(),
         non_virtual_requested_columns);
+
     auto all_read_columns_with_subcolumns = read_columns_description.get(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
 
     Names column_names_to_read = non_virtual_requested_columns;
@@ -241,15 +252,17 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     filterTupleColumnsToRead(requested_table_columns, column_names_to_read);
 
     /// Set format_header with columns that should be read from data.
-    /// However, we include partition columns in requested_columns,
+    /// However, we include partition columns in requested_columns (and not in format_header),
     /// because we will insert partition columns into chunk right after it is read from data file,
     /// so we want it to be verified that chunk contains all the requested columns.
     for (auto & column : requested_table_columns)
     {
-        auto expected_type = info.source_header.getByName(column.name).type;
-        checkTypesAndNestedTypesEqual(column.type, expected_type, column.name);
+        auto * expected_type = info.source_header.findByName(column.name);
+        if (expected_type)
+            /// In this case source contains only virtual columns.
+            checkTypesAndNestedTypesEqual(column.type, expected_type->type, column.name);
 
-        auto [result_column, _] = getColumn(
+        auto [result_column, _] = getPhysicalColumn(
             column,
             all_read_columns_with_subcolumns,
             physical_names_map,
@@ -259,13 +272,18 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
         info.requested_columns.emplace_back(result_column);
     }
 
-    auto table_columns_to_read = table_columns_description.getByNames(
+    /// If only virtual columns were requested, just read the smallest column.
+    /// Because format header cannot be empty.
+    if (supports_subset_of_columns && column_names_to_read.empty())
+        column_names_to_read.push_back(ExpressionActions::getSmallestColumn(table_columns_description.getAll()).name);
+
+    const auto table_columns_to_read = table_columns_description.getByNames(
         GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(),
         column_names_to_read);
 
-    for (auto & column : table_columns_to_read)
+    for (const auto & column : table_columns_to_read)
     {
-        auto [result_column, readable] = getColumn(
+        auto [result_column, readable] = getPhysicalColumn(
             column,
             all_read_columns_with_subcolumns,
             physical_names_map,
