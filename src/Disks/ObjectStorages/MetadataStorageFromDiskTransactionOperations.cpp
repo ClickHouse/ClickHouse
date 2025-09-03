@@ -17,6 +17,11 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 static std::string getTempFileName(const std::string & dir)
 {
     return fs::path(dir) / getRandomASCIIString(32);

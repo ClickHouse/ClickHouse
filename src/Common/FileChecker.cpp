@@ -21,7 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_END_OF_FILE;
-    extern const int EXPECTED_END_OF_FILE;
     extern const int LOGICAL_ERROR;
 }
 
