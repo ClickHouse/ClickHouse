@@ -1,14 +1,11 @@
 10
 6
+2	Bob	200.3
+2	Bob	200.3
 4	David	300.2
 4	David	300.2
 5	Eve	250.1
 5	Eve	250.1
-3	Charlie	150.7
-3	Charlie	150.7
-1	Alice	2022-01-01 10:00:00	100.5
-1	Alice	2022-01-01 10:00:00	100.5
-2	Bob	2022-01-02 11:00:00	200.3
 Union
   Expression ((Project names + Projection))
     Expression
@@ -24,3 +21,31 @@ Expression (Project names)
               Expression
                 ReadFromMergeTree (default.test_local_table)
           ReadFromRemote (Read from remote replica)
+5
+2	Bob	200.3
+2	Bob	200.3
+4	David	300.2
+4	David	300.2
+5	Eve	250.1
+5	Eve	250.1
+0	Invalid	0.5
+0	Invalid	0.5
+1	Alice	100.5
+1	Alice	100.5
+2	Bob	200.3
+2	Bob	200.3
+2	Bob	200.3
+2	Bob	200.3
+2	Bob	200.3
+2	Bob	200.3
+0	Invalid	0.5
+0	Invalid	0.5
+1	Alice	100.5
+1	Alice	100.5
+2	Bob	200.3
+2	Bob	200.3
+Union
+  Expression ((Project names + Projection))
+    Expression
+      ReadFromMergeTree (default.test_local_table)
+  ReadFromRemote (Read from remote replica)

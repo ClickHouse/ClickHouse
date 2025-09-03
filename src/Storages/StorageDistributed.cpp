@@ -996,12 +996,22 @@ void StorageDistributed::read(
 
     if (settings[Setting::allow_experimental_analyzer])
     {
-        StorageID remote_storage_id = StorageID{remote_database, remote_table};
+        // Apply additional filter if present (for TieredDistributedMerge)
+        // Add to filter_asts like additional_table_filters do
+        if (additional_filter)
+        {
+            modified_query_info.filter_asts.push_back(additional_filter);
+        }
+
+        StorageID remote_storage_id = StorageID::createEmpty();
+        if (!remote_table_function_ptr)
+            remote_storage_id = StorageID{remote_database, remote_table};
 
         auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
             query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
+
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
         /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
           * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
@@ -1018,6 +1028,13 @@ void StorageDistributed::read(
     }
     else
     {
+        // Apply additional filter if present (for TieredDistributedMerge)
+        // Add to filter_asts like additional_table_filters do
+        if (additional_filter)
+        {
+            modified_query_info.filter_asts.push_back(additional_filter);
+        }
+
         header = InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
         modified_query_info.query = ClusterProxy::rewriteSelectQuery(
@@ -2242,8 +2259,7 @@ void registerStorageDistributed(StorageFactory & factory)
         distributed_storage->renameInMemory({args.table_id.database_name, args.table_id.table_name, args.table_id.uuid});
 
         // Store the filter expression for later use in read operations
-        // For now, we'll just return the distributed storage
-        // TODO: Implement filter application in read() method
+        distributed_storage->setAdditionalFilter(second_arg);
 
         return distributed_storage;
     },

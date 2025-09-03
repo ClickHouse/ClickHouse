@@ -149,6 +149,9 @@ public:
 
     size_t getShardCount() const;
 
+    /// Set additional filter for TieredDistributedMerge engine
+    void setAdditionalFilter(ASTPtr filter) { additional_filter = std::move(filter); }
+
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
 
 private:
@@ -282,6 +285,9 @@ private:
     pcg64 rng;
 
     bool is_remote_function;
+
+    /// Additional filter expression for TieredDistributedMerge engine
+    ASTPtr additional_filter;
 };
 
 }
