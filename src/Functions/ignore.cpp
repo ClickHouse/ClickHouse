@@ -60,11 +60,11 @@ REGISTER_FUNCTION(Ignore)
 {
     FunctionDocumentation::Description description = R"(
 Accepts arbitrary arguments and unconditionally returns `0`.
-The argument is still evaluated internally, making it useful for eg. benchmarking.
+The argument is still evaluated internally, making it useful for benchmarking for example.
     )";
     FunctionDocumentation::Syntax syntax = "ignore(x)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "A value of any data type. The argument is not used for calculation and is passed only not to get syntax error.", {"Any"}}
+        {"x", "An input value which is unused and passed only so as to avoid a syntax error.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Always returns `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {

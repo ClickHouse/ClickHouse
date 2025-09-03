@@ -811,7 +811,7 @@ namespace
 REGISTER_FUNCTION(Transform)
 {
     FunctionDocumentation::Description description = R"(
-Transforms a value according to the explicitly defined mapping of some elements to other ones.
+Transforms a value according to the explicitly defined mapping of some elements to other elements.
 
 There are two variations of this function:
 - `transform(x, array_from, array_to, default)` - transforms `x` using mapping arrays with a default value for unmatched elements

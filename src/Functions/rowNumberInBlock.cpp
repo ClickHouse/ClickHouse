@@ -69,14 +69,14 @@ REGISTER_FUNCTION(RowNumberInBlock)
     FunctionDocumentation::Description description = R"(
 For each [block](../../development/architecture.md#block) processed by `rowNumberInBlock`, returns the number of the current row.
 
-The returned number starts at 0 for each block.
+The returned number starts from 0 for each block.
     )";
     FunctionDocumentation::Syntax syntax = "rowNumberInBlock()";
     FunctionDocumentation::Arguments arguments = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the ordinal number of the row in the data block starting from `0`.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Basic usage",
+        "Usage example",
         R"(
 SELECT rowNumberInBlock()
 FROM

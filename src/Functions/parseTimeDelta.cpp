@@ -336,10 +336,10 @@ The length of years and months are approximations: year is 365 days, month is 30
     FunctionDocumentation::Arguments arguments = {
         {"timestr", "A sequence of numbers followed by something resembling a time unit.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"A floating-point number with the number of seconds.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"The number of seconds.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
         {
-            "Basic usage",
+            "Usage example",
             R"(
 SELECT parseTimeDelta('11s+22min')
             )",

@@ -106,7 +106,7 @@ REGISTER_FUNCTION(VisibleWidth)
     FunctionDocumentation::Description description = R"(
 Calculates the approximate width when outputting values to the console in text format (tab-separated).
 This function is used by the system to implement Pretty formats.
-`NULL` is represented as a string corresponding to `NULL` in `Pretty` formats.
+`NULL` is represented as a string corresponding to `NULL` in Pretty formats.
     )";
     FunctionDocumentation::Syntax syntax = "visibleWidth(x)";
     FunctionDocumentation::Arguments arguments = {

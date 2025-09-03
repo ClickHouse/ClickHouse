@@ -236,7 +236,7 @@ The function can be enabled by setting `allow_deprecated_error_prone_window_func
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a value from the specified offset, or default if out of bounds.", {"Any"}};
     FunctionDocumentation::Examples examples = {
         {
-            "Basic usage",
+            "Usage example",
             R"(
 SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
             )",

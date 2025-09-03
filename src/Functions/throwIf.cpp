@@ -178,8 +178,8 @@ Throw an exception if argument x is true.
     FunctionDocumentation::Syntax syntax = "throwIf(x[, message[, error_code]])";
     FunctionDocumentation::Arguments arguments = {
         {"x", "The condition to check.", {"Any"}},
-        {"message", "Optional. A constant string providing a custom error message.", {"const String"}},
-        {"error_code", "Optional. A constant integer providing a custom error code.", {"const Int8/16/32"}}
+        {"message", "Optional. Custom error message.", {"const String"}},
+        {"error_code", "Optional. Custom error code.", {"const Int8/16/32"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `0` if the condition is false, throws an exception if the condition is true.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {

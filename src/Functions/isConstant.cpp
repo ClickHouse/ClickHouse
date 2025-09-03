@@ -62,7 +62,7 @@ This function is mostly intended for development, debugging and demonstration.
     )";
     FunctionDocumentation::Syntax syntax = "isConstant(x)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "Expression to check.", {"const Any"}}
+        {"x", "An expression to check.", {"const Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `x` is constant, `0` if `x` is non-constant.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {

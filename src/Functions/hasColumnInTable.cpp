@@ -183,7 +183,7 @@ For the nested data structure itself, the function returns `0`.
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the given column exists, `0` otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Check existing column",
+        "Check an existing column",
         R"(
 SELECT hasColumnInTable('system','metrics','metric')
         )",
@@ -192,7 +192,7 @@ SELECT hasColumnInTable('system','metrics','metric')
         )"
     },
     {
-        "Check non-existing column",
+        "Check a non-existing column",
         R"(
 SELECT hasColumnInTable('system','metrics','non-existing_column')
         )",

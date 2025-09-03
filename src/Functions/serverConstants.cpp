@@ -156,10 +156,10 @@ Otherwise it produces a constant value.
     )";
     FunctionDocumentation::Syntax syntax = "buildId()";
     FunctionDocumentation::Arguments arguments = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the build ID as a", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the build ID.", {"String"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Get build ID", R"(
+        "Usage example", R"(
 SELECT buildId()
         )",
         R"(
@@ -187,7 +187,7 @@ Otherwise it produces a constant value.
     )";
     FunctionDocumentation::Syntax syntax = "hostName()";
     FunctionDocumentation::Arguments arguments = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the host name as a", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the host name.", {"String"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
@@ -217,7 +217,7 @@ REGISTER_FUNCTION(ServerUUID)
 REGISTER_FUNCTION(TCPPort)
 {
     FunctionDocumentation::Description description = R"(
-Returns [native interface](../../interfaces/tcp.md) TCP port number listened by this server.
+Returns the [native interface](../../interfaces/tcp.md) TCP port number listened to by the server.
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard.
 Otherwise it produces a constant value.
     )";
@@ -226,7 +226,7 @@ Otherwise it produces a constant value.
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the TCP port number.", {"UInt16"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Get TCP port",
+        "Usage example",
         R"(
 SELECT tcpPort()
         )",
@@ -257,7 +257,7 @@ timezone()
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the canonical time zone name as a", {"String"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Get current session time zone",
+        "Usage example",
         R"(
 SELECT timezone()
         )",
@@ -287,7 +287,7 @@ If the function is executed in the context of a distributed table, then it gener
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the server timezone as a", {"String"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Get server time zone", R"(
+        "Usage example", R"(
 SELECT serverTimeZone()
         )",
         R"(
@@ -317,7 +317,7 @@ Otherwise it produces a constant value.
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the server uptime in seconds.", {"UInt32"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Get server uptime",
+        "Usage example",
         R"(
 SELECT uptime() AS Uptime
         )",
@@ -338,7 +338,7 @@ SELECT uptime() AS Uptime
 REGISTER_FUNCTION(Version)
 {
     FunctionDocumentation::Description description = R"(
-Returns the current version of ClickHouse as a string in the form: major_version.minor_version.patch_version.number_of_commits_since_the_previous_stable_release.
+Returns the current version of ClickHouse as a string in the form: `major_version.minor_version.patch_version.number_of_commits_since_the_previous_stable_release`.
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard.
 Otherwise, it produces a constant value.
     )";
@@ -347,7 +347,7 @@ Otherwise, it produces a constant value.
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the current version of ClickHouse.", {"String"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Get ClickHouse version",
+        "Usage example",
         R"(
 SELECT version()
         )",
@@ -375,7 +375,7 @@ Returns the current ClickHouse server revision.
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the current ClickHouse server revision.", {"UInt32"}};
     FunctionDocumentation::Examples examples = {
     {
-        "Get server revision",
+        "Usage example",
         R"(
 SELECT revision()
         )",

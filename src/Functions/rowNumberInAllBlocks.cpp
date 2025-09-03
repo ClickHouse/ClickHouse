@@ -80,14 +80,14 @@ public:
 REGISTER_FUNCTION(RowNumberInAllBlocks)
 {
     FunctionDocumentation::Description description = R"(
-Returns a unique row number for each row processed by `rowNumberInAllBlocks`.
+Returns a unique row number for each row processed.
     )";
     FunctionDocumentation::Syntax syntax = "rowNumberInAllBlocks()";
     FunctionDocumentation::Arguments arguments = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the ordinal number of the row in the data block starting from `0`.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
         {
-            "Basic usage",
+            "Usage example",
             R"(
 SELECT rowNumberInAllBlocks()
 FROM
