@@ -500,6 +500,9 @@ void generateManifestFile(
             auto statistics = data_file_statistics->getColumnSizes();
             set_fields(statistics, Iceberg::f_column_sizes, [](size_t, size_t value) { return static_cast<Int32>(value); });
 
+            statistics = data_file_statistics->getNullCounts();
+            set_fields(statistics, Iceberg::f_null_value_counts, [](size_t, size_t value) { return static_cast<Int32>(value); });
+
             std::unordered_map<size_t, size_t> field_id_to_column_index;
             auto field_ids = data_file_statistics->getFieldIds();
             for (size_t i = 0; i < field_ids.size(); ++i)
@@ -1135,6 +1138,7 @@ void DataFileStatistics::update(const Chunk & chunk)
     if (column_sizes.empty())
     {
         column_sizes.resize(num_columns, 0);
+        null_counts.resize(num_columns, 0);
         for (size_t i = 0; i < num_columns; ++i)
         {
             ranges.push_back(getExtremeRangeFromColumn(chunk.getColumns()[i]));
@@ -1145,6 +1149,9 @@ void DataFileStatistics::update(const Chunk & chunk)
 
     for (size_t i = 0; i < num_columns; ++i)
     {
+        column_sizes[i] += chunk.getColumns()[i]->byteSize();
+        for (size_t j = 0; j < chunk.getNumRows(); ++j)
+            null_counts[i] += (chunk.getColumns()[i]->isNullAt(j));
         ranges[i] = uniteRanges(ranges[i], getExtremeRangeFromColumn(chunk.getColumns()[i]));
     }
 }
@@ -1167,6 +1174,17 @@ std::vector<std::pair<size_t, size_t>> DataFileStatistics::getColumnSizes() cons
     }
     return result;
 }
+
+std::vector<std::pair<size_t, size_t>> DataFileStatistics::getNullCounts() const
+{
+    std::vector<std::pair<size_t, size_t>> result;
+    for (size_t i = 0; i < null_counts.size(); ++i)
+    {
+        result.push_back({field_ids[i], null_counts[i]});
+    }
+    return result;
+}
+
 
 std::vector<std::pair<size_t, Field>> DataFileStatistics::getLowerBounds() const
 {
