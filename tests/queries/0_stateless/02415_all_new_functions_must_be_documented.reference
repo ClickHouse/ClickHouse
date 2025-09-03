@@ -61,8 +61,6 @@ countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
 currentDatabase
-currentProfiles
-currentRoles
 currentUser
 cutFragment
 cutIPv6
@@ -75,14 +73,10 @@ dateTime64ToSnowflake
 dateTimeToSnowflake
 decodeURLComponent
 decodeURLFormComponent
-defaultProfiles
-defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
 dotProduct
 dumpColumnStructure
-enabledProfiles
-enabledRoles
 encodeURLComponent
 encodeURLFormComponent
 errorCodeToName
@@ -90,10 +84,6 @@ evalMLMethod
 extractURLParameter
 extractURLParameterNames
 extractURLParameters
-filesystemAvailable
-filesystemCapacity
-filesystemUnreserved
-finalizeAggregation
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
 formatReadableQuantity
@@ -109,7 +99,6 @@ fromUnixTimestamp64Second
 generateUUIDv4
 getMacro
 getOSKernelVersion
-getServerPort
 getSizeOfEnumType
 getTypeSerializationStreams
 globalIn
@@ -134,14 +123,11 @@ in
 inIgnoreSet
 indexHint
 initialQueryID
-initializeAggregation
 isConstant
 isDecimalOverflow
 isIPAddressInRange
 isIPv4String
 isIPv6String
-joinGet
-joinGetOrNull
 like
 lowCardinalityIndices
 lowCardinalityKeys
@@ -275,11 +261,9 @@ replicate
 revision
 rowNumberInAllBlocks
 rowNumberInBlock
-runningAccumulate
 runningConcurrency
 runningDifference
 runningDifferenceStartingWithFirstValue
-serverUUID
 shardCount
 shardNum
 showCertificate
@@ -421,7 +405,6 @@ toUnixTimestamp64Micro
 toUnixTimestamp64Milli
 toUnixTimestamp64Nano
 toUnixTimestamp64Second
-transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
 transform
