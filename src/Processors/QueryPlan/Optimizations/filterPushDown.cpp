@@ -312,7 +312,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     // If we have OR with special predicates, don't push down
     if (has_or && contains_special_predicates(filter->getExpression(), filter->getFilterColumnName()))
     {
-        LOG_DEBUG(getLogger("QueryPlanOptimizations"), 
+        LOG_DEBUG(getLogger("QueryPlanOptimizations"),
                   "Skipping OR pushdown due to special predicates (EXISTS, correlated subqueries)");
         return 0;
     }
