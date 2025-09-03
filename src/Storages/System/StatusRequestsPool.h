@@ -184,7 +184,8 @@ public:
                         holder->getStatus(status, req.with_zk_fields);
                     } else
                     {
-                        if (!([&] {
+                        if (!([&]
+                            {
                             if (auto * var_holder = dynamic_cast<THolders *>(req.base_holder.get()))
                             {
                                 var_holder->getStatus(status, req.with_zk_fields);
