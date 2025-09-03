@@ -1126,6 +1126,7 @@ def modify_server_settings(
             "crash_log",
             "dead_letter_queue",
             "error_log",
+            "iceberg_metadata_log",
             "metric_log",
             "opentelemetry_span_log",
             "part_log",
