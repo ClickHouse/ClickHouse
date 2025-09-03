@@ -166,6 +166,7 @@ ObjectStorageQueueSource::FileIterator::next()
         return {};
     }
 
+    auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     if (current_batch_processed)
     {
         file_metadatas.clear();
@@ -247,8 +248,11 @@ ObjectStorageQueueSource::FileIterator::next()
                 }
 
                 Coordination::Responses responses;
-                auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
-                auto code = zk_client->tryMulti(requests, responses);
+                Coordination::Error code;
+                zk_retries.retryLoop([&]
+                {
+                    code = ObjectStorageQueueMetadata::getZooKeeper()->tryMulti(requests, responses);
+                });
                 if (code == Coordination::Error::ZOK)
                 {
                     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded, num_successful_objects);

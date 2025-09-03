@@ -836,14 +836,7 @@ void StorageObjectStorageQueue::commit(
 
     auto context = getContext();
     const auto & settings = context->getSettingsRef();
-    ZooKeeperRetriesControl zk_retry{
-        getName(),
-        log,
-        ZooKeeperRetriesInfo{
-            settings[Setting::keeper_max_retries],
-            settings[Setting::keeper_retry_initial_backoff_ms],
-            settings[Setting::keeper_retry_max_backoff_ms],
-            context->getProcessListElement()}};
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
 
     std::optional<Coordination::Error> code;
     Coordination::Responses responses;

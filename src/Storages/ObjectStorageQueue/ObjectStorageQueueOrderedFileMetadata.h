@@ -76,13 +76,15 @@ private:
     bool getMaxProcessedFile(
         NodeMetadata & result,
         Coordination::Stat * stat,
-        const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client);
+        const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+        LoggerPtr log_);
 
     static bool getMaxProcessedFile(
         NodeMetadata & result,
         Coordination::Stat * stat,
         const std::string & processed_node_path_,
-        const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client);
+        const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+        LoggerPtr log_);
 
     void prepareProcessedRequests(
         Coordination::Requests & requests,

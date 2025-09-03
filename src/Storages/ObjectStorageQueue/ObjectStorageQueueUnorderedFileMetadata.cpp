@@ -159,8 +159,11 @@ void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
         check_paths.push_back(zk_path_ / "failed" / node_name);
     }
 
-    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
-    auto responses = zk_client->tryGet(check_paths);
+    zkutil::ZooKeeper::MultiTryGetResponse responses;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log_).retryLoop([&]
+    {
+        responses = ObjectStorageQueueMetadata::getZooKeeper()->tryGet(check_paths);
+    });
 
     auto check_code = [&](auto code, const std::string & path)
     {

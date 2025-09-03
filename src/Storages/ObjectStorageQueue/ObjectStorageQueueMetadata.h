@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/SettingsChanges.h>
 
 namespace fs = std::filesystem;
@@ -148,6 +149,7 @@ public:
     tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
     static std::shared_ptr<ZooKeeperWithFaultInjection> getZooKeeper();
+    static ZooKeeperRetriesControl getKeeperRetriesControl(LoggerPtr log);
 
     /// Set local ref count for metadata.
     void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
@@ -162,7 +164,7 @@ public:
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
-    void cleanupPersistentProcessingNodes(zkutil::ZooKeeperPtr zk_client);
+    void cleanupPersistentProcessingNodes();
 
     void migrateToBucketsInKeeper(size_t value);
 

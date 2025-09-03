@@ -161,19 +161,26 @@ std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getMetadataPaths
 bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
     NodeMetadata & result,
     Coordination::Stat * stat,
-    const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client)
+    const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+    LoggerPtr log_)
 {
-    return getMaxProcessedFile(result, stat, processed_node_path, zk_client);
+    return getMaxProcessedFile(result, stat, processed_node_path, zk_client, log_);
 }
 
 bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
     NodeMetadata & result,
     Coordination::Stat * stat,
     const std::string & processed_node_path_,
-    const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client)
+    const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+    LoggerPtr log_)
 {
     std::string data;
-    if (zk_client->tryGet(processed_node_path_, data, stat))
+    bool processed_node_exists = false;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log_).retryLoop([&]
+    {
+        processed_node_exists = zk_client->tryGet(processed_node_path_, data, stat);
+    });
+    if (processed_node_exists)
     {
         if (!data.empty())
             result = NodeMetadata::fromString(data);
@@ -325,7 +332,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         else
         {
             NodeMetadata node_metadata;
-            if (getMaxProcessedFile(node_metadata, &processed_node_stat, zk_client))
+            if (getMaxProcessedFile(node_metadata, &processed_node_stat, zk_client, log))
             {
                 if (zk_client->exists(failed_node_path))
                 {
@@ -464,7 +471,7 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequests(
 {
     NodeMetadata processed_node;
     Coordination::Stat processed_node_stat;
-    if (getMaxProcessedFile(processed_node, &processed_node_stat, processed_node_path_, zk_client))
+    if (getMaxProcessedFile(processed_node, &processed_node_stat, processed_node_path_, zk_client, log))
     {
         LOG_TEST(log, "Current max processed file: {}, condition less: {}",
                  processed_node.file_path, bool(path <= processed_node.file_path));
@@ -528,7 +535,8 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
             processed_node,
             &processed_node_stat,
             old_processed_path,
-            zk_client);
+            zk_client,
+            log);
 
         if (!has_processed_node)
         {
@@ -629,7 +637,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
             : getProcessedPathWithoutBucket(zk_path_);
 
         NodeMetadata max_processed_file;
-        if (getMaxProcessedFile(max_processed_file, {}, processed_node_path, zk_client))
+        if (getMaxProcessedFile(max_processed_file, {}, processed_node_path, zk_client, log_))
             max_processed_file_per_bucket[i] = std::move(max_processed_file.file_path);
     }
 
