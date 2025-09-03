@@ -118,11 +118,15 @@ namespace
         const std::unordered_set<UUID> & allowed_profile_ids,
         const std::unordered_set<UUID> & allowed_role_ids,
         bool allow_no_password,
-        bool allow_plaintext_password)
+        bool allow_plaintext_password,
+        bool escape_dot_in_user_name)
     {
         const bool validate = true;
         auto user = std::make_shared<User>();
-        user->setName(user_name);
+        String unescaped_user_name = user_name;
+        if (!escape_dot_in_user_name)
+            Poco::replaceInPlace(unescaped_user_name, "\\.", ".");
+        user->setName(unescaped_user_name);
         String user_config = "users." + user_name;
         bool has_no_password = config.has(user_config + ".no_password");
         bool has_password_plaintext = config.has(user_config + ".password");
@@ -148,12 +152,12 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
                             "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys', "
                             "'http_authentication' are used to specify authentication info for user {}. "
-                            "Must be only one of them.", user_name);
+                            "Must be only one of them.", unescaped_user_name);
 
         if (num_password_fields < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'password' or 'password_sha256_hex' "
                             "or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos "
-                            "or 'ssl_certificates' or 'ssh_keys' or 'http_authentication' must be specified for user {}.", user_name);
+                            "or 'ssl_certificates' or 'ssh_keys' or 'http_authentication' must be specified for user {}.", unescaped_user_name);
 
         if (has_password_plaintext)
         {
@@ -179,11 +183,11 @@ namespace
         {
             bool has_ldap_server = config.has(user_config + ".ldap.server");
             if (!has_ldap_server)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing mandatory 'server' in 'ldap', with LDAP server name, for user {}.", user_name);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing mandatory 'server' in 'ldap', with LDAP server name, for user {}.", unescaped_user_name);
 
             const auto ldap_server_name = config.getString(user_config + ".ldap.server");
             if (ldap_server_name.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server name cannot be empty for user {}.", user_name);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server name cannot be empty for user {}.", unescaped_user_name);
 
             user->authentication_methods.emplace_back(AuthenticationType::LDAP);
             user->authentication_methods.back().setLDAPServerName(ldap_server_name);
@@ -438,7 +442,8 @@ namespace
         const std::unordered_set<UUID> & allowed_profile_ids,
         const std::unordered_set<UUID> & allowed_role_ids,
         bool allow_no_password,
-        bool allow_plaintext_password)
+        bool allow_plaintext_password,
+        bool escape_dot_in_user_name)
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
@@ -449,7 +454,7 @@ namespace
         {
             try
             {
-                users.push_back(parseUser(config, user_name, allowed_profile_ids, allowed_role_ids, allow_no_password, allow_plaintext_password));
+                users.push_back(parseUser(config, user_name, allowed_profile_ids, allowed_role_ids, allow_no_password, allow_plaintext_password, escape_dot_in_user_name));
             }
             catch (Exception & e)
             {
@@ -876,9 +881,10 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
         auto allowed_role_ids = getAllowedIDs(config, "roles", AccessEntityType::ROLE);
         bool no_password_allowed = access_control.isNoPasswordAllowed();
         bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
+        bool escape_dot_in_user_name = access_control.shouldEscapeDotInUserName();
 
         std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
-        for (const auto & entity : parseUsers(config, allowed_profile_ids, allowed_role_ids, no_password_allowed, plaintext_password_allowed))
+        for (const auto & entity : parseUsers(config, allowed_profile_ids, allowed_role_ids, no_password_allowed, plaintext_password_allowed, escape_dot_in_user_name))
             all_entities.emplace_back(generateID(*entity), entity);
         for (const auto & entity : parseQuotas(config))
             all_entities.emplace_back(generateID(*entity), entity);
