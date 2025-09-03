@@ -1,5 +1,4 @@
 #include <Common/Exception.h>
-#include <Common/Jemalloc.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
