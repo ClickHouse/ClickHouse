@@ -973,14 +973,19 @@ def test_recover_staled_replica(started_cluster):
     )
     test_recover_staled_replica_run += 1
 
+    # Note that the table name is not deterministic
+    # It's formed as ${original_name}_${max_log_ptr}_${random_number_up_to_1000}
+    # And that fault injection might increase max_log_ptr as replicas are added or removed
     table = dummy_node.query(
-        "SHOW TABLES FROM recover_broken_tables LIKE 'mt1_41_%' LIMIT 1"
+        "SHOW TABLES FROM recover_broken_tables LIKE 'mt1_%' LIMIT 1"
     ).strip()
+    logging.debug(f"Table: {table}")
+    assert table
     assert (
         dummy_node.query(f"SELECT (*,).1 FROM recover_broken_tables.{table}") == "42\n"
     )
     table = dummy_node.query(
-        "SHOW TABLES FROM recover_broken_replicated_tables LIKE 'rmt5_41_%' LIMIT 1"
+        "SHOW TABLES FROM recover_broken_replicated_tables LIKE 'rmt5_%' LIMIT 1"
     ).strip()
     assert (
         dummy_node.query(f"SELECT (*,).1 FROM recover_broken_replicated_tables.{table}")
