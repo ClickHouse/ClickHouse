@@ -1,4 +1,3 @@
-#include "Common/Exception.h"
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -114,8 +113,7 @@ std::optional<CheckResult> FileChecker::checkNextEntry(DataValidationTasksPtr & 
     return CheckResult(name, true, "");
 }
 
-void FileChecker::checkСonsistency()
-try
+void FileChecker::repair()
 {
     for (const auto & name_size : map)
     {
@@ -133,10 +131,6 @@ try
             throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Size of {} is bigger than expected. Size is {} but should be {}.",
                 path, real_size, expected_size);
     }
-}
-catch (...)
-{
-    tryLogCurrentException(__PRETTY_FUNCTION__);
 }
 
 void FileChecker::save() const
@@ -160,8 +154,6 @@ void FileChecker::save() const
             writeString(R"(:{"size":")", *out);
             writeIntText(it->second, *out);
             writeString("\"}", *out);
-
-            LOG_TEST(getLogger("FileChecker"), "Saving file info: {} with size {}", it->first, it->second);
         }
 
         writeCString("}}", *out);
@@ -174,8 +166,6 @@ void FileChecker::save() const
         disk->replaceFile(tmp_files_info_path, files_info_path);
     else
         fs::rename(tmp_files_info_path, files_info_path);
-
-    LOG_TEST(getLogger("FileChecker"), "Completed saving file info to {}", files_info_path);
 }
 
 void FileChecker::load()
@@ -201,9 +191,6 @@ void FileChecker::load()
     JSON files = json.has("clickhouse") ? json["clickhouse"] : json["yandex"];
     for (const JSON file : files) // NOLINT
         map[unescapeForFileName(file.getName())] = file.getValue()["size"].toUInt();
-
-    for (const auto & name_size : map)
-        LOG_TEST(getLogger("FileChecker"), "Loaded file info: {} with size {}", name_size.first, name_size.second);
 }
 
 bool FileChecker::fileReallyExists(const String & path_) const

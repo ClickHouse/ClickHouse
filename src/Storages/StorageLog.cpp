@@ -3,7 +3,6 @@
 #include <Storages/StorageLogSettings.h>
 
 #include <Columns/IColumn.h>
-#include <Common/Logger.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
@@ -257,7 +256,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
             size_t file_size = file_sizes[data_file.index];
 
             auto it = streams.try_emplace(data_file_name, storage.disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
-            return &(it->second.compressed.value());
+            return &it->second.compressed.value();
         };
     };
 
@@ -268,9 +267,6 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     }
 
     settings.getter = create_stream_getter(false);
-
-    LOG_DEBUG(getLogger("StorageLog"), "Reading {} rows of column {} from StorageLog", max_rows_to_read, name);
-
     serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
 }
 
@@ -328,20 +324,30 @@ public:
 
     ~LogSink() override
     {
-        if (done)
-            return;
-
-        /// No more writing.
-        for (auto & [_, stream] : streams)
+        try
         {
-            stream.cancel();
+            if (!done)
+            {
+                /// Rollback partial writes.
+
+                /// No more writing.
+                for (auto & [_, stream] : streams)
+                {
+                    stream.cancel();
+                }
+                streams.clear();
+
+                /// Truncate files to the older sizes.
+                storage.file_checker.repair();
+
+                /// Remove excessive marks.
+                storage.removeUnsavedMarks(lock);
+            }
         }
-        streams.clear();
-
-        /// Remove excessive marks.
-        storage.removeUnsavedMarks(lock);
-
-        storage.file_checker.checkСonsistency();
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     void consume(Chunk & chunk) override;
@@ -361,7 +367,6 @@ private:
             compressed(*plain, std::move(codec), max_compress_block_size),
             plain_offset(initial_data_size)
         {
-            LOG_DEBUG(getLogger("StorageLog"), "Opening stream for write file {} with initial size {}", data_path, initial_data_size);
         }
 
         std::unique_ptr<WriteBuffer> plain;
@@ -664,6 +669,17 @@ StorageLog::StorageLog(
         /// create directories if they do not exist
         disk->createDirectories(table_path);
     }
+    else
+    {
+        try
+        {
+            file_checker.repair();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 
     columns_with_collected_nested = ColumnsDescription{Nested::collect(columns_.getAll())};
     total_bytes = file_checker.getTotalSize();
@@ -795,11 +811,11 @@ void StorageLog::removeUnsavedMarks(const WriteLock & /* already locked for writ
 
 void StorageLog::saveFileSizes(const WriteLock & /* already locked for writing */)
 {
-    // for (const auto & data_file : data_files)
-    //     file_checker.update(data_file.path);
+    for (const auto & data_file : data_files)
+        file_checker.update(data_file.path);
 
-    // if (use_marks_file)
-    //     file_checker.update(marks_file_path);
+    if (use_marks_file)
+        file_checker.update(marks_file_path);
 
     file_checker.save();
     total_bytes = file_checker.getTotalSize();
@@ -1179,6 +1195,8 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
     }
     catch (...)
     {
+        /// Rollback partial writes.
+        file_checker.repair();
         removeUnsavedMarks(lock);
         throw;
     }
