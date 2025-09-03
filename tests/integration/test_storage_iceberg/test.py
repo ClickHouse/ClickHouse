@@ -3073,10 +3073,8 @@ def test_writes_different_path_format_error(started_cluster, format_version, sto
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
 
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('maneskin');", settings={"allow_experimental_insert_into_iceberg": 1})
-    with pytest.raises(Exception) as err:
-        instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('radiohead');", settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
-    assert "Paths in Iceberg must use a consistent format" in str(err.value)
-
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('radiohead');", settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL;") == 'maneskin\nradiohead\n'
 
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("storage_type", ["local"])
