@@ -592,6 +592,8 @@ def get_build_report_links(
         for job in build_job_names:
             if job not in build_report_links:
                 build_report_links[job] = link_template.format(job_name=job)
+
+    if len(build_report_links) > 0:
         return build_report_links
 
     # No cache or build result was found, guess the links
