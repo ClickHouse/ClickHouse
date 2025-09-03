@@ -8,7 +8,7 @@ namespace DB
 {
 
 class Context;
-template <typename T>
+template <typename T, typename ...Ts>
 class StatusRequestsPools;
 class StorageReplicatedMergeTree;
 

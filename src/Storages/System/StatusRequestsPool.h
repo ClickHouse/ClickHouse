@@ -39,10 +39,18 @@ extern const int QUERY_WAS_CANCELLED;
 template <typename T>
 concept IsHolder = std::derived_from<T, IDatabase> || std::derived_from<T, IStorage>;
 
-template <IsHolder THolder>
+template <IsHolder T>
+struct StatusHolderBase
+{
+    using Base = std::conditional_t<std::derived_from<T, IDatabase>, IDatabase, IStorage>;
+};
+
+template <IsHolder THolder, IsHolder ...THolders>
+requires (... && std::is_same_v<typename StatusHolderBase<THolder>::Base, typename StatusHolderBase<THolders>::Base>) &&
+         (... && std::is_same_v<typename THolder::ReplicatedStatus, typename THolders::ReplicatedStatus>)
 class StatusRequestsPool;
 
-template <class T>
+template <class T, class ...Ts>
 class StatusRequestsPools final
 {
 public:
@@ -52,20 +60,22 @@ public:
     {
     }
 
-    using StatusPool = StatusRequestsPool<T>;
+    using StatusPool = StatusRequestsPool<T, Ts...>;
     StatusPool requests_without_zk_fields;
     StatusPool requests_with_zk_fields;
 };
 
 /// Allows to "deduplicate" getStatus() requests for the same holder: if a request for a holder is already in progress
 /// then the new request will return the same future as the previous one.
-template <IsHolder THolder>
+template <IsHolder THolder, IsHolder ...THolders>
+requires (... && std::is_same_v<typename StatusHolderBase<THolder>::Base, typename StatusHolderBase<THolders>::Base>) &&
+         (... && std::is_same_v<typename THolder::ReplicatedStatus, typename THolders::ReplicatedStatus>)
 class StatusRequestsPool final
 {
 public:
     using TStatus = typename THolder::ReplicatedStatus;
     using TPromiseStatus = std::promise<TStatus>;
-    using TBaseHolder = typename std::conditional_t<std::derived_from<THolder, IDatabase>, IDatabase, IStorage>;
+    using TBaseHolder = StatusHolderBase<THolder>::Base;
     using TBaseHolderPtr = std::shared_ptr<TBaseHolder>;
     using TFuture = std::shared_future<TStatus>;
 
@@ -172,6 +182,18 @@ public:
                     if (auto * holder = dynamic_cast<THolder *>(req.base_holder.get()))
                     {
                         holder->getStatus(status, req.with_zk_fields);
+                    } else
+                    {
+                        if (!([&] {
+                            if (auto * var_holder = dynamic_cast<THolders *>(req.base_holder.get()))
+                            {
+                                var_holder->getStatus(status, req.with_zk_fields);
+                                return true;
+                            }
+
+                            return false;
+                        }() || ...))
+                            status = {};
                     }
 
                     req.promise->set_value(std::move(status));
