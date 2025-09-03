@@ -36,22 +36,20 @@ class SparkAndClickHouseCheck:
 
             order_by_cols = [k for k in table.columns.keys()]
             # Spark hash
-            df = spark.table(table.get_table_full_path())
-            # Sort for deterministic ordering
-            df = df.orderBy(*order_by_cols)
-            # Convert all columns to string for consistent hashing
-            string_cols = [F.col(c).cast("string").alias(c) for c in df.columns]
-            # Generate hash per row, then combine
-            spark_hash = (
-                df.select(*string_cols)
-                .select(F.md5(F.concat_ws("||", *df.columns)).alias("row_hash"))
-                .agg(
-                    F.md5(F.concat_ws("", F.collect_list("row_hash"))).alias(
-                        "table_hash"
-                    )
-                )
-                .collect()[0]["table_hash"]
-            )
+            # Generate hash for each row in ClickHouse
+            # Convert all columns to string and concatenate
+            concat_cols = " || '||' || ".join([f"CAST({col} AS STRING)" for col in order_by_cols])
+            # Generate hash using SQL
+            query = f"""
+            SELECT LOWER(HEX(MD5(CONCAT_WS('', COLLECT_LIST(row_hash))))) as table_hash
+            FROM (
+                SELECT LOWER(HEX(MD5({concat_cols}))) as row_hash
+                FROM {table.get_clickhouse_path()}
+                ORDER BY {', '.join([f"{col} ASC NULLS FIRST" for col in order_by_cols])}
+            );
+            """
+            result = spark.sql(query).collect()
+            spark_hash = result[0]["table_hash"]
 
             # ClickHouse hash
             # Generate hash for each row in ClickHouse
@@ -65,7 +63,7 @@ class SparkAndClickHouseCheck:
             FROM (
                 SELECT hex(MD5({concat_cols})) as row_hash
                 FROM {table.get_clickhouse_path()}
-                ORDER BY {', '.join(order_by_cols)}
+                ORDER BY {', '.join([f"{col} ASC NULLS FIRST" for col in order_by_cols])}
             );
             """
             )
