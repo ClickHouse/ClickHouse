@@ -194,6 +194,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     const std::filesystem::path & zk_path,
     const Bucket & bucket,
     const Processor & processor,
+    bool use_persistent_processing_nodes_,
     LoggerPtr log_)
 {
     const auto zk_client = getZooKeeper();
@@ -213,7 +214,10 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
         Coordination::Requests requests;
 
         /// Create bucket lock node as ephemeral node.
-        requests.push_back(zkutil::makeCreateRequest(bucket_lock_path, "", zkutil::CreateMode::Ephemeral));
+        requests.push_back(zkutil::makeCreateRequest(
+            bucket_lock_path,
+            "",
+            use_persistent_processing_nodes_ ? zkutil::CreateMode::Persistent : zkutil::CreateMode::Ephemeral));
 
         /// Create bucket lock id node as persistent node if it does not exist yet.
         /// Update bucket lock id path. We use its version as a version of ephemeral bucket lock node.

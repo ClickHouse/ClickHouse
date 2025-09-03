@@ -44,6 +44,7 @@ public:
         const std::filesystem::path & zk_path,
         const Bucket & bucket,
         const Processor & processor,
+        bool use_persistent_processing_nodes_,
         LoggerPtr log_);
 
     static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(const std::string & path, size_t buckets_num);

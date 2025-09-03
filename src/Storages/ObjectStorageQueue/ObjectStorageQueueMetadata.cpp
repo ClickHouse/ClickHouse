@@ -164,9 +164,14 @@ void ObjectStorageQueueMetadata::startup()
     if (startup_called.exchange(true))
          return;
 
-    if (!task
-        && mode == ObjectStorageQueueMode::UNORDERED
-        && (table_metadata.tracked_files_limit || table_metadata.tracked_files_ttl_sec))
+    bool need_cleanup_for_unordered = mode == ObjectStorageQueueMode::UNORDERED
+        && (table_metadata.tracked_files_limit
+            || table_metadata.tracked_files_ttl_sec
+            || (use_persistent_processing_nodes && persistent_processing_node_ttl_seconds));
+    bool need_cleanup_for_ordered = mode == ObjectStorageQueueMode::ORDERED
+        && use_persistent_processing_nodes && persistent_processing_node_ttl_seconds;
+
+    if (!task && (need_cleanup_for_unordered || need_cleanup_for_ordered))
     {
         task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
             "ObjectStorageQueueCleanupFunc",
@@ -239,7 +244,7 @@ ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
 ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const Processor & processor)
 {
-    return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor, log);
+    return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, processor, use_persistent_processing_nodes, log);
 }
 
 void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, const ContextPtr & context)
@@ -1040,6 +1045,8 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     /// TODO because of this lock we might not update local file statuses on time on one of the nodes.
 
     cleanupPersistentProcessingNodes(zk_client);
+    if (mode == ObjectStorageQueueMode::ORDERED)
+        return;
 
     const fs::path zookeeper_processed_path = zookeeper_path / "processed";
     const fs::path zookeeper_failed_path = zookeeper_path / "failed";
@@ -1292,6 +1299,16 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(zkutil::ZooKee
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(code));
     }
 
+    Strings bucket_lock_paths;
+    if (useBucketsForProcessing())
+    {
+        const auto buckets_path = zookeeper_path / "buckets";
+        for (size_t i = 0; i < getBucketsNum(); ++i)
+        {
+            bucket_lock_paths.push_back(buckets_path / toString(i) / "lock");
+        }
+    }
+
     auto current_time = getCurrentTime();
     Strings nodes_to_remove;
     Strings get_batch;
@@ -1320,6 +1337,26 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(zkutil::ZooKee
     for (const auto & node : persistent_processing_nodes)
     {
         get_batch.push_back(zookeeper_persistent_processing_path / node);
+        try
+        {
+            if (get_batch.size() == keeper_multiread_batch_size)
+                get_paths();
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            if (!Coordination::isHardwareError(e.code))
+            {
+                LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
+                chassert(false);
+            }
+
+            /// Will retry with a new zk connection.
+            throw;
+        }
+    }
+    for (const auto & node : bucket_lock_paths)
+    {
+        get_batch.push_back(node);
         try
         {
             if (get_batch.size() == keeper_multiread_batch_size)
