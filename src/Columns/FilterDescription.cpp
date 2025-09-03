@@ -62,26 +62,26 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
     }
 }
 
-static const IColumnFilter & unpackOrConvertFilter(ColumnPtr & column, std::optional<IColumnFilter> & column_filter)
+static const IColumnFilter & unpackOrConvertFilter(ColumnPtr & column, std::optional<IColumnFilter> & filter)
 {
     if (const auto * column_uint8 = typeid_cast<const ColumnUInt8 *>(column.get()))
     {
         if (column->use_count() == 1)
         {
             auto mut_col = IColumn::mutate(std::move(column));
-            column_filter = std::move(assert_cast<ColumnUInt8 &>(*mut_col).getData());
-            return *column_filter;
+            filter = std::move(assert_cast<ColumnUInt8 &>(*mut_col).getData());
+            return *filter;
         }
         else
             return column_uint8->getData();
     }
 
-    IColumnFilter col(column->size());
-    if (!tryConvertAnyColumnToBool(*column, col))
+    IColumnFilter res(column->size());
+    if (!tryConvertAnyColumnToBool(*column, res))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Illegal type {} of column for filter. Must be Number or Nullable(Number).", column->getName());
-    column_filter = std::move(col);
-    return *column_filter;
+    filter = std::move(res);
+    return *filter;
 }
 
 FilterDescription::FilterDescription(const IColumn & column_)
@@ -96,8 +96,8 @@ FilterDescription::FilterDescription(const IColumn & column_)
     ColumnPtr null_map_column;
     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
     {
-        column = nullable_column->getNestedColumnPtr();
         null_map_column = nullable_column->getNullMapColumnPtr();
+        column = nullable_column->getNestedColumnPtr();
     }
 
     std::optional<IColumnFilter> column_filter;
