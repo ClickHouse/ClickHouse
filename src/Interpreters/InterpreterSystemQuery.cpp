@@ -813,7 +813,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
             auto system_logs = getContext()->getSystemLogs();
-            system_logs.flush(true, query.logs);
+            system_logs.flush(query.logs);
             break;
         }
         case Type::STOP_LISTEN:
