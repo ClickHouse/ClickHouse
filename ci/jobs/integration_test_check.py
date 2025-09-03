@@ -212,8 +212,10 @@ def main():
             break
         if "parallel" in option:
             only_parallel = True
+            assert not only_sequential
         if "sequential" in option:
             only_sequential = True
+            assert not only_parallel
 
     job_configuration = options[0].strip()
 

@@ -547,7 +547,9 @@ class ClickhouseIntegrationTestsRunner:
             report_name = f"{test_group_str}_{i}.jsonl"
             report_path = os.path.join(self.repo_path, "tests/integration", report_name)
 
-            test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
+            with open(os.path.join(self.repo_path, "tests/integration", "test_names.txt"), "w") as f:
+                for test_name in test_names:
+                    f.write(test_name + "\n")
             parallel_cmd = f" --parallel {num_workers} " if num_workers > 0 else ""
             # Run flaky tests in a random order to increase chance to catch an error
             repeat_cmd = (
@@ -561,7 +563,7 @@ class ClickhouseIntegrationTestsRunner:
             cmd = (
                 f"cd {self.repo_path}/tests/integration && "
                 f"PYTHONPATH=../..:. timeout --verbose --signal=KILL {timeout} ./runner {self._get_runner_opts()} "
-                f"{image_cmd} -t {test_cmd} {parallel_cmd} {repeat_cmd} -- "
+                f"{image_cmd} {parallel_cmd} {repeat_cmd} --read-tests-from-file -- "
                 f"-rfEps --run-id={i} --color=no --durations=0 "
                 f"--report-log={report_name} --report-log-exclude-logs-on-passed-tests "
                 f"{_get_deselect_option(self.should_skip_tests())}"
@@ -570,7 +572,9 @@ class ClickhouseIntegrationTestsRunner:
             log_basename = f"{test_group_str}_{i}.log"
             log_path = os.path.join(self.repo_path, "tests/integration", log_basename)
             logging.info("Executing cmd: %s", cmd)
-            _ret_code = Shell.run(command=cmd, log_file=log_path)
+            _ret_code = Shell.run(command=cmd, log_file=log_path, verbose=True)
+            if not _ret_code == 0:
+                print(f"ERROR: Test run exit code [{_ret_code}]")
 
             extra_logs_names = [log_basename]
             log_result_path = os.path.join(
@@ -1103,8 +1107,7 @@ class ClickhouseIntegrationTestsRunner:
             grouped_tests = {}
         if not only_sequential:
             grouped_tests["parallel"] = filtered_parallel_tests
-        else:
-            pass
+
         logging.info("Found %s tests groups", len(grouped_tests))
         counters = {
             "ERROR": [],
