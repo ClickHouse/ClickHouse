@@ -4259,9 +4259,19 @@ DDLWorker & Context::getDDLWorker() const
 
 zkutil::ZooKeeperPtr Context::getZooKeeper(UInt64 max_lock_milliseconds) const
 {
-    if (!shared->zookeeper_mutex.try_lock_for(std::chrono::milliseconds(max_lock_milliseconds)))
-        throw zkutil::KeeperException(Coordination::Error::ZOPERATIONTIMEOUT,
-            "Cannot get ZooKeeper connection, another thread is holding the lock for more than {} ms", max_lock_milliseconds);
+    if (!max_lock_milliseconds)
+    {
+        if (!shared->zookeeper_mutex.try_lock_for(std::chrono::milliseconds(max_lock_milliseconds)))
+            throw zkutil::KeeperException(
+                Coordination::Error::ZOPERATIONTIMEOUT,
+                "Cannot get ZooKeeper connection, another thread is holding the lock for more than {} ms",
+                max_lock_milliseconds);
+    }
+    else
+    {
+        shared->zookeeper_mutex.lock();
+    }
+
     std::lock_guard lock(shared->zookeeper_mutex, std::adopt_lock);
 
     if (!shared->zookeeper)

@@ -377,7 +377,7 @@ String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooK
 
 bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
-    auto zookeeper = context->getZooKeeper();
+    auto zookeeper = context->getZooKeeper(timeout_ms);
     const auto our_log_ptr_path = database->replica_path + "/log_ptr";
     const auto max_log_ptr_path = database->zookeeper_path + "/max_log_ptr";
     UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(our_log_ptr_path));
