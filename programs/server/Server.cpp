@@ -1239,7 +1239,7 @@ try
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
 
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
-    SCOPE_EXIT({
+    SCOPE_EXIT_SAFE({
         Stopwatch watch;
         LOG_INFO(log, "Waiting for background threads");
         GlobalThreadPool::instance().shutdown();
@@ -1290,7 +1290,7 @@ try
 
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
-    SCOPE_EXIT({
+    SCOPE_EXIT_SAFE({
         async_metrics.stop();
 
         /** Ask to cancel background jobs all table engines,
