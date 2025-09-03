@@ -1,0 +1,7 @@
+-- { echo }
+select sum(key) from test_10m settings allow_experimental_parallel_reading_from_replicas=1;
+499999500000
+select sum(key) from test_10m where key = 1 settings allow_experimental_parallel_reading_from_replicas=1;
+1
+allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas=parallel_replicas, parallel_replicas_distributed_index_analysis=1, DistributedIndexAnalysisMicroseconds>0=1, DistributedIndexAnalysisScheduledReplicas=11, DistributedIndexAnalysisFailedReplicas>0=1
+allow_experimental_parallel_reading_from_replicas=1, cluster_for_parallel_replicas=parallel_replicas, parallel_replicas_distributed_index_analysis=1, DistributedIndexAnalysisMicroseconds>0=1, DistributedIndexAnalysisScheduledReplicas=1, DistributedIndexAnalysisFailedReplicas>0=0
