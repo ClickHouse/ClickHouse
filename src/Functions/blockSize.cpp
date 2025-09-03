@@ -62,7 +62,7 @@ public:
 REGISTER_FUNCTION(BlockSize)
 {
     FunctionDocumentation::Description description = R"(
-In ClickHouse, queries are processed in blocks (chunks).
+In ClickHouse, queries are processed in [blocks](/development/architecture#block) (chunks).
 This function returns the size (row count) of the block the function is called on.
     )";
     FunctionDocumentation::Syntax syntax = "blockSize()";

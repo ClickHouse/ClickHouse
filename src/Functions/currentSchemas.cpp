@@ -68,16 +68,18 @@ public:
 REGISTER_FUNCTION(CurrentSchema)
 {
     FunctionDocumentation::Description description = R"(
-Returns a single-element array with the name of the current database schema.
+Same as funtion [`currentDatabase`](#currentDatabase) but
+- accepts a boolean argument which is ignored
+- returns the database name as an array with a single value.
 
-:::note
-The boolean argument is ignored.
-It only exists for the sake of compatibility with the implementation of this function in PostgreSQL.
-:::
+Function `currentSchemas` only exists for compatibility with PostgreSQL.
+Please use `currentDatabase` instead.
+
+Also see the [`SET` statement](/sql-reference/statements/use).
     )";
     FunctionDocumentation::Syntax syntax = "currentSchemas(bool)";
     FunctionDocumentation::Arguments arguments = {
-        {"bool", "A boolean value.", {"Bool"}}
+        {"bool", "A boolean value, which is ignored.", {"Bool"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a single-element array with the name of the current database.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {

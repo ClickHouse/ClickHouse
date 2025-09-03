@@ -56,6 +56,8 @@ REGISTER_FUNCTION(CurrentDatabase)
     FunctionDocumentation::Description description = R"(
 Returns the name of the current database.
 Useful in table engine parameters of `CREATE TABLE` queries where you need to specify the database.
+
+Also see the [`SET` statement](/sql-reference/statements/use).
     )";
     FunctionDocumentation::Syntax syntax = "currentDatabase()";
     FunctionDocumentation::Arguments arguments = {};

@@ -85,7 +85,7 @@ REGISTER_FUNCTION(GetMacro)
 {
     FunctionDocumentation::Description description = R"(
 Returns the value of a macro from the server configuration file.
-Macros are defined in the `<macros>` section of the configuration file and can be used to distinguish servers by convenient names even if they have complicated hostnames.
+Macros are defined in the [`<macros>`](/operations/server-configuration-parameters/settings#macros) section of the configuration file and can be used to distinguish servers by convenient names even if they have complicated hostnames.
 If the function is executed in the context of a distributed table, it generates a normal column with values relevant to each shard.
 )";
     FunctionDocumentation::Syntax syntax = "getMacro(name)";
