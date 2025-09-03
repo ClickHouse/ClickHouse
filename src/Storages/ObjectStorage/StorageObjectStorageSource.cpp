@@ -406,7 +406,7 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
 {
     const auto cache_key = getKeyForSchemaCache(
         getUniqueStoragePathIdentifier(*configuration, object_info),
-        object_info.getFileFormat().has_value() ? *object_info.getFileFormat() : configuration->format,
+        object_info.getFileFormat().value_or(configuration->format),
         format_settings,
         read_context);
     schema_cache.addNumRows(cache_key, num_rows);
@@ -484,7 +484,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         const auto cache_key = getKeyForSchemaCache(
             getUniqueStoragePathIdentifier(*configuration, *object_info),
-            object_info->getFileFormat().has_value() ? *object_info->getFileFormat() : configuration->format,
+            object_info->getFileFormat().value_or(configuration->format),
             format_settings,
             context_);
 
@@ -554,7 +554,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }();
 
         auto input_format = FormatFactory::instance().getInput(
-            object_info->getFileFormat().has_value() ? *object_info->getFileFormat() : configuration->format,
+            object_info->getFileFormat().value_or(configuration->format),
             *read_buf,
             initial_header,
             context_,
