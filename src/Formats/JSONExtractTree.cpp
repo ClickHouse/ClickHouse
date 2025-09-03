@@ -772,26 +772,13 @@ public:
         return true;
     }
 
-    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat time_input_format) const
+    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
         ReadBufferFromMemory buf(data.data(), data.size());
         const auto & date_lut = DateLUT::instance();
 
-        switch (time_input_format)
-        {
-            case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadTimeText(value, buf, date_lut) && buf.eof())
-                    return true;
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffort:
-                if (tryParseTimeBestEffort(value, buf, date_lut, date_lut) && buf.eof())
-                    return true;
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                if (tryParseTimeBestEffortUS(value, buf, date_lut, date_lut) && buf.eof())
-                    return true;
-                break;
-        }
+        if (tryReadTimeText(value, buf, date_lut) && buf.eof())
+            return true;
 
         return false;
     }
@@ -996,26 +983,13 @@ public:
         return true;
     }
 
-    bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat time_input_format) const
+    bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
         ReadBufferFromMemory buf(data.data(), data.size());
         const auto & date_lut = DateLUT::instance();
 
-        switch (time_input_format)
-        {
-            case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
-                    return true;
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffort:
-                if (tryParseTime64BestEffort(value, scale, buf, date_lut, date_lut) && buf.eof())
-                    return true;
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                if (tryParseTime64BestEffortUS(value, scale, buf, date_lut, date_lut) && buf.eof())
-                    return true;
-                break;
-        }
+        if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
+            return true;
 
         return false;
     }
@@ -1590,32 +1564,32 @@ public:
         const auto & variant_info = column_dynamic.getVariantInfo();
         const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
 
-        /// Try to insert element into current variants but with no types conversion.
-        /// We want to avoid inferring the type on each row, so if we can insert this element into
-        /// any existing variant with no types conversion (like Integer -> String, Double -> Integer, etc)
-        /// we will do it and won't try to infer the type.
-        auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
-        auto insert_settings_with_no_type_conversion = insert_settings;
-        insert_settings_with_no_type_conversion.allow_type_conversion = false;
+            /// Try to insert element into current variants but with no types conversion.
+            /// We want to avoid inferring the type on each row, so if we can insert this element into
+            /// any existing variant with no types conversion (like Integer -> String, Double -> Integer, etc)
+            /// we will do it and won't try to infer the type.
+            auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
+            auto insert_settings_with_no_type_conversion = insert_settings;
+            insert_settings_with_no_type_conversion.allow_type_conversion = false;
 
-        /// Check if we already have variants order for this Variant type in cache.
-        auto variants_order_it = variants_order_cache.find(variant_info.variant_name);
-        if (variants_order_it == variants_order_cache.end())
-            variants_order_it = variants_order_cache.emplace(variant_info.variant_name, SerializationVariant::getVariantsDeserializeTextOrder(assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants())).first;
+            /// Check if we already have variants order for this Variant type in cache.
+            auto variants_order_it = variants_order_cache.find(variant_info.variant_name);
+            if (variants_order_it == variants_order_cache.end())
+                variants_order_it = variants_order_cache.emplace(variant_info.variant_name, SerializationVariant::getVariantsDeserializeTextOrder(assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants())).first;
 
-        for (size_t i : variants_order_it->second)
-        {
-            if (i != shared_variant_discr)
+            for (size_t i : variants_order_it->second)
             {
-                auto it = json_extract_nodes_cache.find(variant_info.variant_names[i]);
-                if (it == json_extract_nodes_cache.end())
-                    it = json_extract_nodes_cache.emplace(variant_info.variant_names[i], buildJSONExtractTree<JSONParser>(variant_types[i], "Dynamic inference")).first;
-
-                if (it->second->insertResultToColumn(variant_column.getVariantByGlobalDiscriminator(i), element, insert_settings_with_no_type_conversion, format_settings, error))
+                if (i != shared_variant_discr)
                 {
-                    variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(i));
-                    variant_column.getOffsets().push_back(variant_column.getVariantByGlobalDiscriminator(i).size() - 1);
-                    return true;
+                    auto it = json_extract_nodes_cache.find(variant_info.variant_names[i]);
+                    if (it == json_extract_nodes_cache.end())
+                        it = json_extract_nodes_cache.emplace(variant_info.variant_names[i], buildJSONExtractTree<JSONParser>(variant_types[i], "Dynamic inference")).first;
+
+                    if (it->second->insertResultToColumn(variant_column.getVariantByGlobalDiscriminator(i), element, insert_settings_with_no_type_conversion, format_settings, error))
+                    {
+                        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(i));
+                        variant_column.getOffsets().push_back(variant_column.getVariantByGlobalDiscriminator(i).size() - 1);
+                        return true;
                 }
             }
         }
