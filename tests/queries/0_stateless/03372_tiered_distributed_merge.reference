@@ -1,0 +1,13 @@
+Code: 42. DB::Exception: Storage TieredDistributedMerge requires at least 2 arguments, got 0. (NUMBER_OF_ARGUMENTS_DOESNT_MATCH)
+
+Code: 42. DB::Exception: Storage TieredDistributedMerge requires at least 2 arguments, got 1. (NUMBER_OF_ARGUMENTS_DOESNT_MATCH)
+
+Code: 36. DB::Exception: First argument must be a table function, got: Literal_'invalid_arg'. (BAD_ARGUMENTS)
+
+Code: 36. DB::Exception: First argument must be a table function, got: sin. (BAD_ARGUMENTS)
+
+Code: 36. DB::Exception: First argument must be one of: remote, remoteSecure, cluster, clusterAllReplicas, got: url. (BAD_ARGUMENTS)
+
+Code: 42. DB::Exception: Storage TieredDistributedMerge requires at least 2 arguments, got 1. (NUMBER_OF_ARGUMENTS_DOESNT_MATCH)
+
+Code: 36. DB::Exception: Second argument must be a SQL expression, got string literal. (BAD_ARGUMENTS)

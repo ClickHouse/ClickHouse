@@ -2159,6 +2159,57 @@ void registerStorageDistributed(StorageFactory & factory)
         .source_access_type = AccessType::REMOTE,
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     });
+
+    // Register TieredDistributedMerge engine - Step 3: Add first argument validation
+    factory.registerStorage("TieredDistributedMerge", [](const StorageFactory::Arguments & args) -> StoragePtr
+    {
+        ASTs & engine_args = args.engine_args;
+
+        if (engine_args.size() < 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage TieredDistributedMerge requires at least 2 arguments, got {}", engine_args.size());
+
+        // Validate first argument - must be a table function
+        ASTPtr first_arg = engine_args[0];
+        if (const auto * func = first_arg->as<ASTFunction>())
+        {
+            // Check if it's a valid table function name
+            if (!TableFunctionFactory::instance().isTableFunctionName(func->name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "First argument must be a table function, got: {}", func->name);
+
+            // Check if it's one of the supported remote table functions
+            if (func->name != "remote" && func->name != "remoteSecure" &&
+                func->name != "cluster" && func->name != "clusterAllReplicas")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "First argument must be one of: remote, remoteSecure, cluster, clusterAllReplicas, got: {}", func->name);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "First argument must be a table function, got: {}", first_arg->getID());
+        }
+
+        // Validate second argument - must be a SQL expression (not a string literal)
+        ASTPtr second_arg = engine_args[1];
+        if (const auto * literal = second_arg->as<ASTLiteral>())
+        {
+            // Check if it's a string literal (which would be invalid for a SQL expression)
+            if (literal->value.getType() == Field::Types::String)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Second argument must be a SQL expression, got string literal");
+            }
+        }
+
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TieredDistributedMerge engine is not implemented yet");
+    },
+    {
+        .supports_settings = false,
+        .supports_parallel_insert = false,
+        .supports_schema_inference = false,
+        .source_access_type = AccessType::REMOTE,
+    });
 }
 
 bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
