@@ -1201,7 +1201,10 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
         {
             this->ids.emplace_back(1);
         }
-        this->ids.emplace_back(2);
+        if ((allowed_types & allow_int16))
+        {
+            this->ids.emplace_back(2);
+        }
         this->ids.emplace_back(3);
         if ((allowed_types & allow_int64))
         {
@@ -1217,7 +1220,10 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
     {
         this->ids.emplace_back(7);
     }
-    this->ids.emplace_back(8);
+    if ((allowed_types & allow_int16))
+    {
+        this->ids.emplace_back(8);
+    }
     this->ids.emplace_back(9);
     if ((allowed_types & allow_int64))
     {
@@ -1262,10 +1268,25 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
     return std::make_tuple(new IntType(32, false), Integers::Int32);
 }
 
-std::tuple<SQLType *, FloatingPoints> StatementGenerator::randomFloatType(RandomGenerator & rg) const
+std::tuple<SQLType *, FloatingPoints> StatementGenerator::randomFloatType(RandomGenerator & rg, const uint64_t allowed_types)
 {
-    const uint32_t nopt = (rg.nextSmallNumber() % 3) + 1;
-    return std::make_tuple(new FloatType(1 << (nopt + 3)), static_cast<FloatingPoints>(nopt));
+    chassert(this->ids.empty());
+
+    if ((allowed_types & allow_bfloat16))
+    {
+        this->ids.emplace_back(1);
+    }
+    if ((allowed_types & allow_float32))
+    {
+        this->ids.emplace_back(2);
+    }
+    if ((allowed_types & allow_float64))
+    {
+        this->ids.emplace_back(3);
+    }
+    const uint32_t nopt = rg.pickRandomly(this->ids);
+    this->ids.clear();
+    return std::make_tuple(new FloatType(1 << (3 + nopt)), static_cast<FloatingPoints>(nopt));
 }
 
 std::tuple<SQLType *, Dates> StatementGenerator::randomDateType(RandomGenerator & rg, const uint64_t allowed_types) const
@@ -1392,8 +1413,8 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
     SQLType * res = nullptr;
 
     const uint32_t int_type = 40;
-    const uint32_t floating_point_type
-        = 10 * static_cast<uint32_t>((allowed_types & allow_floating_points) != 0 && this->fc.fuzz_floating_points);
+    const uint32_t floating_point_type = 10
+        * static_cast<uint32_t>((allowed_types & (allow_bfloat16 | allow_float32 | allow_float64)) != 0 && this->fc.fuzz_floating_points);
     const uint32_t date_type = 15 * static_cast<uint32_t>((allowed_types & allow_dates) != 0);
     const uint32_t datetime_type = 15 * static_cast<uint32_t>((allowed_types & allow_datetimes) != 0);
     const uint32_t string_type = 30 * static_cast<uint32_t>((allowed_types & allow_strings) != 0);
@@ -1425,7 +1446,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
     {
         FloatingPoints nflo;
 
-        std::tie(res, nflo) = randomFloatType(rg);
+        std::tie(res, nflo) = randomFloatType(rg, allowed_types);
         if (tp)
         {
             tp->set_floats(nflo);
@@ -2047,7 +2068,7 @@ String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidt
 String strBuildJSONElement(RandomGenerator & rg)
 {
     String ret;
-    std::uniform_int_distribution<int> opts(1, 22);
+    std::uniform_int_distribution<int> opts(1, 23);
 
     switch (opts(rg.generator))
     {
@@ -2128,6 +2149,10 @@ String strBuildJSONElement(RandomGenerator & rg)
             /// IPv6
             ret = '"' + rg.nextIPv6() + '"';
             break;
+        case 23:
+            /// Floating-point
+            ret = nextFloatingPoint(rg, true);
+            break;
         default:
             chassert(0);
     }
@@ -2177,11 +2202,11 @@ String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth)
     return ret;
 }
 
-String StatementGenerator::strAppendAnyValue(RandomGenerator & rg, SQLType * tp)
+String StatementGenerator::strAppendAnyValue(RandomGenerator & rg, const bool allow_cast, SQLType * tp)
 {
     String ret = tp->appendRandomRawValue(rg, *this);
 
-    if (rg.nextSmallNumber() < 7)
+    if (allow_cast && rg.nextSmallNumber() < 7)
     {
         ret += "::";
         ret += tp->typeName(false);

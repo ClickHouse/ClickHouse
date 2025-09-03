@@ -245,6 +245,21 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     ResultReplacementMap replacement_map;
 
     auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, table_nodes, query_context, &replacement_map);
+    /// disable parallel replicas to collect filters
+    {
+        if (auto * query_node = updated_query_tree->as<QueryNode>())
+        {
+            auto new_context = Context::createCopy(query_node->getMutableContext());
+            new_context->setSetting("enable_parallel_replicas", false);
+            query_node->getMutableContext() = new_context;
+        }
+        else if (auto * union_node = updated_query_tree->as<UnionNode>())
+        {
+            auto new_context = Context::createCopy(union_node->getMutableContext());
+            new_context->setSetting("enable_parallel_replicas", false);
+            union_node->getMutableContext() = new_context;
+        }
+    }
 
     std::unordered_map<const IStorage *, QueryTreeNodePtr> dummy_storage_to_table;
 

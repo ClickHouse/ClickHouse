@@ -28,6 +28,7 @@
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
 
+#include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 
 #include <Interpreters/Context_fwd.h>
@@ -122,6 +123,8 @@ struct RelativePathWithMetadata
         : relative_path(std::move(relative_path_))
         , metadata(std::move(metadata_))
     {}
+
+    RelativePathWithMetadata(const RelativePathWithMetadata & other) = default;
 
     virtual ~RelativePathWithMetadata() = default;
 
