@@ -144,7 +144,7 @@ public:
     virtual void createHardLink(const std::string & src_path, const std::string & dst_path) = 0;
 
     /// Truncate file to the target size.
-    virtual void truncateFile(const std::string & src_path) = 0;
+    virtual void truncateFile(const std::string & src_path, size_t size) = 0;
 };
 
 using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;

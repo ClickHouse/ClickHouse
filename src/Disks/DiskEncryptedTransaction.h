@@ -260,10 +260,10 @@ public:
     }
 
     /// Truncate file to the target size.
-    void truncateFile(const std::string & src_path) override
+    void truncateFile(const std::string & src_path, size_t size) override
     {
         auto wrapped_path = wrappedPath(src_path);
-        delegate_transaction->truncateFile(wrapped_path);
+        delegate_transaction->truncateFile(wrapped_path, size);
     }
 
 private:

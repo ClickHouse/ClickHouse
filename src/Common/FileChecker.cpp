@@ -127,9 +127,11 @@ void FileChecker::repair()
             throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Size of {} is less than expected. Size is {} but should be {}.",
                 path, real_size, expected_size);
 
-        if (real_size < expected_size)
-            throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Size of {} is bigger than expected. Size is {} but should be {}.",
-                path, real_size, expected_size);
+        if (real_size > expected_size)
+        {
+            LOG_WARNING(log, "Will truncate file {} that has size {} to size {}", path, real_size, expected_size);
+            disk->truncateFile(path, expected_size);
+        }
     }
 }
 

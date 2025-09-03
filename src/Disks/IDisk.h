@@ -424,7 +424,7 @@ public:
     }
 
     /// Truncate file to specified size.
-    virtual void truncateFile(const String & path);
+    virtual void truncateFile(const String & path, size_t size);
 
     /// Return data source description
     virtual DataSourceDescription getDataSourceDescription() const = 0;

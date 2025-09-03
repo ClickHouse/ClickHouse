@@ -452,9 +452,9 @@ bool DiskLocal::equivalentNoThrow(const String & p1, const String & p2) const
     return fs::equivalent(fs::path(disk_path) / p1, fs::path(disk_path) / p2, ec);
 }
 
-void DiskLocal::truncateFile(const String & path)
+void DiskLocal::truncateFile(const String & path, size_t size)
 {
-    int res = truncate((fs::path(disk_path) / path).string().data(), /*length*/ 0);
+    int res = truncate((fs::path(disk_path) / path).string().data(), size);
     if (-1 == res)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate {}", path);
 }

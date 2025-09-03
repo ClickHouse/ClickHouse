@@ -294,7 +294,7 @@ public:
         tx->commit();
     }
 
-    void truncateFile(const String & path) override;
+    void truncateFile(const String & path, size_t size) override;
 
     void refresh(UInt64 not_sooner_than_milliseconds) override { delegate->refresh(not_sooner_than_milliseconds); }
 

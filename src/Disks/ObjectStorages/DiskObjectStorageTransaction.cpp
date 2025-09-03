@@ -658,15 +658,18 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOperation
 {
     std::string path;
+    size_t size;
 
     TruncateFileOperationOutcomePtr truncate_outcome;
 
     TruncateFileObjectStorageOperation(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
-        const std::string & path_)
+        const std::string & path_,
+        size_t size_)
         : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
         , path(path_)
+        , size(size_)
     {}
 
     std::string getInfoForLog() const override
@@ -676,8 +679,8 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
 
     void execute(MetadataTransactionPtr tx) override
     {
-        LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Truncating file: {} type {}", path, typeid(tx.get()).name());
-        truncate_outcome = tx->truncateFile(path);
+        LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Truncating file: {} type {} to size {}", path, typeid(tx.get()).name(), size);
+        truncate_outcome = tx->truncateFile(path, size);
 
         LOG_TEST(getLogger("DiskObjectStorageTransaction"), "truncate outcome: {}", getDebugInfo());
     }
@@ -786,10 +789,10 @@ void DiskObjectStorageTransaction::moveFile(const String & from_path, const Stri
         }));
 }
 
-void DiskObjectStorageTransaction::truncateFile(const String & path)
+void DiskObjectStorageTransaction::truncateFile(const String & path, size_t size)
 {
     operations_to_execute.emplace_back(
-        std::make_shared<TruncateFileObjectStorageOperation>(object_storage, metadata_storage, path)
+        std::make_shared<TruncateFileObjectStorageOperation>(object_storage, metadata_storage, path, size)
     );
 }
 
@@ -903,7 +906,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     if (mode == WriteMode::Rewrite && !object_storage.isPlain())
     {
         LOG_TEST(getLogger("DiskObjectStorageTransaction"), "truncate file before rerwiting {} mode {}", path, mode);
-        truncateFile(object->local_path);
+        truncateFile(object->local_path, /*size*/ 0);
     }
 
     operations_to_execute.emplace_back(std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object, object_key, mode, do_not_write_empty_blob));
@@ -981,7 +984,7 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     auto object = std::make_shared<StoredObject>(object_key.serialize(), path);
 
     if (mode == WriteMode::Rewrite && !object_storage.isPlain())
-        truncateFile(object->local_path);
+        truncateFile(object->local_path, /*size*/ 0);
 
     operations_to_execute.emplace_back(std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object, object_key, mode, /*do_not_write_empty_blob*/ false));
 

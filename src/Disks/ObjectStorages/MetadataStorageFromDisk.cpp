@@ -139,16 +139,7 @@ MetadataTransactionPtr MetadataStorageFromDisk::createTransaction()
 StoredObjects MetadataStorageFromDisk::getStorageObjects(const std::string & path) const
 {
     auto metadata = readMetadata(path);
-    const auto & keys_with_meta = metadata->getKeysWithMeta();
-
-    StoredObjects objects;
-    objects.reserve(keys_with_meta.size());
-    for (const auto & [object_key, object_meta] : keys_with_meta)
-    {
-        objects.emplace_back(object_key.serialize(), path, object_meta.size_bytes);
-    }
-
-    return objects;
+    return metadata->getStorageObjects(path);
 }
 
 uint32_t MetadataStorageFromDisk::getHardlinkCount(const std::string & path) const
@@ -262,18 +253,25 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromDiskTransaction::unlink
     return result;
 }
 
-TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile(const std::string & path)
+TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile(const std::string & path, size_t size)
 {
-    auto operation = std::make_unique<TruncateMetadataFileOperation>(path, metadata_storage, *metadata_storage.getDisk(), *this);
+    auto operation = std::make_unique<TruncateMetadataFileOperation>(path, size, metadata_storage, *metadata_storage.getDisk(), *this);
     auto result = operation->outcome;
     addOperation(std::move(operation));
     return result;
 }
 
-std::optional<StoredObjects> MetadataStorageFromDiskTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
+DiskObjectStorageMetadataPtr MetadataStorageFromDiskTransaction::tryGetFileMetadataFromTransactionIfExists(const std::string & path) const
 {
     if (metadata_storage.existsFileOrDirectory(path))
-        return metadata_storage.getStorageObjects(path);
+        return metadata_storage.readMetadata(path);
+    return nullptr;
+}
+
+std::optional<StoredObjects> MetadataStorageFromDiskTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
+{
+    if (auto metadata = tryGetFileMetadataFromTransactionIfExists(path))
+        return metadata->getStorageObjects(path);
     return std::nullopt;
 }
 

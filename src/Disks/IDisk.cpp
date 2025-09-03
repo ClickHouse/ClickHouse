@@ -187,7 +187,7 @@ void IDisk::copyDirectoryContent(
     copyThroughBuffers(from_dir, to_disk, to_dir, read_settings, write_settings, cancellation_hook);
 }
 
-void IDisk::truncateFile(const String &)
+void IDisk::truncateFile(const String &, size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getDataSourceDescription().type);
 }
