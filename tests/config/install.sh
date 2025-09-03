@@ -318,7 +318,6 @@ fi
 if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     if [[ "$NO_AZURE" != "1" ]]; then
         ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
-        ln -sf $SRC_PATH/config.d/storage_conf_03602.xml $DEST_SERVER_PATH/config.d/
     fi
 
     if check_clickhouse_version 25.5; then
