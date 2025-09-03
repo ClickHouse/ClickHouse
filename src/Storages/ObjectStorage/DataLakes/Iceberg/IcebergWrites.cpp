@@ -348,6 +348,8 @@ FileNamesGenerator::Result FileNamesGenerator::generatePositionDeleteFile()
 
 String FileNamesGenerator::convertMetadataPathToStoragePath(const String & metadata_path) const
 {
+    if (!metadata_path.starts_with(table_dir))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Paths in Iceberg must use a consistent format — either /your/path or s3://your/path. Use the write_full_path_in_iceberg_metadata setting to control this behavior {} {}", metadata_path, table_dir);
     return storage_dir + metadata_path.substr(table_dir.size());
 }
 
@@ -1296,6 +1298,9 @@ IcebergStorageSink::IcebergStorageSink(
     auto config_path = configuration_->getPathForWrite().path;
     if (config_path.empty() || config_path.back() != '/')
         config_path += "/";
+    if (!config_path.starts_with('/'))
+        config_path = '/' + config_path;
+
     if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
     {
         filename_generator = FileNamesGenerator(config_path, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method);
