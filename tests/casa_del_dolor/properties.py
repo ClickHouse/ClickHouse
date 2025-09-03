@@ -1135,9 +1135,12 @@ def modify_server_settings(
             "query_metric_log",
             "query_thread_log",
             "query_views_log",
+            "session_log",
             "s3queue_log",
             "text_log",
             "trace_log",
+            "zookeeper_connection_log",
+            "zookeeper_log",
         ]
         if random.randint(1, 100) <= 70:
             all_log_entries = random.sample(
