@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/TraceSender.h>
+#include <Common/MemoryTracker.h>
 #include <Common/logger_useful.h>
 
 #define STRINGIFY_HELPER(x) #x
@@ -15,6 +16,8 @@ namespace ProfileEvents
 {
     extern const Event MemoryAllocatorPurge;
     extern const Event MemoryAllocatorPurgeTimeMicroseconds;
+    extern const Event JemallocFailedAllocationSampleTracking;
+    extern const Event JemallocFailedDeallocationSampleTracking;
 }
 
 namespace DB
@@ -103,6 +106,7 @@ thread_local bool collect_local_profiles_in_trace_log = false;
 
 void jemallocAllocationTracker(const void * ptr, size_t /*size*/, void ** backtrace, unsigned backtrace_length, size_t usize)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     if (!collect_local_profiles_in_trace_log && !collect_global_profiles_in_trace_log)
         return;
 
@@ -118,12 +122,13 @@ void jemallocAllocationTracker(const void * ptr, size_t /*size*/, void ** backtr
     }
     catch (...)
     {
-        tryLogCurrentException(getLogger("JemallocProfiler"));
+        ProfileEvents::increment(ProfileEvents::JemallocFailedAllocationSampleTracking);
     }
 }
 
 void jemallocDeallocationTracker(const void * ptr, unsigned usize)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     if (!collect_local_profiles_in_trace_log && !collect_global_profiles_in_trace_log)
         return;
 
@@ -136,7 +141,7 @@ void jemallocDeallocationTracker(const void * ptr, unsigned usize)
     }
     catch (...)
     {
-        tryLogCurrentException(getLogger("JemallocProfiler"));
+        ProfileEvents::increment(ProfileEvents::JemallocFailedDeallocationSampleTracking);
     }
 }
 

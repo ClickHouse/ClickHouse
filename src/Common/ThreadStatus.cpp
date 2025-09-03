@@ -26,12 +26,6 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
-namespace Setting
-{
-    extern const SettingsBool jemalloc_enable_profiler;
-    extern const SettingsBool jemalloc_collect_profile_samples_in_trace_log;
-}
-
 #if !defined(SANITIZER)
 namespace
 {
