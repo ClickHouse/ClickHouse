@@ -149,7 +149,7 @@ public:
                 previous_value = values[i];
                 previous_timestamp = timestamps[i];
             }
-            else if (has_previous_value && (previous_timestamp + Base::window >= current_timestamp))
+            else if (has_previous_value && (previous_timestamp + Base::window > current_timestamp))
             {
                 /// Use the previous value if the current timestamp is missing and the previous one is not stale
                 values[i] = previous_value;
