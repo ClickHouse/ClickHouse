@@ -3580,11 +3580,12 @@ CREATE TABLE {table_name}
 
     spark.sql(f"""
     INSERT INTO {table_name}
-    VALUES (named_struct('_2', array(1, 2, 3))),
+    VALUES (named_struct('_2', array(1, NULL, 3))),
         (named_struct('_2', array(4, 5)))
     """)
     LocalUploader(instance).upload_directory(f"{path}/", f"{path}/")
 
-    assert "([1,2,3])\n([4,5])" == instance.query(f"SELECT * FROM {table_name}").strip()
-    assert "[1,2,3]\n[4,5]" == instance.query(f"SELECT {table_name}.`c1._2` FROM {table_name}").strip()
+    assert "([1,NULL,3])\n([4,5])" == instance.query(f"SELECT * FROM {table_name}").strip()
+    assert "[1,NULL,3]\n[4,5]" == instance.query(f"SELECT {table_name}.`c1._2` FROM {table_name}").strip()
     assert "3\n2" == instance.query(f"SELECT {table_name}.`c1._2`.size0 FROM {table_name}").strip()
+    assert "[0,1,0]\n[0,0]" == instance.query(f"SELECT {table_name}.`c1._2`.null FROM {table_name}").strip()
