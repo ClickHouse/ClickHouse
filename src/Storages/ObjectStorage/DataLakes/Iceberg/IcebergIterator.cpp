@@ -236,10 +236,13 @@ IcebergIterator::IcebergIterator(
     PersistentTableComponents persistent_components_)
     : filter_dag(filter_dag_ ? std::make_unique<ActionsDAG>(filter_dag_->clone()) : nullptr)
     , object_storage(std::move(object_storage_))
+    , table_state_snapshot(table_snapshot_)
+    , persistent_components(persistent_components_)
     , data_files_iterator(
           object_storage,
           local_context_,
-          [](const Iceberg::ManifestFilePtr & manifest_file) { return manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::DATA); },
+          [](const Iceberg::ManifestFilePtr & manifest_file)
+          { return manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::DATA); },
           Iceberg::ManifestFileContentType::DATA,
           configuration_,
           filter_dag.get(),
@@ -319,6 +322,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         {
             object_info->addEqualityDeleteObject(equality_delete);
         }
+        object_info->schema_id_relevant_to_iterator = table_state_snapshot->schema_id;
         return object_info;
     }
     return nullptr;

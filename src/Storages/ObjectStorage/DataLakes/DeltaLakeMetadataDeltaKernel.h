@@ -62,6 +62,8 @@ public:
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
         size_t list_batch_size,
+        StorageSnapshotPtr storage_snapshot,
+
         ContextPtr context) const override;
 
     DeltaLake::KernelHelperPtr getKernelHelper() const { return kernel_helper; }

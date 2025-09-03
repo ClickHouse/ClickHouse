@@ -172,25 +172,22 @@ public:
     std::optional<size_t> totalRows(ContextPtr local_context) override
     {
         assertInitialized();
-        return current_metadata->totalRows(local_context);
+        return current_metadata->updateConfigurationAndGetTotalRows(local_context);
+    }
+
+    // This method should work even if metadata is not initialized
+    bool neverNeedUpdateOnReadWrite() const override
+    {
+#if USE_AVRO
+        return std::is_same_v<IcebergMetadata, DataLakeMetadata>;
+#endif
+        return false;
     }
 
     std::optional<size_t> totalBytes(ContextPtr local_context) override
     {
         assertInitialized();
-        return current_metadata->totalBytes(local_context);
-    }
-
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override
-    {
-        assertInitialized();
-        return current_metadata->getInitialSchemaByPath(local_context, object_info);
-    }
-
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override
-    {
-        assertInitialized();
-        return current_metadata->getSchemaTransformer(local_context, object_info);
+        return current_metadata->updateConfigurationAndGetTotalRows(local_context);
     }
 
     bool hasExternalDynamicMetadata() override
@@ -213,14 +210,34 @@ public:
         return current_metadata->supportsWrites();
     }
 
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override
+    {
+        assertInitialized();
+        return current_metadata->getInitialSchemaByPath(local_context, object_info);
+    }
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override
+    {
+        assertInitialized();
+        return current_metadata->getSchemaTransformer(local_context, object_info);
+    }
+
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         IDataLakeMetadata::FileProgressCallback callback,
         size_t list_batch_size,
+        StorageSnapshotPtr storage_snapshot,
         ContextPtr context) override
     {
         assertInitialized();
-        return current_metadata->iterate(filter_dag, callback, list_batch_size, context);
+        return current_metadata->iterate(filter_dag, callback, list_batch_size, storage_snapshot, context);
+    }
+
+    void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr storage_snapshot) const noexcept override
+    {
+        if (current_metadata)
+        {
+            current_metadata->sendTemporaryStateToStorageSnapshot(storage_snapshot);
+        }
     }
 
     /// This is an awful temporary crutch,
@@ -250,10 +267,10 @@ public:
         assertInitialized();
         return current_metadata->getColumnMapperForObject(object_info);
     }
-    ColumnMapperPtr getColumnMapperForCurrentSchema() const override
+    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr storage_snapshot, ContextPtr context) const override
     {
         assertInitialized();
-        return current_metadata->getColumnMapperForCurrentSchema();
+        return current_metadata->getColumnMapperForCurrentSchema(storage_snapshot, context);
     }
 
     void drop(ContextPtr local_context) override
