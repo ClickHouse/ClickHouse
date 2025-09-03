@@ -563,6 +563,9 @@ void generateManifestFile(
                         avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
                     break;
 
+                case Field::Types::Null:
+                    break;
+
                 default:
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
