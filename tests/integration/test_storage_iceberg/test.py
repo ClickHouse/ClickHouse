@@ -2976,7 +2976,7 @@ def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
 
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("storage_type", ["s3"])
-def test_writes_nullable_bugs(started_cluster, format_version, storage_type):
+def test_pruning_nullable_bug(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
