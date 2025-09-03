@@ -1,20 +1,27 @@
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
+
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/GinIndexStore.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/System/StorageSystemPartsBase.h>
+#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
+#include <Storages/VirtualColumnUtils.h>
+
+#include <Common/logger_useful.h>
+auto logger = getLogger("GEORGES LOGGER");
 
 
 namespace DB
@@ -149,11 +156,49 @@ protected:
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(index.granularity);
 
+
+                    LOG_DEBUG(logger, "index name is {}", index.name);
+                    LOG_DEBUG(logger, "index type is {}", index.type);
+
+                    UInt64 extra_files_size = 0;
+                    if (index.type == "text") // TODO need to support alternate names?
+                    {
+                        auto stream = StoragesInfoStream({}, {}, context);
+
+                        while(const auto & info = stream.next())
+                        {
+                            auto disk = database->getDisk();
+                            MergeTreeData::DataPartStateVector states{ MergeTreeData::DataPartState::Active };
+                            for (const auto & part : info.getParts(states, false /*has_state_column*/)) // TODO I don't understand what this bool does
+                                                                                                        // but don't think it matters here
+                            {
+                                std::vector<String> gin_files;
+                                gin_files.push_back(INDEX_FILE_PREFIX + index.name + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE);
+                                gin_files.push_back(INDEX_FILE_PREFIX + index.name + GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE);
+                                gin_files.push_back(INDEX_FILE_PREFIX + index.name + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE);
+                                gin_files.push_back(INDEX_FILE_PREFIX + index.name + GinIndexStore::GIN_DICTIONARY_FILE_TYPE);
+                                gin_files.push_back(INDEX_FILE_PREFIX + index.name + GinIndexStore::GIN_POSTINGS_FILE_TYPE);
+
+                                for (auto file_name : gin_files)
+                                {
+                                    auto full_path = part->getRelativePathOfActivePart() + file_name;
+                                    LOG_DEBUG(logger, "full path is is {}", full_path);
+                                    if (disk->existsFile(full_path))
+                                    {
+                                        UInt64 size = disk->getFileSize(full_path);
+                                        LOG_DEBUG(logger, "file exists, size is {}, adding to total", size);
+                                        extra_files_size += size;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     auto & secondary_index_size = secondary_index_sizes[index.name];
 
                     // 'compressed bytes' column
                     if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.data_compressed);
+                        res_columns[res_index++]->insert(secondary_index_size.data_compressed + extra_files_size);
 
                     // 'uncompressed bytes' column
 

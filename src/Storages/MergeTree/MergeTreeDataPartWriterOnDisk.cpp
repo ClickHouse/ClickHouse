@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
@@ -490,21 +491,22 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
 {
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
+        // so stream seems to have empty paths when it is a gin index?
         auto & stream = *skip_indices_streams[i];
         if (!skip_indices_aggregators[i]->empty())
             skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed_hashing);
 
         /// Register additional files written only by the text index. Required because otherwise DROP TABLE complains about unknown
-        /// files. Note that the provided actual checksums are bogus. The problem is that at this point the file writes happened already and
-        /// we'd need to re-open + hash the files (fixing this is TODO). For now, CHECK TABLE skips these four files.
+        /// files. Note that the provided actual checksums are bogus. The problem is that the files have not been created or finalized yet. See
+        /// StorageSystemDataSkipIndices.cpp for a hack that reads and displays the file sizes later, and consider making a nicer fix in the future.
         if (typeid_cast<const MergeTreeIndexGin *>(&*skip_indices[i]) != nullptr)
         {
-            String filename_without_extension = skip_indices[i]->getFileName();
-            checksums.files[filename_without_extension + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
-            checksums.files[filename_without_extension + GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
-            checksums.files[filename_without_extension + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
-            checksums.files[filename_without_extension + GinIndexStore::GIN_DICTIONARY_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
-            checksums.files[filename_without_extension + GinIndexStore::GIN_POSTINGS_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
+            String file_stem = skip_indices[i]->getFileName();
+            checksums.files[file_stem + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[file_stem + GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[file_stem + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[file_stem + GinIndexStore::GIN_DICTIONARY_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[file_stem + GinIndexStore::GIN_POSTINGS_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
         }
     }
 
