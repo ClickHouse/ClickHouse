@@ -103,56 +103,6 @@ private:
     std::vector<Range> ranges;
 };
 
-class MultipleFileWriter
-{
-public:
-    explicit MultipleFileWriter(
-        UInt64 max_data_file_num_rows_,
-        UInt64 max_data_file_num_bytes_,
-        Poco::JSON::Array::Ptr schema,
-        FileNamesGenerator & filename_generator_,
-        ObjectStoragePtr object_storage_,
-        ContextPtr context_,
-        const std::optional<FormatSettings> & format_settings_,
-        StorageObjectStorageConfigurationPtr configuration_,
-        SharedHeader sample_block_);
-
-    void consume(const Chunk & chunk);
-    void finalize();
-    void release();
-    void cancel();
-    void clearAllDataFiles() const;
-
-    UInt64 getResultBytes() const;
-
-    const std::vector<String> & getDataFiles() const
-    {
-        return data_file_names;
-    }
-
-    const DataFileStatistics & getResultStatistics() const
-    {
-        return stats;
-    }
-
-private:
-    UInt64 max_data_file_num_rows;
-    UInt64 max_data_file_num_bytes;
-    DataFileStatistics stats;
-    std::optional<size_t> current_file_num_rows = std::nullopt;
-    std::optional<size_t> current_file_num_bytes = std::nullopt;
-    std::vector<String> data_file_names;
-    std::vector<std::unique_ptr<WriteBufferFromFileBase>> buffers;
-    std::vector<OutputFormatPtr> output_formats;
-    FileNamesGenerator & filename_generator;
-    ObjectStoragePtr object_storage;
-    ContextPtr context;
-    std::optional<FormatSettings> format_settings;
-    StorageObjectStorageConfigurationPtr configuration;
-    SharedHeader sample_block;
-    UInt64 total_bytes = 0;
-};
-
 
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
@@ -271,7 +221,10 @@ public:
 
 private:
     SharedHeader sample_block;
-    std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
+    std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> write_buffers;
+    std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> writers;
+    std::unordered_map<ChunkPartitioner::PartitionKey, String, ChunkPartitioner::PartitionKeyHasher> data_filenames;
+    std::unordered_map<ChunkPartitioner::PartitionKey, DataFileStatistics, ChunkPartitioner::PartitionKeyHasher> statistics;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
     Poco::JSON::Object::Ptr current_schema;

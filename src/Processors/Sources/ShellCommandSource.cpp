@@ -580,7 +580,6 @@ namespace
         {
             writeText(chunk.getNumRows(), *buffer);
             writeChar('\n', *buffer);
-            buffer->next();
         }
 
     private:

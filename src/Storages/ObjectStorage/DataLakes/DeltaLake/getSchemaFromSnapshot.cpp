@@ -88,7 +88,7 @@ public:
     const DB::Names & getPartitionColumns() const { return partition_columns; }
 
 private:
-    DB::NamesAndTypesList getNamesAndTypesFromList(size_t list_idx);
+    DB::DataTypes getDataTypesFromTypeList(size_t list_idx);
 
     struct Field
     {
@@ -376,51 +376,61 @@ private:
 
 SchemaVisitorData::SchemaResult SchemaVisitorData::getSchemaResult()
 {
-    SchemaResult result;
-    result.names_and_types = getNamesAndTypesFromList(0);
-    chassert(result.names_and_types.size() == type_lists[0]->size());
+    const auto types = getDataTypesFromTypeList(0);
+    chassert(types.size() == type_lists[0]->size());
 
-    for (size_t i = 0; i < type_lists[0]->size(); ++i)
+    std::list<DB::NameAndTypePair> names_and_types;
+    SchemaResult result;
+    for (size_t i = 0; i < types.size(); ++i)
     {
         const auto & field = (*type_lists[0])[i];
+        names_and_types.emplace_back(field.name, types[i]);
         if (!field.physical_name.empty())
         {
             [[maybe_unused]] bool inserted = result.physical_names_map.emplace(field.name, field.physical_name).second;
             chassert(inserted);
         }
     }
+    result.names_and_types = DB::NamesAndTypesList(names_and_types.begin(), names_and_types.end());
     return result;
 }
 
-DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(size_t list_idx)
+DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx)
 {
-    DB::NamesAndTypesList names_and_types;
+    DB::DataTypes types;
     for (const auto & field : *type_lists[list_idx])
     {
-        DB::DataTypePtr type;
         if (field.is_bool)
         {
-            type = DB::DataTypeFactory::instance().get("Bool");
+            auto type = DB::DataTypeFactory::instance().get("Bool");
             if (field.nullable)
                 type = std::make_shared<DB::DataTypeNullable>(type);
+
+            types.push_back(type);
         }
         else if (field.type == DB::TypeIndex::Decimal32)
         {
-            type = DB::createDecimal<DB::DataTypeDecimal>(field.precision, field.scale);
+            auto type = DB::createDecimal<DB::DataTypeDecimal>(field.precision, field.scale);
             if (field.nullable)
                 type = std::make_shared<DB::DataTypeNullable>(type);
+
+            types.push_back(type);
         }
         else if (field.type == DB::TypeIndex::DateTime64)
         {
-            type = std::make_shared<DB::DataTypeDateTime64>(6);
+            DB::DataTypePtr type = std::make_shared<DB::DataTypeDateTime64>(6);
             if (field.nullable)
                 type = std::make_shared<DB::DataTypeNullable>(type);
+
+            types.push_back(type);
         }
         else if (DB::isSimpleDataType(field.type))
         {
-            type = DB::getSimpleDataTypeFromTypeIndex(field.type);
+            auto type = DB::getSimpleDataTypeFromTypeIndex(field.type);
             if (field.nullable)
                 type = std::make_shared<DB::DataTypeNullable>(type);
+
+            types.push_back(type);
         }
         else
         {
@@ -434,12 +444,12 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(size_t list_id
             DB::WhichDataType which(field.type);
             if (which.isTuple())
             {
-                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id);
-                type = std::make_shared<DB::DataTypeTuple>(child_names_and_types.getTypes(), child_names_and_types.getNames());
+                auto child_types = getDataTypesFromTypeList(field.child_list_id);
+                types.push_back(std::make_shared<DB::DataTypeTuple>(child_types));
             }
             else if (which.isArray())
             {
-                auto child_types = getNamesAndTypesFromList(field.child_list_id);
+                auto child_types = getDataTypesFromTypeList(field.child_list_id);
                 if (child_types.size() != 1)
                 {
                     throw DB::Exception(
@@ -448,12 +458,11 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(size_t list_id
                         child_types.size());
                 }
 
-                type = std::make_shared<DB::DataTypeArray>(child_types.getTypes()[0]);
+                types.push_back(std::make_shared<DB::DataTypeArray>(child_types[0]));
             }
             else if (which.isMap())
             {
-                auto child_names_and_types = getNamesAndTypesFromList(field.child_list_id);
-                auto child_types = child_names_and_types.getTypes();
+                auto child_types = getDataTypesFromTypeList(field.child_list_id);
                 if (child_types.size() != 2)
                 {
                     throw DB::Exception(
@@ -461,7 +470,7 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(size_t list_id
                         "Unexpected number of types in array: {}",
                         child_types.size());
                 }
-                type = std::make_shared<DB::DataTypeMap>(child_types[0], child_types[1]);
+                types.push_back(std::make_shared<DB::DataTypeMap>(child_types[0], child_types[1]));
             }
             else
             {
@@ -470,10 +479,8 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(size_t list_id
                     "Column {} has unsupported complex data type: {}", field.name, field.type);
             }
         }
-        chassert(type);
-        names_and_types.emplace_back(field.name, type);
     }
-    return names_and_types;
+    return types;
 }
 
 std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot)

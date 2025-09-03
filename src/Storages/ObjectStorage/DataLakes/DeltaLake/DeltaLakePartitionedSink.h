@@ -9,7 +9,6 @@
 #include <absl/container/flat_hash_map.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/IPartitionStrategy.h>
 
 
@@ -50,42 +49,26 @@ public:
     void onFinish() override;
 
 private:
-    using StorageSinkPtr = std::unique_ptr<StorageObjectStorageSink>;
-
-    struct DataFileInfo
+    struct PartitionData
     {
-        explicit DataFileInfo(StorageSinkPtr sink_) : sink(std::move(sink_)) {}
-
-        StorageSinkPtr sink;
-        size_t written_bytes = 0;
-        size_t written_rows = 0;
+        SinkPtr sink;
+        std::string path;
+        size_t size = 0;
     };
-    struct PartitionInfo
-    {
-        explicit PartitionInfo(StringRef partition_key_) : partition_key(partition_key_) {}
-
-        const StringRef partition_key;
-        std::vector<DataFileInfo> data_files;
-    };
-    using PartitionInfoPtr = std::shared_ptr<PartitionInfo>;
+    using PartitionDataPtr = std::shared_ptr<PartitionData>;
+    PartitionDataPtr getPartitionDataForPartitionKey(StringRef partition_key);
 
     const LoggerPtr log;
     const Names partition_columns;
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
     const StorageObjectStorageConfigurationPtr configuration;
-    const size_t data_file_max_rows;
-    const size_t data_file_max_bytes;
     const std::unique_ptr<IPartitionStrategy> partition_strategy;
     const DeltaLake::WriteTransactionPtr delta_transaction;
 
-    absl::flat_hash_map<StringRef, PartitionInfoPtr> partitions_data;
-    size_t total_data_files_count = 0;
+    absl::flat_hash_map<StringRef, PartitionDataPtr> partition_id_to_sink;
     IColumn::Selector chunk_row_index_to_partition_index;
     Arena partition_keys_arena;
-
-    StorageSinkPtr createSinkForPartition(StringRef partition_key);
-    PartitionInfoPtr getPartitionDataForPartitionKey(StringRef partition_key);
 };
 
 }

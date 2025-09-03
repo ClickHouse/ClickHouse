@@ -20,7 +20,7 @@ class DeltaLakeMetadataDeltaKernel;
  * Sink to write non-partitioned data to DeltaLake.
  * Writes a single data file and commits it to DeltaLake metadata.
  */
-class DeltaLakeSink : public SinkToStorage, private WithContext
+class DeltaLakeSink : public StorageObjectStorageSink
 {
 public:
     DeltaLakeSink(
@@ -40,25 +40,9 @@ public:
     void onFinish() override;
 
 private:
-    using StorageSinkPtr = std::unique_ptr<StorageObjectStorageSink>;
-    StorageSinkPtr createStorageSink() const;
-
     const DeltaLake::WriteTransactionPtr delta_transaction;
     const ObjectStoragePtr object_storage;
-    const StorageObjectStorageConfigurationPtr configuration;
-    const std::optional<FormatSettings> format_settings;
-    const SharedHeader sample_block;
-    const size_t data_file_max_rows;
-    const size_t data_file_max_bytes;
-
-    struct DataFileInfo
-    {
-        explicit DataFileInfo(StorageSinkPtr sink_) : sink(std::move(sink_)) {}
-        StorageSinkPtr sink;
-        size_t written_bytes = 0;
-        size_t written_rows = 0;
-    };
-    std::vector<DataFileInfo> data_files;
+    size_t written_bytes = 0;
 };
 
 }

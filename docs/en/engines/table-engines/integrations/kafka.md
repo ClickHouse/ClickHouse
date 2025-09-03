@@ -5,14 +5,13 @@ description: 'The Kafka Table Engine can be used to publish works with Apache Ka
 sidebar_label: 'Kafka'
 sidebar_position: 110
 slug: /engines/table-engines/integrations/kafka
-title: 'Kafka table engine'
-keywords: ['Kafka', 'table engine']
+title: 'Kafka'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# Kafka table engine
+# Kafka
 
 :::note
 If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/clickpipes) instead. ClickPipes natively supports private network connections, scaling ingestion and cluster resources independently, and comprehensive monitoring for streaming Kafka data into ClickHouse.

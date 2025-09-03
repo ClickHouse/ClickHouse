@@ -90,7 +90,7 @@ public:
     SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config);
     SystemLogs(const SystemLogs & other) = default;
 
-    void flush(bool should_prepare_tables_anyway, const Strings & names);
+    void flush(const Strings & names);
     void flushAndShutdown();
     void shutdown();
     void handleCrash();
@@ -106,6 +106,8 @@ public:
 
 private:
     std::vector<ISystemLog *> getAllLogs() const;
+
+    void flushImpl(const Strings & names, bool should_prepare_tables_anyway, bool ignore_errors);
 };
 
 struct SystemLogSettings

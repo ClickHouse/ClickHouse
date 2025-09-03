@@ -58,7 +58,6 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_optimize_predicate_expression", trueOrFalseSetting},
        {"enable_optimize_predicate_expression_to_final_subquery", trueOrFalseSetting},
        {"enable_parallel_replicas", trueOrFalseSetting},
-       {"enable_producing_buckets_out_of_order_in_aggregation", trueOrFalseSetting},
        {"join_algorithm",
         CHSetting(
             [](RandomGenerator & rg)
@@ -238,7 +237,6 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_query_condition_cache", trueOrFalseSetting},
        {"use_skip_indexes", trueOrFalseSetting},
        {"use_skip_indexes_if_final", trueOrFalseSetting},
-       {"use_skip_indexes_on_data_read", trueOrFalseSetting},
        {"use_uncompressed_cache", trueOrFalseSetting}};
 
 std::unordered_map<String, CHSetting> serverSettings = {
@@ -248,7 +246,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"allow_archive_path_syntax", trueOrFalseSettingNoOracle},
     {"allow_asynchronous_read_from_io_pool_for_merge_tree", trueOrFalseSetting},
     {"allow_changing_replica_until_first_data_packet", trueOrFalseSettingNoOracle},
-    {"allow_experimental_delta_kernel_rs", trueOrFalseSettingNoOracle},
     {"allow_get_client_http_header", trueOrFalseSettingNoOracle},
     {"allow_introspection_functions", trueOrFalseSetting},
     {"allow_special_bool_values_inside_variant", trueOrFalseSettingNoOracle},
@@ -340,9 +337,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {},
          false)},
     {"decimal_check_overflow", trueOrFalseSettingNoOracle},
-    {"delta_lake_enable_engine_predicate", trueOrFalseSettingNoOracle},
     {"delta_lake_enable_expression_visitor_logging", trueOrFalseSettingNoOracle},
-    {"delta_lake_throw_on_engine_predicate_error", trueOrFalseSettingNoOracle},
     /// {"deduplicate_blocks_in_dependent_materialized_views", trueOrFalseSettingNoOracle},
     /// {"describe_compact_output", trueOrFalseSettingNoOracle},
     {"describe_extend_object_types", trueOrFalseSettingNoOracle},
@@ -439,7 +434,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"engine_file_empty_if_not_exists", trueOrFalseSettingNoOracle},
     {"engine_file_skip_empty_files", trueOrFalseSettingNoOracle},
     {"engine_url_skip_empty_files", trueOrFalseSettingNoOracle},
-    //{"exact_rows_before_limit", trueOrFalseSetting}, cannot use with generateRandom
+    {"exact_rows_before_limit", trueOrFalseSetting},
     {"except_default_mode", setSetting},
     /// {"external_table_functions_use_nulls", trueOrFalseSettingNoOracle},
     /// {"external_table_strict_query", CHSetting(trueOrFalse, {}, true)},
@@ -567,7 +562,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_parquet_filter_push_down", trueOrFalseSetting},
     {"input_format_parquet_preserve_order", trueOrFalseSettingNoOracle},
     {"input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference", trueOrFalseSettingNoOracle},
-    {"input_format_parquet_use_native_reader", trueOrFalseSetting},
+    {"input_format_parquet_use_native_reader", trueOrFalseSettingNoOracle},
     {"input_format_parquet_use_native_reader_v3", trueOrFalseSetting},
     {"input_format_parquet_page_filter_push_down", trueOrFalseSetting},
     {"input_format_parquet_use_offset_index", trueOrFalseSetting},
@@ -811,10 +806,10 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_parquet_date_as_uint16", trueOrFalseSettingNoOracle},
     {"output_format_parquet_max_dictionary_size",
      CHSetting(
-         [](RandomGenerator & rg)
-         { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))); },
-         {},
-         false)},
+        [](RandomGenerator & rg)
+        { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))); },
+        {},
+        false)},
     {"output_format_parquet_fixed_string_as_fixed_byte_array", trueOrFalseSettingNoOracle},
     {"output_format_parquet_geometadata", trueOrFalseSettingNoOracle},
     {"output_format_parquet_parallel_encoding", trueOrFalseSettingNoOracle},
@@ -876,19 +871,15 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {"'sampling_key'", "'read_tasks'", "'custom_key_range'", "'custom_key_sampling'", "'auto'"},
          false)},
-    {"parallel_replicas_support_projection", trueOrFalseSetting},
     {"partial_result_on_first_cancel", trueOrFalseSettingNoOracle},
     {"parsedatetime_e_requires_space_padding", trueOrFalseSettingNoOracle},
     {"parsedatetime_parse_without_leading_zeros", trueOrFalseSettingNoOracle},
-    {"per_part_index_stats", trueOrFalseSetting},
     {"precise_float_parsing", trueOrFalseSettingNoOracle},
     {"print_pretty_type_names", trueOrFalseSettingNoOracle},
     {"push_external_roles_in_interserver_queries", trueOrFalseSettingNoOracle},
     {"query_cache_compress_entries", trueOrFalseSetting},
     {"query_cache_share_between_users", trueOrFalseSettingNoOracle},
     {"query_cache_squash_partial_results", trueOrFalseSetting},
-    {"query_condition_cache_selectivity_threshold",
-     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0)); }, {}, false)},
     {"query_condition_cache_store_conditions_as_plaintext", trueOrFalseSettingNoOracle},
     {"query_plan_use_new_logical_join_step", trueOrFalseSetting},
     {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
@@ -942,7 +933,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"shared_merge_tree_sync_parts_on_partition_operations", trueOrFalseSettingNoOracle},
     {"short_circuit_function_evaluation_for_nulls", trueOrFalseSetting},
     {"short_circuit_function_evaluation_for_nulls_threshold", probRangeSetting},
-    {"show_data_lake_catalogs_in_system_tables", trueOrFalseSettingNoOracle},
     {"show_create_query_identifier_quoting_rule",
      CHSetting(
          [](RandomGenerator & rg)
@@ -1023,7 +1013,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_legacy_to_time", trueOrFalseSettingNoOracle},
     {"use_page_cache_for_disks_without_file_cache", trueOrFalseSetting},
     {"use_query_cache", trueOrFalseSetting},
-    {"use_roaring_bitmap_iceberg_positional_deletes", trueOrFalseSetting},
     {"use_skip_indexes_if_final_exact_mode", CHSetting(trueOrFalse, {"0", "1"}, true)},
     {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
     {"use_variant_as_common_type", CHSetting(trueOrFalse, {"0", "1"}, true)},
@@ -1101,7 +1090,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "join_output_by_rowlist_perkey_rows_threshold",
           "join_to_sort_maximum_table_rows",
           "join_to_sort_minimum_perkey_rows",
-          "max_iceberg_data_file_rows",
           "max_joined_block_size_rows",
           "max_limit_for_vector_search_queries",
           "max_number_of_partitions_for_independent_aggregation",
@@ -1157,7 +1145,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "max_bytes_before_external_sort",
           "max_bytes_before_remerge_sort",
           "max_download_buffer_size",
-          "max_iceberg_data_file_bytes",
           "max_joined_block_size_bytes",
           "max_read_buffer_size",
           "max_read_buffer_size_local_fs",
@@ -1308,7 +1295,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
          {"input_format_csv_enum_as_number", trueOrFalseSettingNoOracle},
          {"input_format_custom_detect_header", trueOrFalseSettingNoOracle},
          {"input_format_json_empty_as_default", trueOrFalseSettingNoOracle},
-         {"input_format_json_infer_array_of_dynamic_from_array_of_different_types", trueOrFalseSettingNoOracle},
          {"input_format_json_map_as_array_of_tuples", trueOrFalseSettingNoOracle},
          {"input_format_json_max_depth", CHSetting(rowsRange, {}, false)},
          {"input_format_max_rows_to_read_for_schema_inference", CHSetting(rowsRange, {}, false)},
@@ -1358,7 +1344,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
 
 std::unique_ptr<SQLType> size_tp, null_tp;
 
-std::vector<SystemTable> systemTables;
+std::unordered_map<String, DB::Strings> systemTables;
 
 void loadSystemTables(FuzzConfig & fc)
 {
