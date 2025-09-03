@@ -1019,7 +1019,7 @@ def modify_server_settings(
         modified = True
         https_port_xml = ET.SubElement(root, "https_port")
         https_port_xml.text = "8443"
-    if root.find("arrowflight_port") is None:
+    if args.with_arrowflight and root.find("arrowflight_port") is None:
         modified = True
         arrowflight_port_xml = ET.SubElement(root, "arrowflight_port")
         arrowflight_port_xml.text = "8888"
