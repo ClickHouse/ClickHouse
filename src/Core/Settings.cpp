@@ -423,9 +423,6 @@ The maximum number of retries in case of unexpected errors during Azure blob sto
     DECLARE(UInt64, s3_max_unexpected_write_error_retries, S3::DEFAULT_MAX_UNEXPECTED_WRITE_ERROR_RETRIES, R"(
 The maximum number of retries in case of unexpected errors during S3 write.
 )", 0) \
-    DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
-Max number of S3 redirects hops allowed.
-)", 0) \
     DECLARE(UInt64, azure_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
 Max number of azure redirects hops allowed.
 )", 0) \
@@ -589,9 +586,6 @@ Possible values:
 )", 0) \
     DECLARE(Bool, s3_disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, R"(
 Do not calculate a checksum when sending a file to S3. This speeds up writes by avoiding excessive processing passes on a file. It is mostly safe as the data of MergeTree tables is checksummed by ClickHouse anyway, and when S3 is accessed with HTTPS, the TLS layer already provides integrity while transferring through the network. While additional checksums on S3 give defense in depth.
-)", 0) \
-    DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(
-Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries
 )", 0) \
     DECLARE(UInt64, s3_request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, R"(
 Idleness timeout for sending and receiving data to/from S3. Fail if a single TCP read or write call blocks for this long.
@@ -7132,6 +7126,8 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_replicated_fetches_network_bandwidth_for_server, 0) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_replicated_sends_network_bandwidth_for_server, 0) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_entries_for_hash_table_stats, 10'000) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS) \
     /* ---- */ \
     MAKE_OBSOLETE(M, DefaultDatabaseEngine, default_database_engine, DefaultDatabaseEngine::Atomic) \
     MAKE_OBSOLETE(M, UInt64, max_pipeline_depth, 0) \
