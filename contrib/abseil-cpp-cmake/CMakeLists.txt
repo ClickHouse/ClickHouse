@@ -2130,9 +2130,9 @@ absl_cc_library(
   NAME
     log_internal_structured_proto
   SRCS
-    "${DIR}/internal/structured_proto.h"
-  HDRS
     "${DIR}/internal/structured_proto.cc"
+  HDRS
+    "${DIR}/internal/structured_proto.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   LINKOPTS
