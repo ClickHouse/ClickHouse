@@ -3,6 +3,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/CreateQueryUUIDs.h>
 #include <Common/quoteString.h>
@@ -588,13 +589,26 @@ void ASTCreateQuery::resetUUIDs()
     CreateQueryUUIDs{}.copyToQuery(*this);
 }
 
-
 void ASTCreateQuery::resetColumnUUIDs()
 {
     for (auto & ast : columns_list->columns->children)
     {
         auto & col_decl = ast->as<ASTColumnDeclaration &>();
         col_decl.uuid = nullptr;
+    }
+}
+
+void ASTCreateQuery::generateColumnRandomUUIDs()
+{
+    for (auto & ast : columns_list->columns->children)
+    {
+        auto & col_decl = ast->as<ASTColumnDeclaration &>();
+        if (!col_decl.uuid)
+        {
+            auto uuid_str = UUIDHelpers::uuidToStr(UUIDHelpers::generateV4());
+            auto uuid_ast = ASTLiteral(Field(uuid_str));
+            col_decl.uuid = uuid_ast.clone();
+        }
     }
 }
 
