@@ -14,7 +14,7 @@ cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
 # we set with_zookeeper=True because we modify keeper cluster used in nodes
-# using Keeper cluster that is changed with reconfig can lead to errors in ClickHouse sever or a really slow shutdown 
+# using Keeper cluster that is changed with reconfig can lead to errors in ClickHouse server or a really slow shutdown 
 # (e.g. when paired with `with_remote_database_disk`), which is not relevant for this test
 node1 = cluster.add_instance(
     "node1", main_configs=["configs/keeper1.xml"], with_zookeeper=True, stay_alive=True
