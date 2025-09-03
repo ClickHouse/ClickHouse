@@ -147,6 +147,8 @@ public:
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
     tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
+    static std::shared_ptr<ZooKeeperWithFaultInjection> getZooKeeper();
+
     /// Set local ref count for metadata.
     void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
 

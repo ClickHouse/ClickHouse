@@ -30,7 +30,7 @@ public:
 
     void prepareProcessedAtStartRequests(
         Coordination::Requests & requests,
-        const zkutil::ZooKeeperPtr & zk_client) override;
+        const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client) override;
 
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;

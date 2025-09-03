@@ -115,7 +115,7 @@ public:
     /// instead of from scratch.
     virtual void prepareProcessedAtStartRequests(
         Coordination::Requests & requests,
-        const zkutil::ZooKeeperPtr & zk_client) = 0;
+        const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client) = 0;
 
     /// A struct, representing information stored in keeper for a single file.
     struct NodeMetadata

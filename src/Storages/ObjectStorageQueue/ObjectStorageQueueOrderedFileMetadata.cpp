@@ -1,4 +1,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/SipHash.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -45,11 +47,6 @@ namespace
             return getProcessedPathWithBucket(zk_path, getBucketForPathImpl(path, buckets_num));
         return getProcessedPathWithoutBucket(zk_path);
     }
-
-    zkutil::ZooKeeperPtr getZooKeeper()
-    {
-        return Context::getGlobalContextInstance()->getZooKeeper();
-    }
 }
 
 ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
@@ -57,7 +54,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     int bucket_version_,
     const std::string & bucket_lock_path_,
     const std::string & bucket_lock_id_path_,
-    zkutil::ZooKeeperPtr zk_client_,
+    std::shared_ptr<ZooKeeperWithFaultInjection> zk_client_,
     LoggerPtr log_)
     : bucket_info(std::make_shared<BucketInfo>(BucketInfo{
         .bucket = bucket_,
@@ -164,7 +161,7 @@ std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getMetadataPaths
 bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
     NodeMetadata & result,
     Coordination::Stat * stat,
-    const zkutil::ZooKeeperPtr & zk_client)
+    const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client)
 {
     return getMaxProcessedFile(result, stat, processed_node_path, zk_client);
 }
@@ -173,7 +170,7 @@ bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
     NodeMetadata & result,
     Coordination::Stat * stat,
     const std::string & processed_node_path_,
-    const zkutil::ZooKeeperPtr & zk_client)
+    const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client)
 {
     std::string data;
     if (zk_client->tryGet(processed_node_path_, data, stat))
@@ -197,7 +194,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     bool use_persistent_processing_nodes_,
     LoggerPtr log_)
 {
-    const auto zk_client = getZooKeeper();
+    const auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
     const auto create_if_not_exists_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
 
     const auto bucket_path = zk_path / "buckets" / toString(bucket);
@@ -278,7 +275,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
 
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueOrderedFileMetadata::setProcessingImpl()
 {
-    const auto zk_client = getZooKeeper();
+    const auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
     processing_id = node_metadata.processing_id = getRandomASCIIString(10);
     auto processor_info = getProcessorInfo(processing_id.value());
 
@@ -443,7 +440,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
 void ObjectStorageQueueOrderedFileMetadata::prepareProcessedAtStartRequests(
     Coordination::Requests & requests,
-    const zkutil::ZooKeeperPtr & zk_client)
+    const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client)
 {
     if (useBucketsForProcessing())
     {
@@ -461,7 +458,7 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedAtStartRequests(
 
 void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequests(
     Coordination::Requests & requests,
-    const zkutil::ZooKeeperPtr & zk_client,
+    const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
     const std::string & processed_node_path_,
     bool ignore_if_exists)
 {
@@ -501,13 +498,13 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequests(
 
 void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests)
 {
-    const auto zk_client = getZooKeeper();
+    const auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
     prepareProcessedRequests(requests, zk_client, processed_node_path, /* ignore_if_exists */false);
 }
 
 void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string & zk_path, size_t value, size_t prev_value)
 {
-    auto zk_client = getZooKeeper();
+    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
     const auto log = getLogger("ObjectStorageQueueOrderedFileMetadata");
     const size_t retries = 1000;
     Coordination::Error code = Coordination::Error::ZOK;
@@ -567,7 +564,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
             if (try_num < retries)
             {
                 LOG_TRACE(log, "Keeper session expired while updating buckets in keeper, will retry");
-                zk_client = getZooKeeper();
+                zk_client = ObjectStorageQueueMetadata::getZooKeeper();
                 continue;
             }
             else
@@ -619,7 +616,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     size_t buckets_num,
     LoggerPtr log_)
 {
-    const auto zk_client = getZooKeeper();
+    const auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
     const bool use_buckets_for_processing = buckets_num > 1;
 
     buckets_num = std::max<size_t>(buckets_num, 1);
@@ -680,4 +677,8 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     paths = std::move(result);
 }
 
+bool ObjectStorageQueueOrderedFileMetadata::BucketHolder::isZooKeeperSessionExpired() const
+{
+    return zk_client->expired();
+}
 }

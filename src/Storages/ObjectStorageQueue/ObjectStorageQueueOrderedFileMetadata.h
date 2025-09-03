@@ -62,7 +62,7 @@ public:
 
     void prepareProcessedAtStartRequests(
         Coordination::Requests & requests,
-        const zkutil::ZooKeeperPtr & zk_client) override;
+        const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client) override;
 
 private:
     const size_t buckets_num;
@@ -76,17 +76,17 @@ private:
     bool getMaxProcessedFile(
         NodeMetadata & result,
         Coordination::Stat * stat,
-        const zkutil::ZooKeeperPtr & zk_client);
+        const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client);
 
     static bool getMaxProcessedFile(
         NodeMetadata & result,
         Coordination::Stat * stat,
         const std::string & processed_node_path_,
-        const zkutil::ZooKeeperPtr & zk_client);
+        const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client);
 
     void prepareProcessedRequests(
         Coordination::Requests & requests,
-        const zkutil::ZooKeeperPtr & zk_client,
+        const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
         const std::string & processed_node_path_,
         bool ignore_if_exists);
 };
@@ -98,7 +98,7 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
         int bucket_version_,
         const std::string & bucket_lock_path_,
         const std::string & bucket_lock_id_path_,
-        zkutil::ZooKeeperPtr zk_client_,
+        std::shared_ptr<ZooKeeperWithFaultInjection> zk_client_,
         LoggerPtr log_);
 
     ~BucketHolder();
@@ -109,13 +109,13 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
     void setFinished() { finished = true; }
     bool isFinished() const { return finished; }
 
-    bool isZooKeeperSessionExpired() const { return zk_client->expired(); }
+    bool isZooKeeperSessionExpired() const;
 
     void release();
 
 private:
     BucketInfoPtr bucket_info;
-    const zkutil::ZooKeeperPtr zk_client;
+    const std::shared_ptr<ZooKeeperWithFaultInjection> zk_client;
     bool released = false;
     bool finished = false;
     LoggerPtr log;

@@ -1,6 +1,8 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -8,15 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-    zkutil::ZooKeeperPtr getZooKeeper()
-    {
-        return Context::getGlobalContextInstance()->getZooKeeper();
-    }
-
 }
 
 ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata(
@@ -43,7 +36,7 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
 ObjectStorageQueueUnorderedFileMetadata::SetProcessingResponseIndexes
 ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordination::Requests & requests)
 {
-    const auto zk_client = getZooKeeper();
+    const auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
 
     processing_id = node_metadata.processing_id = getRandomASCIIString(10);
     const auto processor_info = getProcessorInfo(processing_id.value());
@@ -89,7 +82,7 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordinat
 
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueUnorderedFileMetadata::setProcessingImpl()
 {
-    const auto zk_client = getZooKeeper();
+    const auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
     const size_t max_num_tries = 1000;
     Coordination::Error code;
     for (size_t i = 0; i < max_num_tries; ++i)
@@ -136,7 +129,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
 void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedAtStartRequests(
     Coordination::Requests & requests,
-    const zkutil::ZooKeeperPtr &)
+    const std::shared_ptr<ZooKeeperWithFaultInjection> &)
 {
     requests.push_back(
         zkutil::makeCreateRequest(
@@ -166,7 +159,7 @@ void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
         check_paths.push_back(zk_path_ / "failed" / node_name);
     }
 
-    auto zk_client = getZooKeeper();
+    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
     auto responses = zk_client->tryGet(check_paths);
 
     auto check_code = [&](auto code, const std::string & path)

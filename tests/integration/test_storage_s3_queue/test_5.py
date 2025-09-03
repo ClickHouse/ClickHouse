@@ -76,7 +76,9 @@ def started_cluster():
         )
         cluster.add_instance(
             "instance2",
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+            ],
             with_minio=True,
             with_zookeeper=True,
             main_configs=[
@@ -117,6 +119,27 @@ def started_cluster():
                 "configs/remote_servers_245.xml",
             ],
             with_installed_binary=True,
+        )
+        # TODO: enable keeper fault injection for more tests,
+        # currently it is tricky, because we can only enable it when
+        # use_persistent_processing_nodes = 1, which is not the default,
+        # but we need to make it a default.
+        cluster.add_instance(
+            "instance_with_keeper_fault_injection",
+            with_minio=True,
+            with_azurite=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+                "configs/disable_streaming.xml",
+            ],
+            user_configs=[
+                "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
+            ],
+            stay_alive=True,
         )
 
         logging.info("Starting cluster...")
@@ -1207,7 +1230,7 @@ def test_create_or_replace_table(started_cluster):
 
 
 def test_persistent_processing_nodes_cleanup(started_cluster):
-    node = started_cluster.instances["instance"]
+    node = started_cluster.instances["instance_with_keeper_fault_injection"]
     table_name = "max_persistent_processing_nodes_cleanup"
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
@@ -1256,7 +1279,7 @@ def test_persistent_processing_nodes_cleanup(started_cluster):
 
 
 def test_persistent_processing(started_cluster):
-    node = started_cluster.instances["instance"]
+    node = started_cluster.instances["instance_with_keeper_fault_injection"]
     table_name = "max_persistent_processing"
     dst_table_name = f"{table_name}_dst"
     mv_name = f"{table_name}_mv"
@@ -1323,8 +1346,10 @@ def test_persistent_processing(started_cluster):
 
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
 def test_persistent_processing_failed_commit_retries(started_cluster, mode):
-    node = started_cluster.instances["instance"]
-    table_name = f"max_persistent_processing_failed_commit_retries_{generate_random_string()}"
+    node = started_cluster.instances["instance_with_keeper_fault_injection"]
+    table_name = (
+        f"max_persistent_processing_failed_commit_retries_{generate_random_string()}"
+    )
     dst_table_name = f"{table_name}_dst"
     mv_name = f"{table_name}_mv"
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
@@ -1349,7 +1374,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
             "cleanup_interval_max_ms": 500,
             "polling_max_timeout_ms": 1000,
             "polling_backoff_ms": 100,
-            "processing_threads_num": processing_threads
+            "processing_threads_num": processing_threads,
         },
     )
     i = [0]

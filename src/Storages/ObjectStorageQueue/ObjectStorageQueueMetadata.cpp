@@ -15,6 +15,7 @@
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/randomSeed.h>
 #include <Common/DNSResolver.h>
@@ -48,6 +49,7 @@ namespace Setting
 {
     extern const SettingsBool cloud_mode;
     extern const SettingsBool s3queue_migrate_old_metadata_to_buckets;
+    extern const SettingsFloat s3queue_keeper_fault_injection_probablility;
 }
 
 namespace ObjectStorageQueueSetting
@@ -68,11 +70,6 @@ namespace
         /// So that distributed processing cleanup tasks would not schedule cleanup at the same time.
         pcg64 rng(randomSeed());
         return min + rng() % (max - min + 1);
-    }
-
-    zkutil::ZooKeeperPtr getZooKeeper()
-    {
-        return Context::getGlobalContextInstance()->getZooKeeper();
     }
 }
 
@@ -157,6 +154,22 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
 ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
 {
     shutdown();
+}
+
+ZooKeeperWithFaultInjection::Ptr ObjectStorageQueueMetadata::getZooKeeper()
+{
+    auto context = Context::getGlobalContextInstance();
+    auto zk_client = context->getZooKeeper();
+    if (context->getSettingsRef()[Setting::s3queue_keeper_fault_injection_probablility] != 0.0)
+    {
+        return ZooKeeperWithFaultInjection::createInstance(
+            context->getSettingsRef()[Setting::s3queue_keeper_fault_injection_probablility],
+            /* seed */0,
+            zk_client,
+            "S3Queue",
+            getLogger("S3Queue"));
+    }
+    return std::make_shared<ZooKeeperWithFaultInjection>(zk_client);
 }
 
 void ObjectStorageQueueMetadata::startup()
@@ -258,7 +271,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     const size_t num_tries = 100;
     for (size_t i = 0; i < num_tries; ++i)
     {
-        alter_settings_lock = zkutil::EphemeralNodeHolder::tryCreate(alter_settings_lock_path, *zookeeper, toString(getCurrentTime()));
+        alter_settings_lock = zkutil::EphemeralNodeHolder::tryCreate(alter_settings_lock_path, *zookeeper->getKeeper(), toString(getCurrentTime()));
 
         if (alter_settings_lock)
             break;
@@ -726,7 +739,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
         size_t count = 0;
 
         bool supports_remove_recursive = true;
-        zkutil::ZooKeeperPtr zk_client;
+        ZooKeeperWithFaultInjection::Ptr zk_client;
 
         try
         {
@@ -818,7 +831,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 /// Take a drop lock and do recursive remove as a separate request.
                 /// In case of unsupported "remove_recursive" feature, it will
                 /// do getChildren and remove them one by one.
-                auto drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zk_client);
+                auto drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zk_client->getKeeper());
                 try
                 {
                     zk_client->removeRecursive(zookeeper_path);
@@ -1036,7 +1049,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 
     /// Create a lock so that with distributed processing
     /// multiple nodes do not execute cleanup in parallel.
-    auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(zookeeper_cleanup_lock_path, *zk_client, toString(getCurrentTime()));
+    auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(zookeeper_cleanup_lock_path, *zk_client->getKeeper(), toString(getCurrentTime()));
     if (!ephemeral_node)
     {
         LOG_TEST(log, "Cleanup is already being executed by another node");
@@ -1044,7 +1057,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     }
     /// TODO because of this lock we might not update local file statuses on time on one of the nodes.
 
-    cleanupPersistentProcessingNodes(zk_client);
+    cleanupPersistentProcessingNodes(zk_client->getKeeper());
     if (mode == ObjectStorageQueueMode::ORDERED)
         return;
 
