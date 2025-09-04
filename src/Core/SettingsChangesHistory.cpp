@@ -52,6 +52,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
             {"text_index_use_bloom_filter", true, true, "New setting."},
             {"query_plan_direct_read_from_text_index", true, true, "New setting."},
+            {"jemalloc_enable_profiler", false, false, "New setting"},
+            {"jemalloc_collect_profile_samples_in_trace_log", false, false, "New setting"},
             {"delta_lake_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New setting."},
             {"delta_lake_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
             {"promql_evaluation_time", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."},
