@@ -1,6 +1,10 @@
 import logging
 from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
+from pyspark.sql.types import (
+    StructType,
+    ArrayType,
+    MapType,
+)
 
 from .laketables import SparkTable
 from integration.helpers.client import Client
@@ -10,6 +14,18 @@ class SparkAndClickHouseCheck:
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+
+    def _check_type_valid_for_comparison(self, dtype) -> bool:
+        if isinstance(dtype, ArrayType):
+            return self._check_type_valid_for_comparison(dtype.elementType)
+        if isinstance(dtype, MapType):
+            # Map type is not comparable in Spark
+            return False
+        if isinstance(dtype, StructType):
+            for f in dtype.fields:
+                if not self._check_type_valid_for_comparison(f.dataType):
+                    return False
+        return True
 
     def check_table(self, cluster, spark: SparkSession, table: SparkTable) -> bool:
         try:
@@ -34,7 +50,17 @@ class SparkAndClickHouseCheck:
                 )
                 return False
 
-            order_by_cols = [k for k in table.columns.keys()]
+            order_by_cols = [
+                k
+                for k, v in table.columns.items()
+                if self._check_type_valid_for_comparison(v.spark_type)
+            ]
+            if len(order_by_cols) == 0:
+                self.logger.error(
+                    f"No columns valid to compare for {table.get_clickhouse_path()}"
+                )
+                return True
+
             # Spark hash
             # Convert all columns to string and concatenate
             concat_cols = ", '||', ".join(
