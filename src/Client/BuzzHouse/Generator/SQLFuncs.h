@@ -812,6 +812,8 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCupperUTF8, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCisValidUTF8, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoValidUTF8, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCisASCII, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCisValidASCII, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCspace, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCreverseUTF8, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCconcat, 0, 0, 2, ulimited_params),

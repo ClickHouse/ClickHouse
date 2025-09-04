@@ -746,9 +746,9 @@ But other things being equal, cross-platform or portable code is preferred.
 
 The standard library is used (`libc++`).
 
-**4.**OS: Linux Ubuntu, not older than Precise.
+**4.** OS: Linux Ubuntu, not older than Precise.
 
-**5.**Code is written for x86_64 CPU architecture.
+**5.** Code is written for x86_64 CPU architecture.
 
 The CPU instruction set is the minimum supported set among our servers. Currently, it is SSE 4.2.
 

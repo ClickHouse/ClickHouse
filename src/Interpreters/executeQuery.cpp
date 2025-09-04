@@ -176,7 +176,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_time_series_table;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
-    extern const SettingsFloatAuto evaluation_time;
+    extern const SettingsFloatAuto promql_evaluation_time;
 }
 
 namespace ServerSetting
@@ -1072,7 +1072,7 @@ static BlockIO executeQueryImpl(
         {
             if (!settings[Setting::allow_experimental_time_series_table])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'allow_experimental_time_series_table')");
-            ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::evaluation_time]});
+            ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else

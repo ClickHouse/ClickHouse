@@ -322,16 +322,16 @@ void Builder::minimizePreviousWordSuffix(Int64 down_to)
 
 void Builder::add(std::string_view current_word, Output current_output)
 {
-    /// We assume word size is no greater than MAX_TERM_LENGTH(256).
+    /// We assume word size is no greater than MAX_TOKEN_LENGTH(256).
     /// FSTs without word size limitation would be inefficient and easy to cause memory bloat
     /// Note that when using "split" tokenizer, if a granule has tokens which are longer than
-    /// MAX_TERM_LENGTH, the granule cannot be dropped and will be fully-scanned. It doesn't affect "ngram" tokenizers.
+    /// MAX_TOKEN_LENGTH, the granule cannot be dropped and will be fully-scanned. It doesn't affect "ngram" tokenizers.
     /// Another limitation is that if the query string has tokens which exceed this length
     /// it will fallback to default searching when using "split" tokenizers.
     size_t current_word_len = current_word.size();
 
-    if (current_word_len > MAX_TERM_LENGTH)
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot build text index: The maximum term length is {}, this is exceeded by term {}", MAX_TERM_LENGTH, current_word_len);
+    if (current_word_len > MAX_TOKEN_LENGTH)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot build text index: The maximum term length is {}, this is exceeded by term {}", MAX_TOKEN_LENGTH, current_word_len);
 
     size_t prefix_length_plus1 = getCommonPrefixLength(current_word, previous_word) + 1;
 

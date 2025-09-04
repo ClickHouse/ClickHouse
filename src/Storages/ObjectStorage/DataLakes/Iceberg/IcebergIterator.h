@@ -105,8 +105,6 @@ private:
     ConcurrentBoundedQueue<Iceberg::ManifestFileEntry> blocking_queue;
     BackgroundSchedulePool::TaskHolder producer_task;
     IDataLakeMetadata::FileProgressCallback callback;
-    const String format;
-    const String compression_method;
     std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
     std::vector<Iceberg::ManifestFileEntry> equality_deletes_files;
 };

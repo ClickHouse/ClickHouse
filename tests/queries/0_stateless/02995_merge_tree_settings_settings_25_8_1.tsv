@@ -89,6 +89,7 @@ max_compress_block_size	0
 max_concurrent_queries	0
 max_delay_to_insert	1
 max_delay_to_mutate_ms	1000
+max_digestion_size_per_segment	268435456
 max_file_name_length	127
 max_files_to_modify_in_alter_columns	75
 max_files_to_remove_in_alter_columns	50

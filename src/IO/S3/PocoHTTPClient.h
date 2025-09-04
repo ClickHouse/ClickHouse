@@ -15,6 +15,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/SessionAwareIOStream.h>
+#include <IO/S3Defines.h>
 
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpClient.h>
@@ -46,15 +47,15 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
     struct RetryStrategy
     {
-        unsigned int max_retries = 10;
-        unsigned int initial_delay_ms = 25;
-        unsigned int max_delay_ms = 5000;
-        double jitter_factor = 0;
+        unsigned int max_retries = DEFAULT_RETRY_ATTEMPTS;
+        unsigned int initial_delay_ms = DEFAULT_RETRY_INITIAL_DELAY_MS;
+        unsigned int max_delay_ms = DEFAULT_RETRY_MAX_DELAY_MS;
+        double jitter_factor = DEFAULT_RETRY_JITTER_FACTOR;
     };
     std::function<ProxyConfiguration()> per_request_configuration;
     String force_region;
     const RemoteHostFilter & remote_host_filter;
-    unsigned int s3_max_redirects;
+    unsigned int s3_max_redirects = DEFAULT_MAX_REDIRECTS;
     RetryStrategy retry_strategy;
     bool s3_slow_all_threads_after_network_error;
     bool s3_slow_all_threads_after_retryable_error;

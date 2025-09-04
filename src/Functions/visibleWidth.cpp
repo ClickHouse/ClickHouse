@@ -103,7 +103,34 @@ public:
 
 REGISTER_FUNCTION(VisibleWidth)
 {
-    factory.registerFunction<FunctionVisibleWidth>();
+    FunctionDocumentation::Description description = R"(
+Calculates the approximate width when outputting values to the console in text format (tab-separated).
+This function is used by the system to implement Pretty formats.
+`NULL` is represented as a string corresponding to `NULL` in Pretty formats.
+    )";
+    FunctionDocumentation::Syntax syntax = "visibleWidth(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "A value of any data type.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the approximate width of the value when displayed in text format.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Calculate visible width of NULL",
+        R"(
+SELECT visibleWidth(NULL)
+        )",
+        R"(
+┌─visibleWidth(NULL)─┐
+│                  4 │
+└────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionVisibleWidth>(documentation);
 }
 
 }

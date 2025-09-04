@@ -21,30 +21,30 @@ class GinQueryString
 {
 public:
     GinQueryString() = default;
-    GinQueryString(std::string_view query_string_, const std::vector<String> & search_terms_);
+    GinQueryString(std::string_view query_string_, const std::vector<String> & tokens_);
 
     /// Getter
     const String & getQueryString() const { return query_string; }
-    const std::vector<String> & getTerms() const { return terms; }
+    const std::vector<String> & getTokens() const { return tokens; }
 
     /// Set the query string of the filter
     void setQueryString(std::string_view query_string_) { query_string = query_string_; }
 
-    /// Add term which are tokens generated from the query string
-    bool addTerm(std::string_view term)
+    /// Add token which are tokens generated from the query string
+    bool addToken(std::string_view token)
     {
-        if (term.length() > FST::MAX_TERM_LENGTH)
+        if (token.length() > FST::MAX_TOKEN_LENGTH)
             return false;
 
-        terms.push_back(String(term));
+        tokens.push_back(String(token));
         return true;
     }
 
 private:
     /// Query string of the filter
     String query_string;
-    /// Tokenized terms from query string
-    std::vector<String> terms;
+    /// Tokens from query string
+    std::vector<String> tokens;
 };
 
 struct GinSegmentWithRowIdRange
@@ -89,8 +89,8 @@ public:
 
     GinFilter() = default;
 
-    /// Add term and its row ID to the postings list builder for building the text index for the given store.
-    void add(const String & term, UInt32 row_id, GinIndexStorePtr & store) const;
+    /// Add token and its row ID to the postings list builder for building the text index for the given store.
+    void add(const String & token, UInt32 row_id, GinIndexStorePtr & store) const;
 
     /// Accumulate (segment_id, rowid_start, rowid_end) for building the text index.
     void addRowIdRangeToGinFilter(UInt32 segment_id, UInt32 rowid_start, UInt32 rowid_end);

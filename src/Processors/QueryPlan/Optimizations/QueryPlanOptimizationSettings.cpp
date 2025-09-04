@@ -41,6 +41,7 @@ namespace Setting
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool vector_search_with_rescoring;
+    extern const SettingsUInt64 query_plan_optimize_join_order_limit;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -64,6 +65,8 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
 }
 
 namespace ServerSetting
@@ -74,6 +77,7 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
@@ -104,6 +108,14 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     try_use_vector_search = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_try_use_vector_search];
     convert_join_to_in = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_join_to_in];
     merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
+
+    bool use_parallel_replicas = from[Setting::allow_experimental_parallel_reading_from_replicas] && from[Setting::max_parallel_replicas] > 1;
+    query_plan_optimize_join_order_limit = use_parallel_replicas ? 0 : from[Setting::query_plan_optimize_join_order_limit];
+    if (query_plan_optimize_join_order_limit > 64)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "The value of the setting `query_plan_optimize_join_order_limit` is too large: {}, "
+            "maximum allowed value is 64", query_plan_optimize_join_order_limit);
+
     join_swap_table = from[Setting::query_plan_join_swap_table].is_auto
         ? std::nullopt
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);
