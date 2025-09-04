@@ -991,7 +991,7 @@ void DatabaseCatalog::shutdown(std::function<void()> shutdown_system_logs)
 DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, ContextPtr local_context) const
 {
     String resolved_database = local_context->resolveDatabase(database_name);
-    return getDatabase(resolved_database);
+    return getDatabaseOrThrow(resolved_database, local_context);
 }
 
 void DatabaseCatalog::removeViewDependency(const StorageID & source_table_id, const StorageID & view_id)
