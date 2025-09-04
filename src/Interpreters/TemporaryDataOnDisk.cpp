@@ -1,29 +1,54 @@
-#include <atomic>
+#include <memory>
 #include <mutex>
+
+#include <IO/EmptyReadBuffer.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromEmptyFile.h>
-#include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Formats/NativeWriter.h>
-#include <Core/ProtocolDefines.h>
-#include <Disks/IDisk.h>
-#include <Disks/SingleDiskVolume.h>
-#include <Disks/DiskLocal.h>
-#include <Disks/IO/WriteBufferFromTemporaryFile.h>
+#include <Compression/CompressionFactory.h>
 
 #include <Core/Defines.h>
-#include <Common/formatReadable.h>
-#include <Common/NaNUtils.h>
+#include <Core/ProtocolDefines.h>
+#include <Core/UUID.h>
+
+#include <Disks/DiskLocal.h>
+#include <Disks/IDisk.h>
+#include <Disks/IO/WriteBufferFromTemporaryFile.h>
+#include <Disks/SingleDiskVolume.h>
+
+#include <Formats/NativeWriter.h>
+
+#include <IO/ConnectionTimeouts.h>
+#include <IO/ReadBufferFromEmptyFile.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+
+#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
+#include <Interpreters/Context.h>
+
 #include <Common/Exception.h>
+#include <Common/NaNUtils.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/formatReadable.h>
+#include <Common/CurrentThread.h>
+
+#if ENABLE_DISTRIBUTED_CACHE
+#include <Core/DistributedCacheProtocol.h>
+#include <Disks/IO/ReadBufferFromDistributedCache.h>
+#include <Disks/IO/WriteBufferFromDistributedCache.h>
+#include <DistributedCache/DistributedCacheRegistry.h>
+#include <Server/DistributedCache/DistributedCacheServerInstance.h>
+#endif
 
 namespace ProfileEvents
 {
     extern const Event ExternalProcessingFilesTotal;
+
+#if ENABLE_DISTRIBUTED_CACHE
+    extern const Event DistrCacheTemporaryFilesCreated;
+    extern const Event DistrCacheTemporaryFilesBytesWritten;
+#endif
 }
 
 namespace DB
@@ -76,7 +101,7 @@ public:
         return std::make_unique<WriteBufferToFileSegment>(&segment_holder->front());
     }
 
-    std::unique_ptr<ReadBuffer> read(size_t buffer_size) const override
+    std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size) const override
     {
         return std::make_unique<ReadBufferFromFile>(segment_holder->front().getPath(), /* buf_size = */ buffer_size);
     }
@@ -89,6 +114,94 @@ public:
 private:
     FileSegmentsHolderPtr segment_holder;
 };
+
+#if ENABLE_DISTRIBUTED_CACHE
+class TemporaryFileInDistributedCache final : public TemporaryFileHolder
+{
+public:
+    explicit TemporaryFileInDistributedCache()
+        : file_key(fmt::format("__tmp_{}", toString(UUIDHelpers::generateV4())))
+        , log(getLogger("TemporaryFileInDistributedCache"))
+    {
+        LOG_TRACE(log, "Creating temporary file in distributed cache: {}", file_key);
+
+        auto context = CurrentThread::getQueryContext();
+        if (!context)
+            context = Context::getGlobalContextInstance();
+        read_settings = context->getReadSettings();
+        write_settings = context->getWriteSettings();
+        timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef());
+        distributed_cache_log = context->getDistributedCacheLog();
+
+        SipHash hash;
+        hash.update(file_key);
+        distributed_cache_server = DistributedCache::Registry::instance()
+                                       .getSnapshot(read_settings.distributed_cache_settings.read_only_from_current_az)
+                                       .chooseServer(hash.get128());
+    }
+
+    ~TemporaryFileInDistributedCache() override
+    {
+        try
+        {
+            if (cache_client)
+                cache_client->makeDropCacheRequest(file_key, /*connection_info_hash=*/0, /*is_temporary_data=*/true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+    }
+
+    std::unique_ptr<WriteBuffer> write() override
+    {
+        ProfileEvents::increment(ProfileEvents::DistrCacheTemporaryFilesCreated);
+        return std::make_unique<WriteBufferFromDistributedCache>(
+            file_key, write_settings, timeouts, distributed_cache_server, distributed_cache_log);
+    }
+
+    std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size) const override
+    {
+        if (!cache_client)
+            return std::make_unique<EmptyReadBuffer>();
+
+        if (buffer_size == 0)
+            buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+
+        auto local_read_settings = read_settings;
+        local_read_settings.remote_fs_buffer_size = buffer_size;
+        return std::make_unique<ReadBufferFromDistributedCache>(
+            file_key, bytes_written, local_read_settings, timeouts, distributed_cache_server, distributed_cache_log);
+    }
+
+    void releaseWriteBuffer(std::unique_ptr<WriteBuffer> write_buffer) override
+    {
+        auto & distr_cache_buffer = dynamic_cast<WriteBufferFromDistributedCache &>(*write_buffer);
+        cache_client = distr_cache_buffer.releaseClient();
+        bytes_written = distr_cache_buffer.getBytesWritten();
+        ProfileEvents::increment(ProfileEvents::DistrCacheTemporaryFilesBytesWritten, bytes_written);
+    }
+
+    String describeFilePath() const override
+    {
+        return fmt::format("distrcache://{}", file_key);
+    }
+private:
+    String file_key;
+    DistributedCache::RegisteredServerPtr distributed_cache_server;
+    ReadSettings read_settings;
+    WriteSettings write_settings;
+    ConnectionTimeouts timeouts;
+    size_t bytes_written = 0;
+    std::shared_ptr<DistributedCacheLog> distributed_cache_log;
+
+    /// we need to keep it alive after write because the lifetime of cached file is
+    /// connected to the connection lifetime
+    DistributedCache::ClientPtr cache_client;
+
+    LoggerPtr log;
+};
+#endif
 
 class TemporaryFileOnLocalDisk : public TemporaryFileHolder
 {
@@ -133,7 +246,7 @@ public:
         return disk->writeFile(path_to_file);
     }
 
-    std::unique_ptr<ReadBuffer> read(size_t buffer_size) const override
+    std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size) const override
     {
         ReadSettings settings;
         settings.local_fs_buffer_size = buffer_size;
@@ -193,6 +306,21 @@ TemporaryFileProvider createTemporaryFileProvider(FileCache * file_cache)
     };
 }
 
+#if ENABLE_DISTRIBUTED_CACHE
+TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag)
+{
+    return [](size_t /*max_size*/) -> std::unique_ptr<TemporaryFileHolder>
+    {
+        auto global_context = Context::getGlobalContextInstance();
+        auto read_settings = global_context->getReadSettings();
+        if (!DistributedCache::Registry::instance().isReady(read_settings.distributed_cache_settings.read_only_from_current_az))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed cache is not ready yet");
+
+        return std::make_unique<TemporaryFileInDistributedCache>();
+    };
+}
+#endif
+
 TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(CurrentMetrics::Metric current_metric)
 {
     TemporaryDataOnDiskSettings child_settings = settings;
@@ -223,7 +351,7 @@ TemporaryDataBuffer::TemporaryDataBuffer(TemporaryDataOnDiskScope * parent_, siz
     : WriteBuffer(nullptr, 0)
     , parent(parent_)
     , file_holder(parent->file_provider(reserve_size))
-    , out_compressed_buf(file_holder->write(), getCodec(parent->getSettings()))
+    , out_compressed_buf(file_holder->write(), getCodec(parent->getSettings()), parent->getSettings().buffer_size)
 {
     WriteBuffer::set(out_compressed_buf->buffer().begin(), out_compressed_buf->buffer().size());
 }
@@ -264,6 +392,7 @@ void TemporaryDataBuffer::finalizeImpl()
     out_compressed_buf.getHolder()->finalize();
 
     updateAllocAndCheck();
+    file_holder->releaseWriteBuffer(out_compressed_buf.releaseHolder());
     out_compressed_buf.reset();
 }
 
@@ -280,16 +409,31 @@ TemporaryDataBuffer::Stat TemporaryDataBuffer::finishWriting()
     return stat;
 }
 
+TemporaryDataBuffer::Stat TemporaryDataBuffer::getStat() const
+{
+    return stat;
+}
+
 std::unique_ptr<ReadBuffer> TemporaryDataBuffer::read()
+{
+    return std::make_unique<TemporaryDataReadBuffer>(readRaw());
+}
+
+std::unique_ptr<SeekableReadBuffer> TemporaryDataBuffer::readRaw()
 {
     finishWriting();
 
     if (stat.compressed_size == 0 && stat.uncompressed_size == 0)
-        return std::make_unique<TemporaryDataReadBuffer>(std::make_unique<ReadBufferFromEmptyFile>());
+        return std::make_unique<ReadBufferFromEmptyFile>();
 
     /// Keep buffer size less that file size, to avoid memory overhead for large amounts of small files
     size_t buffer_size = std::min<size_t>(stat.compressed_size, DBMS_DEFAULT_BUFFER_SIZE);
-    return std::make_unique<TemporaryDataReadBuffer>(file_holder->read(buffer_size));
+    return file_holder->read(buffer_size);
+}
+
+CompressedWriteBuffer & TemporaryDataBuffer::getCompressedWriteBuffer()
+{
+    return *out_compressed_buf;
 }
 
 void TemporaryDataBuffer::updateAllocAndCheck()

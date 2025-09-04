@@ -549,7 +549,7 @@ def test_backup_with_fs_cache(
         cluster,
         storage_policy,
         backup_destination,
-        size=10,
+        size=1000,
         insert_settings=insert_settings,
         optimize_table=False,
         backup_settings=backup_settings,
@@ -563,7 +563,7 @@ def test_backup_with_fs_cache(
     # And if allow_s3_native_copy == True then BACKUP shouldn't read MergeTree parts from S3 and thus it shouldn't request any files from the file cache.
     if allow_backup_read_cache and in_cache_initially and not allow_s3_native_copy:
         assert backup_events["CachedReadBufferReadFromCacheBytes"] > 0
-        assert not "CachedReadBufferReadFromSourceBytes" in backup_events
+        assert backup_events["CachedReadBufferReadFromSourceBytes"] > 0
     elif allow_backup_read_cache and not allow_s3_native_copy:
         assert not "CachedReadBufferReadFromCacheBytes" in backup_events
         assert backup_events["CachedReadBufferReadFromSourceBytes"] > 0

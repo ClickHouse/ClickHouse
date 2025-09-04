@@ -675,7 +675,7 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
 
     size_t result_size = downloaded_size;
     size_t aligned_downloaded_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
-    if (aligned_downloaded_size < range().size())
+    if (aligned_downloaded_size <= range().size())
         result_size = aligned_downloaded_size;
 
     chassert(result_size <= range().size());
@@ -731,23 +731,35 @@ size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard:
     return desired_size - downloaded_size;
 }
 
-void FileSegment::complete(bool allow_background_download)
+void FileSegment::complete(FileSegmentPtr && file_segment, bool allow_background_download)
 {
+    if (!file_segment)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is nullptr");
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
 
-    if (isCompleted())
+    if (file_segment->isCompleted())
         return;
 
-    auto locked_key = lockKeyMetadata(false);
+    auto locked_key = file_segment->lockKeyMetadata(false);
     if (!locked_key)
     {
         /// If we failed to lock a key, it must be in detached state.
-        if (isDetached())
+        if (file_segment->isDetached())
             return;
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot complete file segment: {}", getInfoForLog());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot complete file segment: {}", file_segment->getInfoForLog());
     }
 
+    SCOPE_EXIT_SAFE(
+        file_segment.reset();
+    );
+
+    file_segment->complete(locked_key, allow_background_download);
+}
+
+void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_background_download)
+{
     auto segment_lock = lock();
 
     if (isCompleted(false))
@@ -1209,9 +1221,10 @@ FileSegmentsHolder::~FileSegmentsHolder()
 
 FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl(bool allow_background_download)
 {
-    front().complete(allow_background_download);
+    auto file_segment_it = file_segments.begin();
+    FileSegment::complete(std::move(*file_segment_it), allow_background_download);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheHoldFileSegments);
-    return file_segments.erase(file_segments.begin());
+    return file_segments.erase(file_segment_it);
 }
 
 FileSegment & FileSegmentsHolder::add(FileSegmentPtr && file_segment)

@@ -193,7 +193,7 @@ public:
      * ========== Methods that must do cv.notify() ==================
      */
 
-    void complete(bool allow_background_download);
+    static void complete(FileSegmentPtr && file_segment, bool allow_background_download);
 
     void completePartAndResetDownloader();
 
@@ -254,6 +254,8 @@ private:
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
 
     String tryGetPath() const;
+
+    void complete(const LockedKeyPtr & locked_key, bool allow_background_download);
 
     const Key file_key;
     Range segment_range;
