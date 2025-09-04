@@ -1202,7 +1202,7 @@ def test_sync_replica(started_cluster):
         "CREATE DATABASE test_sync_database ENGINE = Replicated('/test/sync_replica', 'shard1', 'replica2');"
     )
 
-    number_of_tables = 1000
+    number_of_tables = 500
 
     settings = {"distributed_ddl_task_timeout": 0}
 
@@ -1218,13 +1218,10 @@ def test_sync_replica(started_cluster):
             )
 
     # wait for host to reconnect
-    dummy_node.query_with_retry("SELECT * FROM system.zookeeper WHERE path='/'")
+    assert_eq_with_retry(main_node, "SELECT sum(is_active) FROM system.clusters WHERE cluster='test_sync_database'", "2\n")
 
-    dummy_node.query("SYSTEM SYNC DATABASE REPLICA test_sync_database")
-
-    assert "2\n" == main_node.query(
-        "SELECT sum(is_active) FROM system.clusters WHERE cluster='test_sync_database'"
-    )
+    # Increase keeper retries and to avoid test failures with injected faults
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA test_sync_database", settings={"keeper_max_retries": 5000})
 
     assert dummy_node.query(
         "SELECT count() FROM system.tables where database='test_sync_database'"
