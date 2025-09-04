@@ -3,7 +3,6 @@
 #include <Common/JSONBuilder.h>
 #include <Common/safe_cast.h>
 #include <Common/typeid_cast.h>
-
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Core/ColumnWithTypeAndName.h>
 
@@ -412,26 +411,24 @@ struct JoinPlanningContext
     bool is_storage_join;
 };
 
-<<<<<<< HEAD
-void predicateOperandsToCommonType(JoinPredicate & predicate, JoinExpressionActions & expression_actions, const JoinSettings & join_settings, JoinPlanningContext join_context)
-=======
-void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & right_node,
-    const JoinPlanningContext & planning_context)
->>>>>>> 66411b31c81687de0a9b08c118618e8569847322
+void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & right_node, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
 {
     const auto & left_type = left_node.getType();
     const auto & right_type = right_node.getType();
 
-    bool is_left_key_dynamic = hasDynamicType(left_type);
-    bool is_right_key_dynamic = hasDynamicType(right_type);
-
-    if (!join_settings.allow_dynamic_type_in_join_keys && (is_left_key_dynamic || is_right_key_dynamic))
+    if (!join_settings.allow_dynamic_type_in_join_keys)
     {
-        throw DB::Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "JOIN on keys with Dynamic type is not supported: key {} has type {}. In order to use this key in JOIN you should cast it to any other type",
-            is_left_key_dynamic ? left_node.getColumnName() : right_node.getColumnName(),
-            is_left_key_dynamic ? left_type->getName() : right_type->getName());
+        bool is_left_key_dynamic = hasDynamicType(left_type);
+        bool is_right_key_dynamic = hasDynamicType(right_type);
+
+        if (is_left_key_dynamic || is_right_key_dynamic)
+        {
+            throw DB::Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "JOIN on keys with Dynamic type is not supported: key {} has type {}. In order to use this key in JOIN you should cast it to any other type",
+                is_left_key_dynamic ? left_node.getColumnName() : right_node.getColumnName(),
+                is_left_key_dynamic ? left_type->getName() : right_type->getName());
+        }
     }
 
     if (left_type->equals(*right_type))
@@ -474,21 +471,11 @@ void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & ri
 }
 
 bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
-    std::vector<JoinActionRef> & used_expressions, const JoinPlanningContext & planning_context)
+    std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
 {
     bool has_join_predicates = false;
     std::vector<JoinActionRef> new_predicates;
 
-<<<<<<< HEAD
-bool addJoinConditionToTableJoin(JoinCondition & join_condition, TableJoin::JoinOnClause & table_join_clause, JoinExpressionActions & expression_actions, const JoinSettings & join_settings, JoinPlanningContext join_context)
-{
-    std::vector<JoinPredicate> new_predicates;
-    for (size_t i = 0; i < join_condition.predicates.size(); ++i)
-    {
-        auto & predicate = join_condition.predicates[i];
-        predicateOperandsToCommonType(predicate, expression_actions, join_settings, join_context);
-        if (PredicateOperator::Equals == predicate.op || PredicateOperator::NullSafeEquals == predicate.op)
-=======
     for (auto & pred : predicates)
     {
         auto & predicate = new_predicates.emplace_back(std::move(pred));
@@ -501,10 +488,9 @@ bool addJoinConditionToTableJoin(JoinCondition & join_condition, TableJoin::Join
         else if (!lhs.fromLeft() || !rhs.fromRight())
             continue;
 
-        predicateOperandsToCommonType(lhs, rhs, planning_context);
+        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
         bool null_safe_comparison = JoinConditionOperator::NullSafeEquals == predicate_op;
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
->>>>>>> 66411b31c81687de0a9b08c118618e8569847322
         {
             /**
                 * In case of null-safe comparison (a IS NOT DISTINCT FROM b),
@@ -579,6 +565,7 @@ bool tryAddDisjunctiveConditions(
     std::vector<JoinActionRef> & join_expressions,
     TableJoin::Clauses & table_join_clauses,
     std::vector<JoinActionRef> & used_expressions,
+    const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context,
     bool throw_on_error)
 {
@@ -599,7 +586,7 @@ bool tryAddDisjunctiveConditions(
             join_condition = expr.getArguments();
 
         auto & table_join_clause = table_join_clauses.emplace_back();
-        bool has_keys = addJoinPredicatesToTableJoin(join_condition, table_join_clause, used_expressions, planning_context);
+        bool has_keys = addJoinPredicatesToTableJoin(join_condition, table_join_clause, used_expressions, join_settings, planning_context);
         if (!has_keys)
         {
             table_join_clauses.resize(initial_clauses_num);
@@ -825,14 +812,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
             && join_expression[0].getType()->onlyNull()
             && std::get<0>(join_expression[0].asBinaryPredicate()) == JoinConditionOperator::Unknown))
     {
-<<<<<<< HEAD
-        bool has_keys = addJoinConditionToTableJoin(
-            join_expression.condition, table_join_clauses.emplace_back(),
-            expression_actions, join_settings, join_context);
-=======
         UInt8 rhs_value = join_expression.empty() ? 1 : 0;
         join_expression.clear();
->>>>>>> 66411b31c81687de0a9b08c118618e8569847322
 
         auto actions_dag = expression_actions.getActionsDAG();
 
@@ -864,7 +845,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     auto & table_join_clauses = table_join->getClauses();
     if (!is_join_without_expression)
     {
-        bool has_keys = addJoinPredicatesToTableJoin(join_expression, table_join_clauses.emplace_back(), used_expressions, planning_context);
+        bool has_keys = addJoinPredicatesToTableJoin(join_expression, table_join_clauses.emplace_back(), used_expressions, join_settings, planning_context);
 
         if (!has_keys && join_operator.strictness != JoinStrictness::Asof)
         {
@@ -874,7 +855,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
             table_join_clauses.pop_back();
             is_disjunctive_condition = tryAddDisjunctiveConditions(
-                join_expression, table_join_clauses, used_expressions, planning_context, !can_convert_to_cross);
+                join_expression, table_join_clauses, used_expressions, join_settings, planning_context, !can_convert_to_cross);
 
             if (!is_disjunctive_condition)
             {
@@ -904,106 +885,12 @@ static QueryPlanNode buildPhysicalJoinImpl(
         auto found_asof_predicate_it = join_expression.end();
         for (auto it = join_expression.begin(); it != join_expression.end(); ++it)
         {
-<<<<<<< HEAD
-            predicateOperandsToCommonType(predicate, expression_actions, join_settings, join_context);
-            auto asof_inequality_op = operatorToAsofInequality(predicate.op);
-            if (!asof_inequality_op)
-                continue;
-
-            if (asof_predicate_found)
-                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join does not support multiple inequality predicates in JOIN ON expression");
-            asof_predicate_found = true;
-            table_join->setAsofInequality(*asof_inequality_op);
-            table_join_clauses.front().addKey(predicate.left_node.getColumnName(), predicate.right_node.getColumnName(), /* null_safe_comparison = */ false);
-        }
-        if (!asof_predicate_found)
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join requires one inequality predicate in JOIN ON expression, in {}",
-                formatJoinCondition(join_expression.condition));
-    }
-
-    for (auto & join_condition : join_expression.disjunctive_conditions)
-    {
-        auto & table_join_clause = table_join_clauses.emplace_back();
-        bool has_keys = addJoinConditionToTableJoin(join_condition, table_join_clause, expression_actions, join_settings, join_context);
-        if (!has_keys)
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
-                formatJoinCondition(join_condition));
-        if (auto left_pre_filter_condition = concatMergeConditions(join_condition.left_filter_conditions, expression_actions.left_pre_join_actions))
-            table_join_clause.analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
-        if (auto right_pre_filter_condition = concatMergeConditions(join_condition.right_filter_conditions, expression_actions.right_pre_join_actions))
-            table_join_clause.analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
-    }
-
-    JoinActionRef residual_filter_condition(nullptr);
-    if (join_expression.disjunctive_conditions.empty())
-    {
-        residual_filter_condition = concatMergeConditions(
-            join_expression.condition.residual_conditions, expression_actions.post_join_actions);
-    }
-    else
-    {
-        bool need_residual_filter = !join_expression.condition.residual_conditions.empty();
-        for (const auto & join_condition : join_expression.disjunctive_conditions)
-        {
-            need_residual_filter = need_residual_filter || !join_condition.residual_conditions.empty();
-            if (need_residual_filter)
-                break;
-        }
-
-        if (need_residual_filter)
-            residual_filter_condition = buildSingleActionForJoinExpression(join_expression, expression_actions);
-    }
-
-    bool need_add_nullable = join_info.kind == JoinKind::Left
-        || join_info.kind == JoinKind::Right
-        || join_info.kind == JoinKind::Full;
-    if (need_add_nullable && use_nulls)
-    {
-        if (residual_filter_condition)
-        {
-            throw Exception(
-                ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "{} JOIN ON expression '{}' contains column from left and right table, which is not supported with `join_use_nulls`",
-                toString(join_info.kind), residual_filter_condition.getColumnName());
-        }
-
-        auto to_nullable_function = FunctionFactory::instance().get("toNullable", nullptr);
-        if (join_info.kind == JoinKind::Left || join_info.kind == JoinKind::Full)
-            addToNullableActions(*expression_actions.right_pre_join_actions, to_nullable_function);
-        if (join_info.kind == JoinKind::Right || join_info.kind == JoinKind::Full)
-            addToNullableActions(*expression_actions.left_pre_join_actions, to_nullable_function);
-    }
-
-    if (residual_filter_condition && canPushDownFromOn(join_info))
-    {
-        post_filter = residual_filter_condition;
-    }
-    else if (residual_filter_condition)
-    {
-        ActionsDAG dag;
-        if (is_explain_logical)
-        {
-            /// Keep post_join_actions for explain
-            dag = expression_actions.post_join_actions->clone();
-        }
-        else
-        {
-            /// Move post_join_actions to join, replace with no-op dag
-            dag = std::move(*expression_actions.post_join_actions);
-            *expression_actions.post_join_actions = ActionsDAG(dag.getRequiredColumns());
-        }
-        auto & outputs = dag.getOutputs();
-        for (const auto * node : outputs)
-        {
-            if (node->result_name == residual_filter_condition.getColumnName())
-=======
             auto [predicate_op, lhs, rhs] = it->asBinaryPredicate();
             auto asof_inequality_op = operatorToAsofInequality(predicate_op);
             if (!asof_inequality_op)
                 continue;
 
             if (lhs.fromRight() && rhs.fromLeft())
->>>>>>> 66411b31c81687de0a9b08c118618e8569847322
             {
                 *asof_inequality_op = reverseASOFJoinInequality(*asof_inequality_op);
                 std::swap(lhs, rhs);
@@ -1015,7 +902,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join does not support multiple inequality predicates in JOIN ON expression");
             found_asof_predicate_it = it;
 
-            predicateOperandsToCommonType(lhs, rhs, planning_context);
+            predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
 
             used_expressions.push_back(lhs);
             used_expressions.push_back(rhs);

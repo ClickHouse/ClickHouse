@@ -820,16 +820,19 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
         const auto & ltype = ltypeit->second;
         const auto & rtype = rtypeit->second;
 
-        bool is_left_key_dynamic = hasDynamicType(ltype);
-        bool is_right_key_dynamic = hasDynamicType(rtype);
-
-        if (allow_dynamic_type_in_join_keys && (is_left_key_dynamic || is_right_key_dynamic))
+        if (!allow_dynamic_type_in_join_keys)
         {
-            throw DB::Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "JOIN on keys with Dynamic type is not supported: key {} has type {}. In order to use this key in JOIN you should cast it to any other type",
-                is_left_key_dynamic ? left_key_name : right_key_name,
-                is_left_key_dynamic ? ltype->getName() : rtype->getName());
+            bool is_left_key_dynamic = hasDynamicType(ltype);
+            bool is_right_key_dynamic = hasDynamicType(rtype);
+
+            if (is_left_key_dynamic || is_right_key_dynamic)
+            {
+                throw DB::Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "JOIN on keys with Dynamic type is not supported: key {} has type {}. In order to use this key in JOIN you should cast it to any other type",
+                    is_left_key_dynamic ? left_key_name : right_key_name,
+                    is_left_key_dynamic ? ltype->getName() : rtype->getName());
+            }
         }
 
         bool type_equals = require_strict_keys_match ? ltype->equals(*rtype) : JoinCommon::typesEqualUpToNullability(ltype, rtype);

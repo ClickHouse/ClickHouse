@@ -849,16 +849,19 @@ JoinClausesAndActions buildJoinClausesAndActions(
             auto & left_key_node = join_clause.getLeftKeyNodes()[i];
             auto & right_key_node = join_clause.getRightKeyNodes()[i];
 
-            bool is_left_key_dynamic = hasDynamicType(left_key_node->result_type);
-            bool is_right_key_dynamic = hasDynamicType(right_key_node->result_type);
-
-            if (!planner_context->getQueryContext()->getSettingsRef()[Setting::allow_dynamic_type_in_join_keys] && (is_left_key_dynamic || is_right_key_dynamic))
+            if (!planner_context->getQueryContext()->getSettingsRef()[Setting::allow_dynamic_type_in_join_keys])
             {
-                throw DB::Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "JOIN on keys with Dynamic type is not supported: key {} has type {}. In order to use this key in JOIN you should cast it to any other type",
-                    is_left_key_dynamic ? left_key_node->result_name : right_key_node->result_name,
-                    is_left_key_dynamic ? left_key_node->result_type->getName() : right_key_node->result_type->getName());
+                bool is_left_key_dynamic = hasDynamicType(left_key_node->result_type);
+                bool is_right_key_dynamic = hasDynamicType(right_key_node->result_type);
+
+                if (is_left_key_dynamic || is_right_key_dynamic)
+                {
+                    throw DB::Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "JOIN on keys with Dynamic type is not supported: key {} has type {}. In order to use this key in JOIN you should cast it to any other type",
+                        is_left_key_dynamic ? left_key_node->result_name : right_key_node->result_name,
+                        is_left_key_dynamic ? left_key_node->result_type->getName() : right_key_node->result_type->getName());
+                }
             }
 
             if (!left_key_node->result_type->equals(*right_key_node->result_type))
