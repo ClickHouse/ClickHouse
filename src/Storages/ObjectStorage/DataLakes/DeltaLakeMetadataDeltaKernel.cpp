@@ -128,6 +128,13 @@ static void checkTypesAndNestedTypesEqual(DataTypePtr type, DataTypePtr expected
     }
 }
 
+static void convertTypeForCompatibility( NameAndTypePair & column, DataTypePtr expected_type)
+{
+    /// Comvert for compatibility, because it used to work.
+    if (column.type->isNullable() && !expected_type->isNullable())
+        column.type = removeNullable(column.type);
+}
+
 /// Returns non virtual column names, and virtual columns names and types.
 static std::pair<Names, NamesAndTypesList> splitVirtualColumns(
     const Names & columns,
@@ -251,17 +258,19 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// while in column_names_to_read we will have `c1` as name in storage and `c2` as subcolumn name.
     filterTupleColumnsToRead(requested_table_columns, column_names_to_read);
 
+    /// If only virtual columns were requested, just read the smallest column.
+    /// Because format header cannot be empty.
+    if (supports_subset_of_columns && column_names_to_read.empty())
+        column_names_to_read.push_back(ExpressionActions::getSmallestColumn(table_columns_description.getAll()).name);
+
+    info.columns_description = storage_snapshot->getDescriptionForColumns(column_names_to_read);
+
     /// Set format_header with columns that should be read from data.
     /// However, we include partition columns in requested_columns (and not in format_header),
     /// because we will insert partition columns into chunk right after it is read from data file,
     /// so we want it to be verified that chunk contains all the requested columns.
     for (auto & column : requested_table_columns)
     {
-        auto * expected_type = info.source_header.findByName(column.name);
-        if (expected_type)
-            /// In this case source contains only virtual columns.
-            checkTypesAndNestedTypesEqual(column.type, expected_type->type, column.name);
-
         auto [result_column, _] = getPhysicalColumn(
             column,
             all_read_columns_with_subcolumns,
@@ -269,19 +278,18 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             /* get_name_in_storage */true,
             log);
 
+        auto expected_type = info.columns_description.get(column.name).type;
+        convertTypeForCompatibility(result_column, expected_type);
+        checkTypesAndNestedTypesEqual(result_column.type, expected_type, column.name);
+
         info.requested_columns.emplace_back(result_column);
     }
 
-    /// If only virtual columns were requested, just read the smallest column.
-    /// Because format header cannot be empty.
-    if (supports_subset_of_columns && column_names_to_read.empty())
-        column_names_to_read.push_back(ExpressionActions::getSmallestColumn(table_columns_description.getAll()).name);
-
-    const auto table_columns_to_read = table_columns_description.getByNames(
+    auto table_columns_to_read = table_columns_description.getByNames(
         GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(),
         column_names_to_read);
 
-    for (const auto & column : table_columns_to_read)
+    for (auto & column : table_columns_to_read)
     {
         auto [result_column, readable] = getPhysicalColumn(
             column,
@@ -291,11 +299,13 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             log);
 
         if (readable)
+        {
+            convertTypeForCompatibility(result_column, info.columns_description.get(column.name).type);
             info.format_header.insert(ColumnWithTypeAndName{result_column.type, result_column.name});
+        }
     }
 
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
-    info.columns_description = storage_snapshot->getDescriptionForColumns(column_names_to_read);
 
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());
