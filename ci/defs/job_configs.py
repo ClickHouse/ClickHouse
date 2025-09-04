@@ -607,7 +607,30 @@ class JobConfigs:
             requires=["Build (amd_msan)"],
         ),
     )
-    stress_test_azure_master_jobs = Job.Config(
+    stress_test_azure_msan_jobs = Job.Config(
+        name=JobNames.STRESS,
+        runs_on=[],  # from parametrize()
+        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./tests/queries/0_stateless/",
+                "./tests/clickhouse-test",
+                "./tests/config",
+                "./tests/*.txt",
+                "./tests/docker_scripts/",
+                "./ci/docker/stress-test",
+                "./ci/jobs/scripts/clickhouse_proc.py",
+            ],
+        ),
+        allow_merge_on_failure=True,
+    ).parametrize(
+        Job.ParamSet(
+            parameter="azure, msan",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=["Build (amd_msan)"],
+        ),
+    )
+    stress_test_azure_tsan_jobs = Job.Config(
         name=JobNames.STRESS,
         runs_on=[],  # from parametrize()
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
@@ -628,11 +651,6 @@ class JobConfigs:
             parameter="azure, tsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=["Build (amd_tsan)"],
-        ),
-        Job.ParamSet(
-            parameter="azure, msan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=["Build (amd_msan)"],
         ),
     )
     upgrade_test_jobs = Job.Config(

@@ -58,7 +58,11 @@ cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config 
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
 
-start_server || { echo "Failed to start server"; exit 1; }
+start_server
+if [ $? -ne 0 ]; then
+    echo "Failed to start server"
+    exit 1
+fi
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_start || echo "ERROR: Failed to start log exports"
 
@@ -108,6 +112,10 @@ sudo cat /etc/clickhouse-server/users.d/stress_tests_overrides.xml <<EOL
 EOL
 
 start_server
+if [ $? -ne 0 ]; then
+    echo "Failed to start server"
+    exit 1
+fi
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
@@ -264,7 +272,11 @@ if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
 
-start_server || (echo "Failed to start server" && exit 1)
+start_server
+if [ $? -ne 0 ]; then
+    echo "Failed to start server"
+    exit 1
+fi
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
 python3 /repo/tests/ci/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
@@ -287,6 +299,10 @@ unset "${!THREAD_@}"
 rm /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
 
 start_server
+if [ $? -ne 0 ]; then
+    echo "Failed to start server"
+    exit 1
+fi
 
 check_server_start
 
