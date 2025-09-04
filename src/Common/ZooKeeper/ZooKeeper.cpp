@@ -576,6 +576,24 @@ Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination
     return code;
 }
 
+Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback)
+{
+    auto future_result = asyncTryExistsNoThrow(path, watch_callback);
+
+    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+    {
+        impl->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Exists, path));
+        return Coordination::Error::ZOPERATIONTIMEOUT;
+    }
+
+    auto response = future_result.get();
+    Coordination::Error code = response.error;
+    if (code == Coordination::Error::ZOK && stat)
+        *stat = response.stat;
+
+    return code;
+}
+
 bool ZooKeeper::exists(const std::string & path, Coordination::Stat * stat, const EventPtr & watch)
 {
     return existsWatch(path, stat, callbackForEvent(watch));
@@ -593,6 +611,15 @@ bool ZooKeeper::anyExists(const std::vector<std::string> & paths)
 }
 
 bool ZooKeeper::existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback)
+{
+    Coordination::Error code = existsImpl(path, stat, watch_callback);
+
+    if (!(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE))
+        throw KeeperException::fromPath(code, path);
+    return code != Coordination::Error::ZNONODE;
+}
+
+bool ZooKeeper::existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback)
 {
     Coordination::Error code = existsImpl(path, stat, watch_callback);
 
@@ -1346,6 +1373,20 @@ std::future<Coordination::ExistsResponse> ZooKeeper::asyncTryExistsNoThrow(const
 
     impl->exists(path, std::move(callback),
         watch_callback ? std::make_shared<Coordination::WatchCallback>(watch_callback) : Coordination::WatchCallbackPtr{});
+    return future;
+}
+
+std::future<Coordination::ExistsResponse> ZooKeeper::asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallbackPtr watch_callback)
+{
+    auto promise = std::make_shared<std::promise<Coordination::ExistsResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise](const Coordination::ExistsResponse & response) mutable
+    {
+        promise->set_value(response);
+    };
+
+    impl->exists(path, std::move(callback), watch_callback);
     return future;
 }
 
