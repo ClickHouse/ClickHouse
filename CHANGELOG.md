@@ -1,5 +1,5 @@
 ### Table of Contents
-**[ClickHouse release v25.8, 2025-08-28](#258)**<br/>
+**[ClickHouse release v25.8 LTS, 2025-08-28](#258)**<br/>
 **[ClickHouse release v25.7, 2025-07-24](#257)**<br/>
 **[ClickHouse release v25.6, 2025-06-26](#256)**<br/>
 **[ClickHouse release v25.5, 2025-05-22](#255)**<br/>
@@ -18,10 +18,9 @@
 
 # 2025 Changelog
 
-### <a id="258"></a> ClickHouse release 25.8, 2025-08-28
+### <a id="258"></a> ClickHouse release 25.8 LTS, 2025-08-28
 
 #### Backward Incompatible Change
-* All the allocations done by external libraries are now visible to ClickHouse's memory tracker and accounted properly. This may result in "increased" reported memory usage for certain queries or failures with `MEMORY_LIMIT_EXCEEDED`. [#84082](https://github.com/ClickHouse/ClickHouse/pull/84082) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 * Infer `Array(Dynamic)` instead of unnamed `Tuple` for arrays of values with different types in JSON. To use the previous behaviour, disable setting `input_format_json_infer_array_of_dynamic_from_array_of_different_types`. [#80859](https://github.com/ClickHouse/ClickHouse/pull/80859) ([Pavel Kruglov](https://github.com/Avogar)).
 * Move S3 latency metrics to histograms for homogeneity and simplicity. [#82305](https://github.com/ClickHouse/ClickHouse/pull/82305) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
 * Require backticks around identifiers with dots in default expressions to prevent them from being parsed as compound identifiers. [#83162](https://github.com/ClickHouse/ClickHouse/pull/83162) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
@@ -32,6 +31,7 @@
 * ClickHouse supports PostgreSQL-style heredoc syntax: `$tag$ string contents... $tag$`, also known as dollar-quoted string literals. In previous versions, there were fewer restrictions on tags: they could contain arbitrary characters, including punctuation and whitespace. This introduces parsing ambiguity with identifiers that can also start with a dollar character. At the same time, PostgreSQL only allows word characters for tags. To resolve the problem, we now restrict heredoc tags only to contain word characters. Closes [#84731](https://github.com/ClickHouse/ClickHouse/issues/84731). [#84846](https://github.com/ClickHouse/ClickHouse/pull/84846) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * The functions `azureBlobStorage`, `deltaLakeAzure`, and `icebergAzure` have been updated to properly validate `AZURE` permissions. All cluster-variant functions (`-Cluster` functions) now verify permissions against their corresponding non-clustered counterparts. Additionally, the `icebergLocal` and `deltaLakeLocal` functions now enforce `FILE` permission checks. [#84938](https://github.com/ClickHouse/ClickHouse/pull/84938) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 * Enables `allow_dynamic_metadata_for_data_lakes` setting (Table Engine level setting) by default. [#85044](https://github.com/ClickHouse/ClickHouse/pull/85044) ([Daniil Ivanik](https://github.com/divanik)).
+* Disable quoting 64 bit integers in JSON formats by default. [#74079](https://github.com/ClickHouse/ClickHouse/pull/74079) ([Pavel Kruglov](https://github.com/Avogar))
 
 #### New Feature
 * Basic support for the PromQL dialect is added. To use it, set `dialect='promql'` in clickhouse-client, point it to the TimeSeries table using the setting `promql_table_name='X'` and execute queries like `rate(ClickHouseProfileEvents_ReadCompressedBytes[1m])[5m:1m]`. In addition you can wrap the PromQL query with SQL: `SELECT * FROM prometheusQuery('up', ...);`. So far only functions `rate`, `delta` and `increase` are supported. No unary/binary operators. No HTTP API. [#75036](https://github.com/ClickHouse/ClickHouse/pull/75036) ([Vitaly Baranov](https://github.com/vitlibar)).
@@ -202,6 +202,7 @@
 * Add a `parameter` column to `system.grants` to determine source type for `GRANT READ/WRITE` and the table engine for `GRANT TABLE ENGINE`. [#85643](https://github.com/ClickHouse/ClickHouse/pull/85643) ([MikhailBurdukov](https://github.com/MikhailBurdukov)).
 * Fix parsing of a trailing comma in columns of the CREATE DICTIONARY query after a column with parameters, for example, Decimal(8). Closes [#85586](https://github.com/ClickHouse/ClickHouse/issues/85586). [#85653](https://github.com/ClickHouse/ClickHouse/pull/85653) ([Nikolay Degterinsky](https://github.com/evillique)).
 * Support inner arrays for the function `nested`. [#85719](https://github.com/ClickHouse/ClickHouse/pull/85719) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* All the allocations done by external libraries are now visible to ClickHouse's memory tracker and accounted properly. This may result in "increased" reported memory usage for certain queries or failures with `MEMORY_LIMIT_EXCEEDED`. [#84082](https://github.com/ClickHouse/ClickHouse/pull/84082) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 
 #### Bug Fix (user-visible misbehavior in an official stable release)
 
