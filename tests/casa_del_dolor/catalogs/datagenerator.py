@@ -434,22 +434,28 @@ class LakeDataGenerator:
         self.run_query(spark, f"DELETE FROM {table.get_table_full_path()};")
 
     def update_table(self, spark: SparkSession, table: SparkTable) -> bool:
-        next_operation = random.randint(1, 900)
+        next_operation = random.randint(1, 1000)
 
         if next_operation <= 400:
+            # Insert
             self.insert_random_data(spark, table)
         elif next_operation <= 600:
+            # Update and delete
             self.merge_into_table(spark, table)
         elif next_operation <= 650:
+            # Delete
             self.delete_table(spark, table)
         elif next_operation <= 700:
+            # Truncate
             self.truncate_table(spark, table)
-        elif next_operation <= 800:
+        elif next_operation <= 850:
+            # SQL Procedures or other statements specific for the lake
             next_table_generator = LakeTableGenerator.get_next_generator(
                 table.lake_format
             )
             self.run_query(spark, next_table_generator.generate_extra_statement(table))
-        elif next_operation <= 900:
+        elif next_operation <= 1000:
+            # Alter statements
             next_table_generator = LakeTableGenerator.get_next_generator(
                 table.lake_format
             )

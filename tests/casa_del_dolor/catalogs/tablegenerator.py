@@ -62,6 +62,23 @@ class LakeTableGenerator:
     def add_partition_clauses(self, columns_spark: dict[str, SparkColumn]) -> list[str]:
         return []
 
+    def random_ordered_columns(self, columns_spark, with_asc_desc: bool):
+        columns_list = []
+        flattened_columns = self.flat_columns(columns_spark)
+        for k in flattened_columns.keys():
+            if with_asc_desc:
+                columns_list.append(f"{k} ASC NULLS FIRST")
+                columns_list.append(f"{k} ASC NULLS LAST")
+                columns_list.append(f"{k} DESC NULLS FIRST")
+                columns_list.append(f"{k} DESC NULLS LAST")
+            else:
+                columns_list.append(f"{k}")
+        random_subset = random.sample(
+            columns_list, k=random.randint(1, len(columns_list))
+        )
+        random.shuffle(random_subset)
+        return ",".join(random_subset)
+
     def generate_create_table_ddl(
         self,
         catalog_name: str,
@@ -143,16 +160,52 @@ class LakeTableGenerator:
         table: SparkTable,
     ) -> str:
         """Generate random ALTER TABLE statements for testing"""
-        properties = self.generate_table_properties(table.columns, table.deterministic)
+        next_operation = random.randint(1, 1000)
 
-        if properties and random.randint(1, 2) == 1:
+        if next_operation <= 250:
             # Set random properties
-            key = random.choice(list(properties.keys()))
-            return f"ALTER TABLE {table.get_table_full_path()} SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
-        elif properties:
+            properties = self.generate_table_properties(
+                table.columns, table.deterministic
+            )
+            if properties:
+                key = random.choice(list(properties.keys()))
+                return f"ALTER TABLE {table.get_table_full_path()} SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
+        elif next_operation <= 500:
             # Unset a property
-            key = random.choice(list(properties.keys()))
-            return f"ALTER TABLE {table.get_table_full_path()} UNSET TBLPROPERTIES ('{key}');"
+            properties = self.generate_table_properties(
+                table.columns, table.deterministic
+            )
+            if properties:
+                key = random.choice(list(properties.keys()))
+                return f"ALTER TABLE {table.get_table_full_path()} UNSET TBLPROPERTIES ('{key}');"
+        elif next_operation <= 600:
+            # Add or drop partition field
+            partition_clauses = self.add_partition_clauses(table.columns)
+            random.shuffle(partition_clauses)
+            return f"""ALTER TABLE {table.get_table_full_path()} {random.choice(["ADD", "DROP"])}
+                       PARTITION FIELD {random.choice(list(partition_clauses))};"""
+        elif next_operation <= 700:
+            # Replace partition field
+            partition_clauses = self.add_partition_clauses(table.columns)
+            random.shuffle(partition_clauses)
+            return f"""ALTER TABLE {table.get_table_full_path()} REPLACE PARTITION FIELD
+                       {random.choice(list(partition_clauses))} WITH {random.choice(list(partition_clauses))};"""
+        elif next_operation <= 800:
+            # Set ORDER BY
+            if random.randint(1, 2) == 1:
+                return f"ALTER TABLE {table.get_table_full_path()} WRITE UNORDERED;"
+            return f"""ALTER TABLE {table.get_table_full_path()} WRITE{random.choice([" LOCALLY", ""])}
+                       ORDERED BY {",".join(self.random_ordered_columns(table.columns, True))};"""
+        elif next_operation <= 900:
+            # Set distribution
+            if random.randint(1, 2) == 1:
+                return f"ALTER TABLE {table.get_table_full_path()} WRITE DISTRIBUTED BY PARTITION;"
+            return f"""ALTER TABLE {table.get_table_full_path()} WRITE DISTRIBUTED BY PARTITION
+                       LOCALLY ORDERED BY {",".join(self.random_ordered_columns(table.columns, True))};"""
+        elif next_operation <= 1000:
+            # Set identifier fields
+            return f"""ALTER TABLE {table.get_table_full_path()} {random.choice(["SET", "DROP"])}
+                       IDENTIFIER FIELDS {",".join(self.random_ordered_columns(table.columns, False))};"""
         return ""
 
     @abstractmethod
@@ -442,23 +495,6 @@ class IcebergTableGenerator(LakeTableGenerator):
         ] = random.choice(["none", "counts", "truncate(8)", "truncate(16)", "full"])
 
         return properties
-
-    def random_ordered_columns(self, columns_spark, with_desc: bool):
-        columns_list = []
-        flattened_columns = self.flat_columns(columns_spark)
-        for k in flattened_columns.keys():
-            if with_desc:
-                columns_list.append(f"{k} ASC NULLS FIRST")
-                columns_list.append(f"{k} ASC NULLS LAST")
-                columns_list.append(f"{k} DESC NULLS FIRST")
-                columns_list.append(f"{k} DESC NULLS LAST")
-            else:
-                columns_list.append(f"{k}")
-        random_subset = random.sample(
-            columns_list, k=random.randint(1, len(columns_list))
-        )
-        random.shuffle(random_subset)
-        return ",".join(random_subset)
 
     def _generate_write_properties(
         self, columns_spark: dict[str, SparkColumn]
