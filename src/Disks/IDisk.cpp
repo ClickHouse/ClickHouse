@@ -234,12 +234,10 @@ try
 {
     const std::string_view payload("test", 4);
     const auto read_settings = getReadSettings();
-    auto write_settings = getWriteSettings();
-    write_settings.is_initial_access_check = true;
 
     /// write
     {
-        auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite, write_settings);
+        auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite);
         try
         {
             file->write(payload.data(), payload.size());

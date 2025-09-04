@@ -208,14 +208,12 @@ void WriteTransaction::create()
 void WriteTransaction::validateSchema(const DB::Block & header) const
 {
     assertTransactionCreated();
-    auto write_column_names = write_schema.getNameSet();
-    auto header_column_names = header.getNamesAndTypesList().getNameSet();
-    if (write_column_names != header_column_names)
+    if (write_schema.getNames() != header.getNames())
     {
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
             "Header does not match write schema. Expected: {}, got: {}",
-            fmt::join(write_column_names, ", "), fmt::join(header_column_names, ", "));
+            fmt::join(write_schema.getNames(), ", "), fmt::join(header.getNames(), ", "));
     }
 }
 

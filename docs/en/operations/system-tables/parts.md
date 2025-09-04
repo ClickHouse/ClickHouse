@@ -90,9 +90,9 @@ Columns:
 
 - `data_version` ([UInt64](../../sql-reference/data-types/int-uint.md)) – Number that is used to determine which mutations should be applied to the data part (mutations with a version higher than `data_version`).
 
-- `primary_key_bytes_in_memory` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) used by primary key values (will be `0` in case of `primary_key_lazy_load=1` and `use_primary_key_cache=1`).
+- `primary_key_bytes_in_memory` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) used by primary key values.
 
-- `primary_key_bytes_in_memory_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) reserved for primary key values (will be `0` in case of `primary_key_lazy_load=1` and `use_primary_key_cache=1`).
+- `primary_key_bytes_in_memory_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) reserved for primary key values.
 
 - `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. For more details, see [FREEZE PARTITION](/sql-reference/statements/alter/partition#freeze-partition)
 

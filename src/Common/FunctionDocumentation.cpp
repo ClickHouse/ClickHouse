@@ -204,6 +204,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Geo, "Geo"},
         {Category::Encoding, "Encoding"},
         {Category::Encryption, "Encryption"},
+        {Category::File, "File"},
         {Category::Financial, "Financial"},
         {Category::Hash, "Hash"},
         {Category::IPAddress, "IP Address"},

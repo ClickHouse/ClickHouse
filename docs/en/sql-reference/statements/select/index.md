@@ -284,8 +284,6 @@ You can specify the necessary settings right in the `SELECT` query. The setting 
 
 Other ways to make settings see [here](/operations/settings/overview).
 
-For boolean settings set to true, you can use a shorthand syntax by omitting the value assignment. When only the setting name is specified, it is automatically set to `1` (true).
-
 **Example**
 
 ```sql
