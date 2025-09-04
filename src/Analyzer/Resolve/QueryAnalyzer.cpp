@@ -3070,6 +3070,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         else
                             common_type = getLeastSupertype(DataTypes{if_function_arguments[1]->getResultType(), function_query_node->getResultType()});
                         node = buildCastFunction(if_function_arguments[1], common_type, scope.context, true);
+                        resolveExpressionNode(node,
+                            scope,
+                            false /*allow_lambda_expression*/,
+                            false /*allow_table_expression*/);
                     }
                     else
                         node = std::move(if_function_arguments[1]);
