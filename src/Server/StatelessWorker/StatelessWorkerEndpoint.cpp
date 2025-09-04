@@ -147,7 +147,7 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
     }
 }
 
-void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response)
+void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response)
 {
     auto operation = params.get("operation");
     auto task_id = params.get("task_id");
@@ -157,8 +157,9 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBuffer &
         auto unique_temp_file_path = params.get("temp_path");
         /// Deserialize task fields from the request body
         DistributedQueryTaskDescription task_description;
-        deserializeTask(task_description, body);
-        body.eof();
+        deserializeTask(task_description, *body);
+        body->eof();
+        body.reset();
 
         /// Pass it to the runner to start execution
         task_runner->startTask(task_id, task_description, unique_temp_file_path);
@@ -173,7 +174,8 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBuffer &
         if (params.has("client_version"))
             client_version = parse<UInt64>(params.get("client_version"));
 
-        body.eof();
+        body->eof();
+        body.reset();
 
         auto status = task_runner->getStatus(task_id, wait_milliseconds);
         DistributedQueryTaskStatus task_status;
@@ -223,7 +225,8 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBuffer &
     }
     else if (operation == "cancel")
     {
-        body.eof();
+        body->eof();
+        body.reset();
         auto result = task_runner->cancelTask(task_id);
         switch (result)
         {
@@ -250,7 +253,8 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBuffer &
     }
     else if (operation == "forget")
     {
-        body.eof();
+        body->eof();
+        body.reset();
         auto result = task_runner->forgetTask(task_id);
         switch (result)
         {
@@ -270,7 +274,8 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBuffer &
     }
     else
     {
-        body.eof();
+        body->eof();
+        body.reset();
         LOG_WARNING(log, "Unsupported operation '{}'", operation);
         response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
         writeString("Unknown operation type\n", out);

@@ -16,7 +16,7 @@ public:
     ~StatelessWorkerEndpoint() override;
 
     std::string getId(const std::string & path) const override;
-    void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
+    void processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response) override;
     void shutdown();
 
 private:
