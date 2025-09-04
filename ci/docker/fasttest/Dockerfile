@@ -6,7 +6,7 @@ ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 ARG LLVM_APT_VERSION="1:21.1.0~"
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=20
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=21
 
 # We need ca-certificates first to be able to update all repos. This is why it's run twice
 RUN apt-get update \
