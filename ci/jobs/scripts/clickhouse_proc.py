@@ -384,14 +384,21 @@ profiles:
             strict=True,
         )
 
-        replicas=3 if self.is_db_replicated else 1
-        tsan_memory_limit_mb=Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
+        replicas = 3 if self.is_db_replicated else 1
+        tsan_memory_limit_mb = (
+            Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
+        )
 
         env = os.environ.copy()
-        env["TSAN_OPTIONS"] = " ".join(filter(lambda x: x is not None, [
-            env.get("TSAN_OPTIONS", None),
-            f"memory_limit_mb={tsan_memory_limit_mb}",
-        ]))
+        env["TSAN_OPTIONS"] = " ".join(
+            filter(
+                lambda x: x is not None,
+                [
+                    env.get("TSAN_OPTIONS", None),
+                    f"memory_limit_mb={tsan_memory_limit_mb}",
+                ],
+            )
+        )
         tsan_options = env["TSAN_OPTIONS"]
         print(f"TSAN_OPTIONS = {tsan_options}")
 
@@ -732,11 +739,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         for pid, profile in latest_profiles.items():
             Shell.check(
                 f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
-                verbose=True
+                verbose=True,
             )
             Shell.check(
                 f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
-                verbose=True
+                verbose=True,
             )
 
         Shell.check(
