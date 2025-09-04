@@ -1923,7 +1923,7 @@ void StatementGenerator::generateLimitExpr(RandomGenerator & rg, Expr * expr)
 {
     if (this->depth >= this->fc.max_depth || rg.nextSmallNumber() < 8)
     {
-        static const std::vector<uint32_t> & limitValues = {0, 1, 2, 5, 10, 50, 100};
+        static const std::vector<uint32_t> & limitValues = {0, 0, 1, 1, 1, 1, 2, 2, 5, 5, 10, 50, 100};
 
         expr->mutable_lit_val()->mutable_int_lit()->set_uint_lit(
             rg.nextSmallNumber() < 9 ? rg.pickRandomly(limitValues) : rg.nextRandomUInt32());
