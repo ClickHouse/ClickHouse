@@ -140,6 +140,7 @@ spark_properties = {
 
 def get_spark(
     cluster,
+    env,
     sparklogfile: str,
     derbylogfile: str,
     metastore_db: str,
@@ -187,6 +188,8 @@ def get_spark(
         raise Exception("Unknown lake format")
 
     os.environ["PYSPARK_SUBMIT_ARGS"] = f"--packages {",".join(all_jars)} pyspark-shell"
+    for k, val in env.items():
+        os.environ[k] = val
 
     from pyspark.sql import SparkSession
 
@@ -399,6 +402,11 @@ def get_spark(
     builder.config("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED")
     # Allow to retain 0 hours on vacuum
     builder.config("spark.databricks.delta.retentionDurationCheck.enabled", "false")
+    # Set timezone to match ClickHouse
+    if "TZ" in env:
+        builder.config("spark.sql.session.timeZone", env["TZ"])
+    for k, val in env.items():
+        builder.config(f"spark.executorEnv.{k}", val)
 
     # Random properties
     if random.randint(1, 100) <= 70:
@@ -437,7 +445,7 @@ def wait_for_port(host, port, timeout=90):
 
 
 class SparkHandler:
-    def __init__(self, cluster, args):
+    def __init__(self, cluster, args, env: dict[str, str]):
         self.logger = logging.getLogger(__name__)
         self.uc_server = None
         self.catalogs = {}
@@ -453,6 +461,7 @@ class SparkHandler:
         self.metastore_db = self.spark_log_dir / "metastore_db"
         self.data_generator = LakeDataGenerator(self.spark_query_logger)
         self.table_check = SparkAndClickHouseCheck()
+        self.env = env
         spark_log = f"""
 # ----- log4j2.properties -----
 status = error
@@ -581,6 +590,7 @@ logger.jetty.level = warn
     ):
         return get_spark(
             cluster,
+            self.env,
             str(self.spark_log_config),
             str(self.derby_logger),
             str(self.metastore_db),

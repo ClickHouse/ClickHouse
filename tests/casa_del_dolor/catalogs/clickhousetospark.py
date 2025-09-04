@@ -52,7 +52,7 @@ class ClickHouseSparkTypeMapper:
             "String": ("STRING", StringType()),
             "FixedString": ("STRING", StringType()),
             # Date and Time types
-            "Date": ("STRING", StringType()), # it doesn't fit
+            "Date": ("STRING", StringType()),  # it doesn't fit
             "Date32": ("DATE", DateType()),
             "Time": ("STRING", StringType()),
             "Time64": ("STRING", StringType()),

@@ -450,7 +450,7 @@ if args.with_azurite:
     )
 cluster.default_local_uploader = LocalUploader(cluster.instances["node0"])
 cluster.default_local_downloader = LocalDownloader(cluster.instances["node0"])
-spark_handler = SparkHandler(cluster, args)
+spark_handler = SparkHandler(cluster, args, test_env_variables)
 
 if args.with_postgresql:
     postgres_conn = get_postgres_conn(
