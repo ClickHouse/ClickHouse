@@ -858,9 +858,7 @@ function checkURL() {
     ping(url_elem.value).then(status => {
         if (current_ping_request_num == ping_request_num) {
             elem.className = status ? 'ok' : 'fail';
-            if (status) {
-                checkCredentials();
-            }
+            // Removed automatic credential validation - credentials will be validated on query execution
         }
     });
 };
@@ -868,21 +866,7 @@ function checkURL() {
 url_elem.addEventListener('input', checkURL);
 checkURL();
 
-async function getServerStatus(server_address, user, password) {
-    let url = server_address +
-        (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        'add_http_cors_header=1&default_format=JSONEachRow';
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
-    try {
-        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t", headers: { 'Authorization': 'never' } });
-        if (!response.ok) return false;
-        json = await response.json();
-        return json;
-    } catch (e) {
-        return false;
-    }
-}
+// Removed getServerStatus() function - no longer needed since real-time credential validation was removed
 
 let load_databases_request_num = 0;
 async function loadDatabases(server_address, user, password) {
@@ -1028,24 +1012,10 @@ function formatUptime(t) {
     return days + " day" + (days > 1 ? 's' : '');
 }
 
-let check_credentials_request_num = 0;
-function checkCredentials() {
-    ++check_credentials_request_num;
-    const current_check_credentials_request_num = check_credentials_request_num;
-    getServerStatus(url_elem.value, user_elem.value, password_elem.value).then(json => {
-        if (current_check_credentials_request_num == check_credentials_request_num) {
-            if (json) {
-                [user_elem, password_elem].forEach(e => { e.classList.remove('fail'); e.classList.add('ok'); });
-                document.getElementById('server_info').innerText = `v${json.v}, uptime ${formatUptime(json.t)} `;
-            } else {
-                [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.add('fail'); });
-            }
-        }
-    });
-}
+// Removed checkCredentials() function and related variables - no longer needed since real-time credential validation was removed
 
-user_elem.addEventListener('input', checkCredentials);
-password_elem.addEventListener('input', checkCredentials);
+// Removed real-time credential validation to prevent excessive POST requests on each keystroke
+// Credentials will be validated when the user clicks "Run" button as part of the query execution
 
 
 function queryToColor(str) {
