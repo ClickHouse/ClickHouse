@@ -185,6 +185,7 @@ QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, const Cont
     return query->cloneAndReplace(visitor.replacement_map);
 }
 
+#define DUMP_PARALLEL_REPLICAS_QUERY_CANDIDATES 1
 #ifdef DUMP_PARALLEL_REPLICAS_QUERY_CANDIDATES
 #include <ranges>
 
@@ -232,7 +233,13 @@ const QueryNode * findQueryForParallelReplicas(
         auto it = mapping.find(subquery_node);
         /// This should not happen ideally.
         if (it == mapping.end())
+        {
+            LOG_DEBUG(
+                getLogger(__PRETTY_FUNCTION__),
+                "Plan node is not found for {}",
+                CityHash_v1_0_2::Hash128to64(subquery_node->getTreeHash()));
             break;
+        }
 
         std::stack<Frame> nodes_to_check;
         nodes_to_check.push({.node = it->second, .inside_join = false});
@@ -327,11 +334,18 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     auto stack = getSupportingParallelReplicasQueries(query_tree_node.get(), context);
     /// Empty stack means that storage does not support parallel replicas.
     if (stack.empty())
+    {
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Query can be executed with parallel replicas. Stack is empty");
         return nullptr;
+    }
 
     /// We don't have any subquery and storage can process parallel replicas by itself.
     if (stack.back() == query_tree_node.get())
+    {
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Stack top match query_tree_node. Stack size: {}", stack.size());
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Chosen query\n{}", stack.back()->dumpTree());
         return nullptr;
+    }
 
     /// This is needed to avoid infinite recursion.
     auto mutable_context = Context::createCopy(context);
@@ -342,7 +356,11 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     auto updated_query_tree = replaceTablesWithDummyTables(query_tree_node, mutable_context);
 
     SelectQueryOptions options;
-    Planner planner(updated_query_tree, options, std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
+    Planner planner(
+        updated_query_tree,
+        options,
+        std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}),
+        "findQueryForParallelReplicas");
     planner.buildQueryPlanIfNeeded();
 
     /// This part is a bit clumsy.
@@ -368,6 +386,16 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
             new_stack.pop_back();
         }
     }
+    else
+    {
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "findQueryforParallelReplicas() returned NULL");
+    }
+
+    if (res)
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Result\n{}", res->dumpTree());
+    else
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Result NULL");
+
     return res;
 }
 
@@ -478,8 +506,8 @@ const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tr
 
     auto context = query_node ? query_node->getContext() : union_node->getContext();
 
-    if (!context->canUseParallelReplicasOnFollower())
-        return nullptr;
+    // if (!context->canUseParallelReplicasOnFollower())
+    //     return nullptr;
 
     return findTableForParallelReplicas(query_tree_node.get(), context);
 }
