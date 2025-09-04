@@ -29,6 +29,8 @@ public:
     /// For merges in mutations it may need special logic, it's done inside ProgressCallback.
     void disableProfileEventUpdate() { update_profile_events = false; }
 
+    /// Returns false if the query should be quietly cancelled.
+    /// Throws exception if the query should fail.
     bool onProgress(uint64_t read_rows, uint64_t read_bytes, const StorageLimitsList & storage_limits);
 
 private:
