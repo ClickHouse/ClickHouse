@@ -114,6 +114,7 @@
 #include <Server/TLSHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperReadinessHandler.h>
+#include <Server/ArrowFlightHandler.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -334,6 +335,9 @@ namespace ServerSetting
     extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsBool skip_binary_checksum_checks;
+    extern const ServerSettingsBool abort_on_logical_error;
+    extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
+    extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
 }
 
 namespace ErrorCodes
@@ -1015,6 +1019,22 @@ try
 
     Poco::Logger * log = &logger();
 
+    // If the startupLevel is set in the config, we override the root logger level.
+    // Specific loggers can still override it.
+    std::string default_logger_level_config = config().getString("logger.level", "");
+    bool should_restore_default_logger_level = false;
+    if (config().has("logger.startupLevel") && !config().getString("logger.startupLevel").empty())
+    {
+        /// Set the root logger level to the startup level.
+        /// This is useful for debugging startup issues.
+        /// The root logger level will be reset to the default level after the server is fully initialized.
+        config().setString("logger.level", config().getString("logger.startupLevel"));
+        Loggers::updateLevels(config(), logger());
+        should_restore_default_logger_level = true;
+
+        LOG_INFO(log, "Starting root logger in level {}", config().getString("logger.startupLevel"));
+    }
+
     MainThreadStatus::getInstance();
 
     ServerSettings server_settings;
@@ -1203,6 +1223,9 @@ try
             total_memory_tracker.setSampleMaxAllocationSize(server_settings[ServerSetting::total_memory_profiler_sample_max_allocation_size]);
     }
 
+    total_memory_tracker.setJemallocFlushProfileInterval(server_settings[ServerSetting::jemalloc_flush_profile_interval_bytes]);
+    total_memory_tracker.setJemallocFlushProfileOnMemoryExceeded(server_settings[ServerSetting::jemalloc_flush_profile_on_memory_exceeded]);
+
     Poco::ThreadPool server_pool(
         /* minCapacity */3,
         /* maxCapacity */server_settings[ServerSetting::max_connections],
@@ -1216,7 +1239,7 @@ try
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
 
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
-    SCOPE_EXIT({
+    SCOPE_EXIT_SAFE({
         Stopwatch watch;
         LOG_INFO(log, "Waiting for background threads");
         GlobalThreadPool::instance().shutdown();
@@ -1267,7 +1290,7 @@ try
 
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
-    SCOPE_EXIT({
+    SCOPE_EXIT_SAFE({
         async_metrics.stop();
 
         /** Ask to cancel background jobs all table engines,
@@ -1910,6 +1933,8 @@ try
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(*config);
 
+            DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
+
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
             const double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
             const size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
@@ -2334,8 +2359,23 @@ try
             async_metrics,
             servers_to_start_before_tables,
             /* start_servers= */ false);
+    }
 
+#if USE_SSL
+    /// We may notice that try to reload certificates twice within this function.
+    /// First time here before starting the `servers_to_start_before_tables`, and then
+    /// one more time before starting the `servers`. The problem we're trying to avoid is:
+    /// 1. We create a socket for keeper secure protocol (w/o starting a server yet). That creates a SSL context (in particular, it might be the default context).
+    /// 2. We then start this server a few lines below. While handling the first request, it will access (read) certs.
+    /// 3. A little further down, we reload certificates before starting the rest of the servers.
+    /// 4. `CertificateReloader` will set its custom `cert_cb` to the default context if it is not initialized yet (see `CertificateReloader::init()`).
+    /// 5. Items (2) and (4) are not synchronized, so there might be a data race for example (see https://github.com/ClickHouse/ClickHouse/issues/85412).
+    CertificateReloader::instance().tryLoad(config());
+    CertificateReloader::instance().tryLoadClient(config());
+#endif
 
+    {
+        std::lock_guard lock(servers_lock);
         for (auto & server : servers_to_start_before_tables)
         {
             server.start();
@@ -2540,7 +2580,7 @@ try
 
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
-        global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
+        global_context->handleSystemZooKeeperLogAndConnectionLogAfterInitializationIfNeeded();
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
         buildLoggers(config(), logger());
@@ -2715,6 +2755,14 @@ try
                 LOG_INFO(log, "Listening for {}", server.getDescription());
             }
 
+            // Restore the root logger level to the default level after the server is fully initialized.
+            if (should_restore_default_logger_level)
+            {
+                config().setString("logger.level", default_logger_level_config);
+                Loggers::updateLevels(config(), logger());
+                LOG_INFO(log, "Restored default logger level to {}", default_logger_level_config);
+            }
+
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
@@ -2741,6 +2789,15 @@ try
 #endif
 
         SCOPE_EXIT_SAFE({
+            if (config().has("logger.shutdownLevel") && !config().getString("logger.shutdownLevel").empty())
+            {
+                /// Set the root logger level to the shutdown level.
+                /// This is useful for debugging shutdown issues.
+                config().setString("logger.level", config().getString("logger.shutdownLevel"));
+                Loggers::updateLevels(config(), logger());
+
+                LOG_INFO(log, "Set root logger in level {} before shutdown", config().getString("logger.shutdownLevel"));
+            }
             LOG_DEBUG(log, "Received termination signal.");
 
             CurrentMetrics::set(CurrentMetrics::IsServerShuttingDown, 1);
@@ -2777,6 +2834,8 @@ try
             /// (because killAllQueries() will cancel all running backups/restores).
             if (server_settings[ServerSetting::shutdown_wait_backups_and_restores])
                 global_context->waitAllBackupsAndRestores();
+            else
+                global_context->cancelAllBackupsAndRestores();
 
             /// Killing remaining queries.
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
@@ -3088,6 +3147,26 @@ void Server::createServers(
                         connection_filter));
             });
         }
+
+#if USE_ARROWFLIGHT
+        if (server_type.shouldStart(ServerType::Type::ARROW_FLIGHT))
+        {
+            port_name = "arrowflight_port";
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(Poco::Timespan());
+                socket.setSendTimeout(settings[Setting::send_timeout]);
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    "Arrow Flight compatibility protocol: " + address.toString(),
+                    std::unique_ptr<IGRPCServer>(new ArrowFlightHandler(*this, makeSocketAddress(listen_host, port, &logger()))),
+                    true);
+            });
+        }
+#endif
 
         if (server_type.shouldStart(ServerType::Type::TCP_SECURE))
         {

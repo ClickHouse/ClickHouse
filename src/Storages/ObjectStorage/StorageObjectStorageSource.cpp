@@ -1,17 +1,21 @@
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <memory>
 #include <optional>
-#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/Archives/ArchiveUtils.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -19,17 +23,14 @@
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
-#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheKey.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/Context.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
 #include <Disks/IO/ReadBufferFromDistributedCache.h>
@@ -83,7 +84,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     ContextPtr context_,
     UInt64 max_block_size_,
     std::shared_ptr<IObjectIterator> file_iterator_,
-    FormatParserGroupPtr parser_group_,
+    FormatParserSharedResourcesPtr parser_shared_resources_,
+    FormatFilterInfoPtr format_filter_info_,
     bool need_only_count_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , name(std::move(name_))
@@ -93,13 +95,15 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
-    , parser_group(std::move(parser_group_))
+    , parser_shared_resources(std::move(parser_shared_resources_))
+    , format_filter_info(std::move(format_filter_info_))
     , read_from_format_info(info)
-    , create_reader_pool(std::make_shared<ThreadPool>(
-        CurrentMetrics::StorageObjectStorageThreads,
-        CurrentMetrics::StorageObjectStorageThreadsActive,
-        CurrentMetrics::StorageObjectStorageThreadsScheduled,
-        1 /* max_threads */))
+    , create_reader_pool(
+          std::make_shared<ThreadPool>(
+              CurrentMetrics::StorageObjectStorageThreads,
+              CurrentMetrics::StorageObjectStorageThreadsActive,
+              CurrentMetrics::StorageObjectStorageThreadsScheduled,
+              1 /* max_threads */))
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
@@ -303,17 +307,8 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
 
-            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
-                chunk,
-                read_from_format_info.requested_virtual_columns,
-                {.path = path,
-                 .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_info->metadata->size_bytes,
-                 .filename = &filename,
-                 .last_modified = object_info->metadata->last_modified,
-                 .etag = &(object_info->metadata->etag)},
-                read_context);
-
-            // The order is important, it must be added after virtual columns..
+            /// The order is important, hive partition columns must be added before virtual columns
+            /// because they are part of the schema
             if (!read_from_format_info.hive_partition_columns_to_read_from_file_path.empty())
             {
                 HivePartitioningUtils::addPartitionColumnsToChunk(
@@ -321,11 +316,23 @@ Chunk StorageObjectStorageSource::generate()
                     read_from_format_info.hive_partition_columns_to_read_from_file_path,
                     path);
             }
+
+            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
+                chunk,
+                read_from_format_info.requested_virtual_columns,
+                {.path = path,
+                 .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_info->metadata->size_bytes,
+                 .filename = &filename,
+                 .last_modified = object_info->metadata->last_modified,
+                 .etag = &(object_info->metadata->etag),
+                 .data_lake_snapshot_version = file_iterator->getSnapshotVersion()},
+                read_context);
+
 #if USE_PARQUET && USE_AWS_S3
             if (chunk_size && chunk.hasColumns())
             {
                 /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
-                if (dynamic_cast<const DeltaLakeMetadata *>(configuration.get()))
+                if (dynamic_cast<const DeltaLakeMetadata *>(configuration->getExternalMetadata()))
                 {
                     /// This is an awful temporary crutch,
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.
@@ -375,7 +382,7 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !parser_group->filter_actions_dag)
+            && !format_filter_info->filter_actions_dag)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -398,7 +405,10 @@ Chunk StorageObjectStorageSource::generate()
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
 {
     const auto cache_key = getKeyForSchemaCache(
-        getUniqueStoragePathIdentifier(*configuration, object_info), configuration->format, format_settings, read_context);
+        getUniqueStoragePathIdentifier(*configuration, object_info),
+        object_info.getFileFormat().value_or(configuration->format),
+        format_settings,
+        read_context);
     schema_cache.addNumRows(cache_key, num_rows);
 }
 
@@ -415,7 +425,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         &schema_cache,
         log,
         max_block_size,
-        parser_group,
+        parser_shared_resources,
+        format_filter_info,
         need_only_count);
 }
 
@@ -430,7 +441,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     SchemaCache * schema_cache,
     const LoggerPtr & log,
     size_t max_block_size,
-    FormatParserGroupPtr parser_group,
+    FormatParserSharedResourcesPtr parser_shared_resources,
+    FormatFilterInfoPtr format_filter_info,
     bool need_only_count)
 {
     ObjectInfoPtr object_info;
@@ -472,7 +484,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         const auto cache_key = getKeyForSchemaCache(
             getUniqueStoragePathIdentifier(*configuration, *object_info),
-            configuration->format,
+            object_info->getFileFormat().value_or(configuration->format),
             format_settings,
             context_);
 
@@ -495,8 +507,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
         /// Instead, we use special ConstChunkGenerator that will generate chunks
         /// with max_block_size rows until total number of rows is reached.
+
+        auto names_and_types = read_from_format_info.columns_description.getAllPhysical();
+        ColumnsWithTypeAndName columns;
+        for (const auto & [name, type] : names_and_types)
+            columns.emplace_back(type->createColumn(), type, name);
         builder.init(Pipe(std::make_shared<ConstChunkGenerator>(
-                              std::make_shared<const Block>(read_from_format_info.format_header), *num_rows_from_cache, max_block_size)));
+                              std::make_shared<const Block>(columns), *num_rows_from_cache, max_block_size)));
     }
     else
     {
@@ -514,8 +531,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
 
         Block initial_header = read_from_format_info.format_header;
+        bool schema_changed = false;
 
-        if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info->getPath()))
+        if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info))
         {
             Block sample_header;
             for (const auto & [name, type] : *initial_schema)
@@ -523,16 +541,27 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 sample_header.insert({type->createColumn(), type, name});
             }
             initial_header = sample_header;
+            schema_changed = true;
         }
+        auto filter_info = [&]()
+        {
+            if (!schema_changed)
+                return format_filter_info;
+            auto mapper = configuration->getColumnMapperForObject(object_info);
+            if (!mapper)
+                return format_filter_info;
+            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper);
+        }();
 
         auto input_format = FormatFactory::instance().getInput(
-            configuration->format,
+            object_info->getFileFormat().value_or(configuration->format),
             *read_buf,
             initial_header,
             context_,
             max_block_size,
             format_settings,
-            parser_group,
+            parser_shared_resources,
+            filter_info,
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
@@ -544,15 +573,26 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        std::shared_ptr<const ActionsDAG> transformer;
-        if (object_info->data_lake_metadata)
-            transformer = object_info->data_lake_metadata->transform;
-        if (!transformer)
-            transformer = configuration->getSchemaTransformer(context_, object_info->getPath());
+        configuration->addDeleteTransformers(object_info, builder, format_settings, context_);
 
-        if (transformer)
+        std::optional<ActionsDAG> transformer;
+        if (object_info->data_lake_metadata && object_info->data_lake_metadata->transform)
         {
-            auto schema_modifying_actions = std::make_shared<ExpressionActions>(transformer->clone());
+            transformer = object_info->data_lake_metadata->transform->clone();
+            /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
+            /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
+            /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
+            transformer->removeUnusedActions(read_from_format_info.requested_columns.getNames());
+        }
+        if (!transformer)
+        {
+            if (auto schema_transformer = configuration->getSchemaTransformer(context_, object_info))
+                transformer = schema_transformer->clone();
+        }
+
+        if (transformer.has_value())
+        {
+            auto schema_modifying_actions = std::make_shared<ExpressionActions>(std::move(transformer.value()));
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
@@ -592,8 +632,12 @@ std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource
     return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
 }
 
-std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBuffer(
-    ObjectInfo & object_info, const ObjectStoragePtr & object_storage, const ContextPtr & context_, const LoggerPtr & log, const std::optional<ReadSettings> & read_settings)
+std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
+    ObjectInfo & object_info,
+    const ObjectStoragePtr & object_storage,
+    const ContextPtr & context_,
+    const LoggerPtr & log,
+    const std::optional<ReadSettings> & read_settings)
 {
     const auto & settings = context_->getSettingsRef();
     const auto & effective_read_settings = read_settings.has_value() ? read_settings.value() : context_->getReadSettings();
@@ -1081,7 +1125,7 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
                 path_to_archive,
                 [=, this]()
                 {
-                    return StorageObjectStorageSource::createReadBuffer(*archive_object, object_storage, getContext(), log);
+                    return createReadBuffer(*archive_object, object_storage, getContext(), log);
                 },
                 archive_object->metadata->size_bytes);
 
@@ -1138,12 +1182,10 @@ StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr o
 {
     const auto size = object_info->metadata->size_bytes;
     return DB::createArchiveReader(
-        /* path_to_archive */object_info->getPath(),
-        /* archive_read_function */[=, this]()
-        {
-            return StorageObjectStorageSource::createReadBuffer(*object_info, object_storage, getContext(), log);
-        },
-        /* archive_size */size);
+        /* path_to_archive */
+        object_info->getPath(),
+        /* archive_read_function */ [=, this]() { return createReadBuffer(*object_info, object_storage, getContext(), log); },
+        /* archive_size */ size);
 }
 
 ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor)
