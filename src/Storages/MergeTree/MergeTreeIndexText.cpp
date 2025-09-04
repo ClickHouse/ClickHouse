@@ -514,14 +514,17 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(MergeTreeInde
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
 {
-    auto tokens_view = token_extractor->getTokensView(document.data, document.size);
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+    size_t length = document.size;
 
-    for (const auto & token : tokens_view)
+    while (cur < length && token_extractor->nextInStringPadded(document.data, length, &cur, &token_start, &token_len))
     {
         bool inserted;
         TokensMap::LookupResult it;
 
-        ArenaKeyHolder key_holder{StringRef(token.data(), token.length()), *arena};
+        ArenaKeyHolder key_holder{StringRef(document.data + token_start, token_len), *arena};
         tokens_map.emplace(key_holder, it, inserted);
 
         if (inserted)
