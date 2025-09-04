@@ -1,4 +1,4 @@
-// Copyright 2022-2023  The OpenSSL Project Authors. All Rights Reserved.
+// Copyright 2022-2025  The OpenSSL Project Authors. All Rights Reserved.
 //
 // Licensed under the Apache License 2.0 (the "License").  You may not use
 // this file except in compliance with the License.  You can obtain a copy
@@ -18,11 +18,19 @@
 .hidden	OPENSSL_armcap_P
 
 .text
+
+.section	.rodata
 .align	5
+.type	_chacha_sve_consts,%object
+_chacha_sve_consts:
 .Lchacha20_consts:
 .quad	0x3320646e61707865,0x6b20657479622d32		// endian-neutral
 .Lrot8:
 .word	0x02010003,0x04040404,0x02010003,0x04040404
+.size	_chacha_sve_consts,.-_chacha_sve_consts
+
+.previous
+
 .globl	ChaCha20_ctr32_sve
 .type	ChaCha20_ctr32_sve,%function
 .align	5
@@ -41,7 +49,8 @@ ChaCha20_ctr32_sve:
 1:
 	cmp	x5,4
 	b.le	.Lreturn
-	adr	x6,.Lrot8
+	adrp	x6,.Lrot8
+	add	x6,x6,#:lo12:.Lrot8
 	ldp	w9,w10,[x6]
 .inst	0x04aa4d3f	//index z31.s,w9,w10
 2:
@@ -59,7 +68,8 @@ ChaCha20_ctr32_sve:
 	stp	x28,x29,[sp,160]
 	str	x30,[sp,176]
 
-	adr	x6,.Lchacha20_consts
+	adrp	x6,.Lchacha20_consts
+	add	x6,x6,#:lo12:.Lchacha20_consts
 	ldp	x23,x24,[x6]
 	ldp	x25,x26,[x3]
 	ldp	x27,x28,[x3, 16]
