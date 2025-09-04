@@ -29,7 +29,7 @@ namespace ErrorCodes
 static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
 {
     static constexpr size_t atom_size = 8;
-    return (bits_per_row * num_tokens + atom_size - 1) / atom_size;
+    return std::max(1UL, (bits_per_row * num_tokens + atom_size - 1) / atom_size);
 }
 
 static constexpr UInt8 EMBEDDED_POSTINGS_FLAG = static_cast<UInt8>(1 << 6);
