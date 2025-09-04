@@ -201,9 +201,10 @@ protected:
                         res_columns[res_index++]->insert(secondary_index_size.data_compressed + extra_files_size);
 
                     // 'uncompressed bytes' column
-
+                    // Note: we add the extra text index files sizes even though they are compressed, so that the estimate is closer to reality
+                    // since we do not have access to their uncompressed sizes here
                     if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.data_uncompressed);
+                        res_columns[res_index++]->insert(secondary_index_size.data_uncompressed + extra_files_size);
 
                     /// 'marks_bytes' column
                     if (column_mask[src_index++])
