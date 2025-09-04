@@ -58,13 +58,13 @@ public:
 REGISTER_FUNCTION(ErrorCodeToName)
 {
     FunctionDocumentation::Description description_errorCodeToName = R"(
-Returns the textual name of a ClickHouse error code.
+Returns the textual name of a numeric ClickHouse error code.
 )";
     FunctionDocumentation::Syntax syntax_errorCodeToName = "errorCodeToName(error_code)";
     FunctionDocumentation::Arguments arguments_errorCodeToName = {
         {"error_code", "ClickHouse error code.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_errorCodeToName = {"Returns the textual name of an error code.", {"LowCardinality(String)"}};
+    FunctionDocumentation::ReturnedValue returned_value_errorCodeToName = {"Returns the textual name of `error_code`.", {"LowCardinality(String)"}};
     FunctionDocumentation::Examples examples_errorCodeToName = {
     {
         "Usage example",

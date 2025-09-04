@@ -255,7 +255,7 @@ FunctionDocumentation::Syntax syntax_parseReadableSize = "parseReadableSize(x)";
 FunctionDocumentation::Arguments arguments_parseReadableSize = {
     {"x", "Readable size with ISO/IEC 80000-13 or decimal byte unit.", {"String"}}
 };
-FunctionDocumentation::ReturnedValue returned_value_parseReadableSize = {"Returns the number of bytes, rounded up to the nearest integer", {"UInt64"}};
+FunctionDocumentation::ReturnedValue returned_value_parseReadableSize = {"Returns the number of bytes, rounded up to the nearest integer.", {"UInt64"}};
 FunctionDocumentation::Examples examples_parseReadableSize = {
 {
     "Usage example",

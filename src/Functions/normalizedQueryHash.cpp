@@ -105,7 +105,7 @@ Can be helpful in analyzing query logs.
     FunctionDocumentation::Arguments normalizedQueryHash_arguments = {
         {"x", "Sequence of characters.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue normalizedQueryHash_returned_value = {"Returns 64 bit hash value.", {"UInt64"}};
+    FunctionDocumentation::ReturnedValue normalizedQueryHash_returned_value = {"Returns a 64 bit hash value.", {"UInt64"}};
     FunctionDocumentation::Examples normalizedQueryHash_examples = {
     {
         "Usage example",

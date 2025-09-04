@@ -92,11 +92,11 @@ REGISTER_FUNCTION(GetSetting)
     FunctionDocumentation::Description description_getSetting = R"(
 Returns the current value of a [custom setting](/operations/settings/query-level#custom_settings).
 )";
-    FunctionDocumentation::Syntax syntax_getSetting = "getSetting('custom_setting')";
+    FunctionDocumentation::Syntax syntax_getSetting = "getSetting(custom_setting)";
     FunctionDocumentation::Arguments arguments_getSetting = {
-        {"custom_setting", "The setting name.", {"String"}}
+        {"custom_setting", "The setting name.", {"const String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_getSetting = {"Returns the setting's current value.", {"String", "(U)Int*"}};
+    FunctionDocumentation::ReturnedValue returned_value_getSetting = {"Returns the setting's current value.", {"Any"}};
     FunctionDocumentation::Examples examples_getSetting = {
     {
         "Usage example",
@@ -115,14 +115,14 @@ SELECT getSetting('custom_a');
 
     factory.registerFunction<FunctionGetSetting<ErrorHandlingMode::Exception>>(documentation_getSetting, FunctionFactory::Case::Sensitive);
     FunctionDocumentation::Description description_getSettingOrDefault = R"(
-Returns the current value of a [custom setting](/operations/settings/query-level#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
+Returns the current value of a [custom setting](/operations/settings/query-level#custom_settings) or returns the default value specified in the second argument if the custom setting is not set in the current profile.
 )";
     FunctionDocumentation::Syntax syntax_getSettingOrDefault = "getSettingOrDefault('custom_setting', default_value)";
     FunctionDocumentation::Arguments arguments_getSettingOrDefault = {
         {"custom_setting", "The setting name.", {"String"}},
         {"default_value", "Value to return if custom_setting is not set. Value may be of any data type or Null."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_getSettingOrDefault = {"Returns the setting's current value or the default_value if setting is not set."};
+    FunctionDocumentation::ReturnedValue returned_value_getSettingOrDefault = {"Returns the current value of `custom_setting` or `default_value` if the setting is not set."};
     FunctionDocumentation::Examples examples_getSettingOrDefault = {
     {
         "Usage example",
