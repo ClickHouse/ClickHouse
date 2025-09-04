@@ -2,6 +2,10 @@ import logging
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
     StructType,
+    CharType,
+    VarcharType,
+    StringType,
+    BinaryType,
     ArrayType,
     MapType,
 )
@@ -20,7 +24,7 @@ class SparkAndClickHouseCheck:
             return not isinstance(
                 dtype.elementType, ArrayType
             ) and self._check_type_valid_for_comparison(dtype.elementType)
-        if isinstance(dtype, (MapType, StructType)):
+        if isinstance(dtype, (MapType, StructType, StringType, BinaryType, CharType, VarcharType)):
             # Map type is not comparable in Spark, Struct is complicated
             return False
         return True
