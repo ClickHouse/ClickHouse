@@ -17,14 +17,12 @@ class SparkAndClickHouseCheck:
 
     def _check_type_valid_for_comparison(self, dtype) -> bool:
         if isinstance(dtype, ArrayType):
-            return self._check_type_valid_for_comparison(dtype.elementType)
-        if isinstance(dtype, MapType):
-            # Map type is not comparable in Spark
+            return not isinstance(
+                dtype.elementType, ArrayType
+            ) and self._check_type_valid_for_comparison(dtype.elementType)
+        if isinstance(dtype, (MapType, StructType)):
+            # Map type is not comparable in Spark, Struct is complicated
             return False
-        if isinstance(dtype, StructType):
-            for f in dtype.fields:
-                if not self._check_type_valid_for_comparison(f.dataType):
-                    return False
         return True
 
     def check_table(self, cluster, spark: SparkSession, table: SparkTable) -> bool:
@@ -51,8 +49,8 @@ class SparkAndClickHouseCheck:
                 return False
 
             order_by_cols = [
-                k
-                for k, v in table.columns.items()
+                v
+                for v in table.columns.values()
                 if self._check_type_valid_for_comparison(v.spark_type)
             ]
             if len(order_by_cols) == 0:
@@ -64,7 +62,7 @@ class SparkAndClickHouseCheck:
             # Spark hash
             # Convert all columns to string and concatenate
             concat_cols = ", '||', ".join(
-                [f"CAST({col} AS STRING)" for col in order_by_cols]
+                [f"CAST({col.column_name} AS STRING)" for col in order_by_cols]
             )
             # Generate hash using SQL
             query = f"""
@@ -72,7 +70,7 @@ class SparkAndClickHouseCheck:
             FROM (
                 SELECT MD5(CONCAT({concat_cols})) as row_hash
                 FROM {table.get_table_full_path()}
-                ORDER BY {', '.join([f"{col} ASC NULLS FIRST" for col in order_by_cols])}
+                ORDER BY {', '.join([f"{col.column_name} ASC NULLS FIRST" for col in order_by_cols])}
             );
             """
             result = spark.sql(query).collect()
@@ -80,8 +78,17 @@ class SparkAndClickHouseCheck:
 
             # ClickHouse hash
             # Convert all columns to string and concatenate
+            # ClickHouse arrays as strings don't have a space after the comma, add it
+            clickhouse_strings = {
+                col.column_name: (
+                    f"'[' || arrayStringConcat(arrayMap(x -> toString(x), c0), ', ') || ']'"
+                    if isinstance(col.spark_type, (ArrayType))
+                    else f"toString({col.column_name})"
+                )
+                for col in order_by_cols
+            }
             concat_cols = " || '||' || ".join(
-                [f"toString({col})" for col in order_by_cols]
+                [col.column_name for col in order_by_cols]
             )
             # Generate hash for each row in ClickHouse
             clickhouse_hash = client.query(
@@ -89,8 +96,9 @@ class SparkAndClickHouseCheck:
             SELECT lower(hex(MD5(arrayStringConcat(groupArray(row_hash), '')))) as table_hash
             FROM (
                 SELECT lower(hex(MD5({concat_cols}))) as row_hash
-                FROM {table.get_clickhouse_path()}
-                ORDER BY {', '.join([f"{col} ASC NULLS FIRST" for col in order_by_cols])}
+                FROM (SELECT {', '.join([f"{v} AS {k}" for k, v in clickhouse_strings.items()])}
+                      FROM {table.get_clickhouse_path()}) x
+                ORDER BY {', '.join([f"{k} ASC NULLS FIRST" for k in clickhouse_strings.keys()])}
             );
             """
             )
