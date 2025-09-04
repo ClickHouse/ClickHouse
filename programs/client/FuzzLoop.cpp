@@ -552,7 +552,9 @@ bool Client::buzzHouse()
 
         while (server_up && !buzz_done && std::getline(infile, full_query))
         {
-            String seed_str, schema, table;
+            String seed_str;
+            String schema;
+            String table;
 
             if (full_query == restart_cmd)
             {
