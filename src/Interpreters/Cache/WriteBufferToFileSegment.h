@@ -31,7 +31,6 @@ public:
 
     bool cachingStopped() const override { return false; }
     const FileSegmentsHolder * getFileSegments() const override { return segment_holder.get(); }
-    void jumpToPosition(size_t) override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method jumpToPosition is not implemented for WriteBufferToFileSegment"); }
 
 protected:
     void finalizeImpl() override;

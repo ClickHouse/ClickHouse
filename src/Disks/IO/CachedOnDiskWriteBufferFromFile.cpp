@@ -235,22 +235,6 @@ void FileSegmentRangeWriter::completeFileSegment()
     appendFilesystemCacheLog(file_segment);
 }
 
-void FileSegmentRangeWriter::jumpToPosition(size_t position)
-{
-    if (!file_segments->empty())
-    {
-        auto & file_segment = file_segments->front();
-
-        const auto current_write_offset = file_segment.getCurrentWriteOffset();
-        if (position < current_write_offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot jump backwards: {} < {}", position, current_write_offset);
-
-        file_segments->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
-        file_segments.reset();
-    }
-    expected_write_offset = position;
-}
-
 CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     std::unique_ptr<WriteBuffer> impl_,
     FileCachePtr cache_,
@@ -387,18 +371,6 @@ void CachedOnDiskWriteBufferFromFile::finalizeImpl()
         cache_writer->finalize();
         cache_writer.reset();
     }
-}
-
-void CachedOnDiskWriteBufferFromFile::jumpToPosition(size_t position)
-{
-    if (!dynamic_cast<const NullWriteBuffer *>(impl.get()))
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Jumping to position in CachedOnDiskWriteBufferFromFile "
-                        "is allowed only for NullWriteBuffer");
-    }
-
-    cache_writer->jumpToPosition(position);
 }
 
 }

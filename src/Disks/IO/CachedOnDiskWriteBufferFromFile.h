@@ -48,8 +48,6 @@ public:
 
     const FileSegmentsHolder * getFileSegments() const { return file_segments.get(); }
 
-    void jumpToPosition(size_t position);
-
 private:
     FileSegment & allocateFileSegment(size_t offset, FileSegmentKind segment_kind);
 
@@ -80,7 +78,6 @@ class IFilesystemCacheWriteBuffer
 public:
     virtual bool cachingStopped() const = 0;
     virtual const FileSegmentsHolder * getFileSegments() const  = 0;
-    virtual void jumpToPosition(size_t position) = 0;
 
     virtual WriteBuffer & getImpl() = 0;
 
@@ -111,8 +108,6 @@ public:
     bool cachingStopped() const override { return cache_in_error_state_or_disabled; }
 
     const FileSegmentsHolder * getFileSegments() const override { return cache_writer ? cache_writer->getFileSegments() : nullptr; }
-
-    void jumpToPosition(size_t position) override;
 
     WriteBuffer & getImpl() override { return *this; }
 
