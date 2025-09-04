@@ -45,6 +45,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Config Workflow"
 
       - name: Note report location to summary
         env:
@@ -94,6 +98,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Dockers Build (amd)"
 
       - name: Prepare env script
         run: |
@@ -135,6 +143,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Dockers Build (arm)"
 
       - name: Prepare env script
         run: |
@@ -176,6 +188,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Dockers Build (multiplatform manifest)"
 
       - name: Prepare env script
         run: |
@@ -217,6 +233,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (amd_debug)"
 
       - name: Prepare env script
         run: |
@@ -258,6 +278,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (amd_release)"
 
       - name: Prepare env script
         run: |
@@ -299,6 +323,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (amd_asan)"
 
       - name: Prepare env script
         run: |
@@ -340,6 +368,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (amd_tsan)"
 
       - name: Prepare env script
         run: |
@@ -381,6 +413,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (amd_msan)"
 
       - name: Prepare env script
         run: |
@@ -422,6 +458,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (amd_ubsan)"
 
       - name: Prepare env script
         run: |
@@ -463,6 +503,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (amd_binary)"
 
       - name: Prepare env script
         run: |
@@ -504,6 +548,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (arm_release)"
 
       - name: Prepare env script
         run: |
@@ -545,6 +593,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (arm_coverage)"
 
       - name: Prepare env script
         run: |
@@ -586,6 +638,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (arm_binary)"
 
       - name: Prepare env script
         run: |
@@ -627,6 +683,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (amd_darwin)"
 
       - name: Prepare env script
         run: |
@@ -668,6 +728,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (arm_darwin)"
 
       - name: Prepare env script
         run: |
@@ -709,6 +773,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (arm_v80compat)"
 
       - name: Prepare env script
         run: |
@@ -750,6 +818,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (amd_freebsd)"
 
       - name: Prepare env script
         run: |
@@ -791,6 +863,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (ppc64le)"
 
       - name: Prepare env script
         run: |
@@ -832,6 +908,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (amd_compat)"
 
       - name: Prepare env script
         run: |
@@ -873,6 +953,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (amd_musl)"
 
       - name: Prepare env script
         run: |
@@ -914,6 +998,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (riscv64)"
 
       - name: Prepare env script
         run: |
@@ -955,6 +1043,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (s390x)"
 
       - name: Prepare env script
         run: |
@@ -996,6 +1088,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (loongarch64)"
 
       - name: Prepare env script
         run: |
@@ -1037,6 +1133,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Build (fuzzers)"
 
       - name: Prepare env script
         run: |
@@ -1078,6 +1178,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Unit tests (asan)"
 
       - name: Prepare env script
         run: |
@@ -1119,6 +1223,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Unit tests (tsan)"
 
       - name: Prepare env script
         run: |
@@ -1160,6 +1268,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Unit tests (msan)"
 
       - name: Prepare env script
         run: |
@@ -1201,6 +1313,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Unit tests (ubsan)"
 
       - name: Prepare env script
         run: |
@@ -1242,6 +1358,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Docker server image"
 
       - name: Prepare env script
         run: |
@@ -1283,6 +1403,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Docker keeper image"
 
       - name: Prepare env script
         run: |
@@ -1324,6 +1448,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Install packages (release)"
 
       - name: Prepare env script
         run: |
@@ -1365,6 +1493,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Install packages (aarch64)"
 
       - name: Prepare env script
         run: |
@@ -1406,6 +1538,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Compatibility check (release)"
 
       - name: Prepare env script
         run: |
@@ -1447,6 +1583,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Compatibility check (aarch64)"
 
       - name: Prepare env script
         run: |
@@ -1488,6 +1628,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_asan, distributed plan, 1/2)"
 
       - name: Prepare env script
         run: |
@@ -1529,6 +1673,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_asan, distributed plan, 2/2)"
 
       - name: Prepare env script
         run: |
@@ -1570,6 +1718,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_binary)"
 
       - name: Prepare env script
         run: |
@@ -1611,6 +1763,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, 1/2)"
 
       - name: Prepare env script
         run: |
@@ -1652,6 +1808,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_binary, old analyzer, s3 storage, DatabaseReplicated, 2/2)"
 
       - name: Prepare env script
         run: |
@@ -1693,6 +1853,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_binary, ParallelReplicas, s3 storage)"
 
       - name: Prepare env script
         run: |
@@ -1734,6 +1898,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_debug, AsyncInsert, s3 storage)"
 
       - name: Prepare env script
         run: |
@@ -1775,6 +1943,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_debug)"
 
       - name: Prepare env script
         run: |
@@ -1816,6 +1988,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_tsan, 1/3)"
 
       - name: Prepare env script
         run: |
@@ -1857,6 +2033,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_tsan, 2/3)"
 
       - name: Prepare env script
         run: |
@@ -1898,6 +2078,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_tsan, 3/3)"
 
       - name: Prepare env script
         run: |
@@ -1939,6 +2123,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_msan, 1/4)"
 
       - name: Prepare env script
         run: |
@@ -1980,6 +2168,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_msan, 2/4)"
 
       - name: Prepare env script
         run: |
@@ -2021,6 +2213,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_msan, 3/4)"
 
       - name: Prepare env script
         run: |
@@ -2062,6 +2258,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_msan, 4/4)"
 
       - name: Prepare env script
         run: |
@@ -2103,6 +2303,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_ubsan)"
 
       - name: Prepare env script
         run: |
@@ -2144,6 +2348,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_debug, distributed plan, s3 storage)"
 
       - name: Prepare env script
         run: |
@@ -2185,6 +2393,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_tsan, s3 storage, 1/3)"
 
       - name: Prepare env script
         run: |
@@ -2226,6 +2438,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_tsan, s3 storage, 2/3)"
 
       - name: Prepare env script
         run: |
@@ -2267,6 +2483,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_tsan, s3 storage, 3/3)"
 
       - name: Prepare env script
         run: |
@@ -2308,6 +2528,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (arm_binary)"
 
       - name: Prepare env script
         run: |
@@ -2349,6 +2573,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (azure, arm_asan, 1/3)"
 
       - name: Prepare env script
         run: |
@@ -2390,6 +2618,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (azure, arm_asan, 2/3)"
 
       - name: Prepare env script
         run: |
@@ -2431,6 +2663,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (azure, arm_asan, 3/3)"
 
       - name: Prepare env script
         run: |
@@ -2472,6 +2708,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (asan, old analyzer, 1/6)"
 
       - name: Prepare env script
         run: |
@@ -2513,6 +2753,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (asan, old analyzer, 2/6)"
 
       - name: Prepare env script
         run: |
@@ -2554,6 +2798,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (asan, old analyzer, 3/6)"
 
       - name: Prepare env script
         run: |
@@ -2595,6 +2843,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (asan, old analyzer, 4/6)"
 
       - name: Prepare env script
         run: |
@@ -2636,6 +2888,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (asan, old analyzer, 5/6)"
 
       - name: Prepare env script
         run: |
@@ -2677,6 +2933,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (asan, old analyzer, 6/6)"
 
       - name: Prepare env script
         run: |
@@ -2718,6 +2978,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (release, 1/4)"
 
       - name: Prepare env script
         run: |
@@ -2759,6 +3023,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (release, 2/4)"
 
       - name: Prepare env script
         run: |
@@ -2800,6 +3068,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (release, 3/4)"
 
       - name: Prepare env script
         run: |
@@ -2841,6 +3113,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (release, 4/4)"
 
       - name: Prepare env script
         run: |
@@ -2882,6 +3158,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (aarch64, distributed plan, 1/4)"
 
       - name: Prepare env script
         run: |
@@ -2923,6 +3203,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (aarch64, distributed plan, 2/4)"
 
       - name: Prepare env script
         run: |
@@ -2964,6 +3248,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (aarch64, distributed plan, 3/4)"
 
       - name: Prepare env script
         run: |
@@ -3005,6 +3293,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (aarch64, distributed plan, 4/4)"
 
       - name: Prepare env script
         run: |
@@ -3046,6 +3338,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (tsan, 1/6)"
 
       - name: Prepare env script
         run: |
@@ -3087,6 +3383,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (tsan, 2/6)"
 
       - name: Prepare env script
         run: |
@@ -3128,6 +3428,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (tsan, 3/6)"
 
       - name: Prepare env script
         run: |
@@ -3169,6 +3473,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (tsan, 4/6)"
 
       - name: Prepare env script
         run: |
@@ -3210,6 +3518,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (tsan, 5/6)"
 
       - name: Prepare env script
         run: |
@@ -3251,6 +3563,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Integration tests (tsan, 6/6)"
 
       - name: Prepare env script
         run: |
@@ -3279,7 +3595,7 @@ jobs:
 
   stateless_tests_amd_coverage_1_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsMS82KQ==') }}
     name: "Stateless tests (amd_coverage,1/6)"
     outputs:
@@ -3292,6 +3608,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_coverage,1/6)"
 
       - name: Prepare env script
         run: |
@@ -3320,7 +3640,7 @@ jobs:
 
   stateless_tests_amd_coverage_2_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsMi82KQ==') }}
     name: "Stateless tests (amd_coverage,2/6)"
     outputs:
@@ -3333,6 +3653,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_coverage,2/6)"
 
       - name: Prepare env script
         run: |
@@ -3361,7 +3685,7 @@ jobs:
 
   stateless_tests_amd_coverage_3_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsMy82KQ==') }}
     name: "Stateless tests (amd_coverage,3/6)"
     outputs:
@@ -3374,6 +3698,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_coverage,3/6)"
 
       - name: Prepare env script
         run: |
@@ -3402,7 +3730,7 @@ jobs:
 
   stateless_tests_amd_coverage_4_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsNC82KQ==') }}
     name: "Stateless tests (amd_coverage,4/6)"
     outputs:
@@ -3415,6 +3743,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_coverage,4/6)"
 
       - name: Prepare env script
         run: |
@@ -3443,7 +3775,7 @@ jobs:
 
   stateless_tests_amd_coverage_5_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsNS82KQ==') }}
     name: "Stateless tests (amd_coverage,5/6)"
     outputs:
@@ -3456,6 +3788,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_coverage,5/6)"
 
       - name: Prepare env script
         run: |
@@ -3484,7 +3820,7 @@ jobs:
 
   stateless_tests_amd_coverage_6_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsNi82KQ==') }}
     name: "Stateless tests (amd_coverage,6/6)"
     outputs:
@@ -3497,6 +3833,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stateless tests (amd_coverage,6/6)"
 
       - name: Prepare env script
         run: |
@@ -3538,6 +3878,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stress test (amd_debug)"
 
       - name: Prepare env script
         run: |
@@ -3579,6 +3923,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stress test (amd_tsan)"
 
       - name: Prepare env script
         run: |
@@ -3620,6 +3968,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stress test (amd_ubsan)"
 
       - name: Prepare env script
         run: |
@@ -3661,6 +4013,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "Stress test (amd_msan)"
 
       - name: Prepare env script
         run: |
@@ -3702,6 +4058,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "AST fuzzer (amd_debug)"
 
       - name: Prepare env script
         run: |
@@ -3743,6 +4103,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "AST fuzzer (amd_tsan)"
 
       - name: Prepare env script
         run: |
@@ -3784,6 +4148,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "AST fuzzer (amd_msan)"
 
       - name: Prepare env script
         run: |
@@ -3825,6 +4193,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "AST fuzzer (amd_ubsan)"
 
       - name: Prepare env script
         run: |
@@ -3866,6 +4238,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "BuzzHouse (amd_debug)"
 
       - name: Prepare env script
         run: |
@@ -3907,6 +4283,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "BuzzHouse (amd_tsan)"
 
       - name: Prepare env script
         run: |
@@ -3948,6 +4328,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "BuzzHouse (amd_msan)"
 
       - name: Prepare env script
         run: |
@@ -3989,6 +4373,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "BuzzHouse (amd_ubsan)"
 
       - name: Prepare env script
         run: |
@@ -4030,6 +4418,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "ClickBench (amd_release)"
 
       - name: Prepare env script
         run: |
@@ -4071,6 +4463,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "ClickBench (arm_release)"
 
       - name: Prepare env script
         run: |
@@ -4112,6 +4508,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "SQLancer (amd_debug)"
 
       - name: Prepare env script
         run: |
@@ -4153,6 +4553,10 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "SQLTest"
 
       - name: Prepare env script
         run: |
@@ -4193,7 +4597,7 @@ jobs:
     secrets: inherit
     with:
       docker_image: altinityinfra/clickhouse-server
-      # version: ${{ fromJson(needs.config_workflow.outputs.data).custom_data.version.string }}
+      version: ${{ fromJson(needs.config_workflow.outputs.data).custom_data.version.string }}
       tag-suffix: ${{ matrix.suffix }}
   GrypeScanKeeper:
       needs: [config_workflow, docker_keeper_image]
@@ -4202,11 +4606,11 @@ jobs:
       secrets: inherit
       with:
         docker_image: altinityinfra/clickhouse-keeper
-        # version: ${{ fromJson(needs.config_workflow.outputs.data).custom_data.version.string }}
+        version: ${{ fromJson(needs.config_workflow.outputs.data).custom_data.version.string }}
 
   RegressionTestsRelease:
     needs: [config_workflow, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9yZWxlYXNlKQ==') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_regression')}}
+    if: ${{ !failure() && !cancelled() && !contains(github.event.pull_request.body, '[x] <!---ci_exclude_regression')}}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
@@ -4218,7 +4622,7 @@ jobs:
       workflow_config: ${{ needs.config_workflow.outputs.data }}
   RegressionTestsAarch64:
     needs: [config_workflow, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9yZWxlYXNlKQ==') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_regression') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_aarch64')}}
+    if: ${{ !failure() && !cancelled() && !contains(github.event.pull_request.body, '[x] <!---ci_exclude_regression') && !contains(github.event.pull_request.body, '[x] <!---ci_exclude_aarch64')}}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:

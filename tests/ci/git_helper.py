@@ -280,8 +280,8 @@ class Git:
         self.latest_tag = self.run("git describe --tags --abbrev=0", stderr=stderr)
         self.commits_since_latest = self._commits_since(self.latest_tag)
 
-        latest_upstream_tag = self.run("git describe --tags --abbrev=0 --match='*-*'", stderr=stderr)
-        self.commits_since_upstream = self._commits_since(latest_upstream_tag)
+        self.latest_upstream_tag = self.run("git describe --tags --abbrev=0 --match='*-*'", stderr=stderr)
+        self.commits_since_upstream = None if not self.latest_upstream_tag else self._commits_since(self.latest_upstream_tag)
 
         if self.latest_tag.endswith("-new"):
             # We won't change the behaviour of the the "latest_tag"

@@ -383,24 +383,28 @@ class CI:
             required_builds=[BuildNames.PACKAGE_ASAN],
             release_only=True,
             num_batches=8,
-            timeout=10800,
+            timeout=4 * 3600,
         ),
         JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
             num_batches=8,
+            timeout=4 * 3600,
         ),
         JobNames.INTEGRATION_TEST_TSAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
+            timeout=4 * 3600,
             num_batches=8,
         ),
         JobNames.INTEGRATION_TEST_AARCH64_DISTRIBUTED_PLAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=8,
             runner_type=Runners.FUNC_TESTER_AARCH64,
+            timeout=4 * 3600,
         ),
         JobNames.INTEGRATION_TEST: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
             num_batches=8,
+            timeout=4 * 3600,
             # release_only=True,
         ),
         JobNames.INTEGRATION_TEST_FLAKY: CommonJobConfigs.INTEGRATION_TEST.with_properties(

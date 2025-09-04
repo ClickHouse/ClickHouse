@@ -14,6 +14,10 @@ class AltinityWorkflowTemplates:
     JOB_SETUP_STEPS = """
       - name: Setup
         uses: ./.github/actions/runner_setup
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
+        with:
+          test_name: "{JOB_NAME_GH}"
 """
     # Additional pre steps for config workflow job
     ADDITIONAL_CI_CONFIG_STEPS = r"""
@@ -42,7 +46,7 @@ class AltinityWorkflowTemplates:
     secrets: inherit
     with:
       docker_image: altinityinfra/clickhouse-server
-      # version: ${{ fromJson(needs.config_workflow.outputs.data).custom_data.version.string }}
+      version: ${{ fromJson(needs.config_workflow.outputs.data).custom_data.version.string }}
       tag-suffix: ${{ matrix.suffix }}
   GrypeScanKeeper:
       needs: [config_workflow, docker_keeper_image]
@@ -51,11 +55,11 @@ class AltinityWorkflowTemplates:
       secrets: inherit
       with:
         docker_image: altinityinfra/clickhouse-keeper
-        # version: ${{ fromJson(needs.config_workflow.outputs.data).custom_data.version.string }}
+        version: ${{ fromJson(needs.config_workflow.outputs.data).custom_data.version.string }}
 
   RegressionTestsRelease:
     needs: [config_workflow, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9yZWxlYXNlKQ==') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_regression')}}
+    if: ${{ !failure() && !cancelled() && !contains(github.event.pull_request.body, '[x] <!---ci_exclude_regression')}}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
@@ -67,7 +71,7 @@ class AltinityWorkflowTemplates:
       workflow_config: ${{ needs.config_workflow.outputs.data }}
   RegressionTestsAarch64:
     needs: [config_workflow, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9yZWxlYXNlKQ==') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_regression') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_aarch64')}}
+    if: ${{ !failure() && !cancelled() && !contains(github.event.pull_request.body, '[x] <!---ci_exclude_regression') && !contains(github.event.pull_request.body, '[x] <!---ci_exclude_aarch64')}}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
