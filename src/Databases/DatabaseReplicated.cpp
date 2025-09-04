@@ -1445,6 +1445,7 @@ void DatabaseReplicated::recoverLostReplica(WithRetries & with_retries, UInt32 o
         auto holder = with_retries.createRetriesControlHolderForOperations("recoverLostReplica::make_query_context");
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
+            with_retries.renewZooKeeper(zookeeper);
             auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper->getKeeper(), zookeeper_path, false, "");
             query_context->initZooKeeperMetadataTransaction(txn);
         });

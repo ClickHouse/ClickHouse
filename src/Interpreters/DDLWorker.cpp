@@ -630,6 +630,8 @@ void DDLWorker::processTask(DDLTaskBase & task, const WithRetries & with_retries
     String active_node_path = task.getActiveNodePath();
     String finished_node_path = task.getFinishedNodePath();
 
+    auto original_task_ops = task.ops;
+
     auto holder = with_retries.createRetriesControlHolderForOperations("DDLWorker::processTask");
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
@@ -769,13 +771,18 @@ void DDLWorker::processTask(DDLTaskBase & task, const WithRetries & with_retries
 
         /// Active node was removed in multi ops
         active_node->setAlreadyRemoved();
+
+        holder.retries_ctl.retryLoop([&, &zookeeper_create_node = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zookeeper_create_node);
+            task.createSyncedNodeIfNeed(zookeeper_create_node);
+        });
+    },
+    [&]()
+    {
+        task.ops = original_task_ops;
     });
 
-    holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
-    {
-        with_retries.renewZooKeeper(zookeeper);
-        task.createSyncedNodeIfNeed(zookeeper);
-    });
     updateMaxDDLEntryID(task.entry_name);
     task.completely_processed = true;
     subsequent_errors_count = 0;

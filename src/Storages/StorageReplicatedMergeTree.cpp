@@ -8013,6 +8013,8 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
             LOG_TRACE(log, "Version conflict when trying to create a mutation node, retrying...");
             continue;
         }
+
+        zkutil::KeeperMultiException::check(rc, requests, responses);
         throw Coordination::Exception::fromMessage(rc, "Unable to create a mutation znode");
     }
 

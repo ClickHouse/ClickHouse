@@ -4281,12 +4281,13 @@ zkutil::ZooKeeperPtr Context::getZooKeeper(UInt64 max_lock_milliseconds) const
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
             zookeeper_connection_log->addConnected(
                 ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
+        LOG_DEBUG(shared->log, "Established a new keeper connection. Session id: {}", shared->zookeeper->getClientID());
     }
 
     if (shared->zookeeper->expired())
     {
         Stopwatch watch;
-        LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
+        LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper (Old session id: {})", shared->zookeeper->getClientID());
 
         auto old_zookeeper = shared->zookeeper;
 
@@ -4302,7 +4303,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper(UInt64 max_lock_milliseconds) const
 
         if (isServerCompletelyStarted())
             shared->zookeeper->setServerCompletelyStarted();
-        LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
+        LOG_DEBUG(shared->log, "Establishing a new connection (session id {}) with Keeper took {} ms", shared->zookeeper->getClientID(), watch.elapsedMilliseconds());
     }
 
     return shared->zookeeper;
