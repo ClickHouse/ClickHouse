@@ -22,12 +22,11 @@
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #if USE_BUZZHOUSE
-#    include <regex>
-
 #    include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #    include <Client/BuzzHouse/Generator/FuzzConfig.h>
 #    include <Client/BuzzHouse/Generator/QueryOracle.h>
 #    include <Client/BuzzHouse/Generator/StatementGenerator.h>
+#    include <Common/re2.h>
 namespace BuzzHouse
 {
 extern void loadFuzzerServerSettings(const FuzzConfig & fc);
@@ -533,11 +532,11 @@ static void runExternalCommand(
 /// Returns false when server is not available.
 bool Client::buzzHouse()
 {
-    bool server_up = true;
     String full_query;
+    bool server_up = true;
     static const String & restart_cmd = "--Reconnecting client";
     static const String & external_cmd = "--External command with seed ";
-    static const std::regex re(R"(^--External\s+command\s+with\s+seed\s+(\d+)\s+to\s+([^\s.]+)\.([^\s.]+)\s*$)", std::regex::icase);
+    static const RE2 extern_re(R"((?i)^--External\s+command\s+with\s+seed\s+(\d+)\s+to\s+([^\s.]+)\.([^\s.]+)\s*$)");
 
     /// Set time to run, but what if a query runs for too long?
     buzz_done = 0;
@@ -553,22 +552,21 @@ bool Client::buzzHouse()
 
         while (server_up && !buzz_done && std::getline(infile, full_query))
         {
-            std::smatch m;
+            String seed_str, schema, table;
 
             if (full_query == restart_cmd)
             {
                 server_up &= fuzzLoopReconnect();
             }
-            else if (startsWith(full_query, external_cmd) && std::regex_search(full_query, m, re) && m.size() == 4)
+            else if (startsWith(full_query, external_cmd) && RE2::FullMatch(full_query, extern_re, &seed_str, &schema, &table))
             {
                 uint64_t seed = 0;
-                const std::string & seed_str = m[1].str();
-                const auto first = seed_str.data();
-                const auto last = first + seed_str.size();
+                const auto * const first = seed_str.data();
+                const auto * const last = first + seed_str.size();
                 const auto x = std::from_chars(first, last, seed, 10);
 
                 UNUSED(x);
-                runExternalCommand(external_integrations, seed, m[2].str(), m[3].str());
+                runExternalCommand(external_integrations, seed, schema, table);
             }
             else
             {
