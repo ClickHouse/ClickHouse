@@ -180,7 +180,7 @@ void extractPartitionColumnsFromPathAndEnrichStorageColumns(
 
 HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
     ColumnsDescription & columns,
-    const StorageObjectStorageConfigurationPtr & configuration,
+    const StorageObjectStorage::ConfigurationPtr & configuration,
     const std::string & sample_path,
     bool inferred_schema,
     std::optional<FormatSettings> format_settings,
