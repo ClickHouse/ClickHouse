@@ -265,7 +265,7 @@ class LakeDataGenerator:
             return self._rand_string(
                 random.randint(self._min_str_len, self._max_str_len)
             )
-        if isinstance(dtype, CharType) or isinstance(dtype, VarcharType):
+        if isinstance(dtype, (CharType, VarcharType)):
             return self._rand_string(
                 random.randint(
                     min(dtype.length, self._min_str_len),
