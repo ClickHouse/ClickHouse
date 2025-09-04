@@ -432,34 +432,37 @@ private:
         return true;
     }
 
-    void startNextInterval()
+    void startNextInterval(bool first = false)
     {
         std::lock_guard lock(interval_mutex);
 
         delay_watch.restart();
         UInt64 now_ns = delay_watch.getStart();
 
-        // Report previous interval (of any)
-        if (interval)
+        if (cumulative)
         {
-            interval->close(now_ns, threads);
-            if (!precise)
+            if (!first)
+                report(total_stats, total_watch.elapsedSeconds(), threads);
+        }
+        else
+        {
+            // Report previous interval (of any)
+            if (interval)
             {
-                if (cumulative)
-                    report(total_stats, total_watch.elapsedSeconds(), threads);
-                else
+                interval->close(now_ns, threads);
+                if (!precise)
                     interval->report();
             }
-        }
 
-        // Start the next interval
-        auto next_interval = std::make_shared<IntervalStats>(*this, now_ns);
-        next_interval->stats.reserve(round_robin ? 1 : connections.size());
-        for (size_t i = 0; i < (round_robin ? 1 : connections.size()); ++i)
-            next_interval->stats.emplace_back(std::make_shared<Stats>());
-        if (interval)
-            interval->next = next_interval;
-        interval = next_interval;
+            // Start the next interval
+            auto next_interval = std::make_shared<IntervalStats>(*this, now_ns);
+            next_interval->stats.reserve(round_robin ? 1 : connections.size());
+            for (size_t i = 0; i < (round_robin ? 1 : connections.size()); ++i)
+                next_interval->stats.emplace_back(std::make_shared<Stats>());
+            if (interval)
+                interval->next = next_interval;
+            interval = next_interval;
+        }
     }
 
     void runBenchmark()
@@ -467,7 +470,7 @@ private:
         pcg64 generator(randomSeed());
         std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
 
-        startNextInterval();
+        startNextInterval(true);
 
         try
         {
@@ -504,8 +507,10 @@ private:
         {
             std::lock_guard lock(interval_mutex);
             // Do not report leftovers after the last interval
-            interval->ignore();
-            interval.reset();
+            if (interval) {
+                interval->ignore();
+                interval.reset();
+            }
         }
 
         report(total_stats, total_watch.elapsedSeconds(), threads);
@@ -567,7 +572,8 @@ private:
                 }
 
                 std::lock_guard lock(interval_mutex); // Locking order: first intervals_mutex, then mutex
-                ++interval->stats[info_index]->errors;
+                if (interval)
+                    ++interval->stats[info_index]->errors;
             }
             // Count failed queries toward executed, so that we'd reach
             // max_iterations even if every run fails.
@@ -621,7 +627,7 @@ private:
             : progress.elapsed_ns / 1e9;
         size_t info_index = round_robin ? 0 : connection_index;
 
-        if (precise)
+        if (precise && cur_interval)
         {
             // Stats weighting across all overlapped intervals
             UInt64 duration_ns = watch.getEnd() - watch.getStart();
@@ -654,7 +660,7 @@ private:
             // Latency goes to the last interval only (our sampler does not support weights)
             interval->stats[info_index]->sample(duration);
         }
-        else
+        else if (!cumulative)
         {
             std::lock_guard lock(interval_mutex);
             interval->stats[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
@@ -740,12 +746,6 @@ private:
         print_percentile(99.99);
 
         log << "\n" << t_test.compareAndReport(confidence).second << "\n";
-
-        if (!cumulative)
-        {
-            for (const auto & info : infos)
-                info->clear();
-        }
 
         log.next();
     }
