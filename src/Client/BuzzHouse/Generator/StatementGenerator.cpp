@@ -665,7 +665,7 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
         /// Use table function
         const bool isCluster = (cluster_func && (nopt < cluster_func + 1));
 
-        setTableFunction(rg, isCluster ? TableFunctionUsage::ClusterCall : TableFunctionUsage::RemoteCall, true, t, tof->mutable_tfunc());
+        setTableFunction(rg, isCluster ? TableFunctionUsage::ClusterCall : TableFunctionUsage::RemoteCall, t, tof->mutable_tfunc());
         tof = isCluster ? const_cast<ClusterFunc &>(tof->tfunc().cluster()).mutable_tof()
                         : const_cast<RemoteFunc &>(tof->tfunc().remote()).mutable_tof();
     }
@@ -679,7 +679,7 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
 
     if (engine_func && (nopt2 < engine_func + 1))
     {
-        setTableFunction(rg, TableFunctionUsage::EngineReplace, true, t, tof->mutable_tfunc());
+        setTableFunction(rg, TableFunctionUsage::EngineReplace, t, tof->mutable_tfunc());
     }
     else if ((is_url = (url_func && (nopt2 < engine_func + url_func + 1))))
     {

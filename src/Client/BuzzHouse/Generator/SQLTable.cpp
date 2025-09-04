@@ -1009,11 +1009,11 @@ void StatementGenerator::setRandomShardKey(RandomGenerator & rg, const std::opti
     }
 }
 
-String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTable & t, const bool allow_chaos, const bool escape)
+String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTable & t, const bool escape)
 {
     String buf;
     bool first = true;
-    const bool allCols = allow_chaos && rg.nextSmallNumber() < 4;
+    const bool allCols = this->allow_not_deterministic && rg.nextSmallNumber() < 4;
 
     flatTableColumnPath(to_remote_entries, t.cols, [&](const SQLColumn & c) { return allCols || c.canBeInserted(); });
     std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
@@ -1238,6 +1238,8 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine() || b.isAnyS3Engine() || b.isAnyAzureEngine()))
     {
+        const bool prev_allow_not_deterministic = this->allow_not_deterministic;
+
         if (b.integration != IntegrationCall::None)
         {
             if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
@@ -1250,7 +1252,9 @@ void StatementGenerator::generateEngineDetails(
             chassert(b.isOnLocal());
             te->add_params()->set_rvalue("local");
         }
-        setObjectStoreParams<SQLBase, TableEngine>(rg, b, false, te);
+        this->allow_not_deterministic = false;
+        setObjectStoreParams<SQLBase, TableEngine>(rg, b, te);
+        this->allow_not_deterministic = prev_allow_not_deterministic;
     }
     else if (te->has_engine() && b.isArrowFlightEngine())
     {
