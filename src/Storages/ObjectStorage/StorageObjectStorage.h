@@ -94,6 +94,12 @@ public:
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
+    /// Things required for PREWHERE.
+    bool supportsPrewhere() const override;
+    bool canMoveConditionsToPrewhere() const override;
+    std::optional<NameSet> supportedPrewhereColumns() const override;
+    ColumnSizeByName getColumnSizes() const override;
+
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
@@ -170,12 +176,13 @@ protected:
     /// Whether this engine is a part of according Cluster engine implementation.
     /// (One of the reading replicas, not the initiator).
     const bool distributed_processing;
+    bool supports_prewhere = false;
     /// Whether we need to call `configuration->update()`
     /// (e.g. refresh configuration) on each read() method call.
     bool update_configuration_on_read_write = true;
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-    ColumnsDescription file_columns;
+    NamesAndTypesList file_columns;
 
     LoggerPtr log;
 

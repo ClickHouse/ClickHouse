@@ -61,7 +61,7 @@ void PatchJoinCache::init(const RangesInPatchParts & ranges_in_patches)
     }
 }
 
-PatchJoinCache::PatchStatsEntryPtr PatchJoinCache::getStatsEntry(const DataPartPtr & patch_part)
+PatchJoinCache::PatchStatsEntryPtr PatchJoinCache::getStatsEntry(const DataPartPtr & patch_part, const MergeTreeReaderSettings & settings)
 {
     auto stats_entry = getOrCreatePatchStats(patch_part->name);
     std::lock_guard lock(stats_entry->mutex);
@@ -81,8 +81,8 @@ PatchJoinCache::PatchStatsEntryPtr PatchJoinCache::getStatsEntry(const DataPartP
     for (const auto & [range, _] : it->second)
         all_patch_ranges.push_back(range);
 
-    auto block_number_stats = getMinMaxStats(patch_part, all_patch_ranges, BlockNumberColumn::name);
-    auto block_offset_stats = getMinMaxStats(patch_part, all_patch_ranges, BlockOffsetColumn::name);
+    auto block_number_stats = getPatchMinMaxStats(patch_part, all_patch_ranges, BlockNumberColumn::name, settings);
+    auto block_offset_stats = getPatchMinMaxStats(patch_part, all_patch_ranges, BlockOffsetColumn::name, settings);
 
     if (block_number_stats && block_offset_stats)
     {
