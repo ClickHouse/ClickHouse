@@ -3,6 +3,7 @@
 #include <IO/BoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Disks/ObjectStorages/Cached/FileCachesHolder.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
@@ -22,16 +23,14 @@ namespace FileCacheSetting
 
 CachedObjectStorage::CachedObjectStorage(
     ObjectStoragePtr object_storage_,
-    FileCachePtr cache_,
-    const FileCacheSettings & cache_settings_,
+    FileCachesHolder && holder_,
     const std::string & cache_config_name_)
     : object_storage(object_storage_)
-    , cache(cache_)
-    , cache_settings(cache_settings_)
+    , holder(std::move(holder_))
     , cache_config_name(cache_config_name_)
     , log(getLogger(getName()))
 {
-    cache->initialize();
+    holder.initializeAll();
 }
 
 FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
@@ -79,6 +78,8 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
 {
     if (read_settings.enable_filesystem_cache)
     {
+
+        auto cache = holder.getCache(defineCacheType(object.local_path));
         if (cache->isInitialized())
         {
             auto cache_key = FileCacheKey::fromPath(object.remote_path);
@@ -120,6 +121,8 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     size_t buf_size,
     const WriteSettings & write_settings)
 {
+    auto cache_type = defineCacheType(object.local_path);
+    auto cache = holder.getCache(cache_type);
     /// Add cache relating settings to WriteSettings.
     auto modified_write_settings = IObjectStorage::patchSettings(write_settings);
     auto implementation_buffer = object_storage->writeObject(object, mode, attributes, buf_size, modified_write_settings);
@@ -129,7 +132,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
         && fs::path(object.remote_path).extension() != ".tmp";
 
     /// Need to remove even if cache_on_write == false.
-    removeCacheIfExists(object.remote_path);
+    removeKeyFromCacheIfExists(object.remote_path, cache_type);
 
     if (cache_on_write && cache->isInitialized())
     {
@@ -148,26 +151,25 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     return implementation_buffer;
 }
 
-void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_cache)
+void CachedObjectStorage::removeKeyFromCacheIfExists(const std::string & path_key_for_cache, SplitCacheType cache_type)
 {
     if (path_key_for_cache.empty())
         return;
-
-    /// Add try catch?
+    auto cache = holder.getCache(cache_type);
     if (cache->isInitialized())
         cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
 }
 
 void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
-    removeCacheIfExists(object.remote_path);
+    removeKeyFromCacheIfExists(object.remote_path, defineCacheType(object.local_path));
     object_storage->removeObjectIfExists(object);
 }
 
 void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     for (const auto & object : objects)
-        removeCacheIfExists(object.remote_path);
+        removeKeyFromCacheIfExists(object.remote_path, defineCacheType(object.local_path));
 
     object_storage->removeObjectsIfExist(objects);
 }
