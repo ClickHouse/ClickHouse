@@ -3915,8 +3915,14 @@ services:
             {krb5_conf}
             {lakehouses_path}
         entrypoint: /integration-tests-entrypoint.sh {entrypoint_cmd}
-        # increase it to allow jeprof to dump the profile report
-        stop_grace_period: 5m
+        # Increase it to allow jeprof to dump the profile report and gdb collect stacktraces
+        #
+        # NOTE: it has been proven that 5m is not enough slightly, but anyway
+        # this should not be a problem, since in
+        # integration-tests-entrypoint.sh we have "timeout" of 1 minute, and
+        # later we will attach with gdb to collect stacktraces, and once it
+        # will be done it will exit.
+        stop_grace_period: 10m
         tmpfs: {tmpfs}
         {mem_limit}
         cap_add:

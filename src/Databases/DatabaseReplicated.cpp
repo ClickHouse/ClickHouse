@@ -1462,7 +1462,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             LOG_DEBUG(log, "Will DROP TABLE {}, because it does not store data on disk and can be safely dropped", backQuoteIfNeed(table_name));
             dropped_tables.push_back(tryGetTableUUID(table_name));
             dropped_dictionaries += table->isDictionary();
-            table->flushAndShutdown();
+            table->flushAndShutdown(/*is_drop=*/true);
 
             if (table->getName() == "MaterializedView" || table->getName() == "WindowView")
             {
