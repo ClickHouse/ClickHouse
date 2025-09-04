@@ -93,6 +93,7 @@ public:
     void update(const Chunk & chunk);
 
     std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
+    std::vector<std::pair<size_t, size_t>> getNullCounts() const;
     std::vector<std::pair<size_t, Field>> getLowerBounds() const;
     std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
@@ -102,6 +103,7 @@ private:
 
     std::vector<Int64> field_ids;
     std::vector<Int64> column_sizes;
+    std::vector<Int64> null_counts;
     std::vector<Range> ranges;
 };
 
