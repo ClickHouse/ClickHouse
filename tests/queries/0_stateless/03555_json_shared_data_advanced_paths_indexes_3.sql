@@ -1,4 +1,4 @@
--- Tags: no-s3-storage, long
+-- Tags: no-s3-storage, long, no-msan, no-tsan, no-asan, no-ubsan
 
 set output_format_json_quote_64bit_integers=0;
 
