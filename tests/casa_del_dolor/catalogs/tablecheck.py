@@ -36,15 +36,16 @@ class SparkAndClickHouseCheck:
 
             order_by_cols = [k for k in table.columns.keys()]
             # Spark hash
-            # Generate hash for each row in ClickHouse
             # Convert all columns to string and concatenate
-            concat_cols = " || '||' || ".join([f"CAST({col} AS STRING)" for col in order_by_cols])
+            concat_cols = ", '||', ".join(
+                [f"CAST({col} AS STRING)" for col in order_by_cols]
+            )
             # Generate hash using SQL
             query = f"""
-            SELECT LOWER(HEX(MD5(CONCAT_WS('', COLLECT_LIST(row_hash))))) as table_hash
+            SELECT MD5(CONCAT_WS('', COLLECT_LIST(row_hash))) as table_hash
             FROM (
-                SELECT LOWER(HEX(MD5({concat_cols}))) as row_hash
-                FROM {table.get_clickhouse_path()}
+                SELECT MD5(CONCAT({concat_cols})) as row_hash
+                FROM {table.get_table_full_path()}
                 ORDER BY {', '.join([f"{col} ASC NULLS FIRST" for col in order_by_cols])}
             );
             """
@@ -52,16 +53,16 @@ class SparkAndClickHouseCheck:
             spark_hash = result[0]["table_hash"]
 
             # ClickHouse hash
-            # Generate hash for each row in ClickHouse
+            # Convert all columns to string and concatenate
             concat_cols = " || '||' || ".join(
                 [f"toString({col})" for col in order_by_cols]
             )
-            # Convert all columns to string and concatenate
+            # Generate hash for each row in ClickHouse
             clickhouse_hash = client.query(
                 f"""
-            SELECT hex(MD5(arrayStringConcat(groupArray(row_hash), ''))) as table_hash
+            SELECT lower(hex(MD5(arrayStringConcat(groupArray(row_hash), '')))) as table_hash
             FROM (
-                SELECT hex(MD5({concat_cols})) as row_hash
+                SELECT lower(hex(MD5({concat_cols}))) as row_hash
                 FROM {table.get_clickhouse_path()}
                 ORDER BY {', '.join([f"{col} ASC NULLS FIRST" for col in order_by_cols])}
             );
