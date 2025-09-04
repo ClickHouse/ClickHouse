@@ -1,14 +1,16 @@
-#include <memory>
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Passes/LikeToRangeRewritePass.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <boost/algorithm/string.hpp>
 #include <Core/Settings.h>
 #include <Common/StringUtils.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
+
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
@@ -47,9 +49,8 @@ public:
         if (args.size() != 2)
             return;
 
-        /// Do not rewrite attributes of low cardinality
-        auto col_type = args[0]->getResultType();
-        if (WhichDataType(col_type).isLowCardinality())
+        /// Do not rewrite for non-column, non-string left hand side
+        if (args[0]->getNodeType() != QueryTreeNodeType::COLUMN || !isStringOrFixedString(args[0]->getResultType()))
             return;
 
         /// Extract prefix and check if it's suitable for rewrite
@@ -99,6 +100,7 @@ public:
 
         /// Replpace the original LIKE node
         chassert(new_node != nullptr, "should have been created");
+        chassert(new_node->getResultType()->getTypeId() == node->getResultType()->getTypeId(), "Rewrite should preserve type");
         node = std::move(new_node);
     }
 private:
