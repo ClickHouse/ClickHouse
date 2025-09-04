@@ -5,11 +5,12 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DistributedQueryStatusSource.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Databases/DatabaseReplicated.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 namespace DB
 {
@@ -17,6 +18,8 @@ namespace Setting
 {
 extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
 extern const SettingsInt64 distributed_ddl_task_timeout;
+extern const SettingsFloat keeper_fault_injection_probability;
+extern const SettingsUInt64 keeper_fault_injection_seed;
 }
 namespace ErrorCodes
 {
@@ -75,7 +78,7 @@ IProcessor::Status DistributedQueryStatusSource::prepare()
         return ISource::prepare();
 }
 
-NameSet DistributedQueryStatusSource::getOfflineHosts(const NameSet & hosts_to_wait, const ZooKeeperPtr & zookeeper)
+NameSet DistributedQueryStatusSource::getOfflineHosts(const NameSet & hosts_to_wait, const ZooKeeperWithFaultInjectionPtr & zookeeper)
 {
     Strings paths;
     Strings hosts_array;
@@ -217,7 +220,14 @@ Chunk DistributedQueryStatusSource::generate()
             retries_ctl.retryLoop(
                 [&]()
                 {
-                    auto zookeeper = context->getZooKeeper();
+                    const auto & settings = context->getSettingsRef();
+                    auto zookeeper = ZooKeeperWithFaultInjection::createInstance(
+                        settings[Setting::keeper_fault_injection_probability],
+                        settings[Setting::keeper_fault_injection_seed],
+                        context->getZooKeeper(),
+                        "DDLWorker",
+                        nullptr);
+
                     Strings paths = getNodesToWait();
                     auto res = zookeeper->tryGetChildren(paths);
                     for (size_t i = 0; i < res.size(); ++i)
