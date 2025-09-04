@@ -13,4 +13,17 @@ function collect_core_dumps()
   done
 }
 
+jemalloc_profiles_dir=/tmp/jemalloc_profiles
+rm -rf /tmp/jemalloc_profiles
+mkdir -p "$jemalloc_profiles_dir"
+
+export MALLOC_CONF=prof_prefix:$jemalloc_profiles_dir/clickhouse.jemalloc
+
+function collect_jemalloc_profiles()
+{
+  if [ -d "$jemalloc_profiles_dir" ]; then
+    tar -C "$jemalloc_profiles_dir" -cf - $(find "$jemalloc_profiles_dir" -type f -printf '%f\n') | zstd --threads=0 > /test_output/jemalloc.tar.zst
+  fi
+}
+
 # vi: ft=bash
