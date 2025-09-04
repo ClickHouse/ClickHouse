@@ -9,7 +9,7 @@ import random
 import time
 import threading
 import numpy as np
-from praktika.result import Result
+from ci.praktika.result import Result
 
 TABLE = "table"
 S3_URLS = "s3urls"
@@ -106,7 +106,7 @@ test_run_params_1 = {
     # Pass a filename to reuse a pre-generated truth set, else test will generate truth set (default)
     # Running 10000 brute force KNN queries over a 100 million dataset could take time.
     LIMIT_N: None,
-    TRUTH_SET_FILES: ["laion_truth_set_1", "laion_truth_set_2", "laion_truth_set_3"],
+    TRUTH_SET_FILES: ["https://clickhouse-datasets.s3.amazonaws.com/laion-5b/truth_set_10k.tar"]
     QUANTIZATION: "bf16",  # 'b1' for binary quantization
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 512,
@@ -137,6 +137,7 @@ test_run_quick_test = {
 
 
 def get_new_connection():
+    # time.sleep(600)
     chclient = clickhouse_connect.get_client(send_receive_timeout=1800)
     return chclient
 
@@ -309,8 +310,9 @@ class RunTest:
         logger(f"Runtime for KNN : {runtime / 1000} seconds")
 
     # Load the truth set from a file (instead of generating at runtime)
-    def load_truth_set(self, name):
+    def load_truth_set(self, path):
         logger(f"Loading truth set from file {name} ...")
+        if "https" in path: # Pretty basic test for truth set in S3
         query_vectors = np.load(name + "_vectors.npy")
         neighbours = np.load(name + "_neighbours.npy")
         distances = np.load(name + "_distances.npy")
