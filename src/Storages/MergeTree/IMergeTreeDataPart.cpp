@@ -2407,6 +2407,33 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
         if (mrk_checksum != checksums.files.end())
             index_size.marks = mrk_checksum->second.file_size;
 
+        if (index_description.type == "text") // TODO check for legacy types?
+        {
+            // TODO get from GinIndexStore instead of hardcoding
+            auto GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
+            auto GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
+            auto GIN_BLOOM_FILTER_FILE_TYPE = ".gin_bflt";
+            auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
+            auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
+
+            std::vector<String> gin_files;
+            gin_files.push_back(index_name_escaped + GIN_SEGMENT_ID_FILE_TYPE);
+            gin_files.push_back(index_name_escaped + GIN_SEGMENT_METADATA_FILE_TYPE);
+            gin_files.push_back(index_name_escaped + GIN_BLOOM_FILTER_FILE_TYPE);
+            gin_files.push_back(index_name_escaped + GIN_DICTIONARY_FILE_TYPE);
+            gin_files.push_back(index_name_escaped + GIN_POSTINGS_FILE_TYPE);
+
+            for (auto file_name : gin_files)
+            {
+                auto gin_checksum = checksums.files.find(file_name);
+                if (gin_checksum != checksums.files.end())
+                {
+                    index_size.data_compressed += gin_checksum->second.file_size;
+                    index_size.data_uncompressed += gin_checksum->second.uncompressed_size;
+                }
+            }
+        }
+
         total_secondary_indices_size.add(index_size);
         secondary_index_sizes[index_description.name] = index_size;
     }

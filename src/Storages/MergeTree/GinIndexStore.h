@@ -110,6 +110,10 @@ public:
     /// Returns a pointer to the GinIndexPostingsList created by deserialization.
     static GinPostingsListPtr deserialize(ReadBuffer & buffer);
 
+    /// Return "uncompressed" size of postings list. This is not the true uncompressed size since
+    /// it is still a roaring bitmap.
+    size_t getUncompressedSize() { return rowids.getSizeInBytes(); }
+
 private:
     enum class Serialization : UInt8
     {
@@ -160,6 +164,8 @@ public:
 
     static std::unique_ptr<GinDictionaryBloomFilter> deserialize(ReadBuffer & read_buffer);
 
+    size_t getUncompressedSize() { return uncompressed_size; }
+
 private:
     /// Estimated number of entries
     const UInt64 unique_count;
@@ -170,6 +176,8 @@ private:
 
     /// Encapsulated BloomFilter instance
     BloomFilter bloom_filter;
+
+    size_t uncompressed_size = 0;
 };
 
 struct GinDictionary
@@ -224,6 +232,8 @@ public:
             posting_lists_file_size -= other.posting_lists_file_size;
             return *this;
         }
+
+        void fillChecksums(MergeTreeDataPartChecksums & checksums, const GinIndexStore & store);
 
     private:
         size_t num_tokens;
@@ -334,6 +344,11 @@ private:
 
     const UInt64 segment_digestion_threshold_bytes = 0;
     const double bloom_filter_false_positive_rate = 0.0;
+
+    size_t segment_descriptor_uncompressed_size = 0;
+    size_t bloom_filter_uncompressed_size = 0;
+    size_t dict_uncompressed_size = 0;
+    size_t posting_lists_uncompressed_size = 0;
 
     LoggerPtr logger = getLogger("TextIndex");
 };

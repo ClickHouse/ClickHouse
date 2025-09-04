@@ -332,18 +332,23 @@ UInt64 GinDictionaryBloomFilter::serialize(WriteBuffer & write_buffer)
 
     writeVarUInt(unique_count, write_buffer);
     bytes_written += getLengthOfVarUInt(unique_count);
+    uncompressed_size += sizeof(unique_count);
 
     writeVarUInt(bits_per_row, write_buffer);
     bytes_written += getLengthOfVarUInt(bits_per_row);
+    uncompressed_size += sizeof(bits_per_row);
 
     writeVarUInt(num_hashes, write_buffer);
     bytes_written += getLengthOfVarUInt(num_hashes);
+    uncompressed_size += sizeof(num_hashes);
 
     writeVarUInt(filter_size_bytes, write_buffer);
     bytes_written += getLengthOfVarUInt(filter_size_bytes);
+    uncompressed_size += sizeof(filter_size_bytes);
 
     write_buffer.write(reinterpret_cast<const char *>(bloom_filter.getFilter().data()), filter_size_bytes);
     bytes_written += filter_size_bytes;
+    uncompressed_size += filter_size_bytes;
 
     return bytes_written;
 }
@@ -493,6 +498,9 @@ void GinIndexStore::finalize(MergeTreeDataPartChecksums & checksums)
 
     if (postings_file_stream)
         postings_file_stream->finalize();
+
+    Statistics stats = getStatistics();
+    stats.fillChecksums(checksums, *this);
 }
 
 void GinIndexStore::cancel() noexcept
@@ -530,6 +538,23 @@ String GinIndexStore::Statistics::toString() const
         ReadableSize(bloom_filter_file_size),
         ReadableSize(dictionary_file_size),
         ReadableSize(posting_lists_file_size));
+}
+
+void GinIndexStore::Statistics::fillChecksums(MergeTreeDataPartChecksums & checksums, const GinIndexStore & store)
+{
+    auto fill_checksum = [&](const auto & file_name, auto uncompressed_size, auto file_size)
+    {
+        checksums.files[file_name].is_compressed = true;
+        checksums.files[file_name].uncompressed_size = uncompressed_size;
+        checksums.files[file_name].uncompressed_hash = Checksum::uint128(0, 0);
+        checksums.files[file_name].file_size = file_size;
+        checksums.files[file_name].file_hash = Checksum::uint128(0, 0);
+    };
+
+    fill_checksum(store.getName() + GIN_SEGMENT_DESCRIPTOR_FILE_TYPE, store.segment_descriptor_uncompressed_size, segment_descriptor_file_size);
+    fill_checksum(store.getName() + GIN_BLOOM_FILTER_FILE_TYPE, store.bloom_filter_uncompressed_size, bloom_filter_file_size);
+    fill_checksum(store.getName() + GIN_DICTIONARY_FILE_TYPE, store.dict_uncompressed_size, dictionary_file_size);
+    fill_checksum(store.getName() + GIN_POSTINGS_FILE_TYPE, store.posting_lists_uncompressed_size, posting_lists_file_size);
 }
 
 GinIndexStore::Statistics GinIndexStore::getStatistics()
@@ -625,6 +650,7 @@ void GinIndexStore::writeSegment()
 
     /// Write segment descriptor
     segment_descriptor_file_stream->write(reinterpret_cast<char *>(&current_segment), sizeof(GinSegmentDescriptor));
+    segment_descriptor_uncompressed_size = sizeof(GinSegmentDescriptor);
 
     using TokenPostingsBuilderPair = std::pair<std::string_view, GinPostingsListBuilderPtr>;
     using TokenPostingsBuilderPairs = std::vector<TokenPostingsBuilderPair>;
@@ -653,10 +679,13 @@ void GinIndexStore::writeSegment()
         posting_list_byte_sizes[i] = posting_list_byte_size;
         i++;
         current_segment.postings_start_offset += posting_list_byte_size;
+
+        posting_lists_uncompressed_size += postings_list->getUncompressedSize();
     }
 
     /// Write bloom filter
     current_segment.bloom_filter_start_offset += bloom_filter.serialize(*bloom_filter_file_stream);
+    bloom_filter_uncompressed_size = bloom_filter.getUncompressedSize();
 
     /// Write item dictionary
     std::vector<UInt8> buffer;
@@ -674,11 +703,11 @@ void GinIndexStore::writeSegment()
     fst_builder.build();
     write_buf.finalize();
 
-    const size_t uncompressed_size = buffer.size();
-    const bool compress_fst = uncompressed_size >= FST_SIZE_COMPRESSION_THRESHOLD;
+    dict_uncompressed_size = buffer.size();
+    const bool compress_fst = dict_uncompressed_size >= FST_SIZE_COMPRESSION_THRESHOLD;
 
     /// Header contains the uncompressed size and a single bit to indicate whether FST is compressed or uncompressed.
-    UInt64 fst_size_header = (uncompressed_size << 1) | (compress_fst ? 0x1 : 0x0);
+    UInt64 fst_size_header = (dict_uncompressed_size << 1) | (compress_fst ? 0x1 : 0x0);
     /// Write FST size header
     writeVarUInt(fst_size_header, *dict_file_stream);
     current_segment.dict_start_offset += getLengthOfVarUInt(fst_size_header);
@@ -687,8 +716,8 @@ void GinIndexStore::writeSegment()
     {
         const auto & codec = GinCompressionFactory::zstdCodec();
         Memory<> memory;
-        memory.resize(codec->getCompressedReserveSize(static_cast<UInt32>(uncompressed_size)));
-        auto compressed_size = codec->compress(reinterpret_cast<char *>(buffer.data()), uncompressed_size, memory.data());
+        memory.resize(codec->getCompressedReserveSize(static_cast<UInt32>(dict_uncompressed_size)));
+        auto compressed_size = codec->compress(reinterpret_cast<char *>(buffer.data()), dict_uncompressed_size, memory.data());
 
         /// Write FST compressed size
         writeVarUInt(compressed_size, *dict_file_stream);
@@ -701,8 +730,8 @@ void GinIndexStore::writeSegment()
     else
     {
         /// Write FST uncompressed blob
-        dict_file_stream->write(reinterpret_cast<char *>(buffer.data()), uncompressed_size);
-        current_segment.dict_start_offset += uncompressed_size;
+        dict_file_stream->write(reinterpret_cast<char *>(buffer.data()), dict_uncompressed_size);
+        current_segment.dict_start_offset += dict_uncompressed_size;
     }
 
     /// Note: this writes out the file size delta, not the actual file sizes
