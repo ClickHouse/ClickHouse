@@ -110,10 +110,10 @@ enum class BinaryTypeIndex : uint8_t
     Time64UTC = 0x34
     Time64WithTimezone = 0x35
 
-    After that timezoned became forbidden for Time[64] types, so we removed those types from here.
-    But we need to make the indexing consistent with integration tools.
+    After that timezones became forbidden for Time[64] types, so we removed those types from here.
+    But we need to make the indexing consistent to ensure backwards compatibility.
 
-    Please don't use 0x33 and 0x35, because Client might try to serialise data as if it is TimeWithTimezone/Time64WithTimezone.*/
+    Please don't use 0x33 and 0x35, because older client might try to serialise data as TimeWithTimezone/Time64WithTimezone, and newer server would deserialise them as incorrect types. */
     Time64 = 0x34
     // reserved = 0x35
 };
