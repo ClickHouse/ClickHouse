@@ -28,8 +28,6 @@
 #include <Core/ServerSettings.h>
 
 #if defined(OS_LINUX)
-#   include <Common/hasLinuxCapability.h>
-
 #   include <sys/time.h>
 #   include <sys/resource.h>
 #endif

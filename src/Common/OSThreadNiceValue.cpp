@@ -1,8 +1,11 @@
+#include <Common/Exception.h>
+#include <Common/OSThreadNiceValue.h>
+
+#if defined(OS_LINUX)
 #include <sys/resource.h>
 #include <linux/capability.h>
-#include <Common/Exception.h>
 #include <Common/hasLinuxCapability.h>
-#include <Common/OSThreadNiceValue.h>
+#endif
 
 namespace DB
 {
