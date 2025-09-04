@@ -35,7 +35,7 @@ endmacro()
 
 # Keep in sync with toolchain in docker images
 # (must be called before find_package(Rust) and inclusion of Corrosion.cmake)
-set(Rust_TOOLCHAIN "nightly-2024-12-01")
+set(Rust_TOOLCHAIN "nightly-2025-07-07")
 
 macro(find_rust)
     set_rust_target()
@@ -134,7 +134,24 @@ if (SANITIZE STREQUAL "memory")
 elseif (SANITIZE STREQUAL "thread")
     set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=thread")
+elseif (SANITIZE STREQUAL "address")
+    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
+    list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
+
+# Set metadata flag to force different hashes for different sanitizers
+if (SANITIZE STREQUAL "")
+    list(APPEND RUSTFLAGS "-C" "metadata=no-sanitizer")
+else()
+    list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
+endif()
+
+list(APPEND RUSTFLAGS
+    # Suppress warnings in delta-kernel-rs
+    "-Adead_code"
+    # Suppress warnings in skim
+    "-Amismatched_lifetime_syntaxes"
+)
 
 list(JOIN RUSTFLAGS " " RUSTFLAGS)
 

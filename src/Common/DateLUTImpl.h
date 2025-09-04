@@ -62,7 +62,7 @@ class DateLUTImpl
 {
 private:
     friend class DateLUT;
-    explicit DateLUTImpl(const std::string & time_zone);
+    explicit DateLUTImpl(std::string_view time_zone);
 
     DateLUTImpl(const DateLUTImpl &) = delete; /// NOLINT
     DateLUTImpl & operator=(const DateLUTImpl &) = delete; /// NOLINT
@@ -1204,7 +1204,7 @@ public:
         return lut[index].date + time_offset;
     }
 
-    Time makeTime(uint64_t hour, UInt8 minute, UInt8 second) const
+    Time makeTime(int64_t hour, UInt8 minute, UInt8 second) const
     {
         Time time_offset = hour * 3600 + minute * 60 + second;
 

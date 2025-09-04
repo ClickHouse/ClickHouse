@@ -70,6 +70,9 @@ void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
 {
     prefetched_streams.clear();
 
+    if (all_mark_ranges.getNumberOfMarks() == 0)
+        return;
+
     try
     {
         /// Start prefetches for all columns. But don't deserialize prefixes, because it can be a heavy operation
@@ -106,7 +109,9 @@ void MergeTreeReaderWide::prefetchForAllColumns(
         ? settings.read_settings.remote_fs_prefetch
         : settings.read_settings.local_fs_prefetch;
 
-    if (!do_prefetch)
+    if (!do_prefetch || all_mark_ranges.getNumberOfMarks() == 0)
+        return;
+    if (settings.filesystem_prefetches_limit && num_columns > settings.filesystem_prefetches_limit)
         return;
 
     if (deserialize_prefixes)
@@ -358,6 +363,7 @@ void MergeTreeReaderWide::deserializePrefix(
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.object_and_dynamic_read_statistics = true;
         deserialize_settings.prefixes_prefetch_callback = prefixes_prefetch_callback;
+        deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
         deserialize_settings.prefixes_deserialization_thread_pool = settings.use_prefixes_deserialization_thread_pool ? &getMergeTreePrefixesDeserializationThreadPool().get() : nullptr;
         deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
@@ -513,6 +519,7 @@ void MergeTreeReaderWide::readData(
     double & avg_value_size_hint = avg_value_size_hints[name_and_type.name];
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.avg_value_size_hint = avg_value_size_hint;
+    deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
 
     deserializePrefix(serialization, name_and_type, from_mark, current_task_last_mark, deserialize_binary_bulk_state_map, cache, deserialize_states_cache, {});
 
@@ -526,6 +533,15 @@ void MergeTreeReaderWide::readData(
             /* seek_to_start = */false, substream_path,
             data_part_info_for_read->getChecksums(),
             name_and_type, from_mark, seek_to_mark, current_task_last_mark, cache);
+    };
+
+    deserialize_settings.seek_stream_to_mark_callback = [&](const ISerialization::SubstreamPath & substream_path, const MarkInCompressedFile & mark)
+    {
+        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
+        if (!stream_name)
+            return;
+
+        streams[*stream_name]->seekToMark(mark);
     };
 
     deserialize_settings.continuous_reading = continue_reading;

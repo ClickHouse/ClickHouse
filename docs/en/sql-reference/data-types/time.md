@@ -25,13 +25,13 @@ Resolution: 1 second.
 
 The `Date` data type is faster than `Time` under _most_ conditions. But the `Time` data type is around the same as `DateTime` data type.
 
-Due to the implementation details, the `Time` and `DateTime` type requires 4 bytes of storage, while `Date` requires 2 bytes. However, when the database compresses the database, this difference is amplified.
+Due to the implementation details, the `Time` and `DateTime` type requires 4 bytes of storage, while `Date` requires 2 bytes. However, during compression, the size difference between Date and Time becomes more significant.
 
 ## Usage Remarks {#usage-remarks}
 
 The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), regardless of the time zone or daylight saving time.
 
-**Note:** The Time data type does not observe time zones. It represents a time‐of‐day value on its own, without any date or regional offset context. Attempting to apply or change a time zone on Time columns has no effect and is not supported.
+**Note:** The Time data type does not observe time zones. It represents a time‐of‐day value on its own, without any date or regional offset context. **Specifying timezone during Time type initialization is not allowed and will result in an error**. Attempting to apply or change a time zone on Time columns has no effect and is not supported.
 
 ## Examples {#examples}
 
@@ -97,7 +97,6 @@ SELECT toTime(now()) AS column, toTypeName(column) AS x
 1. │  18:55:15 │ Time │
    └───────────┴──────┘
 ```
-
 
 ## See Also {#see-also}
 

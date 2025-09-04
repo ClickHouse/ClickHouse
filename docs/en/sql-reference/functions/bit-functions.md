@@ -1,12 +1,11 @@
 ---
 description: 'Documentation for Bit Functions'
 sidebar_label: 'Bit'
-sidebar_position: 20
 slug: /sql-reference/functions/bit-functions
 title: 'Bit Functions'
 ---
 
-# Bit Functions
+# Bit functions
 
 Bit functions work for any pair of types from `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, or `Float64`. Some functions support `String` and `FixedString` types.
 

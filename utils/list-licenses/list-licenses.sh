@@ -10,7 +10,11 @@ else
     GREP_CMD='grep'
 fi
 
-ROOT_PATH="$(git rev-parse --show-toplevel)"
+ROOT_PATH="${1:-}"
+if [[ -z "$ROOT_PATH" ]]; then
+    ROOT_PATH="$(git rev-parse --show-toplevel)"
+fi
+
 LIBS_PATH="${ROOT_PATH}/contrib"
 
 libs=$(echo "${ROOT_PATH}/base/poco"; (find "${LIBS_PATH}" -maxdepth 1 -type d -not -name '*-cmake' -not -name 'rust_vendor' | LC_ALL=C sort) )
@@ -126,6 +130,9 @@ do
       "LICENSE-MIT.txt"
       "LICENSE-MIT.md"
       "LICENSE.MIT"
+      "LICENSE_A2"
+      "LICENSE_CC0"
+      "LICENSE_A2LLVM"
     )
     for possible_path in "${arr[@]}"
     do

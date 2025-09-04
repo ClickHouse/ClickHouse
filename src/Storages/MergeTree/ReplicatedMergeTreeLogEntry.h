@@ -72,6 +72,7 @@ struct ReplicatedMergeTreeLogEntryData
     UUID new_part_uuid = UUIDHelpers::Nil;
 
     Strings source_parts;
+    Strings patch_parts;
     bool deduplicate = false; /// Do deduplicate on merge
     Strings deduplicate_by_columns = {}; // Which columns should be checked for duplicates, empty means 'all' (default).
     bool cleanup = false;

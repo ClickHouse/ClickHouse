@@ -15,10 +15,11 @@ class JoinStep : public IQueryPlanStep
 {
 public:
     JoinStep(
-        const Header & left_header_,
-        const Header & right_header_,
+        const SharedHeader & left_header_,
+        const SharedHeader & right_header_,
         JoinPtr join_,
         size_t max_block_size_,
+        size_t min_block_size_rows_,
         size_t min_block_size_bytes_,
         size_t max_streams_,
         NameSet required_output_,
@@ -54,14 +55,19 @@ public:
     void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
     void keepLeftPipelineInOrder() { keep_left_read_in_order = true; }
 
+    bool isOptimized() const { return optimized; }
+    void setOptimized() { optimized = true; }
+
 private:
+    bool optimized = false;
     void updateOutputHeader() override;
 
     /// Header that expected to be returned from IJoin
-    Block join_algorithm_header;
+    SharedHeader join_algorithm_header;
 
     JoinPtr join;
     size_t max_block_size;
+    size_t min_block_size_rows;
     size_t min_block_size_bytes;
     size_t max_streams;
 
@@ -78,7 +84,7 @@ private:
 class FilledJoinStep : public ITransformingStep
 {
 public:
-    FilledJoinStep(const Header & input_header_, JoinPtr join_, size_t max_block_size_);
+    FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_, size_t max_block_size_);
 
     String getName() const override { return "FilledJoin"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;

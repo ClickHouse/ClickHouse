@@ -1,4 +1,4 @@
-#include "ITokenExtractor.h"
+#include <Interpreters/ITokenExtractor.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -20,26 +20,29 @@ namespace ErrorCodes
 namespace DB
 {
 
-std::vector<String> ITokenExtractor::getTokens(const char * data, size_t length) const
+std::vector<std::string_view> ITokenExtractor::getTokensView(const char * data, size_t length) const
 {
-    std::vector<String> tokens;
+    std::vector<std::string_view> tokens;
 
     size_t cur = 0;
     size_t token_start = 0;
     size_t token_len = 0;
 
     while (cur < length && nextInString(data, length, &cur, &token_start, &token_len))
-        tokens.push_back(String(data + token_start, token_len));
+        tokens.emplace_back(data + token_start, token_len);
 
     return tokens;
 }
 
-std::vector<String> NgramTokenExtractor::getTokens(const char * data, size_t length) const
+std::vector<std::string_view> NgramTokenExtractor::getTokensView(const char * data, size_t length) const
 {
-    if (length < n)
-        return std::vector<String>{String(data, length)};
+    if (length == 0)
+        return {};
 
-    return ITokenExtractor::getTokens(data, length);
+    if (length < n)
+        return std::vector<std::string_view>{{data, length}};
+
+    return ITokenExtractor::getTokensView(data, length);
 }
 
 bool NgramTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
@@ -277,9 +280,9 @@ void DefaultTokenExtractor::substringToBloomFilter(const char * data, size_t len
             bloom_filter.add(data + token_start, token_len);
 }
 
-void DefaultTokenExtractor::substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const
+void DefaultTokenExtractor::substringToGinFilter(const char * data, size_t length, GinQueryString & query_string, bool is_prefix, bool is_suffix) const
 {
-    gin_filter.setQueryString(data, length);
+    query_string.setQueryString({data, length});
 
     size_t cur = 0;
     size_t token_start = 0;
@@ -290,7 +293,7 @@ void DefaultTokenExtractor::substringToGinFilter(const char * data, size_t lengt
         // first token is ignored, unless substring is prefix and
         // last token is ignored, unless substring is suffix
         if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
-            gin_filter.addTerm(data + token_start, token_len);
+            query_string.addToken({data + token_start, token_len});
 }
 
 SplitTokenExtractor::SplitTokenExtractor(const std::vector<String> & separators_)
@@ -349,9 +352,12 @@ bool SplitTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*lengt
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StringTokenExtractor::nextInStringLike is not implemented");
 }
 
-std::vector<String> NoOpTokenExtractor::getTokens(const char * data, size_t length) const
+std::vector<std::string_view> NoOpTokenExtractor::getTokensView(const char * data, size_t length) const
 {
-    return {String(data, length)};
+    if (length == 0)
+        return {};
+
+    return {{data, length}};
 }
 
 bool NoOpTokenExtractor::nextInString(const char * /*data*/, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const

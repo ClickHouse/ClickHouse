@@ -274,26 +274,6 @@ TEST(AccessRights, Union)
 
     lhs = {};
     rhs = {};
-    lhs.grant(AccessType::INSERT);
-    rhs.grant(AccessType::ALL, "db1");
-    lhs.makeUnion(rhs);
-    ASSERT_EQ(lhs.toString(),
-              "GRANT INSERT ON *.*, "
-              "GRANT CHECK, SHOW, SELECT, ALTER, CREATE DATABASE, CREATE TABLE, CREATE VIEW, "
-              "CREATE DICTIONARY, DROP DATABASE, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, "
-              "TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, "
-              "SHOW ROW POLICIES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, "
-              "SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM VIEWS, SYSTEM SENDS, "
-              "SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM REDUCE BLOCKING PARTS, "
-              "SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, "
-              "SYSTEM RESTORE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM SYNC DATABASE REPLICA, SYSTEM FLUSH DISTRIBUTED, "
-              "SYSTEM LOAD PRIMARY KEY, SYSTEM UNLOAD PRIMARY KEY, dictGet ON db1.*, GRANT TABLE ENGINE ON db1, "
-              "GRANT SET DEFINER ON db1, "
-              "GRANT CREATE USER, ALTER USER, DROP USER, CREATE ROLE, ALTER ROLE, DROP ROLE ON db1, "
-              "GRANT NAMED COLLECTION ADMIN ON db1");
-
-    lhs = {};
-    rhs = {};
     lhs.grant(AccessType::SELECT, "db1", "tb1", Strings{"col1", "col2", "test"});
     rhs.grant(AccessType::SELECT, "db1", "tb1");
     lhs.makeUnion(rhs);
@@ -544,4 +524,25 @@ TEST(AccessRights, Iterator)
     ASSERT_EQ(res[1], "team");
     ASSERT_EQ(res[2], "toast");
     ASSERT_EQ(res[3], "toaster");
+}
+
+TEST(AccessRights, Filter)
+{
+    AccessRights root;
+    root.grant(AccessType::READ, "S3", "s3://url1.*");
+    root.grant(AccessType::READ, "S3", "s3://url2.*");
+    root.grant(AccessType::READ, "URL", "https://url3.*");
+
+    auto res = root.getFilters("S3");
+    ASSERT_EQ(res.size(), 2);
+    ASSERT_EQ(res[0].path, "s3://url1.*");
+    ASSERT_EQ(res[1].path, "s3://url2.*");
+
+    res = root.getFilters("URL");
+    ASSERT_EQ(res.size(), 1);
+    ASSERT_EQ(res[0].path, "https://url3.*");
+
+    root.revoke(AccessType::READ, "URL");
+    res = root.getFilters("URL");
+    ASSERT_EQ(res.size(), 0);
 }

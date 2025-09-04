@@ -11,7 +11,7 @@ class ReadBuffer;
 class MarkdownRowOutputFormat final : public IRowOutputFormat
 {
 public:
-    MarkdownRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    MarkdownRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "MarkdownRowOutputFormat"; }
 

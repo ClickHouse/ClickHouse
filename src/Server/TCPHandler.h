@@ -28,8 +28,8 @@
 #include <Server/TCPProtocolStackData.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
-#include "Client/IServerConnection.h"
-#include "IServer.h"
+#include <Client/IServerConnection.h>
+#include <Server/IServer.h>
 
 
 namespace CurrentMetrics
@@ -246,6 +246,10 @@ private:
     std::optional<UInt64> nonce;
     String cluster;
 
+    /// For tracking connection lifetime and query count
+    UInt64 query_count = 0;
+    Stopwatch connection_timer;
+
     /// `callback_mutex` protects using `out` (WriteBuffer), `in` (ReadBuffer) and other members concurrent inside callbacks.
     /// All the methods which are run inside callbacks are marked with TSA_REQUIRES.
     std::mutex callback_mutex;
@@ -280,7 +284,7 @@ private:
 
     std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
-    void processCancel(QueryState & state, bool throw_exception = true) TSA_REQUIRES(callback_mutex);
+    void processCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
     void processQuery(std::optional<QueryState> & state);
     void processIgnoredPartUUIDs();
     bool processData(QueryState & state, bool scalar) TSA_REQUIRES(callback_mutex);
@@ -335,6 +339,8 @@ private:
     /// This function is called from different threads.
     void updateProgress(QueryState & state, const Progress & value);
     void logQueryDuration(QueryState & state);
+
+    bool connectionLimitReached();
 
     Poco::Net::SocketAddress getClientAddress(const ClientInfo & client_info);
 };

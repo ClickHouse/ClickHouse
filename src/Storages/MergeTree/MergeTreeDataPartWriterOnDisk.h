@@ -168,7 +168,7 @@ protected:
     /// Get unique non ordered skip indices column.
     Names getSkipIndicesColumns() const;
 
-    virtual void addStreams(const NameAndTypePair & name_and_type, const ColumnPtr & column, const ASTPtr & effective_codec_desc) = 0;
+    virtual void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) = 0;
 
     /// On first block create all required streams for columns with dynamic subcolumns and remember the block sample.
     /// On each next block check if dynamic structure of the columns equals to the dynamic structure of the same
@@ -215,7 +215,6 @@ protected:
     Block block_sample;
 
     /// List of substreams for each column in order of serialization.
-    /// Right now used only in Compact parts.
     ColumnsSubstreams columns_substreams;
 
 private:

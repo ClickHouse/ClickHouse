@@ -6,6 +6,7 @@ import string
 import time
 import uuid
 from multiprocessing.dummy import Pool
+from datetime import datetime
 
 import pytest
 from kazoo.exceptions import NoNodeError
@@ -375,6 +376,8 @@ def test_commit_on_limit(started_cluster, processing_threads):
         started_cluster, f"{files_path}/test_999999.csv", correct_values_csv
     )
 
+    start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     create_mv(node, table_name, dst_table_name)
 
     expected_files = files_to_generate + 4
@@ -424,6 +427,25 @@ def test_commit_on_limit(started_cluster, processing_threads):
         )
     )
 
+    finish_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    node.query("system flush logs")
+    commit_id = node.query(
+        f"SELECT commit_id FROM system.s3queue_log WHERE file_name = '{files_path}/test_999999.csv'"
+    ).strip()
+    assert len(commit_id) > 0
+    commit_id_count = int(
+        node.query(
+            f"SELECT count() FROM system.s3queue_log WHERE commit_id = {commit_id}"
+        ).strip()
+    )
+    assert files_to_generate + 5 == int(
+        node.query(
+            f"SELECT count() FROM system.s3queue_log WHERE transaction_start_time >= toDateTime('{start_time}') and transaction_start_time <= toDateTime('{finish_time}')"
+        ).strip()
+    )
+    # 11 and not 10, because failed file is not accounted in
+    # current_processed_files which is compared to max_processed_files.
+    assert commit_id_count <= 11
     expected_processed = ["test_" + str(i) + ".csv" for i in range(files_to_generate)]
     processed = get_processed_files()
     for value in expected_processed:

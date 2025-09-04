@@ -4,7 +4,6 @@
 #include <DataTypes/EnumValues.h>
 #include <Columns/ColumnVector.h>
 #include <Common/HashTable/HashMap.h>
-#include <vector>
 
 
 namespace DB
@@ -67,6 +66,7 @@ public:
     MutableColumnPtr createColumn() const override { return ColumnType::create(); }
 
     Field getDefault() const override;
+    Type getDefaultValue() const;
     void insertDefaultInto(IColumn & column) const override;
 
     bool equals(const IDataType & rhs) const override;
@@ -81,6 +81,8 @@ public:
     bool contains(const IDataType & rhs) const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
+
+    void updateHashImpl(SipHash & hash) const override;
 };
 
 

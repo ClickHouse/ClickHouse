@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/castTypeToEither.h>
 
 #include <Core/callOnTypeIndex.h>
 
@@ -9,21 +8,20 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <Common/transformEndianness.h>
 #include <Common/memcpySmall.h>
 #include <Common/typeid_cast.h>
-
-#include <base/unaligned.h>
 
 
 namespace DB
@@ -100,6 +98,20 @@ public:
             if (!canBeReinterpretedAsNumeric(from_data_type) && !from_data_type.isStringOrFixedString())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Cannot reinterpret {} as {} because only Numeric, String or FixedString can be reinterpreted in Numeric",
+                    from_type->getName(),
+                    to_type->getName());
+        }
+        else if (result_reinterpret_type.isArray())
+        {
+            WhichDataType from_data_type(from_type);
+            if (!from_data_type.isStringOrFixedString())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Cannot reinterpret {} as {} because only String or FixedString can be reinterpreted as array",
+                    from_type->getName(),
+                    to_type->getName());
+            if (!to_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Cannot reinterpret {} as {} because the array element type is not fixed length",
                     from_type->getName(),
                     to_type->getName());
         }
@@ -180,7 +192,7 @@ public:
                     size_t offset = 0;
                     for (size_t i = 0; i < input_rows_count; ++i)
                     {
-                        size_t copy_size = std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1);
+                        size_t copy_size = std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset);
                         if constexpr (std::endian::native == std::endian::little)
                             memcpy(&vec_res[i],
                                 &data_from[offset],
@@ -275,10 +287,41 @@ public:
             return false;
         }))
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Cannot reinterpret {} as {}",
-                from_type->getName(),
-                result_type->getName());
+            /// Destination could be an array, source has to be String/FixedString
+            /// Above lambda block of callOnTwoTypeIndexes only for scalar result type specializations.
+            /// All Array(T) result types are handled with a single code block below using insertData().
+            if (WhichDataType(result_type).isArray())
+            {
+                auto inner_type = typeid_cast<const DataTypeArray &>(*result_type).getNestedType();
+                const IColumn * col_from = nullptr;
+
+                if (WhichDataType(from_type).isString())
+                    col_from = &assert_cast<const ColumnString &>(*arguments[0].column);
+                else if (WhichDataType(from_type).isFixedString())
+                    col_from = &assert_cast<const ColumnFixedString &>(*arguments[0].column);
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Cannot reinterpret {} as {}, expected String or FixedString as source",
+                        from_type->getName(),
+                        result_type->getName());
+
+                auto col_res = ColumnArray::create(inner_type->createColumn());
+
+                for (size_t i = 0; i < input_rows_count; ++i)
+                {
+                    StringRef ref = col_from->getDataAt(i);
+                    col_res->insertData(ref.data, ref.size);
+                }
+
+                result = std::move(col_res);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Cannot reinterpret {} as {}",
+                    from_type->getName(),
+                    result_type->getName());
+            }
         }
 
         return result;
@@ -355,15 +398,13 @@ private:
                 index++;
             data.size -= index;
 #endif
-            data_to.resize(offset + data.size + 1);
+            data_to.resize(offset + data.size);
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
             memcpy(&data_to[offset], data.data, data.size);
 #else
             reverseMemcpy(&data_to[offset], data.data + index, data.size);
 #endif
             offset += data.size;
-            data_to[offset] = 0;
-            ++offset;
             offsets_to[i] = offset;
         }
     }

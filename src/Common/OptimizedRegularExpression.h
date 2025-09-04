@@ -35,6 +35,15 @@ namespace OptimizedRegularExpressionDetails
     };
 }
 
+struct RegexpAnalysisResult
+{
+    std::string required_substring;
+    bool is_trivial = false;
+    bool has_capture = false;
+    bool required_substring_is_prefix = false;
+    std::vector<std::string> alternatives;
+};
+
 class OptimizedRegularExpression
 {
 public:
@@ -91,18 +100,14 @@ public:
 
     /// analyze function will extract the longest string literal or multiple alternative string literals from regexp for pre-checking if
     /// a string contains the string literal(s). If not, we can tell this string can never match the regexp.
-    static void analyze(
-        std::string_view regexp_,
-        std::string & required_substring,
-        bool & is_trivial,
-        bool & required_substring_is_prefix,
-        std::vector<std::string> & alternatives);
+    static RegexpAnalysisResult analyze(std::string_view regexp_);
 
 private:
+    std::string required_substring;
     bool is_trivial;
+    bool has_capture;
     bool required_substring_is_prefix;
     bool is_case_insensitive;
-    std::string required_substring;
     std::optional<DB::ASCIICaseSensitiveStringSearcher> case_sensitive_substring_searcher;
     std::optional<DB::ASCIICaseInsensitiveStringSearcher> case_insensitive_substring_searcher;
     std::unique_ptr<re2::RE2> re2;

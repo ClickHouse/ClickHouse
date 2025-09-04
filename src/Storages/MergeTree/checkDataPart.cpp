@@ -290,7 +290,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             continue;
         }
 
-        /// Exclude files written by full-text index from check. No correct checksums are available for them currently.
+        /// Exclude files written by text index from check. No correct checksums are available for them currently.
         if (isGinFile(file_name))
             continue;
 

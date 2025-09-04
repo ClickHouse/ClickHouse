@@ -1,13 +1,15 @@
 #pragma once
 
+#include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatSettings.h>
+#include <IO/Archives/IArchiveReader.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Processors/ISource.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/IStorage.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/FileRenamer.h>
-#include <Formats/FormatSettings.h>
-#include <IO/Archives/IArchiveReader.h>
-#include <Processors/SourceWithKeyCondition.h>
-#include <Interpreters/ActionsDAG.h>
 
 #include <atomic>
 #include <shared_mutex>
@@ -89,6 +91,12 @@ public:
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
+
+    /// Things required for PREWHERE.
+    bool supportsPrewhere() const override;
+    bool canMoveConditionsToPrewhere() const override;
+    std::optional<NameSet> supportedPrewhereColumns() const override;
+    ColumnSizeByName getColumnSizes() const override;
 
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
@@ -179,6 +187,8 @@ private:
     bool is_db_table = true;        /// Table is stored in real database, not user's file
     bool use_table_fd = false;      /// Use table_fd instead of path
 
+    bool supports_prewhere = false;
+
     mutable std::shared_timed_mutex rwlock;
 
     LoggerPtr log = getLogger("StorageFile");
@@ -201,9 +211,11 @@ private:
     FileRenamer file_renamer;
     bool was_renamed = false;
     bool distributed_processing = false;
+    NamesAndTypesList file_columns;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
-class StorageFileSource : public SourceWithKeyCondition, WithContext
+class StorageFileSource : public ISource, WithContext
 {
 public:
     class FilesIterator : WithContext
@@ -214,6 +226,7 @@ public:
             std::optional<StorageFile::ArchiveInfo> archive_info_,
             const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns,
+            const NamesAndTypesList & hive_columns,
             const ContextPtr & context_,
             bool distributed_processing_ = false);
 
@@ -254,8 +267,9 @@ private:
         UInt64 max_block_size_,
         FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_,
-        bool need_only_count_);
-
+        bool need_only_count_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        FormatFilterInfoPtr format_filter_info_);
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
@@ -270,11 +284,11 @@ private:
         return storage->getName();
     }
 
-    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
-
     bool tryGetCountFromCache(const struct stat & file_stat);
 
     Chunk generate() override;
+
+    void onFinish() override { parser_shared_resources->finishStream(); }
 
     void addNumRowsToCache(const String & path, size_t num_rows) const;
 
@@ -292,6 +306,8 @@ private:
     InputFormatPtr input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
+    FormatParserSharedResourcesPtr parser_shared_resources;
+    FormatFilterInfoPtr format_filter_info;
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
@@ -301,6 +317,7 @@ private:
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
     SerializationInfoByName serialization_hints;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     UInt64 max_block_size;
 

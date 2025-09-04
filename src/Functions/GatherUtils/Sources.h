@@ -13,9 +13,9 @@
 
 #include <DataTypes/EnumValues.h>
 
-#include "IArraySource.h"
-#include "IValueSource.h"
-#include "Slices.h"
+#include <Functions/GatherUtils/IArraySource.h>
+#include <Functions/GatherUtils/IValueSource.h>
+#include <Functions/GatherUtils/Slices.h>
 #include <Functions/FunctionHelpers.h>
 
 
@@ -279,7 +279,7 @@ struct StringSource
 
     size_t getElementSize() const
     {
-        return offsets[row_num] - prev_offset - 1;
+        return offsets[row_num] - prev_offset;
     }
 
     size_t getColumnSize() const
@@ -289,12 +289,12 @@ struct StringSource
 
     Slice getWhole() const
     {
-        return {&elements[prev_offset], offsets[row_num] - prev_offset - 1};
+        return {&elements[prev_offset], offsets[row_num] - prev_offset};
     }
 
     Slice getSliceFromLeft(size_t offset) const
     {
-        size_t elem_size = offsets[row_num] - prev_offset - 1;
+        size_t elem_size = offsets[row_num] - prev_offset;
         if (offset >= elem_size)
             return {&elements[prev_offset], 0};
         return {&elements[prev_offset + offset], elem_size - offset};
@@ -302,7 +302,7 @@ struct StringSource
 
     Slice getSliceFromLeft(size_t offset, size_t length) const
     {
-        size_t elem_size = offsets[row_num] - prev_offset - 1;
+        size_t elem_size = offsets[row_num] - prev_offset;
         if (offset >= elem_size)
             return {&elements[prev_offset], 0};
         return {&elements[prev_offset + offset], std::min(length, elem_size - offset)};
@@ -310,7 +310,7 @@ struct StringSource
 
     Slice getSliceFromRight(size_t offset) const
     {
-        size_t elem_size = offsets[row_num] - prev_offset - 1;
+        size_t elem_size = offsets[row_num] - prev_offset;
         if (offset > elem_size)
             return {&elements[prev_offset], elem_size};
         return {&elements[prev_offset + elem_size - offset], offset};
@@ -318,7 +318,7 @@ struct StringSource
 
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
-        size_t elem_size = offsets[row_num] - prev_offset - 1;
+        size_t elem_size = offsets[row_num] - prev_offset;
         if (offset > elem_size)
             return {&elements[prev_offset], length + elem_size > offset ? std::min(elem_size, length + elem_size - offset) : 0};
         return {&elements[prev_offset + elem_size - offset], std::min(length, offset)};
@@ -459,7 +459,7 @@ struct UTF8StringSource : public StringSource
     Slice getSliceFromLeft(size_t offset) const
     {
         const auto * begin = &elements[prev_offset];
-        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * end = elements.data() + offsets[row_num];
         const auto * res_begin = skipCodePointsForward(begin, offset, end);
 
         if (res_begin >= end)
@@ -471,7 +471,7 @@ struct UTF8StringSource : public StringSource
     Slice getSliceFromLeft(size_t offset, size_t length) const
     {
         const auto * begin = &elements[prev_offset];
-        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * end = elements.data() + offsets[row_num];
         const auto * res_begin = skipCodePointsForward(begin, offset, end);
 
         if (res_begin >= end)
@@ -488,7 +488,7 @@ struct UTF8StringSource : public StringSource
     Slice getSliceFromRight(size_t offset) const
     {
         const auto * begin = &elements[prev_offset];
-        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * end = elements.data() + offsets[row_num];
         const auto * res_begin = skipCodePointsBackward(end, offset, begin);
 
         return {res_begin, size_t(end - res_begin)};
@@ -497,7 +497,7 @@ struct UTF8StringSource : public StringSource
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
         const auto * begin = &elements[prev_offset];
-        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * end = elements.data() + offsets[row_num];
         const auto * res_begin = skipCodePointsBackward(end, offset, begin);
         const auto * res_end = skipCodePointsForward(res_begin, length, end);
 

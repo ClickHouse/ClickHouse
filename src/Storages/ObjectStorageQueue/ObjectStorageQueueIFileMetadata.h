@@ -27,6 +27,8 @@ public:
         };
 
         void setProcessingEndTime();
+        /// Set how much time it took to list this object from s3.
+        void setGetObjectTime(size_t elapsed_ms);
         void onProcessing();
         void onProcessed();
         void reset();
@@ -42,6 +44,7 @@ public:
         std::atomic<time_t> processing_start_time = 0;
         std::atomic<time_t> processing_end_time = 0;
         std::atomic<size_t> retries = 0;
+        std::atomic<UInt64> get_object_time_ms = 0;
 
     private:
         mutable std::mutex last_exception_mutex;
@@ -57,6 +60,7 @@ public:
         FileStatusPtr file_status_,
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
+        bool use_persistent_processing_nodes_,
         LoggerPtr log_);
 
     virtual ~ObjectStorageQueueIFileMetadata();
@@ -126,6 +130,8 @@ public:
         static NodeMetadata fromString(const std::string & metadata_str);
     };
 
+    static std::string getProcessingNodesPath(bool use_persistent_processing_nodes);
+
 protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
     virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests) = 0;
@@ -141,6 +147,7 @@ protected:
     const FileStatusPtr file_status;
     const size_t max_loading_retries;
     const std::atomic<size_t> & metadata_ref_count;
+    const bool use_persistent_processing_nodes;
 
     const std::string processing_node_path;
     const std::string processed_node_path;
