@@ -198,7 +198,6 @@ WITH lines AS (
     )
 )
 SELECT
-    -- Count occurrences of the key constants irrespective of exact UInt type
     countIf(positionCaseInsensitive(explain, '5_UInt')  > 0) AS count_const_5,
     countIf(positionCaseInsensitive(explain, '11_UInt') > 0) AS count_const_11
 FROM lines
