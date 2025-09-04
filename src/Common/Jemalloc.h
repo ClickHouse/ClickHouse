@@ -17,7 +17,7 @@ void checkJemallocProfilingEnabled();
 
 void setJemallocProfileActive(bool value);
 
-std::string flushJemallocProfile(const std::string & file_prefix);
+std::string flushJemallocProfile(const std::string & file_prefix, bool log);
 
 void setJemallocBackgroundThreads(bool enabled);
 

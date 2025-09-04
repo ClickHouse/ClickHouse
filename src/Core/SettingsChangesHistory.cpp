@@ -41,11 +41,19 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.9",
         {
-            {"use_skip_indexes_on_data_read", false, true, "New setting"},
+            {"iceberg_delete_data_on_drop", false, false, "New setting"},
+            {"use_skip_indexes_on_data_read", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"iceberg_metadata_log_level", "none", "none", "New setting."},
             {"max_iceberg_data_file_rows", 100000, 100000, "New setting."},
             {"max_iceberg_data_file_bytes", 100000000, 100000000, "New setting."},
+            {"query_plan_optimize_join_order_limit", 1, 1, "New setting"},
+            {"query_plan_display_internal_aliases", false, false, "New setting"},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
+            {"delta_lake_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New setting."},
+            {"delta_lake_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
+            {"promql_evaluation_time", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."},
+            {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
@@ -861,6 +869,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, false, "New setting"},
             {"shared_merge_tree_empty_partition_lifetime", 86400, 86400, "New setting"},
+            {"shared_merge_tree_outdated_parts_group_size", 2, 2, "New setting"},
+            {"shared_merge_tree_use_outdated_parts_compact_format", false, true, "Enable outdated parts v3 by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
