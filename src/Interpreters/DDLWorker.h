@@ -138,7 +138,7 @@ protected:
     /// If dry_run = false, the task will be processed right after this call.
     virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperWithFaultInjectionPtr & zookeeper, bool dry_run);
 
-    void processTask(DDLTaskBase & task, const ZooKeeperWithFaultInjectionPtr & zookeeper, bool internal_query);
+    void processTask(DDLTaskBase & task, const WithRetries & with_retries, bool internal_query);
     void updateMaxDDLEntryID(const String & entry_name);
 
     /// Check that query should be executed on leader replica only

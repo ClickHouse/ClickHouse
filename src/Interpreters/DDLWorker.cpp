@@ -59,8 +59,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool implicit_transaction;
+    extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsFloat keeper_fault_injection_probability;
     extern const SettingsUInt64 keeper_fault_injection_seed;
+    extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }
@@ -295,185 +298,203 @@ static void filterAndSortQueueNodes(Strings & all_nodes)
 void DDLWorker::scheduleTasks(bool reinitialized)
 {
     LOG_DEBUG(log, "Scheduling tasks");
-    auto zookeeper = getZooKeeper();
-
-    /// Main thread of DDLWorker was restarted, probably due to lost connection with ZooKeeper.
-    /// We have some unfinished tasks.
-    /// To avoid duplication of some queries we should try to write execution status again.
-    /// To avoid skipping of some entries which were not executed we should be careful when choosing begin_node to start from.
-    /// NOTE: It does not protect from all cases of query duplication, see also comments in processTask(...)
-    if (reinitialized)
-    {
-        if (current_tasks.empty())
-            LOG_TRACE(log, "Don't have unfinished tasks after restarting");
-        else
-            LOG_INFO(log, "Have {} unfinished tasks, will check them", current_tasks.size());
-
-        assert(current_tasks.size() <= pool_size + (worker_pool != nullptr));
-        auto task_it = current_tasks.begin();
-        while (task_it != current_tasks.end())
+    const auto & settings = context->getSettingsRef();
+    auto with_retries = WithRetries(
+        log,
+        [&](UInt64 max_lock_milliseconds) { return context->getZooKeeper(max_lock_milliseconds); },
         {
-            auto & task = *task_it;
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            context->getProcessListElement()
+        },
+        settings[Setting::keeper_fault_injection_probability],
+        settings[Setting::keeper_fault_injection_seed]
+        );
 
-            if (task->completely_processed)
+    auto holder = with_retries.createRetriesControlHolderForOperations("DDLWorker::scheduleTasks");
+    holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
+    {
+        with_retries.renewZooKeeper(zookeeper);
+
+        /// Main thread of DDLWorker was restarted, probably due to lost connection with ZooKeeper.
+        /// We have some unfinished tasks.
+        /// To avoid duplication of some queries we should try to write execution status again.
+        /// To avoid skipping of some entries which were not executed we should be careful when choosing begin_node to start from.
+        /// NOTE: It does not protect from all cases of query duplication, see also comments in processTask(...)
+        if (reinitialized)
+        {
+            if (current_tasks.empty())
+                LOG_TRACE(log, "Don't have unfinished tasks after restarting");
+            else
+                LOG_INFO(log, "Have {} unfinished tasks, will check them", current_tasks.size());
+
+            assert(current_tasks.size() <= pool_size + (worker_pool != nullptr));
+            auto task_it = current_tasks.begin();
+            while (task_it != current_tasks.end())
             {
-                chassert(task->was_executed);
-                /// Status must be written (but finished/ node may not exist if entry was deleted).
-                /// If someone is deleting entry concurrently, then /active status dir must not exist.
-                assert(zookeeper->exists(task->getFinishedNodePath()) || !zookeeper->exists(fs::path(task->entry_path) / "active"));
-                ++task_it;
-            }
-            else if (task->was_executed)
-            {
-                /// Connection was lost on attempt to write status. Will retry.
-                bool status_written = zookeeper->exists(task->getFinishedNodePath());
-                /// You might think that the following condition is redundant, because status_written implies completely_processed.
-                /// But it's wrong. It's possible that (!task->completely_processed && status_written)
-                /// if ZooKeeper successfully received and processed our request
-                /// but we lost connection while waiting for the response.
-                /// Yeah, distributed systems is a zoo.
-                if (status_written)
+                auto & task = *task_it;
+
+                if (task->completely_processed)
                 {
-                    /// TODO We cannot guarantee that query was actually executed synchronously if connection was lost.
-                    /// Let's simple create synced/ node for now, but it would be better to pass UNFINISHED status to initiator
-                    /// or wait for query to actually finish (requires https://github.com/ClickHouse/ClickHouse/issues/23513)
-                    task->createSyncedNodeIfNeed(zookeeper);
-                    task->completely_processed = true;
+                    chassert(task->was_executed);
+                    /// Status must be written (but finished/ node may not exist if entry was deleted).
+                    /// If someone is deleting entry concurrently, then /active status dir must not exist.
+                    assert(zookeeper->exists(task->getFinishedNodePath()) || !zookeeper->exists(fs::path(task->entry_path) / "active"));
+                    ++task_it;
+                }
+                else if (task->was_executed)
+                {
+                    /// Connection was lost on attempt to write status. Will retry.
+                    bool status_written = zookeeper->exists(task->getFinishedNodePath());
+                    /// You might think that the following condition is redundant, because status_written implies completely_processed.
+                    /// But it's wrong. It's possible that (!task->completely_processed && status_written)
+                    /// if ZooKeeper successfully received and processed our request
+                    /// but we lost connection while waiting for the response.
+                    /// Yeah, distributed systems is a zoo.
+                    if (status_written)
+                    {
+                        /// TODO We cannot guarantee that query was actually executed synchronously if connection was lost.
+                        /// Let's simple create synced/ node for now, but it would be better to pass UNFINISHED status to initiator
+                        /// or wait for query to actually finish (requires https://github.com/ClickHouse/ClickHouse/issues/23513)
+                        task->createSyncedNodeIfNeed(zookeeper);
+                        task->completely_processed = true;
+                    }
+                    else
+                    {
+                        processTask(*task, with_retries, /*internal_query=*/ false);
+                    }
+                    ++task_it;
                 }
                 else
                 {
-                    processTask(*task, zookeeper, /*internal_query=*/ false);
+                    /// We didn't even executed a query, so let's just remove it.
+                    /// We will try to read the task again and execute it from the beginning.
+                    /// NOTE: We can safely compare entry names as Strings, because they are padded.
+                    /// Entry name always starts with "query-" and contain exactly 10 decimal digits
+                    /// of log entry number (with leading zeros).
+                    if (!first_failed_task_name || task->entry_name < *first_failed_task_name)
+                        first_failed_task_name = task->entry_name;
+
+                    task_it = current_tasks.erase(task_it);
                 }
-                ++task_it;
+            }
+        }
+
+        Strings queue_nodes = zookeeper->getChildren(queue_dir, &queue_node_stat, queue_updated_event);
+        size_t size_before_filtering = queue_nodes.size();
+        filterAndSortQueueNodes(queue_nodes);
+        /// The following message is too verbose, but it can be useful to debug mysterious test failures in CI
+        LOG_TRACE(log, "scheduleTasks: initialized={}, size_before_filtering={}, queue_size={}, "
+                       "entries={}..{}, "
+                       "first_failed_task_name={}, current_tasks_size={}, "
+                       "last_current_task={}, "
+                       "last_skipped_entry_name={}",
+                       initialized.load(), size_before_filtering, queue_nodes.size(),
+                       queue_nodes.empty() ? "none" : queue_nodes.front(), queue_nodes.empty() ? "none" : queue_nodes.back(),
+                       first_failed_task_name ? *first_failed_task_name : "none", current_tasks.size(),
+                       current_tasks.empty() ? "none" : current_tasks.back()->entry_name,
+                       last_skipped_entry_name ? *last_skipped_entry_name : "none");
+
+        if (max_tasks_in_queue < queue_nodes.size())
+            cleanup_event->set();
+
+        /// Detect queue start, using:
+        /// - skipped tasks
+        /// - in memory tasks (that are currently active or were finished recently)
+        /// - failed tasks (that should be processed again)
+        auto begin_node = queue_nodes.begin();
+        if (first_failed_task_name)
+        {
+            /// If we had failed tasks, then we should start from the first failed task.
+            chassert(reinitialized);
+            begin_node = std::lower_bound(queue_nodes.begin(), queue_nodes.end(), first_failed_task_name);
+        }
+        else
+        {
+            /// We had no failed tasks. Let's just choose the maximum entry we have previously seen.
+            String last_task_name;
+            if (!current_tasks.empty())
+                last_task_name = current_tasks.back()->entry_name;
+            if (last_skipped_entry_name && last_task_name < *last_skipped_entry_name)
+                last_task_name = *last_skipped_entry_name;
+            begin_node = std::upper_bound(queue_nodes.begin(), queue_nodes.end(), last_task_name);
+        }
+
+        if (begin_node == queue_nodes.end())
+            LOG_DEBUG(log, "No tasks to schedule");
+        else
+            LOG_DEBUG(log, "Will schedule {} tasks starting from {}", std::distance(begin_node, queue_nodes.end()), *begin_node);
+
+        /// Let's ensure that it's exactly the first task we should process.
+        /// Maybe such asserts are too paranoid and excessive,
+        /// but it's easy enough to break DDLWorker in a very unobvious way by making some minor change in code.
+        [[maybe_unused]] bool have_no_tasks_info = !first_failed_task_name && current_tasks.empty() && !last_skipped_entry_name;
+        chassert(have_no_tasks_info || queue_nodes.end() == std::find_if(queue_nodes.begin(), queue_nodes.end(), [&](const String & entry_name)
+        {
+            /// We should return true if some invariants are violated.
+            String reason;
+            auto task = initAndCheckTask(entry_name, reason, zookeeper, /*dry_run*/ true);
+            bool maybe_currently_processing = current_tasks.end() != std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
+            {
+                return t->entry_name == entry_name;
+            });
+            /// begin_node is something like a log pointer
+            if (begin_node == queue_nodes.end() || entry_name < *begin_node)
+            {
+                /// Return true if entry should be scheduled.
+                /// There is a minor race condition: initAndCheckTask(...) may return not null
+                /// if someone is deleting outdated entry right now (including finished/ nodes), so we also check active/ status dir.
+                bool maybe_concurrently_deleting = task && !zookeeper->exists(fs::path(task->entry_path) / "active");
+                return task && !maybe_concurrently_deleting && !maybe_currently_processing;
+            }
+            if (last_skipped_entry_name.has_value() && !queue_fully_loaded_after_initialization_debug_helper)
+            {
+                /// If connection was lost during queue loading
+                /// we may start processing from finished task (because we don't know yet that it's finished) and it's ok.
+                return false;
+            }
+
+            /// Return true if entry should not be scheduled.
+            bool processed = !task && reason == TASK_PROCESSED_OUT_REASON;
+            return processed || maybe_currently_processing;
+        }));
+
+        for (auto it = begin_node; it != queue_nodes.end() && !stop_flag; ++it)
+        {
+            String entry_name = *it;
+            LOG_TRACE(log, "Checking task {}", entry_name);
+
+            String reason;
+            auto task = initAndCheckTask(entry_name, reason, zookeeper, /*dry_run*/ false);
+            if (task)
+            {
+                queue_fully_loaded_after_initialization_debug_helper = true;
             }
             else
             {
-                /// We didn't even executed a query, so let's just remove it.
-                /// We will try to read the task again and execute it from the beginning.
-                /// NOTE: We can safely compare entry names as Strings, because they are padded.
-                /// Entry name always starts with "query-" and contain exactly 10 decimal digits
-                /// of log entry number (with leading zeros).
-                if (!first_failed_task_name || task->entry_name < *first_failed_task_name)
-                    first_failed_task_name = task->entry_name;
+                LOG_DEBUG(log, "Will not execute task {}: {}", entry_name, reason);
+                updateMaxDDLEntryID(entry_name);
+                last_skipped_entry_name.emplace(entry_name);
+                continue;
+            }
 
-                task_it = current_tasks.erase(task_it);
+            auto & saved_task = saveTask(std::move(task));
+
+            if (worker_pool)
+            {
+                worker_pool->scheduleOrThrowOnError([this, &saved_task, &with_retries]()
+                {
+                    setThreadName("DDLWorkerExec");
+                    processTask(saved_task, with_retries, /*internal_query=*/ false);
+                });
+            }
+            else
+            {
+                processTask(saved_task, with_retries, /*internal_query=*/ false);
             }
         }
-    }
-
-    Strings queue_nodes = zookeeper->getChildren(queue_dir, &queue_node_stat, queue_updated_event);
-    size_t size_before_filtering = queue_nodes.size();
-    filterAndSortQueueNodes(queue_nodes);
-    /// The following message is too verbose, but it can be useful to debug mysterious test failures in CI
-    LOG_TRACE(log, "scheduleTasks: initialized={}, size_before_filtering={}, queue_size={}, "
-                   "entries={}..{}, "
-                   "first_failed_task_name={}, current_tasks_size={}, "
-                   "last_current_task={}, "
-                   "last_skipped_entry_name={}",
-                   initialized.load(), size_before_filtering, queue_nodes.size(),
-                   queue_nodes.empty() ? "none" : queue_nodes.front(), queue_nodes.empty() ? "none" : queue_nodes.back(),
-                   first_failed_task_name ? *first_failed_task_name : "none", current_tasks.size(),
-                   current_tasks.empty() ? "none" : current_tasks.back()->entry_name,
-                   last_skipped_entry_name ? *last_skipped_entry_name : "none");
-
-    if (max_tasks_in_queue < queue_nodes.size())
-        cleanup_event->set();
-
-    /// Detect queue start, using:
-    /// - skipped tasks
-    /// - in memory tasks (that are currently active or were finished recently)
-    /// - failed tasks (that should be processed again)
-    auto begin_node = queue_nodes.begin();
-    if (first_failed_task_name)
-    {
-        /// If we had failed tasks, then we should start from the first failed task.
-        chassert(reinitialized);
-        begin_node = std::lower_bound(queue_nodes.begin(), queue_nodes.end(), first_failed_task_name);
-    }
-    else
-    {
-        /// We had no failed tasks. Let's just choose the maximum entry we have previously seen.
-        String last_task_name;
-        if (!current_tasks.empty())
-            last_task_name = current_tasks.back()->entry_name;
-        if (last_skipped_entry_name && last_task_name < *last_skipped_entry_name)
-            last_task_name = *last_skipped_entry_name;
-        begin_node = std::upper_bound(queue_nodes.begin(), queue_nodes.end(), last_task_name);
-    }
-
-    if (begin_node == queue_nodes.end())
-        LOG_DEBUG(log, "No tasks to schedule");
-    else
-        LOG_DEBUG(log, "Will schedule {} tasks starting from {}", std::distance(begin_node, queue_nodes.end()), *begin_node);
-
-    /// Let's ensure that it's exactly the first task we should process.
-    /// Maybe such asserts are too paranoid and excessive,
-    /// but it's easy enough to break DDLWorker in a very unobvious way by making some minor change in code.
-    [[maybe_unused]] bool have_no_tasks_info = !first_failed_task_name && current_tasks.empty() && !last_skipped_entry_name;
-    chassert(have_no_tasks_info || queue_nodes.end() == std::find_if(queue_nodes.begin(), queue_nodes.end(), [&](const String & entry_name)
-    {
-        /// We should return true if some invariants are violated.
-        String reason;
-        auto task = initAndCheckTask(entry_name, reason, zookeeper, /*dry_run*/ true);
-        bool maybe_currently_processing = current_tasks.end() != std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
-        {
-            return t->entry_name == entry_name;
-        });
-        /// begin_node is something like a log pointer
-        if (begin_node == queue_nodes.end() || entry_name < *begin_node)
-        {
-            /// Return true if entry should be scheduled.
-            /// There is a minor race condition: initAndCheckTask(...) may return not null
-            /// if someone is deleting outdated entry right now (including finished/ nodes), so we also check active/ status dir.
-            bool maybe_concurrently_deleting = task && !zookeeper->exists(fs::path(task->entry_path) / "active");
-            return task && !maybe_concurrently_deleting && !maybe_currently_processing;
-        }
-        if (last_skipped_entry_name.has_value() && !queue_fully_loaded_after_initialization_debug_helper)
-        {
-            /// If connection was lost during queue loading
-            /// we may start processing from finished task (because we don't know yet that it's finished) and it's ok.
-            return false;
-        }
-
-        /// Return true if entry should not be scheduled.
-        bool processed = !task && reason == TASK_PROCESSED_OUT_REASON;
-        return processed || maybe_currently_processing;
-    }));
-
-    for (auto it = begin_node; it != queue_nodes.end() && !stop_flag; ++it)
-    {
-        String entry_name = *it;
-        LOG_TRACE(log, "Checking task {}", entry_name);
-
-        String reason;
-        auto task = initAndCheckTask(entry_name, reason, zookeeper, /*dry_run*/ false);
-        if (task)
-        {
-            queue_fully_loaded_after_initialization_debug_helper = true;
-        }
-        else
-        {
-            LOG_DEBUG(log, "Will not execute task {}: {}", entry_name, reason);
-            updateMaxDDLEntryID(entry_name);
-            last_skipped_entry_name.emplace(entry_name);
-            continue;
-        }
-
-        auto & saved_task = saveTask(std::move(task));
-
-        if (worker_pool)
-        {
-            worker_pool->scheduleOrThrowOnError([this, &saved_task, zookeeper]()
-            {
-                setThreadName("DDLWorkerExec");
-                processTask(saved_task, zookeeper, /*internal_query=*/ false);
-            });
-        }
-        else
-        {
-            processTask(saved_task, zookeeper, /*internal_query=*/ false);
-        }
-    }
+    });
 }
 
 DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
@@ -595,7 +616,7 @@ void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
     }
 }
 
-void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperWithFaultInjectionPtr & zookeeper, bool internal_query)
+void DDLWorker::processTask(DDLTaskBase & task, const WithRetries & with_retries, bool internal_query)
 {
     LOG_DEBUG(log, "Processing task {} (query: {}, backup restore: {})", task.entry_name, task.query_for_logging, task.entry.is_backup_restore);
     chassert(!task.completely_processed);
@@ -609,142 +630,152 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperWithFaultInjectio
     String active_node_path = task.getActiveNodePath();
     String finished_node_path = task.getFinishedNodePath();
 
-    /// Step 1: Create ephemeral node in active/ status dir.
-    /// It allows other hosts to understand that task is currently executing (useful for system.distributed_ddl_queue)
-    /// and protects from concurrent deletion or the task.
-
-    /// It will tryRemove(...) on exception
-    auto active_node = zkutil::EphemeralNodeHolder::existing(active_node_path, *zookeeper->getKeeper());
-
-    /// Try fast path
-    const String canary_value = Field(ServerUUID::get()).dump();
-    auto create_active_res = zookeeper->tryCreate(active_node_path, canary_value, zkutil::CreateMode::Ephemeral);
-    if (create_active_res != Coordination::Error::ZOK)
+    auto holder = with_retries.createRetriesControlHolderForOperations("DDLWorker::processTask");
+    holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        if (create_active_res != Coordination::Error::ZNONODE && create_active_res != Coordination::Error::ZNODEEXISTS)
-        {
-            chassert(Coordination::isHardwareError(create_active_res));
-            throw Coordination::Exception::fromPath(create_active_res, active_node_path);
-        }
+        with_retries.renewZooKeeper(zookeeper);
 
-        /// Status dirs were not created in enqueueQuery(...) or someone is removing entry
-        if (create_active_res == Coordination::Error::ZNONODE)
+        /// Step 1: Create ephemeral node in active/ status dir.
+        /// It allows other hosts to understand that task is currently executing (useful for system.distributed_ddl_queue)
+        /// and protects from concurrent deletion or the task.
+
+        /// It will tryRemove(...) on exception
+        auto active_node = zkutil::EphemeralNodeHolder::existing(active_node_path, *zookeeper->getKeeper());
+
+        /// Try fast path
+        const String canary_value = Field(ServerUUID::get()).dump();
+        auto create_active_res = zookeeper->tryCreate(active_node_path, canary_value, zkutil::CreateMode::Ephemeral);
+        if (create_active_res != Coordination::Error::ZOK)
         {
-            chassert(dynamic_cast<DatabaseReplicatedTask *>(&task) == nullptr);
-            if (task.was_executed)
+            if (create_active_res != Coordination::Error::ZNONODE && create_active_res != Coordination::Error::ZNODEEXISTS)
             {
-                /// Special case:
-                /// Task was executed (and we are trying to write status after connection loss) ==> Status dirs were previously created.
-                /// (Status dirs were previously created AND active/ does not exist) ==> Task was removed.
-                /// We cannot write status, but it's not required anymore, because no one will try to execute it again.
-                /// So we consider task as completely processed.
-                LOG_WARNING(log, "Task {} is executed, but looks like entry {} was deleted, cannot write status", task.entry_name, task.entry_path);
-                task.completely_processed = true;
-                return;
+                chassert(Coordination::isHardwareError(create_active_res));
+                throw Coordination::Exception::fromPath(create_active_res, active_node_path);
             }
-            createStatusDirs(task.entry_path, zookeeper);
-        }
 
-        if (create_active_res == Coordination::Error::ZNODEEXISTS)
-        {
-            /// Connection has been lost and now we are retrying,
-            /// but our previous ephemeral node still exists.
-            zookeeper->deleteEphemeralNodeIfContentMatches(active_node_path, canary_value);
-        }
-
-        zookeeper->create(active_node_path, canary_value, zkutil::CreateMode::Ephemeral);
-    }
-
-    /// We must hold the lock until task execution status is committed to ZooKeeper,
-    /// otherwise another replica may try to execute query again.
-    std::unique_ptr<zkutil::ZooKeeperLock> execute_on_leader_lock;
-
-    /// Step 2: Execute query from the task.
-    if (!task.was_executed)
-    {
-        /// If table and database engine supports it, they will execute task.ops by their own in a single transaction
-        /// with other zk operations (such as appending something to ReplicatedMergeTree log, or
-        /// updating metadata in Replicated database), so we make create request for finished_node_path with status "0",
-        /// which means that query executed successfully.
-        task.ops.emplace_back(zkutil::makeRemoveRequest(active_node_path, -1));
-        task.ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, ExecutionStatus(0).serializeText(), zkutil::CreateMode::Persistent));
-
-        try
-        {
-            LOG_DEBUG(log, "Executing query: {}", task.query_for_logging);
-
-            StoragePtr storage;
-            if (auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(task.query.get()); query_with_table)
+            /// Status dirs were not created in enqueueQuery(...) or someone is removing entry
+            if (create_active_res == Coordination::Error::ZNONODE)
             {
-                if (query_with_table->table)
+                chassert(dynamic_cast<DatabaseReplicatedTask *>(&task) == nullptr);
+                if (task.was_executed)
                 {
-                    /// It's not CREATE DATABASE
-                    auto table_id = context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
-                    /// The settings may affect the behavior of `DatabaseCatalog::tryGetTable`.
-                    auto query_context = Context::createCopy(context);
-                    StorageAlias::modifyContextByQueryAST(task.query, query_context);
-                    storage = DatabaseCatalog::instance().tryGetTable(table_id, query_context);
+                    /// Special case:
+                    /// Task was executed (and we are trying to write status after connection loss) ==> Status dirs were previously created.
+                    /// (Status dirs were previously created AND active/ does not exist) ==> Task was removed.
+                    /// We cannot write status, but it's not required anymore, because no one will try to execute it again.
+                    /// So we consider task as completely processed.
+                    LOG_WARNING(log, "Task {} is executed, but looks like entry {} was deleted, cannot write status", task.entry_name, task.entry_path);
+                    task.completely_processed = true;
+                    return;
+                }
+                createStatusDirs(task.entry_path, zookeeper);
+            }
+
+            if (create_active_res == Coordination::Error::ZNODEEXISTS)
+            {
+                /// Connection has been lost and now we are retrying,
+                /// but our previous ephemeral node still exists.
+                zookeeper->deleteEphemeralNodeIfContentMatches(active_node_path, canary_value);
+            }
+
+            zookeeper->create(active_node_path, canary_value, zkutil::CreateMode::Ephemeral);
+        }
+
+        /// We must hold the lock until task execution status is committed to ZooKeeper,
+        /// otherwise another replica may try to execute query again.
+        std::unique_ptr<zkutil::ZooKeeperLock> execute_on_leader_lock;
+
+        /// Step 2: Execute query from the task.
+        if (!task.was_executed)
+        {
+            /// If table and database engine supports it, they will execute task.ops by their own in a single transaction
+            /// with other zk operations (such as appending something to ReplicatedMergeTree log, or
+            /// updating metadata in Replicated database), so we make create request for finished_node_path with status "0",
+            /// which means that query executed successfully.
+            task.ops.emplace_back(zkutil::makeRemoveRequest(active_node_path, -1));
+            task.ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, ExecutionStatus(0).serializeText(), zkutil::CreateMode::Persistent));
+
+            try
+            {
+                LOG_DEBUG(log, "Executing query: {}", task.query_for_logging);
+
+                StoragePtr storage;
+                if (auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(task.query.get()); query_with_table)
+                {
+                    if (query_with_table->table)
+                    {
+                        /// It's not CREATE DATABASE
+                        auto table_id = context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
+                        /// The settings may affect the behavior of `DatabaseCatalog::tryGetTable`.
+                        auto query_context = Context::createCopy(context);
+                        StorageAlias::modifyContextByQueryAST(task.query, query_context);
+                        storage = DatabaseCatalog::instance().tryGetTable(table_id, query_context);
+                    }
+
+                    task.execute_on_leader = storage && taskShouldBeExecutedOnLeader(task.query, storage) && !task.is_circular_replicated;
                 }
 
-                task.execute_on_leader = storage && taskShouldBeExecutedOnLeader(task.query, storage) && !task.is_circular_replicated;
+                if (task.execute_on_leader)
+                {
+                    tryExecuteQueryOnLeaderReplica(task, storage, task.entry_path, zookeeper, execute_on_leader_lock);
+                }
+                else
+                {
+                    storage.reset();
+                    tryExecuteQuery(task, zookeeper, internal_query);
+                }
             }
-
-            if (task.execute_on_leader)
+            catch (const Coordination::Exception &)
             {
-                tryExecuteQueryOnLeaderReplica(task, storage, task.entry_path, zookeeper, execute_on_leader_lock);
-            }
-            else
-            {
-                storage.reset();
-                tryExecuteQuery(task, zookeeper, internal_query);
-            }
-        }
-        catch (const Coordination::Exception &)
-        {
-            throw;
-        }
-        catch (...)
-        {
-            if (task.is_initial_query)
                 throw;
-            tryLogCurrentException(log, "An error occurred before execution of DDL task: ");
-            task.execution_status = ExecutionStatus::fromCurrentException("An error occurred before execution");
-        }
-
-        if (task.execution_status.code != 0)
-        {
-            bool status_written_by_table_or_db = task.ops.empty();
-            bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task);
-            if (status_written_by_table_or_db || is_replicated_database_task)
+            }
+            catch (...)
             {
-                throw Exception(ErrorCodes::UNFINISHED, "Unexpected error: {}", task.execution_status.message);
+                if (task.is_initial_query)
+                    throw;
+                tryLogCurrentException(log, "An error occurred before execution of DDL task: ");
+                task.execution_status = ExecutionStatus::fromCurrentException("An error occurred before execution");
             }
 
-            /// task.ops where not executed by table or database engine, so DDLWorker is responsible for
-            /// writing query execution status into ZooKeeper.
-            task.ops.emplace_back(zkutil::makeSetRequest(finished_node_path, task.execution_status.serializeText(), -1));
+            if (task.execution_status.code != 0)
+            {
+                bool status_written_by_table_or_db = task.ops.empty();
+                bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task);
+                if (status_written_by_table_or_db || is_replicated_database_task)
+                {
+                    throw Exception(ErrorCodes::UNFINISHED, "Unexpected error: {}", task.execution_status.message);
+                }
+
+                /// task.ops where not executed by table or database engine, so DDLWorker is responsible for
+                /// writing query execution status into ZooKeeper.
+                task.ops.emplace_back(zkutil::makeSetRequest(finished_node_path, task.execution_status.serializeText(), -1));
+            }
+
+            /// We need to distinguish ZK errors occurred before and after query executing
+            task.was_executed = true;
         }
 
-        /// We need to distinguish ZK errors occurred before and after query executing
-        task.was_executed = true;
-    }
+        /// Step 3: Create node in finished/ status dir and write execution status.
+        /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
+        /// NOTE: If ZooKeeper connection is lost here, we will try again to write query status.
+        /// NOTE: If both table and database are replicated, task is executed in single ZK transaction.
 
-    /// Step 3: Create node in finished/ status dir and write execution status.
-    /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
-    /// NOTE: If ZooKeeper connection is lost here, we will try again to write query status.
-    /// NOTE: If both table and database are replicated, task is executed in single ZK transaction.
+        bool status_written = task.ops.empty();
+        if (!status_written)
+        {
+            zookeeper->multi(task.ops);
+            task.ops.clear();
+        }
 
-    bool status_written = task.ops.empty();
-    if (!status_written)
+        /// Active node was removed in multi ops
+        active_node->setAlreadyRemoved();
+    });
+
+    holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        zookeeper->multi(task.ops);
-        task.ops.clear();
-    }
-
-    /// Active node was removed in multi ops
-    active_node->setAlreadyRemoved();
-
-    task.createSyncedNodeIfNeed(zookeeper);
+        with_retries.renewZooKeeper(zookeeper);
+        task.createSyncedNodeIfNeed(zookeeper);
+    });
     updateMaxDDLEntryID(task.entry_name);
     task.completely_processed = true;
     subsequent_errors_count = 0;

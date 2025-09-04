@@ -560,7 +560,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(const WithRetries 
 
         try
         {
-            processTask(*task, zookeeper, internal_query);
+            processTask(*task, with_retries, internal_query);
         }
         catch (const Coordination::Exception & e)
         {
