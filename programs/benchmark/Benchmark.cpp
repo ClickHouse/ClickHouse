@@ -505,7 +505,7 @@ private:
             }
         }
 
-        report(total_stats, total_watch.elapsedSeconds(), threads);
+        report(total_stats, total_watch.elapsedSeconds());
     }
 
 
@@ -663,7 +663,7 @@ private:
         t_test.add(info_index, duration);
     }
 
-    void report(const MultiStats & infos, double seconds, size_t used_threads)
+    void report(const MultiStats & infos, double seconds, size_t used_threads = 0)
     {
         std::lock_guard lock(mutex);
 
@@ -675,7 +675,7 @@ private:
             log << " (" << (executed * 100.0 / queries.size()) << "%)";
         log << ".\n" << flush;
 
-        if (concurrency < max_concurrency)
+        if (used_threads > 0 && concurrency < max_concurrency)
         {
             log << "Concurrency: " << used_threads;
             log << " of " << max_concurrency;
