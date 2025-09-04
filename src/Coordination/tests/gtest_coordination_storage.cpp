@@ -890,11 +890,11 @@ TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
     storage.preprocessRequest(create_request, 0, 0, 1);
     storage.preprocessRequest(create_request, 0, 0, 2);
 
-    ASSERT_EQ(get_committed_data(), std::nullopt);
+    ASSERT_FALSE(get_committed_data());
 
     const auto after_create_get = preprocess_get(3);
 
-    ASSERT_EQ(get_committed_data(), std::nullopt);
+    ASSERT_FALSE(get_committed_data());
 
     const auto set_request = std::make_shared<ZooKeeperSetRequest>();
     set_request->path = path;
@@ -903,7 +903,7 @@ TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
 
     const auto after_set_get = preprocess_get(5);
 
-    ASSERT_EQ(get_committed_data(), std::nullopt);
+    ASSERT_FALSE(get_committed_data());
 
     const auto remove_request = std::make_shared<ZooKeeperRemoveRequest>();
     remove_request->path = path;
@@ -912,7 +912,7 @@ TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
 
     const auto after_remove_get = preprocess_get(8);
 
-    ASSERT_EQ(get_committed_data(), std::nullopt);
+    ASSERT_FALSE(get_committed_data());
 
     {
         const auto responses = storage.processRequest(create_request, 0, 1);
@@ -968,7 +968,7 @@ TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
         ASSERT_EQ(get_response.error, Error::ZNONODE);
     }
 
-    ASSERT_EQ(get_committed_data(), std::nullopt);
+    ASSERT_FALSE(get_committed_data());
 }
 
 TYPED_TEST(CoordinationTest, TestBlockACL)
@@ -1039,106 +1039,6 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         ASSERT_EQ(acls.size(), 0);
         storage.processRequest(set_acl_request, session_id, req_zxid);
         ASSERT_EQ(storage.container.getValue(path).acl_id, 0);
-    }
-}
-
-TYPED_TEST(CoordinationTest, TestMultiWatches)
-{
-    using namespace DB;
-    using namespace Coordination;
-
-    using Storage = typename TestFixture::Storage;
-
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
-
-    Storage storage{500, "", this->keeper_context};
-
-    int32_t zxid = 0;
-    auto wait_event = std::make_shared<Poco::Event>();
-    auto subscription = std::make_shared<Coordination::WatchCallback>([wait_event](const Coordination::WatchResponse &) { wait_event->set(); });
-
-    /// Create nodes before tests
-    {
-        const Coordination::Requests ops{
-            zkutil::makeCreateRequest("/A1", "", zkutil::CreateMode::Persistent),
-            zkutil::makeCreateRequest("/B1", "", zkutil::CreateMode::Persistent),
-        };
-        const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
-
-        int new_zxid = ++zxid;
-        storage.preprocessRequest(request, 1, 0, new_zxid);
-        storage.processRequest(request, 1, new_zxid);
-    }
-
-    {
-        SCOPED_TRACE("Multi With Single Regular Watch");
-
-        const Coordination::Requests ops{
-            zkutil::makeGetRequest("/A1", subscription),
-            zkutil::makeListRequest("/B1"),
-        };
-        const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
-
-        int new_zxid = ++zxid;
-        storage.preprocessRequest(request, 1, 0, new_zxid);
-        storage.processRequest(request, 1, new_zxid);
-
-        ASSERT_EQ(storage.watches.size(), 1);
-        ASSERT_EQ(storage.list_watches.size(), 0);
-    }
-
-    {
-        SCOPED_TRACE("Multi With Single List Watch");
-
-        const Coordination::Requests ops{
-            zkutil::makeGetRequest("/A1"),
-            zkutil::makeListRequest("/B1", Coordination::ListRequestType::ALL, subscription),
-        };
-        const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
-
-        int new_zxid = ++zxid;
-        storage.preprocessRequest(request, 1, 0, new_zxid);
-        auto remove_responses = storage.processRequest(request, 1, new_zxid);
-
-        ASSERT_EQ(storage.watches.size(), 1);
-        ASSERT_EQ(storage.list_watches.size(), 1);
-    }
-
-    {
-        SCOPED_TRACE("Multi Watches Deduplication");
-
-        const Coordination::Requests ops{
-            zkutil::makeGetRequest("/A1", subscription),
-            zkutil::makeListRequest("/B1", Coordination::ListRequestType::ALL, subscription),
-        };
-        const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
-
-        int new_zxid = ++zxid;
-        storage.preprocessRequest(request, 1, 0, new_zxid);
-        auto remove_responses = storage.processRequest(request, 1, new_zxid);
-
-        ASSERT_EQ(storage.watches.size(), 1);
-        ASSERT_EQ(storage.list_watches.size(), 1);
-    }
-
-    {
-        SCOPED_TRACE("Multi Watches Partial Deduplication");
-
-        const Coordination::Requests ops{
-            zkutil::makeGetRequest("/A1", subscription),
-            zkutil::makeListRequest("/B1", Coordination::ListRequestType::ALL, subscription),
-            zkutil::makeSimpleListRequest("/A1", subscription),
-            zkutil::makeExistsRequest("/C1", subscription),
-        };
-        const auto request = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
-
-        int new_zxid = ++zxid;
-        storage.preprocessRequest(request, 1, 0, new_zxid);
-        auto remove_responses = storage.processRequest(request, 1, new_zxid);
-
-        ASSERT_EQ(storage.watches.size(), 2);
-        ASSERT_EQ(storage.list_watches.size(), 2);
     }
 }
 

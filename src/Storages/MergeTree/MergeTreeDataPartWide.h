@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/IDataPartStorage.h>
+#include "Storages/MergeTree/IDataPartStorage.h"
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
@@ -22,6 +22,19 @@ public:
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_ = nullptr);
+
+    MergeTreeReaderPtr getReader(
+        const NamesAndTypesList & columns,
+        const StorageSnapshotPtr & storage_snapshot,
+        const MarkRanges & mark_ranges,
+        const VirtualFields & virtual_fields,
+        UncompressedCache * uncompressed_cache,
+        MarkCache * mark_cache,
+        DeserializationPrefixesCache * deserialization_prefixes_cache,
+        const AlterConversionsPtr & alter_conversions,
+        const MergeTreeReaderSettings & reader_settings_,
+        const ValueSizeMap & avg_value_size_hints,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
 
     bool isStoredOnReadonlyDisk() const override;
 
@@ -54,9 +67,9 @@ private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
 
-    ColumnSize getColumnSizeImpl(const NameAndTypePair & column, std::unordered_set<String> * processed_substreams) const;
+    ColumnSize getColumnSizeImpl(const NameAndTypePair & column, std::unordered_set<String> * processed_substreams, std::optional<Block> columns_sample) const;
 
-    void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
+    void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const override;
 
 };
 

@@ -26,9 +26,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeTime64.h>
 
 #include <Columns/ColumnNullable.h>
 
@@ -175,7 +173,6 @@ private:
             AttributeContainerType<Decimal128>,
             AttributeContainerType<Decimal256>,
             AttributeContainerType<DateTime64>,
-            AttributeContainerType<Time64>,
             AttributeContainerType<Float32>,
             AttributeContainerType<Float64>,
             AttributeContainerType<UUID>,
@@ -218,7 +215,6 @@ private:
         ContainerType<Decimal128>,
         ContainerType<Decimal256>,
         ContainerType<DateTime64>,
-        ContainerType<Time64>,
         ContainerType<Float32>,
         ContainerType<Float64>,
         ContainerType<UUID>,
@@ -303,7 +299,7 @@ namespace impl
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::LeftType;
 
-            if constexpr ((IsDataTypeDecimalOrNumber<DataType> || IsDataTypeDateOrDateTimeOrTime<DataType> || IsDataTypeEnum<DataType>)
+            if constexpr ((IsDataTypeDecimalOrNumber<DataType> || IsDataTypeDateOrDateTime<DataType> || IsDataTypeEnum<DataType>)
                 && !std::is_same_v<DataType, DataTypeBFloat16>)
             {
                 using ColumnType = typename DataType::ColumnType;

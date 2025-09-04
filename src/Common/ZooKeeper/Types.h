@@ -13,6 +13,7 @@ namespace zkutil
 
 using Strings = std::vector<std::string>;
 
+
 namespace CreateMode
 {
     extern const int Persistent;
@@ -32,12 +33,12 @@ Coordination::RequestPtr makeCreateRequest(const std::string & path, const std::
 Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version);
 Coordination::RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version);
 Coordination::RequestPtr makeCheckRequest(const std::string & path, int version);
-Coordination::RequestPtr makeGetRequest(const std::string & path, Coordination::WatchCallbackPtr watch = nullptr);
-Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL, Coordination::WatchCallbackPtr watch = nullptr);
-Coordination::RequestPtr makeSimpleListRequest(const std::string & path, Coordination::WatchCallbackPtr watch = nullptr);
-Coordination::RequestPtr makeExistsRequest(const std::string & path, Coordination::WatchCallbackPtr watch = nullptr);
+Coordination::RequestPtr makeGetRequest(const std::string & path);
+Coordination::RequestPtr
+makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+Coordination::RequestPtr makeSimpleListRequest(const std::string & path);
+Coordination::RequestPtr makeExistsRequest(const std::string & path);
 
 template <class Client>
 Coordination::RequestPtr makeRemoveRecursiveRequest(const Client & client, const std::string & path, uint32_t remove_nodes_limit);
-
 }

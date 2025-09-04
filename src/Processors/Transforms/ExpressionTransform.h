@@ -1,7 +1,6 @@
 #pragma once
-#include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
-#include <Core/Block_fwd.h>
+#include <Processors/ISimpleTransform.h>
 
 namespace DB
 {
@@ -19,7 +18,9 @@ class ActionsDAG;
 class ExpressionTransform final : public ISimpleTransform
 {
 public:
-    ExpressionTransform(SharedHeader header_, ExpressionActionsPtr expression_);
+    ExpressionTransform(
+            const Block & header_,
+            ExpressionActionsPtr expression_);
 
     String getName() const override { return "ExpressionTransform"; }
 
@@ -36,8 +37,8 @@ class ConvertingTransform final : public ExceptionKeepingTransform
 {
 public:
     ConvertingTransform(
-        SharedHeader header_,
-        ExpressionActionsPtr expression_);
+            const Block & header_,
+            ExpressionActionsPtr expression_);
 
     String getName() const override { return "ConvertingTransform"; }
 

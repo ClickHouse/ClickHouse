@@ -27,8 +27,7 @@ public:
 
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
-        FunctionArgumentDescriptors mandatory_args
-        {
+        FunctionArgumentDescriptors mandatory_args{
             {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
@@ -50,10 +49,9 @@ public:
     /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
-        if (pos == end)
+        if (pos == nullptr)
             return false;
 
-        /// Skip to the query string or fragment identifier
         if (first)
         {
             first = false;
@@ -63,7 +61,6 @@ public:
             ++pos;
         }
 
-        /// Find either parameter name (&, #) or value (=)
         while (true)
         {
             token_begin = pos;
@@ -80,30 +77,18 @@ public:
             break;
         }
 
-        if (pos < end && (*pos == '&' || *pos == '#'))
+        if (*pos == '&' || *pos == '#')
         {
-            /// The end of the current parameter
-            token_end = pos;
-            ++pos;
-        }
-        else if (pos + 1 >= end)
-        {
-            token_end = end;
-            ++pos;
+            token_end = pos++;
         }
         else
         {
             ++pos;
             pos = find_first_symbols<'&', '#'>(pos, end);
             if (pos == end)
-            {
                 token_end = end;
-            }
             else
-            {
-                token_end = pos;
-                ++pos;
-            }
+                token_end = pos++;
         }
 
         return true;

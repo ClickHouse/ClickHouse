@@ -1,7 +1,5 @@
 DROP TABLE IF EXISTS t_ind_merge_1;
 
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
 SET enable_analyzer = 1;
 
 CREATE TABLE t_ind_merge_1 (a UInt64, b UInt64, c UInt64, d UInt64, INDEX idx_b b TYPE minmax)
@@ -27,7 +25,7 @@ OPTIMIZE TABLE t_ind_merge_1 FINAL;
 SELECT count() FROM t_ind_merge_1 WHERE b < 100 SETTINGS force_data_skipping_indices = 'idx_b';
 EXPLAIN indexes = 1 SELECT count() FROM t_ind_merge_1 WHERE b < 100;
 
-SYSTEM FLUSH LOGS text_log;
+SYSTEM FLUSH LOGS;
 SET max_rows_to_read = 0; -- system.text_log can be really big
 WITH
     (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND table = 't_ind_merge_1') AS uuid,

@@ -1,3 +1,4 @@
+#include <sys/stat.h>
 #include <sys/types.h>
 
 #include <optional>
@@ -23,9 +24,10 @@
 
 #include <Interpreters/Context.h>
 
+#include <Parsers/ASTLiteral.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageStripeLog.h>
-#include <Storages/StorageLogSettings.h>
+#include "StorageLogSettings.h"
 #include <Processors/ISource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -105,7 +107,7 @@ public:
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_,
         size_t file_size_)
-        : ISource(std::make_shared<const Block>(getHeader(storage_snapshot_, column_names, index_begin_, index_end_)))
+        : ISource(getHeader(storage_snapshot_, column_names, index_begin_, index_end_))
         , storage(storage_)
         , storage_snapshot(storage_snapshot_)
         , read_settings(std::move(read_settings_))
@@ -129,7 +131,7 @@ protected:
             res = block_in->read();
 
             /// Freeing memory before destroying the object.
-            if (res.empty())
+            if (!res)
             {
                 block_in.reset();
                 data_in.reset();
@@ -181,7 +183,7 @@ public:
     using WriteLock = std::unique_lock<std::shared_timed_mutex>;
 
     explicit StripeLogSink(StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_, WriteLock && lock_)
-        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))
@@ -199,7 +201,7 @@ public:
         storage.saveFileSizes(lock);
 
         size_t initial_data_size = storage.file_checker.getFileSize(storage.data_file_path);
-        block_out = std::make_unique<NativeWriter>(*data_out, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()), std::nullopt, false, &storage.indices, initial_data_size);
+        block_out = std::make_unique<NativeWriter>(*data_out, 0, metadata_snapshot->getSampleBlock(), std::nullopt, false, &storage.indices, initial_data_size);
     }
 
     String getName() const override { return "StripeLogSink"; }
@@ -384,7 +386,7 @@ Pipe StorageStripeLog::read(
 
     size_t data_file_size = file_checker.getFileSize(data_file_path);
     if (!data_file_size)
-        return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
+        return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
 
     auto indices_for_selected_columns
         = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{column_names.begin(), column_names.end()}));
@@ -536,7 +538,7 @@ void StorageStripeLog::updateTotalRows(const WriteLock &)
     total_rows = new_total_rows;
 }
 
-std::optional<UInt64> StorageStripeLog::totalRows(ContextPtr) const
+std::optional<UInt64> StorageStripeLog::totalRows(const Settings &) const
 {
     if (indices_loaded)
         return total_rows;
@@ -547,7 +549,7 @@ std::optional<UInt64> StorageStripeLog::totalRows(ContextPtr) const
     return {};
 }
 
-std::optional<UInt64> StorageStripeLog::totalBytes(ContextPtr) const
+std::optional<UInt64> StorageStripeLog::totalBytes(const Settings &) const
 {
     return total_bytes;
 }

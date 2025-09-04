@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Interpreters/CNFQueryAtomicFormula.h>
-#include <Parsers/ASTLiteral.h>
-
 #include <set>
+#include <unordered_map>
 #include <vector>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -12,7 +12,28 @@ namespace DB
 class CNFQuery
 {
 public:
-    using OrGroup = std::set<CNFQueryAtomicFormula>;
+    struct AtomicFormula
+    {
+        bool negative = false;
+        ASTPtr ast;
+
+        /// for set
+        bool operator<(const AtomicFormula & rhs) const
+        {
+            return ast->getTreeHash(/*ignore_aliases=*/ true) == rhs.ast->getTreeHash(/*ignore_aliases=*/ true)
+                ? negative < rhs.negative
+                : ast->getTreeHash(/*ignore_aliases=*/ true) < rhs.ast->getTreeHash(/*ignore_aliases=*/ true);
+        }
+
+        bool operator==(const AtomicFormula & rhs) const
+        {
+            return negative == rhs.negative &&
+                ast->getTreeHash(/*ignore_aliases=*/ true) == rhs.ast->getTreeHash(/*ignore_aliases=*/ true) &&
+                ast->getColumnName() == rhs.ast->getColumnName();
+        }
+    };
+
+    using OrGroup = std::set<AtomicFormula>;
     using AndGroup = std::set<OrGroup>;
 
     CNFQuery(AndGroup && statements_) : statements(std::move(statements_)) { } /// NOLINT
@@ -49,7 +70,7 @@ public:
                 /// all atoms false -> group false -> CNF false
                 filtered.clear();
                 filtered_group.clear();
-                filtered_group.insert(CNFQueryAtomicFormula{false, std::make_shared<ASTLiteral>(static_cast<UInt8>(0))});
+                filtered_group.insert(AtomicFormula{false, std::make_shared<ASTLiteral>(static_cast<UInt8>(0))});
                 filtered.insert(filtered_group);
                 std::swap(statements, filtered);
                 return *this;
@@ -141,7 +162,7 @@ public:
     static ASTPtr fromCNF(const CNFQuery & cnf);
 };
 
-void pushNotIn(CNFQueryAtomicFormula & atom);
+void pushNotIn(CNFQuery::AtomicFormula & atom);
 
 /// Reduces CNF groups by removing mutually exclusive atoms
 /// found across groups, in case other atoms are identical.

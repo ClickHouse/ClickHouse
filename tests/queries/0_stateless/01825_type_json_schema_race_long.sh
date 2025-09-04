@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-async-insert
-# no-async-insert: flaky
+# Tags: no-fasttest, long
 
 set -e
 
@@ -24,7 +23,6 @@ function test_case()
     done
 
     echo '{"data": {"k1": "str", "k2": "str1"}}' | $CLICKHOUSE_CLIENT -q "INSERT INTO t_json_race FORMAT JSONEachRow" &
-    pids+=($!)
 
     for pid in "${pids[@]}"; do
         wait "$pid" || exit 1
