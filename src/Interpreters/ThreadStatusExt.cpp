@@ -67,7 +67,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_SET_THREAD_PRIORITY;
 }
 
 ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_)

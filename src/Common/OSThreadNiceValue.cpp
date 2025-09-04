@@ -11,7 +11,7 @@ namespace DB
 {
     namespace ErrorCodes
     {
-        const extern int CANNOT_SET_THREAD_PRIORITY;
+        extern const int CANNOT_SET_THREAD_PRIORITY;
     }
 
     void OSThreadNiceValue::set(const Int32 value, const UInt32 thread_id)
@@ -37,7 +37,7 @@ namespace DB
             {
                 set(0, thread_id);
             }
-            catch(...)
+            catch (...)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
