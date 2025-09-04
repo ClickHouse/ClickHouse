@@ -247,6 +247,7 @@ private:
     struct Stats
     {
         double queries = 0;
+        size_t finished_queries = 0;
         size_t errors = 0;
         double read_rows = 0;
         double read_bytes = 0;
@@ -267,6 +268,7 @@ private:
 
         void sample(double duration)
         {
+            ++finished_queries;
             sampler.insert(duration);
         }
 
@@ -274,16 +276,6 @@ private:
         {
             addWeighted(read_rows_inc, read_bytes_inc, result_rows_inc, result_bytes_inc, 1.0);
             sample(duration);
-        }
-
-        void clear()
-        {
-            queries = 0;
-            read_rows = 0;
-            read_bytes = 0;
-            result_rows = 0;
-            result_bytes = 0;
-            sampler.clear();
         }
     };
 
@@ -696,7 +688,7 @@ private:
             const auto & info = infos[i];
 
             /// Avoid zeros, nans or exceptions
-            if (0 == info->queries)
+            if (0 == info->finished_queries)
                 return;
 
             std::string connection_description = connections[i]->getDescription();
@@ -712,7 +704,7 @@ private:
             }
             log
                 << connection_description << ", "
-                << "queries: " << static_cast<size_t>(info->queries) << ", ";
+                << "queries: " << info->finished_queries << ", ";
             if (info->errors)
             {
                 log << "errors: " << info->errors << ", ";
