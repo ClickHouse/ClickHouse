@@ -5,6 +5,12 @@ from ci.defs.defs import ArtifactNames, BuildTypes, JobNames, RunnerLabels
 
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 
+BINARY_DOCKER_COMMAND = (
+    "clickhouse/binary-builder+--network=host+"
+    f"--memory={Utils.physical_memory() * 95 // 100}+"
+    f"--memory-reservation={Utils.physical_memory() * 9 // 10}"
+)
+
 build_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./src",
@@ -20,6 +26,16 @@ build_digest_config = Job.CacheDigestConfig(
         "./utils/list-licenses",
     ],
     with_git_submodules=True,
+)
+
+common_build_job_config = Job.Config(
+    name=JobNames.BUILD,
+    runs_on=[],  # from parametrize()
+    requires=[],
+    command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
+    run_in_docker=BINARY_DOCKER_COMMAND,
+    timeout=3600 * 4,
+    digest_config=build_digest_config,
 )
 
 common_ft_job_config = Job.Config(
@@ -42,12 +58,6 @@ common_ft_job_config = Job.Config(
         ],
     ),
     result_name_for_cidb="Tests",
-)
-
-BINARY_DOCKER_COMMAND = (
-    "clickhouse/binary-builder+--network=host+"
-    f"--memory={Utils.physical_memory() * 95 // 100}+"
-    f"--memory-reservation={Utils.physical_memory() * 9 // 10}"
 )
 
 
@@ -83,45 +93,21 @@ class JobConfigs:
         ),
         result_name_for_cidb="Tests",
     )
-    tidy_build_arm_jobs = Job.Config(
-        name=JobNames.BUILD,
-        runs_on=[],  # from parametrize()
-        requires=[],
-        command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
-        run_in_docker=BINARY_DOCKER_COMMAND,
-        timeout=3600 * 4,
-        digest_config=build_digest_config,
-    ).parametrize(
+    tidy_build_arm_jobs = common_build_job_config.parametrize(
         Job.ParamSet(
             parameter=BuildTypes.ARM_TIDY,
             provides=[],
             runs_on=RunnerLabels.BUILDER_ARM,
         ),
     )
-    tidy_build_amd_jobs = Job.Config(
-        name=JobNames.BUILD,
-        runs_on=[],  # from parametrize()
-        requires=[],
-        command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
-        run_in_docker=BINARY_DOCKER_COMMAND,
-        timeout=3600 * 4,
-        digest_config=build_digest_config,
-    ).parametrize(
+    tidy_build_amd_jobs = common_build_job_config.parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_TIDY,
             provides=[],
             runs_on=RunnerLabels.BUILDER_AMD,
         ),
     )
-    build_jobs = Job.Config(
-        name=JobNames.BUILD,
-        runs_on=[],  # from parametrize()
-        requires=[],
-        command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
-        # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker=BINARY_DOCKER_COMMAND,
-        timeout=3600 * 2,
-        digest_config=build_digest_config,
+    build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
             "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
@@ -215,15 +201,7 @@ class JobConfigs:
             runs_on=RunnerLabels.BUILDER_ARM,
         ),
     )
-    special_build_jobs = Job.Config(
-        name=JobNames.BUILD,
-        runs_on=[],  # from parametrize()
-        requires=[],
-        command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
-        # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker=BINARY_DOCKER_COMMAND,
-        timeout=3600 * 2,
-        digest_config=build_digest_config,
+    special_build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
             "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
