@@ -26,10 +26,6 @@ from pyspark.sql.types import (
 )
 
 
-def inner_null_str(inner_null, inner_tp) -> str:
-    return "" if inner_null else " NOT NULL"
-
-
 class ClickHouseSparkTypeMapper:
     """Maps between ClickHouse and Spark SQL data types using string representations."""
 
@@ -104,7 +100,7 @@ class ClickHouseSparkTypeMapper:
                 element_type, False
             )
             return (
-                f"ARRAY<{inner_str}{inner_null_str(inner_null, inner_tp)}>",
+                f"ARRAY<{inner_str}>",
                 False,
                 ArrayType(inner_tp, containsNull=inner_null),
             )
@@ -120,10 +116,7 @@ class ClickHouseSparkTypeMapper:
                     for name, ch_field_type in fields.items()
                 }
                 str_fields = ", ".join(
-                    [
-                        f"{cname}: {val[0]}{inner_null_str(val[1], val[2])}"
-                        for cname, val in parsed_fields.items()
-                    ]
+                    [f"{cname}: {val[0]}" for cname, val in parsed_fields.items()]
                 )
                 struct_fields = [
                     StructField(name=cname, dataType=val[2], nullable=val[1])
@@ -153,9 +146,7 @@ class ClickHouseSparkTypeMapper:
                     next_tp, next_null, next_spark = self.clickhouse_to_spark(
                         elem_type, False
                     )
-                    spark_elements.append(
-                        f"{cname}: {next_tp}{inner_null_str(next_null, next_spark)}"
-                    )
+                    spark_elements.append(f"{cname}: {next_tp}")
                     struct_fields.append(
                         StructField(name=cname, dataType=next_spark, nullable=next_null)
                     )
@@ -163,9 +154,7 @@ class ClickHouseSparkTypeMapper:
                     next_tp, next_null, next_spark = self.clickhouse_to_spark(
                         elem, False
                     )
-                    spark_elements.append(
-                        f"_{i}: {next_tp}{inner_null_str(next_null, next_spark)}"
-                    )
+                    spark_elements.append(f"_{i}: {next_tp}")
                     struct_fields.append(
                         StructField(
                             name=f"_{i}", dataType=next_spark, nullable=next_null
@@ -192,7 +181,7 @@ class ClickHouseSparkTypeMapper:
                     value_type, False
                 )
                 return (
-                    f"MAP<{spark_key_str}, {spark_value_str}{inner_null_str(value_nullable, spark_val)}>",
+                    f"MAP<{spark_key_str}, {spark_value_str}>",
                     False,
                     MapType(spark_key, spark_val, valueContainsNull=value_nullable),
                 )
