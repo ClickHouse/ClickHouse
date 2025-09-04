@@ -52,14 +52,15 @@ ExpressionCost CostEstimator::estimateHashJoinCost(const JoinStepLogical & join_
     auto left_cost = memo.getGroup(left_tree)->best_implementation.cost;
     auto right_cost = memo.getGroup(right_tree)->best_implementation.cost;
 
-    if (join_step.areInputsSwapped())
-        std::swap(left_cost, right_cost);
+//    if (join_step.areInputsSwapped())
+//        std::swap(left_cost, right_cost);
 
     double join_selectivity = 1.0;
-    for (const auto & predicate : join_step.getJoinInfo().expression.condition.predicates)
+    for (const auto & predicate_expression : join_step.getJoinOperator().expression)
     {
-        const auto & left_column = predicate.left_node.getColumnName();
-        const auto & right_column = predicate.right_node.getColumnName();
+        const auto & predicate = predicate_expression.asBinaryPredicate();
+        const auto & left_column = get<1>(predicate).getColumnName();
+        const auto & right_column = get<2>(predicate).getColumnName();
         auto left_number_of_distinct_values = statistics.getNumberOfDistinctValues(left_column);
         auto right_number_of_distinct_values = statistics.getNumberOfDistinctValues(right_column);
 

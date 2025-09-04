@@ -28,6 +28,7 @@ protected:
 
 using OptimizationRulePtr = std::shared_ptr<const IOptimizationRule>;
 
+#if 0
 /// NOTE: Currently unused, replaced by JOIN graph
 class JoinAssociativity : public IOptimizationRule
 {
@@ -40,7 +41,7 @@ public:
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, Memo & memo) const override;
 };
-
+#endif
 
 class JoinCommutativity : public IOptimizationRule
 {

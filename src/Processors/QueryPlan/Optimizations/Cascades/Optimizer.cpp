@@ -8,11 +8,13 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Interpreters/JoinOperator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Core/Joins.h>
 #include <Core/Block_fwd.h>
 #include <Core/Settings.h>
 #include <IO/WriteBufferFromString.h>
@@ -54,7 +56,7 @@ bool collectJoins(QueryPlan::Node * node, JoinGraph & join_graph)
         return false;
 
     auto * join_step = typeid_cast<JoinStepLogical *>(node->step.get());
-    if (join_step && join_step->getJoinInfo().kind == JoinKind::Inner)
+    if (join_step && join_step->getJoinOperator().kind == JoinKind::Inner)
     {
         if (node->children.size() != 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Join step has {} children instead of 2", node->children.size());
@@ -65,12 +67,13 @@ bool collectJoins(QueryPlan::Node * node, JoinGraph & join_graph)
         if (!collectJoins(node->children[1], join_graph))
             join_graph.addRelation({}, *node->children[1]);
 
-        for (const auto & predicate : join_step->getJoinInfo().expression.condition.predicates)
+        for (const auto & e : join_step->getJoinOperator().expression)
         {
-            if (predicate.op == PredicateOperator::Equals)
+            const auto predicate = e.asBinaryPredicate();
+            if (std::get<0>(predicate) == JoinConditionOperator::Equals)
             {
-                const auto & lhs_column = predicate.left_node.getColumnName();
-                const auto & rhs_column = predicate.right_node.getColumnName();
+                const auto & lhs_column = get<1>(predicate).getColumnName();
+                const auto & rhs_column = get<2>(predicate).getColumnName();
                 join_graph.addEqualityPredicate(lhs_column, rhs_column);
             }
         }
@@ -234,6 +237,7 @@ GroupId CascadesOptimizer::populateMemoFromJoinGraph(const JoinGraph & join_grap
 
                     auto join_expression = std::make_shared<GroupExpression>(nullptr); // TODO:
                     join_expression->inputs = {larger_subgroup.group_id, smaller_subgroup.group_id};
+#if 0
                     {
 
                         JoinExpressionActions join_expression_actions(
@@ -287,7 +291,50 @@ GroupId CascadesOptimizer::populateMemoFromJoinGraph(const JoinGraph & join_grap
 
                         join_expression->plan_step = std::move(join_step);
                     }
+#else
+                    {
+                        const auto & settings = CurrentThread::get().getQueryContext()->getSettingsRef();
 
+                        auto left_header = larger_subgroup.output_columns;
+                        auto right_header = smaller_subgroup.output_columns;
+
+                        JoinExpressionActions join_expression_actions(*left_header, *right_header);
+
+                        std::vector<JoinActionRef> predicate_action_refs;
+                        for (const auto & predicate : predicates)
+                        {
+                            std::vector<JoinActionRef> eq_arguments;
+                            eq_arguments.push_back(join_expression_actions.findNode(predicate.first, /* is_input= */ true));
+                            eq_arguments.push_back(join_expression_actions.findNode(predicate.second, /* is_input= */ true));
+                            auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+                            predicate_action_refs.push_back(std::move(eq_node));
+                        }
+
+                        JoinOperator join_operator(
+                            JoinKind::Inner,
+                            JoinStrictness::All,
+                            JoinLocality::Unspecified,
+                            std::move(predicate_action_refs)
+                        );
+
+                        auto join_step = std::make_unique<JoinStepLogical>(
+                            larger_subgroup.output_columns,
+                            smaller_subgroup.output_columns,
+                            std::move(join_operator),
+                            std::move(join_expression_actions),
+                            joined_output_columns.getNamesAndTypesList().getNameSet(),
+                            std::unordered_map<String, const ActionsDAG::Node *>{},
+                            /*join_use_nulls=*/false,
+                            JoinSettings{settings},
+                            SortingStep::Settings{settings});
+
+                        join_step->setStepDescription("JOIN '" +
+                                normalizedGroupName(larger_subgroup.relations) + "', '" +
+                                normalizedGroupName(smaller_subgroup.relations) + "'");
+
+                        join_expression->plan_step = std::move(join_step);
+                    }
+#endif
                     /// Add or create new group for the combined set of relations
                     RelationsSet joined_relations(larger_subgroup.relations);
                     joined_relations.insert(smaller_subgroup.relations.begin(), smaller_subgroup.relations.end());
