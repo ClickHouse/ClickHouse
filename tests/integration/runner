@@ -506,11 +506,10 @@ if __name__ == "__main__":
         f"--volume={args.utils_dir}/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 "
         f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
         f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_old_analyzer} {use_distributed_plan} -e PYTHONUNBUFFERED=1 "
-        f'-e PYTEST_ADDOPTS="{parallel_args} {repeat_args} {pytest_opts} {rand_args} -vvv {tests_list}"'
-        f" {DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version}"
+        f"{DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version} "
     )
 
-    cmd = cmd_base + " " + args.command
+    cmd = cmd_base + f"sh -c 'pytest {parallel_args} {repeat_args} {pytest_opts} {rand_args} -vvv {tests_list}'" + args.command
     cmd_pre_pull = (
         f"{cmd_base} find /ClickHouse/tests/integration/compose -name docker_compose_*.yml "
         r"-exec docker compose -f '{}' pull --quiet \;"
@@ -526,10 +525,6 @@ if __name__ == "__main__":
         subprocess.check_call(f"docker kill {' '.join(containers)}", shell=True)
         print(f"Containers {containers} killed")
 
-    if args.pre_pull:
-        print(("Running pre pull as: '" + cmd_pre_pull + "'."))
-        subprocess.check_call(cmd_pre_pull, shell=True)
-
     if args.debug:
         print(
             f"""
@@ -542,5 +537,9 @@ if __name__ == "__main__":
 """
         )
 
-    print(("Running pytest container as: '" + cmd + "'."))
-    subprocess.check_call(cmd, shell=True, bufsize=0)
+    if args.pre_pull:
+        print(("Running pre pull as: '" + cmd_pre_pull + "'."))
+        subprocess.check_call(cmd_pre_pull, shell=True)
+    else:
+        print(("Running pytest container as: '" + cmd + "'."))
+        subprocess.check_call(cmd, shell=True, bufsize=0)
