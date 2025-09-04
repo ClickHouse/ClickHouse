@@ -326,7 +326,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             auto pos_net = connection_url.find(".net");
 
             if (pos_slash == std::string::npos || pos_at == std::string::npos|| pos_dot == std::string::npos || pos_net == std::string::npos
-                || pos_at-pos_slash-3 <= 0 || pos_dot-pos_at-1 <= 0g)
+                || pos_at-pos_slash-3 <= 0 || pos_dot-pos_at-1 <= 0)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect url format for a abfss url {}", connection_url);
             }
