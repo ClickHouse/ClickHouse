@@ -4018,6 +4018,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// Columns to check that the type change is safe for partition key.
     NameSet columns_alter_type_check_safe_for_partition;
 
+    /// Columns with subcolumns used in primary key or partition key.
+    std::unordered_map<String, std::vector<String>> column_to_subcolumns_used_in_keys;
+
+    const auto & old_columns = old_metadata.getColumns();
+
     if (old_metadata.hasPartitionKey())
     {
         /// Forbid altering columns inside partition key expressions because it can change partition ID format.
@@ -4030,7 +4035,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         /// But allow to alter columns without expressions under certain condition.
         for (const String & col : partition_key_expr->getRequiredColumns())
-            columns_alter_type_check_safe_for_partition.insert(col);
+        {
+            auto storage_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, col);
+            if (storage_column && storage_column->isSubcolumn())
+                column_to_subcolumns_used_in_keys[storage_column->getNameInStorage()].push_back(backQuoteIfNeed(col));
+            else
+                columns_alter_type_check_safe_for_partition.insert(col);
+        }
     }
 
     if (old_metadata.hasSortingKey())
@@ -4042,7 +4053,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 columns_alter_type_forbidden.insert(child->result_name);
         }
         for (const String & col : sorting_key_expr->getRequiredColumns())
-            columns_alter_type_metadata_only.insert(col);
+        {
+            auto storage_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, col);
+            if (storage_column && storage_column->isSubcolumn())
+                column_to_subcolumns_used_in_keys[storage_column->getNameInStorage()].push_back(backQuoteIfNeed(col));
+            else
+                columns_alter_type_metadata_only.insert(col);
+        }
 
         /// We don't process sample_by_ast separately because it must be among the primary key columns
         /// and we don't process primary_key_expr separately because it is a prefix of sorting_key_expr.
@@ -4172,6 +4189,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                 backQuoteIfNeed(command.column_name));
             }
 
+            if (column_to_subcolumns_used_in_keys.contains(command.column_name))
+            {
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER RENAME column {} whose subcolumns ({}) are part of key expression",
+                    backQuoteIfNeed(command.column_name),
+                    boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
+            }
+
             /// Don't check columns in indices here. RENAME works fine with index columns.
 
             if (auto it = columns_in_projections.find(command.column_name); it != columns_in_projections.end())
@@ -4189,6 +4215,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             {
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "Trying to ALTER DROP key {} column which is a part of key expression", backQuoteIfNeed(command.column_name));
+            }
+
+            if (column_to_subcolumns_used_in_keys.contains(command.column_name))
+            {
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER DROP column {} whose subcolumns ({}) are part of key expression",
+                    backQuoteIfNeed(command.column_name),
+                    boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
             }
 
             /// Don't check columns in indices or projections here. If required columns of indices
@@ -4238,6 +4273,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if (columns_alter_type_forbidden.contains(command.column_name))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "ALTER of key column {} is forbidden",
                     backQuoteIfNeed(command.column_name));
+
+            if (column_to_subcolumns_used_in_keys.contains(command.column_name))
+            {
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER column {} whose subcolumns ({}) are part of key expression",
+                    backQuoteIfNeed(command.column_name),
+                    boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
+            }
 
             if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
             {

@@ -158,8 +158,13 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
 
                 try
                 {
-                    auto read_buf = object_storage->readObject(object, settings);
-                    readStringUntilEOF(local_path, *read_buf);
+                    if (metadata->size_bytes == 0)
+                        LOG_TRACE(log, "The object with the key '{}' has size 0, skipping the read", remote_metadata_path);
+                    else
+                    {
+                        auto read_buf = object_storage->readObject(object, settings);
+                        readStringUntilEOF(local_path, *read_buf);
+                    }
 
                     /// Load the list of files inside the directory.
                     fs::path full_remote_path = object_storage->getCommonKeyPrefix() / remote_path;
