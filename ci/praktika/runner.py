@@ -1,4 +1,3 @@
-import dataclasses
 import glob
 import json
 import os
@@ -52,23 +51,6 @@ class Runner:
         pr = pr or -1
         if branch:
             pr = 0
-        digest_dockers = {}
-        for docker in workflow.dockers:
-            digest_dockers[docker.name] = Digest().calc_docker_digest(
-                docker, workflow.dockers
-            )
-        workflow_config = RunConfig(
-            name=workflow.name,
-            digest_jobs={},
-            digest_dockers=digest_dockers,
-            sha="",
-            cache_success=[],
-            cache_success_base64=[],
-            cache_artifacts={},
-            cache_jobs={},
-            filtered_jobs={},
-            custom_data={},
-        )
         _Environment(
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
@@ -93,17 +75,25 @@ class Runner:
             USER_LOGIN="",
             FORK_NAME="",
             PR_LABELS=[],
-            EVENT_TIME="",
-            WORKFLOW_DATA={
-                Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
-                    "outputs": {
-                        "data": json.dumps(
-                            {"workflow_config": dataclasses.asdict(workflow_config)}
-                        )
-                    }
-                }
-            },
         ).dump()
+        workflow_config = RunConfig(
+            name=workflow.name,
+            digest_jobs={},
+            digest_dockers={},
+            sha="",
+            cache_success=[],
+            cache_success_base64=[],
+            cache_artifacts={},
+            cache_jobs={},
+            filtered_jobs={},
+            custom_data={},
+        )
+        for docker in workflow.dockers:
+            workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
+                docker, workflow.dockers
+            )
+
+        workflow_config.dump()
 
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
@@ -234,7 +224,7 @@ class Runner:
         if job.name != Settings.CI_CONFIG_JOB_NAME:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
-                    RunConfig.from_workflow_data().digest_dockers
+                    RunConfig.from_fs(workflow.name).digest_dockers
                 )
             except Exception as e:
                 traceback.print_exc()
@@ -261,7 +251,7 @@ class Runner:
             else:
                 docker_name, docker_tag = (
                     job.run_in_docker,
-                    RunConfig.from_workflow_data().digest_dockers[job.run_in_docker],
+                    RunConfig.from_fs(workflow.name).digest_dockers[job.run_in_docker],
                 )
                 if Utils.is_arm():
                     docker_tag += "_arm"
@@ -404,14 +394,6 @@ class Runner:
         result.update_duration()
         # if result.is_error():
         result.set_files([Settings.RUN_LOG])
-
-        job_outputs = env.JOB_KV_DATA
-        print(f"Job's output: [{list(job_outputs.keys())}]")
-        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-            print(
-                f"data={json.dumps(job_outputs)}",
-                file=f,
-            )
 
         if job.post_hooks:
             sw_ = Utils.Stopwatch()
@@ -593,20 +575,6 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Failed to merge the PR: [{e}]")
                 traceback.print_exc()
-
-        # finally, set the status flag for GH Actions
-        pipeline_status = Result.Status.SUCCESS
-        if not result.is_ok():
-            if result.is_failure() and result.do_not_block_pipeline_on_failure():
-                # job explicitly says to not block ci even though result is failure
-                pass
-            else:
-                pipeline_status = Result.Status.FAILED
-        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-            print(
-                f"pipeline_status={pipeline_status}",
-                file=f,
-            )
 
         return is_ok
 

@@ -304,7 +304,6 @@ With `indexes` = 1, the `Indexes` key is added. It contains an array of used ind
 - `Description` — The index description (currently only used for `Skip` indexes).
 - `Parts` — The number of parts before/after the index is applied.
 - `Granules` — The number of granules before/after the index is applied.
-- `Ranges` — The number of granules ranges after the index is applied.
 
 Example:
 

@@ -80,8 +80,7 @@ void registerOutputFormatCSV(FormatFactory & factory)
         factory.registerOutputFormat(format_name, [with_names, with_types](
                    WriteBuffer & buf,
                    const Block & sample,
-                   const FormatSettings & format_settings,
-                   FormatFilterInfoPtr /*format_filter_info*/)
+                   const FormatSettings & format_settings)
         {
             return std::make_shared<CSVRowOutputFormat>(buf, std::make_shared<const Block>(sample), with_names, with_types, format_settings);
         });

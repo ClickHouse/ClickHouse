@@ -15,8 +15,8 @@
 #include <Functions/IFunction.h>
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/JoinInfo.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/JoinOperator.h>
 
 #include <Parsers/SelectUnionMode.h>
 
@@ -276,21 +276,30 @@ QueryPlan decorrelateQueryPlan(
 
         auto lhs_plan_header = lhs_plan.getCurrentHeader();
 
+        ColumnsWithTypeAndName output_columns_and_types;
+        output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan_header->getColumnsWithTypeAndName());
+        output_columns_and_types.insert_range(output_columns_and_types.cend(), decorrelated_plan_header->getColumnsWithTypeAndName());
+
         JoinExpressionActions join_expression_actions(
             lhs_plan_header->getColumnsWithTypeAndName(),
-            decorrelated_plan_header->getColumnsWithTypeAndName());
+            decorrelated_plan_header->getColumnsWithTypeAndName(),
+            output_columns_and_types);
 
-        NameSet output_columns;
-        output_columns.insert_range(lhs_plan_header->getNames());
-        output_columns.insert_range(node->step->getOutputHeader()->getNames());
+        Names output_columns;
+        output_columns.insert_range(output_columns.cend(), lhs_plan_header->getNames());
+        output_columns.insert_range(output_columns.cend(), node->step->getOutputHeader()->getNames());
 
         auto decorrelated_join = std::make_unique<JoinStepLogical>(
             lhs_plan_header,
             /*right_header_=*/decorrelated_plan_header,
-            JoinOperator(JoinKind::Cross),
+            JoinInfo{
+                .expression = {},
+                .kind = JoinKind::Cross,
+                .strictness = JoinStrictness::All,
+                .locality = JoinLocality::Local
+            },
             std::move(join_expression_actions),
-            output_columns,
-            std::unordered_map<String, const ActionsDAG::Node *>{},
+            std::move(output_columns),
             settings[Setting::join_use_nulls],
             JoinSettings(settings),
             SortingStep::Settings(settings));
@@ -470,6 +479,7 @@ void buildRenamingForScalarSubquery(
     {
         new_outputs.push_back(&dag.addAlias(dag.findInOutputs(column_name), fmt::format("{}.{}", correlated_subquery.action_node_name, column_name)));
     }
+    new_outputs.push_back(result_node);
 
     dag.getOutputs() = std::move(new_outputs);
 
@@ -512,6 +522,47 @@ void buildExistsResultExpression(
     query_plan.addStep(std::move(expression_step));
 }
 
+/// Remove query plan steps that don't affect the number of rows in the result.
+/// Returns true if the query always returns at least 1 row.
+bool optimizeCorrelatedPlanForExists(QueryPlan & correlated_query_plan)
+{
+    auto * node = correlated_query_plan.getRootNode();
+    while (true)
+    {
+        if (typeid_cast<ExpressionStep *>(node->step.get()))
+        {
+            node = node->children[0];
+            continue;
+        }
+        if (auto * aggregation = typeid_cast<AggregatingStep *>(node->step.get()))
+        {
+            const auto & params = aggregation->getParams();
+            if (params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
+            {
+                /// Subquery will always produce at least one row
+                return true;
+            }
+            node = node->children[0];
+            continue;
+        }
+        if (typeid_cast<LimitStep *>(node->step.get()))
+        {
+            /// TODO: Support LimitStep in decorrelation process.
+            /// For now, we just remove it, because it only increases the number of rows in the result.
+            /// It doesn't affect the result of correlated subquery.
+            node = node->children[0];
+            continue;
+        }
+        break;
+    }
+
+    if (node != correlated_query_plan.getRootNode())
+    {
+        correlated_query_plan = correlated_query_plan.extractSubplan(node);
+    }
+    return false;
+}
+
 QueryPlan buildLogicalJoin(
     const PlannerContextPtr & planner_context,
     QueryPlan left_plan,
@@ -522,34 +573,56 @@ QueryPlan buildLogicalJoin(
     const auto & lhs_plan_header = left_plan.getCurrentHeader();
     const auto & rhs_plan_header = right_plan.getCurrentHeader();
 
+    ColumnsWithTypeAndName output_columns_and_types;
+    output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan_header->getColumnsWithTypeAndName());
+    output_columns_and_types.emplace_back(rhs_plan_header->getByName(correlated_subquery.action_node_name));
+
     JoinExpressionActions join_expression_actions(
         lhs_plan_header->getColumnsWithTypeAndName(),
-        rhs_plan_header->getColumnsWithTypeAndName());
+        rhs_plan_header->getColumnsWithTypeAndName(),
+        output_columns_and_types);
 
-    NameSet output_columns;
-    output_columns.insert_range(lhs_plan_header->getNames());
-    output_columns.insert(correlated_subquery.action_node_name);
+    Names output_columns;
+    output_columns.insert_range(output_columns.cend(), lhs_plan_header->getNames());
+    output_columns.push_back(correlated_subquery.action_node_name);
 
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
 
-    std::vector<JoinActionRef> predicates;
+    std::vector<JoinPredicate> predicates;
     for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
     {
-        std::vector<JoinActionRef> eq_arguments;
-        eq_arguments.push_back(join_expression_actions.findNode(column_name, /* is_input= */ true));
-        eq_arguments.push_back(join_expression_actions.findNode(fmt::format("{}.{}", correlated_subquery.action_node_name, column_name), /* is_input= */ true));
-        auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
-        predicates.push_back(std::move(eq_node));
+        const auto * left_node = &join_expression_actions.left_pre_join_actions->findInOutputs(column_name);
+        const auto * right_node = &join_expression_actions.right_pre_join_actions->findInOutputs(fmt::format("{}.{}", correlated_subquery.action_node_name, column_name));
+
+        JoinPredicate predicate{
+            .left_node = JoinActionRef(left_node, join_expression_actions.left_pre_join_actions.get()),
+            .right_node = JoinActionRef(right_node, join_expression_actions.right_pre_join_actions.get()),
+            .op = PredicateOperator::Equals
+        };
+
+        predicates.emplace_back(std::move(predicate));
     }
 
     /// Add LEFT OUTER JOIN
     auto result_join = std::make_unique<JoinStepLogical>(
         lhs_plan_header,
         rhs_plan_header,
-        JoinOperator(JoinKind::Left, JoinStrictness::Any, JoinLocality::Unspecified, std::move(predicates)),
+        JoinInfo{
+            .expression = JoinExpression{
+                .condition = JoinCondition{
+                    .predicates = std::move(predicates),
+                    .left_filter_conditions = {},
+                    .right_filter_conditions = {},
+                    .residual_conditions = {}
+                },
+                .disjunctive_conditions = {}
+            },
+            .kind = JoinKind::Left,
+            .strictness = JoinStrictness::Any,
+            .locality = JoinLocality::Local
+        },
         std::move(join_expression_actions),
-        output_columns,
-        std::unordered_map<String, const ActionsDAG::Node *>{},
+        std::move(output_columns),
         /*join_use_nulls=*/false,
         JoinSettings(settings),
         SortingStep::Settings(settings));
@@ -705,7 +778,7 @@ void buildQueryPlanForCorrelatedSubquery(
             /// It may also result in non-correlated subquery plan
             /// Example:
             /// SELECT * FROM numbers(1) WHERE EXISTS (SELECT a = number FROM table)
-            if (optimizePlanForExists(correlated_query_plan))
+            if (optimizeCorrelatedPlanForExists(correlated_query_plan))
             {
                 /// Subquery always produces at least 1 row.
                 buildExistsResultExpression(query_plan, correlated_subquery, /*project_only_correlated_columns=*/false);

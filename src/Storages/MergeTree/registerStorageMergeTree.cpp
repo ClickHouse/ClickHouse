@@ -755,7 +755,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 if (minmax_index_exists)
                     continue;
 
-                auto new_index = createImplicitMinMaxIndexDescription(column.name, columns, context);
+                auto index_type = makeASTFunction("minmax");
+                auto index_ast = std::make_shared<ASTIndexDeclaration>(
+                        std::make_shared<ASTIdentifier>(column.name), index_type,
+                        IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
+                index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+                auto new_index = IndexDescription::getIndexFromAST(index_ast, columns, context);
                 metadata.secondary_indices.push_back(std::move(new_index));
             }
         }

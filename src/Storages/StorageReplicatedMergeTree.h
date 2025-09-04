@@ -308,8 +308,7 @@ public:
         const MergeTreeSettings & settings,
         LoggerPtr logger,
         const String & zookeeper_path_old,
-        MergeTreeDataFormatVersion data_format_version,
-        const ContextPtr & local_context);
+        MergeTreeDataFormatVersion data_format_version);
 
     /// Fetch part only if some replica has it on shared storage like S3
     MutableDataPartPtr tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
@@ -969,7 +968,7 @@ private:
         const zkutil::ZooKeeperPtr & zookeeper) const;
 
     static Strings getZeroCopyPartPath(const MergeTreeSettings & settings, const std::string & disk_type, const String & table_uuid,
-        const String & part_name, const String & zookeeper_path_old, const ContextPtr & local_context);
+        const String & part_name, const String & zookeeper_path_old);
 
     static void createZeroCopyLockNode(
         const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node,

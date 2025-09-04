@@ -25,16 +25,11 @@ public:
 
     void onFinish() override;
 
-    const String & getPath() const { return path; }
-
-    size_t getFileSize() const;
-
 private:
     const String path;
     SharedHeader sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
-    std::optional<size_t> result_file_size;
 
     void finalizeBuffers();
     void releaseBuffers();
@@ -49,11 +44,15 @@ public:
         StorageObjectStorageConfigurationPtr configuration_,
         std::optional<FormatSettings> format_settings_,
         SharedHeader sample_block_,
-        ContextPtr context_);
+        ContextPtr context_,
+        const ASTPtr & partition_by);
 
     SinkPtr createSinkForPartition(const String & partition_id) override;
 
 private:
+    void validateKey(const String & str);
+    void validateNamespace(const String & str);
+
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
 

@@ -28,6 +28,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_execute_multiif_columnar;
+    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -60,11 +61,12 @@ public:
     {
         const auto & settings = context_->getSettingsRef();
         return std::make_shared<FunctionMultiIf>(
-            settings[Setting::allow_execute_multiif_columnar], settings[Setting::use_variant_as_common_type]);
+            settings[Setting::allow_execute_multiif_columnar], settings[Setting::allow_experimental_variant_type], settings[Setting::use_variant_as_common_type]);
     }
 
-    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool use_variant_as_common_type_)
+    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool allow_experimental_variant_type_, bool use_variant_as_common_type_)
         : allow_execute_multiif_columnar(allow_execute_multiif_columnar_)
+        , allow_experimental_variant_type(allow_experimental_variant_type_)
         , use_variant_as_common_type(use_variant_as_common_type_)
     {}
 
@@ -142,7 +144,7 @@ public:
             types_of_branches.emplace_back(arg);
         });
 
-        if (use_variant_as_common_type)
+        if (allow_experimental_variant_type && use_variant_as_common_type)
             return getLeastSupertypeOrVariant(types_of_branches);
 
         return getLeastSupertype(types_of_branches);
@@ -528,6 +530,7 @@ private:
     }
 
     const bool allow_execute_multiif_columnar;
+    const bool allow_experimental_variant_type;
     const bool use_variant_as_common_type;
 };
 
@@ -593,9 +596,9 @@ FROM LEFT_RIGHT;
     factory.registerAlias("caseWithoutExpression", "multiIf");
 }
 
-FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool use_variant_as_common_type)
+FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool allow_experimental_variant_type, bool use_variant_as_common_type)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, use_variant_as_common_type));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, allow_experimental_variant_type, use_variant_as_common_type));
 }
 
 }

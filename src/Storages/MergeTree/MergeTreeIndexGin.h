@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Common/HashTable/HashSet.h>
 #include <Interpreters/GinFilter.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB
@@ -12,19 +10,22 @@ namespace DB
 
 struct MergeTreeIndexGranuleGin final : public IMergeTreeIndexGranule
 {
-    explicit MergeTreeIndexGranuleGin(const String & index_name_);
+    MergeTreeIndexGranuleGin(
+        const String & index_name_,
+        const GinFilterParameters & gin_filter_params_);
 
     ~MergeTreeIndexGranuleGin() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return !initialized; }
+    bool empty() const override { return !has_elems; }
     size_t memoryUsageBytes() const override;
 
     const String index_name;
+    const GinFilterParameters gin_filter_params;
     GinFilter gin_filter;
-    bool initialized;
+    bool has_elems;
 };
 
 using MergeTreeIndexGranuleGinPtr = std::shared_ptr<MergeTreeIndexGranuleGin>;
@@ -35,6 +36,7 @@ struct MergeTreeIndexAggregatorGin final : IMergeTreeIndexAggregator
         GinIndexStorePtr store_,
         const Names & index_columns_,
         const String & index_name_,
+        const GinFilterParameters & gin_filter_params_,
         TokenExtractorPtr token_extractor_);
 
     ~MergeTreeIndexAggregatorGin() override = default;
@@ -42,10 +44,12 @@ struct MergeTreeIndexAggregatorGin final : IMergeTreeIndexAggregator
     bool empty() const override { return !granule || granule->empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
+    void addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter);
 
     GinIndexStorePtr store;
     Names index_columns;
     const String index_name;
+    const GinFilterParameters gin_filter_params;
     TokenExtractorPtr token_extractor;
     MergeTreeIndexGranuleGinPtr granule;
 };
@@ -58,14 +62,14 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context,
         const Block & index_sample_block,
-        const GinFilter::Parameters & gin_filter_params_,
+        const GinFilterParameters & gin_filter_params_,
         TokenExtractorPtr token_extactor_);
 
     ~MergeTreeIndexConditionGin() override = default;
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
-    bool mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule, GinPostingsListsCacheForStore & postings_lists_cache_for_store) const;
+    bool mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule, PostingsCacheForStore & cache_store) const;
 
 private:
     struct KeyTuplePositionMapping
@@ -86,6 +90,7 @@ private:
             FUNCTION_NOT_EQUALS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
+            FUNCTION_MULTI_SEARCH,
             FUNCTION_MATCH,
             FUNCTION_SEARCH_ANY,
             FUNCTION_SEARCH_ALL,
@@ -100,16 +105,16 @@ private:
         };
 
         RPNElement( /// NOLINT
-            Function function_ = FUNCTION_UNKNOWN, std::unique_ptr<GinQueryString> && query_string_ = nullptr)
-                : function(function_), query_string(std::move(query_string_)) {}
+                Function function_ = FUNCTION_UNKNOWN, std::unique_ptr<GinFilter> && const_gin_filter_ = nullptr)
+                : function(function_), gin_filter(std::move(const_gin_filter_)) {}
 
         Function function = FUNCTION_UNKNOWN;
 
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS
-        std::unique_ptr<GinQueryString> query_string;
+        std::unique_ptr<GinFilter> gin_filter;
 
-        /// For FUNCTION_IN and FUNCTION_NOT_IN
-        std::vector<std::vector<GinQueryString>> query_strings_for_set;
+        /// For FUNCTION_IN, FUNCTION_NOT_IN and FUNCTION_MULTI_SEARCH
+        std::vector<GinFilters> set_gin_filters;
 
         /// For FUNCTION_IN and FUNCTION_NOT_IN
         std::vector<size_t> set_key_position;
@@ -128,7 +133,7 @@ private:
     bool tryPrepareSetGinFilter(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, RPNElement & out);
 
     const Block & header;
-    GinFilter::Parameters gin_filter_params;
+    GinFilterParameters gin_filter_params;
     TokenExtractorPtr token_extractor;
     RPN rpn;
     PreparedSetsPtr prepared_sets;
@@ -139,17 +144,17 @@ class MergeTreeIndexGin final : public IMergeTreeIndex
 public:
     MergeTreeIndexGin(
         const IndexDescription & index_,
-        const GinFilter::Parameters & gin_filter_params_,
+        const GinFilterParameters & gin_filter_params_,
         std::unique_ptr<ITokenExtractor> && token_extractor_);
 
     ~MergeTreeIndexGin() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
-    GinFilter::Parameters gin_filter_params;
+    GinFilterParameters gin_filter_params;
     std::unique_ptr<ITokenExtractor> token_extractor;
 };
 

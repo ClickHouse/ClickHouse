@@ -98,7 +98,8 @@ ColumnPtr readDictPage<ColumnString>(
 
     // will be read as low cardinality column
     // in which case, the null key is set to first position, so the first string should be empty
-    col->getOffsets()[0] = 0;
+    col->getChars().push_back(0);
+    col->getOffsets()[0] = 1;
     for (auto i = 1; i <= page.num_values(); i++)
     {
         buffer.readString(*col, i);

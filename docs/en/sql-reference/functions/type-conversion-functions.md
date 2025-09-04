@@ -3758,6 +3758,7 @@ SELECT
 └─────────────────────┴───────────────┴─────────────┴─────────────────────┘
 ```
 
+
 ## toDateOrZero {#todateorzero}
 
 The same as [toDate](#todate) but returns lower boundary of [Date](../data-types/date.md) if an invalid argument is received. Only [String](../data-types/string.md) argument is supported.
@@ -3778,6 +3779,7 @@ Result:
 └────────────────────────────┴──────────────────┘
 ```
 
+
 ## toDateOrNull {#todateornull}
 
 The same as [toDate](#todate) but returns `NULL` if an invalid argument is received. Only [String](../data-types/string.md) argument is supported.
@@ -3797,6 +3799,7 @@ Result:
 │                 2022-12-30 │             ᴺᵁᴸᴸ │
 └────────────────────────────┴──────────────────┘
 ```
+
 
 ## toDateOrDefault {#todateordefault}
 
@@ -3823,6 +3826,7 @@ Result:
 │                    2022-12-30 │                                      2023-01-01 │
 └───────────────────────────────┴─────────────────────────────────────────────────┘
 ```
+
 
 ## toDateTime {#todatetime}
 
@@ -3865,6 +3869,7 @@ Result:
 └───────────────────────────────────┴───────────────────────────────┘
 ```
 
+
 ## toDateTimeOrZero {#todatetimeorzero}
 
 The same as [toDateTime](#todatetime) but returns lower boundary of [DateTime](../data-types/datetime.md) if an invalid argument is received. Only [String](../data-types/string.md) argument is supported.
@@ -3885,6 +3890,7 @@ Result:
 └─────────────────────────────────────────┴──────────────────────┘
 ```
 
+
 ## toDateTimeOrNull {#todatetimeornull}
 
 The same as [toDateTime](#todatetime) but returns `NULL` if an invalid argument is received. Only [String](../data-types/string.md) argument is supported.
@@ -3904,6 +3910,7 @@ Result:
 │                     2022-12-30 13:44:17 │                 ᴺᵁᴸᴸ │
 └─────────────────────────────────────────┴──────────────────────┘
 ```
+
 
 ## toDateTimeOrDefault {#todatetimeordefault}
 
@@ -3930,6 +3937,7 @@ Result:
 │                        2022-12-30 13:44:17 │                                                     2023-01-01 00:00:00 │
 └────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────┘
 ```
+
 
 ## toDate32 {#todate32}
 
@@ -4106,6 +4114,7 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 │ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
 └─────────────────────────┴────────────────────────────────────────────┘
 ```
+
 
 3. With `timezone`:
 
@@ -5464,8 +5473,8 @@ toDecimalString(number, scale)
 
 - `number` — Value to be represented as String, [Int, UInt](../data-types/int-uint.md), [Float](../data-types/float.md), [Decimal](../data-types/decimal.md),
 - `scale` — Number of fractional digits, [UInt8](../data-types/int-uint.md).
-  * Maximum scale for [Decimal](../data-types/decimal.md) and [Int, UInt](../data-types/int-uint.md) types is 77 (it is the maximum possible number of significant digits for Decimal),
-  * Maximum scale for [Float](../data-types/float.md) is 60.
+    * Maximum scale for [Decimal](../data-types/decimal.md) and [Int, UInt](../data-types/int-uint.md) types is 77 (it is the maximum possible number of significant digits for Decimal),
+    * Maximum scale for [Float](../data-types/float.md) is 60.
 
 **Returned value**
 
@@ -6464,6 +6473,7 @@ Result:
 └───────┴──────┴──────────────┘
 ```
 
+
 ## accurateCastOrDefault(x, T[, default_value]) {#accuratecastordefaultx-t-default_value}
 
 Converts input value `x` to the specified data type `T`. Returns default type value or `default_value` if specified if the cast value is not representable in the target type.
@@ -6537,19 +6547,20 @@ toInterval(value, unit)
 - `unit` — The type of interval to create. [String Literal](/sql-reference/syntax#string).
     Possible values:
 
-  - `nanosecond`
-  - `microsecond`
-  - `millisecond`
-  - `second`
-  - `minute`
-  - `hour`
-  - `day`
-  - `week`
-  - `month`
-  - `quarter`
-  - `year`
+    - `nanosecond`
+    - `microsecond`
+    - `millisecond`
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
 
-  The `unit` argument is case-insensitive.
+    The `unit` argument is case-insensitive.
+
 
 **Returned value**
 
@@ -6978,7 +6989,7 @@ Result:
 
 Converts a [String](../data-types/string.md) to [DateTime](../data-types/datetime.md) according to a [MySQL format string](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
 
-This function is the opposite operation of function [formatDateTime](/sql-reference/functions/date-time-functions#formatDateTime).
+This function is the opposite operation of function [formatDateTime](/sql-reference/functions/date-time-functions#formatdatetime).
 
 **Syntax**
 
@@ -6998,7 +7009,7 @@ Return a [DateTime](../data-types/datetime.md) value parsed from the input strin
 
 **Supported format specifiers**
 
-All format specifiers listed in [formatDateTime](/sql-reference/functions/date-time-functions#formatDateTime) except:
+All format specifiers listed in [formatDateTime](/sql-reference/functions/date-time-functions#formatdatetime) except:
 - %Q: Quarter (1-4)
 
 **Example**
@@ -7027,7 +7038,7 @@ Alias: `str_to_date`.
 
 Similar to [parseDateTime](#parsedatetime), except that the format string is in [Joda](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL syntax.
 
-This function is the opposite operation of function [formatDateTimeInJodaSyntax](/sql-reference/functions/date-time-functions#formatDateTimeInJodaSyntax).
+This function is the opposite operation of function [formatDateTimeInJodaSyntax](/sql-reference/functions/date-time-functions#formatdatetimeinjodasyntax).
 
 **Syntax**
 
@@ -7047,7 +7058,7 @@ Return a [DateTime](../data-types/datetime.md) value parsed from the input strin
 
 **Supported format specifiers**
 
-All format specifiers listed in [`formatDateTimeInJodaSyntax`](/sql-reference/functions/date-time-functions#formatDateTimeInJodaSyntax) are supported, except:
+All format specifiers listed in [formatDateTimeInJoda](/sql-reference/functions/date-time-functions#formatdatetime) are supported, except:
 - S: fraction of second
 - z: time zone
 - Z: time zone offset/id

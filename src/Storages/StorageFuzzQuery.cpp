@@ -49,11 +49,12 @@ ColumnPtr FuzzQuerySource::createColumn()
             continue;
         }
 
-        IColumn::Offset next_offset = offset + fuzzed_text.size();
+        IColumn::Offset next_offset = offset + fuzzed_text.size() + 1;
         data_to.resize(next_offset);
 
         std::copy(fuzzed_text.begin(), fuzzed_text.end(), &data_to[offset]);
 
+        data_to[offset + fuzzed_text.size()] = 0;
         offsets_to[row_num] = next_offset;
 
         offset = next_offset;

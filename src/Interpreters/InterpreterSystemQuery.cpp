@@ -41,7 +41,6 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
-#include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -801,9 +800,6 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RESTORE_REPLICA:
             restoreReplica();
             break;
-        case Type::RESTORE_DATABASE_REPLICA:
-            restoreDatabaseReplica(query);
-            break;
         case Type::WAIT_LOADING_PARTS:
             waitLoadingParts();
             break;
@@ -918,7 +914,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            flushJemallocProfile("/tmp/jemalloc_clickhouse", /* log= */ true);
+            flushJemallocProfile("/tmp/jemalloc_clickhouse");
             break;
         }
 #else
@@ -955,24 +951,6 @@ void InterpreterSystemQuery::restoreReplica()
             settings[Setting::keeper_retry_max_backoff_ms],
             getContext()->getProcessListElementSafe()},
         false);
-}
-
-void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
-{
-    const String database_name = query.getDatabase();
-    getContext()->checkAccess(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, database_name);
-
-    const auto db_ptr = DatabaseCatalog::instance().getDatabase(database_name);
-
-    auto* replicated_db = dynamic_cast<DatabaseReplicated*>(db_ptr.get());
-    if (!replicated_db)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated", database_name);
-    }
-
-    replicated_db->restoreDatabaseMetadataInKeeper(getContext());
-
-    LOG_TRACE(log, "Replicated database {} was restored.", database_name);
 }
 
 StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
@@ -1752,11 +1730,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESTORE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTORE_REPLICA, query.getDatabase(), query.getTable());
-            break;
-        }
-        case Type::RESTORE_DATABASE_REPLICA:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, query.getDatabase());
             break;
         }
         case Type::SYNC_REPLICA:

@@ -11,7 +11,6 @@
 #include <rocksdb/table.h>
 #include <rocksdb/snapshot.h>
 #include <rocksdb/write_batch.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -70,7 +69,7 @@ public:
 
         explicit const_iterator(std::shared_ptr<KVPair> pair_) : pair(std::move(pair_)) {}
 
-        explicit const_iterator(std::shared_ptr<rocksdb::Iterator> iter_) : iter(iter_)
+        explicit const_iterator(rocksdb::Iterator * iter_) : iter(iter_)
         {
             updatePairFromIter();
         }
@@ -147,6 +146,8 @@ public:
         }
     };
 
+    bool initialized = false;
+
     const const_iterator end_ptr;
 
     void initialize(const KeeperContextPtr & context)
@@ -171,17 +172,14 @@ public:
         }
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
         write_options.disableWAL = true;
+        initialized = true;
     }
 
     ~RocksDBContainer()
     {
-        if (rocksdb_ptr)
+        if (initialized)
         {
-            auto status = rocksdb_ptr->Close();
-            if (!status.ok())
-            {
-                LOG_ERROR(getLogger("RocksDB"), "Close failed (the error will be ignored): {}", status.ToString());
-            }
+            rocksdb_ptr->Close();
             rocksdb_ptr = nullptr;
 
             std::filesystem::remove_all(rocksdb_dir);
@@ -362,7 +360,7 @@ public:
         }
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
 
-        std::unique_ptr<rocksdb::Iterator> it(rocksdb_ptr->NewIterator(rocksdb::ReadOptions{}));
+        auto * it = rocksdb_ptr->NewIterator(rocksdb::ReadOptions{});
         counter = 0;
         for (it->SeekToFirst(); it->Valid(); it->Next())
         {
@@ -479,7 +477,7 @@ public:
         read_options.total_order_seek = true;
         if (snapshot_mode)
             read_options.snapshot = snapshot;
-        std::shared_ptr<rocksdb::Iterator> iter(rocksdb_ptr->NewIterator(read_options));
+        auto * iter = rocksdb_ptr->NewIterator(read_options);
         iter->SeekToFirst();
         return const_iterator(iter);
     }

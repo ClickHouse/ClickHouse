@@ -6,7 +6,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <TableFunctions/ITableFunction.h>
 
@@ -24,6 +23,108 @@ class StorageLocalConfiguration;
 struct S3StorageSettings;
 struct AzureStorageSettings;
 struct HDFSStorageSettings;
+
+struct AzureDefinition
+{
+    static constexpr auto name = "azureBlobStorage";
+    static constexpr auto storage_type_name = "Azure";
+};
+
+struct S3Definition
+{
+    static constexpr auto name = "s3";
+    static constexpr auto storage_type_name = "S3";
+};
+
+struct GCSDefinition
+{
+    static constexpr auto name = "gcs";
+    static constexpr auto storage_type_name = "GCS";
+};
+
+struct COSNDefinition
+{
+    static constexpr auto name = "cosn";
+    static constexpr auto storage_type_name = "COSN";
+};
+
+struct OSSDefinition
+{
+    static constexpr auto name = "oss";
+    static constexpr auto storage_type_name = "OSS";
+};
+
+struct HDFSDefinition
+{
+    static constexpr auto name = "hdfs";
+    static constexpr auto storage_type_name = "HDFS";
+};
+
+struct LocalDefinition
+{
+    static constexpr auto name = "local";
+    static constexpr auto storage_type_name = "Local";
+};
+
+struct IcebergDefinition
+{
+    static constexpr auto name = "iceberg";
+    static constexpr auto storage_type_name = "S3";
+};
+
+struct IcebergS3Definition
+{
+    static constexpr auto name = "icebergS3";
+    static constexpr auto storage_type_name = "S3";
+};
+
+struct IcebergAzureDefinition
+{
+    static constexpr auto name = "icebergAzure";
+    static constexpr auto storage_type_name = "Azure";
+};
+
+struct IcebergLocalDefinition
+{
+    static constexpr auto name = "icebergLocal";
+    static constexpr auto storage_type_name = "Local";
+};
+
+struct IcebergHDFSDefinition
+{
+    static constexpr auto name = "icebergHDFS";
+    static constexpr auto storage_type_name = "HDFS";
+};
+
+struct DeltaLakeDefinition
+{
+    static constexpr auto name = "deltaLake";
+    static constexpr auto storage_type_name = "S3";
+};
+
+struct DeltaLakeS3Definition
+{
+    static constexpr auto name = "deltaLakeS3";
+    static constexpr auto storage_type_name = "S3";
+};
+
+struct DeltaLakeAzureDefinition
+{
+    static constexpr auto name = "deltaLakeAzure";
+    static constexpr auto storage_type_name = "Azure";
+};
+
+struct DeltaLakeLocalDefinition // New definition for local Delta Lake
+{
+    static constexpr auto name = "deltaLakeLocal";
+    static constexpr auto storage_type_name = "Local";
+};
+
+struct HudiDefinition
+{
+    static constexpr auto name = "hudi";
+    static constexpr auto storage_type_name = "S3";
+};
 
 template <typename Definition, typename Configuration, bool is_data_lake = false>
 class TableFunctionObjectStorage : public ITableFunction
@@ -76,11 +177,6 @@ public:
             Configuration().addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
     }
 
-    void setPartitionBy(const ASTPtr & partition_by_) override
-    {
-        partition_by = partition_by_;
-    }
-
 protected:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -89,8 +185,7 @@ protected:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override { return Definition::storage_engine_name; }
-    const String & getFunctionURI() const override { return configuration->getRawURI(); }
+    const char * getStorageTypeName() const override { return Definition::storage_type_name; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -104,7 +199,6 @@ protected:
     mutable ObjectStoragePtr object_storage;
     ColumnsDescription structure_hint;
     std::shared_ptr<Settings> settings;
-    ASTPtr partition_by;
 
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 };
@@ -120,6 +214,8 @@ using TableFunctionAzureBlob = TableFunctionObjectStorage<AzureDefinition, Stora
 #if USE_HDFS
 using TableFunctionHDFS = TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>;
 #endif
+
+using TableFunctionLocal = TableFunctionObjectStorage<LocalDefinition, StorageLocalConfiguration>;
 
 
 #if USE_AVRO

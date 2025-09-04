@@ -94,6 +94,4 @@ SET(VERSION_STRING {string})
 
     @classmethod
     def store_version_data_in_ci_pipeline(cls):
-        version = cls.get_current_version_as_dict()
-        print(f"Store version in pipeline kv data: [version={version}]")
-        Info().store_kv_data("version", cls.get_current_version_as_dict())
+        Info().store_custom_data("version", cls.get_current_version_as_dict())
