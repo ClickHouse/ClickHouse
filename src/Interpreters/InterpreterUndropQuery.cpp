@@ -31,7 +31,7 @@ BlockIO InterpreterUndropQuery::execute()
     auto & undrop = query_ptr->as<ASTUndropQuery &>();
     if (!undrop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
-        DDLQueryOnClusterParams params;
+        DDLQueryOnClusterParams params(getContext());
         params.access_to_check = getRequiredAccessForDDLOnCluster();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }

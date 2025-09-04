@@ -1069,7 +1069,7 @@ void BackupsWorker::sendQueryToOtherHosts(const ASTBackupQuery & backup_or_resto
 {
     chassert(cluster);
 
-    DDLQueryOnClusterParams params;
+    DDLQueryOnClusterParams params(context);
     params.cluster = cluster;
     params.only_shard_num = only_shard_num;
     params.only_replica_num = only_replica_num;

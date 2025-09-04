@@ -209,7 +209,7 @@ BlockIO InterpreterKillQueryQuery::execute()
 
     if (!query.cluster.empty())
     {
-        DDLQueryOnClusterParams params;
+        DDLQueryOnClusterParams params(getContext());
         params.access_to_check = getRequiredAccessForDDLOnCluster();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }

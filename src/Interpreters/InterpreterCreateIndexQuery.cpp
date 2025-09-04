@@ -63,7 +63,7 @@ BlockIO InterpreterCreateIndexQuery::execute()
 
     if (!create_index.cluster.empty())
     {
-        DDLQueryOnClusterParams params;
+        DDLQueryOnClusterParams params(current_context);
         params.access_to_check = std::move(required_access);
         return executeDDLQueryOnCluster(query_ptr, current_context, params);
     }

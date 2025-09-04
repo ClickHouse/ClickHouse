@@ -2326,7 +2326,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
 {
     prepareOnClusterQuery(create, getContext(), create.cluster);
-    DDLQueryOnClusterParams params;
+    DDLQueryOnClusterParams params(getContext());
     params.access_to_check = getRequiredAccess();
     return executeDDLQueryOnCluster(query_ptr, getContext(), params);
 }

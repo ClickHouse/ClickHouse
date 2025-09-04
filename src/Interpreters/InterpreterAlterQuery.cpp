@@ -121,14 +121,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
 
-        DDLQueryOnClusterParams params;
+        DDLQueryOnClusterParams params(getContext());
         params.access_to_check = getRequiredAccess();
-        params.retries_info = {
-            settings[Setting::keeper_max_retries],
-            settings[Setting::keeper_retry_initial_backoff_ms],
-            settings[Setting::keeper_retry_max_backoff_ms],
-            getContext()->getProcessListElement()
-        };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
@@ -313,7 +307,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 
     if (!alter.cluster.empty())
     {
-        DDLQueryOnClusterParams params;
+        DDLQueryOnClusterParams params(getContext());
         params.access_to_check = getRequiredAccess();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }

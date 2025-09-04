@@ -66,7 +66,7 @@ BlockIO InterpreterCreateRoleQuery::execute()
         getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::ROLE);
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext(), DDLQueryOnClusterParams{getContext()});
 
     IAccessStorage * storage = &access_control;
     MultipleAccessStorage::StoragePtr storage_ptr;
