@@ -487,6 +487,7 @@ public:
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
 
     StoragePolicyPtr getStoragePolicy() const override;
+    static StoragePolicyPtr getStoragePolicyImpl(ContextPtr context_, MergeTreeSettingsPtr table_settings);
 
     bool isMergeTree() const override { return true; }
 
