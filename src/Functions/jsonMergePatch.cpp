@@ -16,6 +16,7 @@
 #include <rapidjson/document.h>
 #include <rapidjson/writer.h>
 #include <rapidjson/stringbuffer.h>
+#include <rapidjson/filereadstream.h>
 #include <rapidjson/error/en.h>
 
 
@@ -96,7 +97,9 @@ namespace
             auto parse_json_document = [](const ColumnString & column, rapidjson::Document & document, size_t i)
             {
                 auto str_ref = column.getDataAt(i);
-                document.Parse(str_ref.toString().c_str());
+                const char * json = str_ref.data;
+
+                document.Parse(json);
 
                 if (document.HasParseError())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong JSON string to merge: {}", rapidjson::GetParseError_En(document.GetParseError()));

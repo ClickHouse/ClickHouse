@@ -60,8 +60,7 @@ void sortResponseRanges(RangesInDataPartsDescription & result)
     for (auto & ranges_in_part : result)
     {
         if (new_result.empty() || new_result.back().info != ranges_in_part.info)
-            new_result.push_back(
-                RangesInDataPartDescription{.info = ranges_in_part.info, .projection_name = ranges_in_part.projection_name});
+            new_result.push_back(RangesInDataPartDescription{.info = ranges_in_part.info});
 
         new_result.back().ranges.insert(
             new_result.back().ranges.end(),
@@ -96,7 +95,6 @@ extern const Event ParallelReplicasUsedCount;
 extern const Event ParallelReplicasUnavailableCount;
 
 extern const Event ParallelReplicasQueryCount;
-extern const Event ParallelReplicasNumRequests;
 }
 
 namespace DB
@@ -190,7 +188,6 @@ public:
     virtual void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
     virtual bool isReadingCompleted() const { return false; }
-    virtual bool initializedWithEmptyRanges() const { return false; }
 
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
     {
@@ -238,8 +235,6 @@ public:
     void markReplicaAsUnavailable(size_t replica_number) override;
 
     bool isReadingCompleted() const override;
-
-    bool initializedWithEmptyRanges() const override { return state_initialized && all_parts_to_read.empty(); }
 
 private:
     /// This many granules will represent a single segment of marks that will be assigned to a replica
@@ -357,9 +352,9 @@ private:
         size_t & current_marks_amount,
         RangesInDataPartsDescription & description);
 
-    bool possiblyCanReadPart(size_t replica, const RangesInDataPartDescription & description) const;
-    void enqueueSegment(const RangesInDataPartDescription & description, const MarkRange & segment, size_t owner);
-    void enqueueToStealerOrStealingQueue(const RangesInDataPartDescription & description, const MarkRange & segment);
+    bool possiblyCanReadPart(size_t replica, const MergeTreePartInfo & info) const;
+    void enqueueSegment(const MergeTreePartInfo & info, const MarkRange & segment, size_t owner);
+    void enqueueToStealerOrStealingQueue(const MergeTreePartInfo & info, const MarkRange & segment);
 };
 
 
@@ -380,7 +375,7 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
     for (const auto & part : announcement.description)
     {
         /// We don't really care here if this part will be included into the working set or not
-        part_visibility[part.getPartOrProjectionName()].insert(announcement.replica_num);
+        part_visibility[part.info.getPartNameV1()].insert(announcement.replica_num);
     }
 
     /// If state is already initialized - just register availabitily info and leave
@@ -429,7 +424,7 @@ void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
             continue;
 
         chassert(segment.ranges.size() == 1);
-        enqueueToStealerOrStealingQueue(segment, segment.ranges.front());
+        enqueueToStealerOrStealingQueue(segment.info, segment.ranges.front());
     }
     distribution_by_hash_queue[replica_number].clear();
 }
@@ -479,10 +474,10 @@ void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
     /// Sift the queue to move out all invisible segments
     for (auto segment_it = distribution_by_hash_queue[replica_num].begin(); segment_it != distribution_by_hash_queue[replica_num].end();)
     {
-        if (!part_visibility[segment_it->getPartOrProjectionName()].contains(replica_num))
+        if (!part_visibility[segment_it->info.getPartNameV1()].contains(replica_num))
         {
             chassert(segment_it->ranges.size() == 1);
-            enqueueToStealerOrStealingQueue(*segment_it, segment_it->ranges.front());
+            enqueueToStealerOrStealingQueue(segment_it->info, segment_it->ranges.front());
             segment_it = distribution_by_hash_queue[replica_num].erase(segment_it);
         }
         else
@@ -498,7 +493,7 @@ void DefaultCoordinator::tryToTakeFromDistributionQueue(
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasCollectingOwnedSegmentsMicroseconds);
 
     auto & distribution_queue = distribution_by_hash_queue[replica_num];
-    auto replica_can_read_part = [&](auto replica, const auto & part) { return part_visibility[part.getPartOrProjectionName()].contains(replica); };
+    auto replica_can_read_part = [&](auto replica, const auto & part) { return part_visibility[part.getPartNameV1()].contains(replica); };
 
     RangesInDataPartDescription result;
 
@@ -509,7 +504,7 @@ void DefaultCoordinator::tryToTakeFromDistributionQueue(
             if (!result.ranges.empty())
                 /// We're switching to a different part, so have to save currently accumulated ranges
                 description.push_back(result);
-            result = {.info = distribution_queue.begin()->info, .projection_name = distribution_queue.begin()->projection_name};
+            result = {.info = distribution_queue.begin()->info};
         }
 
         /// NOTE: this works because ranges are not considered by the comparator
@@ -517,7 +512,7 @@ void DefaultCoordinator::tryToTakeFromDistributionQueue(
         chassert(part_ranges.ranges.size() == 1);
         auto & range = part_ranges.ranges.front();
 
-        if (replica_can_read_part(replica_num, part_ranges))
+        if (replica_can_read_part(replica_num, part_ranges.info))
         {
             if (auto taken = takeFromRange(range, min_number_of_marks, current_marks_amount, result); taken == range.getNumberOfMarks())
                 distribution_queue.erase(distribution_queue.begin());
@@ -531,7 +526,7 @@ void DefaultCoordinator::tryToTakeFromDistributionQueue(
         {
             /// It might be that `replica_num` is the stealer by hash itself - no problem,
             /// we'll just have a redundant hash computation inside this function
-            enqueueToStealerOrStealingQueue(part_ranges, range);
+            enqueueToStealerOrStealingQueue(part_ranges.info, range);
             distribution_queue.erase(distribution_queue.begin());
         }
     }
@@ -591,7 +586,7 @@ void DefaultCoordinator::tryToStealFromQueue(
     size_t & current_marks_amount,
     RangesInDataPartsDescription & description)
 {
-    auto replica_can_read_part = [&](auto replica, const auto & part) { return part_visibility[part.getPartOrProjectionName()].contains(replica); };
+    auto replica_can_read_part = [&](auto replica, const auto & part) { return part_visibility[part.getPartNameV1()].contains(replica); };
 
     RangesInDataPartDescription result;
 
@@ -607,17 +602,17 @@ void DefaultCoordinator::tryToStealFromQueue(
             if (!result.ranges.empty())
                 /// We're switching to a different part, so have to save currently accumulated ranges
                 description.push_back(result);
-            result = {.info = part_ranges.info, .projection_name = part_ranges.projection_name};
+            result = {.info = part_ranges.info};
         }
 
-        if (replica_can_read_part(replica_num, part_ranges))
+        if (replica_can_read_part(replica_num, part_ranges.info))
         {
             bool can_take = false;
             if (scan_mode == ScanMode::TakeWhatsMineForStealing)
             {
                 chassert(owner >= 0);
                 const size_t segment_begin = roundDownToMultiple(range.begin, mark_segment_size);
-                can_take = computeConsistentHash(part_ranges.getPartOrProjectionName(), segment_begin, scan_mode) == replica_num;
+                can_take = computeConsistentHash(part_ranges.info.getPartNameV1(), segment_begin, scan_mode) == replica_num;
             }
             else
             {
@@ -652,7 +647,7 @@ void DefaultCoordinator::processPartsFurther(
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasProcessingPartsMicroseconds);
 
-    auto replica_can_read_part = [&](auto replica, const auto & part) { return part_visibility[part.getPartOrProjectionName()].contains(replica); };
+    auto replica_can_read_part = [&](auto replica, const auto & part) { return part_visibility[part.getPartNameV1()].contains(replica); };
 
     for (const auto & part : all_parts_to_read)
     {
@@ -662,10 +657,10 @@ void DefaultCoordinator::processPartsFurther(
             return;
         }
 
-        RangesInDataPartDescription result{.info = part.description.info, .projection_name = part.description.projection_name};
+        RangesInDataPartDescription result{.info = part.description.info};
 
         auto & part_ranges = part.description.ranges;
-        auto & part_description = part.description;
+        const auto & part_info = part.description.info;
 
         while (!part_ranges.empty() && current_marks_amount < min_number_of_marks)
         {
@@ -679,8 +674,8 @@ void DefaultCoordinator::processPartsFurther(
                 const auto cur_segment
                     = MarkRange{std::max(range.begin, segment_begin), std::min(range.end, segment_begin + mark_segment_size)};
 
-                const auto owner = computeConsistentHash(part_description.getPartOrProjectionName(), segment_begin, scan_mode);
-                if (owner == replica_num && replica_can_read_part(replica_num, part_description))
+                const auto owner = computeConsistentHash(part_info.getPartNameV1(), segment_begin, scan_mode);
+                if (owner == replica_num && replica_can_read_part(replica_num, part_info))
                 {
                     const auto taken = takeFromRange(cur_segment, min_number_of_marks, current_marks_amount, result);
                     if (taken == range.getNumberOfMarks())
@@ -698,7 +693,7 @@ void DefaultCoordinator::processPartsFurther(
                 else
                 {
                     chassert(scan_mode == ScanMode::TakeWhatsMineByHash);
-                    enqueueSegment(part_description, cur_segment, owner);
+                    enqueueSegment(part_info, cur_segment, owner);
                     range.begin += cur_segment.getNumberOfMarks();
                     if (range.getNumberOfMarks() == 0)
                     {
@@ -733,44 +728,40 @@ void DefaultCoordinator::selectPartsAndRanges(
         tryToStealFromQueues(replica_num, scan_mode, min_number_of_marks, current_marks_amount, description);
 }
 
-bool DefaultCoordinator::possiblyCanReadPart(size_t replica, const RangesInDataPartDescription & description) const
+bool DefaultCoordinator::possiblyCanReadPart(size_t replica, const MergeTreePartInfo & info) const
 {
     /// At this point we might not be sure if `owner` can read from the given part.
     /// Then we will check it while processing `owner`'s data requests - they are guaranteed to came after the announcement.
     return !stats[replica].is_unavailable && !replica_status[replica].is_finished
-        && (!replica_status[replica].is_announcement_received || part_visibility.at(description.getPartOrProjectionName()).contains(replica));
+        && (!replica_status[replica].is_announcement_received || part_visibility.at(info.getPartNameV1()).contains(replica));
 }
 
-void DefaultCoordinator::enqueueSegment(const RangesInDataPartDescription & description, const MarkRange & segment, size_t owner)
+void DefaultCoordinator::enqueueSegment(const MergeTreePartInfo & info, const MarkRange & segment, size_t owner)
 {
-    if (possiblyCanReadPart(owner, description))
+    if (possiblyCanReadPart(owner, info))
     {
         /// TODO: optimize me (maybe we can store something lighter than RangesInDataPartDescription)
-        distribution_by_hash_queue[owner].insert(
-            RangesInDataPartDescription{.info = description.info, .ranges = {segment}, .projection_name = description.projection_name});
-        LOG_TEST(log, "Segment {} of {} is added to its owner's ({}) queue", segment, description.getPartOrProjectionName(), owner);
+        distribution_by_hash_queue[owner].insert(RangesInDataPartDescription{.info = info, .ranges = {segment}});
+        LOG_TEST(log, "Segment {} of {} is added to its owner's ({}) queue", segment, info.getPartNameV1(), owner);
     }
     else
-        enqueueToStealerOrStealingQueue(description, segment);
+        enqueueToStealerOrStealingQueue(info, segment);
 }
 
-void DefaultCoordinator::enqueueToStealerOrStealingQueue(const RangesInDataPartDescription & description, const MarkRange & segment)
+void DefaultCoordinator::enqueueToStealerOrStealingQueue(const MergeTreePartInfo & info, const MarkRange & segment)
 {
-    auto && range = RangesInDataPartDescription{.info = description.info, .ranges = {segment},
-                                                .projection_name = description.projection_name};
+    auto && range = RangesInDataPartDescription{.info = info, .ranges = {segment}};
     const auto stealer_by_hash = computeConsistentHash(
-        description.getPartOrProjectionName(),
-        roundDownToMultiple(segment.begin, mark_segment_size),
-        ScanMode::TakeWhatsMineForStealing);
-    if (possiblyCanReadPart(stealer_by_hash, description))
+        info.getPartNameV1(), roundDownToMultiple(segment.begin, mark_segment_size), ScanMode::TakeWhatsMineForStealing);
+    if (possiblyCanReadPart(stealer_by_hash, info))
     {
         distribution_by_hash_queue[stealer_by_hash].insert(std::move(range));
-        LOG_TEST(log, "Segment {} of {} is added to its stealer's ({}) queue", segment, description.getPartOrProjectionName(), stealer_by_hash);
+        LOG_TEST(log, "Segment {} of {} is added to its stealer's ({}) queue", segment, info.getPartNameV1(), stealer_by_hash);
     }
     else
     {
         ranges_for_stealing_queue.push_back(std::move(range));
-        LOG_TEST(log, "Segment {} of {} is added to stealing queue", segment, description.getPartOrProjectionName());
+        LOG_TEST(log, "Segment {} of {} is added to stealing queue", segment, info.getPartNameV1());
     }
 }
 
@@ -793,13 +784,8 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
         request.min_number_of_marks,
         stats[request.replica_num].number_of_requests);
 
-    if (replica_status[request.replica_num].is_finished)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Got request from replica {} after ranges assignment has been completed for the replica",
-            request.replica_num);
-
     ParallelReadResponse response;
+
     size_t current_mark_size = 0;
 
     /// 1. Try to select ranges meant for this replica by consistent hash
@@ -1022,13 +1008,8 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
 
     for (auto & part : response.description)
     {
-        auto global_part_it = std::find_if(
-            all_parts_to_read.begin(),
-            all_parts_to_read.end(),
-            [&part](const Part & other)
-            {
-                return other.description.info == part.info && other.description.projection_name == part.projection_name;
-            });
+        auto global_part_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
+            [&part] (const Part & other) { return other.description.info == part.info; });
 
         if (global_part_it == all_parts_to_read.end())
             continue;
@@ -1107,7 +1088,6 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
 
 void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    ProfileEvents::increment(ProfileEvents::ParallelReplicasNumRequests);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleAnnouncementMicroseconds);
 
     if (is_reading_completed)
@@ -1134,7 +1114,6 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
 
-    ProfileEvents::increment(ProfileEvents::ParallelReplicasNumRequests);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleRequestMicroseconds);
 
     ParallelReadResponse response;
@@ -1191,9 +1170,7 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
                 "All ranges for reading has been assigned to replicas. Cancelling execution for unused replicas. Used replicas: {}",
                 replicas);
 
-            if (pimpl && !pimpl->initializedWithEmptyRanges())
-                chassert(!replicas_used.empty());
-
+            chassert(!replicas_used.empty());
             (*read_completed_callback)(replicas_to_exclude);
             read_completed_callback.reset();
         }

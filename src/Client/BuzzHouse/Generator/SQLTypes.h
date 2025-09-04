@@ -40,7 +40,7 @@ enum class SQLTypeClass
 class SQLType
 {
 public:
-    virtual String typeName(bool, bool) const = 0;
+    virtual String typeName(bool escape) const = 0;
     virtual String MySQLtypeName(RandomGenerator & rg, bool escape) const = 0;
     virtual String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const = 0;
     virtual String SQLitetypeName(RandomGenerator & rg, bool escape) const = 0;
@@ -55,7 +55,7 @@ public:
 class BoolType : public SQLType
 {
 public:
-    String typeName(bool, bool) const override;
+    String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
@@ -78,7 +78,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
@@ -99,7 +99,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
@@ -120,7 +120,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
@@ -144,7 +144,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
@@ -170,7 +170,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
@@ -195,12 +195,11 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool escape) const override;
     SQLType * typeDeepCopy() const override;
-    static String appendDecimalValue(RandomGenerator & rg, bool use_func, const DecimalType * dt);
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     bool isNullable() const override { return true; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::DECIMAL; }
@@ -217,7 +216,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator & rg, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
@@ -232,7 +231,7 @@ public:
 class UUIDType : public SQLType
 {
 public:
-    String typeName(bool, bool) const override;
+    String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
@@ -268,7 +267,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
@@ -283,7 +282,7 @@ public:
 class IPv4Type : public SQLType
 {
 public:
-    String typeName(bool, bool) const override;
+    String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
@@ -298,7 +297,7 @@ public:
 class IPv6Type : public SQLType
 {
 public:
-    String typeName(bool, bool) const override;
+    String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
@@ -319,7 +318,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
@@ -355,7 +354,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
@@ -376,7 +375,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator & rg, bool escape) const override;
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool escape) const override;
@@ -397,7 +396,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator & rg, bool escape) const override;
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool escape) const override;
@@ -418,7 +417,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
@@ -439,7 +438,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
@@ -462,7 +461,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
@@ -496,7 +495,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
@@ -517,7 +516,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
@@ -551,7 +550,7 @@ public:
     {
     }
 
-    String typeName(bool, bool) const override;
+    String typeName(bool escape) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
@@ -623,7 +622,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     return false;
 }
 
-String appendDecimal(RandomGenerator & rg, bool use_func, uint32_t left, uint32_t right);
+String appendDecimal(RandomGenerator & rg, uint32_t left, uint32_t right);
 String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth);
 String strBuildJSONElement(RandomGenerator & rg);
 String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth);

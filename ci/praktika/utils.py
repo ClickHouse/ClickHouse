@@ -41,8 +41,6 @@ class MetaClasses:
                 return [cls.to_dict(i) for i in obj]
             elif isinstance(obj, dict):
                 return {k: cls.to_dict(v) for k, v in obj.items()}
-            elif isinstance(obj, Path):
-                return str(obj)
             else:
                 return obj
 
@@ -470,18 +468,6 @@ class Utils:
     @staticmethod
     def set_env(key, val):
         os.environ[key] = val
-
-    @staticmethod
-    def physical_memory() -> int:
-        """
-        Returns the total physical memory in bytes.
-        """
-        try:
-            # for linux
-            return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-        except ValueError:
-            # for MacOS
-            return int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
 
     @staticmethod
     def print_formatted_error(error_message, stdout="", stderr=""):

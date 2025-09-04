@@ -60,7 +60,6 @@ public:
         FileStatusPtr file_status_,
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
-        bool use_persistent_processing_nodes_,
         LoggerPtr log_);
 
     virtual ~ObjectStorageQueueIFileMetadata();
@@ -130,8 +129,6 @@ public:
         static NodeMetadata fromString(const std::string & metadata_str);
     };
 
-    static std::string getProcessingNodesPath(bool use_persistent_processing_nodes);
-
 protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
     virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests) = 0;
@@ -147,7 +144,6 @@ protected:
     const FileStatusPtr file_status;
     const size_t max_loading_retries;
     const std::atomic<size_t> & metadata_ref_count;
-    const bool use_persistent_processing_nodes;
 
     const std::string processing_node_path;
     const std::string processed_node_path;

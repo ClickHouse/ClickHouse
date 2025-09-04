@@ -1126,7 +1126,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     {
         auto pipe = in_order_reading_step_getter(ranges);
 
-        pipe.addSimpleTransform([sorting_expr](const SharedHeader & header)
+        pipe.addSimpleTransform([sorting_expr](const Block & header)
         {
             return std::make_shared<ExpressionTransform>(header, sorting_expr);
         });
@@ -1176,8 +1176,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     if (max_layers <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
-    auto split_ranges = splitIntersectingPartsRangesIntoLayers(
-        intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
+    auto split_ranges = splitIntersectingPartsRangesIntoLayers(intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
     result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, in_reverse_order, context);
     return result;
 }
@@ -1214,7 +1213,7 @@ Pipes readByLayers(
                                                   i ? ::toString(borders[i - 1]) : "-inf",
                                                   i < borders.size() ? ::toString(borders[i]) : "+inf");
         merging_pipes[i].addSimpleTransform(
-            [&](const SharedHeader & header)
+            [&](const Block & header)
             {
                 auto step = std::make_shared<FilterSortedStreamByRange>(header, expression_actions, filter_function->getColumnName(), true);
                 step->setDescription(description);

@@ -1,5 +1,7 @@
 -- Tags: no-fasttest, no-ordinary-database
 
+SET allow_experimental_vector_similarity_index = 1;
+
 -- Vector similarity indexes must reject empty Arrays or Arrays with default values (issue #52258)
 
 DROP TABLE IF EXISTS tab;

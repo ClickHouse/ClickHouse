@@ -5,7 +5,7 @@
 #include <Poco/Exception.h>
 #include <base/StringRef.h>
 #include <base/types.h>
-#include <Dictionaries/Embedded/GeodataProviders/INamesProvider.h>
+#include "GeodataProviders/INamesProvider.h"
 
 namespace DB
 {
