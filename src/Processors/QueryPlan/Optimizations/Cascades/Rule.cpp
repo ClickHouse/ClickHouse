@@ -3,7 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Interpreters/JoinInfo.h>
+//#include <Interpreters/JoinInfo.h>
 #include <Core/Names.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -19,7 +19,7 @@ std::vector<GroupExpressionPtr> IOptimizationRule::apply(GroupExpressionPtr expr
     return new_expressions;
 }
 
-
+#if 0
 bool JoinAssociativity::checkPattern(GroupExpressionPtr expression, const Memo & memo) const
 {
     if (expression->getName() != "Join")
@@ -127,7 +127,7 @@ std::vector<GroupExpressionPtr> JoinAssociativity::applyImpl(GroupExpressionPtr 
 
     return new_expressions;
 }
-
+#endif
 
 bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const Memo & /*memo*/) const
 {
@@ -139,7 +139,7 @@ std::unique_ptr<JoinStepLogical> cloneSwapped(const JoinStepLogical & join_step)
 {
     auto left_input_header = join_step.getInputHeaders()[1];
     auto right_input_header = join_step.getInputHeaders()[0];
-
+#if 0
     JoinExpressionActions join_expression_actions(
         left_input_header->getColumnsWithTypeAndName(),
         right_input_header->getColumnsWithTypeAndName(),
@@ -182,6 +182,12 @@ std::unique_ptr<JoinStepLogical> cloneSwapped(const JoinStepLogical & join_step)
         join_step.useNulls(),
         join_step.getJoinSettings(),
         join_step.getSortingSettings());
+#else
+    auto swapped_join_step = std::unique_ptr<JoinStepLogical>(dynamic_cast<JoinStepLogical*>(join_step.clone().release()));
+    auto inputs = swapped_join_step->getInputHeaders();
+    chassert(inputs.size() == 2);
+    swapped_join_step->updateInputHeaders({inputs[1], inputs[0]});
+#endif
 
     return swapped_join_step;
 }
