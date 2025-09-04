@@ -203,30 +203,21 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
     return nullptr;
 }
 
-void IDisk::startup(bool skip_access_check)
+void IDisk::startup(bool)
 {
-    if (!skip_access_check)
+    if (isReadOnly())
     {
-        if (isReadOnly())
-        {
-            LOG_DEBUG(getLogger("IDisk"),
-                "Skip access check for disk {} (read-only disk).",
-                getName());
-        }
-        else
-            checkAccess();
+        LOG_DEBUG(getLogger("IDisk"),
+            "Skip access check for disk {} (read-only disk).",
+            getName());
     }
-    checkCaseSensitivity();
-    startupImpl();
+    else
+        checkAccess();
 }
 
 void IDisk::checkAccess()
 {
-    DB::UUID server_uuid = DB::ServerUUID::get();
-    if (server_uuid == DB::UUIDHelpers::Nil)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
-    const String path = fmt::format("clickhouse_access_check_{}", toString(server_uuid));
-
+    const String path = fmt::format("clickhouse_access_check_{}", toString(DB::UUIDHelpers::generateV4()));
     checkAccessImpl(path);
 }
 
@@ -281,6 +272,9 @@ try
         }
     }
 
+    /// check case sensitivity
+    is_case_insensitive = existsFile(boost::to_upper_copy(path));
+
     /// remove
     removeFile(path);
 }
@@ -288,25 +282,6 @@ catch (Exception & e)
 {
     e.addMessage(fmt::format("While checking access for disk {}", name));
     throw;
-}
-
-void IDisk::checkCaseSensitivity()
-{
-    DB::UUID server_uuid = DB::ServerUUID::get();
-    if (server_uuid == DB::UUIDHelpers::Nil)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
-    const String path = fmt::format("clickhouse_case_sensitivity_check_{}", toString(server_uuid));
-    try
-    {
-        createFile(path);
-        is_case_insensitive = existsFile(boost::to_upper_copy(path));
-        removeFile(path);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format("While checking case sensitivity for disk {}", name));
-        throw;
-    }
 }
 
 void IDisk::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr /*context*/, const String & config_prefix, const DisksMap & /*map*/)

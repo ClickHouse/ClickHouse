@@ -602,9 +602,6 @@ private:
 
     /// Check access to the disk.
     void checkAccess();
-
-    /// Check if underlying filesystem is case-insensitive or not.
-    void checkCaseSensitivity();
 };
 
 using Disks = std::vector<DiskPtr>;
