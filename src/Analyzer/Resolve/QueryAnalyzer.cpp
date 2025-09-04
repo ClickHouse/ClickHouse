@@ -3013,20 +3013,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     constant_if_result_node = if_function_arguments[2];
                 }
 
-                bool current_only_analyze = only_analyze;
-                only_analyze = true;
+                bool current_do_not_execute = do_not_execute;
+                do_not_execute = true;
                 resolveExpressionNode(possibly_invalid_argument_node,
                     scope,
                     false /*allow_lambda_expression*/,
                     false /*allow_table_expression*/);
-                only_analyze = current_only_analyze;
+                do_not_execute = current_do_not_execute;
 
                 auto result_projection_names = resolveExpressionNode(constant_if_result_node,
                     scope,
                     false /*allow_lambda_expression*/,
                     false /*allow_table_expression*/);
 
-                if (!possibly_invalid_argument_node->getResultType()->equals(*constant_if_result_node->getResultType()))
+                if (possibly_invalid_argument_node->getNodeType() != QueryTreeNodeType::IDENTIFIER &&
+                    constant_if_result_node->getNodeType() != QueryTreeNodeType::IDENTIFIER &&
+                    !possibly_invalid_argument_node->getResultType()->equals(*constant_if_result_node->getResultType()))
                 {
                     DataTypePtr common_type;
                     if (use_variant_when_no_common_type)
@@ -3049,17 +3051,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         multi_if_function->getArguments().getNodes().push_back(if_function_arguments[n]);
 
                     QueryTreeNodePtr function_query_node = multi_if_function;
-                    bool current_only_analyze = only_analyze;
-                    only_analyze = true;
+                    bool current_do_not_execute = do_not_execute;
+                    do_not_execute = true;
                     resolveFunction(function_query_node, scope);
-                    only_analyze = current_only_analyze;
+                    do_not_execute = current_do_not_execute;
 
                     auto result_projection_names = resolveExpressionNode(if_function_arguments[1],
                         scope,
                         false /*allow_lambda_expression*/,
                         false /*allow_table_expression*/);
 
-                    if (!function_query_node->getResultType()->equals(*if_function_arguments[1]->getResultType()))
+                    if (if_function_arguments[1]->getNodeType() != QueryTreeNodeType::IDENTIFIER &&
+                        !function_query_node->getResultType()->equals(*if_function_arguments[1]->getResultType()))
                     {
                         DataTypePtr common_type;
                         if (use_variant_when_no_common_type)
@@ -3075,13 +3078,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 }
                 else
                 {
-                    bool current_only_analyze = only_analyze;
-                    only_analyze = true;
+                    bool current_do_not_execute = do_not_execute;
+                    do_not_execute = true;
                     resolveExpressionNode(if_function_arguments[1],
                         scope,
                         false /*allow_lambda_expression*/,
                         false /*allow_table_expression*/);
-                    only_analyze = current_only_analyze;
+                    do_not_execute = current_do_not_execute;
 
                     auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
                     for (size_t n = 2; n < if_function_arguments.size(); ++n)
@@ -3089,7 +3092,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     node = std::move(multi_if_function);
                     auto result_projection_names = resolveFunction(node, scope);
 
-                    if (node->getResultType()->equals(*if_function_arguments[1]->getResultType()))
+                    if (if_function_arguments[1]->getNodeType() != QueryTreeNodeType::IDENTIFIER &&
+                        node->getResultType()->equals(*if_function_arguments[1]->getResultType()))
                     {
                         DataTypePtr common_type;
                         if (use_variant_when_no_common_type)
@@ -3848,7 +3852,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (!argument_columns.empty())
                     num_rows = argument_columns.front().column->size();
 
-                if (only_analyze)
+                if (do_not_execute)
                     column = result_type->createColumnConstWithDefaultValue(num_rows);
                 else
                     column = executable_function->execute(argument_columns, result_type, num_rows, true);
@@ -4037,6 +4041,9 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
             if (!resolved_identifier_node)
             {
+                if (do_not_execute)
+                    break;
+
                 std::string message_clarification;
                 if (allow_lambda_expression)
                     message_clarification = std::string(" or ") + toStringLowercase(IdentifierLookupContext::FUNCTION);
