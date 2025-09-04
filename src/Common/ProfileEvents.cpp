@@ -1136,6 +1136,9 @@ The server successfully detected this situation and will download merged part fr
     M(AsyncLoggingErrorFileLogDroppedMessages, "How many messages have been dropped from error file log due to the async log queue being full", ValueType::Number) \
     M(AsyncLoggingSyslogDroppedMessages, "How many messages have been dropped from the syslog due to the async log queue being full", ValueType::Number) \
     M(AsyncLoggingTextLogDroppedMessages, "How many messages have been dropped from text_log due to the async log queue being full", ValueType::Number) \
+    \
+    M(JemallocFailedAllocationSampleTracking, "Total number of times tracking of jemalloc allocation sample failed", ValueType::Number) \
+    M(JemallocFailedDeallocationSampleTracking, "Total number of times tracking of jemalloc deallocation sample failed", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

@@ -1,6 +1,7 @@
 #include <memory>
 #include <mutex>
 #include <Common/OSThreadNiceValue.h>
+#include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
 
 #include <Interpreters/Context.h>
@@ -61,6 +62,8 @@ namespace Setting
     extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
     extern const SettingsUInt64 query_profiler_real_time_period_ns;
     extern const SettingsBool enable_adaptive_memory_spill_scheduler;
+    extern const SettingsBool jemalloc_enable_profiler;
+    extern const SettingsBool jemalloc_collect_profile_samples_in_trace_log;
 }
 
 namespace ErrorCodes
@@ -338,6 +341,17 @@ void ThreadStatus::applyQuerySettings()
     untracked_memory_limit = settings[Setting::max_untracked_memory];
     if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(untracked_memory_limit))
         untracked_memory_limit = settings[Setting::memory_profiler_step];
+
+#if USE_JEMALLOC
+    if (settings[Setting::jemalloc_enable_profiler])
+    {
+        jemalloc_profiler_enabled = true;
+        Jemalloc::getThreadProfileActiveMib().setValue(true);
+    }
+
+    if (settings[Setting::jemalloc_collect_profile_samples_in_trace_log])
+        Jemalloc::setCollectLocalProfileSamplesInTraceLog(true);
+#endif
 }
 
 void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
@@ -395,6 +409,12 @@ void ThreadStatus::detachFromGroup()
     }
 
     thread_group.reset();
+
+#if USE_JEMALLOC
+    if (std::exchange(jemalloc_profiler_enabled, false))
+        Jemalloc::getThreadProfileActiveMib().setValue(Jemalloc::getThreadProfileInitMib().getValue());
+    Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
+#endif
 
     query_id.clear();
     query_context.reset();
