@@ -113,9 +113,7 @@ public:
     /// Done on table creation, when we want to tell the table
     /// that processing must be started from certain point,
     /// instead of from scratch.
-    virtual void prepareProcessedAtStartRequests(
-        Coordination::Requests & requests,
-        const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client) = 0;
+    virtual void prepareProcessedAtStartRequests(Coordination::Requests & requests) = 0;
 
     /// A struct, representing information stored in keeper for a single file.
     struct NodeMetadata

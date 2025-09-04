@@ -1414,17 +1414,17 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit_once")
     node.query(
         f"""
-        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * FROM {table_name} WHERE NOT sleepEachRow(0.3);
+        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * FROM {table_name} WHERE NOT sleepEachRow(0.5);
         """
     )
 
     found = False
-    for _ in range(10):
+    for _ in range(100):
         nodes = zk.get_children(f"{keeper_path}/persistent_processing")
         if len(nodes) > 0:
             found = True
             break
-        time.sleep(1)
+        time.sleep(0.1)
     assert found
     if is_ordered:
         locked_buckets = 0
@@ -1489,4 +1489,5 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
             found = True
             break
         time.sleep(1)
-    assert found
+    nodes = zk.get_children(f"{keeper_path}/persistent_processing")
+    assert found, f"Nodes: {nodes}"

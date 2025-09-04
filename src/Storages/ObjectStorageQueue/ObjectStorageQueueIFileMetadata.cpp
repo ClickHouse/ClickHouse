@@ -165,14 +165,16 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
         LOG_TEST(log, "Removing processing node in destructor for file: {}", path);
         try
         {
-            auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
-
             Coordination::Requests requests;
             requests.push_back(zkutil::makeCheckRequest(processing_node_id_path, processing_id_version.value()));
             requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 
             Coordination::Responses responses;
-            const auto code = zk_client->tryMulti(requests, responses);
+            Coordination::Error code;
+            ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+            {
+                code = ObjectStorageQueueMetadata::getZooKeeper()->tryMulti(requests, responses);
+            });
             if (code != Coordination::Error::ZOK
                 && !Coordination::isHardwareError(code)
                 && code != Coordination::Error::ZBADVERSION
@@ -347,8 +349,11 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     prepareResetProcessingRequests(requests);
 
     Coordination::Responses responses;
-    const auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
-    const auto code = zk_client->tryMulti(requests, responses);
+    Coordination::Error code;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        code = ObjectStorageQueueMetadata::getZooKeeper()->tryMulti(requests, responses);
+    });
     if (code == Coordination::Error::ZOK)
         return;
 
@@ -490,12 +495,16 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     /// the number of already done retries in trySetProcessing.
 
     auto retrieable_failed_node_path = failed_node_path + ".retriable";
-    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
 
     /// Extract the number of already done retries from node_hash.retriable node if it exists.
     Coordination::Stat retriable_failed_node_stat;
     std::string res;
-    bool has_failed_before = zk_client->tryGet(retrieable_failed_node_path, res, &retriable_failed_node_stat);
+    bool has_failed_before = false;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
+        has_failed_before = zk_client->tryGet(retrieable_failed_node_path, res, &retriable_failed_node_stat);
+    });
     if (has_failed_before)
         file_status->retries = node_metadata.retries = NodeMetadata::fromString(res).retries + 1;
     else

@@ -36,7 +36,8 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
 ObjectStorageQueueUnorderedFileMetadata::SetProcessingResponseIndexes
 ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordination::Requests & requests)
 {
-    const auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
+    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
+    bool create_if_not_exists_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
 
     processing_id = node_metadata.processing_id = getRandomASCIIString(10);
     const auto processor_info = getProcessorInfo(processing_id.value());
@@ -56,7 +57,7 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordinat
             node_metadata.toString(),
             use_persistent_processing_nodes ? zkutil::CreateMode::Persistent : zkutil::CreateMode::Ephemeral));
 
-    if (zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS))
+    if (create_if_not_exists_enabled)
     {
         requests.push_back(
             zkutil::makeCreateRequest(
@@ -65,13 +66,22 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordinat
                 zkutil::CreateMode::Persistent,
                 /* ignore_if_exists */ true));
     }
-    else if (!zk_client->exists(processing_node_id_path))
+    else
     {
-        requests.push_back(
-            zkutil::makeCreateRequest(
-                processing_node_id_path,
-                processor_info,
-                zkutil::CreateMode::Persistent));
+        bool processing_node_id_path_exists = false;
+        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        {
+            processing_node_id_path_exists = zk_client->exists(processing_node_id_path);
+        });
+
+        if (!processing_node_id_path_exists)
+        {
+            requests.push_back(
+                zkutil::makeCreateRequest(
+                    processing_node_id_path,
+                    processor_info,
+                    zkutil::CreateMode::Persistent));
+        }
     }
 
     result_indexes.set_processing_id_node_idx = requests.size();
@@ -82,16 +92,22 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordinat
 
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueUnorderedFileMetadata::setProcessingImpl()
 {
-    const auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
+    bool create_if_not_exists_enabled = ObjectStorageQueueMetadata::getZooKeeper()->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
+    auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+
     const size_t max_num_tries = 1000;
     Coordination::Error code;
+
     for (size_t i = 0; i < max_num_tries; ++i)
     {
         Coordination::Requests requests;
         auto result_indexes = prepareProcessingRequestsImpl(requests);
 
         Coordination::Responses responses;
-        code = zk_client->tryMulti(requests, responses);
+        zk_retries.retryLoop([&]
+        {
+            code = ObjectStorageQueueMetadata::getZooKeeper()->tryMulti(requests, responses);
+        });
         auto has_request_failed = [&](size_t request_index) { return responses[request_index]->error != Coordination::Error::ZOK; };
 
         if (code == Coordination::Error::ZOK)
@@ -112,7 +128,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         if (has_request_failed(result_indexes.create_processing_node_idx))
             return {false, FileStatus::State::Processing};
 
-        if (zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS))
+        if (create_if_not_exists_enabled)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", code);
 
         /// Most likely the node was removed so let's try again.
@@ -127,9 +143,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         max_num_tries, code);
 }
 
-void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedAtStartRequests(
-    Coordination::Requests & requests,
-    const std::shared_ptr<ZooKeeperWithFaultInjection> &)
+void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedAtStartRequests(Coordination::Requests & requests)
 {
     requests.push_back(
         zkutil::makeCreateRequest(

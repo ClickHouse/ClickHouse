@@ -28,9 +28,7 @@ public:
         const std::filesystem::path & zk_path_,
         LoggerPtr log_);
 
-    void prepareProcessedAtStartRequests(
-        Coordination::Requests & requests,
-        const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client) override;
+    void prepareProcessedAtStartRequests(Coordination::Requests & requests) override;
 
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
