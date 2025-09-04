@@ -256,6 +256,12 @@ public:
         return current_metadata->getColumnMapperForCurrentSchema();
     }
 
+    void drop(ContextPtr local_context) override
+    {
+        if (current_metadata)
+            current_metadata->drop(local_context);
+    }
+
     SinkToStoragePtr write(
         SharedHeader sample_block,
         const StorageID & table_id,

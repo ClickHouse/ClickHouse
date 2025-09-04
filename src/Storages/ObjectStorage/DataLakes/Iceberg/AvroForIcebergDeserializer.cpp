@@ -1,10 +1,17 @@
+#include <memory>
+#include <sstream>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <IO/WriteBufferFromString.h>
 
 #if USE_AVRO
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Common/assert_cast.h>
 #include <base/find_symbols.h>
+#include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
 
 namespace DB::ErrorCodes
 {
@@ -81,6 +88,54 @@ std::optional<std::string> AvroForIcebergDeserializer::tryGetAvroMetadataValue(s
         return std::nullopt;
 
     return std::string{it->second.begin(), it->second.end()};
+}
+
+namespace
+{
+
+String removeAllSlashes(const String & input)
+{
+    std::string result;
+    result.reserve(input.size());
+
+    for (size_t i = 0; i < input.size(); ++i)
+    {
+        if (i + 1 < input.size() && input[i] == '\\' && input[i + 1] == '"')
+        {
+            ++i;
+            continue;
+        }
+        result.push_back(input[i]);
+    }
+    return result;
+}
+
+}
+
+String AvroForIcebergDeserializer::getContent(size_t row_number) const
+{
+    WriteBufferFromOwnString buf;
+    FormatSettings settings;
+    settings.write_statistics = false;
+    ColumnsWithTypeAndName columns({ColumnWithTypeAndName(parsed_column, parsed_column_data_type, "")});
+    JSONEachRowRowOutputFormat output_format = JSONEachRowRowOutputFormat(buf, std::make_shared<const Block>(columns), settings);
+    output_format.writeRow({parsed_column}, row_number);
+    output_format.finalize();
+    auto result_json = buf.str();
+    /// result_json looks like '{"":<some_json>}\n'. We need to extract just <some_json>
+    return result_json.substr(4, result_json.size() - 6);
+}
+
+String AvroForIcebergDeserializer::getMetadataContent() const
+{
+    Poco::JSON::Object::Ptr metadata_object = new Poco::JSON::Object;
+    for (const auto & [key, value] : metadata)
+    {
+        metadata_object->set(key, String(value.begin(), value.end()));
+    }
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    metadata_object->stringify(oss);
+    return removeAllSlashes(oss.str());
 }
 
 }
