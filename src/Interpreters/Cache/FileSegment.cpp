@@ -8,6 +8,8 @@
 #include <base/EnumReflection.h>
 #include <base/getThreadId.h>
 #include <base/hex.h>
+#include <sys/stat.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -155,6 +157,24 @@ size_t FileSegment::getReservedSize() const
 {
     auto lk = lock();
     return reserved_size;
+}
+
+size_t FileSegment::getSize(FileSegment::SizeAlignment alignment) const
+{
+    size_t size = reserved_size.load();
+    switch (alignment)
+    {
+        case FileSegment::SizeAlignment::ALIGNED:
+            return getKeyMetadata()->alignFileSize(size);
+        case FileSegment::SizeAlignment::NOT_ALIGNED:
+            return size;
+        case FileSegment::SizeAlignment::DEFAULT_ALIGNMENT:
+            auto metadata = getKeyMetadata();
+            chassert(metadata);
+            return metadata->useRealDiskSize() ? metadata->alignFileSize(size) : size;
+    }
+    chassert(false);
+    return 0;
 }
 
 FileSegment::Priority::IteratorPtr FileSegment::getQueueIterator() const
@@ -731,6 +751,7 @@ size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard:
     return desired_size - downloaded_size;
 }
 
+
 void FileSegment::complete(bool allow_background_download)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
@@ -936,8 +957,8 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             return;
 
         const auto & entry = it->getEntry();
-        if (download_state != State::DOWNLOADING && entry->size != reserved_size)
-            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size.load(), reserved_size.load()));
+        if (download_state != State::DOWNLOADING && entry->getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED) != reserved_size)
+            throw_logical(fmt::format("Expected entry non-aligned size == reserved_size ({} == {})", entry->getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED), reserved_size.load()));
 
         chassert(entry->key == key());
         chassert(entry->offset == offset());
@@ -977,6 +998,16 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
             chassert(!remote_file_reader);
             chassert(!cache_writer);
+            { // check aligned size
+                struct stat file_stat;
+                stat(file_path.c_str(), &file_stat);
+                size_t sz = getSize(FileSegment::SizeAlignment::ALIGNED);
+                size_t real_size = static_cast<size_t>(file_stat.st_blocks * 512); // st_block -- Number of 512B blocks allocated
+                if (sz != real_size)
+                {
+                    throw_logical("Aligned file size != statvfs: " + std::to_string(sz) + " != " + std::to_string(real_size));
+                }
+            }
 
             auto file_size = fs::file_size(getPath());
             UNUSED(file_size);

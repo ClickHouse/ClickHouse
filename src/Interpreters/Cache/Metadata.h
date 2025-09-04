@@ -9,9 +9,10 @@
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Common/ThreadPool.h>
-
+#include <Common/filesystemHelpers.h>
 #include <memory>
 #include <shared_mutex>
+#include <optional>
 
 namespace DB
 {
@@ -37,7 +38,8 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     bool releasable() const { return isSharedPtrUnique(file_segment); }
 
-    size_t size() const;
+    size_t size(FileSegment::SizeAlignment alignment = FileSegment::SizeAlignment::DEFAULT_ALIGNMENT) const;
+
 
     bool isEvictingOrRemoved(const CachePriorityGuard::Lock & lock) const
     {
@@ -79,7 +81,7 @@ struct FileSegmentMetadata : private boost::noncopyable
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
 
         const auto & entry = iterator->getEntry();
-        chassert(size() == entry->size);
+        chassert(size() == entry->getSize());
         entry->resetEvictingFlag();
     }
 
@@ -142,6 +144,9 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     auto emplaceUnlocked(Args &&... args) { return emplace(std::forward<Args>(args)...); }
     size_t sizeUnlocked() const { return size(); }
 
+    size_t alignFileSize(size_t file_size) const;
+    bool useRealDiskSize() const;
+
 private:
     const CacheMetadata * cache_metadata;
 
@@ -172,7 +177,8 @@ public:
         const std::string & path_,
         size_t background_download_queue_size_limit_,
         size_t background_download_threads_,
-        bool write_cache_per_user_directory_);
+        bool write_cache_per_user_directory_,
+        bool use_real_disk_size_);
 
     void startup();
 
@@ -222,6 +228,12 @@ public:
 
     bool isBackgroundDownloadEnabled();
 
+    size_t alignFileSize(size_t file_size) const;
+
+    bool useRealDiskSize() const;
+
+    void fillStatVFS();
+
 private:
     static constexpr size_t buckets_num = 1024;
 
@@ -229,6 +241,8 @@ private:
     const CleanupQueuePtr cleanup_queue;
     const DownloadQueuePtr download_queue;
     const bool write_cache_per_user_directory;
+    std::optional<struct statvfs> path_stat = std::nullopt;
+    bool use_real_disk_size;
 
     LoggerPtr log;
     mutable std::shared_mutex key_prefix_directory_mutex;
@@ -351,6 +365,8 @@ struct LockedKey : private boost::noncopyable
     std::vector<FileSegment::Info> sync();
 
     std::string toString() const;
+
+    bool useRealDiskSize() const;
 
 private:
     KeyMetadata::iterator removeFileSegmentImpl(
