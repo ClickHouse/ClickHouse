@@ -3209,7 +3209,7 @@ def test_concurrent_queries(started_cluster, partitioned):
     def select(_):
         instance.query(f"SELECT * FROM {TABLE_NAME}")
 
-    num_threads = 10
+    num_threads = 20
     num_rows = 50
     errors = ["" for _ in range(num_threads)]
     success = [0 for _ in range(num_threads)]
@@ -3223,7 +3223,7 @@ def test_concurrent_queries(started_cluster, partitioned):
         except Exception as e:
             errors[i] = str(e)
 
-    for _ in range(10):
+    for _ in range(num_threads):
         insert(_)
 
     select_pool = Pool(num_threads)
