@@ -18,9 +18,9 @@ Returns the minute component (0-59) of a `Date` or `DateTime` value.
     FunctionDocumentation::Syntax syntax = "toMinute(datetime)";
     FunctionDocumentation::Arguments arguments =
     {
-        {"datetime", "Date or date with time to get the minute from.", {"Date", "Date32", "DateTime", "DateTime64"}}
+        {"datetime", "Date with time to get the minute from.", {"DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the minute of the hour (0 - 59) of the given `Date` or `DateTime` value", {"UInt8"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the minute of the hour (0 - 59) of `datetime`.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", R"(
 SELECT toMinute(toDateTime('2023-04-21 10:20:30'))

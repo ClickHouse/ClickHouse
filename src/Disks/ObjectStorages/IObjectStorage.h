@@ -134,13 +134,7 @@ struct RelativePathWithMetadata
     virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual std::string getPathOrPathToArchiveIfArchive() const;
-    virtual bool hasPositionDeleteTransformer() const { return false; }
-    virtual std::shared_ptr<ISimpleTransform>
-    getPositionDeleteTransformer(ObjectStoragePtr, const SharedHeader &, const std::optional<FormatSettings> &, ContextPtr)
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Position delete transformer is not implemented for object with path: {}", relative_path);
-    }
+    virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 };
 
 struct ObjectKeyWithMetadata

@@ -533,7 +533,8 @@ static void validateUpdateColumns(
             }
         }
 
-        if (!storage_columns.tryGetColumn(GetColumnsOptions::Ordinary, column_name))
+        auto ordinary_storage_column = storage_columns.tryGetColumn(GetColumnsOptions::Ordinary, column_name);
+        if (!ordinary_storage_column)
         {
             /// Allow to override value of lightweight delete filter virtual column
             if (column_name == RowExistsColumn::name)
@@ -548,6 +549,16 @@ static void validateUpdateColumns(
             else
             {
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", backQuote(column_name));
+            }
+        }
+        else
+        {
+            /// Check if we have a subcolumn of this column as a key column.
+            for (const auto & key_column : key_columns)
+            {
+                auto [key_column_name, key_subcolumn_name] = Nested::splitName(key_column);
+                if (key_column_name == column_name && ordinary_storage_column->type->hasSubcolumn(key_subcolumn_name))
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Cannot UPDATE column {} because its subcolumn {} is a key column", backQuote(column_name), backQuote(key_column));
             }
         }
     }
