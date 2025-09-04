@@ -414,13 +414,13 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
         if (check_bucket_version_idx.has_value() && has_request_failed(*check_bucket_version_idx))
         {
-            LOG_DEBUG(log, "Version of bucket lock changed: {}. Will retry for file `{}`", code, path);
+            LOG_TEST(log, "Version of bucket lock changed: {}. Will retry for file `{}`", code, path);
             continue;
         }
 
         if (has_request_failed(check_max_processed_path))
         {
-            LOG_DEBUG(log, "Version of max processed file changed: {}. Will retry for file `{}`", code, path);
+            LOG_TEST(log, "Version of max processed file changed: {}. Will retry for file `{}`", code, path);
             continue;
         }
 

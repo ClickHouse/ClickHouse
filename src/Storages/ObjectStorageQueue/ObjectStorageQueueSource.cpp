@@ -598,8 +598,6 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
             {
                 /// Reset current processor for the keys
                 /// to avoid the above error "Expected current processor {} to be equal to {} for bucket {}".
-                /// TODO: Support persistent bucket holder keeper node,
-                /// like since recently we support persistent processing nodes.
                 if (bucket_info.processor.has_value() && bucket_info.processor.value() == current_processor)
                 {
                     LOG_DEBUG(log, "Resetting processor ({}) for bucket {}", current_processor, bucket);
