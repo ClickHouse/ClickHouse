@@ -11,6 +11,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Core/NamesAndTypes.h>
+#include <IO/ReadHelpers.h>
 #include <ranges>
 
 namespace DB

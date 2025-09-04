@@ -744,13 +744,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     return QueryProcessingStage::Complete;
 }
 
-StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
-{
-    return getStorageSnapshotForQuery(metadata_snapshot, nullptr, query_context);
-}
-
-StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
-    const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr /*query_context*/) const
+StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
 {
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 }
