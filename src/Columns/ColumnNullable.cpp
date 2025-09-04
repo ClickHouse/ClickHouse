@@ -198,6 +198,14 @@ char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory) const
     return getNestedColumn().serializeValueIntoMemory(n, memory);
 }
 
+std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n) const
+{
+    auto nested_size = getNestedColumn().getSerializedValueSize(n);
+    if (!nested_size)
+        return std::nullopt;
+    return 1 + *nested_size; /// +1 for null mask byte.
+}
+
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
 {
     UInt8 val = unalignedLoad<UInt8>(pos);
