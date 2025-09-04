@@ -26,35 +26,6 @@ def cluster():
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
             ],
-            with_zookeeper=True,
-            with_minio=True,
-            stay_alive=True,
-        )
-        cluster.add_instance(
-            "node2",
-            main_configs=[
-                "config.d/storage_conf.xml",
-            ],
-            user_configs=[
-                "users.d/cache_on_write_operations.xml",
-                "users.d/small_buffer_size.xml",
-            ],
-            with_zookeeper=True,
-            with_minio=True,
-            stay_alive=True,
-        )
-        cluster.add_instance(
-            "node3",
-            main_configs=[
-                "config.d/storage_conf.xml",
-            ],
-            user_configs=[
-                "users.d/cache_on_write_operations.xml",
-                "users.d/small_buffer_size.xml",
-                "users.d/disable_background_download_for_metadata_files.xml",
-            ],
-            with_zookeeper=True,
-            with_minio=True,
             stay_alive=True,
         )
         cluster.add_instance(
@@ -79,16 +50,7 @@ def cluster():
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
             ],
-            with_zookeeper=True,
             stay_alive=True,
-        )
-        cluster.add_instance(
-            "node_caches_with_s3",
-            main_configs=[
-                "config.d/storage_conf_3.xml",
-            ],
-            with_zookeeper=True,
-            with_minio=True,
         )
 
         logging.info("Starting cluster...")
@@ -116,8 +78,6 @@ def non_shared_cluster():
                 "config.d/remove_filesystem_caches_path.xml",
             ],
             stay_alive=True,
-            with_zookeeper=True,
-            with_minio=True,
         )
 
         logging.info("Starting test-exclusive cluster...")
@@ -153,7 +113,6 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     node.query(
         """
         DROP TABLE IF EXISTS test SYNC;
-        SYSTEM DROP FILESYSTEM CACHE;
 
         CREATE TABLE test (key UInt32, value String)
         Engine=MergeTree()
@@ -180,19 +139,19 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
         SELECT * FROM test FORMAT Null;
         """
     )
-    assert int(node.query("SELECT count() FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) > 0
-    assert int(node.query("SELECT max(size) FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) == 1024
+    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
+    assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
     count = int(node.query("SELECT count() FROM test"))
 
     cache_count = int(
-        node.query("SELECT count() FROM system.filesystem_cache WHERE size > 0 AND cache_name = 'parallel_loading_test'")
+        node.query("SELECT count() FROM system.filesystem_cache WHERE size > 0")
     )
     cache_state = node.query(
-        "SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE size > 0 AND cache_name = 'parallel_loading_test' ORDER BY key, file_segment_range_begin, size"
+        "SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE size > 0 ORDER BY key, file_segment_range_begin, size"
     )
     keys = (
         node.query(
-            "SELECT distinct(key) FROM system.filesystem_cache WHERE size > 0 AND cache_name = 'parallel_loading_test' ORDER BY key, file_segment_range_begin, size"
+            "SELECT distinct(key) FROM system.filesystem_cache WHERE size > 0 ORDER BY key, file_segment_range_begin, size"
         )
         .strip()
         .splitlines()
@@ -202,15 +161,15 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     wait_for_cache_initialized(node, "parallel_loading_test")
 
     # < because of additional files loaded into cache on server startup.
-    assert cache_count <= int(node.query("SELECT count() FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'"))
+    assert cache_count <= int(node.query("SELECT count() FROM system.filesystem_cache"))
     keys_set = ",".join(["'" + x + "'" for x in keys])
     assert cache_state == node.query(
-        f"SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE key in ({keys_set}) AND cache_name = 'parallel_loading_test' ORDER BY key, file_segment_range_begin, size"
+        f"SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE key in ({keys_set}) ORDER BY key, file_segment_range_begin, size"
     )
 
     assert node.contains_in_log("Loading filesystem cache with 30 threads")
-    assert int(node.query("SELECT count() FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) > 0
-    assert int(node.query("SELECT max(size) FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) == 1024
+    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
+    assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
     assert (
         int(
             node.query(
@@ -456,7 +415,6 @@ def test_custom_cached_disk(non_shared_cluster):
     )
 
 
-@pytest.mark.skip(reason="In private we always use cache for merges")
 def test_force_filesystem_cache_on_merges(cluster):
     def test(node, forced_read_through_cache_on_merge):
         def to_int(value):
@@ -665,7 +623,7 @@ INSERT INTO test SELECT randomString(200);
     """
     )
 
-    query_id = f"test_keep_up_size_ratio_1_{uuid.uuid4()}"
+    query_id = "test_keep_up_size_ratio_1"
     node.query(
         "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
         query_id=query_id,
@@ -693,128 +651,6 @@ INSERT INTO test SELECT randomString(200);
             break
         time.sleep(1)
     assert elements <= expected
-
-
-def test_readonly_cache(cluster):
-    try:
-        node = cluster.instances["node_caches_with_s3"]
-
-        node.query("SYSTEM DROP FILESYSTEM CACHE;")
-        node.query("DROP TABLE IF EXISTS cache_readonly SYNC;")
-        node.query(
-            """
-            CREATE TABLE cache_readonly (key UInt32, value String)
-            Engine=SharedMergeTree('/test/table', '1') ORDER BY value
-            SETTINGS disk = 's3_encrypted', min_bytes_for_wide_part=1, min_rows_for_wide_part=1;
-            """
-        )
-
-        node.query(
-            """
-            INSERT INTO cache_readonly SELECT * FROM generateRandom('a Int32, b String')
-            LIMIT 1000 settings enable_filesystem_cache_on_write_operations=1;
-            """
-        )
-
-        node.query("select sum(length(value)) from cache_readonly;")
-
-        node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "chattr +i /var/lib/clickhouse/tmp_dsk/cache_readonly",
-            ],
-            privileged=True,
-            user="root",
-        )
-
-        node.query("check table cache_readonly;")
-
-        assert "" == node.query(
-            "select * from system.replicas where lost_part_count > 0 format Vertical"
-        )
-    finally:
-        try:
-            node.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    "chattr -i /var/lib/clickhouse/tmp_dsk/cache_readonly",
-                ],
-                privileged=True,
-                user="root",
-            )
-        except:
-            pass
-
-
-def test_no_background_download_for_metadata_files(cluster):
-    node1 = cluster.instances["node"]
-    node_with_background_download = cluster.instances["node2"]
-    node_without_background_download = cluster.instances["node3"]
-
-    table_name = f"meta_{uuid.uuid4()}"
-    min_bytes_for_full_part_storage = 10000000000
-    node1.query(
-        f"""
-        DROP TABLE IF EXISTS test SYNC;
-
-        CREATE TABLE test (key UInt32, value String)
-        Engine=SharedMergeTree('/clickhouse/tables/{table_name}', 'replica1')
-        ORDER BY value
-        SETTINGS storage_policy = 's3', min_bytes_for_full_part_storage = {min_bytes_for_full_part_storage}
-        """
-    )
-    i = 2
-    for node in [node1, node_without_background_download, node_with_background_download]:
-        node.query("system stop merges")
-        node.query("system drop filesystem cache")
-
-    for node in [node_with_background_download, node_without_background_download]:
-        node.restart_clickhouse()
-        if node.name == "node3":
-            assert "" == node.query(
-                "select value from system.events where name = 'FilesystemCacheBackgroundDownloadQueuePush'"
-            )
-            node.query(
-                f"""
-                DROP TABLE IF EXISTS test SYNC;
-
-                CREATE TABLE test (key UInt32, value String)
-                Engine=SharedMergeTree('/clickhouse/tables/{table_name}', 'replica{i}')
-                ORDER BY value
-                SETTINGS storage_policy = 's3', min_bytes_for_full_part_storage = 10000000000, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas = 1
-                """
-            )
-            assert "" == node.query(
-                "select value from system.events where name = 'FilesystemCacheBackgroundDownloadQueuePush'"
-            )
-        else:
-            node.query(
-                f"""
-                DROP TABLE IF EXISTS test SYNC;
-
-                CREATE TABLE test (key UInt32, value String)
-                Engine=SharedMergeTree('/clickhouse/tables/{table_name}', 'replica{i}')
-                ORDER BY value
-                SETTINGS storage_policy = 's3', min_bytes_for_full_part_storage = 10000000000, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas = 0
-                """
-            )
-        i += 1
-
-    node1.query(
-        "insert into test select number, randomString(1000) from numbers(10000)"
-    )
-    time.sleep(10)
-
-    assert 0 < int(
-        node_with_background_download.query(
-            "select value from system.events where name = 'FilesystemCacheBackgroundDownloadQueuePush'"
-        )
-    )
-    assert "" == node_without_background_download.query(
-        "select value from system.events where name = 'FilesystemCacheBackgroundDownloadQueuePush'"
-    )
 
 
 cache_dynamic_resize_config = """
