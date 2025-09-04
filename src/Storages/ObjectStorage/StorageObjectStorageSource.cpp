@@ -528,6 +528,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
 
         Block initial_header = read_from_format_info.format_header;
+        bool schema_changed = false;
 
         if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info))
         {
@@ -537,7 +538,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 sample_header.insert({type->createColumn(), type, name});
             }
             initial_header = sample_header;
+            schema_changed = true;
         }
+        auto filter_info = [&]()
+        {
+            if (!schema_changed)
+                return format_filter_info;
+            auto mapper = configuration->getColumnMapperForObject(object_info);
+            if (!mapper)
+                return format_filter_info;
+            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper);
+        }();
 
         auto input_format = FormatFactory::instance().getInput(
             configuration->format,
@@ -547,7 +558,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             max_block_size,
             format_settings,
             parser_shared_resources,
-            format_filter_info,
+            filter_info,
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
