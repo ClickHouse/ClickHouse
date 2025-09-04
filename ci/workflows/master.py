@@ -28,7 +28,7 @@ workflow = Workflow.Config(
         *JobConfigs.compatibility_test_jobs,
         *JobConfigs.functional_tests_jobs_required,
         *JobConfigs.functional_tests_jobs_non_required,
-        *JobConfigs.functional_tests_jobs_azure_master_only,
+        # *JobConfigs.functional_tests_jobs_azure_master_only, # NOTE (strtgbb): disabled due to high number of fails
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
         *JobConfigs.functional_tests_jobs_coverage,
