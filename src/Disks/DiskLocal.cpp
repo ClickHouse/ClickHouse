@@ -320,9 +320,9 @@ bool DiskLocal::renameExchangeIfSupported(const std::string & old_path, const st
     return DB::renameExchangeIfSupported(fs::path(disk_path) / old_path, fs::path(disk_path) / new_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
+std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint) const
 {
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, file_size);
+    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -573,7 +573,7 @@ try
     ReadSettings read_settings;
     /// Proper disk read checking requires direct io
     read_settings.direct_io_threshold = 1;
-    auto buf = readFile(disk_checker_path, read_settings, {}, {});
+    auto buf = readFile(disk_checker_path, read_settings, {});
     UInt32 magic_number;
     readIntBinary(magic_number, *buf);
     if (buf->eof())

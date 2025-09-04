@@ -64,9 +64,9 @@ protected:
         return temp_dir->path() + "/";
     }
 
-    String getFileContents(const String & file_name, std::optional<size_t> file_size = {})
+    String getFileContents(const String & file_name)
     {
-        auto buf = encrypted_disk->readFile(file_name, /* settings= */ {}, /* read_hint= */ {}, file_size);
+        auto buf = encrypted_disk->readFile(file_name, /* settings= */ {}, /* read_hint= */ {});
         String str;
         readStringUntilEOF(str, *buf);
         return str;
@@ -128,10 +128,6 @@ TEST_F(DiskEncryptedTest, WriteAndRead)
 
     /// Read the file.
     EXPECT_EQ(getFileContents("a.txt"), "Some text");
-    checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 9);
-
-    /// Read the file with specified file size.
-    EXPECT_EQ(getFileContents("a.txt", 9), "Some text");
     checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 9);
 
     /// Remove the file.
@@ -342,7 +338,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String 
 
     {
         /// Read the whole file in two portions.
-        auto buf = disk->readFile(filename, read_settings, {}, {});
+        auto buf = disk->readFile(filename, read_settings, {});
 
         String str;
         readString(str, *buf, 5);
@@ -354,7 +350,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String 
 
     {
         /// Read until specified position (setReadUntilPosition).
-        auto buf = disk->readFile(filename, read_settings, {}, {});
+        auto buf = disk->readFile(filename, read_settings, {});
 
         buf->setReadUntilPosition(10);
 
@@ -365,7 +361,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String 
 
     {
         /// Read until specified position (setReadUntilPosition), then move that position forward.
-        auto buf = disk->readFile(filename, read_settings, {}, {});
+        auto buf = disk->readFile(filename, read_settings, {});
         buf->setReadUntilPosition(10);
 
         String str;
@@ -390,7 +386,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String 
 
     {
         /// Read until specified position (setReadUntilPosition), then move that position backward.
-        auto buf = disk->readFile(filename, read_settings, {}, {});
+        auto buf = disk->readFile(filename, read_settings, {});
         buf->setReadUntilPosition(10);
 
         String str;
@@ -404,7 +400,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String 
 
     {
         /// Read until specified position (setReadUntilPosition), then move that position backward and seek.
-        auto buf = disk->readFile("a.txt", read_settings, {}, {});
+        auto buf = disk->readFile("a.txt", read_settings, {});
         buf->setReadUntilPosition(10);
 
         String str;
@@ -419,7 +415,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String 
 
     {
         /// Seek and then read until a specified position.
-        auto buf = disk->readFile(filename, read_settings, {}, {});
+        auto buf = disk->readFile(filename, read_settings, {});
 
         String str;
         buf->seek(0, SEEK_SET);
