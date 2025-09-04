@@ -800,7 +800,7 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
     return nullptr;
 }
 
-namespace
+namespace internal
 {
     class ReadBufferIterator : public IReadBufferIterator, WithContext
     {
@@ -1049,7 +1049,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     else
         urls_to_check = {uri};
 
-    ReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
+    internal::ReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
     return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
