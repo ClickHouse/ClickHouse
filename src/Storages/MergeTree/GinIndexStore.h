@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 
 #include <roaring.hh>
 #include <mutex>
@@ -274,7 +275,7 @@ public:
     UInt32 getCurrentSegmentId() const { return current_segment.segment_id; }
 
     /// Do last segment writing
-    void finalize();
+    void finalize(MergeTreeDataPartChecksums & checksums);
     void cancel() noexcept;
 
     /// Method for writing segment data to Gin index files
@@ -299,7 +300,7 @@ private:
     void initSegmentId();
 
     /// Stores segment ID to disk
-    void writeSegmentId();
+    void writeSegmentId(MergeTreeDataPartChecksums & checksums);
 
     const String name;
     const DataPartStoragePtr storage;

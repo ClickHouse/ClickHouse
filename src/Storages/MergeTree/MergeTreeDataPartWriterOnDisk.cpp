@@ -502,13 +502,15 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         if (typeid_cast<const MergeTreeIndexGin *>(&*skip_indices[i]) != nullptr)
         {
             String file_stem = skip_indices[i]->getFileName();
-            checksums.files[file_stem + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
             checksums.files[file_stem + GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
             checksums.files[file_stem + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
             checksums.files[file_stem + GinIndexStore::GIN_DICTIONARY_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
             checksums.files[file_stem + GinIndexStore::GIN_POSTINGS_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
         }
     }
+
+    for (auto & store: gin_index_stores)
+        store.second->finalize(checksums);
 
     for (auto & stream : skip_indices_streams)
     {
@@ -549,9 +551,6 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
         if (sync)
             stream->sync();
     }
-
-    for (auto & store: gin_index_stores)
-        store.second->finalize();
 
     for (size_t i = 0; i < skip_indices.size(); ++i)
         LOG_DEBUG(log, "Spent {} ms calculating index {} for the part {}", execution_stats.skip_indices_build_us[i] / 1000, skip_indices[i]->index.name, data_part_name);

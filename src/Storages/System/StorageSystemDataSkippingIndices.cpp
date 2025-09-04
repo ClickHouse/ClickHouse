@@ -173,7 +173,7 @@ protected:
                                                                                                         // but don't think it matters here
                             {
                                 std::vector<String> gin_files;
-                                gin_files.push_back(INDEX_FILE_PREFIX + index.name + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE);
+                                //gin_files.push_back(INDEX_FILE_PREFIX + index.name + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE);
                                 gin_files.push_back(INDEX_FILE_PREFIX + index.name + GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE);
                                 gin_files.push_back(INDEX_FILE_PREFIX + index.name + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE);
                                 gin_files.push_back(INDEX_FILE_PREFIX + index.name + GinIndexStore::GIN_DICTIONARY_FILE_TYPE);

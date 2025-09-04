@@ -32,6 +32,8 @@
 namespace DB
 {
 
+using Checksum = MergeTreeDataPartChecksum;
+
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
@@ -472,12 +474,12 @@ bool GinIndexStore::needToWriteCurrentSegment() const
     return (segment_digestion_threshold_bytes != UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES) && (current_size_bytes > segment_digestion_threshold_bytes);
 }
 
-void GinIndexStore::finalize()
+void GinIndexStore::finalize(MergeTreeDataPartChecksums & checksums)
 {
     if (!token_postings_lists.empty())
     {
         writeSegment();
-        writeSegmentId();
+        writeSegmentId(checksums);
     }
 
     if (segment_descriptor_file_stream)
@@ -552,7 +554,9 @@ void GinIndexStore::initSegmentId()
         readVarUInt(segment_id, *istr);
     }
     else
+    {
         segment_id = 1;
+    }
 
     next_available_segment_id = segment_id;
 }
@@ -570,17 +574,26 @@ void GinIndexStore::initFileStreams()
     postings_file_stream = data_part_storage_builder->writeFile(postings_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
 }
 
-void GinIndexStore::writeSegmentId()
+void GinIndexStore::writeSegmentId(MergeTreeDataPartChecksums & checksums)
 {
     String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
+
+    /// TODO hashes are bogus
+    checksums.files[segment_id_file_name].is_compressed = true;
+    checksums.files[segment_id_file_name].uncompressed_hash = Checksum::uint128(0, 0);
+    checksums.files[segment_id_file_name].file_hash = Checksum::uint128(0, 0);
+
     std::unique_ptr<DB::WriteBufferFromFileBase> ostr = this->data_part_storage_builder->writeFile(segment_id_file_name, 8, {});
 
     /// Write version
     writeChar(static_cast<char>(CURRENT_GIN_FILE_FORMAT_VERSION), *ostr);
+    checksums.files[segment_id_file_name].uncompressed_size = sizeof(CURRENT_GIN_FILE_FORMAT_VERSION);
 
     writeVarUInt(next_available_segment_id, *ostr);
     ostr->sync();
     ostr->finalize();
+
+    checksums.files[segment_id_file_name].file_size = ostr->count();
 }
 
 namespace
@@ -692,6 +705,7 @@ void GinIndexStore::writeSegment()
         current_segment.dict_start_offset += uncompressed_size;
     }
 
+    /// Note: this writes out the file size delta, not the actual file sizes
     auto statistics = getStatistics() - before_write_segment_stats;
     LOG_TRACE(
         logger,

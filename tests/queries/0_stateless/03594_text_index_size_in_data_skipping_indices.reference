@@ -1,0 +1,1 @@
+default	tab	idx	text	text(tokenizer = \'ngram\', ngram_size = 3)	str	1	39	16	50
