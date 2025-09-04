@@ -337,7 +337,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
 
             if (!container_name.empty())
             {
-                blob_path = container_name + blob_path;
+                blob_path.path = container_name + blob_path.path;
             }
             connection_params.endpoint.container_name = container_name_abfss;
         }
