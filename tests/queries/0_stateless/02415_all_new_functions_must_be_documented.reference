@@ -399,6 +399,7 @@ toUnixTimestamp64Second
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
+validateNestedArraySizes
 windowID
 wkt
 zookeeperSessionUptime
