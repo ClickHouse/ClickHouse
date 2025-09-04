@@ -1128,6 +1128,16 @@ The server successfully detected this situation and will download merged part fr
     M(RefreshableViewSyncReplicaRetry, "How many times a SELECT from refreshable materialized view failed and retried an implicit SYNC REPLICA", ValueType::Number) \
     M(RefreshableViewLockTableRetry, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \
     \
+    M(JoinPrepare, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \
+    M(JoinMainLoop, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \
+    M(JoinCutBlock, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \
+    M(JoinBuildOutput, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \
+    M(JoinApplyingFilter, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \
+    M(JoinFilterBySelector, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \
+    M(JoinReplicateBlock, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \
+    M(HJAddBlock, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \
+    M(CHJAddBlock, "How many times a SELECT from refreshable materialized view had to switch to a new table because the old table was dropped", ValueType::Number) \
+    \
     M(AsyncLoggingConsoleTotalMessages, "How many messages (accepted or dropped) have been sent to the async queue for the console log", ValueType::Number) \
     M(AsyncLoggingFileLogTotalMessages, "How many messages (accepted or dropped) have been sent to the async queue for the file log", ValueType::Number) \
     M(AsyncLoggingErrorFileLogTotalMessages, "How many messages (accepted or dropped) have been sent to the async queue for the error file log", ValueType::Number) \
