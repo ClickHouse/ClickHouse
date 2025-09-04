@@ -32,6 +32,7 @@ public:
         size_t buckets_num_,
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
+        bool use_persistent_processing_nodes_,
         bool is_path_with_hive_partitioning,
         LoggerPtr log_);
 

@@ -16,6 +16,7 @@ namespace
     {
         return Context::getGlobalContextInstance()->getZooKeeper();
     }
+
 }
 
 ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata(
@@ -24,15 +25,17 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
     FileStatusPtr file_status_,
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
+    bool use_persistent_processing_nodes_,
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
         path_,
-        /* processing_node_path */zk_path / "processing" / getNodeName(path_),
+        /* processing_node_path */zk_path / getProcessingNodesPath(use_persistent_processing_nodes_) / getNodeName(path_),
         /* processed_node_path */zk_path / "processed" / getNodeName(path_),
         /* failed_node_path */zk_path / "failed" / getNodeName(path_),
         file_status_,
         max_loading_retries_,
         metadata_ref_count_,
+        use_persistent_processing_nodes_,
         log_)
 {
 }
@@ -54,7 +57,11 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordinat
     zkutil::addCheckNotExistsRequest(requests, *zk_client, failed_node_path);
 
     result_indexes.create_processing_node_idx = requests.size();
-    requests.push_back(zkutil::makeCreateRequest(processing_node_path, node_metadata.toString(), zkutil::CreateMode::Ephemeral));
+    requests.push_back(
+        zkutil::makeCreateRequest(
+            processing_node_path,
+            node_metadata.toString(),
+            use_persistent_processing_nodes ? zkutil::CreateMode::Persistent : zkutil::CreateMode::Ephemeral));
 
     if (zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS))
     {
