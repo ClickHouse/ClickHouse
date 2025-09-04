@@ -304,19 +304,20 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
 
         if (pos_container != std::string::npos)
         {
-            String container_blob_path = connection_url.substr(pos_container+5,connection_url.size());
+            String container_blob_path = connection_url.substr(pos_container+5);
             connection_url = connection_url.substr(0,pos_container+4);
-            container_name = connection_url.substr(pos_container+4, connection_url.size());
+            container_name = connection_url.substr(pos_container+4);
             auto pos_blob_path = container_blob_path.find('/');
 
             if (pos_blob_path != std::string::npos)
             {
                 container_name = container_blob_path.substr(0, pos_blob_path);
-                blob_path = container_blob_path.substr(pos_blob_path,container_blob_path.size());
+                blob_path = container_blob_path.substr(pos_blob_path);
             }
         }
 
         /// Added for Unity Catalog on top of AzureBlobStorage
+        // Sample abfss url : abfss://mycontainer@mydatalakestorage.dfs.core.windows.net/subdirectory/file.txt
         if (connection_url.starts_with("abfss"))
         {
             auto pos_slash = connection_url.find("://");
@@ -324,7 +325,8 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             auto pos_dot = connection_url.find('.');
             auto pos_net = connection_url.find(".net");
 
-            if (pos_slash == std::string::npos || pos_at == std::string::npos || pos_dot == std::string::npos || pos_net == std::string::npos)
+            if (pos_slash == std::string::npos || pos_at == std::string::npos || pos_dot == std::string::npos || pos_net == std::string::npos
+            || pos_at-pos_slash-3 <= 0 ||  pos_dot-pos_at-1 <= 0 )
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect url format for a abfss url {}", connection_url);
             }
