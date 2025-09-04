@@ -128,7 +128,7 @@ static void checkTypesAndNestedTypesEqual(DataTypePtr type, DataTypePtr expected
     }
 }
 
-static void convertTypeForCompatibility( NameAndTypePair & column, DataTypePtr expected_type)
+static void convertTypeForCompatibility(NameAndTypePair & column, DataTypePtr expected_type)
 {
     /// Comvert for compatibility, because it used to work.
     if (column.type->isNullable() && !expected_type->isNullable())
