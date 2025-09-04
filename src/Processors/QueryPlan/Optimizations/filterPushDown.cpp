@@ -473,12 +473,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     Names left_stream_available_columns_to_push_down = get_available_columns_for_filter(true /*push_to_left_stream*/, left_stream_filter_push_down_input_columns_available);
     Names right_stream_available_columns_to_push_down = get_available_columns_for_filter(false /*push_to_left_stream*/, right_stream_filter_push_down_input_columns_available);
 
-    if (join && join->isDisjunctionsOptimizationApplied())
-    {
-        LOG_DEBUG(getLogger("QueryPlanOptimizations"), "Disjunctions optimization already applied, RETURN 0");
-        return 0;
-    }
-
     auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(filter->getFilterColumnName(),
         filter->removesFilterColumn(),
         left_stream_available_columns_to_push_down,

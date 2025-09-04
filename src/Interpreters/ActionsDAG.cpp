@@ -2401,11 +2401,11 @@ inline bool isConstNode(const ActionsDAG::Node * n)
     return n->type == ActionsDAG::ActionType::COLUMN && n->column && isColumnConst(*n->column);
 }
 
-inline bool isOrFn(const ActionsDAG::Node * n)
+inline bool isSpecFn(const ActionsDAG::Node * n, String fn_name)
 {
     return n->type == ActionsDAG::ActionType::FUNCTION
         && n->function_base
-        && n->function_base->getName() == "or";
+        && n->function_base->getName() == fn_name;
 }
 
 bool predicateContainsOr(const ActionsDAG::Node * root)
@@ -2418,7 +2418,7 @@ bool predicateContainsOr(const ActionsDAG::Node * root)
     {
         const auto * n = st.top(); st.pop();
         if (!seen.insert(n).second) continue;
-        if (isOrFn(n)) return true;
+        if (isSpecFn(n, "or")) return true;
         for (const auto * ch : n->children) st.push(ch);
     }
     return false;
@@ -2445,7 +2445,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
         {
             const auto * node = stack.top();
             stack.pop();
-            bool is_conjunction = node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and";
+            bool is_conjunction = isSpecFn(node, "and");
             if (is_conjunction)
             {
                 for (const auto & child : node->children)
@@ -2543,7 +2543,12 @@ DisjunctionNodes getDisjunctionNodes(
         return disjunction;
 
     // 1) Mark every node "allowed" bottom-up using the SAME rules as conjunctions
-    struct F { const ActionsDAG::Node * node; size_t next=0; size_t ok=0; };
+    struct F
+    {
+        const ActionsDAG::Node * node;
+        size_t next = 0;
+        size_t ok = 0;
+    };
     std::stack<F> dfs;
     std::unordered_set<const ActionsDAG::Node *> vis;
     dfs.push({predicate}); vis.insert(predicate);
@@ -2919,39 +2924,24 @@ ActionsDAG::createActionsForDisjunction(NodeRawConstPtrs disjunction, const Colu
     return ActionsDAG::ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter};
 }
 
-static inline bool isAnd(const ActionsDAG::Node * n)
-{
-    return n->type == ActionsDAG::ActionType::FUNCTION
-        && n->function_base
-        && n->function_base->getName() == "and";
-}
-
-static inline bool isOr(const ActionsDAG::Node * n)
-{
-    return n->type == ActionsDAG::ActionType::FUNCTION
-        && n->function_base
-        && n->function_base->getName() == "or";
-}
-
 static void flattenAnd(const ActionsDAG::Node * n, std::vector<const ActionsDAG::Node *> & out)
 {
     if (n->type == ActionsDAG::ActionType::ALIAS) { flattenAnd(n->children.front(), out); return; }
-    if (!isAnd(n)) { out.push_back(n); return; }
+    if (!isSpecFn(n, "and")) { out.push_back(n); return; }
     for (const auto * ch : n->children) flattenAnd(ch, out);
 }
 
 static void flattenOr(const ActionsDAG::Node * n, std::vector<const ActionsDAG::Node *> & out)
 {
     if (n->type == ActionsDAG::ActionType::ALIAS) { flattenOr(n->children.front(), out); return; }
-    if (!isOr(n)) { out.push_back(n); return; }
+    if (!isSpecFn(n, "or")) { out.push_back(n); return; }
     for (const auto * ch : n->children) flattenOr(ch, out);
 }
 
 /// If `predicate` = AND(..., OR(term1, term2, ...), ...),
-/// return the vector of terms, each term flattened into AND-atoms.
-/// Otherwise return std::nullopt (don’t try OR pushdown).
-static std::optional<std::vector<std::vector<const ActionsDAG::Node *>>>
-extractTopLevelOrOfAndTerms(const ActionsDAG::Node * predicate)
+/// return the vector of terms, each term flattened into AND-atoms
+/// otherwise return std::nullopt (don’t try OR pushdown)
+static std::optional<std::vector<std::vector<const ActionsDAG::Node *>>> extractTopLevelOrOfAndTerms(const ActionsDAG::Node * predicate)
 {
     std::vector<const ActionsDAG::Node *> and_children;
     flattenAnd(predicate, and_children);
@@ -2959,7 +2949,7 @@ extractTopLevelOrOfAndTerms(const ActionsDAG::Node * predicate)
     const ActionsDAG::Node * or_node = nullptr;
     for (const auto * ch : and_children)
     {
-        if (isOr(ch))
+        if (isSpecFn(ch, "or"))
         {
             if (or_node) return std::nullopt; // more than one OR on the top-level AND → skip
             or_node = ch;
@@ -2976,8 +2966,13 @@ extractTopLevelOrOfAndTerms(const ActionsDAG::Node * predicate)
     {
         std::vector<const ActionsDAG::Node *> atoms;
         flattenAnd(term, atoms);
-        // If a term still contains an OR somewhere inside, it’s not a pure AND — skip all.
-        for (const auto * a : atoms) if (isOr(a)) return std::nullopt;
+        /// If a term still contains an OR somewhere inside, it’s not a pure AND — skip all
+        for (const auto * a : atoms)
+        {
+            if (isSpecFn(a, "or"))
+                return std::nullopt;
+        }
+
         terms.push_back(std::move(atoms));
     }
     return terms;
@@ -3350,7 +3345,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             right_filter = createActionsForConjunction(right_stream_push_down_conjunctions.allowed,
                                                        right_stream_header.getColumnsWithTypeAndName());
 
-        // Never remove the original filter when we have OR with special predicates
+        /// Never remove the original filter when we have OR with special predicates
         return ActionsForJOINFilterPushDown{
             .left_stream_filter_to_push_down = left_filter ? std::move(left_filter->dag) : std::optional<ActionsDAG>{},
             .left_stream_filter_removes_filter = false,  // Keep original filter
@@ -3439,6 +3434,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     {
         auto updated_filter = *ActionsDAG::buildFilterActionsDAG({filter.getOutputs()[filter_pos]}, columns_to_replace);
         chassert(updated_filter.getOutputs().size() == 1);
+
         /** If result filter to left or right stream has column that is one of the stream inputs, we need distinguish filter column from
           * actual input column. It is necessary because after filter step, filter column became constant column with value 1, and
           * not all JOIN algorithms properly work with constants.
@@ -3545,14 +3541,30 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     if (!result.left_stream_filter_to_push_down && !result.right_stream_filter_to_push_down)
         return result;
 
-    /// Now, when actions are created, update the current DAG.
-    removeUnusedConjunctions(std::move(rejected_conjunctions), predicate, removes_filter);
+    /// Now, when actions are created, update the current DAG
+    /// If the top-level predicate is an OR, rejected_conjunctions may contain `predicate` itself
+    /// In that case, do NOT rewrite the predicate (it would create a self-alias)
+    if (!has_or)
+        removeUnusedConjunctions(std::move(rejected_conjunctions), predicate, removes_filter);
+    else
+    {
+        rejected_conjunctions.erase(
+            std::remove(rejected_conjunctions.begin(), rejected_conjunctions.end(), predicate),
+            rejected_conjunctions.end());
+        if (!rejected_conjunctions.empty())
+            removeUnusedConjunctions(std::move(rejected_conjunctions), predicate, removes_filter);
+        // else: leave parent predicate unchanged
+    }
 
     return result;
 }
 
 void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter)
 {
+    /// if rejected == {predicate}, do nothing (avoid creating an alias to itself)
+    if (rejected_conjunctions.size() == 1 && rejected_conjunctions.front() == predicate)
+        return;
+
     if (rejected_conjunctions.empty())
     {
         /// The whole predicate was split.
