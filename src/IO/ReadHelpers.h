@@ -9,6 +9,7 @@
 
 #include <type_traits>
 
+#include "boost/asio/detail/date_time_fwd.hpp"
 #include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
@@ -908,6 +909,8 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                     /// If it's regular DateTime we should check that it falls within the supported range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
                     if (!dt64_mode && (*datetime_maybe < 0 || *datetime_maybe > UINT32_MAX))
                         return ReturnType(false);
+
+                    datetime = *datetime_maybe;
                 }
             }
 
