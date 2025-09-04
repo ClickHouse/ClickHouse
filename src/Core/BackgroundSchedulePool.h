@@ -14,6 +14,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/callOnce.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 
 namespace DB
@@ -136,8 +137,8 @@ public:
     /// Atomically activate task and schedule it for execution.
     bool activateAndSchedule();
 
-    /// get Coordination::WatchCallback needed for notifications from ZooKeeper watches.
-    Coordination::WatchCallback getWatchCallback();
+    /// Return **permanent** watch callback needed for notifications from ZooKeeper watches.
+    Coordination::WatchCallbackPtr getWatchCallback();
 
     /// Returns lock that protects from concurrent task execution.
     /// This lock should not be held for a long time.
@@ -156,6 +157,9 @@ private:
     BackgroundSchedulePoolWeakPtr pool_ref;
     std::string log_name;
     BackgroundSchedulePool::TaskFunc function;
+
+    OnceFlag watch_callback_initialized;
+    Coordination::WatchCallbackPtr watch_callback;
 
     std::mutex exec_mutex;
     std::mutex schedule_mutex;
