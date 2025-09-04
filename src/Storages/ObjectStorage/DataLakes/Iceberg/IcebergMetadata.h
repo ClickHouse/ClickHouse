@@ -79,7 +79,8 @@ public:
 
     bool supportsSchemaEvolution() const override { return true; }
 
-    static Int32 parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
+    static Int32 parseTableSchema(
+        const Poco::JSON::Object::Ptr & metadata_object, Iceberg::IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
@@ -91,8 +92,9 @@ public:
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
-    ColumnMapperPtr getColumnMapper() const override { return column_mapper; }
+    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
+    ColumnMapperPtr getColumnMapperForCurrentSchema() const override;
     SinkToStoragePtr write(
         SharedHeader sample_block,
         const StorageID & table_id,
@@ -142,9 +144,6 @@ private:
     Iceberg::IcebergDataSnapshotPtr relevant_snapshot TSA_GUARDED_BY(mutex);
     Int64 relevant_snapshot_id TSA_GUARDED_BY(mutex) {-1};
     CompressionMethod metadata_compression_method;
-
-
-    ColumnMapperPtr column_mapper;
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
