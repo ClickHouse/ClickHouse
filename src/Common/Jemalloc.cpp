@@ -60,7 +60,7 @@ void setJemallocProfileActive(bool value)
     LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is {}", value ? "enabled" : "disabled");
 }
 
-std::string flushJemallocProfile(const std::string & file_prefix)
+std::string flushJemallocProfile(const std::string & file_prefix, bool log)
 {
     checkJemallocProfilingEnabled();
     char * prefix_buffer;
@@ -68,7 +68,8 @@ std::string flushJemallocProfile(const std::string & file_prefix)
     int n = mallctl("opt.prof_prefix", &prefix_buffer, &prefix_size, nullptr, 0); // NOLINT
     if (!n && std::string_view(prefix_buffer) != "jeprof")
     {
-        LOG_TRACE(getLogger("SystemJemalloc"), "Flushing memory profile with prefix {}", prefix_buffer);
+        if (log)
+            LOG_TRACE(getLogger("SystemJemalloc"), "Flushing memory profile with prefix {}", prefix_buffer);
         mallctl("prof.dump", nullptr, nullptr, nullptr, 0);
         return prefix_buffer;
     }
@@ -77,7 +78,8 @@ std::string flushJemallocProfile(const std::string & file_prefix)
     std::string profile_dump_path = fmt::format("{}.{}.{}.heap", file_prefix, getpid(), profile_counter.fetch_add(1));
     const auto * profile_dump_path_str = profile_dump_path.c_str();
 
-    LOG_TRACE(getLogger("SystemJemalloc"), "Flushing memory profile to {}", profile_dump_path_str);
+    if (log)
+        LOG_TRACE(getLogger("SystemJemalloc"), "Flushing memory profile to {}", profile_dump_path_str);
     mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str)); // NOLINT
     return profile_dump_path;
 }

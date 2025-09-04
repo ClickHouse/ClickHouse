@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Logger.h>
@@ -513,7 +514,11 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 
 std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 {
-    return getQuota()->getUsage();
+    auto quota = getQuota();
+    if (!quota) /// Detected by fuzzer
+        return {};
+    else
+        return quota->getUsage();
 }
 
 SettingsChanges ContextAccess::getDefaultSettings() const
@@ -965,6 +970,26 @@ void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_id
             checkGranteeIsAllowed(id, *user_entity);
     }
 }
+
+void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
+{
+    if (isGranted(context, flags, parameter))
+        return;
+
+    if (!to_check_by_filter.empty())
+    {
+        auto access_rights = getAccessRights();
+        auto filters = access_rights->getFilters(parameter);
+        for (const auto & filter : filters)
+        {
+            if (re2::RE2::FullMatch(to_check_by_filter, filter.path) && filter.access_flags.contains(flags))
+                return;
+        }
+    }
+
+    checkAccess(context, flags, parameter);
+}
+
 
 std::shared_ptr<const ContextAccessWrapper> ContextAccessWrapper::fromContext(const ContextPtr & context)
 {

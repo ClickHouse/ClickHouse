@@ -5,8 +5,8 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserGroup.h>
-
+#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatFilterInfo.h>
 #include <queue>
 
 namespace parquet
@@ -58,7 +58,8 @@ public:
         ReadBuffer & buf,
         SharedHeader header,
         const FormatSettings & format_settings_,
-        FormatParserGroupPtr parser_group_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        FormatFilterInfoPtr format_filter_info_,
         size_t min_bytes_for_seek_);
 
     ~ParquetBlockInputFormat() override;
@@ -211,6 +212,7 @@ private:
         //  (at most max_pending_chunks_per_row_group)
 
         size_t next_chunk_idx = 0;
+        std::vector<size_t> chunk_sizes;
         size_t num_pending_chunks = 0;
 
         size_t total_rows = 0;
@@ -294,7 +296,8 @@ private:
 
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_row_groups;
-    FormatParserGroupPtr parser_group;
+    FormatParserSharedResourcesPtr parser_shared_resources;
+    FormatFilterInfoPtr format_filter_info;
     size_t min_bytes_for_seek;
     const size_t max_pending_chunks_per_row_group_batch = 2;
 
@@ -320,6 +323,7 @@ private:
     std::condition_variable condvar;
 
     std::vector<RowGroupBatchState> row_group_batches;
+    std::vector<size_t> row_group_batches_skipped_rows;
     std::priority_queue<PendingChunk, std::vector<PendingChunk>, PendingChunk::Compare> pending_chunks;
     size_t row_group_batches_completed = 0;
 
@@ -335,12 +339,13 @@ private:
     std::atomic<int> is_stopped{0};
     bool is_initialized = false;
     std::optional<std::unordered_map<String, String>> parquet_names_to_clickhouse;
+    std::optional<std::unordered_map<String, String>> clickhouse_names_to_parquet;
 };
 
-class ParquetSchemaReader : public ISchemaReader
+class ArrowParquetSchemaReader : public ISchemaReader
 {
 public:
-    ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+    ArrowParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
     std::optional<size_t> readNumberOrRows() override;
