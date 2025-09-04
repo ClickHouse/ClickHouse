@@ -1346,7 +1346,7 @@ def test_persistent_processing(started_cluster):
 
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
 def test_persistent_processing_failed_commit_retries(started_cluster, mode):
-    node = started_cluster.instances["instance_with_keeper_fault_injection"]
+    node = started_cluster.instances["instance"]
     table_name = (
         f"max_persistent_processing_failed_commit_retries_{generate_random_string()}"
     )
