@@ -453,13 +453,13 @@ SELECT getOSKernelVersion();
 
 REGISTER_FUNCTION(DisplayName)
 {
-    FunctionDocumentation::Description description_displayName = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the value of `display_name` from [config](/operations/configuration-files) or the server's Fully Qualified Domain Name (FQDN) if not set.
 )";
-    FunctionDocumentation::Syntax syntax_displayName = "displayName()";
-    FunctionDocumentation::Arguments arguments_displayName = {};
-    FunctionDocumentation::ReturnedValue returned_value_displayName = {"Returns the value of `display_name` from config or server FQDN if not set.", {"String"}};
-    FunctionDocumentation::Examples examples_displayName = {
+    FunctionDocumentation::Syntax syntax = "displayName()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the value of `display_name` from config or server FQDN if not set.", {"String"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -472,11 +472,11 @@ SELECT displayName();
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_displayName = {22, 11};
-    FunctionDocumentation::Category category_displayName = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_displayName = {description_displayName, syntax_displayName, arguments_displayName, returned_value_displayName, examples_displayName, introduced_in_displayName, category_displayName};
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDisplayName>(documentation_displayName);
+    factory.registerFunction<FunctionDisplayName>(documentation);
 }
 
 

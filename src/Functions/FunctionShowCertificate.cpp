@@ -143,14 +143,14 @@ public:
 
 REGISTER_FUNCTION(ShowCertificate)
 {
-    FunctionDocumentation::Description description_showCertificate = R"(
+    FunctionDocumentation::Description description = R"(
 Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured.
 See [Configuring SSL-TLS](/guides/sre/configuring-ssl) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
     )";
-    FunctionDocumentation::Syntax syntax_showCertificate = "showCertificate()";
-    FunctionDocumentation::Arguments arguments_showCertificate = {};
-    FunctionDocumentation::ReturnedValue returned_value_showCertificate = {"Returns map of key-value pairs relating to the configured SSL certificate.", {"Map(String, String)"}};
-    FunctionDocumentation::Examples examples_showCertificate = {{"Usage example",
+    FunctionDocumentation::Syntax syntax = "showCertificate()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns map of key-value pairs relating to the configured SSL certificate.", {"Map(String, String)"}};
+    FunctionDocumentation::Examples examples = {{"Usage example",
         R"(
 SELECT showCertificate() FORMAT LineAsString;
         )",
@@ -159,11 +159,11 @@ SELECT showCertificate() FORMAT LineAsString;
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_showCertificate = {22, 6};
-    FunctionDocumentation::Category category_showCertificate = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_showCertificate = {description_showCertificate, syntax_showCertificate, arguments_showCertificate, returned_value_showCertificate, examples_showCertificate, introduced_in_showCertificate, category_showCertificate};
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionShowCertificate>(documentation_showCertificate);
+    factory.registerFunction<FunctionShowCertificate>(documentation);
 }
 
 }

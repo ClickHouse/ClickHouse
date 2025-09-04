@@ -65,19 +65,19 @@ public:
 
 REGISTER_FUNCTION(PartitionId)
 {
-    FunctionDocumentation::Description description_partitionId = R"(
+    FunctionDocumentation::Description description = R"(
 Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
 
 :::note
 This function is slow and should not be called for large numbers of rows.
 :::
 )";
-    FunctionDocumentation::Syntax syntax_partitionId = "partitionId(x[, y, ...])";
-    FunctionDocumentation::Arguments arguments_partitionId = {
+    FunctionDocumentation::Syntax syntax = "partitionId(x[, y, ...])";
+    FunctionDocumentation::Arguments arguments = {
         {"x, y, ...", "Column for which to return the partition ID."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_partitionId = {"Returns the partition ID that the row would belong to.", {"String"}};
-    FunctionDocumentation::Examples examples_partitionId = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the partition ID that the row would belong to.", {"String"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -108,11 +108,11 @@ SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_partitionId = {21, 4};
-    FunctionDocumentation::Category category_partitionId = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_partitionId = {description_partitionId, syntax_partitionId, arguments_partitionId, returned_value_partitionId, examples_partitionId, introduced_in_partitionId, category_partitionId};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionPartitionId>(documentation_partitionId);
+    factory.registerFunction<FunctionPartitionId>(documentation);
     factory.registerAlias("partitionID", "partitionId");
 }
 

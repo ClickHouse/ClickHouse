@@ -41,14 +41,14 @@ public:
 
 REGISTER_FUNCTION(InitialQueryStartTime)
 {
-    FunctionDocumentation::Description description_initialQueryStartTime = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the start time of the initial current query.
 `initialQueryStartTime` returns the same results on different shards.
 )";
-    FunctionDocumentation::Syntax syntax_initialQueryStartTime = "initialQueryStartTime()";
-    FunctionDocumentation::Arguments arguments_initialQueryStartTime = {};
-    FunctionDocumentation::ReturnedValue returned_value_initialQueryStartTime = {"Returns the start time of the initial current query.", {"DateTime"}};
-    FunctionDocumentation::Examples examples_initialQueryStartTime = {
+    FunctionDocumentation::Syntax syntax = "initialQueryStartTime()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the start time of the initial current query.", {"DateTime"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -63,11 +63,11 @@ SELECT count(DISTINCT t) FROM (SELECT initialQueryStartTime() AS t FROM remote('
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_initialQueryStartTime = {25, 4};
-    FunctionDocumentation::Category category_initialQueryStartTime = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_initialQueryStartTime = {description_initialQueryStartTime, syntax_initialQueryStartTime, arguments_initialQueryStartTime, returned_value_initialQueryStartTime, examples_initialQueryStartTime, introduced_in_initialQueryStartTime, category_initialQueryStartTime};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionInitialQueryStartTime>(documentation_initialQueryStartTime);
+    factory.registerFunction<FunctionInitialQueryStartTime>(documentation);
     factory.registerAlias("initial_query_start_time", FunctionInitialQueryStartTime::name, FunctionFactory::Case::Insensitive);
 }
 }

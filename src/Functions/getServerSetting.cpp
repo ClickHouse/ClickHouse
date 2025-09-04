@@ -79,15 +79,15 @@ private:
 
 REGISTER_FUNCTION(GetServerSetting)
 {
-    FunctionDocumentation::Description description_getServerSetting = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the currently set value, given a server setting name.
     )";
-    FunctionDocumentation::Syntax syntax_getServerSetting = "getServerSetting('server_setting')";
-    FunctionDocumentation::Arguments arguments_getServerSetting = {
+    FunctionDocumentation::Syntax syntax = "getServerSetting('server_setting')";
+    FunctionDocumentation::Arguments arguments = {
         {"server_setting", "The setting name.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_getServerSetting = {"Returns the server setting's current value.", {}};
-    FunctionDocumentation::Examples examples_getServerSetting = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the server setting's current value.", {}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -100,11 +100,11 @@ SELECT getServerSetting('allow_use_jemalloc_memory');
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_getServerSetting = {25, 6};
-    FunctionDocumentation::Category category_getServerSetting = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_getServerSetting = {description_getServerSetting, syntax_getServerSetting, arguments_getServerSetting, returned_value_getServerSetting, examples_getServerSetting, introduced_in_getServerSetting, category_getServerSetting};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionGetServerSetting>(documentation_getServerSetting, FunctionFactory::Case::Sensitive);
+    factory.registerFunction<FunctionGetServerSetting>(documentation, FunctionFactory::Case::Sensitive);
 }
 
 }

@@ -80,15 +80,15 @@ private:
 
 REGISTER_FUNCTION(GetMergeTreeSetting)
 {
-    FunctionDocumentation::Description description_getMergeTreeSetting = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the current value, given the name of a MergeTree setting.
 )";
-    FunctionDocumentation::Syntax syntax_getMergeTreeSetting = "getMergeTreeSetting('merge_tree_setting')";
-    FunctionDocumentation::Arguments arguments_getMergeTreeSetting = {
+    FunctionDocumentation::Syntax syntax = "getMergeTreeSetting('merge_tree_setting')";
+    FunctionDocumentation::Arguments arguments = {
         {"merge_tree_setting", "The setting name.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_getMergeTreeSetting = {"Returns the merge tree setting's current value.", {}};
-    FunctionDocumentation::Examples examples_getMergeTreeSetting = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the merge tree setting's current value.", {}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -101,11 +101,11 @@ SELECT getMergeTreeSetting('index_granularity');
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_getMergeTreeSetting = {25, 6};
-    FunctionDocumentation::Category category_getMergeTreeSetting = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_getMergeTreeSetting = {description_getMergeTreeSetting, syntax_getMergeTreeSetting, arguments_getMergeTreeSetting, returned_value_getMergeTreeSetting, examples_getMergeTreeSetting, introduced_in_getMergeTreeSetting, category_getMergeTreeSetting};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionGetMergeTreeSetting>(documentation_getMergeTreeSetting, FunctionFactory::Case::Sensitive);
+    factory.registerFunction<FunctionGetMergeTreeSetting>(documentation, FunctionFactory::Case::Sensitive);
 }
 
 }

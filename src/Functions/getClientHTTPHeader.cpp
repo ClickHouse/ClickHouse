@@ -77,7 +77,7 @@ public:
 
 REGISTER_FUNCTION(GetClientHTTPHeader)
 {
-    FunctionDocumentation::Description description_getClientHTTPHeader = R"(
+    FunctionDocumentation::Description description = R"(
 Gets the value of an HTTP header.
 If there is no such header or the current request is not performed via the HTTP interface, the function returns an empty string.
 Certain HTTP headers (e.g., `Authentication` and `X-ClickHouse-*`) are restricted.
@@ -90,12 +90,12 @@ The setting is not enabled by default for security reasons, because some headers
 HTTP headers are case sensitive for this function.
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
 )";
-    FunctionDocumentation::Syntax syntax_getClientHTTPHeader = "getClientHTTPHeader(name)";
-    FunctionDocumentation::Arguments arguments_getClientHTTPHeader = {
+    FunctionDocumentation::Syntax syntax = "getClientHTTPHeader(name)";
+    FunctionDocumentation::Arguments arguments = {
         {"name", "The HTTP header name.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_getClientHTTPHeader = {"Returns the value of the header.", {"String"}};
-    FunctionDocumentation::Examples examples_getClientHTTPHeader = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the value of the header.", {"String"}};
+    FunctionDocumentation::Examples examples = {
         {
             "Usage example",
             R"(
@@ -108,13 +108,13 @@ SELECT getClientHTTPHeader('Content-Type');
             )"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_getClientHTTPHeader = {24, 5};
-    FunctionDocumentation::Category category_getClientHTTPHeader = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_getClientHTTPHeader = {description_getClientHTTPHeader, syntax_getClientHTTPHeader, arguments_getClientHTTPHeader, returned_value_getClientHTTPHeader, examples_getClientHTTPHeader, introduced_in_getClientHTTPHeader, category_getClientHTTPHeader};
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction("getClientHTTPHeader",
         [](ContextPtr context) { return std::make_shared<FunctionGetClientHTTPHeader>(context); },
-        documentation_getClientHTTPHeader);
+        documentation);
 }
 
 }
