@@ -225,7 +225,7 @@ def test_caches_with_the_same_configuration(cluster, node_name):
     )
     assert (
         node.query(
-            "SELECT cache_name, sum(downloaded_size) FROM system.filesystem_cache GROUP BY cache_name ORDER BY cache_name"
+            "SELECT cache_name, sum(size) FROM system.filesystem_cache GROUP BY cache_name ORDER BY cache_name"
         ).strip()
         == f"test\t{size}\ntest2\t{size}"
     )
@@ -288,7 +288,7 @@ def test_caches_with_the_same_configuration_2(cluster, node_name):
     )
     assert (
         node.query(
-            "SELECT cache_name, sum(downloaded_size) FROM system.filesystem_cache GROUP BY cache_name ORDER BY cache_name"
+            "SELECT cache_name, sum(size) FROM system.filesystem_cache GROUP BY cache_name ORDER BY cache_name"
         ).strip()
         == f"cache1\t{size}\ncache2\t{size}"
     )

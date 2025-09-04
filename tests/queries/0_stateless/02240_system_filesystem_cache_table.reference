@@ -1,15 +1,13 @@
 Using storage policy: s3_cache
 0
 Expect cache
-DOWNLOADED	0	0	1
 DOWNLOADED	0	79	80
 DOWNLOADED	0	745	746
-3
+2
 Expect cache
-DOWNLOADED	0	0	1
 DOWNLOADED	0	79	80
 DOWNLOADED	0	745	746
-3
+2
 Expect no cache
 Expect cache
 DOWNLOADED	0	79	80
@@ -19,15 +17,13 @@ Expect no cache
 Using storage policy: local_cache
 0
 Expect cache
-DOWNLOADED	0	0	1
 DOWNLOADED	0	79	80
 DOWNLOADED	0	745	746
-3
+2
 Expect cache
-DOWNLOADED	0	0	1
 DOWNLOADED	0	79	80
 DOWNLOADED	0	745	746
-3
+2
 Expect no cache
 Expect cache
 DOWNLOADED	0	79	80
@@ -37,15 +33,13 @@ Expect no cache
 Using storage policy: azure_cache
 0
 Expect cache
-DOWNLOADED	0	0	1
 DOWNLOADED	0	79	80
 DOWNLOADED	0	745	746
-3
+2
 Expect cache
-DOWNLOADED	0	0	1
 DOWNLOADED	0	79	80
 DOWNLOADED	0	745	746
-3
+2
 Expect no cache
 Expect cache
 DOWNLOADED	0	79	80

@@ -654,7 +654,7 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
                 chassert(file_segment.assertCorrectness());
 
                 downloadImpl(file_segment, memory);
-                holder->completeAndPopFront(/*allow_background_download=*/false);
+                holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
             }
             catch (...)
             {

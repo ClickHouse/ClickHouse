@@ -271,7 +271,7 @@ void download(FileSegmentPtr file_segment, bool complete = true)
 
     if (complete)
     {
-        FileSegment::complete(FileSegmentPtr(file_segment), /*allow_background_download=*/false);
+        FileSegment::complete(FileSegmentPtr(file_segment), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
         ASSERT_EQ(file_segment->state(), State::DOWNLOADED);
     }
 }
@@ -282,7 +282,7 @@ void assertDownloadFails(FileSegmentPtr file_segment)
     ASSERT_EQ(file_segment->getDownloadedSize(), 0);
     std::string failure_reason;
     ASSERT_FALSE(file_segment->reserve(file_segment->range().size(), 1000, failure_reason));
-    FileSegment::complete(FileSegmentPtr(file_segment), /*allow_background_download=*/false);
+    FileSegment::complete(FileSegmentPtr(file_segment), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
 }
 
 void download(const HolderPtr & holder)

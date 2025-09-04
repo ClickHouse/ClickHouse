@@ -97,10 +97,10 @@ SELECT count(), sum(size) FROM system.filesystem_cache
 SYSTEM START MERGES test_02241
 OPTIMIZE TABLE test_02241 FINAL
 SELECT count(), sum(size) FROM system.filesystem_cache
-36	167711
+27	84396
 ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100
 SELECT count(), sum(size) FROM system.filesystem_cache
-46	251128
+29	167316
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)
 SYSTEM FLUSH LOGS query_log
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)	0
@@ -207,10 +207,10 @@ SELECT count(), sum(size) FROM system.filesystem_cache
 SYSTEM START MERGES test_02241
 OPTIMIZE TABLE test_02241 FINAL
 SELECT count(), sum(size) FROM system.filesystem_cache
-36	167711
+27	84396
 ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100
 SELECT count(), sum(size) FROM system.filesystem_cache
-46	251128
+29	167316
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)
 SYSTEM FLUSH LOGS query_log
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)	0
@@ -317,10 +317,10 @@ SELECT count(), sum(size) FROM system.filesystem_cache
 SYSTEM START MERGES test_02241
 OPTIMIZE TABLE test_02241 FINAL
 SELECT count(), sum(size) FROM system.filesystem_cache
-36	167711
+27	84396
 ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100
 SELECT count(), sum(size) FROM system.filesystem_cache
-46	251128
+29	167316
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)
 SYSTEM FLUSH LOGS query_log
 INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)	0
