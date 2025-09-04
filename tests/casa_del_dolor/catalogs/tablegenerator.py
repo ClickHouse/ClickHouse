@@ -557,7 +557,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         self,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 8)
+        next_option = random.randint(1, 9)
         restore_to = (
             datetime.now() - timedelta(seconds=random.choice([1, 5, 10, 60]))
         ).strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -568,8 +568,6 @@ class IcebergTableGenerator(LakeTableGenerator):
             res = f"CALL `{table.catalog_name}`.system.remove_orphan_files(table => '{table.get_namespace_path()}'"
             if random.randint(1, 2) == 1:
                 res += f", dry_run => {random.choice(["true", "false"])}"
-            # if random.randint(1, 2) == 1: not yet supported
-            #    res += f", prefix_listing => {random.choice(["true", "false"])}"
             if random.randint(1, 2) == 1:
                 res += f", older_than => TIMESTAMP '{restore_to}'"
             res += ")"
@@ -604,8 +602,6 @@ class IcebergTableGenerator(LakeTableGenerator):
             if random.randint(1, 2) == 1:
                 res += f", stream_results => {random.choice(["true", "false"])}"
             if random.randint(1, 2) == 1:
-                res += f", clean_expired_metadata => {random.choice(["true", "false"])}"
-            if random.randint(1, 2) == 1:
                 res += f", retain_last => {random.randint(1, 10)}"
             res += ")"
             return res
@@ -613,7 +609,9 @@ class IcebergTableGenerator(LakeTableGenerator):
             return f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}')"
         if next_option == 8:
             return f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}')"
-        # if next_option == 9:
+        if next_option == 9:
+            return f"CALL `{table.catalog_name}`.system.ancestors_of(table => '{table.get_namespace_path()}')"
+        # if next_option == 10:
         #    return f"CALL `{table.catalog_name}`.system.set_current_snapshot(table => '{table.get_namespace_path()}', snapshot_id => {random.randint(1, 10)})"
         return ""
 

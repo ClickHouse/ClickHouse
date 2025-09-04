@@ -24,7 +24,9 @@ class SparkAndClickHouseCheck:
             return not isinstance(
                 dtype.elementType, ArrayType
             ) and self._check_type_valid_for_comparison(dtype.elementType)
-        if isinstance(dtype, (MapType, StructType, StringType, BinaryType, CharType, VarcharType)):
+        if isinstance(
+            dtype, (MapType, StructType, StringType, BinaryType, CharType, VarcharType)
+        ):
             # Map type is not comparable in Spark, Struct is complicated
             return False
         return True
@@ -58,23 +60,29 @@ class SparkAndClickHouseCheck:
                 if self._check_type_valid_for_comparison(v.spark_type)
             ]
             if len(order_by_cols) == 0:
-                self.logger.error(
+                self.logger.info(
                     f"No columns valid to compare for {table.get_clickhouse_path()}"
                 )
                 return True
+            self.logger.info(
+                f"Comparing hashes for table {table.get_clickhouse_path()} for column(s) {','.join([col.column_name for col in order_by_cols])}"
+            )
 
             # Spark hash
             # Convert all columns to string and concatenate
-            concat_cols = ", '||', ".join(
-                [f"CAST({col.column_name} AS STRING)" for col in order_by_cols]
-            )
+            spark_strings = {
+                col.column_name: f"CAST({col.column_name} AS STRING)"
+                for col in order_by_cols
+            }
+            concat_cols = ", '||', ".join([col.column_name for col in order_by_cols])
             # Generate hash using SQL
             query = f"""
             SELECT MD5(CONCAT_WS('', COLLECT_LIST(row_hash))) as table_hash
             FROM (
                 SELECT MD5(CONCAT({concat_cols})) as row_hash
-                FROM {table.get_table_full_path()}
-                ORDER BY {', '.join([f"{col.column_name} ASC NULLS FIRST" for col in order_by_cols])}
+                FROM (SELECT {', '.join([f"{v} AS {k}" for k, v in spark_strings.items()])}
+                      FROM {table.get_table_full_path()}) x
+                ORDER BY {', '.join([f"{k} ASC NULLS FIRST" for k in spark_strings.keys()])}
             );
             """
             result = spark.sql(query).collect()
