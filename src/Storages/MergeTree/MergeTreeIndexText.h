@@ -151,7 +151,7 @@ public:
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
     void deserializeBinaryWithMultipleStreams(IndexInputStreams & streams, IndexDeserializationState & state) override;
 
-    bool empty() const override { return total_rows == 0; }
+    bool empty() const override { return num_tokens == 0; }
     size_t memoryUsageBytes() const override { return 0; }
     bool hasAllTokensFromQuery(const GinQueryString & query) const;
     const TokensMap & getRemainingTokens() const { return remaining_tokens; }
@@ -165,7 +165,7 @@ private:
     void analyzeDictionary(IndexReaderStream & stream, IndexDeserializationState & state);
 
     MergeTreeIndexTextParams params;
-    size_t total_rows = 0;
+    size_t num_tokens = 0;
     BloomFilter bloom_filter;
     DictionarySparseIndex sparse_index;
     TokensMap remaining_tokens;
@@ -175,7 +175,6 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleTextWritable(
         size_t dictionary_block_size_,
-        size_t total_rows_,
         BloomFilter bloom_filter_,
         std::vector<StringRef> tokens_,
         std::vector<PostingList> posting_lists_,
@@ -191,7 +190,6 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     size_t memoryUsageBytes() const override { return 0; }
 
     size_t dictionary_block_size;
-    size_t total_rows;
     BloomFilter bloom_filter;
     std::vector<StringRef> tokens;
     std::vector<PostingList> posting_lists;

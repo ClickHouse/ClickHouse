@@ -26,10 +26,10 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
-static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t total_rows)
+static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
 {
     static constexpr size_t atom_size = 8;
-    return (bits_per_row * total_rows + atom_size - 1) / atom_size;
+    return (bits_per_row * num_tokens + atom_size - 1) / atom_size;
 }
 
 static constexpr UInt8 EMBEDDED_POSTINGS_FLAG = static_cast<UInt8>(1 << 6);
@@ -192,9 +192,9 @@ void MergeTreeIndexGranuleText::deserializeBinary(ReadBuffer &, MergeTreeIndexVe
 
 void MergeTreeIndexGranuleText::deserializeBloomFilter(ReadBuffer & istr)
 {
-    readVarUInt(total_rows, istr);
+    readVarUInt(num_tokens, istr);
 
-    size_t bytes_size = getBloomFilterSizeInBytes(params.bloom_filter_bits_per_row, total_rows);
+    size_t bytes_size = getBloomFilterSizeInBytes(params.bloom_filter_bits_per_row, num_tokens);
     bloom_filter.resize(bytes_size);
     istr.readStrict(reinterpret_cast<char *>(bloom_filter.getFilter().data()), bytes_size);
 }
@@ -256,11 +256,11 @@ void MergeTreeIndexGranuleText::deserializeSparseIndex(ReadBuffer & istr)
     ProfileEvents::increment(ProfileEvents::TextIndexReadDictionarySparseIndexBlocks);
 
     sparse_index.tokens = deserializeTokens(istr);
-    size_t num_tokens = sparse_index.tokens->size();
+    size_t num_index_tokens = sparse_index.tokens->size();
 
     auto offsets_in_file = ColumnUInt64::create();
     SerializationNumber<UInt64> serialization_number;
-    serialization_number.deserializeBinaryBulk(*offsets_in_file, istr, 0, num_tokens, 0.0);
+    serialization_number.deserializeBinaryBulk(*offsets_in_file, istr, 0, num_index_tokens, 0.0);
     sparse_index.offsets_in_file = std::move(offsets_in_file);
 }
 
@@ -377,13 +377,11 @@ void MergeTreeIndexGranuleText::resetAfterAnalysis()
 
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     size_t dictionary_block_size_,
-    size_t total_rows_,
     BloomFilter bloom_filter_,
     std::vector<StringRef> tokens_,
     std::vector<PostingList> posting_lists_,
     std::unique_ptr<Arena> arena_)
     : dictionary_block_size(dictionary_block_size_)
-    , total_rows(total_rows_)
     , bloom_filter(std::move(bloom_filter_))
     , tokens(std::move(tokens_))
     , posting_lists(std::move(posting_lists_))
@@ -465,9 +463,9 @@ DictionarySparseIndex serializeTokensAndPostings(
 }
 
 template <typename Stream>
-void serializeBloomFilter(size_t total_rows, const BloomFilter & bloom_filter, Stream & stream)
+void serializeBloomFilter(size_t num_tokens, const BloomFilter & bloom_filter, Stream & stream)
 {
-    writeVarUInt(total_rows, stream.compressed_hashing);
+    writeVarUInt(num_tokens, stream.compressed_hashing);
     const char * filter_data = reinterpret_cast<const char *>(bloom_filter.getFilter().data());
     stream.compressed_hashing.write(filter_data, bloom_filter.getFilterSizeBytes());
 }
@@ -500,7 +498,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Index
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
     auto sparse_index_block = serializeTokensAndPostings(tokens, posting_lists, *dictionary_stream, *postings_stream, dictionary_block_size);
-    serializeBloomFilter(total_rows, bloom_filter, *index_stream);
+    serializeBloomFilter(tokens.size(), bloom_filter, *index_stream);
     serializeSparseIndex(sparse_index_block, *index_stream);
 }
 
@@ -539,7 +537,6 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
 {
-    size_t total_rows = current_row;
     std::vector<std::pair<StringRef, PostingList *>> sorted_values;
     sorted_values.reserve(tokens_map.size());
 
@@ -554,7 +551,8 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
     sorted_tokens.reserve(sorted_values.size());
     sorted_posting_lists.reserve(sorted_values.size());
 
-    size_t bloom_filter_bytes = getBloomFilterSizeInBytes(params.bloom_filter_bits_per_row, total_rows);
+    size_t num_tokens = tokens_map.size();
+    size_t bloom_filter_bytes = getBloomFilterSizeInBytes(params.bloom_filter_bits_per_row, num_tokens);
     BloomFilter bloom_filter(bloom_filter_bytes, params.bloom_filter_num_hashes, 0);
 
     for (auto & [token, posting_list] : sorted_values)
@@ -566,7 +564,6 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     return std::make_unique<MergeTreeIndexGranuleTextWritable>(
         params.dictionary_block_size,
-        total_rows,
         std::move(bloom_filter),
         std::move(sorted_tokens),
         std::move(sorted_posting_lists),
@@ -754,7 +751,7 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     }
 
     UInt64 dictionary_block_size = getOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(256);
-    double bloom_filter_false_positive_rate = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(0.025);
+    double bloom_filter_false_positive_rate = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(0.05);
 
     const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
     MergeTreeIndexTextParams params{dictionary_block_size, bits_per_rows, num_hashes};
