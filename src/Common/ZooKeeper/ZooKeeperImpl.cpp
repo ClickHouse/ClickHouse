@@ -1,3 +1,4 @@
+#include <Common/OSThreadNiceValue.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 
 #include <Compression/CompressedReadBuffer.h>
@@ -28,6 +29,7 @@
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <Coordination/KeeperConstants.h>
 #include "config.h"
@@ -394,7 +396,9 @@ ZooKeeper::ZooKeeper(
     const zkutil::ShuffleHosts & nodes,
     const zkutil::ZooKeeperArgs & args_,
     std::shared_ptr<ZooKeeperLog> zk_log_)
-    : path_acls(args_.path_acls), args(args_)
+    : send_receive_os_threads_nice_value(DB::Context::getGlobalContextInstance()->getConfigRef().getInt("os_thread_nice_value.zookeeper_client_send_receive", 0))
+    , path_acls(args_.path_acls)
+    , args(args_)
 {
     log = getLogger("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
@@ -762,6 +766,12 @@ void ZooKeeper::sendThread()
 {
     setThreadName("ZooKeeperSend");
 
+    scope_guard os_thread_nice_value_guard;
+    if (send_receive_os_threads_nice_value != 0)
+    {
+        os_thread_nice_value_guard = OSThreadNiceValue::scoped(send_receive_os_threads_nice_value);
+    }
+
     auto prev_heartbeat_time = clock::now();
 
     try
@@ -844,6 +854,12 @@ void ZooKeeper::sendThread()
 void ZooKeeper::receiveThread()
 {
     setThreadName("ZooKeeperRecv");
+
+    scope_guard os_thread_nice_value_guard;
+    if (send_receive_os_threads_nice_value != 0)
+    {
+        os_thread_nice_value_guard = OSThreadNiceValue::scoped(send_receive_os_threads_nice_value);
+    }
 
     try
     {
