@@ -102,5 +102,3 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
 
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
-# To pass additional arguments (i.e. list of tests) use PYTEST_ADDOPTS
-CMD ["sh", "-c", "pytest"]
