@@ -1,5 +1,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnNothing.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -3857,7 +3858,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     num_rows = argument_columns.front().column->size();
 
                 if (do_not_execute)
-                    column = result_type->createColumnConstWithDefaultValue(num_rows);
+                {
+                    if (isNothing(result_type))
+                        column = ColumnConst::create(ColumnNothing::create(1), 1);
+                    else
+                        column = result_type->createColumnConstWithDefaultValue(num_rows);
+                }
                 else
                     column = executable_function->execute(argument_columns, result_type, num_rows, true);
             }
