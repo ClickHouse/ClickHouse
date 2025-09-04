@@ -220,7 +220,6 @@ SELECT sleep(2);
 
     factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerBlock>>(documentation_sleep);
 
-    // sleepEachRow documentation
     FunctionDocumentation::Description description_sleepEachRow = R"(
 Pauses the execution of a query for a specified number of seconds for each row in the result set.
 

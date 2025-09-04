@@ -119,19 +119,14 @@ globalNotNullInIgnoreSet
 globalNullIn
 globalNullInIgnoreSet
 globalVariable
-hasColumnInTable
 hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
-hasThreadFuzzer
-identity
-ignore
 ilike
 in
 inIgnoreSet
 indexHint
 initializeAggregation
-isConstant
 isDecimalOverflow
 isIPAddressInRange
 isIPv4String
@@ -147,7 +142,6 @@ mapFromArrays
 mapPopulateSeries
 mapSubtract
 mapUpdate
-materialize
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
@@ -167,7 +161,6 @@ multiSearchFirstIndexUTF8
 multiSearchFirstPositionCaseInsensitive
 multiSearchFirstPositionCaseInsensitiveUTF8
 multiSearchFirstPositionUTF8
-neighbor
 netloc
 notILike
 notIn
@@ -204,7 +197,6 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
-parseTimeDelta
 partitionId
 path
 pathFull
@@ -263,8 +255,6 @@ reinterpretAsUInt64
 reinterpretAsUInt8
 reinterpretAsUUID
 replicate
-rowNumberInAllBlocks
-rowNumberInBlock
 runningAccumulate
 runningConcurrency
 runningDifference
@@ -277,7 +267,6 @@ sigmoid
 snowflakeToDateTime
 snowflakeToDateTime64
 svg
-throwIf
 toBool
 toColumnTypeName
 toDate
@@ -376,7 +365,6 @@ toTime64OrNull
 toTime64OrZero
 toTimeOrNull
 toTimeOrZero
-toTypeName
 toUInt128
 toUInt128OrNull
 toUInt128OrZero
@@ -411,9 +399,6 @@ toUnixTimestamp64Second
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
-transform
-validateNestedArraySizes
-visibleWidth
 windowID
 wkt
 zookeeperSessionUptime

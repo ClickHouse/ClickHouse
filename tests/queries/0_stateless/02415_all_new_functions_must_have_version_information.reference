@@ -203,22 +203,17 @@ globalNotNullInIgnoreSet
 globalNullIn
 globalNullInIgnoreSet
 globalVariable
-hasColumnInTable
 hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF8
 hasSubsequenceUTF8
-hasThreadFuzzer
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
-identity
-ignore
 ilike
 in
 inIgnoreSet
 indexHint
 initialQueryStartTime
 initializeAggregation
-isConstant
 isDecimalOverflow
 isDynamicElementInSharedData
 isIPAddressInRange
@@ -235,7 +230,6 @@ mapFromArrays
 mapPopulateSeries
 mapSubtract
 mapUpdate
-materialize
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
@@ -255,7 +249,6 @@ multiSearchFirstIndexUTF8
 multiSearchFirstPositionCaseInsensitive
 multiSearchFirstPositionCaseInsensitiveUTF8
 multiSearchFirstPositionUTF8
-neighbor
 nested
 netloc
 notILike
@@ -293,7 +286,6 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
-parseTimeDelta
 partitionId
 path
 pathFull
@@ -357,8 +349,6 @@ reinterpretAsUInt64
 reinterpretAsUInt8
 reinterpretAsUUID
 replicate
-rowNumberInAllBlocks
-rowNumberInBlock
 runningAccumulate
 runningConcurrency
 runningDifference
@@ -374,7 +364,6 @@ snowflakeToDateTime64
 structureToCapnProtoSchema
 structureToProtobufSchema
 svg
-throwIf
 toBFloat16
 toBFloat16OrNull
 toBFloat16OrZero
@@ -478,7 +467,6 @@ toTime64OrNull
 toTime64OrZero
 toTimeOrNull
 toTimeOrZero
-toTypeName
 toUInt128
 toUInt128OrDefault
 toUInt128OrNull
@@ -516,13 +504,11 @@ topLevelDomainRFC
 transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
-transform
 tuple
 tupleNames
 validateNestedArraySizes
 variantElement
 variantType
-visibleWidth
 widthBucket
 windowID
 wkt

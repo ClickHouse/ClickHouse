@@ -572,7 +572,7 @@ For the 32-bit version see [`xxHash32`](#xxHash32)
     FunctionDocumentation::Description halfMD5_description = R"(
 [Interprets](../..//sql-reference/functions/type-conversion-functions.md/#type_conversion_functions-reinterpretAsString) all the input
 parameters as strings and calculates the MD5 hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the
-resulting string, and interprets them as [UInt64](../../../sql-reference/data-types/int-uint.md) in big-endian byte order. The function is
+resulting string, and interprets them as [UInt64](/sql-reference/data-types/int-uint) in big-endian byte order. The function is
 relatively slow (5 million short strings per second per processor core).
 
 Consider using the [`sipHash64`](#sipHash64) function instead.

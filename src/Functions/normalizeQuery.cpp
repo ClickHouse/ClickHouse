@@ -81,7 +81,7 @@ SELECT normalizeQuery('[1, 2, 3, x]') AS query
     FunctionDocumentation normalizeQuery_documentation = {normalizeQuery_description, normalizeQuery_syntax, normalizeQuery_arguments, normalizeQuery_returned_value, normalizeQuery_examples, normalizeQuery_introduced_in, normalizeQuery_category};
 
     FunctionDocumentation::Description normalizeQueryKeepNames_description = R"(
-Replaces literals, sequences of literals with placeholder `?` but does not replace complex aliases (containing whitespace, more than two digits or at least 36 bytes long such as UUIDs).
+Replaces literals and sequences of literals with placeholder `?` but does not replace complex aliases (containing whitespace, more than two digits or at least 36 bytes long such as UUIDs).
 This helps better analyze complex query logs.
     )";
     FunctionDocumentation::Syntax normalizeQueryKeepNames_syntax = "normalizeQueryKeepNames(x)";
