@@ -540,8 +540,14 @@ class ClickHouseCluster:
                 p.abspath(p.join(self.base_dir, c)) for c in custom_keeper_configs
             ]
 
+        try:
+            username = pwd.getpwuid(os.getuid()).pw_name
+        except KeyError:
+            # If the user ID doesn't exist in the passwd database, use the UID as a string
+            username = f"user{os.getuid()}"
+            
         project_name = (
-            pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
+            username + p.basename(self.base_dir) + self.name
         )
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
         self.project_name = re.sub(r"[^a-z0-9]", "", project_name.lower())

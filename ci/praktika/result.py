@@ -3,11 +3,13 @@ import dataclasses
 import datetime
 import io
 import json
+import os
 import random
 import sys
 import time
+import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from ._environment import _Environment
 from .s3 import S3
@@ -51,6 +53,7 @@ class Result(MetaClasses.Serializable):
         OK = "OK"
         FAIL = "FAIL"
         SKIPPED = "SKIPPED"
+        ERROR = "ERROR"
 
     class Label:
         REQUIRED = "required"
@@ -302,6 +305,171 @@ class Result(MetaClasses.Serializable):
 
     def set_required_label(self):
         self.set_label(self.Label.REQUIRED)
+
+    @classmethod
+    def from_pytest_run(cls, command, cwd=None, name="Tests", env=None):
+        """
+        Runs a pytest command, captures results in jsonl format, and creates a Result object.
+
+        Args:
+            command (str): The pytest command to run (without 'pytest' itself)
+            cwd (str, optional): Working directory to run the command in
+            name (str, optional): Name for the root Result object
+            env (dict, optional): Environment variables for the pytest command
+            verbose (bool, optional): Whether to print pytest output to console
+
+        Returns:
+            Result: A Result object with test cases as sub-Results
+        """
+        import json
+        import shlex
+        import subprocess
+        import tempfile
+        import time
+
+        sw = Utils.Stopwatch()
+        # Create a temp file for the jsonl report
+        with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as temp_file:
+            jsonl_path = temp_file.name
+
+        with ContextManager.cd(cwd):
+            # Construct the full pytest command with jsonl report
+            full_command = f"pytest {command} --report-log={jsonl_path}"
+            command_args = shlex.split(full_command)
+
+            # Apply environment
+            for key, value in (env or {}).items():
+                print(f"Setting environment variable {key} to {value}")
+                os.environ[key] = value
+
+            if name is None:
+                name = f"pytest_{command}"
+
+            # Run pytest
+            res = Shell.check(full_command, verbose=True)
+
+            # Now parse the jsonl file to get detailed results
+            subresults = cls.from_pytest_jsonl(jsonl_path, name=name)
+            if subresults is None:
+                subresults = []
+
+        # Clean up the temporary jsonl file
+        try:
+            os.unlink(jsonl_path)
+        except:
+            pass
+
+        return Result.create_from(name=name, results=subresults, stopwatch=sw)
+
+    @classmethod
+    def from_pytest_jsonl(cls, jsonl_path: str, name: str = "pytest_results"):
+        """
+        Parses a pytest jsonl report file and creates a hierarchical Result object.
+
+        Args:
+            jsonl_path (str): Path to the pytest jsonl report file
+            name (str): Name for the root Result object
+
+        Returns:
+            List[Result]: A list of Result objects representing individual test cases
+        """
+        if not os.path.isfile(jsonl_path):
+            print(f"Pytest report file {jsonl_path} not found")
+            return None
+
+        # Track test cases by their node_id
+        test_results = {}
+
+        try:
+            with open(jsonl_path, "r") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line.strip())
+
+                        # Process based on event type
+                        if entry.get("$report_type") == "TestReport":
+                            node_id = entry.get("nodeid")
+                            outcome = entry.get("outcome")
+                            duration = entry.get("duration")
+                            when = entry.get("when", "")
+
+                            # Convert node_id to more readable test name
+                            # Format: file_path::test_class::test_method[params]
+                            test_name = (
+                                node_id.split("::")[-1] if "::" in node_id else node_id
+                            )
+
+                            # Map pytest outcome to Result status
+                            status = {
+                                "passed": cls.StatusExtended.OK,
+                                "failed": cls.StatusExtended.FAIL,
+                                "skipped": cls.StatusExtended.SKIPPED,
+                                # "xfailed": cls.StatusExtended.OK,  # expected failure
+                                # "xpassed": cls.StatusExtended.FAIL,   # unexpected pass
+                                "error": cls.StatusExtended.ERROR,
+                            }.get(outcome, cls.StatusExtended.ERROR)
+
+                            # Create or update test result
+                            if node_id not in test_results:
+                                test_result = cls(
+                                    name=node_id, status=status, duration=duration
+                                )
+                                test_results[node_id] = test_result
+                            else:
+                                # Update existing result - prioritize call phase over setup/teardown
+                                if (
+                                    when == "call"
+                                    or test_results[node_id].ext.get("when") != "call"
+                                ):
+                                    test_results[node_id].status = status
+                                    test_results[node_id].duration = duration
+
+                            # Process sections (log output)
+                            if "sections" in entry:
+                                logs = []
+                                for section in entry["sections"]:
+                                    if isinstance(section, list) and len(section) == 2:
+                                        section_title, section_content = section
+                                        if section_content:
+                                            logs.append(f"===== {section_title} =====")
+                                            logs.append(section_content)
+
+                                # Add logs to the result info
+                                if logs:
+                                    current_info = test_results[node_id].info
+                                    if current_info:
+                                        test_results[node_id].info = (
+                                            current_info + "\n" + "\n".join(logs)
+                                        )
+                                    else:
+                                        test_results[node_id].info = "\n".join(logs)
+
+                            # Add any other relevant data to ext
+                            if "longrepr" in entry and entry["longrepr"]:
+                                test_results[node_id].ext["longrepr"] = entry[
+                                    "longrepr"
+                                ]
+
+                            if "location" in entry:
+                                test_results[node_id].ext["location"] = entry[
+                                    "location"
+                                ]
+
+                    except json.JSONDecodeError as e:
+                        print(f"Error decoding line in jsonl file: {e}")
+                        traceback.print_exc()
+                        continue
+
+            # Filter out duplicate entries (keep only the most relevant one per test)
+            # and return as a list of Result objects
+            return list(test_results.values())
+
+        except Exception as e:
+            print(f"Failed to parse pytest jsonl: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return None
 
     @classmethod
     def _filter_out_ok_results(cls, result_obj):
