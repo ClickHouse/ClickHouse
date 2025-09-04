@@ -68,6 +68,7 @@ public:
     Benchmark(unsigned concurrency_,
             unsigned max_concurrency_,
             double delay_,
+            bool precise_,
             Strings && hosts_,
             Ports && ports_,
             bool round_robin_,
@@ -99,6 +100,7 @@ public:
         max_concurrency(std::max(concurrency_, max_concurrency_)),
         threads(concurrency_),
         delay(delay_),
+        precise(precise_),
         queue(max_concurrency),
         randomize(randomize_),
         cumulative(cumulative_),
@@ -122,8 +124,7 @@ public:
         size_t connections_cnt = std::max(ports_.size(), hosts_.size());
 
         connections.reserve(connections_cnt);
-        comparison_info_total.reserve(round_robin ? 1 : connections_cnt);
-        comparison_info_per_interval.reserve(round_robin ? 1 : connections_cnt);
+        total_stats.reserve(round_robin ? 1 : connections_cnt);
 
         for (size_t i = 0; i < connections_cnt; ++i)
         {
@@ -143,11 +144,8 @@ public:
                 secure,
                 /* bind_host_= */ ""));
 
-            if (!round_robin || comparison_info_per_interval.empty())
-            {
-                comparison_info_per_interval.emplace_back(std::make_shared<Stats>());
-                comparison_info_total.emplace_back(std::make_shared<Stats>());
-            }
+            if (!round_robin)
+                total_stats.emplace_back(std::make_shared<Stats>());
         }
 
         // Initialize queries_per_connection to track queries for each connection
@@ -202,6 +200,7 @@ private:
     unsigned max_concurrency;
     unsigned threads;
     double delay;
+    bool precise;
 
     using Query = std::string;
     using Queries = std::vector<Query>;
@@ -247,24 +246,34 @@ private:
 
     struct Stats
     {
-        std::atomic<size_t> queries{0};
+        double queries = 0;
         size_t errors = 0;
-        size_t read_rows = 0;
-        size_t read_bytes = 0;
-        size_t result_rows = 0;
-        size_t result_bytes = 0;
+        double read_rows = 0;
+        double read_bytes = 0;
+        double result_rows = 0;
+        double result_bytes = 0;
 
         using Sampler = ReservoirSampler<double>;
         Sampler sampler {1 << 16};
 
+        void addWeighted(size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc, double weight)
+        {
+            queries += weight;
+            read_rows += weight * read_rows_inc;
+            read_bytes += weight * read_bytes_inc;
+            result_rows += weight * result_rows_inc;
+            result_bytes += weight * result_bytes_inc;
+        }
+
+        void sample(double duration)
+        {
+            sampler.insert(duration);
+        }
+
         void add(double duration, size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc)
         {
-            ++queries;
-            read_rows += read_rows_inc;
-            read_bytes += read_bytes_inc;
-            result_rows += result_rows_inc;
-            result_bytes += result_bytes_inc;
-            sampler.insert(duration);
+            addWeighted(read_rows_inc, read_bytes_inc, result_rows_inc, result_bytes_inc, 1.0);
+            sample(duration);
         }
 
         void clear()
@@ -279,8 +288,58 @@ private:
     };
 
     using MultiStats = std::vector<std::shared_ptr<Stats>>;
-    MultiStats comparison_info_per_interval;
-    MultiStats comparison_info_total;
+
+    struct IntervalStats;
+    friend struct IntervalStats;
+    struct IntervalStats
+    {
+        Benchmark & benchmark;
+        bool reported = false;
+
+        UInt64 start_ns;
+        UInt64 end_ns = std::numeric_limits<UInt64>::max();
+        MultiStats stats;
+        size_t threads;
+
+        // NOTE: We keep reference to the next interval for --precise mode
+        std::shared_ptr<IntervalStats> next;
+
+        IntervalStats(Benchmark & benchmark_, UInt64 start_ns_)
+            : benchmark(benchmark_)
+            , start_ns(start_ns_)
+        {}
+
+        ~IntervalStats()
+        {
+            report();
+        }
+
+        // Closes the interval. Note that stats maybe updated after close by queries started during this interval, but finished in a later one
+        void close(UInt64 end_ns_, size_t threads_)
+        {
+            end_ns = end_ns_;
+            threads = threads_;
+        }
+
+        void ignore()
+        {
+            reported = true;
+        }
+
+        // In --precise mode: it must be called on a closed interval when all queries started during it are finished
+        // Otherwise: it is called just after close()
+        void report()
+        {
+            if (reported)
+                return;
+            reported = true;
+            benchmark.report(stats, (end_ns - start_ns) / 1e9, threads);
+        }
+    };
+
+    std::mutex interval_mutex;
+    std::shared_ptr<IntervalStats> interval TSA_GUARDED_BY(interval_mutex);
+    MultiStats total_stats; // requires mutex
     StudentTTest t_test;
 
     Stopwatch total_watch;
@@ -317,19 +376,6 @@ private:
         log << "Loaded " << queries.size() << " queries.\n" << flush;
     }
 
-
-    void printNumberOfQueriesExecuted(size_t num)
-    {
-        std::lock_guard lock(mutex);
-
-        log << "\nQueries executed: " << num;
-        if (max_iterations > 1)
-            log << " (" << (num * 100.0 / max_iterations) << "%)";
-        else if (queries.size() > 1)
-            log << " (" << (num * 100.0 / queries.size()) << "%)";
-        log << ".\n" << flush;
-    }
-
     /// Try push new query and check cancellation conditions
     bool tryPushQueryInteractively(const String & query, InterruptListener & interrupt_listener)
     {
@@ -359,21 +405,9 @@ private:
             }
         }
 
-        double seconds = delay_watch.elapsedSeconds();
-        if (delay > 0 && seconds > delay)
+        if (delay > 0 && delay_watch.elapsedSeconds() > delay)
         {
-            printNumberOfQueriesExecuted(queries_executed);
-            if (concurrency < max_concurrency)
-            {
-                std::lock_guard lock(mutex);
-                log << "Concurrency: " << threads;
-                log << " of " << max_concurrency;
-                log << " parallel queries.\n" << flush;
-            }
-            cumulative
-                ? report(comparison_info_total, total_watch.elapsedSeconds())
-                : report(comparison_info_per_interval, seconds);
-            delay_watch.restart();
+            startNextInterval();
 
             // Special mode: gradually increasing concurrency.
             // Concurrency is constant between reports and increased by one after every report.
@@ -398,10 +432,42 @@ private:
         return true;
     }
 
+    void startNextInterval()
+    {
+        std::lock_guard lock(interval_mutex);
+
+        delay_watch.restart();
+        UInt64 now_ns = delay_watch.getStart();
+
+        // Report previous interval (of any)
+        if (interval)
+        {
+            interval->close(now_ns, threads);
+            if (!precise)
+            {
+                if (cumulative)
+                    report(total_stats, total_watch.elapsedSeconds(), threads);
+                else
+                    interval->report();
+            }
+        }
+
+        // Start the next interval
+        auto next_interval = std::make_shared<IntervalStats>(*this, now_ns);
+        next_interval->stats.reserve(round_robin ? 1 : connections.size());
+        for (size_t i = 0; i < (round_robin ? 1 : connections.size()); ++i)
+            next_interval->stats.emplace_back(std::make_shared<Stats>());
+        if (interval)
+            interval->next = next_interval;
+        interval = next_interval;
+    }
+
     void runBenchmark()
     {
         pcg64 generator(randomSeed());
         std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
+
+        startNextInterval();
 
         try
         {
@@ -416,7 +482,6 @@ private:
         }
 
         InterruptListener interrupt_listener;
-        delay_watch.restart();
 
         /// Push queries into queue
         for (size_t i = 0; !max_iterations || i < max_iterations; ++i)
@@ -436,8 +501,14 @@ private:
         pool.wait();
         total_watch.stop();
 
-        printNumberOfQueriesExecuted(queries_executed);
-        report(comparison_info_total, total_watch.elapsedSeconds());
+        {
+            std::lock_guard lock(interval_mutex);
+            // Do not report leftovers after the last interval
+            interval->ignore();
+            interval.reset();
+        }
+
+        report(total_stats, total_watch.elapsedSeconds(), threads);
     }
 
 
@@ -478,21 +549,25 @@ private:
             }
             catch (...)
             {
-                std::lock_guard lock(mutex);
-                log << "An error occurred while processing the query " << "'" << query << "'"
-                          << ": " << getCurrentExceptionMessage(false) << '\n';
-                if (!(continue_on_errors || max_consecutive_errors > ++consecutive_errors))
+                size_t info_index = round_robin ? 0 : connection_index;
                 {
-                    shutdown = true;
-                    throw;
+                    std::lock_guard lock(mutex);
+                    log << "An error occurred while processing the query " << "'" << query << "'"
+                            << ": " << getCurrentExceptionMessage(false) << '\n';
+                    if (!(continue_on_errors || max_consecutive_errors > ++consecutive_errors))
+                    {
+                        shutdown = true;
+                        throw;
+                    }
+
+                    log << getCurrentExceptionMessage(print_stacktrace,
+                        true /*check embedded stack trace*/) << '\n' << flush;
+
+                    ++total_stats[info_index]->errors;
                 }
 
-                log << getCurrentExceptionMessage(print_stacktrace,
-                    true /*check embedded stack trace*/) << '\n' << flush;
-
-                size_t info_index = round_robin ? 0 : connection_index;
-                ++comparison_info_per_interval[info_index]->errors;
-                ++comparison_info_total[info_index]->errors;
+                std::lock_guard lock(interval_mutex); // Locking order: first intervals_mutex, then mutex
+                ++interval->stats[info_index]->errors;
             }
             // Count failed queries toward executed, so that we'd reach
             // max_iterations even if every run fails.
@@ -503,6 +578,13 @@ private:
     void execute(const Query & query, size_t connection_index)
     {
         Stopwatch watch;
+
+        std::shared_ptr<IntervalStats> cur_interval;
+        if (precise)
+        {
+            std::lock_guard lock(interval_mutex);
+            cur_interval = interval;
+        }
 
         ConnectionPool::Entry entry = connections[connection_index]->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
 
@@ -533,21 +615,74 @@ private:
 
         executor.finish();
 
+        watch.stop();
         double duration = (display_client_side_time || progress.elapsed_ns == 0)
             ? watch.elapsedSeconds()
             : progress.elapsed_ns / 1e9;
+        size_t info_index = round_robin ? 0 : connection_index;
+
+        if (precise)
+        {
+            // Stats weighting across all overlapped intervals
+            UInt64 duration_ns = watch.getEnd() - watch.getStart();
+
+            std::lock_guard lock(interval_mutex);
+
+            // Distribute weights across intervals intersecting query execution span
+            // Intervals:
+            // [beg]    I0: [s0---------e0)
+            //          I1:               [s1--------------e1)
+            // [end]    I2:               |                  [s2-----------e2)
+            //                            |                  |
+            //  Query span:        [qs----+------------------+-------qe)
+            //                         ^           ^              ^
+            //                         w0          w1             w2
+            // Weights (w0, w1, w2) are proportional to the lengths of intersections
+            // and normalized to the total duration of a query to given 1 as a sum of weights.
+            for (; cur_interval; cur_interval = cur_interval->next)
+            {
+                if (cur_interval->end_ns <= watch.getStart())
+                    continue;
+                if (cur_interval->start_ns >= watch.getEnd())
+                    break;
+                double overlap_ns = std::min(cur_interval->end_ns, watch.getEnd()) - std::max(cur_interval->start_ns, watch.getStart());
+                double weight = double(overlap_ns) / duration_ns;
+                if (overlap_ns > 0 && duration_ns > 0)
+                    cur_interval->stats[info_index]->addWeighted(progress.read_rows, progress.read_bytes, info.rows, info.bytes, weight);
+            }
+
+            // Latency goes to the last interval only (our sampler does not support weights)
+            interval->stats[info_index]->sample(duration);
+        }
+        else
+        {
+            std::lock_guard lock(interval_mutex);
+            interval->stats[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+        }
 
         std::lock_guard lock(mutex);
-
-        size_t info_index = round_robin ? 0 : connection_index;
-        comparison_info_per_interval[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
-        comparison_info_total[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+        total_stats[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
         t_test.add(info_index, duration);
     }
 
-    void report(const MultiStats & infos, double seconds)
+    void report(const MultiStats & infos, double seconds, size_t used_threads)
     {
         std::lock_guard lock(mutex);
+
+        size_t executed = queries_executed.load();
+        log << "\nQueries executed: " << executed;
+        if (max_iterations > 1)
+            log << " (" << (executed * 100.0 / max_iterations) << "%)";
+        else if (queries.size() > 1)
+            log << " (" << (executed * 100.0 / queries.size()) << "%)";
+        log << ".\n" << flush;
+
+        if (concurrency < max_concurrency)
+        {
+            log << "Concurrency: " << used_threads;
+            log << " of " << max_concurrency;
+            log << " parallel queries.\n" << flush;
+        }
 
         log << "\n";
         for (size_t i = 0; i < infos.size(); ++i)
@@ -571,7 +706,7 @@ private:
             }
             log
                 << connection_description << ", "
-                << "queries: " << info->queries.load() << ", ";
+                << "queries: " << static_cast<size_t>(info->queries) << ", ";
             if (info->errors)
             {
                 log << "errors: " << info->errors << ", ";
@@ -666,6 +801,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("max_concurrency,C", value<unsigned>()->default_value(0),          "gradually increase number of parallel queries up to specified value, making one report for every concurrency level")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
+            ("precise",                                                         "enable precise per-interval reporting with weighted metrics")
             ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
             ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
@@ -770,6 +906,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["concurrency"].as<unsigned>(),
             options["max_concurrency"].as<unsigned>(),
             options["delay"].as<double>(),
+            options.contains("precise"),
             std::move(hosts),
             std::move(ports),
             options.contains("roundrobin"),
