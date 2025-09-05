@@ -438,7 +438,7 @@ private:
         }
         else
         {
-            // Report previous interval (of any)
+            // Report previous interval (if any)
             if (interval)
             {
                 interval->close(now_ns, threads);
