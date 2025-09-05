@@ -157,11 +157,6 @@ void optimizeTreeSecondPass(
 
                 auto * local_plan_node = frame.node;
                 query_plan.replaceNodeWithPlan(local_plan_node, std::move(local_plan));
-
-                // after applying optimize() we still can have several expression in a row,
-                // so merge them to make plan more concise
-                if (optimization_settings.merge_expressions)
-                    tryMergeExpressions(local_plan_node, nodes, {});
             }
 
             if (optimization_settings.merge_expressions)
