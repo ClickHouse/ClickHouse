@@ -499,6 +499,7 @@ bool isDecimal(TYPE data_type); \
 \
 bool isFloat(TYPE data_type); \
 \
+bool isIntegerOrDecimal(TYPE data_type); \
 bool isNativeNumber(TYPE data_type); \
 bool isNumber(TYPE data_type); \
 \
