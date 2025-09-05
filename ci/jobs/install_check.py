@@ -95,7 +95,9 @@ chmod a+rw -R /packages
 exit 1
 """
     (TEMP_PATH / "server_test.sh").write_text(server_test, encoding="utf-8")
-    (TEMP_PATH / "initd_via_systemd_test.sh").write_text(initd_via_systemd_test, encoding="utf-8")
+    (TEMP_PATH / "initd_via_systemd_test.sh").write_text(
+        initd_via_systemd_test, encoding="utf-8"
+    )
     (TEMP_PATH / "initd_test.sh").write_text(initd_test, encoding="utf-8")
     (TEMP_PATH / "keeper_test.sh").write_text(keeper_test, encoding="utf-8")
     (TEMP_PATH / "binary_test.sh").write_text(binary_test, encoding="utf-8")
