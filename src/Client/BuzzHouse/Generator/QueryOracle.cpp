@@ -146,7 +146,9 @@ void QueryOracle::insertOnTableOrCluster(
             : (cluster.has_value() ? TableFunctionUsage::ClusterCall
                                    : (replaceable ? TableFunctionUsage::EngineReplace : TableFunctionUsage::RemoteCall));
 
-        gen.setTableFunction(rg, usage, false, t, tof->mutable_tfunc());
+        gen.setAllowNotDetermistic(false);
+        gen.setTableFunction(rg, usage, t, tof->mutable_tfunc());
+        gen.setAllowNotDetermistic(true);
     }
     else
     {
