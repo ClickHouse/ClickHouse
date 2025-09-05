@@ -2409,19 +2409,12 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
 
         if (index_description.type == "text") // TODO check for legacy types?
         {
-            // TODO get from GinIndexStore instead of hardcoding
-            auto GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
-            auto GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
-            auto GIN_BLOOM_FILTER_FILE_TYPE = ".gin_bflt";
-            auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
-            auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
-
             std::vector<String> gin_files;
-            gin_files.push_back(index_name_escaped + GIN_SEGMENT_ID_FILE_TYPE);
-            gin_files.push_back(index_name_escaped + GIN_SEGMENT_METADATA_FILE_TYPE);
-            gin_files.push_back(index_name_escaped + GIN_BLOOM_FILTER_FILE_TYPE);
-            gin_files.push_back(index_name_escaped + GIN_DICTIONARY_FILE_TYPE);
-            gin_files.push_back(index_name_escaped + GIN_POSTINGS_FILE_TYPE);
+            gin_files.push_back(index_name_escaped + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE);
+            gin_files.push_back(index_name_escaped + GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE);
+            gin_files.push_back(index_name_escaped + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE);
+            gin_files.push_back(index_name_escaped + GinIndexStore::GIN_DICTIONARY_FILE_TYPE);
+            gin_files.push_back(index_name_escaped + GinIndexStore::GIN_POSTINGS_FILE_TYPE);
 
             for (auto file_name : gin_files)
             {
