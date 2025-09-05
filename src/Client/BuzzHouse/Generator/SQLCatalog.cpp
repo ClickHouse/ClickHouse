@@ -155,7 +155,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         {
             /// Set bucket path, Spark has the catalog concept on the path :(
             next_bucket_path = fmt::format(
-                "{}{}{}{}t{}/",
+                "{}{}{}{}t{}",
                 isOnLocal() ? fc.lakes_path.generic_string() : "",
                 isOnLocal() ? "/" : "",
                 (integration == IntegrationCall::Dolor) ? getSparkCatalogName() : "",
