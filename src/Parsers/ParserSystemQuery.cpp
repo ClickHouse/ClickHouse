@@ -190,6 +190,9 @@ enum class SystemQueryTargetType : uint8_t
             if (!zk_path.empty() && zk_path[zk_path.size() - 1] == '/')
                 zk_path.pop_back();
             res->replica_zk_path = zk_path;
+
+            if (database && ParserKeyword{Keyword::RESTORE_AND_DROP_DATABASE}.ignore(pos, expected))
+                res->restore_and_drop_database = true;
         }
         else
             return false;

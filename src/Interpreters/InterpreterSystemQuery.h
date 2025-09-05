@@ -80,9 +80,12 @@ private:
     void restoreDatabaseReplica(ASTSystemQuery & query);
 
     void dropReplica(ASTSystemQuery & query);
-    bool dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table);
+    bool dropStorageReplica(const String & query_replica, const StoragePtr & storage);
+    void dropStorageReplicasFromDatabase(const String & query_replica, DatabasePtr database);
     void dropDatabaseReplica(ASTSystemQuery & query);
     void flushDistributed(ASTSystemQuery & query);
+    DatabasePtr restoreDatabaseFromKeeperPath(const String & zookeeper_path, const String & restoring_database_name);
+    std::optional<String> getDetachedDatabaseFromKeeperPath(const ASTSystemQuery & query_);
     [[noreturn]] void restartDisk(String & name);
 
     RefreshTaskList getRefreshTasks();
