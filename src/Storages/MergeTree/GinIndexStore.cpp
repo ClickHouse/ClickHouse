@@ -734,7 +734,6 @@ void GinIndexStore::writeSegment()
         current_segment.dict_start_offset += dict_uncompressed_size;
     }
 
-    /// Note: this writes out the file size delta, not the actual file sizes
     auto statistics = getStatistics() - before_write_segment_stats;
     LOG_TRACE(
         logger,
