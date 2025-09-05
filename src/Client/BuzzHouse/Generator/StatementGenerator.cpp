@@ -7,6 +7,44 @@
 namespace BuzzHouse
 {
 
+const std::vector<std::vector<OutFormat>> StatementGenerator::outFormats
+    = {{OutFormat::OUT_Arrow},
+       {OutFormat::OUT_Avro},
+       {OutFormat::OUT_BSONEachRow},
+       {OutFormat::OUT_CSV, OutFormat::OUT_CSVWithNames, OutFormat::OUT_CSVWithNamesAndTypes},
+       {OutFormat::OUT_CustomSeparated, OutFormat::OUT_CustomSeparatedWithNames, OutFormat::OUT_CustomSeparatedWithNamesAndTypes},
+       {OutFormat::OUT_JSON,
+        OutFormat::OUT_JSONColumns,
+        OutFormat::OUT_JSONColumnsWithMetadata,
+        OutFormat::OUT_JSONCompact,
+        OutFormat::OUT_JSONCompactColumns,
+        OutFormat::OUT_JSONCompactEachRow,
+        OutFormat::OUT_JSONCompactEachRowWithNames,
+        OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes,
+        OutFormat::OUT_JSONCompactStringsEachRow,
+        OutFormat::OUT_JSONCompactStringsEachRowWithNames,
+        OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes,
+        OutFormat::OUT_JSONEachRow,
+        OutFormat::OUT_JSONLines,
+        OutFormat::OUT_JSONObjectEachRow,
+        OutFormat::OUT_JSONStringsEachRow},
+       {OutFormat::OUT_LineAsString},
+       {OutFormat::OUT_MsgPack},
+       {OutFormat::OUT_Native},
+       {OutFormat::OUT_ORC},
+       {OutFormat::OUT_Parquet},
+       {OutFormat::OUT_Protobuf, OutFormat::OUT_ProtobufSingle},
+       {OutFormat::OUT_RawBLOB},
+       {OutFormat::OUT_RowBinary, OutFormat::OUT_RowBinaryWithNames, OutFormat::OUT_RowBinaryWithNamesAndTypes},
+       {OutFormat::OUT_TabSeparated,
+        OutFormat::OUT_TabSeparatedRaw,
+        OutFormat::OUT_TabSeparatedRawWithNames,
+        OutFormat::OUT_TabSeparatedRawWithNamesAndTypes,
+        OutFormat::OUT_TabSeparatedWithNames,
+        OutFormat::OUT_TabSeparatedWithNamesAndTypes},
+       {OutFormat::OUT_TSKV},
+       {OutFormat::OUT_Values}};
+
 const std::unordered_map<OutFormat, InFormat> StatementGenerator::outIn
     = {{OutFormat::OUT_Arrow, InFormat::IN_Arrow},
        {OutFormat::OUT_Avro, InFormat::IN_Avro},
@@ -691,7 +729,7 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
         String buf;
         bool first = true;
         URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
-        const OutFormat outf = rg.nextBool() ? rg.pickRandomly(outIn)
+        const OutFormat outf = rg.nextBool() ? rg.pickRandomly(rg.pickRandomly(outFormats))
                                              : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
         const InFormat iinf = (outIn.find(outf) != outIn.end()) && rg.nextBool()
             ? outIn.at(outf)
@@ -3516,7 +3554,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     {
         /// Most of the times, use formats that can be read later
         br->set_outformat(
-            rg.nextBool() ? rg.pickRandomly(outIn)
+            rg.nextBool() ? rg.pickRandomly(rg.pickRandomly(outFormats))
                           : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
     }
 }

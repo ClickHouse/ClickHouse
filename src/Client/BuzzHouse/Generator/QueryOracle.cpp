@@ -209,7 +209,7 @@ void QueryOracle::dumpTableContent(
         sv->set_property("output_format_write_statistics");
         sv->set_value("0");
     }
-    ts->set_format(rg.pickRandomly(StatementGenerator::outIn));
+    ts->set_format(rg.pickRandomly(rg.pickRandomly(StatementGenerator::outFormats)));
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -226,7 +226,6 @@ void QueryOracle::generateExportQuery(
     SelectStatementCore * sel = sparen->mutable_select()->mutable_select_core();
     const std::filesystem::path & cnfile = fc.client_file_path / "table.data";
     const std::filesystem::path & snfile = fc.server_file_path / "table.data";
-    OutFormat outf = rg.pickRandomly(StatementGenerator::outIn);
 
     can_test_oracle_result &= test_content;
     /// Remove the file if exists
@@ -265,7 +264,7 @@ void QueryOracle::generateExportQuery(
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
     }
     gen.entries.clear();
-    ff->set_outformat(outf);
+    ff->set_outformat(rg.pickRandomly(rg.pickRandomly(StatementGenerator::outFormats)));
     if (rg.nextSmallNumber() < 4)
     {
         ff->set_fcomp(rg.pickRandomly(compressionMethods));
@@ -575,7 +574,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         Insert * ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         sparen = ins->mutable_select();
         FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
-        OutFormat outf = rg.pickRandomly(StatementGenerator::outIn);
+        OutFormat outf = rg.pickRandomly(rg.pickRandomly(StatementGenerator::outFormats));
 
         const auto err = std::filesystem::remove(qcfile);
         UNUSED(err);

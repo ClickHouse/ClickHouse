@@ -1043,7 +1043,7 @@ bool StatementGenerator::joinedTableOrFunction(
         URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
         const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
         const std::optional<String> & cluster = tt.getCluster();
-        const OutFormat outf = rg.nextBool() ? rg.pickRandomly(outIn)
+        const OutFormat outf = rg.nextBool() ? rg.pickRandomly(rg.pickRandomly(outFormats))
                                              : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
         const InFormat iinf = (outIn.find(outf) != outIn.end()) && rg.nextBool()
             ? outIn.at(outf)
