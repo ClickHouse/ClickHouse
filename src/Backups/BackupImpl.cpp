@@ -764,6 +764,16 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
+    // Zero-sized files are not inserted into `file_infos` during metadata load,
+    // but they are present in `file_names`. Short-circuit them here and return
+    // an empty buffer without consulting `file_infos`.
+    if (size_and_checksum.first == 0)
+    {
+        std::lock_guard lock{mutex};
+        ++num_read_files;
+        return std::make_unique<ReadBufferFromOutsideMemoryFile>(file_name, std::string_view{});
+    }
+
     BackupFileInfo info;
     {
         std::lock_guard lock{mutex};
@@ -778,14 +788,6 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
                 file_name);
         }
         info = it->second;
-    }
-
-    if (info.size == 0)
-    {
-        /// Entry's data is empty.
-        std::lock_guard lock{mutex};
-        ++num_read_files;
-        return std::make_unique<ReadBufferFromOutsideMemoryFile>(info.data_file_name, std::string_view{});
     }
 
     if (info.encrypted_by_disk != read_encrypted)
