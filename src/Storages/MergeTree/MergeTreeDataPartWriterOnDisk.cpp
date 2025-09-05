@@ -501,7 +501,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         {
             String filename_without_extension = skip_indices[i]->getFileName();
             checksums.files[filename_without_extension + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
-            checksums.files[filename_without_extension + GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
             checksums.files[filename_without_extension + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
             checksums.files[filename_without_extension + GinIndexStore::GIN_DICTIONARY_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
             checksums.files[filename_without_extension + GinIndexStore::GIN_POSTINGS_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
@@ -573,17 +573,18 @@ void MergeTreeDataPartWriterOnDisk::initOrAdjustDynamicStructureIfNeeded(Block &
 {
     if (!is_dynamic_streams_initialized)
     {
+        block_sample = block.cloneEmpty();
+
         for (const auto & column : columns_list)
         {
             if (column.type->hasDynamicSubcolumns())
             {
                 /// Create all streams for dynamic subcolumns using dynamic structure from block.
                 auto compression = getCodecDescOrDefault(column.name, default_codec);
-                addStreams(column, block.getByName(column.name).column, compression);
+                addStreams(column, compression);
             }
         }
         is_dynamic_streams_initialized = true;
-        block_sample = block.cloneEmpty();
     }
     else
     {

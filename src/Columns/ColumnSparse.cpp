@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <bit>
 
+
 namespace DB
 {
 
@@ -167,6 +168,11 @@ char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory) const
     return values->serializeValueIntoMemory(getValueIndex(n), memory);
 }
 
+std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n) const
+{
+    return values->getSerializedValueSize(getValueIndex(n));
+}
+
 const char * ColumnSparse::deserializeAndInsertFromArena(const char * pos)
 {
     const char * res = nullptr;
@@ -189,7 +195,7 @@ void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
         return;
 
     if (start + length > src.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parameter out of bound in IColumnString::insertRangeFrom method.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parameter out of bound in ColumnSparse::insertRangeFrom method.");
 
     auto & offsets_data = getOffsetsData();
 

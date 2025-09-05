@@ -123,6 +123,7 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class ZooKeeperConnectionLog;
+class IcebergMetadataLog;
 class SessionLog;
 class BackupsWorker;
 class TransactionsInfoLog;
@@ -255,6 +256,8 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+class ContextTimeSeriesTagsCollector;
+
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
@@ -353,6 +356,9 @@ protected:
     Scalars scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;
+
+    /// Mapping between identifiers and time series tags collected in the context of the currently executed query.
+    std::shared_ptr<ContextTimeSeriesTagsCollector> time_series_tags_collector;
 
     /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator
     /// about next file to read from s3.
@@ -524,6 +530,12 @@ protected:
     /// and generate specific filters on the replicas (e.g. when using parallel replicas with sample key)
     /// if we already use a different mode of parallel replicas we want to disable this mode
     bool offset_parallel_replicas_enabled = true;
+
+    /// indicates how the query operates storage alias:
+    /// 0: operate on original storage
+    /// 1: operate on alias storage, for example, drop table ...
+    /// 2: throw exception on DDL, for example, alter table ... add column ...
+    uint8_t storage_alias_behaviour = 0;
 
 public:
     /// Some counters for current query execution.
@@ -873,6 +885,10 @@ public:
 
     std::optional<Block> tryGetSpecialScalar(const String & name) const;
     void addSpecialScalar(const String & name, const Block & block);
+
+    /// Mapping between identifiers and time series tags collected in the context of the currently executed query.
+    const ContextTimeSeriesTagsCollector & getTimeSeriesTagsCollector() const;
+    ContextTimeSeriesTagsCollector & getTimeSeriesTagsCollector();
 
     const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
     QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
@@ -1352,6 +1368,7 @@ public:
     std::shared_ptr<QueryMetricLog> getQueryMetricLog() const;
     std::shared_ptr<DeadLetterQueue> getDeadLetterQueue() const;
     std::shared_ptr<ZooKeeperConnectionLog> getZooKeeperConnectionLog() const;
+    std::shared_ptr<IcebergMetadataLog> getIcebergMetadataLog() const;
 
     SystemLogs getSystemLogs() const;
 
@@ -1512,6 +1529,7 @@ public:
 
     ClusterFunctionReadTaskCallback getClusterFunctionReadTaskCallback() const;
     void setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback && callback);
+    bool hasClusterFunctionReadTaskCallback() const;
 
     MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
     void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
@@ -1563,6 +1581,9 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
+
+    void setStorageAliasBehaviour(uint8_t storage_alias_behaviour_);
+    uint8_t getStorageAliasBehaviour() const;
 
     void setPartitionIdToMaxBlock(PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock() const;
