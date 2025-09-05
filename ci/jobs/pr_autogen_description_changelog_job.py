@@ -10,7 +10,7 @@ if __name__ == "__main__":
 
     # Set up Claude Code environment variables for Bedrock
     os.environ["CLAUDE_CODE_USE_BEDROCK"] = "1"
-    os.environ["AWS_REGION"] = "us-east-2"
+    os.environ["AWS_REGION"] = "us-east-1"
     os.environ["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = "4096"
     # https://github.com/anthropics/claude-code/issues/4887
     #os.environ["MAX_THINKING_TOKENS"] = "1024" 
