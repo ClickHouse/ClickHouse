@@ -484,6 +484,8 @@ public:
      */
     static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
 
+    bool containsOrUnderOutput(const std::string & output_name) const;
+
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
 
@@ -501,7 +503,8 @@ private:
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    static std::optional<ActionsForFilterPushDown> createActionsForDisjunction(NodeRawConstPtrs disjunction, const ColumnsWithTypeAndName & all_inputs);
+    static std::optional<ActionsForFilterPushDown> createActionsForDisjunction(
+        NodeRawConstPtrs disjunction, const ColumnsWithTypeAndName & all_inputs);
 
     static std::optional<ActionsForFilterPushDown> createActionsForMixed(
         NodeRawConstPtrs conjunction_nodes,

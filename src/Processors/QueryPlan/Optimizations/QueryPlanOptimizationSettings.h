@@ -66,9 +66,6 @@ struct QueryPlanOptimizationSettings
     /// Maximum number of tables in query graph to reorder
     UInt64 query_plan_optimize_join_order_limit;
 
-    /// Flag to track if join filter pushdown optimization has been applied globally
-    bool join_filter_push_down_applied = false;
-
     /// --- Second-pass optimizations
     bool optimize_prewhere;
     bool read_in_order;

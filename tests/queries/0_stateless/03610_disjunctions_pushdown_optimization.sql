@@ -1,3 +1,5 @@
+SET enable_analyzer=1;
+
 DROP TABLE IF EXISTS tp1;
 DROP TABLE IF EXISTS tp2;
 

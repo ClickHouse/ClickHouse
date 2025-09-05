@@ -95,26 +95,6 @@ static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
     return res;
 }
 
-static bool dagContainsOr(const ActionsDAG & dag, const std::string & filter_col)
-{
-    const auto * root = dag.tryFindInOutputs(filter_col);
-    if (!root) return false;
-    std::stack<const ActionsDAG::Node *> st;
-    st.push(root);
-    std::unordered_set<const ActionsDAG::Node *> seen;
-    while (!st.empty())
-    {
-        const auto * n = st.top(); st.pop();
-        if (!seen.insert(n).second) continue;
-        if (n->type == ActionsDAG::ActionType::FUNCTION
-            && n->function_base
-            && n->function_base->getName() == "or")
-            return true;
-        for (const auto * ch : n->children) st.push(ch);
-    }
-    return false;
-}
-
 static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, const Names & available_inputs, size_t child_idx = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
@@ -261,7 +241,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     auto & parent = parent_node->step;
     QueryPlanStepPtr & child = child_node->step;
     auto * filter = assert_cast<FilterStep *>(parent.get());
-    bool has_or = dagContainsOr(filter->getExpression(), filter->getFilterColumnName());
+    bool has_or = filter->getExpression().containsOrUnderOutput(filter->getFilterColumnName());
 
     auto * logical_join = typeid_cast<JoinStepLogical *>(child.get());
     auto * join = typeid_cast<JoinStep *>(child.get());
