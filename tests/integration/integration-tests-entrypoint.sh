@@ -5,7 +5,7 @@ if [[ ! -v MALLOC_CONF ]]; then
     jemalloc_profiles=/tmp/jemalloc_profiles
     mkdir -p "$jemalloc_profiles"
 
-    export MALLOC_CONF=prof_active:true,prof_prefix:$jemalloc_profiles/clickhouse.jemalloc
+    export MALLOC_CONF=prof_thread_active_init:true,prof_prefix:$jemalloc_profiles/clickhouse.jemalloc
     JEMALLOC_PROFILER=1
 fi
 

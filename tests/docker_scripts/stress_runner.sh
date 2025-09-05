@@ -329,3 +329,4 @@ then
 fi
 
 collect_core_dumps
+collect_jemalloc_profiles
