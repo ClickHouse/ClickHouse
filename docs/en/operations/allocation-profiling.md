@@ -35,6 +35,10 @@ If you want to sample and profile allocations in `jemalloc`, you need to start C
 
 You can also enable allocations per query by using `jemalloc_enable_profiler` setting.
 
+:::warning Warning
+Because ClickHouse is an allocation-heavy application, jemalloc sampling may incur performance overhead.
+:::
+
 ## Storing jemalloc samples in `system.trace_log` {#storing-jemalloc-samples-in-system-trace-log}
 
 You can store all the jemalloc samples in `system.trace_log` under `JemallocSample` type.
@@ -47,7 +51,7 @@ To enable it globally you can use config `jemalloc_collect_global_profile_sample
 ```
 
 :::warning Warning
-ClickHouse is an allocation-heavy application so collecting all samples in system.trace_log can induce a high load on it.
+Because ClickHouse is an allocation-heavy application, collecting all samples in system.trace_log may incur high load.
 :::
 
 You can also enable it per query by using `jemalloc_collect_profile_samples_in_trace_log` setting.
