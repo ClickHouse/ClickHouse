@@ -35,7 +35,7 @@ namespace DB
         const Int32 original_value = getpriority(PRIO_PROCESS, thread_id);
         if (original_value == -1 && errno != 0)
         {
-            throw ErrnoException(ErrorCodes::CANNOT_GET_THREAD_PRIORITY, 
+            throw ErrnoException(ErrorCodes::CANNOT_GET_THREAD_PRIORITY,
                 "Failed to get the current nice value for thread {}", thread_id);
         }
 
