@@ -91,7 +91,7 @@ def test_jemalloc_global_profiler(started_cluster):
         # we can deallocate outside query some allocations we did in the query
         assert (
             has_jemalloc_sample_in_trace_log(
-                extra_query_condition=f"AND query_id != '{profiled_query_id}' AND size > 0"
+                extra_query_condition=f"AND query_id != '{query_id}' AND size > 0"
             )
             == 0
         )
