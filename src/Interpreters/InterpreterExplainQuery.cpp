@@ -623,7 +623,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     context = interpreter.getContext();
                 }
 
-                auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+                auto optimization_settings = QueryPlanOptimizationSettings(context);
+                optimization_settings.is_explain = true;
+                optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+                auto pipeline = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
                 if (settings.graph)
                 {

@@ -943,7 +943,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
-                    add_filter(*row_policy_filter_info, std::make_unique<DescriptionHolder<26>>("Row-level security filter"));
+                    add_filter(*row_policy_filter_info, makeDescription("Row-level security filter"));
                 }
 
                 if (query_context->canUseParallelReplicasCustomKey())
@@ -951,7 +951,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     if (settings[Setting::parallel_replicas_count] > 1)
                     {
                         if (auto parallel_replicas_custom_key_filter_info= buildCustomKeyFilterIfNeeded(storage, table_expression_query_info, planner_context))
-                            add_filter(*parallel_replicas_custom_key_filter_info, std::make_unique<DescriptionHolder<36>>("Parallel replicas custom key filter"));
+                            add_filter(*parallel_replicas_custom_key_filter_info, makeDescription("Parallel replicas custom key filter"));
                     }
                     else if (auto * distributed = typeid_cast<StorageDistributed *>(storage.get());
                              distributed && query_context->canUseParallelReplicasCustomKeyForCluster(*distributed->getCluster()))
@@ -969,7 +969,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context))
                 {
                     appendSetsFromActionsDAG(additional_filters_info->actions, useful_sets);
-                    add_filter(*additional_filters_info, std::make_unique<DescriptionHolder<18>>("additional filter"));
+                    add_filter(*additional_filters_info, makeDescription("additional filter"));
                 }
 
                 if (!select_query_options.build_logical_plan)
