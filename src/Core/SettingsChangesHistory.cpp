@@ -56,7 +56,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
             {"promql_evaluation_time", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."},
             {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
-            {"file_like_engine_default_partition_strategy", FileLikeEngineDefaultPartitionStrategy::WILDCARD, FileLikeEngineDefaultPartitionStrategy::HIVE, "New setting."},
+            {"file_like_engine_default_partition_strategy", "wildcard", "hive", "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
