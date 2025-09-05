@@ -1,4 +1,0 @@
-profiles:
-  default:
-    jemalloc_enable_profiler: 1
-    jemalloc_collect_profile_samples_in_trace_log: 1

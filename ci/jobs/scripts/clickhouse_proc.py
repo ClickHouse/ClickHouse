@@ -735,12 +735,17 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 verbose=True
             )
             Shell.check(
-                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
+                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.collapsed 2>/dev/null", 
+                verbose=True
+            )
+
+            Shell.check(
+                f"flamegraph.pl {temp_dir}/jemalloc_profiles/jemalloc.{pid}.collapsed --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
                 verbose=True
             )
 
         Shell.check(
-            f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",
+            f"tar -C {temp_dir}/jemalloc_profiles -czf {temp_dir}/jemalloc.tar.zst $(find {temp_dir}/jemalloc_profiles -type f -printf '%f\n')",
             verbose=True,
         )
         if Path(f"{temp_dir}/jemalloc.tar.zst").exists():

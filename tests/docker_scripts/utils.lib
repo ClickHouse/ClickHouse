@@ -14,16 +14,78 @@ function collect_core_dumps()
 }
 
 jemalloc_profiles_dir=/tmp/jemalloc_profiles
-rm -rf /tmp/jemalloc_profiles
+rm -rf "$jemalloc_profiles_dir"
 mkdir -p "$jemalloc_profiles_dir"
 
 export MALLOC_CONF=prof_prefix:$jemalloc_profiles_dir/clickhouse.jemalloc
 
 function collect_jemalloc_profiles()
 {
-  if [ -d "$jemalloc_profiles_dir" ]; then
-    tar -C "$jemalloc_profiles_dir" -cf - $(find "$jemalloc_profiles_dir" -type f -printf '%f\n') | zstd --threads=0 > /test_output/jemalloc.tar.zst
-  fi
+    # Check if profiles directory exists and has files
+    if [ ! -d "$jemalloc_profiles_dir" ] || [ -z "$(ls -A "$jemalloc_profiles_dir" 2>/dev/null)" ]; then
+        echo "WARNING: Jemalloc profiles not found"
+        return 1
+    fi
+
+    local profiles
+    profiles=$(ls "$jemalloc_profiles_dir" 2>/dev/null | grep -E '^clickhouse\.jemalloc\.[0-9]+\.[0-9]+\.m[0-9]+\.heap$')
+
+    if [ -z "$profiles" ]; then
+        echo "WARNING: No jemalloc profiles found"
+        return 1
+    fi
+
+    # Group profiles by PID and find the latest one for each PID
+    declare -A latest_profiles
+
+    while IFS= read -r profile; do
+        if [[ $profile =~ clickhouse\.jemalloc\.([0-9]+)\.([0-9]+)\.m[0-9]+\.heap ]]; then
+            local pid="${BASH_REMATCH[1]}"
+            local count="${BASH_REMATCH[2]}"
+
+            if [ -z "${latest_profiles[$pid]}" ] || [ "$count" -gt "${latest_profiles[$pid]%:*}" ]; then
+                latest_profiles[$pid]="$count:$profile"
+            fi
+        fi
+    done <<< "$profiles"
+
+    # Get clickhouse binary path
+    local chbinary
+    chbinary=$(readlink -f "$(which clickhouse)")
+
+    # Process each latest profile
+    for pid in "${!latest_profiles[@]}"; do
+        local profile_info="${latest_profiles[$pid]}"
+        local profile="${profile_info#*:}"
+
+        echo "Processing jemalloc profile for PID $pid: $profile"
+
+        # Generate text output
+        jeprof "$chbinary" "$jemalloc_profiles_dir/$profile" --text > "$jemalloc_profiles_dir/jemalloc.$pid.txt" 2>/dev/null || true
+
+        # Generate collapsed output
+        jeprof "$chbinary" "$jemalloc_profiles_dir/$profile" --collapsed > "$jemalloc_profiles_dir/jemalloc.$pid.collapsed" 2>/dev/null || true
+
+        # Generate SVG flamegraph
+        if command -v flamegraph.pl >/dev/null 2>&1; then
+            flamegraph.pl "$jemalloc_profiles_dir/jemalloc.$pid.collapsed" --color mem --width 2560 > "$jemalloc_profiles_dir/jemalloc.$pid.svg" 2>/dev/null || true
+        fi
+    done
+
+    # Create tar archive
+    if [ -d "$jemalloc_profiles_dir" ] && [ -n "$(ls -A "$jemalloc_profiles_dir" 2>/dev/null)" ]; then
+        tar -C "$jemalloc_profiles_dir" -czf "/test_output/jemalloc.tar.zst" $(find "$jemalloc_profiles_dir" -type f -printf '%f\n') 2>/dev/null || {
+            echo "WARNING: Failed to create jemalloc profiles archive"
+            return 1
+        }
+
+        if [ -f "/test_output/jemalloc.tar.zst" ]; then
+            return 0
+        fi
+    fi
+
+    echo "WARNING: Jemalloc profiles not found"
+    return 1
 }
 
 # vi: ft=bash
