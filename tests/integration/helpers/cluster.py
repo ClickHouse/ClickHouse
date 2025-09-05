@@ -31,11 +31,21 @@ try:
     # Please, add modules that required for specific tests only here.
     # So contributors will be able to run most tests locally
     # without installing tons of unneeded packages that may be not so easy to install.
+    import asyncio
     import ssl
 
     import psycopg2
     from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+    import pymongo
     import pymysql
+    import nats
+    # Not an easy dep
+    import cassandra.cluster
+    from cassandra.policies import RoundRobinPolicy
+    from confluent_kafka.avro.cached_schema_registry_client import (
+        CachedSchemaRegistryClient,
+    )
+
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
 
@@ -402,11 +412,6 @@ async def check_nats_is_available(nats_port, ssl_ctx=None):
 
 
 async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None, **connect_options):
-    try:
-        import nats
-    except Exception as e:
-        logging.warning(f"Cannot import some modules, some tests may not work: {e}")
-
     if not ssl_ctx:
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
@@ -2798,11 +2803,6 @@ class ClickHouseCluster:
         run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, command)
 
     def wait_nats_is_available(self, max_retries=5):
-        try:
-            import asyncio
-        except Exception as e:
-            logging.warning(f"Cannot import some modules, some tests may not work: {e}")
-
         retries = 0
         while True:
             if asyncio.run(
@@ -2882,11 +2882,6 @@ class ClickHouseCluster:
                 time.sleep(1)
 
     def wait_mongo_to_start(self, timeout=30, secure=False):
-        try:
-            import pymongo
-        except Exception as e:
-            logging.warning(f"Cannot import some modules, some tests may not work: {e}")
-
         connection_str = "mongodb://{user}:{password}@{host}:{port}".format(
             host="localhost",
             port=self.mongo_port,
@@ -3044,13 +3039,6 @@ class ClickHouseCluster:
         raise Exception("Can't wait Azurite to start")
 
     def wait_schema_registry_to_start(self, timeout=180):
-        try:
-            from confluent_kafka.avro.cached_schema_registry_client import (
-                CachedSchemaRegistryClient,
-            )
-        except Exception as e:
-            logging.warning(f"Cannot import some modules, some tests may not work: {e}")
-
         for port in self.schema_registry_port, self.schema_registry_auth_port:
             reg_url = "http://localhost:{}".format(port)
             arg = {"url": reg_url}
@@ -3074,12 +3062,6 @@ class ClickHouseCluster:
                 raise Exception("Can't wait Schema Registry to start")
 
     def wait_cassandra_to_start(self, timeout=180):
-        try:
-            import cassandra.cluster
-            from cassandra.policies import RoundRobinPolicy
-        except Exception as e:
-            logging.warning(f"Cannot import some modules, some tests may not work: {e}")
-
         self.cassandra_ip = self.get_instance_ip(self.cassandra_host)
         cass_client = cassandra.cluster.Cluster(
             [self.cassandra_ip],
