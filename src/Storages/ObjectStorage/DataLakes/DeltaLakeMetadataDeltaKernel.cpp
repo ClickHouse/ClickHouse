@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -117,24 +118,6 @@ void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_
     format_settings.parquet.allow_missing_columns = true;
 }
 
-static void checkTypesAndNestedTypesEqual(DataTypePtr type, DataTypePtr expected_type, const std::string & column_name)
-{
-    /// Checks types recursively if needed.
-    if (!type->equals(*expected_type))
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Types mismatch for column `{}`. Got: {}, expected: {}",
-            column_name, type->getName(), expected_type->getName());
-    }
-}
-
-static void convertTypeForCompatibility(NameAndTypePair & column, DataTypePtr expected_type)
-{
-    /// Comvert for compatibility, because it used to work.
-    if (column.type->isNullable() && !expected_type->isNullable())
-        column.type = removeNullable(column.type);
-}
-
 /// Returns non virtual column names, and virtual columns names and types.
 static std::pair<Names, NamesAndTypesList> splitVirtualColumns(
     const Names & columns,
@@ -152,8 +135,10 @@ static std::pair<Names, NamesAndTypesList> splitVirtualColumns(
     return {non_virtual_columns, virtual_columns};
 }
 
-/// Returns column and whether it is readable from data file.
-static std::pair<NameAndTypePair, bool> getPhysicalColumn(
+/// Returns physical column and whether it is readable from data file.
+/// We do not change given column actual type,
+/// but can only change names inside the type (in case of Tuple).
+static std::pair<NameAndTypePair, bool> setPhysicalNameAndType(
     const NameAndTypePair & column,
     const NamesAndTypesList & read_schema,
     const NameToNameMap & physical_names_map,
@@ -192,6 +177,26 @@ static std::pair<NameAndTypePair, bool> getPhysicalColumn(
         column.name, column.getNameInStorage(), column.getSubcolumnName(),
         physical_name, physical_subcolumn_name, physical_name_and_type->type->getName());
 
+    auto get_tuple = [&](DataTypePtr type)
+    {
+        if (type->isNullable())
+        {
+            type = assert_cast<const DataTypeNullable *>(physical_name_and_type->type.get())->getNestedType();
+        }
+        return dynamic_cast<const DataTypeTuple *>(physical_name_and_type->type.get());
+    };
+
+    DataTypePtr type_in_storage;
+    if (const auto * tuple = get_tuple(column.type); tuple != nullptr)
+    {
+        auto tuple_types = get_tuple(column.type)->getElements();
+        auto tuple_names = get_tuple(physical_name_and_type->type)->getElementNames();
+
+        type_in_storage = std::make_shared<DataTypeTuple>(tuple_types, tuple_names);
+    }
+    else
+        type_in_storage = column.type;
+
     if (column.isSubcolumn())
     {
         result_column = NameAndTypePair(
@@ -199,12 +204,12 @@ static std::pair<NameAndTypePair, bool> getPhysicalColumn(
             /// physical_subcolumn_name can be empty here while column.getSubcolumnName() is not,
             /// if that subcolumn is size0, null, etc.
             physical_subcolumn_name.empty() ? column.getSubcolumnName() : physical_subcolumn_name,
-            /* type_in_storage */physical_name_and_type->type,
+            /* type_in_storage */type_in_storage,
             /* subcolumn_type */result_column.type);
     }
     else
     {
-        result_column = NameAndTypePair(physical_name, physical_name_and_type->type);
+        result_column = NameAndTypePair(physical_name, type_in_storage);
     }
 
     return {result_column, /* readable */true};
@@ -225,87 +230,75 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// 1. we have partition columns (they are not stored in the actual data)
     /// 2. columnMapping.mode = 'name' or 'id'.
     DB::NameToNameMap physical_names_map;
-    ColumnsDescription table_columns_description;
-    ColumnsDescription read_columns_description;
+    ColumnsDescription read_columns_desc;
     {
         std::lock_guard lock(table_snapshot_mutex);
         physical_names_map = table_snapshot->getPhysicalNamesMap();
-        table_columns_description = ColumnsDescription(table_snapshot->getTableSchema());
-        read_columns_description = ColumnsDescription(table_snapshot->getReadSchema());
+        //table_columns_description = ColumnsDescription(table_snapshot->getTableSchema());
+        read_columns_desc = ColumnsDescription(table_snapshot->getReadSchema());
     }
 
-    Names non_virtual_requested_columns;
-    std::tie(non_virtual_requested_columns, info.requested_virtual_columns) =
+    Names columns_to_read;
+    std::tie(columns_to_read, info.requested_virtual_columns) =
         splitVirtualColumns(requested_columns, storage_snapshot->virtual_columns);
 
     /// Create header for Source with non virtual columns
     /// and add virtual columns at the end of the header.
     /// (because they will be added to the chunk after reading regular columns).
-    info.source_header = storage_snapshot->getSampleBlockForColumns(non_virtual_requested_columns);
+    info.source_header = storage_snapshot->getSampleBlockForColumns(columns_to_read);
     for (const auto & column : info.requested_virtual_columns)
         info.source_header.insert({column.type->createColumn(), column.type, column.name});
 
-    auto requested_table_columns = table_columns_description.getByNames(
+    /// Set requested columns that should be read from data.
+    info.requested_columns = storage_snapshot->getColumnsByNames(
         GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(),
-        non_virtual_requested_columns);
+        columns_to_read);
 
-    auto all_read_columns_with_subcolumns = read_columns_description.get(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
-
-    Names column_names_to_read = non_virtual_requested_columns;
-    /// Difference in `requested_table_columns` and `column_names_to_read` after executing `filterTupleColumnsToRead`:
+    /// Difference in `requested_table_columns` and `columns_to_read` after executing `filterTupleColumnsToRead`:
     /// If we have a column `c1.c2` which is an array and have `SELECT c1.c2.size0`,
     /// then in requested_table_columns we will have `c1.c2` as name in storage and `size0` as subcolumn name,
-    /// while in column_names_to_read we will have `c1` as name in storage and `c2` as subcolumn name.
-    filterTupleColumnsToRead(requested_table_columns, column_names_to_read);
+    /// while in columns_to_read we will have `c1` as name in storage and `c2` as subcolumn name.
+    columns_to_read = filterTupleColumnsToRead(info.requested_columns);
+
+    auto readable_columns_with_subcolumns = read_columns_desc.get(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
+    auto readable_columns = read_columns_desc.get(GetColumnsOptions(GetColumnsOptions::All));
 
     /// If only virtual columns were requested, just read the smallest column.
     /// Because format header cannot be empty.
-    if (supports_subset_of_columns && column_names_to_read.empty())
-        column_names_to_read.push_back(ExpressionActions::getSmallestColumn(table_columns_description.getAll()).name);
+    if (supports_subset_of_columns && columns_to_read.empty())
+        columns_to_read.push_back(ExpressionActions::getSmallestColumn(readable_columns).name);
 
-    info.columns_description = storage_snapshot->getDescriptionForColumns(column_names_to_read);
+    info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
+    info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
-    /// Set format_header with columns that should be read from data.
-    /// However, we include partition columns in requested_columns (and not in format_header),
+    /// We include partition columns in requested_columns (and not in format_header),
     /// because we will insert partition columns into chunk right after it is read from data file,
     /// so we want it to be verified that chunk contains all the requested columns.
-    for (auto & column : requested_table_columns)
+    for (auto & name_and_type : info.requested_columns)
     {
-        auto [result_column, _] = getPhysicalColumn(
-            column,
-            all_read_columns_with_subcolumns,
+        auto [result_name_and_type, _] = setPhysicalNameAndType(
+            name_and_type,
+            readable_columns_with_subcolumns,
             physical_names_map,
             /* get_name_in_storage */true,
             log);
-
-        auto expected_type = info.columns_description.get(column.name).type;
-        convertTypeForCompatibility(result_column, expected_type);
-        checkTypesAndNestedTypesEqual(result_column.type, expected_type, column.name);
-
-        info.requested_columns.emplace_back(result_column);
+        name_and_type = result_name_and_type;
     }
 
-    auto table_columns_to_read = table_columns_description.getByNames(
-        GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(),
-        column_names_to_read);
-
-    for (auto & column : table_columns_to_read)
+    /// Set format_header with columns that should be read from data.
+    auto columns_to_read_desc = info.columns_description.get(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
+    for (auto & name_and_type : columns_to_read_desc)
     {
-        auto [result_column, readable] = getPhysicalColumn(
-            column,
-            all_read_columns_with_subcolumns,
+        auto [result_name_and_type, readable] = setPhysicalNameAndType(
+            name_and_type,
+            readable_columns_with_subcolumns,
             physical_names_map,
             /* get_name_in_storage */false,
             log);
 
         if (readable)
-        {
-            convertTypeForCompatibility(result_column, info.columns_description.get(column.name).type);
-            info.format_header.insert(ColumnWithTypeAndName{result_column.type, result_column.name});
-        }
+            info.format_header.insert(ColumnWithTypeAndName{result_name_and_type.type, result_name_and_type.name});
     }
-
-    info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());

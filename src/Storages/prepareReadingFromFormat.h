@@ -70,7 +70,8 @@ namespace DB
         bool supports_tuple_elements = false,
         const PrepareReadingFromFormatHiveParams & hive_parameters = {});
 
-    void filterTupleColumnsToRead(NamesAndTypesList & requested_columns, Strings & columns_to_read);
+    /// Returns columns_to_read from file.
+    Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns);
 
     ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info);
 

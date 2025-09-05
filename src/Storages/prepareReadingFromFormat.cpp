@@ -64,7 +64,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
     {
         if (supports_tuple_elements)
         {
-            filterTupleColumnsToRead(info.requested_columns, columns_to_read);
+            columns_to_read = filterTupleColumnsToRead(info.requested_columns);
         }
         else if (columns_to_read.empty())
         {
@@ -108,7 +108,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
     return info;
 }
 
-void filterTupleColumnsToRead(NamesAndTypesList & requested_columns, Strings & columns_to_read)
+Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
 {
     /// Format can read tuple element subcolumns, e.g. `t.x` or `t.a.x`.
     /// But we still need to do some processing on the set of requested columns:
@@ -240,7 +240,7 @@ void filterTupleColumnsToRead(NamesAndTypesList & requested_columns, Strings & c
         if (!column_info.is_duplicate)
             new_columns_to_read.push_back(column_info.name);
     }
-    columns_to_read = std::move(new_columns_to_read);
+    return new_columns_to_read;
 
     /// (Not checking columns_to_read.empty() in this case, assuming that formats with
     ///  supports_tuple_elements also support empty list of columns.)

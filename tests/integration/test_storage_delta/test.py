@@ -2325,13 +2325,15 @@ def test_concurrent_reads(started_cluster):
     result_file = f"{TABLE_NAME}"
     partition_columns = []
 
-    arrow_schema = pa.schema([
-        ("id", pa.int32(), False),
-        ("name", pa.string(), False),
-        ("age", pa.int32(), False),
-        ("country", pa.string(), False),
-        ("year", pa.string(), False),
-    ])
+    arrow_schema = pa.schema(
+        [
+            ("id", pa.int32(), False),
+            ("name", pa.string(), False),
+            ("age", pa.int32(), False),
+            ("country", pa.string(), False),
+            ("year", pa.string(), False),
+        ]
+    )
 
     num_rows = 500000
     now = datetime.now()
@@ -2342,8 +2344,7 @@ def test_concurrent_reads(started_cluster):
     years = ["2025"] * num_rows
 
     arrow_table = pa.Table.from_arrays(
-        [ids, names, ages, countries, years],
-        schema=arrow_schema
+        [ids, names, ages, countries, years], schema=arrow_schema
     )
     write_deltalake(
         f"/{TABLE_NAME}",
@@ -3076,7 +3077,11 @@ def test_partitioned_writes(started_cluster):
     partition_columns = ["id", "comment"]
 
     schema = pa.schema(
-        [("id", pa.int32(), False), ("name", pa.string(), False), ("comment", pa.string(), False)]
+        [
+            ("id", pa.int32(), False),
+            ("name", pa.string(), False),
+            ("comment", pa.string(), False),
+        ]
     )
     empty_arrays = [
         pa.array([], type=pa.int32()),
@@ -3377,7 +3382,9 @@ def test_write_limits(started_cluster, partitioned, limit_enabled):
         f"INSERT INTO {table_name} SELECT number % {partitions_num}, randomString(10) FROM numbers({num_rows}) SETTINGS delta_lake_insert_max_rows_in_data_file = {limit_rows}, max_insert_block_size = 1000, min_chunk_bytes_for_parallel_parsing = 1000"
     )
 
-    files = LocalDownloader(instance).download_directory(f"/{result_file}/", f"/{result_file}/")
+    files = LocalDownloader(instance).download_directory(
+        f"/{result_file}/", f"/{result_file}/"
+    )
     data_files = [file for file in files if file.endswith(".parquet")]
     assert len(data_files) > 0, f"No data files: {files}"
 
@@ -3578,17 +3585,32 @@ CREATE TABLE {table_name}
     assert 0 == int(instance.query(f"SELECT count() FROM {table_name}"))
     assert "" == instance.query(f"SELECT {table_name}.`c1._2` FROM {table_name}")
 
-    spark.sql(f"""
+    spark.sql(
+        f"""
     INSERT INTO {table_name}
     VALUES (named_struct('_2', array(1, NULL, 3))),
         (named_struct('_2', array(4, 5)))
-    """)
+    """
+    )
     LocalUploader(instance).upload_directory(f"{path}/", f"{path}/")
 
-    assert "([1,NULL,3])\n([4,5])" == instance.query(f"SELECT * FROM {table_name}").strip()
-    assert "[1,NULL,3]\n[4,5]" == instance.query(f"SELECT {table_name}.`c1._2` FROM {table_name}").strip()
-    assert "3\n2" == instance.query(f"SELECT {table_name}.`c1._2`.size0 FROM {table_name}").strip()
-    assert "[0,1,0]\n[0,0]" == instance.query(f"SELECT {table_name}.`c1._2`.null FROM {table_name}").strip()
+    assert (
+        "([1,NULL,3])\n([4,5])" == instance.query(f"SELECT * FROM {table_name}").strip()
+    )
+    assert (
+        "[1,NULL,3]\n[4,5]"
+        == instance.query(f"SELECT {table_name}.`c1._2` FROM {table_name}").strip()
+    )
+    assert (
+        "3\n2"
+        == instance.query(
+            f"SELECT {table_name}.`c1._2`.size0 FROM {table_name}"
+        ).strip()
+    )
+    assert (
+        "[0,1,0]\n[0,0]"
+        == instance.query(f"SELECT {table_name}.`c1._2`.null FROM {table_name}").strip()
+    )
 
 
 def test_write_column_order(started_cluster):
@@ -3625,3 +3647,46 @@ def test_write_column_order(started_cluster):
     )
 
     assert num_rows * 2 == int(instance.query(f"SELECT count() FROM {table_name}"))
+
+
+def test_type_from_storage_def(started_cluster):
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_types_2")
+    spark = started_cluster.spark_session
+    path = f"/{table_name}"
+
+    schema = pa.schema(
+        [
+            ("c0", pa.int32(), False),
+            ("c1", pa.string(), False),
+            ("c2", pa.timestamp("us"), False),  # new datetime column
+        ]
+    )
+
+    # Empty arrays must match schema types
+    empty_arrays = [
+        pa.array([], type=pa.int32()),
+        pa.array([], type=pa.string()),
+        pa.array([], type=pa.timestamp("us")),
+    ]
+
+    # Write empty Delta table with new schema
+    write_deltalake(
+        f"file://{path}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+    )
+    LocalUploader(instance).upload_directory(f"{path}/", f"{path}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (c0 Int32, c1 String, c2 DateTime) ENGINE = DeltaLakeLocal('{path}') SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+    num_rows = 10
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number as c1, toString(number), toDateTime('2000-10-10 00:00:00') FROM numbers(2)"
+    )
+
+    assert (
+        "2000-10-10 00:00:00\n2000-10-10 00:00:00"
+        == instance.query(f"SELECT c2 FROM {table_name}").strip()
+    )
