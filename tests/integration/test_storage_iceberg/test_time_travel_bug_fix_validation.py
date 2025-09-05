@@ -1,4 +1,5 @@
 import pytest
+import os
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
@@ -7,7 +8,7 @@ from helpers.iceberg_utils import (
     get_uuid_str
 )
 
-
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 def test_time_travel_bug_fix_validation(started_cluster):
     instance = started_cluster.instances["node1"]

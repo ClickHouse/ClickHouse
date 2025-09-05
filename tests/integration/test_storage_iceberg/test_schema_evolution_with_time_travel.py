@@ -3,6 +3,7 @@ import time
 import pytest
 
 from helpers.iceberg_utils import (
+    check_schema_and_data,
     get_uuid_str,
     get_creation_expression,
     execute_spark_query_general,
@@ -11,8 +12,6 @@ from helpers.iceberg_utils import (
 )
 
 import logging
-
-from tests.integration.test_storage_iceberg.test import check_schema_and_data
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
