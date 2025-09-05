@@ -1029,18 +1029,20 @@ void ZooKeeper::receiveEvent()
             if (add_watch)
             {
 
-                /// The key of wathces should exclude the args.chroot
+                /// The key of watches should exclude the args.chroot
                 String req_path = req->getPath();
                 removeRootPath(req_path, args.chroot);
                 std::lock_guard lock(watches_mutex);
                 auto & callbacks = watches[req_path];
-                chassert(callbacks.size() < 100);
-                if (callbacks.size() > 10)
-                    LOG_INFO(log, "Too many watches for path {}: {} (This is likely an error)", req_path, callbacks.size());
                 if (watch && *watch)
                 {
                     if (callbacks.insert(watch).second)
+                    {
+                        chassert(callbacks.size() < 100);
+                        if (callbacks.size() > 100)
+                            LOG_WARNING(log, "Too many watches for path {}: {} (This is likely an error)", req_path, callbacks.size());
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
+                    }
                 }
             }
         };
