@@ -56,14 +56,13 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         return false;
 
     /// Check if join can do runtime filtering on left table
-    const auto & join_info = join_step->getJoinInfo();
+    const auto & join_operator = join_step->getJoinOperator();
     const bool can_use_runtime_filter =
         (
-            (join_info.kind == JoinKind::Inner && (join_info.strictness == JoinStrictness::All || join_info.strictness == JoinStrictness::Any)) ||
-            ((join_info.kind == JoinKind::Left || join_info.kind == JoinKind::Right) && join_info.strictness == JoinStrictness::Semi)
+            (join_operator.kind == JoinKind::Inner && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any)) ||
+            ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Semi)
         ) &&
-        (join_info.locality == JoinLocality::Unspecified || join_info.locality != JoinLocality::Global) &&
-        join_info.expression.disjunctive_conditions.empty();
+        (join_operator.locality == JoinLocality::Unspecified || join_operator.locality != JoinLocality::Global);
 
     if (!can_use_runtime_filter)
         return false;
@@ -71,56 +70,30 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     QueryPlan::Node * apply_filter_node = node.children[0];
     QueryPlan::Node * build_filter_node = node.children[1];
 
-    std::vector<ColumnWithTypeAndName> join_keys_probe_side;
-    std::vector<ColumnWithTypeAndName> join_keys_build_side;
+    ColumnsWithTypeAndName join_keys_probe_side;
+    ColumnsWithTypeAndName join_keys_build_side;
 
-    const auto & join_condition = join_info.expression.condition;
-    for (const auto & predicate : join_condition.predicates)
+    /// Check that there are only equality predicates
+    for (const auto & condition : join_operator.expression)
     {
-        if (predicate.op != PredicateOperator::Equals)
+        auto predicate = condition.asBinaryPredicate();
+        if (get<0>(predicate) != JoinConditionOperator::Equals)
             return false;
-
-        join_keys_probe_side.push_back(predicate.left_node.getColumn());
-        join_keys_build_side.push_back(predicate.right_node.getColumn());
     }
 
-    /// Extract expressions for calculating join on keys
-    /// Move them into separate nodes
-    /// Replace pre-join actions in the join step with pass-through (no-op) actions
     {
-        const auto & actions = join_step->getExpressionActions();
-
-        /// Replaces the internals of ActionsDAG with no-op actions that just pass specified columns without any transformations
-        /// This is done in-place because JoinActionRef-s store column names and pointers to ActionsDAG-s
-        auto replace_with_pass_through_actions = [](ActionsDAG & actions_dag, const Block & header)
+        /// Extract expressions for calculating join on keys
+        auto key_dags = join_step->preCalculateKeys(apply_filter_node->step->getOutputHeader(), build_filter_node->step->getOutputHeader());
+        if (key_dags)
         {
-            actions_dag = ActionsDAG(); /// Clear the actions DAG
-            for (const auto & column : header.getColumnsWithTypeAndName())
-                actions_dag.addOrReplaceInOutputs(actions_dag.addInput(column));
-        };
-
-        if (actions.left_pre_join_actions)
-        {
-            apply_filter_node = makeExpressionNodeOnTopOf(apply_filter_node, std::move(*actions.left_pre_join_actions), {}, nodes);
-            apply_filter_node->step->setStepDescription("Compute join keys");
-            replace_with_pass_through_actions(*actions.left_pre_join_actions, *apply_filter_node->step->getOutputHeader());
-            join_step->updateInputHeader(apply_filter_node->step->getOutputHeader(), 0);
+            auto get_node_column_with_type_and_name = [](const auto * e) { return ColumnWithTypeAndName(e->result_type, e->result_name); };
+            join_keys_probe_side = std::ranges::to<ColumnsWithTypeAndName>(key_dags->first.keys | std::views::transform(get_node_column_with_type_and_name));
+            join_keys_build_side = std::ranges::to<ColumnsWithTypeAndName>(key_dags->second.keys | std::views::transform(get_node_column_with_type_and_name));
+            if (!isPassthroughActions(key_dags->first.actions_dag))
+                makeExpressionNodeOnTopOf(*apply_filter_node, std::move(key_dags->first.actions_dag), nodes, "Calculate left join keys");
+            if (!isPassthroughActions(key_dags->second.actions_dag))
+                makeExpressionNodeOnTopOf(*build_filter_node, std::move(key_dags->second.actions_dag), nodes, "Calculate right join keys");
         }
-
-        if (actions.right_pre_join_actions)
-        {
-            build_filter_node = makeExpressionNodeOnTopOf(build_filter_node, std::move(*actions.right_pre_join_actions), {}, nodes);
-            apply_filter_node->step->setStepDescription("Compute join keys");
-            replace_with_pass_through_actions(*actions.right_pre_join_actions, *build_filter_node->step->getOutputHeader());
-            join_step->updateInputHeader(build_filter_node->step->getOutputHeader(), 1);
-        }
-    }
-
-    const bool swap_join_tables = join_step->areInputsSwapped();
-    if (swap_join_tables)
-    {
-        std::swap(build_filter_node, apply_filter_node);
-        std::swap(join_keys_build_side, join_keys_probe_side);
     }
 
     const String filter_name_prefix = fmt::format("_runtime_filter_{}", thread_local_rng());
@@ -207,10 +180,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         apply_filter_node = new_apply_filter_node;
     }
 
-    if (swap_join_tables)
-        node.children = {build_filter_node, apply_filter_node};
-    else
-        node.children = {apply_filter_node, build_filter_node};
+    node.children = {apply_filter_node, build_filter_node};
 
     return true;
 }
