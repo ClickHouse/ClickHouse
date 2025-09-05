@@ -73,7 +73,6 @@ spark_properties = {
     "spark.databricks.delta.optimize.repartition.enabled": true_false_lambda,
     "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact": true_false_lambda,
     "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite": true_false_lambda,
-    "spark.databricks.delta.retentionDurationCheck.enabled": true_false_lambda,
     "spark.databricks.delta.schema.autoMerge.enabled": true_false_lambda,
     "spark.databricks.delta.stalenessLimit": lambda: random.choice(
         ["1h", "6h", "12h", "24h"]
@@ -300,7 +299,7 @@ def get_spark(
     elif lake == LakeFormat.DeltaLake:
         # Enable persistence
         builder.config(
-            "javax.jdo.option.ConnectionURL",
+            "spark.hadoop.javax.jdo.option.ConnectionURL",
             f"jdbc:derby:;databaseName={metastore_db};create=true",
         )
         builder.config(
