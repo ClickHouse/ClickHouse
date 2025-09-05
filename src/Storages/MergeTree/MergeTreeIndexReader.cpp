@@ -1,12 +1,26 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 
 namespace
 {
 
 using namespace DB;
+
+MergeTreeReaderSettings patchSettings(MergeTreeReaderSettings settings, IndexSubstream::Type substream)
+{
+    using enum IndexSubstream::Type;
+
+    if (substream == TextIndexDictionary || substream == TextIndexPostings)
+    {
+        settings.read_settings.local_fs_buffer_size = 16 * 1024;
+        settings.read_settings.remote_fs_buffer_size = 16 * 1024;
+    }
+
+    return settings;
+}
 
 std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     const String & stream_name,
@@ -97,7 +111,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
             all_mark_ranges,
             mark_cache,
             uncompressed_cache,
-            std::move(settings));
+            patchSettings(settings, substream.type));
 
         stream->adjustRightMark(last_mark);
         stream->seekToStart();

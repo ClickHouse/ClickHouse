@@ -326,6 +326,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     else
     {
         task_readers = previous_task->releaseReaders();
+        task_readers.updateAllMarkRanges(ranges);
     }
 
     return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(patches_ranges));

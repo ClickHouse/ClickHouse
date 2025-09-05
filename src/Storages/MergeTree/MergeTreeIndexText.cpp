@@ -6,6 +6,7 @@
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Interpreters/BloomFilterHash.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/logger_useful.h>
 #include <IO/BitHelpers.h>
 #include <base/range.h>
@@ -14,6 +15,9 @@ namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
     extern const Event TextIndexReadDictionarySparseIndexBlocks;
+    extern const Event TextIndexBloomFilterHits;
+    extern const Event TextIndexBloomFilterMisses;
+    extern const Event TextIndexBloomFilterFalsePositives;
 }
 
 namespace DB
@@ -30,6 +34,12 @@ static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
 {
     static constexpr size_t atom_size = 8;
     return std::max(1UL, (bits_per_row * num_tokens + atom_size - 1) / atom_size);
+}
+
+static UInt64 getBloomFilterHash(const StringRef & token, size_t prefix_size)
+{
+    size_t hashing_size = prefix_size ? std::min(prefix_size, token.size) : token.size;
+    return CityHash_v1_0_2::CityHash64(token.data, hashing_size);
 }
 
 static constexpr UInt8 EMBEDDED_POSTINGS_FLAG = static_cast<UInt8>(1 << 6);
@@ -191,9 +201,9 @@ void MergeTreeIndexGranuleText::deserializeBinary(ReadBuffer &, MergeTreeIndexVe
 
 void MergeTreeIndexGranuleText::deserializeBloomFilter(ReadBuffer & istr)
 {
-    readVarUInt(num_tokens, istr);
+    readVarUInt(bloom_filter_elements, istr);
 
-    size_t bytes_size = getBloomFilterSizeInBytes(params.bloom_filter_bits_per_row, num_tokens);
+    size_t bytes_size = getBloomFilterSizeInBytes(params.bloom_filter_bits_per_row, bloom_filter_elements);
     bloom_filter.resize(bytes_size);
     istr.readStrict(reinterpret_cast<char *>(bloom_filter.getFilter().data()), bytes_size);
 }
@@ -278,6 +288,18 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(IndexInputS
     analyzeDictionary(*dictionary_stream, state);
 }
 
+bool MergeTreeIndexGranuleText::hasInBloomFilter(const StringRef & token) const
+{
+    UInt64 hash = getBloomFilterHash(token, params.bloom_filter_prefix_size);
+
+    for (size_t i = 0; i < params.bloom_filter_num_hashes; ++i)
+    {
+        if (!bloom_filter.findHashWithSeed(hash, BloomFilterHash::bf_hash_seed[i]))
+            return false;
+    }
+    return true;
+}
+
 void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexCondition & condition)
 {
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(condition);
@@ -288,14 +310,19 @@ void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexConditio
     {
         for (const auto & token : search_tokens)
         {
-            if (bloom_filter.find(token.data(), token.size()))
+            if (hasInBloomFilter(token))
             {
                 remaining_tokens.emplace(token, TokenInfo{});
             }
-            else if (global_search_mode == TextSearchMode::All)
+            else
             {
-                remaining_tokens.clear();
-                return;
+                ProfileEvents::increment(ProfileEvents::TextIndexBloomFilterHits);
+
+                if (global_search_mode == TextSearchMode::All)
+                {
+                    remaining_tokens.clear();
+                    return;
+                }
             }
         }
     }
@@ -342,10 +369,13 @@ void MergeTreeIndexGranuleText::analyzeDictionary(IndexReaderStream & stream, In
 
             if (token_idx.has_value())
             {
+                ProfileEvents::increment(ProfileEvents::TextIndexBloomFilterMisses);
                 it->second = dictionary_block.token_infos.at(token_idx.value());
             }
             else
             {
+                ProfileEvents::increment(ProfileEvents::TextIndexBloomFilterFalsePositives);
+
                 if (global_search_mode == TextSearchMode::All)
                 {
                     remaining_tokens.clear();
@@ -376,11 +406,13 @@ void MergeTreeIndexGranuleText::resetAfterAnalysis()
 
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     MergeTreeIndexTextParams params_,
+    size_t bloom_filter_elements_,
     BloomFilter bloom_filter_,
     std::vector<StringRef> tokens_,
     std::vector<PostingList> posting_lists_,
     std::unique_ptr<Arena> arena_)
     : params(std::move(params_))
+    , bloom_filter_elements(bloom_filter_elements_)
     , bloom_filter(std::move(bloom_filter_))
     , tokens(std::move(tokens_))
     , posting_lists(std::move(posting_lists_))
@@ -505,7 +537,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Index
         params.dictionary_block_size,
         params.max_cardinality_for_embedded_postings);
 
-    serializeBloomFilter(tokens.size(), bloom_filter, *index_stream);
+    serializeBloomFilter(bloom_filter_elements, bloom_filter, *index_stream);
     serializeSparseIndex(sparse_index_block, *index_stream);
 }
 
@@ -561,19 +593,29 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
     sorted_tokens.reserve(sorted_values.size());
     sorted_posting_lists.reserve(sorted_values.size());
 
-    size_t num_tokens = tokens_map.size();
-    size_t bloom_filter_bytes = getBloomFilterSizeInBytes(params.bloom_filter_bits_per_row, num_tokens);
-    BloomFilter bloom_filter(bloom_filter_bytes, params.bloom_filter_num_hashes, 0);
+    HashSet<UInt64, HashCRC32<UInt64>> bloom_filter_hashes;
 
     for (auto & [token, posting_list] : sorted_values)
     {
-        bloom_filter.add(token.data, token.size);
+        UInt64 hash = getBloomFilterHash(token, params.bloom_filter_prefix_size);
+        bloom_filter_hashes.insert(hash);
+
         sorted_tokens.emplace_back(token);
         sorted_posting_lists.emplace_back(std::move(*posting_list));
     }
 
+    size_t bloom_filter_bytes = getBloomFilterSizeInBytes(params.bloom_filter_bits_per_row, bloom_filter_hashes.size());
+    BloomFilter bloom_filter(bloom_filter_bytes, params.bloom_filter_num_hashes, 0);
+
+    for (const auto & hash : bloom_filter_hashes)
+    {
+        for (size_t i = 0; i < params.bloom_filter_num_hashes; ++i)
+            bloom_filter.addHashWithSeed(hash.getKey(), BloomFilterHash::bf_hash_seed[i]);
+    }
+
     return std::make_unique<MergeTreeIndexGranuleTextWritable>(
         params,
+        bloom_filter_hashes.size(),
         std::move(bloom_filter),
         std::move(sorted_tokens),
         std::move(sorted_posting_lists),
@@ -669,6 +711,7 @@ static const String ARGUMENT_SEPARATORS = "separators";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = "max_cardinality_for_embedded_postings";
 static const String ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE = "bloom_filter_false_positive_rate";
+static const String ARGUMENT_BLOOM_FILTER_PREFIX_SIZE = "bloom_filter_prefix_size";
 
 namespace
 {
@@ -764,9 +807,10 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     UInt64 dictionary_block_size = getOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(128);
     UInt64 max_cardinality_for_embedded_postings = getOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS).value_or(16);
     double bloom_filter_false_positive_rate = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(0.025);
+    UInt64 bloom_filter_prefix_size = getOption<UInt64>(options, ARGUMENT_BLOOM_FILTER_PREFIX_SIZE).value_or(4);
 
     const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
-    MergeTreeIndexTextParams params{dictionary_block_size, max_cardinality_for_embedded_postings, bits_per_rows, num_hashes};
+    MergeTreeIndexTextParams params{dictionary_block_size, max_cardinality_for_embedded_postings, bits_per_rows, num_hashes, bloom_filter_prefix_size};
 
     return std::make_shared<MergeTreeIndexText>(index, params, std::move(token_extractor));
 }

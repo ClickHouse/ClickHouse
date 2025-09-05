@@ -141,6 +141,8 @@ public:
         MergeTreeReaderPtr prepared_index;
         /// TODO: remove this
         bool added_index_readers = false;
+
+        void updateAllMarkRanges(const MarkRanges & ranges);
     };
 
     struct BlockSizeParams

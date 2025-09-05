@@ -55,6 +55,14 @@ void MergeTreeReadTaskColumns::moveAllColumnsFromPrewhere()
     pre_columns.clear();
 }
 
+void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges)
+{
+    main->updateAllMarkRanges(ranges);
+
+    for (auto & reader : prewhere)
+        reader->updateAllMarkRanges(ranges);
+}
+
 MergeTreeReadTask::MergeTreeReadTask(
     MergeTreeReadTaskInfoPtr info_,
     Readers readers_,

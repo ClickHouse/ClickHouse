@@ -37,6 +37,7 @@ public:
 
     bool canSkipMark(size_t mark, size_t current_task_last_mark) override;
     bool canReadIncompleteGranules() const override { return false; }
+    void updateAllMarkRanges(const MarkRanges & ranges) override;
 
 private:
     struct Granule
@@ -48,23 +49,35 @@ private:
         bool need_read_postings = true;
     };
 
+    void updateAllIndexRanges();
     void createEmptyColumns(Columns & columns) const;
     void readPostingsIfNeeded(Granule & granule);
     void fillSkippedColumn(IColumn & column, size_t num_rows);
     void fillColumn(IColumn & column, Granule & granule, TextSearchMode search_mode, size_t granule_offset, size_t num_rows);
 
-    /// Delegates to the main reader to determine if reading incomplete index granules is supported.
-    const IMergeTreeReader * main_reader;
     std::vector<TextSearchMode> search_modes;
     MergeTreeIndexWithCondition index;
 
-    MarkRanges index_ranges;
+    MarkRanges all_index_ranges;
     std::optional<MergeTreeIndexReader> index_reader;
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;
     size_t current_mark = 0;
+
+    struct RemainingMarks
+    {
+        size_t total = 0;
+        size_t remaining = 0;
+
+        void increment();
+        /// Returns true if granule can be removed.
+        bool decrement(size_t granularity);
+        bool finished(size_t granularity) const;
+    };
+
     std::map<size_t, Granule> granules;
+    absl::flat_hash_map<size_t, RemainingMarks> remaining_marks;
 };
 
 }

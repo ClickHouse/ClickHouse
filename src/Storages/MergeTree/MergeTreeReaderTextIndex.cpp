@@ -1,4 +1,3 @@
-#include <sstream>
 #include <Columns/ColumnsCommon.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -43,7 +42,6 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         Context::getGlobalContextInstance()->getIndexMarkCache().get(),
         main_reader_->all_mark_ranges,
         main_reader_->settings)
-    , main_reader(main_reader_)
     , search_modes(std::move(search_modes_))
     , index(std::move(index_))
 {
@@ -59,34 +57,52 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         }
     }
 
-    size_t index_granularity = index.index->index.granularity;
+    updateAllIndexRanges();
 
-    for (const auto & range : all_mark_ranges)
-    {
-        MarkRange index_range(
-            range.begin / index_granularity,
-            (range.end + index_granularity - 1) / index_granularity);
-
-        index_ranges.push_back(index_range);
-    }
-
-    const auto * loaded_data_part = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(main_reader->data_part_info_for_read.get());
+    const auto * loaded_data_part = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
     if (!loaded_data_part)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading text index is supported only for loaded data parts");
 
     const auto & data_part = loaded_data_part->getDataPart();
     size_t marks_count = data_part->index_granularity->getMarksCountWithoutFinal();
-    size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
+    size_t index_marks_count = (marks_count + index.index->index.granularity - 1) / index.index->index.granularity;
 
     index_reader.emplace(
         index.index,
         data_part,
         index_marks_count,
-        index_ranges,
+        all_index_ranges,
         mark_cache,
         uncompressed_cache,
         /*vector_similarity_index_cache=*/ nullptr,
         settings);
+}
+
+void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
+{
+    IMergeTreeReader::updateAllMarkRanges(ranges);
+    updateAllIndexRanges();
+}
+
+void MergeTreeReaderTextIndex::updateAllIndexRanges()
+{
+    all_index_ranges.clear();
+    size_t granularity = index.index->index.granularity;
+
+    for (const auto & range : all_mark_ranges)
+    {
+        for (size_t i = range.begin; i < range.end; ++i)
+        {
+            size_t index_mark = i / granularity;
+            remaining_marks[index_mark].increment();
+        }
+
+        MarkRange index_range(
+            range.begin / granularity,
+            (range.end + granularity - 1) / granularity);
+
+        all_index_ranges.push_back(index_range);
+    }
 }
 
 bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last_mark)
@@ -94,12 +110,18 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last
     chassert(index_reader);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
 
-    size_t index_mark = mark / index.index->index.granularity;
-    size_t index_last_mark = (current_task_last_mark + index.index->index.granularity - 1) / index.index->index.granularity;
+    size_t granularity = index.index->index.granularity;
+    size_t index_mark = mark / granularity;
+    size_t index_last_mark = (current_task_last_mark + granularity - 1) / granularity;
 
-    if (granules.empty() || index_mark != granules.rbegin()->first)
+    auto [it, inserted] = granules.try_emplace(index_mark);
+
+    if (inserted)
     {
-        auto & granule = granules[index_mark];
+        if (remaining_marks.at(index_mark).finished(granularity))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule already finished and removed (mark: {}, index_mark: {})", mark, index_mark);
+
+        auto & granule = it->second;
         chassert(granule.granule == nullptr);
 
         index_reader->adjustRightMark(index_last_mark);
@@ -111,8 +133,7 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last
         granule_text.resetAfterAnalysis();
     }
 
-    chassert(granules.rbegin()->first == index_mark);
-    return !granules.rbegin()->second.may_be_true;
+    return !it->second.may_be_true;
 }
 
 size_t MergeTreeReaderTextIndex::readRows(
@@ -180,7 +201,7 @@ size_t MergeTreeReaderTextIndex::readRows(
         {
             readPostingsIfNeeded(granule);
 
-            size_t mark_at_index_granule = index_mark * index.index->index.granularity;
+            size_t mark_at_index_granule = index_mark * granularity;
             size_t granule_offset = index_granularity.getRowsCountInRange(mark_at_index_granule, from_mark);
 
             for (size_t i = 0; i < res_columns.size(); ++i)
@@ -193,11 +214,10 @@ size_t MergeTreeReaderTextIndex::readRows(
         ++from_mark;
         read_rows += rows_to_read;
         current_row += rows_to_read;
-    }
 
-    size_t index_mark = from_mark / index.index->index.granularity;
-    auto it = granules.lower_bound(index_mark);
-    granules.erase(granules.begin(), it);
+        if (remaining_marks.at(index_mark).decrement(granularity))
+            granules.erase(index_mark);
+    }
 
     current_mark = from_mark;
     return read_rows;
@@ -318,6 +338,26 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, Granule & granule, T
         applyPostingsAll(column, granule.postings, old_size, granule_offset, num_rows);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_mode);
+}
+
+void MergeTreeReaderTextIndex::RemainingMarks::increment()
+{
+    ++total;
+    ++remaining;
+}
+
+bool MergeTreeReaderTextIndex::RemainingMarks::decrement(size_t granularity)
+{
+    if (remaining == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There are no remaining marks");
+
+    --remaining;
+    return finished(granularity);
+}
+
+bool MergeTreeReaderTextIndex::RemainingMarks::finished(size_t granularity) const
+{
+    return remaining == 0 && total == granularity;
 }
 
 }

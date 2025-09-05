@@ -21,6 +21,7 @@ struct MergeTreeIndexTextParams
     size_t max_cardinality_for_embedded_postings = 0;
     size_t bloom_filter_bits_per_row = 0;
     size_t bloom_filter_num_hashes = 0;
+    size_t bloom_filter_prefix_size = 0;
 };
 
 using PostingList = roaring::Roaring;
@@ -152,7 +153,7 @@ public:
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
     void deserializeBinaryWithMultipleStreams(IndexInputStreams & streams, IndexDeserializationState & state) override;
 
-    bool empty() const override { return num_tokens == 0; }
+    bool empty() const override { return bloom_filter_elements == 0; }
     size_t memoryUsageBytes() const override { return 0; }
     bool hasAllTokensFromQuery(const GinQueryString & query) const;
     const TokensMap & getRemainingTokens() const { return remaining_tokens; }
@@ -162,11 +163,12 @@ private:
     void deserializeBloomFilter(ReadBuffer & istr);
     void deserializeSparseIndex(ReadBuffer & istr);
 
+    bool hasInBloomFilter(const StringRef & token) const;
     void analyzeBloomFilter(const IMergeTreeIndexCondition & condition);
     void analyzeDictionary(IndexReaderStream & stream, IndexDeserializationState & state);
 
     MergeTreeIndexTextParams params;
-    size_t num_tokens = 0;
+    size_t bloom_filter_elements = 0;
     BloomFilter bloom_filter;
     DictionarySparseIndex sparse_index;
     TokensMap remaining_tokens;
@@ -176,6 +178,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleTextWritable(
         MergeTreeIndexTextParams params_,
+        size_t bloom_filter_elements_,
         BloomFilter bloom_filter_,
         std::vector<StringRef> tokens_,
         std::vector<PostingList> posting_lists_,
@@ -191,6 +194,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     size_t memoryUsageBytes() const override { return 0; }
 
     MergeTreeIndexTextParams params;
+    size_t bloom_filter_elements;
     BloomFilter bloom_filter;
     std::vector<StringRef> tokens;
     std::vector<PostingList> posting_lists;
