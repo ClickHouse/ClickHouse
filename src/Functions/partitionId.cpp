@@ -72,11 +72,11 @@ Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-
 This function is slow and should not be called for large numbers of rows.
 :::
 )";
-    FunctionDocumentation::Syntax syntax = "partitionId(x[, y, ...])";
+    FunctionDocumentation::Syntax syntax = "partitionId(column1[, column2, ...])";
     FunctionDocumentation::Arguments arguments = {
-        {"x, y, ...", "Column for which to return the partition ID."}
+        {"column1, column2, ...", "Column for which to return the partition ID."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the partition ID that the row would belong to.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the partition ID that the row belongs to.", {"String"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",

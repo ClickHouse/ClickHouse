@@ -34,8 +34,8 @@ public:
 REGISTER_FUNCTION(ConnectionId)
 {
     FunctionDocumentation::Description description = R"(
-Retrieves the connection ID of the client that submitted the current query and returns it as a `UInt64` integer.
-This function is most useful in debugging scenarios or for internal purposes within the MySQL handler.
+Returns the connection ID of the client that submitted the current query.
+This function is most useful in debugging scenarios.
 It was created for compatibility with MySQL's `CONNECTION_ID` function.
 It is not typically used in production queries.
 )";

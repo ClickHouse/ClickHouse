@@ -425,7 +425,7 @@ SELECT zookeeperSessionUptime();
 REGISTER_FUNCTION(GetOSKernelVersion)
 {
     FunctionDocumentation::Description description_getOSKernelVersion = R"(
-Returns a string with the current OS kernel version.
+Returns a string with the OS kernel version.
 )";
     FunctionDocumentation::Syntax syntax_getOSKernelVersion = "getOSKernelVersion()";
     FunctionDocumentation::Arguments arguments_getOSKernelVersion = {};

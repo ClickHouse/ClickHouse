@@ -81,11 +81,11 @@ private:
 REGISTER_FUNCTION(GetMergeTreeSetting)
 {
     FunctionDocumentation::Description description = R"(
-Returns the current value, given the name of a MergeTree setting.
+Returns the current value of a MergeTree setting.
 )";
-    FunctionDocumentation::Syntax syntax = "getMergeTreeSetting('merge_tree_setting')";
+    FunctionDocumentation::Syntax syntax = "getMergeTreeSetting(setting_name)";
     FunctionDocumentation::Arguments arguments = {
-        {"merge_tree_setting", "The setting name.", {"String"}}
+        {"setting_name", "The setting name.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the merge tree setting's current value.", {}};
     FunctionDocumentation::Examples examples = {
@@ -105,7 +105,7 @@ SELECT getMergeTreeSetting('index_granularity');
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionGetMergeTreeSetting>(documentation, FunctionFactory::Case::Sensitive);
+    factory.registerFunction<FunctionGetMergeTreeSetting>(documentation);
 }
 
 }
