@@ -1,5 +1,7 @@
 #include <Common/FieldVisitorToString.h>
+#include <Common/logger_useful.h>
 #include <Columns/ColumnNullable.h>
+#include <unordered_set>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -2849,6 +2851,21 @@ ConstantNodePtr getConstantResultFromFunctionArgs(const QueryTreeNodePtr & node,
             col.type = std::make_shared<DataTypeUInt8>();
         arg_columns.emplace_back(std::move(col));
     }
+    // Check if this function supports getConstantResultForNonConstArguments
+    // by checking function name patterns before attempting to build
+    static const std::unordered_set<std::string> supported_functions = {
+        "and", "or", "xor",
+        "if", "multiIf",
+        "toTypeName", "toColumnTypeName", "getSizeOfEnumType", "defaultValueOfArgumentType",
+        "isNull", "isNotNull", "isNullable",
+        "timezoneOf"
+    };
+
+    if (supported_functions.find(function_name) == supported_functions.end())
+    {
+        return nullptr;
+    }
+
     FunctionOverloadResolverPtr resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
     if (resolver)
     {
@@ -2857,13 +2874,25 @@ ConstantNodePtr getConstantResultFromFunctionArgs(const QueryTreeNodePtr & node,
         {
             base = resolver->build(arg_columns);
         }
-        catch (...)
+        catch (const Exception & e)
         {
-            return nullptr;
+            // Only catch specific exceptions that indicate the function can't be built
+            // with these argument types, not all exceptions
+            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT ||
+                e.code() == ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH)
+            {
+                // Log the error for debugging
+                LOG_DEBUG(&Poco::Logger::get("QueryAnalyzer"), "Function {} failed to build with error: {}", function_name, e.message());
+                return nullptr;
+            }
+            // Re-throw unexpected exceptions
+            throw;
         }
 
         if (!base->isSuitableForConstantFolding())
             return nullptr;
+
+        // Try to get constant result for non-const arguments
         ColumnPtr result = base->getConstantResultForNonConstArguments(arg_columns, base->getResultType());
         if (result)
         {
