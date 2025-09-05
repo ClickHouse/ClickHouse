@@ -14,6 +14,7 @@ void registerDatabaseMemory(DatabaseFactory & factory);
 void registerDatabaseLazy(DatabaseFactory & factory);
 void registerDatabaseFilesystem(DatabaseFactory & factory);
 void registerDatabaseReplicated(DatabaseFactory & factory);
+void registerDatabaseOverlay(DatabaseFactory & factory);
 
 #if USE_MYSQL
 void registerDatabaseMySQL(DatabaseFactory & factory);
@@ -53,6 +54,7 @@ void registerDatabases()
     registerDatabaseLazy(factory);
     registerDatabaseFilesystem(factory);
     registerDatabaseReplicated(factory);
+    registerDatabaseOverlay(factory);
 
 #if USE_MYSQL
     registerDatabaseMySQL(factory);
