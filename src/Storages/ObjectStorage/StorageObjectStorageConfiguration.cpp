@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -15,6 +16,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace Setting
+{
+    extern const SettingsFileLikeEngineDefaultPartitionStrategy file_like_engine_default_partition_strategy;
 }
 
 bool StorageObjectStorageConfiguration::update( ///NOLINT
@@ -82,8 +88,15 @@ void StorageObjectStorageConfiguration::initialize(
     }
     else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
     {
-        // Promote to wildcard in case it is not data lake to make it backwards compatible
-        configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+        switch (local_context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
+        {
+            case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
+                configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+                break;
+            case FileLikeEngineDefaultPartitionStrategy::HIVE:
+                configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
+                break;
+        }
     }
 
     if (configuration_to_initialize.format == "auto")
