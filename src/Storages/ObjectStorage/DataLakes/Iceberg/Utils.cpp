@@ -59,7 +59,7 @@ namespace DB::DataLakeStorageSetting
     extern const DataLakeStorageSettingsString iceberg_metadata_table_uuid;
     extern const DataLakeStorageSettingsBool iceberg_recent_metadata_file_by_last_updated_ms_field;
     extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
-    extern const DataLakeStorageSettingsInt64 iceberg_format_version;
+    extern const DataLakeStorageSettingsNonZeroUInt64 iceberg_format_version;
 }
 
 namespace ProfileEvents
@@ -341,30 +341,33 @@ static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string
         .compression_method = getCompressionMethodFromMetadataFile(path)};
 }
 
-Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
+/// Returns type and required
+std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter)
 {
     switch (type->getTypeId())
     {
         case TypeIndex::UInt32:
         case TypeIndex::Int32:
-            return "int";
+            return {"int", true};
         case TypeIndex::UInt64:
         case TypeIndex::Int64:
-            return "long";
+            return {"long", true};
         case TypeIndex::Float32:
-            return "float";
+            return {"float", true};
         case TypeIndex::Float64:
-            return "double";
+            return {"double", true};
+        case TypeIndex::Date:
         case TypeIndex::Date32:
+            return {"date", true};
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
-            return "date";
+            return {"timestamp", true};
         case TypeIndex::Time:
-            return "time";
+            return {"time", true};
         case TypeIndex::String:
-            return "string";
+            return {"string", true};
         case TypeIndex::UUID:
-            return "uuid";
+            return {"uuid", true};
         case TypeIndex::Tuple:
         {
             auto type_tuple = std::static_pointer_cast<const DataTypeTuple>(type);
@@ -379,14 +382,14 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
                 Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
                 field->set(Iceberg::f_id, ++iter_fields);
                 field->set(Iceberg::f_name, type_tuple->getNameByPosition(iter_names));
-                field->set(Iceberg::f_required, false);
                 auto child_type = getIcebergType(element->getNormalizedType(), iter);
-                field->set(Iceberg::f_type, child_type);
+                field->set(Iceberg::f_required, child_type.second);
+                field->set(Iceberg::f_type, child_type.first);
                 fields->add(field);
                 ++iter_names;
             }
             result->set(Iceberg::f_fields, fields);
-            return result;
+            return {result, true};
         }
         case TypeIndex::Array:
         {
@@ -395,11 +398,11 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
 
             field->set(Iceberg::f_type, "list");
             field->set(Iceberg::f_element_id, ++iter);
-            field->set(Iceberg::f_required, false);
             auto child_type = getIcebergType(type_array->getNestedType(), iter);
-            field->set(Iceberg::f_element, child_type);
-            field->set(Iceberg::f_element_required, false);
-            return field;
+            field->set(Iceberg::f_required, false);
+            field->set(Iceberg::f_element, child_type.first);
+            field->set(Iceberg::f_element_required, child_type.second);
+            return {field, true};
         }
         case TypeIndex::Map:
         {
@@ -409,16 +412,49 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
             field->set(Iceberg::f_type, "map");
             field->set(Iceberg::f_key_id, ++iter);
             field->set(Iceberg::f_value_id, ++iter);
-            field->set(Iceberg::f_value_required, false);
 
-            field->set(Iceberg::f_key, getIcebergType(type_map->getKeyType(), iter));
-            field->set(Iceberg::f_value, getIcebergType(type_map->getValueType(), iter));
-            return field;
+            field->set(Iceberg::f_key, getIcebergType(type_map->getKeyType(), iter).first);
+            auto value_type = getIcebergType(type_map->getValueType(), iter);
+            field->set(Iceberg::f_value, value_type.first);
+            field->set(Iceberg::f_value_required, value_type.second);
+            return {field, true};
         }
         case TypeIndex::Nullable:
         {
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
-            return getIcebergType(type_nullable->getNestedType(), iter);
+            return {getIcebergType(type_nullable->getNestedType(), iter).first, false};
+        }
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+    }
+}
+
+Poco::Dynamic::Var getAvroType(DataTypePtr type)
+{
+    switch (type->getTypeId())
+    {
+        case TypeIndex::UInt32:
+        case TypeIndex::Int32:
+        case TypeIndex::Date:
+        case TypeIndex::Date32:
+        case TypeIndex::Time:
+            return "int";
+        case TypeIndex::UInt64:
+        case TypeIndex::Int64:
+        case TypeIndex::DateTime:
+        case TypeIndex::DateTime64:
+            return "long";
+        case TypeIndex::Float32:
+            return "float";
+        case TypeIndex::Float64:
+            return "double";
+        case TypeIndex::String:
+        case TypeIndex::UUID:
+            return "string";
+        case TypeIndex::Nullable:
+        {
+            auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
+            return getAvroType(type_nullable->getNestedType());
         }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
@@ -432,7 +468,22 @@ Poco::JSON::Object::Ptr getPartitionField(
 {
     const auto * partition_function = partition_by_element->as<ASTFunction>();
     if (!partition_function)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function in partition. Please use functions for iceberg partitioning, for example (identity(x), TRUNCATE(3, y))");
+    {
+        const auto * ast_identifier = partition_by_element->as<ASTIdentifier>();
+        if (!ast_identifier)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown expression for partitioning: {}", partition_by_element->formatForLogging());
+
+        Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
+        auto field = ast_identifier->name();
+        auto it = column_name_to_source_id.find(field);
+        if (it == column_name_to_source_id.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown field to partition {}", field);
+        result->set(Iceberg::f_name, field);
+        result->set(Iceberg::f_source_id, it->second);
+        result->set(Iceberg::f_field_id, ++partition_iter);
+        result->set(Iceberg::f_transform, "identity");
+        return result;
+    }
 
     std::optional<String> field;
     std::optional<Int64> param;
@@ -516,11 +567,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     Int32 partition_iter = 1000;
     if (partition_by)
     {
-        const auto * partition_function = partition_by->as<ASTFunction>();
-        if (!partition_function)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function in partitioning");
-
-        if (partition_function->name == "tuple")
+        if (const auto * partition_function = partition_by->as<ASTFunction>(); partition_function && partition_function->name == "tuple")
         {
             for (const auto & child : partition_function->children)
             {
@@ -579,8 +626,9 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
         field->set(Iceberg::f_id, ++iter_for_initial_columns);
         field->set(Iceberg::f_name, column.name);
-        field->set(Iceberg::f_required, false);
-        field->set(Iceberg::f_type, getIcebergType(column.type, iter));
+        auto type = getIcebergType(column.type, iter);
+        field->set(Iceberg::f_required, type.second);
+        field->set(Iceberg::f_type, type.first);
         column_name_to_source_id[column.name] = iter_for_initial_columns;
         schema_fields->add(field);
     }

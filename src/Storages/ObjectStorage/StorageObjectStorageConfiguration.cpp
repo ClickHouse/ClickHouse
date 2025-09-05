@@ -46,10 +46,11 @@ ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     bool supports_subset_of_columns,
+    bool supports_tuple_elements,
     ContextPtr local_context,
     const PrepareReadingFromFormatHiveParams & hive_parameters)
 {
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, hive_parameters);
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements, hive_parameters);
 }
 
 std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTableStructureFromMetadata() const
@@ -203,19 +204,12 @@ void StorageObjectStorageConfiguration::assertInitialized() const
     }
 }
 
-bool StorageObjectStorageConfiguration::hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const
+void StorageObjectStorageConfiguration::addDeleteTransformers(
+    ObjectInfoPtr,
+    QueryPipelineBuilder &,
+    const std::optional<FormatSettings> &,
+    ContextPtr) const
 {
-    return false;
 }
 
-
-std::shared_ptr<ISimpleTransform> StorageObjectStorageConfiguration::getPositionDeleteTransformer(
-    const ObjectInfoPtr & /*object_info*/,
-    const SharedHeader & /*header*/,
-    const std::optional<FormatSettings> & /*format_settings*/,
-    ContextPtr /*context_*/) const
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Method getPositionDeleteTransformer() is not implemented for configuration type {}", getTypeName());
-}
 }

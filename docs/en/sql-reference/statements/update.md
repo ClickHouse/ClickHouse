@@ -7,13 +7,12 @@ slug: /sql-reference/statements/update
 title: 'The Lightweight UPDATE Statement'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import BetaBadge from '@theme/badges/BetaBadge';
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 :::note
-Lightweight updates are currently experimental.
-To enable them, please first run `SET allow_experimental_lightweight_update = 1`.
+Lightweight updates are currently beta.
 If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
 

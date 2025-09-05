@@ -152,22 +152,10 @@ ColumnsStatistics getStatisticsForColumns(
     return all_statistics;
 }
 
-std::vector<DimensionalMetrics::LabelValues> getInitialLabelValuesForAllErrorCodes()
-{
-    std::vector<DimensionalMetrics::LabelValues> result;
-    for (ErrorCodes::ErrorCode i = 0, end = ErrorCodes::end(); i < end; ++i)
-    {
-        const std::string_view name = ErrorCodes::getName(i);
-        result.push_back({String(name)});
-    }
-    return result;
-}
-
 DimensionalMetrics::MetricFamily & merge_failures = DimensionalMetrics::Factory::instance().registerMetric(
     "merge_failures",
     "Number of all failed merges since startup.",
-    {"error_name"},
-    getInitialLabelValuesForAllErrorCodes()
+    {"error_name"}
 );
 
 }

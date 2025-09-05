@@ -467,7 +467,7 @@ Value saveJemallocMetricImpl(
     const std::string & jemalloc_full_name,
     const std::string & clickhouse_full_name)
 {
-    auto value = getJemallocValue<Value>(jemalloc_full_name.c_str());
+    auto value = Jemalloc::getValue<Value>(jemalloc_full_name.c_str());
     values[clickhouse_full_name] = AsynchronousMetricValue(value, "An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html");
     return value;
 }
@@ -937,7 +937,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
     // the following calls will return stale values. It increments and returns
     // the current epoch number, which might be useful to log as a sanity check.
-    auto epoch = update_jemalloc_epoch ? updateJemallocEpoch() : getJemallocValue<uint64_t>("epoch");
+    auto epoch = update_jemalloc_epoch ? updateJemallocEpoch() : Jemalloc::getValue<uint64_t>("epoch");
     new_values["jemalloc.epoch"]
         = {epoch,
            "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other "
@@ -955,6 +955,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
     saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
     saveJemallocProf<bool>(new_values, "active");
+    saveJemallocProf<bool>(new_values, "thread_active_init");
     saveAllArenasMetric<size_t>(new_values, "pactive");
     saveAllArenasMetric<size_t>(new_values, "pdirty");
     saveAllArenasMetric<size_t>(new_values, "pmuzzy");

@@ -56,7 +56,7 @@ struct ITokenExtractor
     virtual void stringLikeToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
 
     /// Updates GIN filter from exact-match string filter value
-    virtual void stringToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const = 0;
+    virtual void stringToGinFilter(const char * data, size_t length, GinQueryString & query_string) const = 0;
 
     /// Updates GIN filter from substring-match string filter value.
     /// An `ITokenExtractor` implementation may decide to skip certain
@@ -64,19 +64,19 @@ struct ITokenExtractor
     virtual void substringToGinFilter(
         const char * data,
         size_t length,
-        GinFilter & gin_filter,
+        GinQueryString & query_string,
         bool /*is_prefix*/,
         bool /*is_suffix*/) const
     {
-        stringToGinFilter(data, length, gin_filter);
+        stringToGinFilter(data, length, query_string);
     }
 
-    virtual void stringPaddedToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const
+    virtual void stringPaddedToGinFilter(const char * data, size_t length, GinQueryString & query_string) const
     {
-        stringToGinFilter(data, length, gin_filter);
+        stringToGinFilter(data, length, query_string);
     }
 
-    virtual void stringLikeToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const = 0;
+    virtual void stringLikeToGinFilter(const char * data, size_t length, GinQueryString & query_string) const = 0;
 
     virtual bool supportsStringLike() const = 0;
 };
@@ -115,35 +115,35 @@ class ITokenExtractorHelper : public ITokenExtractor
             bloom_filter.add(token.c_str(), token.size());
     }
 
-    void stringToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
+    void stringToGinFilter(const char * data, size_t length, GinQueryString & query_string) const override
     {
-        gin_filter.setQueryString({data, length});
+        query_string.setQueryString({data, length});
         const auto & tokens = getTokensView(data, length);
         for (const auto & token : tokens)
-            gin_filter.addTerm(token);
+            query_string.addToken(token);
     }
 
-    void stringPaddedToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
+    void stringPaddedToGinFilter(const char * data, size_t length, GinQueryString & query_string) const override
     {
-        gin_filter.setQueryString({data, length});
+        query_string.setQueryString({data, length});
 
         size_t cur = 0;
         size_t token_start = 0;
         size_t token_len = 0;
 
         while (cur < length && static_cast<const Derived *>(this)->nextInStringPadded(data, length, &cur, &token_start, &token_len))
-            gin_filter.addTerm({data + token_start, token_len});
+            query_string.addToken({data + token_start, token_len});
     }
 
-    void stringLikeToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
+    void stringLikeToGinFilter(const char * data, size_t length, GinQueryString & query_string) const override
     {
-        gin_filter.setQueryString({data, length});
+        query_string.setQueryString({data, length});
 
         size_t cur = 0;
         String token;
 
         while (cur < length && static_cast<const Derived *>(this)->nextInStringLike(data, length, &cur, token))
-            gin_filter.addTerm(token);
+            query_string.addToken(token);
     }
 };
 
@@ -177,7 +177,7 @@ struct DefaultTokenExtractor final : public ITokenExtractorHelper<DefaultTokenEx
     bool nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToGinFilter(const char * data, size_t length, GinFilter & gin_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToGinFilter(const char * data, size_t length, GinQueryString & query_string, bool is_prefix, bool is_suffix) const override;
 
     bool supportsStringLike() const override { return true; }
 };

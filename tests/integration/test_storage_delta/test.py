@@ -62,6 +62,10 @@ from helpers.test_tools import TSV
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__, with_spark=True)
 
+S3_DATA = [
+    "field_ids_struct_test/data/00000-1-7cad83a6-af90-42a9-8a10-114cbc862a42-0-00001.parquet",
+]
+
 
 def get_spark():
     builder = (
@@ -71,6 +75,8 @@ def get_spark():
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
+        .config("spark.driver.memory", "8g")
+        .config("spark.executor.memory", "8g")
         .master("local")
     )
 
@@ -92,7 +98,10 @@ def started_cluster():
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
             ],
-            user_configs=["configs/users.d/users.xml"],
+            user_configs=[
+                "configs/users.d/users.xml",
+                "configs/users.d/enable_writes.xml",
+            ],
             with_minio=True,
             with_azurite=True,
             stay_alive=True,
@@ -105,7 +114,10 @@ def started_cluster():
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/remote_servers.xml",
             ],
-            user_configs=["configs/users.d/users.xml"],
+            user_configs=[
+                "configs/users.d/users.xml",
+                "configs/users.d/enable_writes.xml",
+            ],
             with_minio=True,
             stay_alive=True,
             with_zookeeper=True,
@@ -187,6 +199,14 @@ def started_cluster():
 
         cluster.spark_session = get_spark()
 
+        for file in S3_DATA:
+            print(f"Copying object {file}")
+            cluster.minio_client.fput_object(
+                bucket_name=cluster.minio_bucket,
+                object_name=file,
+                file_path=os.path.join(SCRIPT_DIR, file),
+            )
+
         yield cluster
 
     finally:
@@ -199,14 +219,16 @@ def write_delta_from_file(spark, path, result_path, mode="overwrite"):
     ).option("delta.columnMapping.mode", "name").save(result_path)
 
 
-def write_delta_from_df(spark, df, result_path, mode="overwrite", partition_by=None):
+def write_delta_from_df(
+    spark, df, result_path, mode="overwrite", partition_by=None, column_mapping="name"
+):
     if partition_by is None:
-        df.write.mode(mode).option("compression", "none").format("delta").option(
-            "delta.columnMapping.mode", "name"
-        ).save(result_path)
+        df.write.mode(mode).option("compression", "none").option(
+            "delta.columnMapping.mode", column_mapping
+        ).format("delta").save(result_path)
     else:
         df.write.mode(mode).option("compression", "none").format("delta").option(
-            "delta.columnMapping.mode", "name"
+            "delta.columnMapping.mode", column_mapping
         ).partitionBy("a").save(result_path)
 
 
@@ -259,14 +281,8 @@ def create_delta_table(
     table_name,
     cluster,
     format="Parquet",
-    allow_dynamic_metadata_for_data_lakes=False,
     **kwargs,
 ):
-    allow_dynamic_metadata_for_datalakes_suffix = (
-        " SETTINGS allow_dynamic_metadata_for_data_lakes = 1"
-        if allow_dynamic_metadata_for_data_lakes
-        else ""
-    )
 
     if storage_type == "s3":
         if "bucket" in kwargs:
@@ -280,7 +296,6 @@ def create_delta_table(
             CREATE TABLE {table_name}
             ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
             """
-            + allow_dynamic_metadata_for_datalakes_suffix
         )
 
     elif storage_type == "azure":
@@ -290,7 +305,6 @@ def create_delta_table(
             CREATE TABLE {table_name}
             ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
             """
-            + allow_dynamic_metadata_for_datalakes_suffix
         )
     elif storage_type == "local":
         # For local storage, we need to use the absolute path
@@ -2920,6 +2934,53 @@ def test_delta_kernel_internal_pruning(started_cluster):
     )
 
 
+def test_count_from_cache(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_empty_format_header")
+    result_file = f"{TABLE_NAME}"
+
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), True),
+            StructField("name", StringType(), True),
+        ]
+    )
+    df = spark.createDataFrame([(1, "keko"), (2, "puka"), (3, "mora")]).toDF(
+        "id", "name"
+    )
+    df.write.format("delta").partitionBy("id").save(f"/{result_file}")
+    upload_directory(minio_client, bucket, f"/{result_file}", "")
+
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    time.sleep(1)
+    assert 3 == int(instance.query(f"SELECT count() FROM {table_function}"))
+    assert 3 == int(instance.query(f"SELECT count() FROM {table_function}"))
+    query_id = f"{TABLE_NAME}_query"
+    assert 3 == int(
+        instance.query(f"SELECT count() FROM {table_function}", query_id=query_id)
+    )
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 3 == int(
+        instance.query(
+            f"SELECT ProfileEvents['SchemaInferenceCacheNumRowsHits'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
+        )
+    )
+    assert (
+        "3\t3"
+        == instance.query(f"SELECT count(), count() FROM {table_function}").strip()
+    )
+    assert (
+        "3\t6\t3"
+        == instance.query(
+            f"SELECT count(), sum(id), uniqExact(_path) FROM {table_function}"
+        ).strip()
+    )
+
+
 def test_writes(started_cluster):
     instance = started_cluster.instances["node1"]
     instance_disabled_kernel = cluster.instances["node_with_disabled_delta_kernel"]
@@ -3145,40 +3206,49 @@ def test_concurrent_queries(started_cluster, partitioned):
         f"create table {TABLE_NAME} (id Int32, name String) engine = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     )
 
-    def select(_):
-        instance.query(f"SELECT * FROM {TABLE_NAME}")
+    num_insert_threads = 15
+    num_select_threads = 5
+    errors = ["" for _ in range(num_insert_threads)]
+    success = [0 for _ in range(num_insert_threads)]
 
-    num_threads = 10
-    num_rows = 50
-    errors = ["" for _ in range(num_threads)]
-    success = [0 for _ in range(num_threads)]
+    def run_concurrent_queries():
+        def select(_):
+            instance.query(f"SELECT * FROM {TABLE_NAME}")
 
-    def insert(i):
-        try:
+        def insert(i):
+            try:
+                instance.query(
+                    f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers(50)",
+                )
+                success[i] += 1
+            except Exception as e:
+                errors[i] = str(e)
+
+        for _ in range(10):
+            insert(_)
+
+        select_pool = Pool(num_select_threads)
+        insert_pool = Pool(num_insert_threads)
+        sp = select_pool.map_async(select, range(num_select_threads))
+        ip = insert_pool.map_async(insert, range(num_insert_threads))
+        sp.wait()
+        ip.wait()
+
+        select(0)
+
+        num_rows = sum(success) * 50
+        assert num_rows == int(
             instance.query(
-                f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers({num_rows})",
+                f"SELECT count() FROM {TABLE_NAME}",
             )
-            success[i] += 1
-        except Exception as e:
-            errors[i] = str(e)
-
-    for _ in range(10):
-        insert(_)
-
-    select_pool = Pool(num_threads)
-    insert_pool = Pool(num_threads)
-    sp = select_pool.map_async(select, range(num_threads))
-    ip = insert_pool.map_async(insert, range(num_threads))
-    sp.wait()
-    ip.wait()
-
-    select(0)
-
-    assert sum(success) * num_rows == int(
-        instance.query(
-            f"SELECT count() FROM {TABLE_NAME}",
         )
-    )
+
+    for _ in range(3):
+        run_concurrent_queries()
+        if len([e for e in errors if e != ""]) > 0:
+            break
+        print("Did not catch commit conflict, will retry")
+
     non_empty_errors = [e for e in errors if e != ""]
     assert len(non_empty_errors) > 0
     for e in non_empty_errors:
@@ -3193,7 +3263,7 @@ def test_concurrent_queries(started_cluster, partitioned):
         ):
             file_names.append(obj.object_name)
     if partitioned:
-        assert len(file_names) == sum(success) * num_rows
+        assert len(file_names) == sum(success) * 50
     else:
         assert len(file_names) == sum(success)
 
@@ -3269,4 +3339,236 @@ def test_writes_spark_compatibility(started_cluster):
     assert len(files) == 3
 
     df = spark.read.format("delta").load(f"/{result_file}").collect()
-    assert "[Row(id=10, name='10'), Row(id=11, name='11'), Row(id=12, name='12'), Row(id=13, name='13'), Row(id=14, name='14'), Row(id=15, name='15'), Row(id=16, name='16'), Row(id=17, name='17'), Row(id=18, name='18'), Row(id=19, name='19'), Row(id=0, name='0'), Row(id=1, name='1'), Row(id=2, name='2'), Row(id=3, name='3'), Row(id=4, name='4'), Row(id=5, name='5'), Row(id=6, name='6'), Row(id=7, name='7'), Row(id=8, name='8'), Row(id=9, name='9')]" == str(df)
+    assert (
+        "[Row(id=10, name='10'), Row(id=11, name='11'), Row(id=12, name='12'), Row(id=13, name='13'), Row(id=14, name='14'), Row(id=15, name='15'), Row(id=16, name='16'), Row(id=17, name='17'), Row(id=18, name='18'), Row(id=19, name='19'), Row(id=0, name='0'), Row(id=1, name='1'), Row(id=2, name='2'), Row(id=3, name='3'), Row(id=4, name='4'), Row(id=5, name='5'), Row(id=6, name='6'), Row(id=7, name='7'), Row(id=8, name='8'), Row(id=9, name='9')]"
+        == str(df)
+    )
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+@pytest.mark.parametrize("limit_enabled", [False, True])
+def test_write_limits(started_cluster, partitioned, limit_enabled):
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_write_limits")
+    result_file = f"{table_name}_data"
+
+    schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["id"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+    files = (
+        instance.exec_in_container(["bash", "-c", f"ls /{result_file}"])
+        .strip()
+        .split("\n")
+    )
+    assert len(files) == 1
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLakeLocal('/{result_file}') SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+
+    num_rows = 1000000
+    partitions_num = 5
+    limit_rows = 10 if limit_enabled else (num_rows + 1)
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number % {partitions_num}, randomString(10) FROM numbers({num_rows}) SETTINGS delta_lake_insert_max_rows_in_data_file = {limit_rows}, max_insert_block_size = 1000, min_chunk_bytes_for_parallel_parsing = 1000"
+    )
+
+    files = LocalDownloader(instance).download_directory(
+        f"/{result_file}/", f"/{result_file}/"
+    )
+    data_files = [file for file in files if file.endswith(".parquet")]
+    assert len(data_files) > 0, f"No data files: {files}"
+
+    if partitioned:
+        if limit_enabled:
+            assert len(data_files) > partitions_num, f"Data files: {data_files}"
+        else:
+            assert len(data_files) == partitions_num, f"Data files: {data_files}"
+    else:
+        if limit_enabled:
+            assert len(data_files) > 1, f"Data files: {data_files}"
+        else:
+            assert len(data_files) == 1, f"Data files: {data_files}"
+
+    assert num_rows == int(instance.query(f"SELECT count() FROM {table_name}"))
+
+    spark = started_cluster.spark_session
+    df = spark.read.format("delta").load(f"/{result_file}")
+    assert df.count() == num_rows
+
+
+def test_column_mapping_id(started_cluster):
+    node = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_column_mapping_id")
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    path = f"/{table_name}"
+
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), True),
+            StructField(
+                "person",
+                StructType(
+                    [
+                        StructField("first_name", StringType(), True),
+                        StructField("last_name", StringType(), True),
+                    ]
+                ),
+                True,
+            ),
+        ]
+    )
+    data = [(1, ("Alice", "Smith")), (2, ("Bob", "Johnson"))]
+    df = spark.createDataFrame(data, schema=schema)
+    df.write.format("delta").option("delta.minReaderVersion", "2").option(
+        "delta.minWriterVersion", "5"
+    ).option("delta.columnMapping.mode", "id").save(path)
+    upload_directory(minio_client, bucket, path, "")
+
+    delta_function = f"""
+deltaLake(
+        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+        '{minio_access_key}',
+        '{minio_secret_key}')
+    """
+    assert (
+        "Column mapping ID mode not supported"
+        in node.query_and_get_error(
+            f"SELECT * FROM {delta_function} ORDER BY all"
+        ).strip()
+    )
+
+
+@pytest.mark.parametrize("column_mapping", ["", "name"])
+def test_subcolumns(started_cluster, column_mapping):
+    node = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_struct")
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    path = f"/{table_name}"
+
+    data_file = "field_ids_struct_test/data/00000-1-7cad83a6-af90-42a9-8a10-114cbc862a42-0-00001.parquet"
+
+    def s3_function(path):
+        return f""" s3(
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{path}' ,
+            '{minio_access_key}',
+            '{minio_secret_key}')
+        """
+
+    func = s3_function(data_file)
+    assert (
+        "2025-06-04\t('100022','2025-06-04 18:40:56.000000','2025-06-09 21:19:00.364000')\t100022"
+        == node.query(f"select * from {func}").strip()
+    )
+    assert (
+        "col_x2D1\tNullable(Date32)\t\t\t\t\t\n"
+        "col_x2D2\tTuple(\\n    col_x2D3 Nullable(String),\\n    col_x2D4 Nullable(DateTime64(6, \\'UTC\\')),\\n    col_x2D5 Nullable(DateTime64(6, \\'UTC\\')))\t\t\t\t\t\n"
+        "col_x2D6\tNullable(Int64)" == node.query(f"describe table {func}").strip()
+    )
+
+    df = spark.read.parquet(os.path.join(SCRIPT_DIR, data_file))
+    write_delta_from_df(spark, df, path, mode="overwrite")
+    default_upload_directory(started_cluster, "s3", path, "")
+
+    s3_objects = list(minio_client.list_objects(bucket, table_name, recursive=True))
+    file_names = []
+    object_name = None
+    for obj in s3_objects:
+        print(f"File: {obj.object_name}")
+        if obj.object_name.endswith(".parquet"):
+            object_name = obj.object_name
+
+    func = s3_function(object_name)
+    assert (
+        "2025-06-04\t('100022','2025-06-04 18:40:56.000000000','2025-06-09 21:19:00.364000000')\t100022"
+        == node.query(f"select * from {func}").strip()
+    )
+    data_file_desc = node.query(f"describe table {func}").strip()
+    assert "col-" in data_file_desc
+    assert "col_" not in data_file_desc
+
+    data_file_schema = node.query(f"describe table {func}")
+    print(f"Data file schema: {data_file_schema}")
+
+    delta_function = f"""
+deltaLake(
+        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+        '{minio_access_key}',
+        '{minio_secret_key}')
+    """
+
+    assert (
+        "2025-06-04\t('100022','2025-06-04 18:40:56.000000','2025-06-09 21:19:00.364000')\t100022"
+        == node.query(f"SELECT * FROM {delta_function} ORDER BY all").strip()
+    )
+
+    assert (
+        "col_x2D1\tNullable(Date32)\t\t\t\t\t\n"
+        "col_x2D2\tTuple(\\n    col_x2D3 Nullable(String),\\n    col_x2D4 Nullable(DateTime64(6)),\\n    col_x2D5 Nullable(DateTime64(6)))\t\t\t\t\t\n"
+        "col_x2D6\tNullable(Int64)"
+        == node.query(f"describe table {delta_function}").strip()
+    )
+
+    node.query(
+        f"""
+    CREATE TABLE {table_name} (
+    col_x2D1 Nullable(Date32),
+    col_x2D2 Tuple(col_x2D3 Nullable(String), col_x2D4 Nullable(DateTime64(6)), col_x2D5 Nullable(DateTime64(6))),
+    col_x2D6 Nullable(Int64)) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+        '{minio_access_key}',
+        '{minio_secret_key}')
+    """
+    )
+
+    assert (
+        "2025-06-04\t('100022','2025-06-04 18:40:56.000000','2025-06-09 21:19:00.364000')\t100022"
+        == node.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
+    )
+
+
+def test_write_column_order(started_cluster):
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_write_column_order")
+    result_file = f"{table_name}_data"
+    schema = pa.schema([("c1", pa.int32()), ("c0", pa.string())])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (c0 String, c1 Int32) ENGINE = DeltaLakeLocal('/{result_file}') SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+    num_rows = 10
+    instance.query(
+        f"INSERT INTO {table_name} (c1, c0) SELECT number as c1, toString(number % 2) as c0 FROM numbers(10)"
+    )
+
+    assert num_rows == int(instance.query(f"SELECT count() FROM {table_name}"))
+    assert (
+        "0\t0\n1\t1\n0\t2\n1\t3\n0\t4\n1\t5\n0\t6\n1\t7\n0\t8\n1\t9"
+        == instance.query(f"SELECT c0, c1 FROM {table_name}").strip()
+    )
+
+    instance.query(
+        f"INSERT INTO {table_name} (c1, c0) SELECT c1, c0 FROM generateRandom('c1 Int32, c0 String', 16920040705558589162, 7706, 3) LIMIT {num_rows}"
+    )
+
+    assert num_rows * 2 == int(instance.query(f"SELECT count() FROM {table_name}"))

@@ -4,6 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ColumnSize.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/ProjectionsDescription.h>
@@ -280,6 +281,15 @@ struct StorageInMemoryMetadata
     /// contains only the columns of the table, and all the columns are different.
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
     void check(const Block & block, bool need_all = false) const;
+
+    /// Returns a IStorage::ColumnSizeByName with made up numbers.
+    /// Used for making PREWHERE work for Parquet input format.
+    /// TODO [parquet]: Propagate real sizes from file metadata instead. We should probably put file
+    ///                 metadata into SchemaCache, similar to row count.
+    std::unordered_map<std::string, ColumnSize> getFakeColumnSizes() const;
+
+    /// Elements of `columns` that have `default_desc.expression == nullptr`.
+    NameSet getColumnsWithoutDefaultExpressions() const;
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;

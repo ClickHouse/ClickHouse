@@ -67,6 +67,37 @@ static std::string renderFileNameTemplate(time_t now, const std::string & file_p
     return path.replace_filename(ss.str());
 }
 
+Poco::AutoPtr<OwnPatternFormatter> getFormatForChannel(Poco::Util::AbstractConfiguration & config, const std::string & channel, bool color)
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys("logger", keys);
+
+    std::string config_prefix_for_channel;
+    std::string config_prefix_global;
+    for (const auto & key : keys)
+    {
+        if (key != "formatting" && !key.starts_with("formatting["))
+            continue;
+
+        if (config.getString(fmt::format("logger.{}.channel", key), "") == channel)
+        {
+            config_prefix_for_channel = "logger." + key;
+            break;
+        }
+        if (config.getString(fmt::format("logger.{}.channel", key), "").empty())
+        {
+            config_prefix_global = "logger." + key;
+            break;
+        }
+    }
+
+    const auto & config_prefix = config_prefix_for_channel.empty() ? config_prefix_global : config_prefix_for_channel;
+    if (config.getString(config_prefix + ".type", "") == "json")
+        return new OwnJSONPatternFormatter(config, config_prefix);
+    else
+        return new OwnPatternFormatter(color);
+}
+
 /// NOLINTBEGIN(readability-static-accessed-through-instance)
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
@@ -124,13 +155,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
         log_file->open();
 
-        Poco::AutoPtr<OwnPatternFormatter> pf;
-
-        if (config.getString("logger.formatting.type", "") == "json")
-            pf = new OwnJSONPatternFormatter(config);
-        else
-            pf = new OwnPatternFormatter;
-
+        Poco::AutoPtr<OwnPatternFormatter> pf = getFormatForChannel(config, "log");
         auto log = std::make_shared<DB::OwnFormattingChannel>(pf, log_file);
         split->addChannel(
             log, "FileLog", log_level, ProfileEvents::AsyncLoggingFileLogTotalMessages, ProfileEvents::AsyncLoggingFileLogDroppedMessages);
@@ -163,13 +188,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         error_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
         error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
 
-        Poco::AutoPtr<OwnPatternFormatter> pf;
-
-        if (config.getString("logger.formatting.type", "") == "json")
-            pf = new OwnJSONPatternFormatter(config);
-        else
-            pf = new OwnPatternFormatter;
-
+        Poco::AutoPtr<OwnPatternFormatter> pf = getFormatForChannel(config, "errorlog");
         auto errorlog = std::make_shared<DB::OwnFormattingChannel>(pf, error_log_file);
         errorlog->open();
         split->addChannel(
@@ -207,13 +226,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         }
         syslog_channel->open();
 
-        Poco::AutoPtr<OwnPatternFormatter> pf;
-
-        if (config.getString("logger.formatting.type", "") == "json")
-            pf = new OwnJSONPatternFormatter(config);
-        else
-            pf = new OwnPatternFormatter;
-
+        Poco::AutoPtr<OwnPatternFormatter> pf = getFormatForChannel(config, "syslog");
         auto log = std::make_shared<DB::OwnFormattingChannel>(pf, syslog_channel);
         split->addChannel(
             log, "Syslog", syslog_level, ProfileEvents::AsyncLoggingSyslogTotalMessages, ProfileEvents::AsyncLoggingSyslogDroppedMessages);
@@ -231,11 +244,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         auto console_log_level = Poco::Logger::parseLevel(console_log_level_string);
         max_log_level = std::max(console_log_level, max_log_level);
 
-        Poco::AutoPtr<OwnPatternFormatter> pf;
-        if (config.getString("logger.formatting.type", "") == "json")
-            pf = new OwnJSONPatternFormatter(config);
-        else
-            pf = new OwnPatternFormatter(color_enabled);
+        Poco::AutoPtr<OwnPatternFormatter> pf = getFormatForChannel(config, "console", color_enabled);
         auto log = std::make_shared<DB::OwnFormattingChannel>(pf, new Poco::ConsoleChannel);
         split->addChannel(
             log,

@@ -34,7 +34,7 @@ $CLICKHOUSE_CLIENT --query "
         max_cleanup_delay_period = 1,
         cleanup_delay_period_random_add = 0;
 
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
     SET insert_keeper_fault_injection_probability = 0.0;
 
     INSERT INTO t_lwu_cleanup_1 VALUES (1, 'v1') (2, 'v2') (3, 'v3');

@@ -57,6 +57,7 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -123,6 +124,9 @@ namespace Setting
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
     extern const SettingsBool apply_settings_from_server;
+    extern const SettingsString promql_database;
+    extern const SettingsString promql_table;
+    extern const SettingsFloatAuto promql_evaluation_time;
 }
 
 namespace ErrorCodes
@@ -383,6 +387,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
     else if (dialect == Dialect::prql)
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    else if (dialect == Dialect::promql)
+        parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
     else
         parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 

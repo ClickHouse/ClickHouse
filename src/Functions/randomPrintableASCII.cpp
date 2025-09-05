@@ -81,7 +81,7 @@ public:
             if (length > (1 << 30))
                 throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
 
-            IColumn::Offset next_offset = offset + length + 1;
+            IColumn::Offset next_offset = offset + length;
             data_to.resize(next_offset);
             offsets_to[row_num] = next_offset;
 
@@ -104,10 +104,7 @@ public:
                 data_to_ptr[pos + 3] = 32 + ((rand4 * 95) >> 16);
 
                 /// NOTE gcc failed to vectorize this code (aliasing of char?)
-                /// TODO Implement SIMD optimizations from Danila Kutenin.
             }
-
-            data_to[offset + length] = 0;
 
             offset = next_offset;
         }
