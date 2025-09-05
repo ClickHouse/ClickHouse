@@ -188,10 +188,6 @@ void optimizeTreeSecondPass(
                 auto local_plan = read_from_local->extractQueryPlan();
                 local_plan->optimize(optimization_settings);
 
-                // WriteBufferFromOwnString wb;
-                // local_plan->explainPlan(wb, ExplainPlanOptions{.actions = 1});
-                // LOG_DEBUG(&Poco::Logger::get("debug"), "wb.str()={}", wb.str());
-
                 auto * local_plan_node = frame.node;
                 query_plan.replaceNodeWithPlan(local_plan_node, std::move(local_plan));
             }
