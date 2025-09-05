@@ -145,8 +145,6 @@ static std::pair<NameAndTypePair, bool> setPhysicalNameAndType(
     bool get_name_in_storgae,
     LoggerPtr log)
 {
-    NameAndTypePair result_column = column;
-
     auto physical_name = DeltaLake::getPhysicalName(get_name_in_storgae ? column.getNameInStorage() : column.name, physical_names_map);
     auto physical_name_and_type = read_schema.tryGetByName(physical_name);
 
@@ -159,6 +157,7 @@ static std::pair<NameAndTypePair, bool> setPhysicalNameAndType(
 
         /// Not a readable column, but if columnMapping.mode == 'name'
         /// we will still have it named as col-<uuid> in metadata.
+        NameAndTypePair result_column = column;
         result_column.name = physical_name;
         return {result_column, /* readable */false};
     }
@@ -197,6 +196,7 @@ static std::pair<NameAndTypePair, bool> setPhysicalNameAndType(
     else
         type_in_storage = column.type;
 
+    NameAndTypePair result_column;
     if (column.isSubcolumn())
     {
         result_column = NameAndTypePair(
@@ -231,11 +231,14 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// 2. columnMapping.mode = 'name' or 'id'.
     DB::NameToNameMap physical_names_map;
     ColumnsDescription read_columns_desc;
+    std::unordered_set<std::string> partition_columns;
     {
         std::lock_guard lock(table_snapshot_mutex);
         physical_names_map = table_snapshot->getPhysicalNamesMap();
         //table_columns_description = ColumnsDescription(table_snapshot->getTableSchema());
         read_columns_desc = ColumnsDescription(table_snapshot->getReadSchema());
+        auto columns = table_snapshot->getPartitionColumns();
+        partition_columns.insert(columns.begin(), columns.end());
     }
 
     Names columns_to_read;
@@ -263,14 +266,6 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     auto readable_columns_with_subcolumns = read_columns_desc.get(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
     auto readable_columns = read_columns_desc.get(GetColumnsOptions(GetColumnsOptions::All));
 
-    /// If only virtual columns were requested, just read the smallest column.
-    /// Because format header cannot be empty.
-    if (supports_subset_of_columns && columns_to_read.empty())
-        columns_to_read.push_back(ExpressionActions::getSmallestColumn(readable_columns).name);
-
-    info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
-    info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
-
     /// We include partition columns in requested_columns (and not in format_header),
     /// because we will insert partition columns into chunk right after it is read from data file,
     /// so we want it to be verified that chunk contains all the requested columns.
@@ -284,6 +279,21 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             log);
         name_and_type = result_name_and_type;
     }
+
+    /// If only virtual columns were requested, just read the smallest non-partitin column.
+    /// Because format header cannot be empty.
+    if (supports_subset_of_columns && columns_to_read.empty())
+    {
+        auto table_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
+        NamesAndTypesList non_partition_columns;
+        for (const auto & name_and_type : table_columns)
+            if (!partition_columns.contains(name_and_type.name))
+                non_partition_columns.push_back(name_and_type);
+        columns_to_read.push_back(ExpressionActions::getSmallestColumn(non_partition_columns).name);
+    }
+
+    info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
+    info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
     /// Set format_header with columns that should be read from data.
     auto columns_to_read_desc = info.columns_description.get(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
@@ -299,6 +309,11 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
         if (readable)
             info.format_header.insert(ColumnWithTypeAndName{result_name_and_type.type, result_name_and_type.name});
     }
+
+    for (const auto & name_and_type : info.columns_description)
+        info.columns_description.rename(
+            name_and_type.name,
+            DeltaLake::getPhysicalName(name_and_type.name, physical_names_map));
 
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());
