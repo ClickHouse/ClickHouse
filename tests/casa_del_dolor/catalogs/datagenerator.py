@@ -454,7 +454,7 @@ class LakeDataGenerator:
                 table.lake_format
             )
             self.run_query(spark, next_table_generator.generate_extra_statement(table))
-        elif next_operation <= 1000:
+        else:
             # Alter statements
             next_table_generator = LakeTableGenerator.get_next_generator(
                 table.lake_format

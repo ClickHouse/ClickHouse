@@ -160,7 +160,9 @@ class LakeTableGenerator:
         table: SparkTable,
     ) -> str:
         """Generate random ALTER TABLE statements for testing"""
-        next_operation = random.randint(1, 500 if self.get_format() == "delta" else 1000)
+        next_operation = random.randint(
+            1, 500 if self.get_format() == "delta" else 1000
+        )
 
         if next_operation <= 250:
             # Set random properties
@@ -934,12 +936,18 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         self,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 100)
+        next_option = random.randint(1, 3)
 
-        if next_option <= 50:
+        if next_option == 1:
+            # Vacuum
             return f"VACUUM {table.get_table_full_path()} RETAIN 0 HOURS;"
-
-        restore_to = (
-            datetime.now() - timedelta(seconds=random.choice([1, 5, 10, 60]))
-        ).strftime("%Y-%m-%d %H:%M:%S.%f")
-        return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{restore_to}';"
+        if next_option == 2:
+            # Restore
+            restore_to = (
+                datetime.now() - timedelta(seconds=random.choice([1, 5, 10, 60]))
+            ).strftime("%Y-%m-%d %H:%M:%S.%f")
+            return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{restore_to}';"
+        if next_option == 3:
+            # Optimize
+            return f"OPTIMIZE {table.get_table_full_path()}{f" ZORDER BY ({self.random_ordered_columns(table.columns, False)})" if random.randint(1, 2) == 1 else ""};"
+        return ""
