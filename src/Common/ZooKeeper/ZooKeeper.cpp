@@ -10,6 +10,7 @@
 #include <Common/ZooKeeper/ShuffleHost.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Core/BackgroundSchedulePool.h>
