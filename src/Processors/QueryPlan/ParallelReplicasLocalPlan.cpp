@@ -56,9 +56,9 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
 
     LOG_DEBUG(&Poco::Logger::get("debug"), "query_ast->formatForLogging()={}", query_ast->formatForLogging());
 
-    WriteBufferFromOwnString wb;
-    query_plan->explainPlan(wb, ExplainPlanOptions{.actions = 1});
-    LOG_DEBUG(&Poco::Logger::get("debug"), "createLocalPlan wb.str()={}", wb.str());
+    // WriteBufferFromOwnString wb;
+    // query_plan->explainPlan(wb, ExplainPlanOptions{.actions = 1});
+    // LOG_DEBUG(&Poco::Logger::get("debug"), "createLocalPlan wb.str()={}", wb.str());
 
     QueryPlan::Node * node = query_plan->getRootNode();
     ReadFromMergeTree * reading = nullptr;

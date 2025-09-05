@@ -164,37 +164,8 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     }
 
     /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
-    QueryPlan::Node * filter_node = nullptr;
-    FilterStep * filter_step = nullptr;
-    if (!filter_step)
-    {
-        filter_node = (stack.rbegin() + 1)->node;
-        filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
-        if (!filter_step)
-        {
-            LOG_DEBUG(
-                &Poco::Logger::get("debug"),
-                "__PRETTY_FUNCTION__={}, __LINE__={}, node={}",
-                __PRETTY_FUNCTION__,
-                __LINE__,
-                filter_node->step->getName());
-        }
-    }
-    if (!filter_step && stack.size() >= 3)
-    {
-        filter_node = (stack.rbegin() + 2)->node;
-        filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
-        if (!filter_step)
-        {
-            LOG_DEBUG(
-                &Poco::Logger::get("debug"),
-                "__PRETTY_FUNCTION__={}, __LINE__={}, node={}",
-                __PRETTY_FUNCTION__,
-                __LINE__,
-                filter_node->step->getName());
-        }
-    }
-
+    QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
+    auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
     if (!filter_step)
         return;
 

@@ -1926,7 +1926,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         __LINE__,
         static_cast<const void *>(&indexes),
         describe_filters(added_filter_nodes));
-    // if (!indexes)
+    if (!indexes)
     {
         LOG_DEBUG(
             &Poco::Logger::get("debug"),
