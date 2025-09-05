@@ -1,5 +1,4 @@
 #include <optional>
-#include <string>
 #include <unordered_set>
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
@@ -125,8 +124,7 @@ namespace FailPoints
 
 
 MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_)
-    : data(data_)
-    , log(getLogger(fmt::format("{} (SelectExecutor [{}])", data.getLogName(), static_cast<const void *>(this))))
+    : data(data_), log(getLogger(data.getLogName() + " (SelectExecutor)"))
 {
 }
 
@@ -1082,11 +1080,6 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     const ContextPtr & context,
     LoggerPtr log)
 {
-    LOG_DEBUG(
-        &Poco::Logger::get("debug"),
-        "!!select_query_info.prewhere_info={}, !!select_query_info.filter_actions_dag={}",
-        !!select_query_info.prewhere_info,
-        !!select_query_info.filter_actions_dag);
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_query_condition_cache]
             || !settings[Setting::allow_experimental_analyzer]

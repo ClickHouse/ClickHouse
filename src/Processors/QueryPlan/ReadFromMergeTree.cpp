@@ -56,7 +56,6 @@
 #include <algorithm>
 #include <iterator>
 #include <memory>
-#include <sstream>
 #include <unordered_map>
 
 #include <fmt/ranges.h>
@@ -1912,29 +1911,8 @@ static void buildIndexes(
 
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto describe_filters = [](const ActionDAGNodes & nodes)
-    {
-        std::stringstream descriptions;
-        for (const auto & node : nodes.nodes)
-            descriptions << node->result_name << " ";
-        return descriptions.str();
-    };
-    LOG_DEBUG(
-        &Poco::Logger::get("debug"),
-        "__PRETTY_FUNCTION__={}, __LINE__={}, this={}, filters={}",
-        __PRETTY_FUNCTION__,
-        __LINE__,
-        static_cast<const void *>(&indexes),
-        describe_filters(added_filter_nodes));
     if (!indexes)
     {
-        LOG_DEBUG(
-            &Poco::Logger::get("debug"),
-            "__PRETTY_FUNCTION__={}, __LINE__={}, this={}, filters={}",
-            __PRETTY_FUNCTION__,
-            __LINE__,
-            static_cast<const void *>(&indexes),
-            describe_filters(added_filter_nodes));
         auto dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, query_info.buildNodeNameToInputNodeColumn());
         filter_actions_dag = dag ? std::make_shared<const ActionsDAG>(std::move(*dag)) : nullptr;
 
@@ -1992,13 +1970,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const Names & primary_key_column_names = primary_key.column_names;
 
     if (!indexes)
-    {
-        LOG_DEBUG(
-            &Poco::Logger::get("debug"),
-            "__PRETTY_FUNCTION__={}, __LINE__={}, this={}",
-            __PRETTY_FUNCTION__,
-            __LINE__,
-            static_cast<const void *>(&indexes));
         buildIndexes(
             indexes,
             query_info_.filter_actions_dag.get(),
@@ -2008,7 +1979,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             context_,
             query_info_,
             metadata_snapshot);
-    }
 
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
@@ -2025,8 +1995,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     {
         ProfileEvents::increment(ProfileEvents::SelectQueriesWithPrimaryKeyUsage);
     }
-
-    LOG_DEBUG(&Poco::Logger::get("debug"), "StackTrace().toString()={}", StackTrace().toString());
 
     LOG_DEBUG(log, "Key condition: {}", indexes->key_condition.toString());
 
