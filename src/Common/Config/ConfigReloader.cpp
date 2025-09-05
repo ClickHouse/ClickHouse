@@ -26,7 +26,7 @@ ConfigReloader::ConfigReloader(
         const std::vector<std::string>& extra_paths_,
         const std::string & preprocessed_dir_,
         zkutil::ZooKeeperNodeCache && zk_node_cache_,
-        const zkutil::EventPtr & zk_changed_event_,
+        const Coordination::EventPtr & zk_changed_event_,
         Updater && updater_)
     : config_path(config_path_)
     , extra_paths(extra_paths_)

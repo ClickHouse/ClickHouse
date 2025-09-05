@@ -34,7 +34,7 @@ public:
         const std::vector<std::string>& extra_paths_,
         const std::string & preprocessed_dir,
         zkutil::ZooKeeperNodeCache && zk_node_cache,
-        const zkutil::EventPtr & zk_changed_event,
+        const Coordination::EventPtr & zk_changed_event,
         Updater && updater);
 
     ~ConfigReloader();
@@ -75,7 +75,7 @@ private:
     FilesChangesTracker files;
     zkutil::ZooKeeperNodeCache zk_node_cache;
     bool need_reload_from_zk = false;
-    zkutil::EventPtr zk_changed_event = std::make_shared<Poco::Event>();
+    Coordination::EventPtr zk_changed_event = std::make_shared<Poco::Event>();
 
     Updater updater;
 

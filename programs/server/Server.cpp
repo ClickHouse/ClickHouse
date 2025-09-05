@@ -1459,7 +1459,7 @@ try
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
 
     zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
-    zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
+    Coordination::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
     if (loaded_config.has_zk_includes)
     {
         auto old_configuration = loaded_config.configuration;

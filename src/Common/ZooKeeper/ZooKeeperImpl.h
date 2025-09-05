@@ -6,6 +6,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -127,7 +128,7 @@ public:
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
         ResponseCallback callback,
-        WatchCallbackPtr watch = nullptr);
+        WatchCallbackPtrOrEventPtr watch = {});
 
     /// See the documentation about semantics of these methods in IKeeper class.
 
@@ -152,12 +153,12 @@ public:
     void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallbackPtr watch) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void get(
         const String & path,
         GetCallback callback,
-        WatchCallbackPtr watch) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void set(
         const String & path,
@@ -169,7 +170,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallbackPtr watch) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void check(
         const String & path,
@@ -265,7 +266,7 @@ private:
     {
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
-        WatchCallbackPtr watch;
+        WatchCallbackPtrOrEventPtr watch;
         clock::time_point time;
     };
 
@@ -279,7 +280,7 @@ private:
     Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
-    using WatchCallbacks = std::unordered_set<WatchCallbackPtr>;
+    using WatchCallbacks = std::unordered_set<WatchCallbackPtrOrEventPtr>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
     Watches watches TSA_GUARDED_BY(watches_mutex);

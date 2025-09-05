@@ -10,6 +10,7 @@
 #include <functional>
 
 #include <fmt/format.h>
+#include <Poco/Event.h>
 
 /** Generic interface for ZooKeeper-like services.
   * Possible examples are:
@@ -166,6 +167,43 @@ using WatchCallback = std::function<void(const WatchResponse &)>;
 ///  - avoid copying of the callback
 ///  - registering the same callback only once per path
 using WatchCallbackPtr = std::shared_ptr<WatchCallback>;
+using EventPtr = std::shared_ptr<Poco::Event>;
+struct WatchCallbackPtrOrEventPtr
+{
+    WatchCallbackPtr callback;
+    EventPtr event;
+
+    WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_) : callback(std::move(callback_)) {} // NOLINT(google-explicit-constructor)
+    WatchCallbackPtrOrEventPtr(EventPtr event_) : event(std::move(event_)) {} // NOLINT(google-explicit-constructor)
+    WatchCallbackPtrOrEventPtr() = default;
+
+    explicit operator bool() const
+    {
+        return static_cast<bool>(event) || static_cast<bool>(callback);
+    }
+
+    bool operator==(const WatchCallbackPtrOrEventPtr & rhs) const
+    {
+        return std::tie(callback, event) == std::tie(rhs.callback, rhs.event);
+    }
+
+    void operator()(WatchResponse response) const
+    {
+        if (callback)
+            (*callback)(response);
+        else if (event)
+            event->set();
+    }
+
+    static WatchCallbackPtrOrEventPtr fromCallback(WatchCallback callback)
+    {
+        WatchCallbackPtrOrEventPtr watch;
+        if (callback)
+            watch = Coordination::WatchCallbackPtrOrEventPtr{std::make_shared<Coordination::WatchCallback>(callback)};
+        return watch;
+    }
+};
+
 
 struct SetACLRequest : virtual Request
 {
@@ -560,12 +598,12 @@ public:
     virtual void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallbackPtr watch) = 0;
+        WatchCallbackPtrOrEventPtr watch) = 0;
 
     virtual void get(
         const String & path,
         GetCallback callback,
-        WatchCallbackPtr watch) = 0;
+        WatchCallbackPtrOrEventPtr watch) = 0;
 
     virtual void set(
         const String & path,
@@ -577,7 +615,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallbackPtr watch) = 0;
+        WatchCallbackPtrOrEventPtr watch) = 0;
 
     virtual void check(
         const String & path,
@@ -620,5 +658,24 @@ template <> struct fmt::formatter<Coordination::Error> : fmt::formatter<std::str
     constexpr auto format(Coordination::Error code, auto & ctx) const
     {
         return formatter<string_view>::format(Coordination::errorMessage(code), ctx);
+    }
+};
+
+template <>
+struct std::hash<Coordination::WatchCallbackPtrOrEventPtr>
+{
+    size_t operator()(const Coordination::WatchCallbackPtrOrEventPtr & self) const
+    {
+        if (self.callback)
+        {
+            std::hash<Coordination::WatchCallbackPtr> hasher;
+            return hasher(self.callback);
+        }
+        if (self.event)
+        {
+            std::hash<Coordination::EventPtr> hasher;
+            return hasher(self.event);
+        }
+        return 0;
     }
 };

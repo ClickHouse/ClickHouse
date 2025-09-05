@@ -43,8 +43,7 @@ public:
         Coordination::Stat stat{};
     };
 
-    ZNode get(const std::string & path, EventPtr watch_event);
-    ZNode get(const std::string & path, Coordination::WatchCallback watch_callback);
+    ZNode get(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
 
     void sync();
 

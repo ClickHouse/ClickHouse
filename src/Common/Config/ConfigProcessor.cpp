@@ -428,7 +428,7 @@ void ConfigProcessor::doIncludesRecursive(
     const LoggerPtr & log,
     Node * node,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
-    const zkutil::EventPtr & zk_changed_event,
+    const Coordination::EventPtr & zk_changed_event,
     std::unordered_set<std::string> * contributing_zk_paths)
 {
     if (node->nodeType() == Node::TEXT_NODE)
@@ -721,7 +721,7 @@ XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path, Poc
 XMLDocumentPtr ConfigProcessor::processConfig(
     bool * has_zk_includes,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
-    const zkutil::EventPtr & zk_changed_event,
+    const Coordination::EventPtr & zk_changed_event,
     bool is_config_changed)
 {
     if (is_config_changed)
@@ -868,7 +868,7 @@ void ConfigProcessor::processIncludes(
     std::unordered_set<std::string> * contributing_zk_paths,
     std::vector<std::string> * contributing_files,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
-    const zkutil::EventPtr & zk_changed_event)
+    const Coordination::EventPtr & zk_changed_event)
 {
     XMLDocumentPtr include_from;
     if (!include_from_path.empty())
@@ -900,7 +900,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     zkutil::ZooKeeperNodeCache & zk_node_cache,
-    const zkutil::EventPtr & zk_changed_event,
+    const Coordination::EventPtr & zk_changed_event,
     bool fallback_to_preprocessed,
     bool is_config_changed)
 {

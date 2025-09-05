@@ -17,16 +17,7 @@ ZooKeeperNodeCache::ZooKeeperNodeCache(GetZooKeeper get_zookeeper_)
 {
 }
 
-ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, EventPtr watch_event)
-{
-    Coordination::WatchCallback watch_callback;
-    if (watch_event)
-        watch_callback = [watch_event](const Coordination::WatchResponse &) { watch_event->set(); };
-
-    return get(path, watch_callback);
-}
-
-ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coordination::WatchCallback caller_watch_callback)
+ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr caller_watch_callback)
 {
     std::unordered_set<std::string> invalidated_paths;
     {

@@ -280,9 +280,9 @@ public:
     /// * The node has children.
     Coordination::Error tryRemove(const std::string & path, int32_t version = -1);
 
-    bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
+    bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const Coordination::EventPtr & watch = nullptr);
     bool existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
-    bool existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback);
+    bool existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
 
     using MultiExistsResponse = MultiReadResponses<Coordination::ExistsResponse, true>;
     template <typename TIter>
@@ -299,9 +299,9 @@ public:
 
     bool anyExists(const std::vector<std::string> & paths);
 
-    std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
+    std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const Coordination::EventPtr & watch = nullptr);
     std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
-    std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback);
+    std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
 
     using MultiGetResponse = MultiReadResponses<Coordination::GetResponse, false>;
     using MultiTryGetResponse = MultiReadResponses<Coordination::GetResponse, true>;
@@ -324,7 +324,7 @@ public:
         const std::string & path,
         std::string & res,
         Coordination::Stat * stat = nullptr,
-        const EventPtr & watch = nullptr,
+        const Coordination::EventPtr & watch = nullptr,
         Coordination::Error * code = nullptr);
 
     bool tryGetWatch(
@@ -338,7 +338,7 @@ public:
         const std::string & path,
         std::string & res,
         Coordination::Stat * stat,
-        Coordination::WatchCallbackPtr watch_callback,
+        Coordination::WatchCallbackPtrOrEventPtr watch_callback,
         Coordination::Error * code = nullptr);
 
     template <typename TIter>
@@ -367,7 +367,7 @@ public:
 
     Strings getChildren(const std::string & path,
                         Coordination::Stat * stat = nullptr,
-                        const EventPtr & watch = nullptr,
+                        const Coordination::EventPtr & watch = nullptr,
                         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     Strings getChildrenWatch(const std::string & path,
@@ -377,7 +377,7 @@ public:
 
     Strings getChildrenWatch(const std::string & path,
                              Coordination::Stat * stat,
-                             Coordination::WatchCallbackPtr watch_callback,
+                             Coordination::WatchCallbackPtrOrEventPtr watch_callback,
                              Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     using MultiGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, false>;
@@ -406,7 +406,7 @@ public:
         const std::string & path,
         Strings & res,
         Coordination::Stat * stat = nullptr,
-        const EventPtr & watch = nullptr,
+        const Coordination::EventPtr & watch = nullptr,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     Coordination::Error tryGetChildrenWatch(
@@ -420,7 +420,7 @@ public:
         const std::string & path,
         Strings & res,
         Coordination::Stat * stat,
-        Coordination::WatchCallbackPtr watch_callback,
+        Coordination::WatchCallbackPtrOrEventPtr watch_callback,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     template <typename TIter>
@@ -535,13 +535,13 @@ public:
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
-    FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallbackPtr watch_callback = {});
+    FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch_callback = {});
 
     using FutureExists = std::future<Coordination::ExistsResponse>;
     FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {});
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureExists asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
-    FutureExists asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallbackPtr watch_callback = {});
+    FutureExists asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch_callback = {});
 
     using FutureGetChildren = std::future<Coordination::ListResponse>;
     FutureGetChildren asyncGetChildren(
@@ -551,7 +551,7 @@ public:
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureGetChildren asyncTryGetChildrenNoThrow(
         const std::string & path,
-        Coordination::WatchCallbackPtr watch_callback = {},
+        Coordination::WatchCallbackPtrOrEventPtr watch_callback = {},
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     using FutureSet = std::future<Coordination::SetResponse>;
@@ -650,13 +650,13 @@ private:
     Coordination::Error getImpl(
         const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
     Coordination::Error getImpl(
-        const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback);
+        const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
     Coordination::Error setImpl(const std::string & path, const std::string & data, int32_t version, Coordination::Stat * stat);
     Coordination::Error getChildrenImpl(
         const std::string & path,
         Strings & res,
         Coordination::Stat * stat,
-        Coordination::WatchCallbackPtr watch_callback,
+        Coordination::WatchCallbackPtrOrEventPtr watch_callback,
         Coordination::ListRequestType list_request_type);
     Coordination::Error getACLImpl(const std::string & path, Coordination::ACLs & res, Coordination::Stat * stat);
 
@@ -665,7 +665,7 @@ private:
     multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid);
 
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
-    Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallbackPtr watch_callback);
+    Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
     Coordination::Error syncImpl(const std::string & path, std::string & returned_path);
 
     using RequestFactory = std::function<Coordination::RequestPtr(const std::string &)>;

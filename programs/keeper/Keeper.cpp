@@ -570,7 +570,7 @@ try
 
     async_metrics.start();
 
-    zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
+    Coordination::EventPtr unused_event = std::make_shared<Poco::Event>();
     zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });
 
     const std::string cert_path = config().getString("openSSL.server.certificateFile", "");

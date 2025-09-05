@@ -704,7 +704,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     for (const String & replica : *all_required_replicas)
     {
         LOG_DEBUG(log, "Waiting for {} to apply mutation {}", replica, mutation_id);
-        zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
+        Coordination::EventPtr wait_event = std::make_shared<Poco::Event>();
 
         constexpr size_t MAX_RETRIES_ON_FAILED_MUTATION = 30;
         size_t retries_on_failed_mutation = 0;
@@ -7290,7 +7290,7 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
         bool pulled_to_queue = false;
         do
         {
-            zkutil::EventPtr event = std::make_shared<Poco::Event>();
+            Coordination::EventPtr event = std::make_shared<Poco::Event>();
 
             String log_pointer = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer", nullptr, event);
             if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
@@ -7354,7 +7354,7 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
             bool pulled_to_queue = false;
             do
             {
-                zkutil::EventPtr event = std::make_shared<Poco::Event>();
+                Coordination::EventPtr event = std::make_shared<Poco::Event>();
 
                 log_pointer = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer", nullptr, event);
                 if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
