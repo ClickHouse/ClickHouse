@@ -82,8 +82,11 @@ void StorageObjectStorageConfiguration::initialize(
     }
     else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
     {
-        // Promote to wildcard in case it is not data lake to make it backwards compatible
-        configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+        if (configuration_to_initialize.getRawPath().hasPartitionWildcard())
+        {
+            // Promote to wildcard in case it is not data lake to make it backwards compatible
+            configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+        }
     }
 
     if (configuration_to_initialize.format == "auto")
