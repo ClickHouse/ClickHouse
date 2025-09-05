@@ -651,7 +651,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         if next_option == 7:
             return f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}')"
         if next_option == 8:
-            return f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}')"
+            return f"CALL {table.catalog_name}.system.compute_partition_stats(table => '{table.get_namespace_path()}')"
         if next_option == 9:
             return f"CALL `{table.catalog_name}`.system.ancestors_of(table => '{table.get_namespace_path()}')"
         # if next_option == 10:
