@@ -73,7 +73,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_arguments{
             {"x", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isIntegerOrDecimal), nullptr, "(U)Int* or Decimal"}, // Adds float
