@@ -1442,7 +1442,7 @@ void StatementGenerator::addTableColumnInternal(
             generateTableExpression(rg, false, def_value->mutable_expr());
         }
     }
-    if (t.isMergeTreeFamily())
+    if (t.isMergeTreeFamily() || rg.nextLargeNumber() < 4)
     {
         const auto & csettings = allColumnSettings.at(t.teng);
 
@@ -2191,7 +2191,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         connections.createPeerTable(rg, next.peer_table, next, ct, entries);
         entries.clear();
     }
-    else if (!next.is_deterministic && next.isMergeTreeFamily() && rg.nextBool())
+    else if (!next.is_deterministic && (next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && rg.nextBool())
     {
         flatTableColumnPath(0, next.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
         generateNextTTL(rg, std::make_optional<SQLTable>(next), te, te->mutable_ttl_expr());
