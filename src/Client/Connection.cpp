@@ -36,12 +36,9 @@
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <pcg_random.hpp>
-#include <base/scope_guard.h>
 #include <Common/FailPoint.h>
 
 #include <Common/config_version.h>
-#include <Common/scope_guard_safe.h>
 #include <Core/Types.h>
 #include "config.h"
 
@@ -1335,7 +1332,7 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::TableColumns:
-                res.multistring_message = receiveMultistringMessage(res.type);
+                res.columns_description = receiveTableColumns();
                 return res;
 
             case Protocol::Server::EndOfStream:
@@ -1432,7 +1429,19 @@ Block Connection::receiveProfileEvents()
 
 void Connection::initInputBuffers()
 {
+}
 
+
+void Connection::initMaybeCompressedInput()
+{
+    if (!maybe_compressed_in)
+    {
+        if (compression == Protocol::Compression::Enable)
+            // Different codecs in this case are the default (e.g. LZ4) and codec NONE to skip compression in case of ColumnBLOB.
+            maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /*allow_different_codec=*/true);
+        else
+            maybe_compressed_in = in;
+    }
 }
 
 
@@ -1440,15 +1449,7 @@ void Connection::initBlockInput()
 {
     if (!block_in)
     {
-        if (!maybe_compressed_in)
-        {
-            if (compression == Protocol::Compression::Enable)
-                // Different codecs in this case are the default (e.g. LZ4) and codec NONE to skip compression in case of ColumnBLOB.
-                maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /*allow_different_codec=*/true);
-            else
-                maybe_compressed_in = in;
-        }
-
+        initMaybeCompressedInput();
         block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, format_settings);
     }
 }
@@ -1458,8 +1459,15 @@ void Connection::initBlockLogsInput()
 {
     if (!block_logs_in)
     {
+        ReadBuffer * logs_buf = in.get();
+        if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+        {
+            initMaybeCompressedInput();
+            logs_buf = maybe_compressed_in.get();
+        }
+
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_unique<NativeReader>(*in, server_revision, format_settings);
+        block_logs_in = std::make_unique<NativeReader>(*logs_buf, server_revision, format_settings);
     }
 }
 
@@ -1468,7 +1476,14 @@ void Connection::initBlockProfileEventsInput()
 {
     if (!block_profile_events_in)
     {
-        block_profile_events_in = std::make_unique<NativeReader>(*in, server_revision, format_settings);
+        ReadBuffer * profile_events_buf = in.get();
+        if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+        {
+            initMaybeCompressedInput();
+            profile_events_buf = maybe_compressed_in.get();
+        }
+
+        block_profile_events_in = std::make_unique<NativeReader>(*profile_events_buf, server_revision, format_settings);
     }
 }
 
@@ -1501,13 +1516,21 @@ std::unique_ptr<Exception> Connection::receiveException() const
 }
 
 
-std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
+String Connection::receiveTableColumns()
 {
-    size_t num = Protocol::Server::stringsInMessage(msg_type);
-    std::vector<String> strings(num);
-    for (size_t i = 0; i < num; ++i)
-        readStringBinary(strings[i], *in);
-    return strings;
+    ReadBuffer * columns_buf = in.get();
+    if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+    {
+        initMaybeCompressedInput();
+        columns_buf = maybe_compressed_in.get();
+    }
+
+    String table_name_ignored;
+    readStringBinary(table_name_ignored, *columns_buf);
+
+    String columns;
+    readStringBinary(columns, *columns_buf);
+    return columns;
 }
 
 
