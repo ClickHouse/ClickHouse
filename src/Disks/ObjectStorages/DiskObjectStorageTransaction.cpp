@@ -1211,11 +1211,34 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
         throw;
     }
 
+    /// after successful commit of metadata transaction we can not rollback transaction
+
     StoredObjects objects_to_remove;
     for (const auto & operation : operations_to_execute)
-        operation->finalize(objects_to_remove);
+    {
+        try
+        {
+            operation->finalize(objects_to_remove);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                __PRETTY_FUNCTION__,
+                fmt::format("An error occurred while finalizing transaction's operation ({})", operation->getInfoForLog()));
+        }
+    }
 
-    object_storage.removeObjectsIfExist(objects_to_remove);
+    try
+    {
+        object_storage.removeObjectsIfExist(objects_to_remove);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            __PRETTY_FUNCTION__,
+            "An error occurred while removing objects during finalizing transaction");
+    }
+
     operations_to_execute.clear();
     is_committed = true;
     return outcome;

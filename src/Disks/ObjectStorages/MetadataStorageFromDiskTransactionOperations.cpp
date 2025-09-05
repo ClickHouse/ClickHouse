@@ -389,7 +389,7 @@ void UnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
 
 void TruncateMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
 {
-    DiskObjectStorageMetadataPtr metadata = metadata_tx.tryGetFileMetadataFromTransactionIfExists(path);
+    DiskObjectStorageMetadataPtr metadata = metadata_tx.tryGetFileMetadataFromTransactionIfExists(path, metadata_lock);
     if (!metadata && metadata_storage.existsFile(path))
         metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
 

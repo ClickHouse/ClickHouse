@@ -261,17 +261,19 @@ TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile
     return result;
 }
 
-DiskObjectStorageMetadataPtr MetadataStorageFromDiskTransaction::tryGetFileMetadataFromTransactionIfExists(const std::string & path) const
+DiskObjectStorageMetadataPtr MetadataStorageFromDiskTransaction::tryGetFileMetadataFromTransactionIfExists(const std::string & path, std::unique_lock<SharedMutex> & lock) const
 {
+    /// This function is called under metadata lock insise meratada transaction, so we can safely read metadata from disk
     if (metadata_storage.existsFileOrDirectory(path))
-        return metadata_storage.readMetadata(path);
+        return metadata_storage.readMetadataUnlocked(path, lock);
     return nullptr;
 }
 
 std::optional<StoredObjects> MetadataStorageFromDiskTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
 {
-    if (auto metadata = tryGetFileMetadataFromTransactionIfExists(path))
-        return metadata->getStorageObjects(path);
+    /// This function is called outsize metadata lock before meratada transaction, so we can't use tryGetFileMetadataFromTransactionIfExists function here
+    if (metadata_storage.existsFileOrDirectory(path))
+        return metadata_storage.getStorageObjects(path);
     return std::nullopt;
 }
 

@@ -142,7 +142,7 @@ public:
 
     TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t size) override;
 
-    DiskObjectStorageMetadataPtr tryGetFileMetadataFromTransactionIfExists(const std::string & path) const;
+    DiskObjectStorageMetadataPtr tryGetFileMetadataFromTransactionIfExists(const std::string & path, std::unique_lock<SharedMutex> & lock) const;
 
     std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 };
