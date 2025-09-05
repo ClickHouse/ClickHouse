@@ -1,6 +1,5 @@
 CAST
 DATE
-FQDN
 IPv4CIDRToRange
 IPv4NumToString
 IPv4NumToStringClassC
@@ -46,22 +45,15 @@ __scalarSubqueryResult
 accurateCast
 accurateCastOrDefault
 accurateCastOrNull
-bar
-basename
-blockNumber
 blockSerializedSize
-blockSize
-byteSize
 caseWithExpression
 catboostEvaluate
 countDigits
 countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
-currentDatabase
 currentProfiles
 currentRoles
-currentUser
 cutFragment
 cutIPv6
 cutQueryString
@@ -94,9 +86,6 @@ filesystemUnreserved
 finalizeAggregation
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
-formatReadableQuantity
-formatReadableSize
-formatReadableTimeDelta
 formatRow
 formatRowNoNewline
 fragment
@@ -105,7 +94,6 @@ fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestamp64Second
 generateUUIDv4
-getMacro
 getServerPort
 getSizeOfEnumType
 getTypeSerializationStreams

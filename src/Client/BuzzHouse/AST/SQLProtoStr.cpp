@@ -3441,7 +3441,7 @@ CONV_FN(Drop, dt)
     const bool is_table = dt.sobject() == SQLObject::TABLE;
 
     ret += "DROP ";
-    if (is_table && dt.is_temp())
+    if ((is_table || dt.sobject() == SQLObject::VIEW) && dt.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -3868,6 +3868,10 @@ CONV_FN(CreateView, create_view)
 
     CreateOrReplaceToString(ret, create_view.create_opt());
     ret += " ";
+    if (create_view.create_opt() == CreateReplaceOption::Create && create_view.is_temp())
+    {
+        ret += "TEMPORARY ";
+    }
     if (replace)
     {
         ret += "TABLE";
@@ -4490,10 +4494,8 @@ CONV_FN(AlterItem, alter)
 
 CONV_FN(Alter, alter)
 {
-    const bool is_table = alter.sobject() == SQLObject::TABLE;
-
     ret += "ALTER ";
-    if (is_table && alter.is_temp())
+    if ((alter.sobject() == SQLObject::TABLE || alter.sobject() == SQLObject::VIEW) && alter.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -4901,7 +4903,7 @@ CONV_FN(BackupRestoreObject, bobject)
 {
     const bool is_table = bobject.sobject() == SQLObject::TABLE;
 
-    if (is_table && bobject.is_temp())
+    if ((is_table || bobject.sobject() == SQLObject::VIEW) && bobject.is_temp())
     {
         ret += "TEMPORARY ";
     }
