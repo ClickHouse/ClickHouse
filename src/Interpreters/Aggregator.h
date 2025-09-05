@@ -327,6 +327,11 @@ private:
     /// If true, we apply similar optimization as is_simple_count.
     bool is_simple_sum = false;
 
+    /// Function pointer for optimized sum extraction when is_simple_sum is true.
+    /// This eliminates runtime type checking overhead during aggregation.
+    using ExtractAndSumFunc = std::function<UInt64(const IColumn*, size_t, size_t, bool)>;
+    ExtractAndSumFunc optimized_extract_sum_func = nullptr;
+
     LoggerPtr log = getLogger("Aggregator");
 
     /// For external aggregation.

@@ -196,6 +196,7 @@ UInt64 & getInlinedStateUInt64(DB::AggregateDataPtr & ptr)
 template <typename T>
 UInt64 ALWAYS_INLINE extractAndSumTyped(const DB::IColumn* column, size_t row_begin, size_t row_end, bool has_sparse_column)
 {
+    // using ColVecType = DB::ColumnVectorOrDecimal<T>;
     using ColVecType = DB::ColumnVectorOrDecimal<T>;
     if (has_sparse_column)
     {
@@ -212,8 +213,14 @@ UInt64 ALWAYS_INLINE extractAndSumTyped(const DB::IColumn* column, size_t row_be
             result += static_cast<UInt64>(data[i+1]);
         return result;
     }
+    else if (row_end == row_begin + 1 )
+    {
+        const auto & typed_column = assert_cast<const ColVecType &>(*column);
+        return static_cast<UInt64>(typed_column.getData()[row_begin]);
+    }
     else
     {
+        // If it's SIMD, must use the from and end, but if it's single, should avoid.
         const auto & typed_column = assert_cast<const ColVecType &>(*column);
         DB::AggregateFunctionSumData<UInt64> sum_data;
         sum_data.addMany(typed_column.getData().data(), row_begin, row_end);
@@ -221,28 +228,6 @@ UInt64 ALWAYS_INLINE extractAndSumTyped(const DB::IColumn* column, size_t row_be
     }
 }
 
-UInt64 ALWAYS_INLINE extractAndSum(DB::Aggregator::AggregateFunctionInstruction * inst, size_t row_begin, size_t row_end)
-{
-    const DB::IColumn* column = inst->batch_arguments[0];
-    auto type = column->getDataType();
-    DB::WhichDataType which(type);
-
-    if (false) {} // NOLINT
-#define M(TYPE) \
-    else if (which.idx == DB::TypeIndex::TYPE) { \
-        return extractAndSumTyped<TYPE>(column, row_begin, row_end, inst->has_sparse_arguments); \
-    }
-
-    FOR_INLINABLE_UINT_TYPES(M)
-#undef M
-
-    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsupported column {} type {} for inline sum optimization", column->getName(), type);
-}
-
-UInt64 ALWAYS_INLINE extractAndSumByRow(DB::Aggregator::AggregateFunctionInstruction * inst, size_t row)
-{
-    return extractAndSum(inst, row, row + 1);
-}
 
 }
 
@@ -583,13 +568,15 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             is_simple_count = true;
         else if (params.aggregates[0].function->getName() == "sum" && result_type->getTypeId() == DB::TypeIndex::UInt64)
         {
-            if (false) {} // NOLINT
-            #define M(TYPE) \
-                else if (result_type->getTypeId() == DB::TypeIndex::TYPE) { \
-                    is_simple_sum = true; \
-                }
-            FOR_INLINABLE_UINT_TYPES(M)
-            #undef M
+            is_simple_sum = true;
+
+            // if (false) {} // NOLINT
+            // #define M(TYPE) \
+            //     else if (result_type->getTypeId() == DB::TypeIndex::TYPE) { \
+            //         is_simple_sum = true; \
+            //     }
+            // FOR_INLINABLE_UINT_TYPES(M)
+            // #undef M
         }
     }
 
@@ -635,6 +622,29 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     HashMethodContext::Settings cache_settings;
     cache_settings.max_threads = params.max_threads;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
+
+    /// After all is_simple_sum assignments are complete, set up the optimized function pointer
+    if (is_simple_sum)
+    {
+        const auto & arg_name = params.aggregates[0].argument_names[0];
+        const auto & column_type = header.getByName(arg_name).type;
+        WhichDataType which(column_type);
+
+        if (false) {} // NOLINT
+#define M(TYPE) \
+        else if (which.idx == TypeIndex::TYPE) { \
+            optimized_extract_sum_func = [](const IColumn* col, size_t begin, size_t end, bool sparse) { \
+                return extractAndSumTyped<TYPE>(col, begin, end, sparse); \
+            }; \
+        }
+
+        FOR_INLINABLE_UINT_TYPES(M)
+#undef M
+        else {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, 
+                "Unsupported column type {} for simple sum optimization", column_type->getName());
+        }
+    }
 
 #if USE_EMBEDDED_COMPILER
     compileAggregateFunctionsIfNeeded();
@@ -751,6 +761,15 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
 
         types_removed_nullable.push_back(type);
     }
+
+    if (is_simple_sum)
+    {
+        auto t  = header.getByName(params.aggregates[0].argument_names[0]);
+        auto type = t.type;
+        DB::WhichDataType which(type);
+        LOG_INFO(log, "jianfei chooseAggregationMethod returned sum column: {} name: {} ", type, t.name);
+    }
+
 
     /** Returns ordinary (not two-level) methods, because we start from them.
       * Later, during aggregation process, data may be converted (partitioned) to two-level structure, if cardinality is high.
@@ -1223,7 +1242,8 @@ void NO_INLINE Aggregator::executeImplBatch(
                 {
                     increment_for_inline_uint64([&](size_t i)
                     {
-                        return extractAndSumByRow(&aggregate_instructions[0], i);
+                        // need to extract data type and add, but we really don't have to do it.
+                        return optimized_extract_sum_func(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
                     });
                     return;
                 }
@@ -1344,14 +1364,14 @@ void NO_INLINE Aggregator::executeImplBatch(
             execute_inline_u64_batch([&]()
             {
                 if (row_end > row_begin)
-                    return extractAndSumByRow(&aggregate_instructions[0], 0) * (row_end - row_begin);
+                    return optimized_extract_sum_func(aggregate_instructions[0].batch_arguments[0], 0, 1, aggregate_instructions[0].has_sparse_arguments) * (row_end - row_begin);
                 return UInt64(0);
             });
         }
         else
             execute_row_by_row_aggregation([&](size_t i)
             {
-                return extractAndSumByRow(&aggregate_instructions[0], i);
+                return optimized_extract_sum_func(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
             });
         return;
     }
@@ -1547,7 +1567,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 
     if (is_simple_sum)
     {
-        UInt64 total_sum = extractAndSum(&aggregate_instructions[0], row_begin, row_end);
+        UInt64 total_sum = optimized_extract_sum_func(aggregate_instructions[0].batch_arguments[0], row_begin, row_end, aggregate_instructions[0].has_sparse_arguments);
         getStateUInt64(res) += total_sum;
         return;
     }
@@ -1659,7 +1679,7 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
 
     if (is_simple_sum)
     {
-        UInt64 total_sum = extractAndSum(&aggregate_instructions[0], row_begin, row_end);
+        UInt64 total_sum = optimized_extract_sum_func(aggregate_instructions[0].batch_arguments[0], row_begin, row_end, aggregate_instructions[0].has_sparse_arguments);
         getStateUInt64(res) += total_sum;
         return;
     }
@@ -1695,6 +1715,10 @@ void NO_INLINE Aggregator::mergeOnIntervalWithoutKey(
 }
 
 
+/// TODO(jianfei): could handle the type switch here instead once.
+/// including sparse and the type switch for integer.
+/// Anther way is to utilize the instruction somehow as it's already typed.
+/// Another way that is almost always correct: make how to add this part of the AggregateFunctionInstruction definition.
 void Aggregator::prepareAggregateInstructions(
     Columns columns,
     AggregateColumns & aggregate_columns,
