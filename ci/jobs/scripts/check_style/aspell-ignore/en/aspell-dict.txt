@@ -1175,6 +1175,7 @@ GTID
 gunzip
 gzip
 gzipped
+hackernews
 hadoop
 halfday
 halfMD

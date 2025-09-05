@@ -81,10 +81,12 @@
           </logger>
         </levels>
         -->
+
         <!-- Structured log formatting:
-        You can specify log format(for now, JSON only). In that case, the console log will be printed
-        in specified format like JSON.
-        For example, as below:
+
+        You can specify log format(for now, JSON only).
+        It can be done either on a per-channel (log, errorlog, console, syslog) level (set `channel`, i.e. `<channel>console</channel>') or for all channels (omit `channel`).
+        The log will be printed in specified format like JSON, example:
 
         {"date_time":"1650918987.180175","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
         {"date_time_utc":"2024-11-06T09:06:09Z","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
@@ -100,8 +102,10 @@
         However, if you comment out all the tags under <names>, the program will print default values for as
         below.
         -->
-        <!-- <formatting>
+        <!--
+        <formatting>
             <type>json</type>
+            <channel></channel>
             <names>
                 <date_time>date_time</date_time>
                 <date_time_utc>date_time_utc</date_time_utc>
@@ -114,7 +118,8 @@
                 <source_file>source_file</source_file>
                 <source_line>source_line</source_line>
             </names>
-        </formatting> -->
+        </formatting>
+        -->
     </logger>
 
     <url_scheme_mappers>
@@ -1289,6 +1294,16 @@
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <flush_on_crash>false</flush_on_crash>
     </asynchronous_metric_log>
+
+    <iceberg_metadata_log>
+        <database>system</database>
+        <table>iceberg_metadata_log</table>
+        <flush_interval_milliseconds>2000</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </iceberg_metadata_log>
 
     <!--
         OpenTelemetry log contains OpenTelemetry trace spans.

@@ -3913,9 +3913,16 @@ services:
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
+            {lakehouses_path}
         entrypoint: /integration-tests-entrypoint.sh {entrypoint_cmd}
-        # increase it to allow jeprof to dump the profile report
-        stop_grace_period: 5m
+        # Increase it to allow jeprof to dump the profile report and gdb collect stacktraces
+        #
+        # NOTE: it has been proven that 5m is not enough slightly, but anyway
+        # this should not be a problem, since in
+        # integration-tests-entrypoint.sh we have "timeout" of 1 minute, and
+        # later we will attach with gdb to collect stacktraces, and once it
+        # will be done it will exit.
+        stop_grace_period: 10m
         tmpfs: {tmpfs}
         {mem_limit}
         cap_add:
@@ -4117,7 +4124,11 @@ class ClickHouseInstance:
         self.clickhouse_start_command_in_daemon = "{} --daemon -- {}".format(
             clickhouse_start_command_with_conf, clickhouse_start_extra_args
         )
-        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
+        # NOTE: as a child command we have only clickhouse, so it is OK to assume so
+        # and there is no other way to kill clickhouse properly (easily), since
+        # clickhosue is spawned with --daemon, and it is not a child neither in
+        # the same session.
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail; pkill clickhouse' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
             self.clickhouse_start_command_in_daemon
         )
 
@@ -4144,6 +4155,9 @@ class ClickHouseInstance:
         else:
             self.keytab_path = ""
             self.krb5_conf = ""
+
+        # Use a common path for data lakes on the filesystem
+        self.lakehouses_path = "- /lakehouses:/lakehouses" if with_dolor else ""
 
         self.docker_client = None
         self.ip_address = None
@@ -5508,6 +5522,7 @@ class ClickHouseInstance:
                     odbc_ini_path=odbc_ini_path,
                     keytab_path=self.keytab_path,
                     krb5_conf=self.krb5_conf,
+                    lakehouses_path=self.lakehouses_path,
                     entrypoint_cmd=entrypoint_cmd,
                     networks=networks,
                     app_net=app_net,
