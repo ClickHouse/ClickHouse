@@ -1,5 +1,5 @@
 #include <Interpreters/SystemLog.h>
-
+#include <Common/Exception.h>
 #include <base/scope_guard.h>
 #include <Common/Logger.h>
 #include <Common/SystemLogBase.h>
@@ -389,7 +389,7 @@ constexpr String getLowerCaseAndRemoveUnderscores(const String & name)
 }
 }
 
-void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
+void SystemLogs::flushImpl(const Strings & names, bool should_prepare_tables_anyway, bool ignore_errors)
 {
     std::vector<std::pair<ISystemLog *, ISystemLog::Index>> logs_to_wait;
 
@@ -434,12 +434,31 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
 
     /// We must wait for the async flushes to finish
     for (const auto & [log, index] : logs_to_wait)
-        log->flush(index, should_prepare_tables_anyway);
+    {
+        if (!ignore_errors)
+            log->flush(index, should_prepare_tables_anyway);
+        else
+        {
+            try
+            {
+                log->flush(index, should_prepare_tables_anyway);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    }
+}
+
+void SystemLogs::flush(const Strings & names)
+{
+    flushImpl(names, /*should_prepare_tables_anyway=*/ true, /*ignore_errors=*/ false);
 }
 
 void SystemLogs::flushAndShutdown()
 {
-    flush(/* should_prepare_tables_anyway */ false, {});
+    flushImpl(/*names=*/ {}, /*should_prepare_tables_anyway=*/ false, /*ignore_errors=*/ true);
     shutdown();
 }
 
