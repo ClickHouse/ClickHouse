@@ -42,7 +42,8 @@ REGISTER_FUNCTION(InitialQueryID)
 {
     FunctionDocumentation::Description description_initialQueryID = R"(
 Returns the ID of the initial current query.
-Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `initial_query_id`.
+Other parameters of a query can be extracted from field `initial_query_id` in [`system.query_log`](../../operations/system-tables/query_log.md).
+
 In contrast to [`queryID`](/sql-reference/functions/other-functions#queryid) function, `initialQueryID` returns the same results on different shards.
 )";
     FunctionDocumentation::Syntax syntax_initialQueryID = "initialQueryID()";

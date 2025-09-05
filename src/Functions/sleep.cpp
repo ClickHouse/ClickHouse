@@ -177,10 +177,10 @@ public:
 REGISTER_FUNCTION(Sleep)
 {
     FunctionDocumentation::Description description_sleep = R"(
-Used to introduce a delay or pause in the execution of a query.
-It is primarily used for testing and debugging purposes.
+Pauses the execution of a query by the specified number of seconds.
+The function is primarily used for testing and debugging purposes.
 
-The `sleep()` function is generally not used in production environments, as it can negatively impact query performance and system responsiveness.
+The `sleep()` function should generally not be used in production environments, as it can negatively impact query performance and system responsiveness.
 However, it can be useful in the following scenarios:
 
 1. **Testing**: When testing or benchmarking ClickHouse, you may want to simulate delays or introduce pauses to observe how the system behaves under certain conditions.

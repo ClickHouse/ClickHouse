@@ -59,22 +59,23 @@ REGISTER_FUNCTION(ErrorCodeToName)
 {
     FunctionDocumentation::Description description_errorCodeToName = R"(
 Returns the textual name of a numeric ClickHouse error code.
+The mapping from numeric error codes to error names is available [here](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ErrorCodes.cpp).
 )";
     FunctionDocumentation::Syntax syntax_errorCodeToName = "errorCodeToName(error_code)";
     FunctionDocumentation::Arguments arguments_errorCodeToName = {
         {"error_code", "ClickHouse error code.", {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_errorCodeToName = {"Returns the textual name of `error_code`.", {"LowCardinality(String)"}};
+    FunctionDocumentation::ReturnedValue returned_value_errorCodeToName = {"Returns the textual name of `error_code`.", {"String"}};
     FunctionDocumentation::Examples examples_errorCodeToName = {
     {
         "Usage example",
         R"(
-SELECT errorCodeToName(1);
+SELECT errorCodeToName(252);
         )",
         R"(
-┌─errorCodeToName(1)─┐
-│ UNSUPPORTED_METHOD │
-└────────────────────┘
+┌─errorCodeToName(252)─┐
+│ TOO_MANY_PARTS       │
+└──────────────────────┘
         )"
     }
     };

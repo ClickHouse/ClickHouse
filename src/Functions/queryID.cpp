@@ -43,7 +43,8 @@ REGISTER_FUNCTION(QueryID)
 {
     FunctionDocumentation::Description description_queryID = R"(
 Returns the ID of the current query.
-Other parameters of a query can be extracted from the [`system.query_log`](../../operations/system-tables/query_log.md) table via `query_id`.
+Other parameters of a query can be extracted from field `query_id` in the [`system.query_log`](../../operations/system-tables/query_log.md) table.
+
 In contrast to [`initialQueryID`](#initialqueryid) function, `queryID` can return different results on different shards.
 )";
     FunctionDocumentation::Syntax syntax_queryID = "queryID()";
