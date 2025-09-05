@@ -928,7 +928,7 @@ void ColumnsDescription::addSubcolumns(const String & name_in_storage, const Dat
     {
         auto subcolumn = NameAndTypePair(name_in_storage, subname, type_in_storage, subdata.type);
 
-        if (has(subcolumn.name))
+        if (hasSubcolumn(subcolumn.name))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Cannot add subcolumn {}: column with this name already exists", subcolumn.name);
 
