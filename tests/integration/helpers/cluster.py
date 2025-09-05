@@ -19,8 +19,6 @@ import time
 import traceback
 import urllib.parse
 import uuid
-from glob import glob
-from collections import defaultdict
 from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
@@ -33,21 +31,11 @@ try:
     # Please, add modules that required for specific tests only here.
     # So contributors will be able to run most tests locally
     # without installing tons of unneeded packages that may be not so easy to install.
-    import asyncio
     import ssl
 
     import psycopg2
     from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-    import pymongo
     import pymysql
-    import nats
-    # Not an easy dep
-    import cassandra.cluster
-    from cassandra.policies import RoundRobinPolicy
-    from confluent_kafka.avro.cached_schema_registry_client import (
-        CachedSchemaRegistryClient,
-    )
-
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
 
@@ -64,12 +52,13 @@ from .config_cluster import *
 from .kazoo_client import KazooClientWithImplicitRetries
 from .random_settings import write_random_settings_config
 from .retry_decorator import retry
-from .test_tools import assert_eq_with_retry, exec_query_with_retry
+from .test_tools import exec_query_with_retry
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
 LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "tests/integration/compose/")
 DEFAULT_ENV_NAME = ".env"
+
 
 def find_default_config_path():
     path = os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", None)
@@ -129,6 +118,7 @@ try:
     os.remove(NET_LOCK_PATH)
 except Exception:
     pass
+
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
@@ -315,6 +305,7 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p.communicate()
     return p.returncode == 0
 
+
 def check_mysql_dotnet_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
         docker_exec(postgresql_java_client_id, "dotnet", "--version"),
@@ -411,6 +402,11 @@ async def check_nats_is_available(nats_port, ssl_ctx=None):
 
 
 async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None, **connect_options):
+    try:
+        import nats
+    except Exception as e:
+        logging.warning(f"Cannot import some modules, some tests may not work: {e}")
+
     if not ssl_ctx:
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
@@ -477,6 +473,7 @@ def find_binary(name):
         return bin_path
 
     raise RuntimeError(f"{name} was not found in PATH")
+
 
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
@@ -1836,7 +1833,6 @@ class ClickHouseCluster:
         with_iceberg_catalog=False,
         with_glue_catalog=False,
         with_hms_catalog=False,
-
         with_ytsaurus=False,
         handle_prometheus_remote_write=None,
         handle_prometheus_remote_read=None,
@@ -2802,6 +2798,11 @@ class ClickHouseCluster:
         run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, command)
 
     def wait_nats_is_available(self, max_retries=5):
+        try:
+            import asyncio
+        except Exception as e:
+            logging.warning(f"Cannot import some modules, some tests may not work: {e}")
+
         retries = 0
         while True:
             if asyncio.run(
@@ -2881,6 +2882,11 @@ class ClickHouseCluster:
                 time.sleep(1)
 
     def wait_mongo_to_start(self, timeout=30, secure=False):
+        try:
+            import pymongo
+        except Exception as e:
+            logging.warning(f"Cannot import some modules, some tests may not work: {e}")
+
         connection_str = "mongodb://{user}:{password}@{host}:{port}".format(
             host="localhost",
             port=self.mongo_port,
@@ -3038,6 +3044,13 @@ class ClickHouseCluster:
         raise Exception("Can't wait Azurite to start")
 
     def wait_schema_registry_to_start(self, timeout=180):
+        try:
+            from confluent_kafka.avro.cached_schema_registry_client import (
+                CachedSchemaRegistryClient,
+            )
+        except Exception as e:
+            logging.warning(f"Cannot import some modules, some tests may not work: {e}")
+
         for port in self.schema_registry_port, self.schema_registry_auth_port:
             reg_url = "http://localhost:{}".format(port)
             arg = {"url": reg_url}
@@ -3061,6 +3074,12 @@ class ClickHouseCluster:
                 raise Exception("Can't wait Schema Registry to start")
 
     def wait_cassandra_to_start(self, timeout=180):
+        try:
+            import cassandra.cluster
+            from cassandra.policies import RoundRobinPolicy
+        except Exception as e:
+            logging.warning(f"Cannot import some modules, some tests may not work: {e}")
+
         self.cassandra_ip = self.get_instance_ip(self.cassandra_host)
         cass_client = cassandra.cluster.Cluster(
             [self.cassandra_ip],
