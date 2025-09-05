@@ -184,7 +184,9 @@ def main():
                 )
                 else random.randint(1, 5)
             ),
-            "max_number_alters": 1 if random.randint(1, 2) == 1 else random.randint(1, 4),
+            "max_number_alters": (
+                1 if random.randint(1, 2) == 1 else random.randint(1, 4)
+            ),
             "fuzz_floating_points": random.choice([True, False]),
             "enable_fault_injection_settings": random.choice([True, False]),
             "enable_force_settings": random.choice([True, False]),
@@ -244,6 +246,17 @@ def main():
             log_file=shell_log_file,
         )
 
+        # Check if server was terminated by any other reason
+        results.append(
+            Result.create_from(
+                name="Check errors",
+                results=ch.check_fatal_messages_in_logs(),
+                status=Result.Status.SUCCESS,
+                stopwatch=stop_watch,
+            )
+        )
+        res = res and results[-1].is_ok()
+
         # If ClickHouse got OOM killed, ignore the result
         # On SIGTERM due to timeout, exit code is 143, ignore it
         oom_check = ch.check_ch_is_oom_killed()
@@ -258,9 +271,10 @@ def main():
                     else Result.Status.FAILED
                 ),
                 info=Shell.get_output(f"tail -300 {shell_log_file}"),
+                stopwatch=stop_watch,
             )
         )
-        res = results[-1].is_ok()
+        res = res and results[-1].is_ok()
 
     Result.create_from(
         results=results,
