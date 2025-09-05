@@ -320,10 +320,6 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                         "Cannot add column {}: column with this name already exists", column.name);
 
-
-    if (column.uuid == UUIDHelpers::Nil && Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
-        column.uuid = UUIDHelpers::generateV4();
-
     /// Normalize ASTs to be compatible with InterpreterCreateQuery.
     if (column.default_desc.expression)
         FunctionNameNormalizer::visit(column.default_desc.expression.get());

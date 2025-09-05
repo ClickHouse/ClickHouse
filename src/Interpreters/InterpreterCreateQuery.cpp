@@ -1672,6 +1672,20 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
+    if (!create.temporary && create.columns_list && getContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
+    {
+        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        if (database && database->getEngineName() == "Atomic")
+        {
+            create.generateColumnRandomUUIDs();
+        }
+        else
+        {
+            /// UUIDs maybe received from ON CLUSTER queries for non Atomic databases
+            create.resetColumnUUIDs();
+        }
+    }
+
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
