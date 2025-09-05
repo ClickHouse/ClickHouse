@@ -69,7 +69,6 @@ def test_jemalloc_global_profiler(started_cluster):
     assert is_global_profiler_active() == 1
     assert has_jemalloc_sample_in_trace_log() == 0
 
-
     # we enable collecting samples to trace_log for specific query only
     profiled_query_id = "test_jemalloc_query_profiler"
     node1.query(
@@ -82,8 +81,22 @@ def test_jemalloc_global_profiler(started_cluster):
         query_id=profiled_query_id,
     )
 
-    assert has_jemalloc_sample_in_trace_log(extra_query_condition=f"AND query_id = '{profiled_query_id}'") == 1
-    assert has_jemalloc_sample_in_trace_log(extra_query_condition=f"AND query_id != '{profiled_query_id}'") == 0
+    def assert_only_traces_from_query(query_id):
+        assert (
+            has_jemalloc_sample_in_trace_log(
+                extra_query_condition=f"AND query_id = '{query_id}'"
+            )
+            == 1
+        )
+        # we can deallocate outside query some allocations we did in the query
+        assert (
+            has_jemalloc_sample_in_trace_log(
+                extra_query_condition=f"AND query_id != '{query_id}' AND size > 0"
+            )
+            == 0
+        )
+
+    assert_only_traces_from_query(profiled_query_id)
 
     set_config("jemalloc_collect_global_profile_samples_in_trace_log", "1")
     node1.restart_clickhouse()
@@ -109,5 +122,4 @@ def test_jemalloc_global_profiler(started_cluster):
         query_id=profiled_query_id,
     )
 
-    assert has_jemalloc_sample_in_trace_log(extra_query_condition=f"AND query_id = '{profiled_query_id}'") == 1
-    assert has_jemalloc_sample_in_trace_log(extra_query_condition=f"AND query_id != '{profiled_query_id}'") == 0
+    assert_only_traces_from_query(profiled_query_id)
