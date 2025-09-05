@@ -953,6 +953,26 @@ SinkToStoragePtr IcebergMetadata::write(
     }
 }
 
+
+ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_info) const
+{
+    IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
+    if (!iceberg_object_info)
+        return nullptr;
+    auto configuration_ptr = configuration.lock();
+    chassert(object_info->getFileFormat().has_value());
+    if (Poco::toLower(*object_info->getFileFormat()) != "parquet")
+        return nullptr;
+
+    return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->underlying_format_read_schema_id);
+}
+
+ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema() const
+{
+    SharedLockGuard lock(mutex);
+    return persistent_components.schema_processor->getColumnMapperById(relevant_snapshot_schema_id);
+}
+  
 }
 
 #endif
