@@ -457,23 +457,14 @@ void QueryOracle::generateImportQuery(
         svs = nins->mutable_setting_values();
         svs->CopyFrom(oins.setting_values());
     }
-    if ((can_test_oracle_result && inf == InFormat::IN_CSV) || inf == InFormat::IN_Parquet)
+    if (can_test_oracle_result && inf == InFormat::IN_CSV)
     {
         svs = svs ? svs : nins->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
-        if (inf == InFormat::IN_Parquet)
-        {
-            /// Use available Parquet readers
-            sv->set_property("input_format_parquet_use_native_reader");
-            sv->set_value(rg.nextBool() ? "1" : "0");
-        }
-        else
-        {
-            /// The oracle expects to read all the lines from the file
-            sv->set_property("input_format_csv_detect_header");
-            sv->set_value("0");
-        }
+        /// The oracle expects to read all the lines from the file
+        sv->set_property("input_format_csv_detect_header");
+        sv->set_value("0");
     }
 }
 
