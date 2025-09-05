@@ -3913,6 +3913,7 @@ services:
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
+            {lakehouses_path}
         entrypoint: /integration-tests-entrypoint.sh {entrypoint_cmd}
         # Increase it to allow jeprof to dump the profile report and gdb collect stacktraces
         #
@@ -4154,6 +4155,9 @@ class ClickHouseInstance:
         else:
             self.keytab_path = ""
             self.krb5_conf = ""
+
+        # Use a common path for data lakes on the filesystem
+        self.lakehouses_path = "- /lakehouses:/lakehouses" if with_dolor else ""
 
         self.docker_client = None
         self.ip_address = None
@@ -5518,6 +5522,7 @@ class ClickHouseInstance:
                     odbc_ini_path=odbc_ini_path,
                     keytab_path=self.keytab_path,
                     krb5_conf=self.krb5_conf,
+                    lakehouses_path=self.lakehouses_path,
                     entrypoint_cmd=entrypoint_cmd,
                     networks=networks,
                     app_net=app_net,

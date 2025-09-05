@@ -318,6 +318,8 @@ public:
 
     bool isArrowFlightEngine() const { return teng == TableEngineValues::ArrowFlight; }
 
+    bool isAliasEngine() const { return teng == TableEngineValues::Alias; }
+
     bool isNotTruncableEngine() const;
 
     bool isEngineReplaceable() const;
@@ -346,7 +348,7 @@ public:
 
     String getSparkCatalogName() const;
 
-    void setTablePath(RandomGenerator & rg, bool has_dolor);
+    void setTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool has_dolor);
 
     String getTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool no_change) const;
 

@@ -248,6 +248,12 @@ parser.add_argument(
     help="Add 'allow_experimental_transactions' server setting",
 )
 parser.add_argument(
+    "--without-log-tables",
+    action="store_false",
+    dest="add_log_tables",
+    help="Add log tables server settings",
+)
+parser.add_argument(
     "--without-distributed-ddl",
     action="store_false",
     dest="add_distributed_ddl",
@@ -444,7 +450,7 @@ if args.with_azurite:
     )
 cluster.default_local_uploader = LocalUploader(cluster.instances["node0"])
 cluster.default_local_downloader = LocalDownloader(cluster.instances["node0"])
-spark_handler = SparkHandler(cluster, args)
+spark_handler = SparkHandler(cluster, args, test_env_variables)
 
 if args.with_postgresql:
     postgres_conn = get_postgres_conn(
@@ -463,11 +469,13 @@ def datalakehandler(path, data, headers):
     try:
         random.seed(data["seed"])
         if path == "/sparkdatabase":
-            spark_handler.create_lake_database(cluster, data)
-            res = True
+            res = spark_handler.create_lake_database(cluster, data)
         elif path == "/sparktable":
-            spark_handler.create_lake_table(cluster, data)
-            res = True
+            res = spark_handler.create_lake_table(cluster, data)
+        elif path in ("/sparkupdate", "/sparkcheck"):
+            res = spark_handler.update_or_check_table(
+                cluster, data, path == "/sparkupdate"
+            )
         random.setstate(state)
     except:
         random.setstate(state)

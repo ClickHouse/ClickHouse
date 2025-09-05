@@ -28,7 +28,10 @@
     M(AsyncInsertBytes, "Data size in bytes of asynchronous INSERT queries.", ValueType::Bytes) \
     M(AsyncInsertRows, "Number of rows inserted by asynchronous INSERT queries.", ValueType::Number) \
     M(AsyncInsertCacheHits, "Number of times a duplicate hash id has been found in asynchronous INSERT hash id cache.", ValueType::Number) \
-    M(FailedQuery, "Number of failed queries.", ValueType::Number) \
+    M(FailedInternalQuery, "Number of failed internal queries.", ValueType::Number) \
+    M(FailedInternalSelectQuery, "Same as FailedInternalQuery, but only for SELECT queries.", ValueType::Number) \
+    M(FailedInternalInsertQuery, "Same as FailedInternalQuery, but only for INSERT queries.", ValueType::Number) \
+    M(FailedQuery, "Number of total failed queries, both internal and user queries.", ValueType::Number) \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.", ValueType::Number) \
     M(FailedAsyncInsertQuery, "Number of failed ASYNC INSERT queries.", ValueType::Number) \
@@ -1136,6 +1139,9 @@ The server successfully detected this situation and will download merged part fr
     M(AsyncLoggingErrorFileLogDroppedMessages, "How many messages have been dropped from error file log due to the async log queue being full", ValueType::Number) \
     M(AsyncLoggingSyslogDroppedMessages, "How many messages have been dropped from the syslog due to the async log queue being full", ValueType::Number) \
     M(AsyncLoggingTextLogDroppedMessages, "How many messages have been dropped from text_log due to the async log queue being full", ValueType::Number) \
+    \
+    M(JemallocFailedAllocationSampleTracking, "Total number of times tracking of jemalloc allocation sample failed", ValueType::Number) \
+    M(JemallocFailedDeallocationSampleTracking, "Total number of times tracking of jemalloc deallocation sample failed", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
