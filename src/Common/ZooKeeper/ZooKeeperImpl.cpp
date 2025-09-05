@@ -1034,6 +1034,9 @@ void ZooKeeper::receiveEvent()
                 removeRootPath(req_path, args.chroot);
                 std::lock_guard lock(watches_mutex);
                 auto & callbacks = watches[req_path];
+                chassert(callbacks.size() < 100);
+                if (callbacks.size() > 10)
+                    LOG_INFO(log, "Too many watches for path {}: {} (This is likely an error)", req_path, callbacks.size());
                 if (watch && *watch)
                 {
                     if (callbacks.insert(watch).second)
