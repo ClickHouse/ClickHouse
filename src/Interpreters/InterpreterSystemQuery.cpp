@@ -1139,7 +1139,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase());
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
-        for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getLightweightTablesIterator(getContext()); iterator->isValid(); iterator->next())
             dropReplicaImpl(query, iterator->table());
         LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
     }
