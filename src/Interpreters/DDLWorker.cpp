@@ -63,11 +63,6 @@ namespace Setting
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }
 
-namespace ServerSetting
-{
-extern const ServerSettingsBool allow_ddl_loopback_hosts;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -1288,25 +1283,13 @@ void DDLWorker::initializeReplication()
 
     zookeeper->createAncestors(fs::path(replicas_dir) / "");
 
-    auto allow_ddl_loopback_hosts = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::allow_ddl_loopback_hosts];
     NameSet host_id_set;
     for (const auto & it : context->getClusters())
     {
         auto cluster = it.second;
         for (const auto & host_ids : cluster->getHostIDs())
             for (const auto & host_id : host_ids)
-            {
-                if (allow_ddl_loopback_hosts)
-                {
-                    host_id_set.emplace(host_id);
-                }
-                else
-                {
-                    HostID host = HostID::fromString(host_id);
-                    if (!host.isLoopbackHost())
-                        host_id_set.emplace(host_id);
-                }
-            }
+                host_id_set.emplace(host_id);
     }
 
     createReplicaDirs(zookeeper, host_id_set);
@@ -1385,17 +1368,36 @@ void DDLWorker::markReplicasActive(bool reinitialized)
     {
         auto it = active_node_holders.find(host_id);
         if (it != active_node_holders.end())
-        {
             continue;
-        }
 
         String active_path = fs::path(replicas_dir) / host_id / "active";
         String active_id = toString(ServerUUID::get());
 
         LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
+        if (HostID::fromString(host_id).isLoopbackHost())
+        {
+            String content;
+            Coordination::Stat stat;
+            if (zookeeper->tryGet(active_path, content, &stat))
+            {
+                // For a loopback host, many replicas might try to claim it as their own host.
+                // If the host is claimed by a replica, we skip it.
+                // Loopback host is supposed to be used in test environment.
+                if (content != active_id)
+                {
+                    LOG_TRACE(log, "HostID {} is a loopback host which is claimed by another replica {}", host_id, content);
+                    continue;
+                }
 
-        zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
-
+                auto code = zookeeper->tryRemove(active_path, stat.version);
+                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                    throw Coordination::Exception::fromPath(code, active_path);
+            }
+        }
+        else
+        {
+            zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
+        }
         zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
         auto active_node_holder_zookeeper = zookeeper;
         auto active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);

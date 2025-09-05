@@ -60,7 +60,7 @@ struct HostID
         return host_name + ":" + DB::toString(port);
     }
 
-    bool isLocalAddress(UInt16 clickhouse_port, bool allow_loopback_host) const;
+    bool isLocalAddress(UInt16 clickhouse_port) const;
     bool isLoopbackHost() const;
 
     static String applyToString(const HostID & host_id)

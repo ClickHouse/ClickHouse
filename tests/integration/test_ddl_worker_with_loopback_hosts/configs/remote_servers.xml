@@ -4,28 +4,30 @@
             <shard>
                 <internal_replication>true</internal_replication>
                 <replica>
-                    <host>node3</host>
+                    <host>node1</host>
                     <port>9000</port>
                 </replica>
                 <replica>
-                    <host>node4</host>
+                    <host>node2</host>
                     <port>9000</port>
                 </replica>
             </shard>
         </test_cluster>
-        <test_dummy_cluster>
+        <test_loopback_cluster1>
             <shard>
                 <replica>
                     <host>127.0.0.1</host>
                     <port>9000</port>
                 </replica>
             </shard>
+        </test_loopback_cluster1>
+        <test_loopback_cluster2>
             <shard>
                 <replica>
                     <host>localhost</host>
                     <port>9000</port>
                 </replica>
             </shard>
-        </test_dummy_cluster>
+        </test_loopback_cluster2>
     </remote_servers>
 </clickhouse>

@@ -1,3 +1,0 @@
-<clickhouse>
-    <allow_ddl_loopback_hosts>1</allow_ddl_loopback_hosts>
-</clickhouse>

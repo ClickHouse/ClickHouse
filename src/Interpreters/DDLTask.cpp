@@ -1,4 +1,5 @@
 #include <Core/ServerSettings.h>
+#include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <IO/Operators.h>
@@ -7,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
+#include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
@@ -20,7 +22,6 @@
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 
-
 namespace DB
 {
 
@@ -32,11 +33,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_query_size;
-}
-namespace ServerSetting
-{
-extern const ServerSettingsBool allow_ddl_loopback_hosts;
-}
+    }
 
 namespace ErrorCodes
 {
@@ -56,15 +53,12 @@ HostID HostID::fromString(const String & host_port_str)
 }
 
 
-bool HostID::isLocalAddress(UInt16 clickhouse_port, bool allow_loopback_host) const
+bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 {
     try
     {
         auto address = DNSResolver::instance().resolveAddress(host_name, port);
-        if (allow_loopback_host)
-            return DB::isLocalAddress(address, clickhouse_port);
-
-        return !address.host().isLoopback() && DB::isLocalAddress(address, clickhouse_port);
+        return DB::isLocalAddress(address, clickhouse_port);
     }
     catch (const DB::NetException &)
     {
@@ -325,6 +319,26 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
         {
             if (!isSeflHostID(host, maybe_secure_port, port))
                 continue;
+
+            if (host.isLoopbackHost())
+            {
+                String current_host_id_str = host.toString();
+                String active_id = toString(ServerUUID::get());
+                String active_path = fs::path(global_context->getDDLWorker().getReplicasDir()) / current_host_id_str / "active";
+                String content;
+                Coordination::Stat stat;
+                if (!zookeeper->tryGet(active_path, content, &stat))
+                {
+                    LOG_TRACE(log, "HostID {} is a loopback host which has not been claimed by any replica", current_host_id_str);
+                    continue;
+                }
+
+                if (content != active_id)
+                {
+                    LOG_TRACE(log, "HostID {} is a loopback host which is claimed by another replica {}", current_host_id_str, content);
+                    continue;
+                }
+            }
         }
         catch (const Exception & e)
         {
@@ -529,19 +543,16 @@ String DDLTask::getShardID() const
 
 bool DDLTask::isSeflHostID(const HostID & checking_host_id, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
 {
-    auto allow_ddl_loopback_hosts = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::allow_ddl_loopback_hosts];
     // If the checking_host_id has a loopback address, it is not considered as the self host_id.
     // Because all replicas will try to claim it as their own hosts.
-    return (maybe_self_secure_port && checking_host_id.isLocalAddress(*maybe_self_secure_port, allow_ddl_loopback_hosts))
-        || checking_host_id.isLocalAddress(self_port, allow_ddl_loopback_hosts);
+    return (maybe_self_secure_port && checking_host_id.isLocalAddress(*maybe_self_secure_port))
+        || checking_host_id.isLocalAddress(self_port);
 }
 
 bool DDLTask::isSeflHostname(const String & checking_host_name, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
 {
-    auto allow_ddl_loopback_hosts = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::allow_ddl_loopback_hosts];
-    return (maybe_self_secure_port
-            && HostID(checking_host_name, *maybe_self_secure_port).isLocalAddress(*maybe_self_secure_port, allow_ddl_loopback_hosts))
-        || HostID(checking_host_name, self_port).isLocalAddress(self_port, allow_ddl_loopback_hosts);
+    return (maybe_self_secure_port && HostID(checking_host_name, *maybe_self_secure_port).isLocalAddress(*maybe_self_secure_port))
+        || HostID(checking_host_name, self_port).isLocalAddress(self_port);
 }
 
 DatabaseReplicatedTask::DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_)
