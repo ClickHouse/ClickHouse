@@ -1064,7 +1064,7 @@ void StatementGenerator::generateEngineDetails(
     else if (te->has_engine() && b.isFileEngine())
     {
         te->add_params()->set_in_out(b.file_format.value());
-        te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
+        te->add_params()->set_svalue(b.getTablePath(rg, fc, false));
         if (b.file_comp.has_value())
         {
             te->add_params()->set_svalue(b.file_comp.value());
@@ -1228,7 +1228,7 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isKeeperMapEngine())
     {
-        te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
+        te->add_params()->set_svalue(b.getTablePath(rg, fc, false));
         if (rg.nextBool())
         {
             std::uniform_int_distribution<uint64_t> keys_limit_dist(0, 8192);
@@ -1261,7 +1261,7 @@ void StatementGenerator::generateEngineDetails(
         /// Set arrow flight params
         b.host_params = rg.pickRandomly(fc.arrow_flight_servers);
         te->add_params()->set_svalue(b.host_params.value());
-        te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
+        te->add_params()->set_svalue(b.getTablePath(rg, fc, false));
     }
 
     if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && allow_shared_tbl && rg.nextSmallNumber() < 5)

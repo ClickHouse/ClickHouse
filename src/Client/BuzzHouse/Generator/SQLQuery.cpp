@@ -334,7 +334,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             {
                 ffunc->set_fname(FileFunc_FName::FileFunc_FName_file);
             }
-            ffunc->set_path(t.getTablePath(rg, fc, true));
+            ffunc->set_path(t.getTablePath(rg, fc, this->allow_not_deterministic));
             if (t.file_format.has_value())
             {
                 ffunc->set_inoutformat(t.file_format.value());
@@ -358,7 +358,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             {
                 ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
             }
-            ufunc->set_uurl(t.getTablePath(rg, fc, true));
+            ufunc->set_uurl(t.getTablePath(rg, fc, this->allow_not_deterministic));
             if (t.file_format.has_value())
             {
                 ufunc->set_inoutformat(t.file_format.value());
@@ -416,7 +416,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             ArrowFlightFunc * affunc = tfunc->mutable_flight();
 
             affunc->set_address(t.host_params.value());
-            affunc->set_dataset(t.getTablePath(rg, fc, true));
+            affunc->set_dataset(t.getTablePath(rg, fc, this->allow_not_deterministic));
         }
         else
         {

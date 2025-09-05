@@ -263,13 +263,13 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     }
 }
 
-String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool no_change) const
+String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool allow_not_deterministic) const
 {
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         String res = bucket_path.value();
 
-        if ((isS3Engine() || isAzureEngine()) && !no_change && rg.nextSmallNumber() < 8)
+        if ((isS3Engine() || isAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
         {
             /// Replace PARTITION BY str
             const size_t partition_pos = res.find(PARTITION_STR);
