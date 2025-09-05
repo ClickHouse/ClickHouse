@@ -3206,40 +3206,49 @@ def test_concurrent_queries(started_cluster, partitioned):
         f"create table {TABLE_NAME} (id Int32, name String) engine = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     )
 
-    def select(_):
-        instance.query(f"SELECT * FROM {TABLE_NAME}")
+    num_insert_threads = 15
+    num_select_threads = 5
+    errors = ["" for _ in range(num_insert_threads)]
+    success = [0 for _ in range(num_insert_threads)]
 
-    num_threads = 20
-    num_rows = 50
-    errors = ["" for _ in range(num_threads)]
-    success = [0 for _ in range(num_threads)]
+    def run_concurrent_queries():
+        def select(_):
+            instance.query(f"SELECT * FROM {TABLE_NAME}")
 
-    def insert(i):
-        try:
+        def insert(i):
+            try:
+                instance.query(
+                    f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers(50)",
+                )
+                success[i] += 1
+            except Exception as e:
+                errors[i] = str(e)
+
+        for _ in range(10):
+            insert(_)
+
+        select_pool = Pool(num_select_threads)
+        insert_pool = Pool(num_insert_threads)
+        sp = select_pool.map_async(select, range(num_select_threads))
+        ip = insert_pool.map_async(insert, range(num_insert_threads))
+        sp.wait()
+        ip.wait()
+
+        select(0)
+
+        num_rows = sum(success) * 50
+        assert num_rows == int(
             instance.query(
-                f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers({num_rows})",
+                f"SELECT count() FROM {TABLE_NAME}",
             )
-            success[i] += 1
-        except Exception as e:
-            errors[i] = str(e)
-
-    for _ in range(num_threads):
-        insert(_)
-
-    select_pool = Pool(num_threads)
-    insert_pool = Pool(num_threads)
-    sp = select_pool.map_async(select, range(num_threads))
-    ip = insert_pool.map_async(insert, range(num_threads))
-    sp.wait()
-    ip.wait()
-
-    select(0)
-
-    assert sum(success) * num_rows == int(
-        instance.query(
-            f"SELECT count() FROM {TABLE_NAME}",
         )
-    )
+
+    for _ in range(3):
+        run_concurrent_queries()
+        if len([e for e in errors if e != ""]) > 0:
+            break
+        print("Did not catch commit conflict, will retry")
+
     non_empty_errors = [e for e in errors if e != ""]
     assert len(non_empty_errors) > 0
     for e in non_empty_errors:
@@ -3254,7 +3263,7 @@ def test_concurrent_queries(started_cluster, partitioned):
         ):
             file_names.append(obj.object_name)
     if partitioned:
-        assert len(file_names) == sum(success) * num_rows
+        assert len(file_names) == sum(success) * 50
     else:
         assert len(file_names) == sum(success)
 
@@ -3372,7 +3381,9 @@ def test_write_limits(started_cluster, partitioned, limit_enabled):
         f"INSERT INTO {table_name} SELECT number % {partitions_num}, randomString(10) FROM numbers({num_rows}) SETTINGS delta_lake_insert_max_rows_in_data_file = {limit_rows}, max_insert_block_size = 1000, min_chunk_bytes_for_parallel_parsing = 1000"
     )
 
-    files = LocalDownloader(instance).download_directory(f"/{result_file}/", f"/{result_file}/")
+    files = LocalDownloader(instance).download_directory(
+        f"/{result_file}/", f"/{result_file}/"
+    )
     data_files = [file for file in files if file.endswith(".parquet")]
     assert len(data_files) > 0, f"No data files: {files}"
 
