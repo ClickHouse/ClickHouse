@@ -8,6 +8,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["config/os_thread_nice_value.xml"],
+    with_zookeeper=True,
 )
 
 
@@ -26,12 +27,12 @@ def test_os_thread_nice_value(started_cluster):
         send_thread_nice_value = node.exec_in_container([
             "bash",
             "-c",
-            "ps -T -o comm,nice --no-headers | grep 'ZooKeeperSend' | awk '{print $2}' | head -n 1",
+            "ps -eT -o comm,nice --no-headers | grep 'ZooKeeperSend' | awk '{print $2}' | head -n 1",
         ]).strip()
         receive_thread_nice_value = node.exec_in_container([
             "bash",
             "-c",
-            "ps -T -o comm,nice --no-headers | grep 'ZooKeeperRecv' | awk '{print $2}' | head -n 1",
+            "ps -eT -o comm,nice --no-headers | grep 'ZooKeeperRecv' | awk '{print $2}' | head -n 1",
         ]).strip()
 
         if send_thread_nice_value == "-5" and receive_thread_nice_value == "-5":

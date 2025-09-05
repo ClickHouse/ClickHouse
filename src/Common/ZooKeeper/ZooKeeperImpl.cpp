@@ -26,6 +26,8 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
+#include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
@@ -69,6 +71,11 @@ namespace CurrentMetrics
 {
     extern const Metric ZooKeeperRequest;
     extern const Metric ZooKeeperWatch;
+}
+
+namespace DB::ServerSetting
+{
+    extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
 }
 
 namespace Metrics::ResponseTime
@@ -396,7 +403,7 @@ ZooKeeper::ZooKeeper(
     const zkutil::ShuffleHosts & nodes,
     const zkutil::ZooKeeperArgs & args_,
     std::shared_ptr<ZooKeeperLog> zk_log_)
-    : send_receive_os_threads_nice_value(DB::Context::getGlobalContextInstance()->getConfigRef().getInt("os_thread_nice_value.zookeeper_client_send_receive", 0))
+    : send_receive_os_threads_nice_value(DB::Context::getGlobalContextInstance()->getServerSettings()[DB::ServerSetting::os_threads_nice_value_zookeeper_client_send_receive])
     , path_acls(args_.path_acls)
     , args(args_)
 {

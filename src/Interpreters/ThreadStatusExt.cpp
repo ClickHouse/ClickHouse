@@ -62,6 +62,13 @@ namespace Setting
     extern const SettingsBool enable_adaptive_memory_spill_scheduler;
     extern const SettingsBool jemalloc_enable_profiler;
     extern const SettingsBool jemalloc_collect_profile_samples_in_trace_log;
+    extern const SettingsInt32 os_threads_nice_value_query;
+    extern const SettingsInt32 os_threads_nice_value_materialized_view;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsInt32 os_threads_nice_value_merge_mutate;
 }
 
 namespace ErrorCodes
@@ -143,7 +150,7 @@ void ThreadGroup::unlinkThread(UInt64 elapsed_thread_counter_ms)
 
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
 {
-    const Int32 os_threads_nice_value = query_context_->getConfigRef().getInt("os_thread_nice_value.query", 0);
+    const Int32 os_threads_nice_value = query_context_->getSettingsRef()[Setting::os_threads_nice_value_query];
     auto group = std::make_shared<ThreadGroup>(query_context_, os_threads_nice_value, std::move(fatal_error_callback_));
     group->memory_tracker.setDescription("Query");
     return group;
@@ -168,7 +175,7 @@ ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_thread_nice_valu
 
 ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr storage_context)
 {
-    const Int32 os_threads_nice_value = storage_context->getConfigRef().getInt("os_thread_nice_value.merge_mutate", 0);
+    const Int32 os_threads_nice_value = storage_context->getServerSettings()[ServerSetting::os_threads_nice_value_merge_mutate];
     auto group = create(storage_context, os_threads_nice_value);
     group->memory_tracker.setDescription("Background process (mutate/merge)");
     group->memory_tracker.setParent(&background_memory_tracker);
@@ -184,7 +191,7 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     }
     else
     {
-        const Int32 os_threads_nice_value = context->getConfigRef().getInt("os_thread_nice_value.materialized_view", 0);
+        const Int32 os_threads_nice_value = context->getSettingsRef()[Setting::os_threads_nice_value_materialized_view];
         res_group = create(context, os_threads_nice_value);
     }
     res_group->memory_tracker.setDescription("MaterializeView");

@@ -11,13 +11,14 @@ namespace DB
 {
     namespace ErrorCodes
     {
+        extern const int CANNOT_GET_THREAD_PRIORITY;
         extern const int CANNOT_SET_THREAD_PRIORITY;
     }
 
     void OSThreadNiceValue::set(const Int32 value, const UInt32 thread_id)
     {
 #if defined(OS_LINUX)
-        if (hasLinuxCapability(CAP_SYS_NICE))
+        if (value >= 0 || hasLinuxCapability(CAP_SYS_NICE))
         {
             if (setpriority(PRIO_PROCESS, thread_id, value) != 0)
             {
@@ -30,12 +31,21 @@ namespace DB
 
     scope_guard OSThreadNiceValue::scoped(const Int32 value, const UInt32 thread_id)
     {
+        errno = 0;
+        const Int32 original_value = getpriority(PRIO_PROCESS, thread_id);
+        if (original_value == -1 && errno != 0)
+        {
+            throw ErrnoException(ErrorCodes::CANNOT_GET_THREAD_PRIORITY, 
+                "Failed to get the current nice value for thread {}", thread_id);
+        }
+
         set(value, thread_id);
-        return [thread_id]()
+
+        return [original_value, thread_id]()
         {
             try
             {
-                set(0, thread_id);
+                set(original_value, thread_id);
             }
             catch (...)
             {
