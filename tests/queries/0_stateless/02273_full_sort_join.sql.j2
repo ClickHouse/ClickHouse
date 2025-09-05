@@ -26,9 +26,6 @@ INSERT INTO t2
         'val' || toString(number) as s
     FROM numbers_mt({{ table_size - 3 }});
 
-{% macro is_implemented(join_algorithm) -%}
-{% endmacro -%}
-
 {% for join_algorithm in ['default', 'full_sorting_merge', 'grace_hash'] -%}
 
 SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}10K{% else %}0{% endif %}';
@@ -67,7 +64,7 @@ SELECT t1.key, t2.key, empty(t1.s), t2.s FROM t1
 {{ kind }} RIGHT JOIN t2
 ON t1.key == t2.key
 ORDER BY t1.key, t2.key, t2.s
-; {{ is_implemented(join_algorithm) }}
+;
 
 SELECT '{{ kind }} INNER | bs = {{ block_size }} | copmosite key';
 SELECT t1.key1, t1.key2, t1.key3, t2.key1, t2.key2, t2.key3, empty(t1.s), empty(t2.s) FROM t1
@@ -88,7 +85,7 @@ SELECT t1.key1, t1.key2, t1.key3, t2.key1, t2.key2, t2.key3, empty(t1.s), t2.s F
 {{ kind }} RIGHT JOIN t2
 ON t1.key1 == t2.key1 AND t1.key2 == t2.key2 AND t1.key3 == t2.key3 AND t1.key1 == t2.key3
 ORDER BY t1.key1, t1.key2, t1.key3, t2.key1, t2.key2, t2.key3, t2.s
-; {{ is_implemented(join_algorithm) }}
+;
 
 {% endfor -%}
 {% endfor -%}
@@ -116,7 +113,7 @@ SELECT t1.key, t2.key, isNull(t1.s), t2.s FROM t1
 {{ kind }} RIGHT JOIN t2
 ON t1.key == t2.key
 ORDER BY t1.key, t2.key, t2.s
-; {{ is_implemented(join_algorithm) }}
+;
 
 SELECT '{{ kind }} INNER | join_use_nulls = 1 | copmosite key';
 SELECT t1.key1, t1.key2, t1.key3, t2.key1, t2.key2, t2.key3, empty(t1.s), empty(t2.s) FROM t1
@@ -137,12 +134,20 @@ SELECT t1.key1, t1.key2, t1.key3, t2.key1, t2.key2, t2.key3, empty(t1.s), t2.s F
 {{ kind }} RIGHT JOIN t2
 ON t1.key1 == t2.key1 AND t1.key2 == t2.key2 AND t1.key3 == t2.key3 AND t1.key1 == t2.key3
 ORDER BY t1.key1, t1.key2, t1.key3, t2.key1, t2.key2, t2.key3, t2.s
-; {{ is_implemented(join_algorithm) }}
+;
 
 SET join_use_nulls = 0;
 SET max_bytes_in_join = 0;
 
 {% endfor -%}
+
+SELECT 'FULL USING | join_use_nulls = 1';
+SELECT key, empty(t1.s), empty(t2.s) FROM t1
+FULL JOIN t2
+USING (key)
+ORDER BY t1.key, t2.key
+;
+
 {% endfor -%}
 
 DROP TABLE IF EXISTS t1;
