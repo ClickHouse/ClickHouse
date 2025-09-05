@@ -54,6 +54,12 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
     query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
 
+    LOG_DEBUG(&Poco::Logger::get("debug"), "query_ast->formatForLogging()={}", query_ast->formatForLogging());
+
+    WriteBufferFromOwnString wb;
+    query_plan->explainPlan(wb, ExplainPlanOptions{.actions = 1});
+    LOG_DEBUG(&Poco::Logger::get("debug"), "createLocalPlan wb.str()={}", wb.str());
+
     QueryPlan::Node * node = query_plan->getRootNode();
     ReadFromMergeTree * reading = nullptr;
     while (node)
@@ -82,11 +88,15 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
         return {std::move(query_plan), false};
 
     ReadFromMergeTree::AnalysisResultPtr analyzed_result_ptr;
+    LOG_DEBUG(&Poco::Logger::get("debug"), "!!analyzed_read_from_merge_tree={}", !!analyzed_read_from_merge_tree);
     if (analyzed_read_from_merge_tree.get())
     {
         auto * analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(analyzed_read_from_merge_tree.get());
         if (analyzed_merge_tree)
+        {
             analyzed_result_ptr = analyzed_merge_tree->getAnalyzedResult();
+            LOG_DEBUG(&Poco::Logger::get("debug"), "!!analyzed_merge_tree->getPrewhereInfo()={}", !!analyzed_merge_tree->getPrewhereInfo());
+        }
     }
 
     MergeTreeAllRangesCallback all_ranges_cb = [coordinator](InitialAllRangesAnnouncement announcement)

@@ -689,6 +689,12 @@ void executeQueryWithParallelReplicas(
             return;
         }
 
+        LOG_DEBUG(&Poco::Logger::get("debug"), "StackTrace().toString());={}", StackTrace().toString());
+
+        // WriteBufferFromOwnString wb;
+        // local_plan->explainPlan(wb, ExplainPlanOptions{.actions = 1});
+        // LOG_DEBUG(&Poco::Logger::get("debug"), "executeQuery wb.str()={}", wb.str());
+
         auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan));
         auto stub_local_plan = std::make_unique<QueryPlan>();
         stub_local_plan->addStep(std::move(read_from_local));

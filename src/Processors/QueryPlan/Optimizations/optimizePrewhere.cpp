@@ -1,3 +1,4 @@
+#include <sstream>
 #include <Core/Settings.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -132,23 +133,72 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (!source_step_with_filter)
         return;
 
+    std::stringstream ss;
+    for (auto it = stack.rbegin(); it != stack.rend(); ++it)
+        ss << (it == stack.rbegin() ? "" : " -> ") << it->node->step->getName();
+    LOG_DEBUG(&Poco::Logger::get("debug"), "ss.str()={}", ss.str());
+
+    LOG_DEBUG(
+        &Poco::Logger::get("debug"),
+        "__PRETTY_FUNCTION__={}, __LINE__={}, source_step_with_filter={}",
+        __PRETTY_FUNCTION__,
+        __LINE__,
+        source_step_with_filter->getName());
+
     if (typeid_cast<ReadFromMerge *>(frame.node->step.get()))
         return;
 
     const auto & storage_snapshot = source_step_with_filter->getStorageSnapshot();
     const auto & storage = storage_snapshot->storage;
     if (!storage.canMoveConditionsToPrewhere())
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         return;
+    }
 
     const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
     if (storage_prewhere_info)
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         return;
+    }
 
     /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
-    QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
-    auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
+    QueryPlan::Node * filter_node = nullptr;
+    FilterStep * filter_step = nullptr;
+    if (!filter_step)
+    {
+        filter_node = (stack.rbegin() + 1)->node;
+        filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
+        if (!filter_step)
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("debug"),
+                "__PRETTY_FUNCTION__={}, __LINE__={}, node={}",
+                __PRETTY_FUNCTION__,
+                __LINE__,
+                filter_node->step->getName());
+        }
+    }
+    if (!filter_step && stack.size() >= 3)
+    {
+        filter_node = (stack.rbegin() + 2)->node;
+        filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
+        if (!filter_step)
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("debug"),
+                "__PRETTY_FUNCTION__={}, __LINE__={}, node={}",
+                __PRETTY_FUNCTION__,
+                __LINE__,
+                filter_node->step->getName());
+        }
+    }
+
     if (!filter_step)
         return;
+
+    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
 
     auto filter_step_description = filter_step->getStepDescription();
     const auto & context = source_step_with_filter->getContext();
@@ -157,12 +207,18 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     bool is_final = source_step_with_filter->isQueryWithFinal();
     bool optimize = settings[Setting::optimize_move_to_prewhere] && (!is_final || settings[Setting::optimize_move_to_prewhere_if_final]);
     if (!optimize)
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         return;
+    }
 
     const auto & storage_metadata = storage_snapshot->metadata;
     auto column_sizes = storage.getColumnSizes();
     if (column_sizes.empty())
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         return;
+    }
 
     /// These two optimizations conflict:
     /// - vector search lookups with disabled rescoring
@@ -170,7 +226,10 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     /// The former is more impactful, therefore disable PREWHERE if both may be used.
     auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
     if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value() && !settings[Setting::vector_search_with_rescoring])
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         return;
+    }
 
     /// Extract column compressed sizes
     std::unordered_map<std::string, UInt64> column_compressed_sizes;
@@ -180,6 +239,10 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     Names queried_columns = source_step_with_filter->requiredSourceColumns();
 
     const auto & source_filter_actions_dag = source_step_with_filter->getFilterActionsDAG();
+    if (source_filter_actions_dag)
+        LOG_DEBUG(&Poco::Logger::get("debug"), "source_filter_actions_dag->dumpDAG());={}", source_filter_actions_dag->dumpDAG());
+    else
+        LOG_DEBUG(&Poco::Logger::get("debug"), "no source_filter_actions_dag");
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
         storage_metadata,
@@ -194,13 +257,22 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         is_final);
 
     if (optimize_result.prewhere_nodes.empty())
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         return;
+    }
 
     PrewhereInfoPtr prewhere_info;
     if (storage_prewhere_info)
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         prewhere_info = storage_prewhere_info->clone();
+    }
     else
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         prewhere_info = std::make_shared<PrewhereInfo>();
+    }
 
     auto remaining_expr = splitAndFillPrewhereInfo(
         prewhere_info,
@@ -214,6 +286,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 
     if (!optimize_result.fully_moved_to_prewhere)
     {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         filter_node->step = std::make_unique<FilterStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr),
@@ -223,6 +296,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     }
     else
     {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         /// Have to keep this expression to change column names to column identifiers
         filter_node->step = std::make_unique<ExpressionStep>(
             source_step_with_filter->getOutputHeader(),

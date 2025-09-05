@@ -327,6 +327,17 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
 
         cond.columns_size = getColumnsSize(cond.table_columns);
 
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "cond.toString()={}, has_invalid_column={}, cond.table_columns.size()={}, cannotBeMoved={}, "
+            "columnsSupportPrewhere(cond.table_columns)={}, cond.table_columns.size()={}, queried_columns.size()={}",
+            cond.toString(),
+            has_invalid_column,
+            cond.table_columns.size(),
+            cannotBeMoved(node, where_optimizer_context),
+            columnsSupportPrewhere(cond.table_columns),
+            cond.table_columns.size(),
+            queried_columns.size());
         cond.viable =
             !has_invalid_column
             /// Condition depend on some column. Constant expressions are not moved.
@@ -484,23 +495,29 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     /// Move conditions unless the ratio of total_size_of_moved_conditions to the total_size_of_queried_columns is less than some threshold.
     while (!where_conditions.empty())
     {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         /// Move the best condition to PREWHERE if it is viable.
         auto it = std::min_element(where_conditions.begin(), where_conditions.end());
 
         if (!it->viable)
+        {
+            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             break;
+        }
 
         if (!where_optimizer_context.move_all_conditions_to_prewhere)
         {
             bool moved_enough = false;
             if (total_size_of_queried_columns > 0)
             {
+                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 /// If we know size of queried columns use it as threshold. 10% ratio is just a guess.
                 moved_enough = total_size_of_moved_conditions > 0
                     && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns;
             }
             else
             {
+                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 /// Otherwise, use number of moved columns as a fallback.
                 /// It can happen, if table has only compact parts. 25% ratio is just a guess.
                 moved_enough = total_number_of_moved_columns > 0
@@ -508,7 +525,10 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
             }
 
             if (moved_enough)
+            {
+                LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
                 break;
+            }
         }
 
         move_condition(it);

@@ -8,6 +8,9 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Common/JSONBuilder.h>
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -82,6 +85,12 @@ void SourceStepWithFilterBase::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     auto dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, {});
     filter_actions_dag = dag ? std::make_shared<const ActionsDAG>(std::move(*dag)) : nullptr;
+    LOG_DEBUG(
+        &Poco::Logger::get("debug"),
+        "__PRETTY_FUNCTION__={}, __LINE__={}, filter_actions_dag={}",
+        __PRETTY_FUNCTION__,
+        __LINE__,
+        filter_actions_dag ? filter_actions_dag->dumpDAG() : "no filter_actions_dag");
 }
 
 void SourceStepWithFilter::applyFilters(ActionDAGNodes added_filter_nodes)
