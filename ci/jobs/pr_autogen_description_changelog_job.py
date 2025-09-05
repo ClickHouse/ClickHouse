@@ -10,7 +10,7 @@ if __name__ == "__main__":
 
     # Set up Claude Code environment variables for Bedrock
     os.environ["CLAUDE_CODE_USE_BEDROCK"] = "1"
-    os.environ["AWS_REGION"] = "us-east-1" # Inference optimized
+    os.environ["AWS_REGION"] = "us-east-1"
     os.environ["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = "4096"
     os.environ["ANTHROPIC_MODEL"] = "arn:aws:bedrock:us-east-1:542516086801:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
     os.environ["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = "arn:aws:bedrock:us-east-1:542516086801:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0"
