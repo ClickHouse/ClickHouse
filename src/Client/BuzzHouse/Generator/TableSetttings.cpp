@@ -531,7 +531,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {KeeperMap, {}},
          {ExternalDistributed, {}},
          {MaterializedPostgreSQL, {}},
-         {ArrowFlight, {}}});
+         {ArrowFlight, {}},
+         {Alias, {}}});
 
     allColumnSettings.insert(
         {{MergeTree, mergeTreeColumnSettings},
@@ -575,7 +576,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {KeeperMap, {}},
          {ExternalDistributed, {}},
          {MaterializedPostgreSQL, {}},
-         {ArrowFlight, {}}});
+         {ArrowFlight, {}},
+         {Alias, {}}});
 
     allDictionaryLayoutSettings.insert(
         {{CACHE, cachedLayoutSettings},

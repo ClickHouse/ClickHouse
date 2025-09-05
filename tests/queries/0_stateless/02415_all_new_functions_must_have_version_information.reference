@@ -1,6 +1,5 @@
 CAST
 DATE
-FQDN
 IPv4CIDRToRange
 IPv4NumToString
 IPv4NumToStringClassC
@@ -56,12 +55,7 @@ accurateCast
 accurateCastOrDefault
 accurateCastOrNull
 asin
-bar
-basename
-blockNumber
 blockSerializedSize
-blockSize
-byteSize
 caseWithExpression
 catboostEvaluate
 connectionId
@@ -69,12 +63,9 @@ countDigits
 countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
-currentDatabase
 currentProfiles
 currentQueryID
 currentRoles
-currentSchemas
-currentUser
 cutFragment
 cutIPv6
 cutQueryString
@@ -172,10 +163,6 @@ formatQuery
 formatQueryOrNull
 formatQuerySingleLine
 formatQuerySingleLineOrNull
-formatReadableDecimalSize
-formatReadableQuantity
-formatReadableSize
-formatReadableTimeDelta
 formatRow
 formatRowNoNewline
 fragment
@@ -186,7 +173,6 @@ fromUnixTimestamp64Second
 generateRandomStructure
 generateSerialID
 generateUUIDv4
-getMacro
 getMaxTableNameLengthForDatabase
 getMergeTreeSetting
 getOSKernelVersion
