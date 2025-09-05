@@ -33,7 +33,6 @@ static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
 }
 
 static constexpr UInt8 EMBEDDED_POSTINGS_FLAG = static_cast<UInt8>(1 << 6);
-static constexpr UInt32 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 64;
 
 CompressedPostings::CompressedPostings(UInt8 delta_bits_, UInt32 cardinality_)
     : delta_bits(delta_bits_), cardinality(cardinality_)
@@ -363,7 +362,7 @@ bool MergeTreeIndexGranuleText::hasAllTokensFromQuery(const GinQueryString & que
 {
     for (const auto & token : query.getTokens())
     {
-        if (remaining_tokens.find(token) == remaining_tokens.end())
+        if (!remaining_tokens.contains(token))
             return false;
     }
     return true;
@@ -376,12 +375,12 @@ void MergeTreeIndexGranuleText::resetAfterAnalysis()
 }
 
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
-    size_t dictionary_block_size_,
+    MergeTreeIndexTextParams params_,
     BloomFilter bloom_filter_,
     std::vector<StringRef> tokens_,
     std::vector<PostingList> posting_lists_,
     std::unique_ptr<Arena> arena_)
-    : dictionary_block_size(dictionary_block_size_)
+    : params(std::move(params_))
     , bloom_filter(std::move(bloom_filter_))
     , tokens(std::move(tokens_))
     , posting_lists(std::move(posting_lists_))
@@ -395,7 +394,8 @@ DictionarySparseIndex serializeTokensAndPostings(
     const std::vector<PostingList> & postings,
     Stream & dictionary_stream,
     Stream & postings_stream,
-    size_t block_size)
+    size_t block_size,
+    size_t max_cardinality_for_embedded_postings)
 {
     chassert(tokens.size() == postings.size());
     size_t num_blocks = (tokens.size() + block_size - 1) / block_size;
@@ -436,7 +436,7 @@ DictionarySparseIndex serializeTokensAndPostings(
             UInt32 cardinality = compressed_postings.getCardinality();
             UInt8 delta_bits = compressed_postings.getDeltaBits();
 
-            bool embedded_postings = cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS;
+            bool embedded_postings = cardinality <= max_cardinality_for_embedded_postings;
             if (embedded_postings)
                 delta_bits |= EMBEDDED_POSTINGS_FLAG;
 
@@ -497,7 +497,14 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Index
     if (!index_stream || !dictionary_stream || !postings_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
-    auto sparse_index_block = serializeTokensAndPostings(tokens, posting_lists, *dictionary_stream, *postings_stream, dictionary_block_size);
+    auto sparse_index_block = serializeTokensAndPostings(
+        tokens,
+        posting_lists,
+        *dictionary_stream,
+        *postings_stream,
+        params.dictionary_block_size,
+        params.max_cardinality_for_embedded_postings);
+
     serializeBloomFilter(tokens.size(), bloom_filter, *index_stream);
     serializeSparseIndex(sparse_index_block, *index_stream);
 }
@@ -566,7 +573,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
     }
 
     return std::make_unique<MergeTreeIndexGranuleTextWritable>(
-        params.dictionary_block_size,
+        params,
         std::move(bloom_filter),
         std::move(sorted_tokens),
         std::move(sorted_posting_lists),
@@ -660,6 +667,7 @@ static const String ARGUMENT_TOKENIZER = "tokenizer";
 static const String ARGUMENT_NGRAM_SIZE = "ngram_size";
 static const String ARGUMENT_SEPARATORS = "separators";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
+static const String ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = "max_cardinality_for_embedded_postings";
 static const String ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE = "bloom_filter_false_positive_rate";
 
 namespace
@@ -753,11 +761,12 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokenizer {} not supported", tokenizer);
     }
 
-    UInt64 dictionary_block_size = getOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(256);
-    double bloom_filter_false_positive_rate = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(0.05);
+    UInt64 dictionary_block_size = getOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(128);
+    UInt64 max_cardinality_for_embedded_postings = getOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS).value_or(16);
+    double bloom_filter_false_positive_rate = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(0.025);
 
     const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
-    MergeTreeIndexTextParams params{dictionary_block_size, bits_per_rows, num_hashes};
+    MergeTreeIndexTextParams params{dictionary_block_size, max_cardinality_for_embedded_postings, bits_per_rows, num_hashes};
 
     return std::make_shared<MergeTreeIndexText>(index, params, std::move(token_extractor));
 }

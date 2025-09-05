@@ -49,7 +49,6 @@ private:
     size_t stream_mark = 0;
 
     void initStreamIfNeeded();
-    std::map<IndexSubstream::Type, MarkInCompressedFile> getCurrentMarks(size_t mark_num);
 };
 
 }

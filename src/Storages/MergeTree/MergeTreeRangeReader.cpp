@@ -5,7 +5,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/Logger.h>
 #include <Common/TargetSpecific.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
@@ -977,7 +976,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             if (merge_tree_reader->canSkipMark(currentMark(), current_task_last_mark))
             {
                 result.addGranule(0, {0, 0} /* unused when granule has no rows to read */);
-                merge_tree_reader->createEmptyColumns(result.columns);
                 stream.toNextMark();
                 continue;
             }

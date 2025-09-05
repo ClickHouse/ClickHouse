@@ -48,6 +48,7 @@ private:
         bool need_read_postings = true;
     };
 
+    void createEmptyColumns(Columns & columns) const;
     void readPostingsIfNeeded(Granule & granule);
     void fillSkippedColumn(IColumn & column, size_t num_rows);
     void fillColumn(IColumn & column, Granule & granule, TextSearchMode search_mode, size_t granule_offset, size_t num_rows);

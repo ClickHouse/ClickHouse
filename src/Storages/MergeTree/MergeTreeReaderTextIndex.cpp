@@ -203,6 +203,15 @@ size_t MergeTreeReaderTextIndex::readRows(
     return read_rows;
 }
 
+void MergeTreeReaderTextIndex::createEmptyColumns(Columns & columns) const
+{
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (columns[i] == nullptr)
+            columns[i] = columns_to_read[i].type->createColumn(*serializations[i]);
+    }
+}
+
 void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
 {
     if (!granule.need_read_postings)

@@ -49,9 +49,6 @@ public:
      */
     void adjustRightMark(size_t right_mark);
 
-    /// Returns mark in compressed file for the given mark number.
-    MarkInCompressedFile getMarkAtBeginning(size_t row_index);
-
     ReadBuffer * getDataBuffer();
     CompressedReadBufferBase * getCompressedDataBuffer();
 

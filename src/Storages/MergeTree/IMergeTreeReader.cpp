@@ -417,15 +417,6 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
                         "Expected {}, got {}", requested_columns.size(), num_columns_to_read);
 }
 
-void IMergeTreeReader::createEmptyColumns(Columns & columns) const
-{
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        if (columns[i] == nullptr)
-            columns[i] = columns_to_read[i].type->createColumn(*serializations[i]);
-    }
-}
-
 String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const
 {
     const auto & data_part_storage = data_part_info_for_read->getDataPartStorage();

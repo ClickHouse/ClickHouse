@@ -1,8 +1,5 @@
-#include <memory>
-#include <Compression/CompressionFactory.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Compression/CompressionFactory.h>
 
 namespace DB
 {

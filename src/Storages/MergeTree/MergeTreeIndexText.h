@@ -18,6 +18,7 @@ class IMergeTreeIndexCondition;
 struct MergeTreeIndexTextParams
 {
     size_t dictionary_block_size = 0;
+    size_t max_cardinality_for_embedded_postings = 0;
     size_t bloom_filter_bits_per_row = 0;
     size_t bloom_filter_num_hashes = 0;
 };
@@ -174,7 +175,7 @@ private:
 struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleTextWritable(
-        size_t dictionary_block_size_,
+        MergeTreeIndexTextParams params_,
         BloomFilter bloom_filter_,
         std::vector<StringRef> tokens_,
         std::vector<PostingList> posting_lists_,
@@ -189,7 +190,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     bool empty() const override { return tokens.empty(); }
     size_t memoryUsageBytes() const override { return 0; }
 
-    size_t dictionary_block_size;
+    MergeTreeIndexTextParams params;
     BloomFilter bloom_filter;
     std::vector<StringRef> tokens;
     std::vector<PostingList> posting_lists;

@@ -73,8 +73,6 @@ public:
 
     virtual bool canSkipMark(size_t, size_t) { return false; }
 
-    void createEmptyColumns(Columns & columns) const;
-
 protected:
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;

@@ -39,13 +39,10 @@ using IndexOutputStreams = std::map<IndexSubstream::Type, IndexWriterStream *>;
 using IndexReaderStream = MergeTreeReaderStream;
 using IndexInputStreams = std::map<IndexSubstream::Type, IndexReaderStream *>;
 
-using IndexStreamMarks = std::map<IndexSubstream::Type, MarkInCompressedFile>;
-
 struct IndexDeserializationState
 {
     MergeTreeIndexVersion version;
     const IMergeTreeIndexCondition * condition;
-    IndexStreamMarks current_marks;
 };
 
 class ICompressionCodec;
