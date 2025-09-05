@@ -500,7 +500,13 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
             setv->set_property(setting);
             if (chs.oracle_values.size() == 2)
             {
-                if (rg.nextBool())
+                if (setting == "enable_analyzer")
+                {
+                    /// For the analyzer, always run the old first, so we can minimize the usage of it
+                    setv->set_value("0");
+                    nsettings.push_back("1");
+                }
+                else if (rg.nextBool())
                 {
                     setv->set_value(*chs.oracle_values.begin());
                     nsettings.push_back(*std::next(chs.oracle_values.begin(), 1));
@@ -513,8 +519,16 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
             }
             else
             {
-                setv->set_value(rg.pickRandomly(chs.oracle_values));
-                nsettings.push_back(rg.pickRandomly(chs.oracle_values));
+                const String & fvalue = rg.pickRandomly(chs.oracle_values);
+                String svalue = rg.pickRandomly(chs.oracle_values);
+
+                for (uint32_t j = 0; j < 4 && fvalue == svalue; j++)
+                {
+                    /// Pick another value until they are different
+                    svalue = rg.pickRandomly(chs.oracle_values);
+                }
+                setv->set_value(fvalue);
+                nsettings.push_back(svalue);
             }
             can_test_oracle_result &= !chs.changes_behavior;
         }
