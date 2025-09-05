@@ -139,6 +139,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
 {
     if (structure == "auto")
     {
+	ColumnsDescription columns;
+
         context->checkAccess(getSourceAccessType());
         if (format == "auto")
         {
