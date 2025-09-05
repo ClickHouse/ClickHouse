@@ -53,6 +53,11 @@ function collect_jemalloc_profiles()
     local chbinary
     chbinary=$(readlink -f "$(which clickhouse)")
 
+    echo $(which jeprof)
+    cat /usr/bin/jeprof
+    ls -lh $chbinary
+    file $chbinary
+
     # Process each latest profile
     for pid in "${!latest_profiles[@]}"; do
         local profile_info="${latest_profiles[$pid]}"
