@@ -5,8 +5,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Common/Exception.h>
-#include "IO/WriteBufferFromString.h"
-#include "Processors/QueryPlan/QueryPlan.h"
 
 #include <stack>
 
@@ -168,10 +166,6 @@ void optimizeTreeSecondPass(
         if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
             tryRemoveRedundantSorting(&root);
     }
-
-    // WriteBufferFromOwnString wb;
-    // query_plan.explainPlan(wb, ExplainPlanOptions{.actions = 1});
-    // LOG_DEBUG(&Poco::Logger::get("debug"), "optimizeSecond wb.str()={}", wb.str());
 
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     std::unordered_set<String> applied_projection_names;
