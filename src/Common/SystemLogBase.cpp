@@ -14,6 +14,7 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
+#include <Interpreters/IcebergMetadataLog.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
 #include <Interpreters/DistributedCacheServerLog.h>

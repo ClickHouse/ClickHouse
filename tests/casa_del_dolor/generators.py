@@ -60,8 +60,11 @@ class BuzzHouseGenerator(Generator):
         if "clickhouse" in buzz_config:
             buzz_config["clickhouse"]["server_hostname"] = "host.docker.internal"
         # Set paths
-        buzz_config["client_file_path"] = f"{Path(cluster.instances_dir) / "node0" / "database" / "user_files"}"
+        buzz_config["client_file_path"] = (
+            f"{Path(cluster.instances_dir) / "node0" / "database" / "user_files"}"
+        )
         buzz_config["server_file_path"] = "/var/lib/clickhouse/user_files"
+        buzz_config["lakes_path"] = "/lakehouses"
         # Set available servers
         for entry in [
             ("remote_servers", "9000"),
@@ -143,7 +146,13 @@ class BuzzHouseGenerator(Generator):
             }
         if args.add_keeper_map_prefix:
             buzz_config["keeper_map_path_prefix"] = "/keeper_map_tables"
-        if args.with_spark or args.with_glue or args.with_hms or args.with_rest or args.with_unity:
+        if (
+            args.with_spark
+            or args.with_glue
+            or args.with_hms
+            or args.with_rest
+            or args.with_unity
+        ):
             buzz_config["dolor"] = {
                 "server_hostname": catalog_server.host,
                 "client_hostname": catalog_server.host,
@@ -170,7 +179,7 @@ class BuzzHouseGenerator(Generator):
                 buzz_config["dolor"]["unity"] = {
                     "server_hostname": "localhost",
                     "port": 8081,
-                    "path": "/api/2.1/unity-catalog"
+                    "path": "/api/2.1/unity-catalog",
                 }
 
         with open(self.temp.name, "w") as file2:

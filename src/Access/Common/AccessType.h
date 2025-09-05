@@ -237,6 +237,8 @@ enum class AccessType : uint8_t
                                                      implicitly enabled by the grant CREATE_TABLE on any table */ \
     M(CREATE_ARBITRARY_TEMPORARY_TABLE, "", GLOBAL, CREATE)  /* allows to create  and manipulate temporary tables
                                                                 with arbitrary table engine */\
+    M(CREATE_TEMPORARY_VIEW, "", GLOBAL, CREATE) /* allows to create and manipulate temporary tables;
+                                                     implicitly enabled by the grant CREATE_VIEW on any table */ \
     M(CREATE_FUNCTION, "", GLOBAL, CREATE) /* allows to execute CREATE FUNCTION */ \
     M(CREATE_WORKLOAD, "", GLOBAL, CREATE) /* allows to execute CREATE WORKLOAD */ \
     M(CREATE_RESOURCE, "", GLOBAL, CREATE) /* allows to execute CREATE RESOURCE */ \

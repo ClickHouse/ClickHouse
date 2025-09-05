@@ -896,7 +896,7 @@ StringRef ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, const c
         res.size += data_ref.size;
     }
 
-    /// Second, serialize paths and values in bunary format from dynamic paths and shared data in sorted by path order.
+    /// Second, serialize paths and values in binary format from dynamic paths and shared data in sorted by path order.
     /// Calculate total number of paths to serialize and write it.
     const auto & shared_data_offsets = getSharedDataOffsets();
     size_t offset = shared_data_offsets[static_cast<ssize_t>(n) - 1];

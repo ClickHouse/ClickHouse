@@ -46,7 +46,8 @@ void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
         }
 
         integration = IntegrationCall::Dolor; /// Has to use La Casa Del Dolor
-        format = (catalog == LakeCatalog::REST || rg.nextBool()) ? LakeFormat::Iceberg : LakeFormat::DeltaLake;
+        format
+            = (catalog == LakeCatalog::REST || catalog == LakeCatalog::Hive || rg.nextBool()) ? LakeFormat::Iceberg : LakeFormat::DeltaLake;
         storage = LakeStorage::S3; /// What ClickHouse supports now
     }
 }
@@ -61,9 +62,8 @@ String SQLDatabase::getSparkCatalogName() const
 bool SQLBase::isNotTruncableEngine() const
 {
     return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
-        || isMongoDBEngine() || isAnyS3Engine() || isAnyAzureEngine() || isHudiEngine() || isAnyDeltaLakeEngine() || isAnyIcebergEngine()
-        || isMergeEngine() || isDistributedEngine() || isDictionaryEngine() || isGenerateRandomEngine() || isMaterializedPostgreSQLEngine()
-        || isExternalDistributedEngine();
+        || isMongoDBEngine() || isHudiEngine() || isMergeEngine() || isDistributedEngine() || isDictionaryEngine()
+        || isGenerateRandomEngine() || isMaterializedPostgreSQLEngine() || isExternalDistributedEngine();
 }
 
 bool SQLBase::isEngineReplaceable() const
@@ -119,12 +119,12 @@ String SQLBase::getSparkCatalogName() const
         /// DeltaLake tables on Spark must be on the `spark_catalog` :(
         return isAnyIcebergEngine() ? getTableName(false) : "spark_catalog";
     }
-    return getDatabaseName();
+    return db->getSparkCatalogName();
 }
 
 static const constexpr String PARTITION_STR = "{_partition_id}";
 
-void SQLBase::setTablePath(RandomGenerator & rg, const bool has_dolor)
+void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool has_dolor)
 {
     chassert(
         !bucket_path.has_value() && !file_format.has_value() && !file_comp.has_value() && !partition_strategy.has_value()
@@ -154,16 +154,15 @@ void SQLBase::setTablePath(RandomGenerator & rg, const bool has_dolor)
         if (isAnyIcebergEngine() || isAnyDeltaLakeEngine())
         {
             const bool onSpark = integration == IntegrationCall::Dolor;
-            const String base = isOnLocal() ? "/var/lib/clickhouse/user_files/lakehouse/" : (isOnAzure() ? "/" : "");
+            const String base = isOnLocal() ? (fc.lakes_path.generic_string() + "/") : (isOnAzure() ? "/" : "");
 
             /// Set bucket path, Spark has the warehouse concept on the path :(
             next_bucket_path = fmt::format(
-                "{}{}{}{}{}{}t{}/",
+                "{}{}{}{}{}t{}/",
                 base,
                 onSpark ? getSparkCatalogName() : "",
                 onSpark ? "/" : "",
                 onSpark ? "test" : "",
-                (onSpark && isAnyDeltaLakeEngine()) ? ".db" : "",
                 onSpark ? "/" : "",
                 tname);
         }
