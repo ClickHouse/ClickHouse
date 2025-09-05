@@ -305,7 +305,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"replicated", allow_replicated},
            {"shared", allow_shared},
            {"datalakecatalog", allow_datalakecatalog},
-           {"arrowflight", allow_arrowflight}};
+           {"arrowflight", allow_arrowflight},
+           {"alias", allow_alias}};
 
     static const SettingEntries configEntries = {
         {"client_file_path",
@@ -320,6 +321,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
              server_file_path = std::filesystem::path(String(value.getString()));
              fuzz_server_out = client_file_path / "fuzz.data";
          }},
+        {"lakes_path", [&](const JSONObjectType & value) { lakes_path = std::filesystem::path(String(value.getString())); }},
         {"log_path", [&](const JSONObjectType & value) { log_path = std::filesystem::path(String(value.getString())); }},
         {"read_log", [&](const JSONObjectType & value) { read_log = value.getBool(); }},
         {"seed", [&](const JSONObjectType & value) { seed = value.getUInt64(); }},
@@ -509,18 +511,19 @@ String FuzzConfig::getHTTPURL(const bool secure) const
     return fmt::format("http{}://{}:{}", secure ? "s" : "", this->host, secure ? this->http_secure_port : this->http_port);
 }
 
-void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tables)
+void FuzzConfig::loadSystemTables(std::vector<SystemTable> & tables)
 {
     String buf;
+    String current_schema;
     String current_table;
     DB::Strings next_cols;
 
+    tables.clear();
     if (processServerQuery(
             false,
             fmt::format(
-                "SELECT t.name, c.name from system.tables t JOIN system.columns c ON t.name = c.table WHERE t.database = 'system' AND "
-                "c.database = 'system' INTO OUTFILE "
-                "'{}' TRUNCATE FORMAT TabSeparated;",
+                "SELECT c.database, c.table, c.name from system.columns c WHERE c.database IN ('system', 'INFORMATION_SCHEMA', "
+                "'information_schema') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 fuzz_server_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
@@ -530,18 +533,21 @@ void FuzzConfig::loadSystemTables(std::unordered_map<String, DB::Strings> & tabl
             {
                 buf.pop_back();
             }
-            const auto tabchar = buf.find('\t');
-            const auto ntable = buf.substr(0, tabchar);
-            const auto ncol = buf.substr(tabchar + 1);
+            const size_t pos1 = buf.find('\t');
+            const String nschema = buf.substr(0, pos1);
+            const size_t pos2 = buf.find('\t', pos1 + 1);
+            const String ntable = buf.substr(pos1 + 1, pos2 - pos1 - 1);
+            const String ncol = buf.substr(pos2 + 1);
 
-            if (ntable != current_table && !next_cols.empty())
+            if (nschema != current_schema || ntable != current_table)
             {
-                if (current_table != "stack_trace"
+                if (!next_cols.empty() && current_table != "stack_trace"
                     && (allow_infinite_tables || (!current_table.starts_with("numbers") && !current_table.starts_with("zeros"))))
                 {
-                    tables[current_table] = next_cols;
+                    tables.emplace_back(SystemTable(current_schema, current_table, next_cols));
                 }
                 next_cols.clear();
+                current_schema = nschema;
                 current_table = ntable;
             }
             next_cols.emplace_back(ncol);
