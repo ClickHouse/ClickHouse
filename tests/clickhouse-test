@@ -1139,13 +1139,14 @@ class SettingsRandomizer:
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
         "parallel_replicas_local_plan": lambda: random.randint(0, 1),
-        "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
+        "query_plan_join_swap_table": lambda: random.choice(["auto", "false"]), # true forces swap, which is harmfull for some tests
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         "use_async_executor_for_materialized_views": lambda: random.randint(0, 1),
         "use_query_condition_cache": lambda: random.randint(0, 1),
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
+        "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
 
@@ -1331,9 +1332,6 @@ class TestCase:
 
         testcase_args.testcase_start_time = datetime.now()
         testcase_basename = os.path.basename(case_file)
-        testcase_args.testcase_client = (
-            f"{testcase_args.client} --log_comment '{testcase_basename}'"
-        )
         testcase_args.testcase_basename = testcase_basename
 
         if testcase_args.database:
@@ -1381,6 +1379,10 @@ class TestCase:
         # Since using CLICKHOUSE_TMP is easier to use in expect.
         testcase_args.debug_log_file = (
             os.path.join(testcase_args.test_tmp_dir, testcase_basename) + ".debuglog"
+        )
+
+        testcase_args.testcase_client = (
+            f"{testcase_args.client} --log_comment f'{testcase_args.testcase_basename}-{testcase_args.testcase_database}'"
         )
 
         return testcase_args
@@ -2000,7 +2002,7 @@ class TestCase:
         ) + log_opt
 
         # This is for .sh tests
-        os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
+        os.environ["CLICKHOUSE_LOG_COMMENT"] = f'{args.testcase_basename}-{args.testcase_database}'
 
         query_params = ""
         if "need-query-parameters" in self.tags:
@@ -2301,7 +2303,7 @@ class TestCase:
                     f"SHOW TABLES FROM {database}",
                     timeout=timeout,
                     settings={
-                        "log_comment": args.testcase_basename,
+                        "log_comment": f'{args.testcase_basename}-{args.testcase_database}',
                     },
                 )
                 .decode()
@@ -2326,7 +2328,7 @@ class TestCase:
                     drop_database_query,
                     timeout=timeout,
                     settings={
-                        "log_comment": args.testcase_basename,
+                        "log_comment": f'{args.testcase_basename}-{args.testcase_database}',
                     },
                 )
             except HTTPError as e:
