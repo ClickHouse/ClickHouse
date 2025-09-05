@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 

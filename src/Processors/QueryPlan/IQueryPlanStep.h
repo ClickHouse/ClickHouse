@@ -4,7 +4,6 @@
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <string_view>
 #include <variant>
 
 namespace DB

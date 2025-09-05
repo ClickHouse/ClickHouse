@@ -12,7 +12,6 @@
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
-#include "Processors/QueryPlan/IQueryPlanStep.h"
 
 namespace DB
 {

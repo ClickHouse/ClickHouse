@@ -4,7 +4,6 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
-#include "Processors/QueryPlan/IQueryPlanStep.h"
 
 namespace DB::QueryPlanOptimizations
 {

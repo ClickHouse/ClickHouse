@@ -2112,7 +2112,7 @@ Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both ta
 Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
 )", 0) \
     \
-    DECLARE(UInt64, query_plan_max_step_description_length, 128, R"(
+    DECLARE(UInt64, query_plan_max_step_description_length, 250, R"(
 Maximum length of step description in EXPLAIN PLAN.
 )", 0) \
     \
