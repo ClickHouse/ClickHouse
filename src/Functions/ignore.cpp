@@ -58,7 +58,32 @@ public:
 
 REGISTER_FUNCTION(Ignore)
 {
-    factory.registerFunction<FunctionIgnore>();
+    FunctionDocumentation::Description description = R"(
+Accepts arbitrary arguments and unconditionally returns `0`.
+    )";
+    FunctionDocumentation::Syntax syntax = "ignore(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "An input value which is unused and passed only so as to avoid a syntax error.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Always returns `0`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT ignore(0, 'ClickHouse', NULL)
+        )",
+        R"(
+┌─ignore(0, 'ClickHouse', NULL)─┐
+│                             0 │
+└───────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionIgnore>(documentation);
 }
 
 }
