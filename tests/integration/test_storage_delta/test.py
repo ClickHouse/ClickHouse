@@ -3212,10 +3212,6 @@ def test_concurrent_queries(started_cluster, partitioned):
     success = [0 for _ in range(num_insert_threads)]
 
     def run_concurrent_queries():
-        for i in range(num_insert_threads):
-            errors[i] = ""
-            success[i] = 0
-
         def select(_):
             instance.query(f"SELECT * FROM {TABLE_NAME}")
 
@@ -3231,8 +3227,6 @@ def test_concurrent_queries(started_cluster, partitioned):
         for _ in range(10):
             insert(_)
 
-        num_rows = int(instance.query(f"SELECT count() FROM {TABLE_NAME}"))
-
         select_pool = Pool(num_select_threads)
         insert_pool = Pool(num_insert_threads)
         sp = select_pool.map_async(select, range(num_select_threads))
@@ -3242,7 +3236,7 @@ def test_concurrent_queries(started_cluster, partitioned):
 
         select(0)
 
-        num_rows = num_rows + sum(success) * 50
+        num_rows = sum(success) * 50
         assert num_rows == int(
             instance.query(
                 f"SELECT count() FROM {TABLE_NAME}",
