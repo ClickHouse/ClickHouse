@@ -28,7 +28,7 @@ size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 
         auto * new_node = &nodes.emplace_back(std::move(child_node));
         child_node = QueryPlan::Node{std::move(step), {new_node}};
-        num_new_nodes++;
+        num_new_nodes = std::max<size_t>(num_new_nodes, 2);
     }
     return num_new_nodes;
 }
