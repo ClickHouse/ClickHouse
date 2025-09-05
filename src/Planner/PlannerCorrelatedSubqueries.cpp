@@ -443,7 +443,7 @@ QueryPlan decorrelateQueryPlan(
             aggeregating_step->usingMemoryBoundMerging(),
             aggeregating_step->explicitSortingRequired()
         );
-        result_step->setStepDescription(aggeregating_step->getStepDescription());
+        result_step->setStepDescription(*aggeregating_step);
 
         decorrelated_query_plan.addStep(std::move(result_step));
 

@@ -467,7 +467,8 @@ std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
     bool allow_implicit_projections,
-    bool is_parallel_replicas_initiator_with_projection_support)
+    bool is_parallel_replicas_initiator_with_projection_support,
+    size_t max_step_description_length)
 {
     if (node.children.size() != 1)
         return {};
@@ -830,7 +831,7 @@ std::optional<String> optimizeUseAggregateProjections(
         });
     }
 
-    projection_reading->setStepDescription(selected_projection_name);
+    projection_reading->setStepDescription(selected_projection_name, max_step_description_length);
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
 
     /// Root node of optimized child plan using @projection_name
