@@ -13,12 +13,6 @@ select * from t where a = 0;
 
 select * from v where a = 0 settings log_comment = '03603_query_condition_cache_parallel_replicas_and_views';
 
---set send_logs_level = 'trace', send_logs_source_regexp = 'SelectExecutor|debug|QueryPlanOptimizePrewhere';
---select * from v where a = 0 settings log_comment = '03603_query_condition_cache_parallel_replicas_and_views';
---set send_logs_level = 'none';
-
---explain actions=1 select * from v where a = 0;
-
 system flush logs;
 
 select throwIf(sum(ProfileEvents['QueryConditionCacheHits'] + ProfileEvents['QueryConditionCacheMisses']) = 0)
