@@ -22,6 +22,7 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+#include "Interpreters/Context_fwd.h"
 
 #include <DataTypes/DataTypesDecimal.h>
 
@@ -79,6 +80,7 @@ public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     HashedDictionary(
+        ContextPtr context,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -167,7 +169,7 @@ public:
         size_t level,
         DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    Pipe read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
     template <typename Value>
@@ -213,9 +215,10 @@ private:
 
     void blockToAttributes(const Block & block, DictionaryKeysArenaHolder<dictionary_key_type> & arena_holder, UInt64 shard);
 
-    void updateData();
+    void updateData(ContextMutablePtr query_context);
 
     void loadData();
+    void loadDataImpl(QueryPipeline & pipeline, DictionaryParallelLoaderType * parallel_loader);
 
     void buildHierarchyParentToChildIndexIfNeeded();
 
@@ -262,6 +265,8 @@ private:
 
     LoggerPtr log;
 
+    ContextPtr context;
+
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const HashedDictionaryConfiguration configuration;
@@ -296,6 +301,7 @@ extern template class HashedDictionary<DictionaryKeyType::Complex, /* sparse= */
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 HashedDictionary<dictionary_key_type, sparse, sharded>::HashedDictionary(
+    ContextPtr context_,
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -303,6 +309,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::HashedDictionary(
     BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
     , log(getLogger("HashedDictionary"))
+    , context(std::move(context_))
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , configuration(configuration_)
@@ -872,13 +879,13 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::createAttributes()
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
-void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
+void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData(ContextMutablePtr query_context)
 {
     /// NOTE: updateData() does not preallocation since it may increase memory usage.
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
+        QueryPipeline pipeline(source_ptr->loadUpdatedAll(std::move(query_context)));
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
         pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
@@ -905,7 +912,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
     }
     else
     {
-        auto pipe = source_ptr->loadUpdatedAll();
+        auto pipe = source_ptr->loadUpdatedAll(std::move(query_context));
         update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<dictionary_key_type>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
@@ -1151,40 +1158,55 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsShortCircui
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
 {
+    auto [query_scope, query_context] = createLoadQueryScope(context);
     if (!source_ptr->hasUpdateField())
     {
-        std::optional<DictionaryParallelLoaderType> parallel_loader;
+        std::unique_ptr<DictionaryParallelLoaderType> parallel_loader;
         if constexpr (sharded)
-            parallel_loader.emplace(*this);
+            parallel_loader = std::make_unique<DictionaryParallelLoaderType>(*this);
 
-        QueryPipeline pipeline(source_ptr->loadAll());
-
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
-        Block block;
-        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-
-        while (executor.pull(block))
+        BlockIO io = source_ptr->loadAll(std::move(query_context));
+        try
         {
-            resize(block.rows());
-            if (parallel_loader)
-                parallel_loader->addBlock(block);
-            else
-                blockToAttributes(block, arena_holder, /* shard= */ 0);
+            loadDataImpl(io.pipeline, parallel_loader.get());
+            io.onFinish();
         }
-
-        if (parallel_loader)
-            parallel_loader->finish();
+        catch (...)
+        {
+            io.onException();
+            throw;
+        }
     }
     else
     {
-        updateData();
+        updateData(std::move(query_context));
     }
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
             "{}: dictionary source is empty and 'require_nonempty' property is set.",
             getFullName());
+}
+
+template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
+void HashedDictionary<dictionary_key_type, sparse, sharded>::loadDataImpl(QueryPipeline & pipeline, DictionaryParallelLoaderType * parallel_loader)
+{
+    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+    pipeline.setConcurrencyControl(false);
+    Block block;
+    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+
+    while (executor.pull(block))
+    {
+        resize(block.rows());
+        if (parallel_loader)
+            parallel_loader->addBlock(block);
+        else
+            blockToAttributes(block, arena_holder, /* shard= */ 0);
+    }
+
+    if (parallel_loader)
+        parallel_loader->finish();
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
@@ -1258,7 +1280,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
-Pipe HashedDictionary<dictionary_key_type, sparse, sharded>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe HashedDictionary<dictionary_key_type, sparse, sharded>::read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     PaddedPODArray<HashedDictionary::KeyType> keys;
 

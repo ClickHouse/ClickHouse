@@ -8,6 +8,7 @@
 #include <Core/Block_fwd.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include "Interpreters/Context_fwd.h"
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -42,6 +43,7 @@ public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     HashedArrayDictionary(
+        ContextPtr context_,
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -127,7 +129,7 @@ public:
         size_t level,
         DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    Pipe read(ContextMutablePtr /* query_context */, const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
 
@@ -188,9 +190,10 @@ private:
 
     void blockToAttributes(const Block & block, DictionaryKeysArenaHolder<dictionary_key_type> & arena_holder, size_t shard);
 
-    void updateData();
+    void updateData(ContextMutablePtr query_context);
 
     void loadData();
+    void loadDataImpl(QueryPipeline & pipeline, DictionaryParallelLoaderType * parallel_loader);
 
     void buildHierarchyParentToChildIndexIfNeeded();
 
@@ -259,6 +262,8 @@ private:
     void resize(size_t total_rows);
 
     LoggerPtr log;
+
+    ContextPtr context;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
