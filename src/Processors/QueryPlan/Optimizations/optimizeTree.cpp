@@ -120,6 +120,45 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     }
 }
 
+struct NoOp{};
+
+template <typename Func1, typename Func2 = NoOp>
+void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter, Func2 && on_leave = {})
+{
+    stack.clear();
+    stack.push_back({.node = &root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        if constexpr (!std::is_same_v<Func1, NoOp>)
+        {
+            if (frame.next_child == 0)
+            {
+                on_enter(*frame.node);
+            }
+        }
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+
+        if constexpr (!std::is_same_v<Func2, NoOp>)
+        {
+            on_leave(*frame.node);
+        }
+
+        stack.pop_back();
+    }
+}
+
+
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
 {
@@ -163,16 +202,15 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
-    calculateHashTableCacheKeys(root);
-
-    stack.push_back({.node = &root});
     bool join_runtime_filters_were_added = false;
+    stack.push_back({.node = &root});
     while (!stack.empty())
     {
         /// Re-run optimizePrewhere if join runtime filters were added
         if (optimization_settings.enable_join_runtime_filters && optimization_settings.optimize_prewhere && join_runtime_filters_were_added)
             optimizePrewhere(stack, nodes);
 
+        /// NOTE: optimizePrewhere can modify the stack.
         auto & frame = stack.back();
 
         if (frame.next_child == 0)
@@ -185,20 +223,11 @@ void optimizeTreeSecondPass(
                 tryPushDownFilter(frame.node, nodes, {});
             }
 
-            const auto rhs_estimation = optimizeJoinLogical(*frame.node, nodes, optimization_settings);
+            optimizeJoinLogical(*frame.node, nodes, optimization_settings);
+            optimizeJoinLegacy(*frame.node, nodes, optimization_settings);
 
             if (optimization_settings.enable_join_runtime_filters)
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(*frame.node, nodes, optimization_settings);
-
-            bool has_join_logical = convertLogicalJoinToPhysical(*frame.node, nodes, optimization_settings, rhs_estimation);
-            if (!has_join_logical)
-                optimizeJoinLegacy(*frame.node, nodes, optimization_settings);
-
-            if (optimization_settings.read_in_order)
-                optimizeReadInOrder(*frame.node, nodes);
-
-            if (optimization_settings.distinct_in_order)
-                optimizeDistinctInOrder(*frame.node, nodes);
         }
 
         /// Traverse all children first.
@@ -210,8 +239,23 @@ void optimizeTreeSecondPass(
             continue;
         }
 
+        /// After all children have been traversed
+        {
+            convertLogicalJoinToPhysical(*frame.node, nodes, optimization_settings);
+        }
+
         stack.pop_back();
     }
+
+    traverseQueryPlan(stack, root,
+        [&](auto & frame_node)
+        {
+            if (optimization_settings.read_in_order)
+                optimizeReadInOrder(frame_node, nodes);
+
+            if (optimization_settings.distinct_in_order)
+                optimizeDistinctInOrder(frame_node, nodes);
+        });
 
     stack.push_back({.node = &root});
 
