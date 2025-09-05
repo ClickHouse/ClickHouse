@@ -5316,7 +5316,7 @@ class ClickHouseInstance:
         # async replication is only supported in version 23.9+
         # for tags that don't specify a version we assume it has a version of ClickHouse
         # that supports async replication if a test for it is present
-        if (
+        if not self.with_dolor and (
             version == None
             or version["major"] > 23
             or (version["major"] == 23 and version["minor"] >= 9)
