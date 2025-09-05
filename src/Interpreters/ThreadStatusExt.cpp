@@ -56,7 +56,6 @@ namespace Setting
     extern const SettingsFloat memory_tracker_fault_probability;
     extern const SettingsBool metrics_perf_events_enabled;
     extern const SettingsString metrics_perf_events_list;
-    extern const SettingsInt64 os_thread_priority;
     extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
     extern const SettingsUInt64 query_profiler_real_time_period_ns;
     extern const SettingsBool enable_adaptive_memory_spill_scheduler;
