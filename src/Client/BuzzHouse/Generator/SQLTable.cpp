@@ -1,5 +1,7 @@
 #include <cstdint>
 
+#include <Common/checkStackSize.h>
+
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
