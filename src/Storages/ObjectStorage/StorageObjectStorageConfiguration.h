@@ -14,7 +14,6 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
-#include <Core/Settings.h>
 
 namespace DB
 {

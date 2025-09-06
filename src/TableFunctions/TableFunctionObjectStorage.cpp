@@ -36,7 +36,6 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
-    extern const SettingsString iceberg_disk_name;
 }
 
 namespace ErrorCodes
@@ -212,15 +211,9 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         client_info.collaborate_with_initiator &&
         context->hasClusterFunctionReadTaskCallback();
 
-    ObjectStoragePtr object_storage_;
-    if (configuration->isDataLakeConfiguration() && context->getSettingsRef()[Setting::iceberg_disk_name].changed)
-        object_storage_ = context->getDisk(context->getSettingsRef()[Setting::iceberg_disk_name].value)->getObjectStorage();
-    else
-        object_storage_ = getObjectStorage(context, !is_insert_query);
-
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
-        object_storage_,
+        getObjectStorage(context, !is_insert_query),
         context,
         StorageID(getDatabaseName(), table_name),
         columns,

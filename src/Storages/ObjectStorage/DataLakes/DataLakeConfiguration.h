@@ -23,7 +23,6 @@
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#include <Interpreters/Context.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 
