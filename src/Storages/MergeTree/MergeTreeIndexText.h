@@ -4,6 +4,7 @@
 #include <Columns/IColumn.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/StringHashMap.h>
 #include <Interpreters/GinQueryString.h>
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenExtractor.h>
@@ -21,7 +22,6 @@ struct MergeTreeIndexTextParams
     size_t max_cardinality_for_embedded_postings = 0;
     size_t bloom_filter_bits_per_row = 0;
     size_t bloom_filter_num_hashes = 0;
-    size_t bloom_filter_prefix_size = 0;
 };
 
 using PostingList = roaring::Roaring;
@@ -36,9 +36,11 @@ public:
     explicit CompressedPostings(const roaring::Roaring & postings);
 
     UInt32 getDelta(size_t idx) const;
+    UInt32 getMinDelta() const { return min_delta; }
     UInt32 getCardinality() const { return cardinality; }
-    bool empty() const { return cardinality == 0; }
     UInt8 getDeltaBits() const { return delta_bits; }
+
+    bool empty() const { return cardinality == 0; }
     bool hasRawDeltas() const { return cardinality <= max_raw_deltas; }
 
     void serialize(WriteBuffer & ostr) const;
@@ -48,7 +50,7 @@ public:
     {
     public:
         explicit Iterator(const CompressedPostings & postings_)
-            : postings(&postings_), row(postings->empty() ? 0 : postings->getDelta(0))
+            : postings(&postings_), row(postings->empty() ? 0 : postings->getMinDelta())
         {
         }
 
@@ -72,8 +74,9 @@ public:
     Iterator getIterator() const { return Iterator(*this); }
 
 private:
-    UInt8 delta_bits;
-    UInt32 cardinality;
+    UInt8 delta_bits = 0;
+    UInt32 cardinality = 0;
+    UInt32 min_delta = 0;
     std::vector<UInt64> deltas_buffer;
 };
 
@@ -163,7 +166,6 @@ private:
     void deserializeBloomFilter(ReadBuffer & istr);
     void deserializeSparseIndex(ReadBuffer & istr);
 
-    bool hasInBloomFilter(const StringRef & token) const;
     void analyzeBloomFilter(const IMergeTreeIndexCondition & condition);
     void analyzeDictionary(IndexReaderStream & stream, IndexDeserializationState & state);
 
@@ -174,15 +176,25 @@ private:
     TokensMap remaining_tokens;
 };
 
+using PostingListRawPtr = PostingList *;
+using TokensMap = StringHashMap<PostingListRawPtr>;
+using SortedTokensAndPostings = std::vector<std::pair<StringRef, PostingList *>>;
+
 struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 {
+    /// A helper struct to hold references to tokens and postings.
+    struct Holder
+    {
+        TokensMap tokens_map;
+        std::unique_ptr<Arena> arena;
+        std::list<PostingList> posting_lists;
+    };
+
     MergeTreeIndexGranuleTextWritable(
         MergeTreeIndexTextParams params_,
-        size_t bloom_filter_elements_,
         BloomFilter bloom_filter_,
-        std::vector<StringRef> tokens_,
-        std::vector<PostingList> posting_lists_,
-        std::unique_ptr<Arena> arena_);
+        SortedTokensAndPostings tokens_and_postings_,
+        Holder holder_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
 
@@ -190,15 +202,13 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     void serializeBinaryWithMultipleStreams(IndexOutputStreams & streams) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return tokens.empty(); }
+    bool empty() const override { return tokens_and_postings.empty(); }
     size_t memoryUsageBytes() const override { return 0; }
 
     MergeTreeIndexTextParams params;
-    size_t bloom_filter_elements;
     BloomFilter bloom_filter;
-    std::vector<StringRef> tokens;
-    std::vector<PostingList> posting_lists;
-    std::unique_ptr<Arena> arena;
+    SortedTokensAndPostings tokens_and_postings;
+    Holder holder;
 };
 
 struct MergeTreeIndexTextGranuleBuilder
@@ -211,9 +221,6 @@ struct MergeTreeIndexTextGranuleBuilder
 
     MergeTreeIndexTextParams params;
     TokenExtractorPtr token_extractor;
-
-    using PostingListRawPtr = PostingList *;
-    using TokensMap = HashMap<StringRef, PostingListRawPtr>;
 
     UInt64 current_row = 0;
     TokensMap tokens_map;

@@ -93,6 +93,7 @@
     M(TextIndexReadDictionaryBlocks, "Number of times a dictionary block has been read from the text index.", ValueType::Number) \
     M(TextIndexReadDictionarySparseIndexBlocks, "Number of times a dictionary sparse index block has been read from the text index.", ValueType::Number) \
     M(TextIndexReaderTotalMicroseconds, "Total time spent reading the text index.", ValueType::Microseconds) \
+    M(TextIndexReadGranulesMicroseconds, "Total time spent reading granules and analyzing the text index.", ValueType::Microseconds) \
     M(TextIndexBloomFilterHits, "Number of times a token has been filtered by bloom filter.", ValueType::Number) \
     M(TextIndexBloomFilterMisses, "Number of times a token has passed the bloom filter and was found in the dictionary.", ValueType::Number) \
     M(TextIndexBloomFilterFalsePositives, "Number of times a token has passed the bloom filter and was not found in the dictionary.", ValueType::Number) \

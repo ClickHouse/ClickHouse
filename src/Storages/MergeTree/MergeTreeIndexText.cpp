@@ -6,6 +6,7 @@
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Interpreters/BloomFilterHash.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/logger_useful.h>
 #include <IO/BitHelpers.h>
@@ -18,6 +19,7 @@ namespace ProfileEvents
     extern const Event TextIndexBloomFilterHits;
     extern const Event TextIndexBloomFilterMisses;
     extern const Event TextIndexBloomFilterFalsePositives;
+    extern const Event TextIndexReadGranulesMicroseconds;
 }
 
 namespace DB
@@ -34,12 +36,6 @@ static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
 {
     static constexpr size_t atom_size = 8;
     return std::max(1UL, (bits_per_row * num_tokens + atom_size - 1) / atom_size);
-}
-
-static UInt64 getBloomFilterHash(const StringRef & token, size_t prefix_size)
-{
-    size_t hashing_size = prefix_size ? std::min(prefix_size, token.size) : token.size;
-    return CityHash_v1_0_2::CityHash64(token.data, hashing_size);
 }
 
 static constexpr UInt8 EMBEDDED_POSTINGS_FLAG = static_cast<UInt8>(1 << 6);
@@ -63,9 +59,13 @@ CompressedPostings::CompressedPostings(const roaring::Roaring & postings)
     cardinality = postings.cardinality();
     std::vector<UInt32> raw_deltas(cardinality);
 
-    UInt32 prev = 0;
-    UInt32 max_delta = 0;
+    if (cardinality == 0)
+        return;
+
     auto it = postings.begin();
+    min_delta = *it;
+    UInt32 prev = *it;
+    UInt32 max_delta = 0;
 
     for (size_t i = 0; i < cardinality; ++i, ++it)
     {
@@ -103,18 +103,34 @@ UInt32 CompressedPostings::getDelta(size_t idx) const
 
 void CompressedPostings::serialize(WriteBuffer & ostr) const
 {
+    writeVarUInt(min_delta, ostr);
+
     if (hasRawDeltas())
-        ostr.write(reinterpret_cast<const char *>(deltas_buffer.data()), sizeof(UInt32) * cardinality);
+    {
+        const auto * raw_deltas = reinterpret_cast<const UInt32 *>(deltas_buffer.data());
+        for (size_t i = 1; i < cardinality; ++i)
+            writeVarUInt(raw_deltas[i], ostr);
+    }
     else
+    {
         ostr.write(reinterpret_cast<const char *>(deltas_buffer.data()), sizeof(UInt64) * deltas_buffer.size());
+    }
 }
 
 void CompressedPostings::deserialize(ReadBuffer & istr)
 {
+    readVarUInt(min_delta, istr);
+
     if (hasRawDeltas())
-        istr.readStrict(reinterpret_cast<char *>(deltas_buffer.data()), sizeof(UInt32) * cardinality);
+    {
+        auto * raw_deltas = reinterpret_cast<UInt32 *>(deltas_buffer.data());
+        for (size_t i = 1; i < cardinality; ++i)
+            readVarUInt(raw_deltas[i], istr);
+    }
     else
+    {
         istr.readStrict(reinterpret_cast<char *>(deltas_buffer.data()), sizeof(UInt64) * deltas_buffer.size());
+    }
 }
 
 UInt32 TokenInfo::getCardinality() const
@@ -275,6 +291,8 @@ void MergeTreeIndexGranuleText::deserializeSparseIndex(ReadBuffer & istr)
 
 void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(IndexInputStreams & streams, IndexDeserializationState & state)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReadGranulesMicroseconds);
+
     auto * index_stream = streams.at(IndexSubstream::Type::Regular);
     auto * dictionary_stream = streams.at(IndexSubstream::Type::TextIndexDictionary);
 
@@ -288,18 +306,6 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(IndexInputS
     analyzeDictionary(*dictionary_stream, state);
 }
 
-bool MergeTreeIndexGranuleText::hasInBloomFilter(const StringRef & token) const
-{
-    UInt64 hash = getBloomFilterHash(token, params.bloom_filter_prefix_size);
-
-    for (size_t i = 0; i < params.bloom_filter_num_hashes; ++i)
-    {
-        if (!bloom_filter.findHashWithSeed(hash, BloomFilterHash::bf_hash_seed[i]))
-            return false;
-    }
-    return true;
-}
-
 void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexCondition & condition)
 {
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(condition);
@@ -310,7 +316,7 @@ void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexConditio
     {
         for (const auto & token : search_tokens)
         {
-            if (hasInBloomFilter(token))
+            if (bloom_filter.find(token.data(), token.size()))
             {
                 remaining_tokens.emplace(token, TokenInfo{});
             }
@@ -406,31 +412,26 @@ void MergeTreeIndexGranuleText::resetAfterAnalysis()
 
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     MergeTreeIndexTextParams params_,
-    size_t bloom_filter_elements_,
     BloomFilter bloom_filter_,
-    std::vector<StringRef> tokens_,
-    std::vector<PostingList> posting_lists_,
-    std::unique_ptr<Arena> arena_)
+    SortedTokensAndPostings tokens_and_postings_,
+    Holder holder_)
     : params(std::move(params_))
-    , bloom_filter_elements(bloom_filter_elements_)
     , bloom_filter(std::move(bloom_filter_))
-    , tokens(std::move(tokens_))
-    , posting_lists(std::move(posting_lists_))
-    , arena(std::move(arena_))
+    , tokens_and_postings(std::move(tokens_and_postings_))
+    , holder(std::move(holder_))
 {
 }
 
 template <typename Stream>
 DictionarySparseIndex serializeTokensAndPostings(
-    const std::vector<StringRef> & tokens,
-    const std::vector<PostingList> & postings,
+    const SortedTokensAndPostings & tokens_and_postings,
     Stream & dictionary_stream,
     Stream & postings_stream,
     size_t block_size,
     size_t max_cardinality_for_embedded_postings)
 {
-    chassert(tokens.size() == postings.size());
-    size_t num_blocks = (tokens.size() + block_size - 1) / block_size;
+    size_t num_tokens = tokens_and_postings.size();
+    size_t num_blocks = (num_tokens + block_size - 1) / block_size;
 
     auto sparse_index_tokens = ColumnString::create();
     auto & sparse_index_str = assert_cast<ColumnString &>(*sparse_index_tokens);
@@ -443,27 +444,30 @@ DictionarySparseIndex serializeTokensAndPostings(
     for (size_t block_idx = 0; block_idx < num_blocks; ++block_idx)
     {
         size_t block_begin = block_idx * block_size;
-        size_t block_end = std::min(block_begin + block_size, tokens.size());
+        size_t block_end = std::min(block_begin + block_size, num_tokens);
 
         dictionary_stream.compressed_hashing.next();
         auto current_mark = dictionary_stream.getCurrentMark();
         chassert(current_mark.offset_in_decompressed_block == 0);
 
+        const auto & first_token = tokens_and_postings[block_begin].first;
         sparse_index_offsets_data.emplace_back(current_mark.offset_in_compressed_file);
-        sparse_index_str.insertData(tokens[block_begin].data, tokens[block_begin].size);
+        sparse_index_str.insertData(first_token.data, first_token.size);
 
-        size_t num_tokens = block_end - block_begin;
-        writeVarUInt(num_tokens, dictionary_stream.compressed_hashing);
+        size_t num_tokens_in_block = block_end - block_begin;
+        writeVarUInt(num_tokens_in_block, dictionary_stream.compressed_hashing);
 
         for (size_t i = block_begin; i < block_end; ++i)
         {
-            writeVarUInt(tokens[i].size, dictionary_stream.compressed_hashing);
-            dictionary_stream.compressed_hashing.write(tokens[i].data, tokens[i].size);
+            const auto & token = tokens_and_postings[i].first;
+            writeVarUInt(token.size, dictionary_stream.compressed_hashing);
+            dictionary_stream.compressed_hashing.write(token.data, token.size);
         }
 
         for (size_t i = block_begin; i < block_end; ++i)
         {
-            CompressedPostings compressed_postings(postings[i]);
+            const auto & postings = *tokens_and_postings[i].second;
+            CompressedPostings compressed_postings(postings);
 
             UInt32 cardinality = compressed_postings.getCardinality();
             UInt8 delta_bits = compressed_postings.getDeltaBits();
@@ -530,14 +534,13 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Index
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
     auto sparse_index_block = serializeTokensAndPostings(
-        tokens,
-        posting_lists,
+        tokens_and_postings,
         *dictionary_stream,
         *postings_stream,
         params.dictionary_block_size,
         params.max_cardinality_for_embedded_postings);
 
-    serializeBloomFilter(bloom_filter_elements, bloom_filter, *index_stream);
+    serializeBloomFilter(tokens_and_postings.size(), bloom_filter, *index_stream);
     serializeSparseIndex(sparse_index_block, *index_stream);
 }
 
@@ -579,47 +582,28 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
 {
-    std::vector<std::pair<StringRef, PostingList *>> sorted_values;
+    SortedTokensAndPostings sorted_values;
     sorted_values.reserve(tokens_map.size());
 
-    for (auto it = tokens_map.begin(); it != tokens_map.end(); ++it)
-        sorted_values.emplace_back(it->getKey(), it->getMapped());
+    size_t bloom_filter_bytes = getBloomFilterSizeInBytes(params.bloom_filter_bits_per_row, tokens_map.size());
+    BloomFilter bloom_filter(bloom_filter_bytes, params.bloom_filter_num_hashes, 0);
+
+    tokens_map.forEachValue([&](const auto & key, auto & mapped)
+    {
+        sorted_values.emplace_back(key, mapped);
+        bloom_filter.add(key.data, key.size);
+    });
 
     std::sort(sorted_values.begin(), sorted_values.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
-    std::vector<StringRef> sorted_tokens;
-    std::vector<PostingList> sorted_posting_lists;
-
-    sorted_tokens.reserve(sorted_values.size());
-    sorted_posting_lists.reserve(sorted_values.size());
-
-    HashSet<UInt64, HashCRC32<UInt64>> bloom_filter_hashes;
-
-    for (auto & [token, posting_list] : sorted_values)
-    {
-        UInt64 hash = getBloomFilterHash(token, params.bloom_filter_prefix_size);
-        bloom_filter_hashes.insert(hash);
-
-        sorted_tokens.emplace_back(token);
-        sorted_posting_lists.emplace_back(std::move(*posting_list));
-    }
-
-    size_t bloom_filter_bytes = getBloomFilterSizeInBytes(params.bloom_filter_bits_per_row, bloom_filter_hashes.size());
-    BloomFilter bloom_filter(bloom_filter_bytes, params.bloom_filter_num_hashes, 0);
-
-    for (const auto & hash : bloom_filter_hashes)
-    {
-        for (size_t i = 0; i < params.bloom_filter_num_hashes; ++i)
-            bloom_filter.addHashWithSeed(hash.getKey(), BloomFilterHash::bf_hash_seed[i]);
-    }
+    using Holder = MergeTreeIndexGranuleTextWritable::Holder;
+    Holder holder{std::move(tokens_map), std::move(arena), std::move(posting_lists)};
 
     return std::make_unique<MergeTreeIndexGranuleTextWritable>(
         params,
-        bloom_filter_hashes.size(),
         std::move(bloom_filter),
-        std::move(sorted_tokens),
-        std::move(sorted_posting_lists),
-        std::move(arena));
+        std::move(sorted_values),
+        std::move(holder));
 }
 
 MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
@@ -711,7 +695,6 @@ static const String ARGUMENT_SEPARATORS = "separators";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = "max_cardinality_for_embedded_postings";
 static const String ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE = "bloom_filter_false_positive_rate";
-static const String ARGUMENT_BLOOM_FILTER_PREFIX_SIZE = "bloom_filter_prefix_size";
 
 namespace
 {
@@ -807,10 +790,9 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     UInt64 dictionary_block_size = getOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(128);
     UInt64 max_cardinality_for_embedded_postings = getOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS).value_or(16);
     double bloom_filter_false_positive_rate = getOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(0.025);
-    UInt64 bloom_filter_prefix_size = getOption<UInt64>(options, ARGUMENT_BLOOM_FILTER_PREFIX_SIZE).value_or(4);
 
     const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
-    MergeTreeIndexTextParams params{dictionary_block_size, max_cardinality_for_embedded_postings, bits_per_rows, num_hashes, bloom_filter_prefix_size};
+    MergeTreeIndexTextParams params{dictionary_block_size, max_cardinality_for_embedded_postings, bits_per_rows, num_hashes};
 
     return std::make_shared<MergeTreeIndexText>(index, params, std::move(token_extractor));
 }
