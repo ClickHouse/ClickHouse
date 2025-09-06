@@ -854,7 +854,7 @@ namespace
             auto outcome = client_ptr->UploadPartCopy(req);
             if (!outcome.IsSuccess())
             {
-                abortMultipartUpload();
+                upload_part_failed = true;
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
