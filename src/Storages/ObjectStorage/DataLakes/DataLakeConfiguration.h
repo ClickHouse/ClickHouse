@@ -223,12 +223,12 @@ public:
         return current_metadata->iterate(filter_dag, callback, list_batch_size, context);
     }
 
+#if USE_PARQUET
     /// This is an awful temporary crutch,
     /// which will be removed once DeltaKernel is used by default for DeltaLake.
     /// By release 25.3.
     /// (Because it does not make sense to support it in a nice way
     /// because the code will be removed ASAP anyway)
-#if USE_PARQUET && USE_AWS_S3
     DeltaLakePartitionColumns getDeltaLakePartitionColumns() const
     {
         assertInitialized();
