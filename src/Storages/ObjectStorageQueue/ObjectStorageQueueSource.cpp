@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/parseGlobs.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
@@ -165,6 +166,7 @@ ObjectStorageQueueSource::FileIterator::next()
         return {};
     }
 
+    auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     if (current_batch_processed)
     {
         file_metadatas.clear();
@@ -246,8 +248,11 @@ ObjectStorageQueueSource::FileIterator::next()
                 }
 
                 Coordination::Responses responses;
-                auto zk_client = Context::getGlobalContextInstance()->getZooKeeper();
-                auto code = zk_client->tryMulti(requests, responses);
+                Coordination::Error code;
+                zk_retries.retryLoop([&]
+                {
+                    code = ObjectStorageQueueMetadata::getZooKeeper()->tryMulti(requests, responses);
+                });
                 if (code == Coordination::Error::ZOK)
                 {
                     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded, num_successful_objects);
@@ -541,20 +546,12 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 }
                 else if (bucket_processor.value() != current_processor)
                 {
-                    if (current_bucket_holder->isZooKeeperSessionExpired())
-                    {
-                        LOG_TRACE(log, "ZooKeeper session expired, bucket no longer held");
-                        current_bucket_holder = {};
-                    }
-                    else
-                    {
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Expected current processor {} to be equal to {} for bucket {}",
-                            current_processor,
-                            bucket_processor.has_value() ? toString(bucket_processor.value()) : "None",
-                            bucket);
-                    }
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Expected current processor {} to be equal to {} for bucket {}",
+                        current_processor,
+                        bucket_processor.has_value() ? toString(bucket_processor.value()) : "None",
+                        bucket);
                 }
 
                 if (current_bucket_holder)
@@ -588,12 +585,6 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 /// - once we write and commit files via commit() method.
                 current_bucket_holder->setFinished();
             }
-        }
-
-        if (current_bucket_holder && current_bucket_holder->isZooKeeperSessionExpired())
-        {
-            LOG_TRACE(log, "ZooKeeper session expired, bucket {} not longer hold", current_bucket_holder->getBucket());
-            current_bucket_holder = {};
         }
 
         /// If processing thread has already acquired some bucket
@@ -1259,7 +1250,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         object_storage->removeObjectsIfExist(successful_objects);
     }
 
-    auto zk_client = getContext()->getZooKeeper();
+    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
     Coordination::Responses responses;
     auto code = zk_client->tryMulti(requests, responses);
     if (code != Coordination::Error::ZOK)
