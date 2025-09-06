@@ -3082,3 +3082,79 @@ def test_writes_multiple_files(started_cluster, format_version, storage_type):
     )
 
     assert sum([file[-7:] == "parquet" for file in files]) == 2
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+def test_writes_cluster_table_function(started_cluster, format_version, storage_type):
+
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+
+    TABLE_NAME = (
+        "test_iceberg_cluster_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    TABLE_NAME_2 = TABLE_NAME + "_2"
+    def add_df(mode):
+        write_iceberg_from_df(
+            spark,
+            generate_data(spark, 0, 100),
+            TABLE_NAME,
+            mode=mode,
+            format_version=format_version,
+        )
+
+        files = default_upload_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+
+        logging.info(f"Adding another dataframe. result files: {files}")
+
+        return files
+
+    files = add_df(mode="overwrite")
+    for i in range(1, len(started_cluster.instances)):
+        files = add_df(mode="append")
+
+    logging.info(f"Setup complete. files: {files}")
+    assert len(files) == 5 + 4 * (len(started_cluster.instances) - 1)
+
+    clusters = instance.query(f"SELECT * FROM system.clusters")
+    logging.info(f"Clusters setup: {clusters}")
+
+    # Regular Query only node1
+    table_function_expr = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster, table_function=True
+    )
+    select_regular = (
+        instance.query(f"SELECT * FROM {table_function_expr}").strip().split()
+    )
+
+    # Cluster Query with node1 as coordinator
+    table_function_expr_cluster = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        run_on_cluster=True,
+    )
+    select_cluster = (
+        instance.query(f"SELECT * FROM {table_function_expr_cluster}").strip().split()
+    )
+
+    # Simple size check
+    assert len(select_regular) == 600
+    assert len(select_cluster) == 600
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME_2, started_cluster, "(x Int32, y Int32)", format_version)
+    instance.query(f"INSERT INTO {TABLE_NAME_2} SELECT * FROM {table_function_expr_cluster};", settings={"allow_experimental_insert_into_iceberg": 1})
+
+    assert instance.query(f"SELECT * FROM {table_function_expr_cluster}") == instance.query(f"SELECT * FROM {TABLE_NAME_2}")
