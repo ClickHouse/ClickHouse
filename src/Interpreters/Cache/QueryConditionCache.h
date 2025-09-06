@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Common/CacheBase.h>
+#include <Common/SharedMutex.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <shared_mutex>
 
 namespace DB
 {
@@ -24,7 +24,8 @@ class QueryConditionCache
 public:
     /// False means none of the rows in the mark match the predicate. We can skip such marks.
     /// True means at least one row in the mark matches the predicate. We need to read such marks.
-    using MatchingMarks = std::vector<bool>;
+    using Entry = std::vector<bool>;
+    using EntryPtr = std::shared_ptr<Entry>;
 
 private:
     /// Key + entry represent a mark range result.
@@ -41,23 +42,6 @@ private:
         bool operator==(const Key & other) const;
     };
 
-    struct Entry
-    {
-        MatchingMarks matching_marks;
-        std::shared_mutex mutex; /// (*)
-
-        explicit Entry(size_t mark_count); /// (**)
-
-        /// (*) You might wonder why Entry has its own mutex considering that CacheBase locks internally already. The reason is that
-        ///     ClickHouse scans ranges within the same part in parallel. The first scan creates and inserts a new Key + Entry into the cache,
-        ///     the 2nd ... Nth scans find the existing Key and update its Entry for the new ranges. This can only be done safely in a
-        ///     synchronized fashion.
-
-        /// (**) About error handling: There could be an exception after the i-th scan and cache entries could (theoretically) be left in a
-        ///     corrupt state. If we are not careful, future scans queries could then skip too many ranges. To prevent this, it is important to
-        ///     initialize all marks of each entry as non-matching. In case of an exception, future scans will then not skip them.
-    };
-
     struct KeyHasher
     {
         size_t operator()(const Key & key) const;
@@ -68,19 +52,15 @@ private:
         size_t operator()(const Entry & entry) const;
     };
 
-
 public:
     using Cache = CacheBase<Key, Entry, KeyHasher, EntryWeight>;
 
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
-    /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
-    void write(
-        const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
-        const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
+    void write(const Key & key, const Entry & entry);
 
     /// Check the cache if it contains an entry for the given table + part id and predicate hash.
-    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash);
+    EntryPtr read(const UUID & table_id, const String & part_name, UInt64 condition_hash);
 
     /// For debugging and system tables
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;
@@ -94,9 +74,65 @@ private:
     Cache cache;
     LoggerPtr logger = getLogger("QueryConditionCache");
 
+    friend class QueryConditionCacheWriter;
     friend class StorageSystemQueryConditionCache;
 };
 
 using QueryConditionCachePtr = std::shared_ptr<QueryConditionCache>;
+
+
+/// An object of this class exists in the scope of a query or a sub-query.
+/// AddRanges() creates/updates entries for the query condition cache (one entry per part), finalize() inserts them into the cache.
+class QueryConditionCacheWriter
+{
+public:
+    QueryConditionCacheWriter(
+        QueryConditionCache & query_condition_cache_,
+        size_t condition_hash_,
+        const String & condition_,
+        double selectivity_threshold_);
+
+    ~QueryConditionCacheWriter();
+
+    void addRanges(
+        const UUID & table_id, const String & part_name,
+        const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
+
+private:
+    struct CacheEntry
+    {
+        SharedMutex mutex;
+        QueryConditionCache::Entry entry;
+        /// Whether it needs to be written into the query condition cache.
+        bool is_dirty;
+
+        /// By default, all marks potentially are potential matches, i.e. we can't skip them.
+        /// Treat all marks for the new entry of the part as potential matches, i.e. don't skip them during read.
+        /// This is important for error handling: Imagine an exception is thrown during query execution and the stack is unwound. At that
+        /// point, a new entry may not have received updates for all scanned ranges within the part. As a result, future scans queries could
+        /// skip too many ranges, causing wrong results. This situation is prevented by initializing all marks of each entry as non-matching.
+        /// Even if there is an exception, future scans will not skip them.
+        explicit CacheEntry(size_t marks_count) : entry(marks_count, true), is_dirty(true) {}
+        explicit CacheEntry(const QueryConditionCache::Entry & entry_) : entry(entry_), is_dirty(false) {}
+    };
+    using CacheEntryPtr = std::shared_ptr<CacheEntry>;
+
+    void finalize();
+
+    bool needUpdateMarks(const QueryConditionCache::Entry & entry, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark) const;
+
+    QueryConditionCache & query_condition_cache;
+
+    SharedMutex mutex;
+    std::unordered_map<QueryConditionCache::Key, CacheEntryPtr, QueryConditionCache::KeyHasher> new_entries;
+
+    const size_t condition_hash;
+    const String condition;
+    const double selectivity_threshold;
+
+    LoggerPtr logger = getLogger("QueryConditionCache");
+};
+
+using QueryConditionCacheWriterPtr = std::shared_ptr<QueryConditionCacheWriter>;
 
 }
