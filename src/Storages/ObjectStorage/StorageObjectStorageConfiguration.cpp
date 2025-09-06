@@ -17,11 +17,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace Setting
-{
-    extern const SettingsString iceberg_disk_name;
-}
-
 bool StorageObjectStorageConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context,
