@@ -120,7 +120,7 @@ namespace
         std::atomic<bool> multipart_upload_aborted = false;
         Strings part_tags;
 
-        std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_upload_part_tasks;
+        std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
         size_t num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         size_t num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         size_t num_finished_parts TSA_GUARDED_BY(bg_tasks_mutex) = 0;
@@ -250,62 +250,6 @@ namespace
             multipart_upload_aborted = true;
         }
 
-        void scheduleAbortMultipartUpload()
-        {
-            bool expected = false;
-            if (!multipart_upload_aborted.compare_exchange_weak(expected, true))
-                return;
-
-            if (schedule)
-            {
-                {
-                    std::lock_guard lock(bg_tasks_mutex);
-                    ++num_added_bg_tasks;
-                }
-
-                auto task_finish_notify = [this]()
-                {
-                    std::lock_guard lock(bg_tasks_mutex);
-                    ++num_finished_bg_tasks;
-
-                    bg_tasks_condvar.notify_one();
-                };
-                try
-                {
-                    schedule(
-                        [this, task_finish_notify]()
-                        {
-                            try
-                            {
-                                abortMultipartUpload();
-                            }
-                            catch (...)
-                            {
-                                tryLogCurrentException(log, "While aborting multipart upload asynchronously");
-                            }
-                            task_finish_notify();
-                        },
-                        Priority{});
-                }
-                /// Fallback to synchronous abort if scheduling fails.
-                catch (...)
-                {
-                    try
-                    {
-                        tryLogCurrentException(log, "While scheduling asynchronous multipart upload");
-                        abortMultipartUpload();
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(log, "While aborting multipart upload");
-                    }
-                    task_finish_notify();
-                }
-            }
-            else
-                abortMultipartUpload();
-        }
-
         void checkObjectAfterUpload()
         {
             LOG_TRACE(log, "Checking object {} exists after upload", dest_key);
@@ -425,7 +369,7 @@ namespace
 
                 {
                     std::lock_guard lock(bg_tasks_mutex);
-                    task = &bg_upload_part_tasks.emplace_back();
+                    task = &bg_tasks.emplace_back();
                     task->part_number = part_number;
                     task->part_offset = part_offset;
                     task->part_size = part_size;
@@ -493,16 +437,8 @@ namespace
             std::lock_guard lock(bg_tasks_mutex); /// Protect bg_tasks from race
             task.tag = tag;
             ++num_finished_parts;
-            LOG_TRACE(
-                log,
-                "Finished writing part #{}. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Finished parts: {} of {}",
-                task.part_number,
-                dest_key,
-                multipart_upload_id,
-                task.tag,
-                bg_upload_part_tasks.size(),
-                num_finished_parts,
-                num_parts);
+            LOG_TRACE(log, "Finished writing part #{}. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Finished parts: {} of {}",
+                      task.part_number, dest_key, multipart_upload_id, task.tag, bg_tasks.size(), num_finished_parts, num_parts);
         }
 
         /// These functions can be called from multiple threads, so derived class needs to take care about synchronization.
@@ -530,7 +466,7 @@ namespace
                 std::rethrow_exception(exception);
             }
 
-            const auto & tasks = TSA_SUPPRESS_WARNING_FOR_READ(bg_upload_part_tasks);
+            const auto & tasks = TSA_SUPPRESS_WARNING_FOR_READ(bg_tasks);
             for (const auto & task : tasks)
                 part_tags.push_back(task.tag);
         }
@@ -707,7 +643,7 @@ namespace
 
             if (!outcome.IsSuccess())
             {
-                scheduleAbortMultipartUpload();
+                abortMultipartUpload();
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
