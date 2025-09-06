@@ -62,9 +62,18 @@ def execute_query_in_prometheus(query, timestamp):
     assert r1 == r2
     return r1
 
+# Executes a prometheus query in ClickHouse via HTTP API
+def execute_query_in_clickhouse_http_api(query, timestamp):
+    return execute_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        query,
+        timestamp,
+    )
 
-# Executes a prometheus query in ClickHouse
-def execute_query_in_clickhouse(query, timestamp):
+# Executes a prometheus query in ClickHouse via SQL query
+def execute_query_in_clickhouse_sql(query, timestamp):
     return node.query(
         f"SELECT * FROM prometheusQuery(prometheus, '{query}', {timestamp})"
     )
@@ -94,8 +103,21 @@ def execute_range_query_in_prometheus(query, start_time, end_time, step):
     return r1
 
 
-# Executes a range query in ClickHouse.
-def execute_range_query_in_clickhouse(query, start_time, end_time, step):
+# Executes a range query in ClickHouse via HTTP API
+def execute_range_query_in_clickhouse_http_api(query, start_time, end_time, step):
+    return execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        query,
+        start_time,
+        end_time,
+        step,
+    )
+
+
+# Executes a range query in ClickHouse via SQL query
+def execute_range_query_in_clickhouse_sql(query, start_time, end_time, step):
     return node.query(
         f"SELECT * FROM prometheusQueryRange(prometheus, '{query}', {start_time}, {end_time}, {step})"
     )
@@ -337,8 +359,11 @@ def test_first():
         assert (
             execute_query_in_prometheus(query, timestamp) == result
         ), f"query: {query}"
-        assert execute_query_in_clickhouse(query, timestamp) == TSV(
+        assert execute_query_in_clickhouse_sql(query, timestamp) == TSV(
             chresult
+        ), f"query: {query}"
+        assert (
+            execute_query_in_clickhouse_http_api(query, timestamp) == result
         ), f"query: {query}"
 
 
@@ -359,9 +384,16 @@ def test_range_query():
     ]
 
     assert (
-        execute_range_query_in_prometheus("test_data", start_time, end_time, step)
+        execute_range_query_in_prometheus(query, start_time, end_time, step)
         == result
     )
-    assert execute_range_query_in_clickhouse(query, start_time, end_time, step) == TSV(
-        chresult
+
+    assert (
+        execute_range_query_in_clickhouse_sql(query, start_time, end_time, step)
+        == TSV(chresult)
+    )
+
+    assert (
+        execute_range_query_in_clickhouse_http_api(query, start_time, end_time, step)
+        == result
     )
