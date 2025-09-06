@@ -381,6 +381,7 @@ bool isDecimal(TYPE data_type) { return WhichDataType(data_type).isDecimal(); } 
 \
 bool isFloat(TYPE data_type) { return WhichDataType(data_type).isFloat(); } \
 \
+bool isIntegerOrDecimal(TYPE data_type) { return WhichDataType(data_type).isIntegerOrDecimal(); } \
 bool isNativeNumber(TYPE data_type) { return WhichDataType(data_type).isNativeNumber(); } \
 bool isNumber(TYPE data_type) { return WhichDataType(data_type).isNumber(); } \
 \
