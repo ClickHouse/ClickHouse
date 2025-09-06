@@ -8,11 +8,13 @@
 #endif
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <AggregateFunctions/AggregateFunctionSum.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnDecimal.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -27,6 +29,7 @@
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <base/defines.h>
 #include <base/sort.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -169,14 +172,76 @@ size_t getMinBytesForPrefetch()
     return 4 * std::max<size_t>(l2_size, 256 * 1024);
 }
 
-UInt64 & getCountState(DB::AggregateDataPtr __restrict place) /// NOLINT(readability-non-const-parameter)
+
+UInt64 & getStateUInt64(DB::AggregateDataPtr __restrict place) /// NOLINT(readability-non-const-parameter)
 {
     return *reinterpret_cast<UInt64 *>(place);
 }
 
-UInt64 & getInlineCountState(DB::AggregateDataPtr & ptr)
+UInt64 & getInlinedStateUInt64(DB::AggregateDataPtr & ptr)
 {
-    return getCountState(reinterpret_cast<DB::AggregateDataPtr>(&ptr));
+    return getStateUInt64(reinterpret_cast<DB::AggregateDataPtr>(&ptr));
+}
+
+#define FOR_INLINABLE_UINT_TYPES(M) \
+    M(UInt8) \
+    M(UInt16) \
+    M(UInt32) \
+    M(UInt64) \
+    M(Int8) \
+    M(Int16) \
+    M(Int32) \
+    M(Int64)
+
+template <typename T>
+UInt64 ALWAYS_INLINE extractAndSumTyped(const DB::IColumn* column, size_t row_begin, size_t row_end, bool has_sparse_column)
+{
+    using ColVecType = DB::ColumnVectorOrDecimal<T>;
+    if (has_sparse_column)
+    {
+        const auto & column_sparse = assert_cast<const DB::ColumnSparse &>(*column);
+        const auto * values = &column_sparse.getValuesColumn();
+        const auto & offsets = column_sparse.getOffsetsData();
+
+        size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
+        size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
+        const auto & typed_column = assert_cast<const ColVecType &>(*values);
+        const auto & data = typed_column.getData();
+        UInt64 result = 0;
+        for (size_t i = from; i < to; ++i)
+            result += static_cast<UInt64>(data[i+1]);
+        return result;
+    }
+    else
+    {
+        const auto & typed_column = assert_cast<const ColVecType &>(*column);
+        DB::AggregateFunctionSumData<UInt64> sum_data;
+        sum_data.addMany(typed_column.getData().data(), row_begin, row_end);
+        return sum_data.get();
+    }
+}
+
+UInt64 ALWAYS_INLINE extractAndSum(DB::Aggregator::AggregateFunctionInstruction * inst, size_t row_begin, size_t row_end)
+{
+    const DB::IColumn* column = inst->batch_arguments[0];
+    auto type = column->getDataType();
+    DB::WhichDataType which(type);
+
+    if (false) {} // NOLINT
+#define M(TYPE) \
+    else if (which.idx == DB::TypeIndex::TYPE) { \
+        return extractAndSumTyped<TYPE>(column, row_begin, row_end, inst->has_sparse_arguments); \
+    }
+
+    FOR_INLINABLE_UINT_TYPES(M)
+#undef M
+
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsupported column {} type {} for inline sum optimization", column->getName(), type);
+}
+
+UInt64 ALWAYS_INLINE extractAndSumByRow(DB::Aggregator::AggregateFunctionInstruction * inst, size_t row)
+{
+    return extractAndSum(inst, row, row + 1);
 }
 
 }
@@ -511,9 +576,21 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     if (params.aggregates_size == 1)
     {
+        const auto & result_type = params.aggregates[0].function->getResultType();
+
         /// Check if COUNT() or COUNT(non-nullable column) which can be verified by simply casting to `AggregateFunctionCount *`.
         if (typeid_cast<const AggregateFunctionCount *>(params.aggregates[0].function.get()))
             is_simple_count = true;
+        else if (params.aggregates[0].function->getName() == "sum" && result_type->getTypeId() == DB::TypeIndex::UInt64)
+        {
+            if (false) {} // NOLINT
+            #define M(TYPE) \
+                else if (result_type->getTypeId() == DB::TypeIndex::TYPE) { \
+                    is_simple_sum = true; \
+                }
+            FOR_INLINABLE_UINT_TYPES(M)
+            #undef M
+        }
     }
 
     method_chosen = chooseAggregationMethod();
@@ -528,9 +605,28 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     #define M(NAME) \
         case AggregatedDataVariants::Type::NAME: \
             is_simple_count = false; \
+            is_simple_sum = false; \
             break;
 
         APPLY_FOR_LOW_CARDINALITY_VARIANTS(M)
+    #undef M
+        default:
+            ;
+    }
+
+    // Disable is_simple_sum for cases where we use FixedHashMap. Its implementation has a special
+    // optimization for zero values. This causes to generate incorrect total aggregated size
+    // when a key column is a zero value, and the aggregated value is also zero. For example,
+    // `SELECT dummy, sum(dummy) GROUP BY dummy` would return nothing.
+    switch (method_chosen)
+    {
+    #define M(NAME) \
+        case AggregatedDataVariants::Type::NAME: \
+            is_simple_sum = false; \
+            break;
+
+        M(key8) \
+        M(key16)
     #undef M
         default:
             ;
@@ -555,7 +651,7 @@ void Aggregator::compileAggregateFunctionsIfNeeded()
     if (!params.compile_aggregate_expressions)
         return;
 
-    if (is_simple_count)
+    if (is_simple_count || is_simple_sum)
         return;
 
     std::vector<AggregateFunctionWithOffset> functions_to_compile;
@@ -983,7 +1079,7 @@ void NO_INLINE Aggregator::executeImpl(
 {
     UInt64 total_rows = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / total_rows : 1.0;
-    bool use_cache = !is_simple_count && cache_hit_rate >= params.min_hit_rate_to_use_consecutive_keys_optimization;
+    bool use_cache = !is_simple_count && !is_simple_sum && cache_hit_rate >= params.min_hit_rate_to_use_consecutive_keys_optimization;
 
     if (use_cache)
     {
@@ -1108,12 +1204,27 @@ void NO_INLINE Aggregator::executeImplBatch(
         {
             if (!all_keys_are_const)
             {
-                if (is_simple_count)
+                auto increment_for_inline_uint64 = [&](auto&& fn)
                 {
                     const auto * key = state.getKeyData();
                     UInt64 * map = reinterpret_cast<UInt64 *>(method.data.data());
                     for (size_t i = row_begin; i < row_end; ++i)
-                        ++map[key[i]];
+                        map[key[i]] += fn(i);
+                    return;
+                };
+
+                if (is_simple_count)
+                {
+                    increment_for_inline_uint64([](size_t) { return 1; });
+                    return;
+                }
+
+                if (is_simple_sum)
+                {
+                    increment_for_inline_uint64([&](size_t i)
+                    {
+                        return extractAndSumByRow(&aggregate_instructions[0], i);
+                    });
                     return;
                 }
 
@@ -1154,28 +1265,32 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
     }
 
-    if (is_simple_count)
+    // Increment inlined UInt64 state when all keys are const.
+    auto execute_inline_u64_batch = [&](auto get_batch_value)
     {
-        if (all_keys_are_const)
+        if (!no_more_keys)
         {
-            if (!no_more_keys)
-            {
-                auto emplace_result = state.emplaceKey(method.data, 0, *aggregates_pool);
-                if (emplace_result.isInserted())
-                    getInlineCountState(emplace_result.getMapped()) = row_end - row_begin;
-                else
-                    getInlineCountState(emplace_result.getMapped()) += row_end - row_begin;
-            }
+            UInt64 total_value = get_batch_value();
+            auto emplace_result = state.emplaceKey(method.data, 0, *aggregates_pool);
+            if (emplace_result.isInserted())
+                getInlinedStateUInt64(emplace_result.getMapped()) = total_value;
             else
-            {
-                auto find_result = state.findKey(method.data, 0, *aggregates_pool);
-                if (find_result.isFound())
-                    getInlineCountState(find_result.getMapped()) = row_end - row_begin;
-                else if (overflow_row)
-                    getCountState(overflow_row) += row_end - row_begin;
-            }
+                getInlinedStateUInt64(emplace_result.getMapped()) += total_value;
         }
-        else if (!no_more_keys)
+        else
+        {
+            UInt64 total_value = get_batch_value();
+            auto find_result = state.findKey(method.data, 0, *aggregates_pool);
+            if (find_result.isFound())
+                getInlinedStateUInt64(find_result.getMapped()) += total_value;
+            else if (overflow_row)
+                getStateUInt64(overflow_row) += total_value;
+        }
+    };
+
+    auto execute_row_by_row_aggregation = [&](auto get_row_value)
+    {
+        if (!no_more_keys)
         {
             for (size_t i = row_begin; i < row_end; ++i)
             {
@@ -1191,25 +1306,53 @@ void NO_INLINE Aggregator::executeImplBatch(
                     }
                 }
 
+                UInt64 value = get_row_value(i);
                 auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
                 if (emplace_result.isInserted())
-                    getInlineCountState(emplace_result.getMapped()) = 1;
+                    getInlinedStateUInt64(emplace_result.getMapped()) = value;
                 else
-                    ++getInlineCountState(emplace_result.getMapped());
+                    getInlinedStateUInt64(emplace_result.getMapped()) += value;
             }
         }
         else
         {
             for (size_t i = row_begin; i < row_end; ++i)
             {
+                UInt64 value = get_row_value(i);
                 auto find_result = state.findKey(method.data, i, *aggregates_pool);
                 if (find_result.isFound())
-                    ++getInlineCountState(find_result.getMapped());
+                    getInlinedStateUInt64(find_result.getMapped()) += value;
                 else if (overflow_row)
-                    ++getCountState(overflow_row);
+                    getStateUInt64(overflow_row) += value;
             }
         }
+    };
 
+    if (is_simple_count)
+    {
+        if (all_keys_are_const)
+            execute_inline_u64_batch([&]() { return row_end - row_begin; });
+        else
+            execute_row_by_row_aggregation([](size_t) { return UInt64(1); });
+        return;
+    }
+
+    if (is_simple_sum)
+    {
+        if (all_keys_are_const)
+        {
+            execute_inline_u64_batch([&]()
+            {
+                if (row_end > row_begin)
+                    return extractAndSumByRow(&aggregate_instructions[0], 0) * (row_end - row_begin);
+                return UInt64(0);
+            });
+        }
+        else
+            execute_row_by_row_aggregation([&](size_t i)
+            {
+                return extractAndSumByRow(&aggregate_instructions[0], i);
+            });
         return;
     }
 
@@ -1398,7 +1541,14 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 
     if (is_simple_count)
     {
-        getCountState(res) += row_end - row_begin;
+        getStateUInt64(res) += row_end - row_begin;
+        return;
+    }
+
+    if (is_simple_sum)
+    {
+        UInt64 total_sum = extractAndSum(&aggregate_instructions[0], row_begin, row_end);
+        getStateUInt64(res) += total_sum;
         return;
     }
 
@@ -1503,7 +1653,14 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
 
     if (is_simple_count)
     {
-        getCountState(res) += row_end - row_begin;
+        getStateUInt64(res) += row_end - row_begin;
+        return;
+    }
+
+    if (is_simple_sum)
+    {
+        UInt64 total_sum = extractAndSum(&aggregate_instructions[0], row_begin, row_end);
+        getStateUInt64(res) += total_sum;
         return;
     }
 
@@ -1982,7 +2139,8 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
     }
     ConvertToBlockResVariant res;
 
-    if (is_simple_count)
+    auto convert_to_block_for_inline_state = [&]<typename StateType, typename ColumnType, typename SetStateFn>(
+        SetStateFn set_state) -> ConvertToBlockResVariant
     {
         /// +1 for nullKeyData, if `data` doesn't have it - not a problem, just some memory for one excessive row will be preallocated
         const size_t max_block_size = (return_single_block ? data.size() : std::min(params.max_block_size, data.size())) + 1;
@@ -1990,16 +2148,16 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
         std::optional<OutputBlockColumns> out_cols;
         std::optional<Sizes> shuffled_key_sizes;
         BlocksList blocks;
-        AggregateFunctionCountData * states = nullptr;
+        StateType * states = nullptr;
         size_t rows_in_current_block = 0;
         size_t rows_in_states = 0;
-        ColumnUInt64 * out_count_col = nullptr;
+        ColumnType * out_col = nullptr;
 
-        /// Allocates enough count states (+1 for nullKeyData) to store inlined states in data.
+        /// Allocates enough states (+1 for nullKeyData) to store inlined states in data.
         if (!final)
         {
-            states = reinterpret_cast<AggregateFunctionCountData *>(
-                arena->alignedAlloc(sizeof(AggregateFunctionCountData) * (data.size() + 1), alignof(AggregateFunctionCountData)));
+            states = reinterpret_cast<StateType *>(
+                arena->alignedAlloc(sizeof(StateType) * (data.size() + 1), alignof(StateType)));
         }
 
         auto init_out_cols = [&]()
@@ -2007,7 +2165,7 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
             out_cols = prepareOutputBlockColumns(params, aggregate_functions, getHeader(final), aggregates_pools, final, max_block_size);
 
             if (final)
-                out_count_col = assert_cast<ColumnUInt64 *>(out_cols->final_aggregate_columns[0].get());
+                out_col = assert_cast<ColumnType *>(out_cols->final_aggregate_columns[0].get());
 
             if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
             {
@@ -2020,13 +2178,13 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
                     if (final)
                     {
                         out_cols->key_columns[0]->insertDefault();
-                        out_count_col->insertValue(getInlineCountState(data.getNullKeyData()));
+                        out_col->insertValue(getInlinedStateUInt64(data.getNullKeyData()));
                         data.hasNullKeyData() = false;
                     }
                     else
                     {
                         out_cols->raw_key_columns[0]->insertDefault();
-                        states[rows_in_states].count = getInlineCountState(data.getNullKeyData());
+                        set_state(states[rows_in_states], getInlinedStateUInt64(data.getNullKeyData()));
                         out_cols->aggregate_columns_data[0]->push_back(reinterpret_cast<AggregateDataPtr>(&states[rows_in_states]));
 
                         ++rows_in_states;
@@ -2052,11 +2210,11 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
 
             if constexpr (is_final)
             {
-                out_count_col->insertValue(getInlineCountState(mapped));
+                out_col->insertValue(getInlinedStateUInt64(mapped));
             }
             else
             {
-                states[rows_in_states].count = getInlineCountState(mapped);
+                set_state(states[rows_in_states], getInlinedStateUInt64(mapped));
                 out_cols->aggregate_columns_data[0]->push_back(reinterpret_cast<AggregateDataPtr>(&states[rows_in_states]));
             }
 
@@ -2082,6 +2240,18 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
             blocks.emplace_back(finalizeBlock(params, getHeader(final), std::move(out_cols).value(), final, rows_in_current_block));
 
         return blocks;
+    };
+
+    if (is_simple_count)
+    {
+        return convert_to_block_for_inline_state.template operator()<AggregateFunctionCountData, ColumnUInt64>(
+            [](AggregateFunctionCountData & state, UInt64 value) { state.count = value; });
+    }
+
+    if (is_simple_sum)
+    {
+        return convert_to_block_for_inline_state.template operator()<AggregateFunctionSumData<UInt64>, ColumnUInt64>(
+            [](AggregateFunctionSumData<UInt64> & state, UInt64 value) { state.sum = value; });
     }
 
     bool use_compiled_functions = false;
@@ -2693,7 +2863,7 @@ void NO_INLINE Aggregator::mergeDataNullKey(
 }
 
 template <typename Table>
-static void NO_INLINE mergeDataNullKeySimpleCount(Table & table_dst, Table & table_src)
+static void NO_INLINE mergeDataNullKeySimpleCountOrSum(Table & table_dst, Table & table_src)
 {
     if (table_src.hasNullKeyData())
     {
@@ -2704,7 +2874,7 @@ static void NO_INLINE mergeDataNullKeySimpleCount(Table & table_dst, Table & tab
         }
         else
         {
-            getInlineCountState(table_dst.getNullKeyData()) += getInlineCountState(table_src.getNullKeyData());
+            getInlinedStateUInt64(table_dst.getNullKeyData()) += getInlinedStateUInt64(table_src.getNullKeyData());
         }
 
         table_src.hasNullKeyData() = false;
@@ -2716,17 +2886,17 @@ template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataImpl(
     Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]], bool prefetch, std::atomic<bool> & is_cancelled) const
 {
-    if (is_simple_count)
+    if (is_simple_count || is_simple_sum)
     {
         if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
-            mergeDataNullKeySimpleCount(table_dst, table_src);
+            mergeDataNullKeySimpleCountOrSum(table_dst, table_src);
 
         auto merge = [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
         {
             if (inserted)
-                getInlineCountState(dst) = getInlineCountState(src);
+                getInlinedStateUInt64(dst) = getInlinedStateUInt64(src);
             else
-                getInlineCountState(dst) += getInlineCountState(src);
+                getInlinedStateUInt64(dst) += getInlinedStateUInt64(src);
         };
 
         if (prefetch)
@@ -2796,17 +2966,17 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
     Table & table_src,
     Arena * arena) const
 {
-    if (is_simple_count)
+    if (is_simple_count || is_simple_sum)
     {
         if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
-            mergeDataNullKeySimpleCount(table_dst, table_src);
+            mergeDataNullKeySimpleCountOrSum(table_dst, table_src);
 
         table_src.mergeToViaFind(table_dst, [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool found)
         {
             if (found)
-                getInlineCountState(dst) += getInlineCountState(src);
+                getInlinedStateUInt64(dst) += getInlinedStateUInt64(src);
             else
-                getCountState(overflows) += getInlineCountState(src);
+                getStateUInt64(overflows) += getInlinedStateUInt64(src);
         });
         table_src.clearAndShrink();
         return;
@@ -2840,16 +3010,16 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
     Table & table_src,
     Arena * arena) const
 {
-    if (is_simple_count)
+    if (is_simple_count || is_simple_sum)
     {
         if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
-            mergeDataNullKeySimpleCount(table_dst, table_src);
+            mergeDataNullKeySimpleCountOrSum(table_dst, table_src);
 
         table_src.mergeToViaFind(table_dst, [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool found)
         {
             if (!found)
                 return;
-            getInlineCountState(dst) += getInlineCountState(src);
+            getInlinedStateUInt64(dst) += getInlinedStateUInt64(src);
         });
         table_src.clearAndShrink();
         return;
@@ -2879,7 +3049,6 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
     table_src.clearAndShrink();
 }
 
-
 void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
     ManyAggregatedDataVariants & non_empty_data,
     std::atomic<bool> & is_cancelled) const
@@ -2887,12 +3056,12 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     AggregatedDataWithoutKey & res_data = res->without_key;
 
-    if (is_simple_count)
+    if (is_simple_count || is_simple_sum)
     {
         for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
         {
             AggregatedDataWithoutKey & current_data = non_empty_data[result_num]->without_key;
-            getCountState(res_data) += getCountState(current_data);
+            getStateUInt64(res_data) += getStateUInt64(current_data);
         }
         return;
     }
@@ -3109,7 +3278,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     std::atomic<bool> & is_cancelled,
     Arena * arena_for_keys) const
 {
-    chassert(!is_simple_count);
+    chassert(!is_simple_count && !is_simple_sum);
     std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[row_end]);
 
     if (!arena_for_keys)
@@ -3211,9 +3380,9 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 {
     UInt64 total_rows = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / total_rows : 1.0;
-    bool use_cache = !is_simple_count && cache_hit_rate >= params.min_hit_rate_to_use_consecutive_keys_optimization;
+    bool use_cache = !is_simple_count && !is_simple_sum && cache_hit_rate >= params.min_hit_rate_to_use_consecutive_keys_optimization;
 
-    auto merge_count_variant = [&]<typename State>(State & state)
+    auto merge_inline_state_variant = [&]<typename State>(State & state)
     {
         chassert(aggregate_columns_data.size() == 1);
         if (!arena_for_keys)
@@ -3226,9 +3395,9 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
                 auto find_result = state.findKey(data, row, *arena_for_keys);
 
                 if (find_result.isFound())
-                    getInlineCountState(find_result.getMapped()) += getCountState(other_aggregated_counts[row]);
+                    getInlinedStateUInt64(find_result.getMapped()) += getStateUInt64(other_aggregated_counts[row]);
                 else if (overflow_row)
-                    getCountState(overflow_row) += getCountState(other_aggregated_counts[row]);
+                    getStateUInt64(overflow_row) += getStateUInt64(other_aggregated_counts[row]);
             }
         }
         else
@@ -3241,9 +3410,9 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
                 /// which is always initialized to have at least 1 arena.
                 auto emplace_result = state.emplaceKey(data, row, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
                 if (emplace_result.isInserted())
-                    getInlineCountState(emplace_result.getMapped()) = getCountState(other_aggregated_counts[row]);
+                    getInlinedStateUInt64(emplace_result.getMapped()) = getStateUInt64(other_aggregated_counts[row]);
                 else
-                    getInlineCountState(emplace_result.getMapped()) += getCountState(other_aggregated_counts[row]);
+                    getInlinedStateUInt64(emplace_result.getMapped()) += getStateUInt64(other_aggregated_counts[row]);
             }
         }
     };
@@ -3251,9 +3420,9 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     if (use_cache)
     {
         typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-        if (is_simple_count)
+        if (is_simple_count || is_simple_sum)
         {
-            merge_count_variant(state);
+            merge_inline_state_variant(state);
         }
         else
         {
@@ -3275,9 +3444,9 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     else
     {
         typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        if (is_simple_count)
+        if (is_simple_count || is_simple_sum)
         {
-            merge_count_variant(state);
+            merge_inline_state_variant(state);
         }
         else
         {
@@ -3328,7 +3497,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
         chassert(aggregate_columns_data.size() == 1);
         const auto & other_aggregated_counts = *aggregate_columns_data[0];
         for (size_t row = row_begin; row < row_end; ++row)
-            getCountState(res) += getCountState(other_aggregated_counts[row]);
+            getStateUInt64(res) += getStateUInt64(other_aggregated_counts[row]);
 
         return;
     }
@@ -3700,8 +3869,8 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     /// Create a 'selector' that will contain bucket index for every row. It will be used to scatter rows to buckets.
     IColumn::Selector selector(rows);
 
-    /// Disable cache for simple count aggregation
-    if (is_simple_count)
+    /// Disable cache for simple count or sum aggregation
+    if (is_simple_count || is_simple_sum)
     {
         typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
         for (size_t i = 0; i < rows; ++i)
