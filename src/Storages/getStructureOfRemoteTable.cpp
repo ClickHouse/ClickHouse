@@ -27,6 +27,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
+    extern const SettingsBool describe_compact_output;
 }
 
 namespace ErrorCodes
@@ -77,6 +78,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         Settings new_settings = new_context->getSettingsCopy();
         new_settings[Setting::max_result_rows] = 0;
         new_settings[Setting::max_result_bytes] = 0;
+        new_settings[Setting::describe_compact_output] = false;
         new_context->setSettings(new_settings);
     }
 

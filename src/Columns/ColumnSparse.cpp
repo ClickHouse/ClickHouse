@@ -168,6 +168,11 @@ char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory) const
     return values->serializeValueIntoMemory(getValueIndex(n), memory);
 }
 
+std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n) const
+{
+    return values->getSerializedValueSize(getValueIndex(n));
+}
+
 const char * ColumnSparse::deserializeAndInsertFromArena(const char * pos)
 {
     const char * res = nullptr;

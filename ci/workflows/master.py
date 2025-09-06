@@ -35,7 +35,9 @@ workflow = Workflow.Config(
         *JobConfigs.performance_comparison_with_master_head_jobs,
         *JobConfigs.performance_comparison_with_release_base_jobs,
         *JobConfigs.clickbench_master_jobs,
-        *JobConfigs.sqlancer_master_jobs,
+        # TODO: sqlancer needs adjustment after https://github.com/ClickHouse/ClickHouse/pull/81835
+        #   job error: java.lang.AssertionError: CREATE TABLE IF NOT EXISTS database0NoREC.t1 (c0 String MATERIALIZED (-1457864079) CODEC (NONE)) ENGINE = MergeTree()  ORDER BY tuple()  SETTINGS allow_suspicious_indices=1;
+        # *JobConfigs.sqlancer_master_jobs,
         JobConfigs.sqltest_master_job,
     ],
     artifacts=[

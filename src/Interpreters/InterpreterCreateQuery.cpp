@@ -1505,8 +1505,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Temporary tables are created out of databases.
     if (create.temporary && create.database)
         throw Exception(ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE,
-                        "Temporary tables cannot be inside a database. "
-                        "You should not specify a database for a temporary table.");
+                        "Temporary objects (tables/views) cannot be inside a database. "
+                        "You should not specify a database for a temporary objects.");
+
+    if (create.temporary && !create.cluster.empty())
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Temporary objects (tables/views) cannot be created ON CLUSTER."
+            "You should not specify a cluster for a temporary objects.");
 
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
@@ -2381,9 +2386,10 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     }
     else if (create.isView())
     {
-        assert(!create.temporary);
         if (create.replace_view)
             required_access.emplace_back(AccessType::DROP_VIEW | AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
+        else if (create.temporary)
+            required_access.emplace_back(AccessType::CREATE_TEMPORARY_VIEW);
         else
             required_access.emplace_back(AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
     }

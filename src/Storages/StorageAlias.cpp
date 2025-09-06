@@ -17,16 +17,11 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsSeconds lock_acquire_timeout;
-}
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
-    extern const int LOGICAL_ERROR;
 }
 
 StorageAlias::StorageAlias(const StorageID & table_id_, const StorageID & ref_table_id_)
@@ -92,24 +87,6 @@ StoragePtr StorageAlias::getReferenceTable(ContextPtr context) const
     if (ref_table_id.hasUUID())
         return DatabaseCatalog::instance().getByUUID(ref_table_id.uuid).second;
     return DatabaseCatalog::instance().getTable(ref_table_id, context);
-}
-
-ContextPtr StorageAlias::getContext() const
-{
-    auto context = CurrentThread::getQueryContext();
-    if (!context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Alias table can only be used in DML or DDL queries");
-    return context;
-}
-
-StorageInMemoryMetadata StorageAlias::getInMemoryMetadata() const
-{
-    return getReferenceTable(getContext())->getInMemoryMetadata();
-}
-
-StorageMetadataPtr StorageAlias::getInMemoryMetadataPtr() const
-{
-    return getReferenceTable(getContext())->getInMemoryMetadataPtr();
 }
 
 void StorageAlias::alter(const AlterCommands &, ContextPtr, AlterLockHolder &)

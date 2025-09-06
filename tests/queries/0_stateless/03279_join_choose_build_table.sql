@@ -20,6 +20,7 @@ CREATE TABLE products (id Int32, name String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO products SELECT number, 'product ' || toString(number) FROM numbers(100_000);
 
 SET query_plan_join_swap_table = 'auto';
+SET query_plan_optimize_join_order_limit = 2;
 
 SELECT * FROM products, sales
 WHERE sales.product_id = products.id AND date = '2024-05-07'
@@ -47,9 +48,9 @@ SYSTEM FLUSH LOGS query_log;
 -- build table is as it's written in query
 
 SELECT
-    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 100 AND 2000, 'ok', 'fail: ' || toString(ProfileEvents['JoinBuildTableRowCount'])),
-    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 90_000 AND 110_000, 'ok', 'fail: ' || toString(ProfileEvents['JoinProbeTableRowCount'])),
-    if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', 'fail: ' || toString(ProfileEvents['JoinResultRowCount'])),
+    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 100 AND 2000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinBuildTableRowCount'])),
+    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 90_000 AND 110_000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinProbeTableRowCount'])),
+    if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinResultRowCount'])),
     Settings['query_plan_join_swap_table'],
 FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
@@ -59,9 +60,9 @@ ORDER BY event_time DESC
 LIMIT 1;
 
 SELECT
-    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 90_000 AND 110_000, 'ok', 'fail: ' || toString(ProfileEvents['JoinBuildTableRowCount'])),
-    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 100 AND 2000, 'ok', 'fail: ' || toString(ProfileEvents['JoinProbeTableRowCount'])),
-    if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', 'fail: ' || toString(ProfileEvents['JoinResultRowCount'])),
+    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 90_000 AND 110_000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinBuildTableRowCount'])),
+    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 100 AND 2000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinProbeTableRowCount'])),
+    if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinResultRowCount'])),
     Settings['query_plan_join_swap_table'],
 FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
@@ -73,9 +74,9 @@ LIMIT 1;
 -- after adding index, optimizer can choose best table order
 
 SELECT
-    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 100 AND 2000, 'ok', 'fail: ' || toString(ProfileEvents['JoinBuildTableRowCount'])),
-    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 90_000 AND 110_000, 'ok', 'fail: ' || toString(ProfileEvents['JoinProbeTableRowCount'])),
-    if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', 'fail: ' || toString(ProfileEvents['JoinResultRowCount'])),
+    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 100 AND 2000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinBuildTableRowCount'])),
+    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 90_000 AND 110_000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinProbeTableRowCount'])),
+    if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinResultRowCount'])),
     Settings['query_plan_join_swap_table'],
 FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
@@ -85,9 +86,9 @@ ORDER BY event_time DESC
 LIMIT 1;
 
 SELECT
-    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 100 AND 2000, 'ok', 'fail: ' || toString(ProfileEvents['JoinBuildTableRowCount'])),
-    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 90_000 AND 110_000, 'ok', 'fail: ' || toString(ProfileEvents['JoinProbeTableRowCount'])),
-    if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', 'fail: ' || toString(ProfileEvents['JoinResultRowCount'])),
+    if(ProfileEvents['JoinBuildTableRowCount'] BETWEEN 100 AND 2000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinBuildTableRowCount'])),
+    if(ProfileEvents['JoinProbeTableRowCount'] BETWEEN 90_000 AND 110_000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinProbeTableRowCount'])),
+    if(ProfileEvents['JoinResultRowCount'] == 1000, 'ok', format('fail({}): {}', query_id, ProfileEvents['JoinResultRowCount'])),
     Settings['query_plan_join_swap_table'],
 FROM system.query_log
 WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()

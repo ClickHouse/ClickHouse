@@ -873,7 +873,10 @@ std::tuple<Chunk, BlockMissingValues> ReadManager::read()
             {
                 /// Pump the manual executor.
                 lock.unlock();
-                if (!parser_shared_resources->parsing_runner.runTaskInline())
+                /// Note: the executor can be shared among multiple files, so we may execute someone
+                /// else's task, and someone else may execute our task.
+                /// Hence the thread_pool_was_idle check.
+                if (!parser_shared_resources->parsing_runner.runTaskInline() && thread_pool_was_idle)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (single-threaded)");
                 lock.lock();
             }

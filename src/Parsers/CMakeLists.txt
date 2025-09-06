@@ -36,21 +36,22 @@ if (LEXER_STANDALONE_BUILD)
     add_library(lexer-c Lexer.cpp)
     target_include_directories(lexer-c PRIVATE ..)
     target_compile_options(lexer-c PRIVATE -Os -fno-exceptions -fno-rtti -nostdlib -DLEXER_STANDALONE_BUILD)
+
+    # Check that Lexer compiles to WASM. See the usage in programs/server/play.html
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/Lexer.wasm
+        COMMAND ${CMAKE_CXX_COMPILER}
+        -Os -fno-exceptions -fno-rtti -DLEXER_STANDALONE_BUILD --target=wasm32 -flto -nostdlib
+        -I${CMAKE_SOURCE_DIR}/src
+        -Wl,--no-entry -Wl,--export-all
+        ${CMAKE_CURRENT_SOURCE_DIR}/Lexer.cpp
+        -o ${CMAKE_CURRENT_BINARY_DIR}/Lexer.wasm
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/Lexer.cpp
+        COMMENT "Building Lexer.wasm"
+    )
+
+    add_custom_target(lexer_wasm ALL
+        DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/Lexer.wasm
+    )
 endif ()
 
-# Check that Lexer compiles to WASM. See the usage in programs/server/play.html
-add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/Lexer.wasm
-    COMMAND ${CMAKE_CXX_COMPILER}
-    -Os -fno-exceptions -fno-rtti -DLEXER_STANDALONE_BUILD --target=wasm32 -flto -nostdlib
-    -I${CMAKE_SOURCE_DIR}/src
-    -Wl,--no-entry -Wl,--export-all
-    ${CMAKE_CURRENT_SOURCE_DIR}/Lexer.cpp
-    -o ${CMAKE_CURRENT_BINARY_DIR}/Lexer.wasm
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/Lexer.cpp
-    COMMENT "Building Lexer.wasm"
-)
-
-add_custom_target(lexer_wasm ALL
-    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/Lexer.wasm
-)

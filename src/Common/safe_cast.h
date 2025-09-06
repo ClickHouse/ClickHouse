@@ -2,6 +2,11 @@
 
 #include <Common/Exception.h>
 
+#include <concepts>
+#include <limits>
+#include <type_traits>
+#include <utility>
+
 namespace DB
 {
 
@@ -10,13 +15,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <class To, class From>
-To safe_cast(From from)
+/// Safe integral cast with overflow check
+template <std::integral To, std::integral From>
+[[nodiscard]] constexpr To safe_cast(From value)
 {
-    constexpr auto max = std::numeric_limits<To>::max();
-    if (from > max)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Overflow ({} > {})", from, max);
-    return static_cast<To>(from);
+    if constexpr (std::is_signed_v<From> == std::is_signed_v<To> &&
+        std::numeric_limits<To>::digits >= std::numeric_limits<From>::digits)
+    {
+        return static_cast<To>(value);
+    }
+    if constexpr (!std::is_signed_v<From> && std::is_signed_v<To> &&
+        std::numeric_limits<To>::digits > std::numeric_limits<From>::digits)
+    {
+        return static_cast<To>(value);
+    }
+
+    if (!std::in_range<To>(value))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Numeric cast overflow: value {} is out of range of target type {}", value, typeid(To).name());
+
+    return static_cast<To>(value);
 }
 
 }

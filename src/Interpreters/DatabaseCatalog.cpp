@@ -188,7 +188,7 @@ TemporaryTableHolder::~TemporaryTableHolder()
         try
         {
             auto table = getTable();
-            table->flushAndShutdown();
+            table->flushAndShutdown(/*is_drop=*/ true);
             temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
         }
         catch (...)

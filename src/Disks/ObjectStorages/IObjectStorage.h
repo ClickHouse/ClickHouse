@@ -134,6 +134,7 @@ struct RelativePathWithMetadata
     virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual std::string getPathOrPathToArchiveIfArchive() const;
+    virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 };
 
 struct ObjectKeyWithMetadata
