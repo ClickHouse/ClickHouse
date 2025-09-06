@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Core/Settings.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -1476,6 +1477,24 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     return true;
 }
 
+bool ReadFromMergeTree::allPartitionsHaveSinglePart() const
+{
+    std::unordered_set<String> seen_partitions;
+
+    for (const auto & part : prepared_parts)
+    {
+        const auto partition_id = part.data_part->info.getPartitionId();
+
+        if (seen_partitions.contains(partition_id))
+            return false;
+        else
+            seen_partitions.insert(partition_id);
+    }
+
+    return true;
+}
+
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     RangesInDataParts && parts_with_ranges,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -1538,12 +1557,56 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
         /// with level > 0 then we won't post-process this part, and if num_streams > 1 we
         /// can use parallel select on such parts.
-        bool no_merging_final = do_not_merge_across_partitions_select_final &&
-            std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
-            parts_to_merge_ranges[range_index]->data_part->info.level > 0 &&
-            data.merging_params.is_deleted_column.empty() && !reader_settings.read_in_order;
 
-        if (no_merging_final)
+        bool no_merging_final = do_not_merge_across_partitions_select_final
+            && std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1
+            && parts_to_merge_ranges[range_index]->data_part->info.level > 0
+            && !reader_settings.read_in_order;
+
+        /// if do_not_merge_across_partitions_select_final = 1 and the partition contains a single part,
+        /// there is no reason to handle `is_deleted` using slow inorder reading. Faster to do it with prewhere
+        if (no_merging_final && allPartitionsHaveSinglePart() && !data.merging_params.is_deleted_column.empty())
+        {
+            if (!prewhere_info)
+                prewhere_info = std::make_shared<PrewhereInfo>();
+
+            const auto & is_deleted_input = &prewhere_info->prewhere_actions.addInput(data.merging_params.is_deleted_column, std::make_shared<DataTypeUInt8>());
+            auto not_function = FunctionFactory::instance().get("not", context);
+            ActionsDAG::NodeRawConstPtrs not_is_deleted_children = {is_deleted_input};
+
+            const auto * not_is_deleted_func = &prewhere_info->prewhere_actions.addFunction(
+                not_function,
+                std::move(not_is_deleted_children),
+                {}
+            );
+
+            auto & outputs = prewhere_info->prewhere_actions.getOutputs();
+            if (outputs.empty())
+            {
+                // no existing output — just use our filter
+                outputs.push_back(not_is_deleted_func);
+            }
+            else
+            {
+                const auto * existing_output = outputs.at(0);
+                const auto and_function = FunctionFactory::instance().get("and", context);
+                ActionsDAG::NodeRawConstPtrs and_children = { existing_output, not_is_deleted_func };
+
+                const auto * combined_filter = &prewhere_info->prewhere_actions.addFunction(
+                    and_function,
+                    std::move(and_children),
+                    {}
+                );
+
+                /// We need to be careful not to remove other outputs -- they may be there on purpose. So, we just replace the main one.
+                outputs.at(0) = combined_filter;
+            }
+
+            prewhere_info->prewhere_actions.getOutputs().push_back(is_deleted_input);
+            prewhere_info->prewhere_column_name = prewhere_info->prewhere_actions.getOutputs().at(0)->result_name;
+        }
+
+        if (no_merging_final && data.merging_params.is_deleted_column.empty())
         {
             non_intersecting_parts_by_primary_key.push_back(std::move(*parts_to_merge_ranges[range_index]));
             continue;
