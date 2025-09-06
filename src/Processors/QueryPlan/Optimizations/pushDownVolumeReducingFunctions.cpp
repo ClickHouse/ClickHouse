@@ -23,9 +23,9 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-#include <base/defines.h>
 
 
 namespace DB
@@ -226,12 +226,35 @@ void analyzeFilterOrExpressionStep(QueryPlan::Node * node, ColumnCandidatesStack
 
             column_candidate->node_to_output_name[node] = output_node->result_name;
         }
-        else if (dealiased_output_node->type == ActionsDAG::ActionType::FUNCTION)
+        else
         {
             // make sure we update max pushdown point for filter columns
-            if (filter_step && output_node->result_name == filter_step->getFilterColumnName())
+            if (dealiased_output_node->type == ActionsDAG::ActionType::FUNCTION
+                && !(filter_step && filter_step->removesFilterColumn() && output_node->result_name == filter_step->getFilterColumnName()))
+                candidates.emplace_back(std::make_shared<ColumnCandidate>(node, "", output_node->result_name));
+            if (dealiased_output_node->type == ActionsDAG::ActionType::FUNCTION
+                && dealiased_output_node->function_base->isSuitableForPushDownBeforeFilter()
+                && !(filter_step && filter_step->removesFilterColumn() && output_node->result_name == filter_step->getFilterColumnName()))
                 continue;
-            candidates.emplace_back(std::make_shared<ColumnCandidate>(node, "", output_node->result_name));
+
+            std::vector<const ActionsDAG::Node *> stack;
+            stack.push_back(dealiased_output_node);
+            while (!stack.empty())
+            {
+                const ActionsDAG::Node * curr = stack.back();
+                stack.pop_back();
+                if (curr->type == ActionsDAG::ActionType::INPUT)
+                {
+                    ColumnCandidatePtr column_candidate = findInputColumn(candidates, node, curr->result_name);
+
+                    chassert(column_candidate);
+
+                    column_candidate->max_pushdown_point = node;
+                }
+                for (const ActionsDAG::Node * child : curr->children)
+                    if (child->type != ActionsDAG::ActionType::FUNCTION || !child->function_base->isSuitableForPushDownBeforeFilter())
+                        stack.push_back(child);
+            }
         }
     }
 }
@@ -332,17 +355,20 @@ PushdownRequestsStack createPushdownRequestsForColumnCandidates(QueryPlan::Node 
                 if (column_candidate_for_input)
                     break;
             }
-
+            // must find as input
             if (!column_candidate_for_input)
-                continue;
-
+                break;
+            // this node must no longer output the column candidate
             if (column_candidate_for_input->node_to_output_name.contains(node))
-                continue;
+            {
+                unsuitable_columns.insert(column_candidate_for_input);
+                break;
+            }
 
             if (!isColumnCandidateOnlyInputOfFunction(dealiased_output_node, column_candidate_for_input, node))
             {
                 unsuitable_columns.insert(column_candidate_for_input);
-                continue;
+                break;
             }
 
             if (dealiased_output_node->function_base && dealiased_output_node->function_base->isSuitableForPushDownBeforeFilter())
