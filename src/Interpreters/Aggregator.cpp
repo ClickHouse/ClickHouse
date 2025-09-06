@@ -228,6 +228,13 @@ UInt64 ALWAYS_INLINE extractAndSumTyped(const DB::IColumn* column, size_t row_be
     }
 }
 
+template <typename T>
+UInt64 ALWAYS_INLINE extractAndSumTypedSingle(const DB::IColumn* column, size_t row_begin, size_t , bool )
+{
+    using ColVecType = DB::ColumnVectorOrDecimal<T>;
+    const auto & typed_column = assert_cast<const ColVecType &>(*column);
+    return static_cast<UInt64>(typed_column.getData()[row_begin]);
+}
 
 }
 
@@ -628,6 +635,8 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     {
         const auto & arg_name = params.aggregates[0].argument_names[0];
         const auto & column_type = header.getByName(arg_name).type;
+        // LOG_INFO(log, "jianfei chooseAggregationMethod returned sum column: {} name: {} ", column_type, arg_name);
+
         WhichDataType which(column_type);
 
         if (false) {} // NOLINT
@@ -1329,9 +1338,23 @@ void NO_INLINE Aggregator::executeImplBatch(
                 UInt64 value = get_row_value(i);
                 auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
                 if (emplace_result.isInserted())
-                    getInlinedStateUInt64(emplace_result.getMapped()) = value;
+                {
+                    if (is_simple_count)
+                        getInlinedStateUInt64(emplace_result.getMapped()) = value;
+                    else if (is_simple_sum)
+                    {
+                        getInlinedStateUInt64(emplace_result.getMapped()) = extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
+                    }
+                }
                 else
-                    getInlinedStateUInt64(emplace_result.getMapped()) += value;
+                {
+                    if (is_simple_count)
+                        getInlinedStateUInt64(emplace_result.getMapped()) += value;
+                    else if (is_simple_sum)
+                    {
+                        getInlinedStateUInt64(emplace_result.getMapped()) += extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
+                    }
+                }
             }
         }
         else
@@ -1341,9 +1364,21 @@ void NO_INLINE Aggregator::executeImplBatch(
                 UInt64 value = get_row_value(i);
                 auto find_result = state.findKey(method.data, i, *aggregates_pool);
                 if (find_result.isFound())
-                    getInlinedStateUInt64(find_result.getMapped()) += value;
+                {
+                    if (is_simple_count)
+                        getInlinedStateUInt64(find_result.getMapped()) += value;
+                    else if (is_simple_sum)
+                    {
+                        getInlinedStateUInt64(find_result.getMapped()) += extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
+                    }
+                }
                 else if (overflow_row)
-                    getStateUInt64(overflow_row) += value;
+                {
+                    if (is_simple_count)
+                        getStateUInt64(overflow_row) += value;
+                    else if (is_simple_sum)
+                        getStateUInt64(overflow_row) += extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
+                }
             }
         }
     };
@@ -1369,10 +1404,50 @@ void NO_INLINE Aggregator::executeImplBatch(
             });
         }
         else
-            execute_row_by_row_aggregation([&](size_t i)
+        {
+            if (!no_more_keys)
             {
-                return optimized_extract_sum_func(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
-            });
+                for (size_t i = row_begin; i < row_end; ++i)
+                {
+                    if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+                    {
+                        if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
+                            prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+    
+                        if (i + prefetch_look_ahead < row_end)
+                        {
+                            auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                            method.data.prefetch(std::move(key_holder));
+                        }
+                    }
+    
+                    auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+                    if (emplace_result.isInserted())
+                    {
+                        getInlinedStateUInt64(emplace_result.getMapped()) = extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
+                    }
+                    else
+                    {
+                        getInlinedStateUInt64(emplace_result.getMapped()) += extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
+                    }
+                }
+            }
+            else
+            {
+                for (size_t i = row_begin; i < row_end; ++i)
+                {
+                    auto find_result = state.findKey(method.data, i, *aggregates_pool);
+                    if (find_result.isFound())
+                    {
+                        getInlinedStateUInt64(find_result.getMapped()) += extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
+                    }
+                    else if (overflow_row)
+                    {
+                        getStateUInt64(overflow_row) += extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
+                    }
+                }
+            }
+        }
         return;
     }
 
