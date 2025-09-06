@@ -128,19 +128,6 @@ SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
 └────────────────────────────────────────────────────────┘
 ```
 
-#### CAST from deprecated `Object('json')` to `JSON` {#cast-from-deprecated-objectjson-to-json}
-
-```sql title="Query"
-SET allow_experimental_object_type = 1;
-SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json')::JSON AS json;
-```
-
-```text title="Response"
-┌─json───────────────────────────────────────────────────┐
-│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
-└────────────────────────────────────────────────────────┘
-```
-
 :::note
 JSON paths are stored flattened. This means that when a JSON object is formatted from a path like `a.b.c`
 it is not possible to know whether the object should be constructed as `{ "a.b.c" : ... }` or `{ "a" " {"b" : {"c" : ... }}}`.
