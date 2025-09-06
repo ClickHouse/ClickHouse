@@ -183,16 +183,6 @@ UInt64 & getInlinedStateUInt64(DB::AggregateDataPtr & ptr)
     return getStateUInt64(reinterpret_cast<DB::AggregateDataPtr>(&ptr));
 }
 
-#define FOR_INLINABLE_UINT_TYPES(M) \
-    M(UInt8) \
-    M(UInt16) \
-    M(UInt32) \
-    M(UInt64) \
-    M(Int8) \
-    M(Int16) \
-    M(Int32) \
-    M(Int64)
-
 template <typename T>
 UInt64 ALWAYS_INLINE extractAndSumTyped(const DB::IColumn* column, size_t row_begin, size_t row_end, bool has_sparse_column)
 {
@@ -630,14 +620,13 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.max_threads = params.max_threads;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
-    /// After all is_simple_sum assignments are complete, set up the optimized function pointer
     if (is_simple_sum)
     {
         const auto & arg_name = params.aggregates[0].argument_names[0];
         const auto & column_type = header.getByName(arg_name).type;
-        // LOG_INFO(log, "jianfei chooseAggregationMethod returned sum column: {} name: {} ", column_type, arg_name);
 
         WhichDataType which(column_type);
+        inline_sum_helper = createSumExtractorForType(column_type);
 
         if (false) {} // NOLINT
 #define M(TYPE) \
@@ -647,7 +636,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             }; \
         }
 
-        FOR_INLINABLE_UINT_TYPES(M)
+        FOR_INLINABLE_UINT_TYPES_FOO(M)
 #undef M
         else {
             throw Exception(ErrorCodes::LOGICAL_ERROR, 
@@ -1424,11 +1413,14 @@ void NO_INLINE Aggregator::executeImplBatch(
                     auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
                     if (emplace_result.isInserted())
                     {
-                        getInlinedStateUInt64(emplace_result.getMapped()) = extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
+                        getInlinedStateUInt64(emplace_result.getMapped()) = inline_sum_helper->add(aggregate_instructions[0].batch_arguments[0], i);
+
+                        // getInlinedStateUInt64(emplace_result.getMapped()) = extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
                     }
                     else
                     {
-                        getInlinedStateUInt64(emplace_result.getMapped()) += extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
+                        getInlinedStateUInt64(emplace_result.getMapped()) += inline_sum_helper->add(aggregate_instructions[0].batch_arguments[0], i);
+                        // getInlinedStateUInt64(emplace_result.getMapped()) += extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
                     }
                 }
             }
@@ -1439,11 +1431,13 @@ void NO_INLINE Aggregator::executeImplBatch(
                     auto find_result = state.findKey(method.data, i, *aggregates_pool);
                     if (find_result.isFound())
                     {
-                        getInlinedStateUInt64(find_result.getMapped()) += extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
+                        getInlinedStateUInt64(find_result.getMapped()) += inline_sum_helper->add(aggregate_instructions[0].batch_arguments[0], i);
+                        // getInlinedStateUInt64(find_result.getMapped()) += extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
                     }
                     else if (overflow_row)
                     {
-                        getStateUInt64(overflow_row) += extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
+                        getStateUInt64(overflow_row) += inline_sum_helper->add(aggregate_instructions[0].batch_arguments[0], i);
+                        // getStateUInt64(overflow_row) += extractAndSumTypedSingle<UInt64>(aggregate_instructions[0].batch_arguments[0], i, i + 1, aggregate_instructions[0].has_sparse_arguments);
                     }
                 }
             }
