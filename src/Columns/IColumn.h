@@ -349,11 +349,11 @@ public:
       * Is used in sorting.
       *
       * If one of element's value is NaN or NULLs, then:
-      * - if nan_direction_hint == -1, NaN and NULLs are considered as least than everything other;
-      * - if nan_direction_hint ==  1, NaN and NULLs are considered as greatest than everything other.
+      * - if nan_direction_hint == -1, NaN and NULLs are considered as less than everything other;
+      * - if nan_direction_hint ==  1, NaN and NULLs are considered as greater than everything other.
       * For example, if nan_direction_hint == -1 is used by descending sorting, NaNs will be at the end.
       *
-      * For non Nullable and non floating point types, nan_direction_hint is ignored.
+      * For non-Nullable and non-floating point types, nan_direction_hint is ignored.
       */
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     [[nodiscard]] virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
