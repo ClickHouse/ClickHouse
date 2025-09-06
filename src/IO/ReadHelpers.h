@@ -9,6 +9,7 @@
 
 #include <type_traits>
 
+#include "boost/asio/detail/date_time_fwd.hpp"
 #include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
@@ -609,6 +610,15 @@ inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
         date = from;
 }
 
+inline bool tryToConvertToDayNum(DayNum & date, ExtendedDayNum & from)
+{
+    if (unlikely(from < 0) || unlikely(from > 0xFFFF))
+        return false;
+
+    date = from;
+    return true;
+}
+
 template <typename ReturnType = void>
 inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_delimiters = nullptr)
 {
@@ -617,13 +627,25 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLU
     LocalDate local_date;
 
     if constexpr (throw_exception)
+    {
         readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters);
-    else if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
-        return false;
+        ExtendedDayNum ret = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
+        convertToDayNum(date, ret);
+    }
+    else
+    {
+        if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
+            return false;
 
-    ExtendedDayNum ret = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
-    convertToDayNum(date, ret);
-    return ReturnType(true);
+        auto ret = tryToMakeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
+        if (!ret)
+            return false;
+
+        if (!tryToConvertToDayNum(date, *ret))
+            return false;
+
+        return true;
+    }
 }
 
 template <typename ReturnType = void>
@@ -869,9 +891,28 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             }
 
             if (unlikely(year == 0))
+            {
                 datetime = 0;
+            }
             else
-                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+            {
+                if constexpr (throw_exception)
+                {
+                    datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+                }
+                else
+                {
+                    auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+                    if (!datetime_maybe)
+                        return ReturnType(false);
+
+                    /// If it's regular DateTime we should check that it falls within the supported range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
+                    if (!dt64_mode && (*datetime_maybe < 0 || *datetime_maybe > UINT32_MAX))
+                        return ReturnType(false);
+
+                    datetime = *datetime_maybe;
+                }
+            }
 
             if (dt_long)
                 buf.position() += date_time_broken_down_length;
