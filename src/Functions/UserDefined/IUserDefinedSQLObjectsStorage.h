@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <Parsers/IAST_fwd.h>
@@ -12,6 +13,7 @@ namespace DB
 class IAST;
 struct Settings;
 enum class UserDefinedSQLObjectType : uint8_t;
+
 
 /// Interface for a storage of user-defined SQL objects.
 /// Implementations: UserDefinedSQLObjectsDiskStorage, UserDefinedSQLObjectsZooKeeperStorage
@@ -28,22 +30,22 @@ public:
     virtual void loadObjects() = 0;
 
     /// Get object by name. If no object stored with object_name throws exception.
-    virtual ASTPtr get(const String & object_name) const = 0;
+    virtual ASTPtr get(const String & object_name, UserDefinedSQLObjectType object_type) const = 0;
 
     /// Get object by name. If no object stored with object_name return nullptr.
-    virtual ASTPtr tryGet(const String & object_name) const = 0;
+    virtual ASTPtr tryGet(const String & object_name, UserDefinedSQLObjectType object_type) const = 0;
 
     /// Check if object with object_name is stored.
-    virtual bool has(const String & object_name) const = 0;
+    virtual bool has(const String & object_name, UserDefinedSQLObjectType object_type) const = 0;
 
     /// Get all user defined object names.
-    virtual std::vector<String> getAllObjectNames() const = 0;
+    virtual std::vector<String> getAllObjectNames(UserDefinedSQLObjectType object_type) const = 0;
 
     /// Get all user defined objects.
-    virtual std::vector<std::pair<String, ASTPtr>> getAllObjects() const = 0;
+    virtual std::vector<std::pair<String, ASTPtr>> getAllObjects(UserDefinedSQLObjectType object_type) const = 0;
 
     /// Check whether any UDFs have been stored.
-    virtual bool empty() const = 0;
+    virtual bool empty(UserDefinedSQLObjectType object_type) const = 0;
 
     /// Stops watching.
     virtual void stopWatching() {}
@@ -54,7 +56,7 @@ public:
     /// Immediately reloads a specified object only.
     virtual void reloadObject(UserDefinedSQLObjectType object_type, const String & object_name) = 0;
 
-    /// Stores an object (must be called only by UserDefinedSQLFunctionFactory::registerFunction).
+    /// Stores an object (must be called only by UserDefinedSQLFunctionFactory or UserDefinedDriverFunctionFactory in the registerFunction method).
     virtual bool storeObject(
         const ContextPtr & current_context,
         UserDefinedSQLObjectType object_type,
@@ -64,7 +66,7 @@ public:
         bool replace_if_exists,
         const Settings & settings) = 0;
 
-    /// Removes an object (must be called only by UserDefinedSQLFunctionFactory::unregisterFunction).
+    /// Removes an object (must be called only by UserDefinedSQLFunctionFactory or UserDefinedDriverFunctionFactory in the unregisterFunction method).
     virtual bool removeObject(
         const ContextPtr & current_context,
         UserDefinedSQLObjectType object_type,
