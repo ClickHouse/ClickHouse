@@ -2,6 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
+#include <Compression/CachedCompressedReadBuffer.h>
 
 namespace
 {
@@ -66,6 +67,8 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     , settings(std::move(settings_))
 {
 }
+
+MergeTreeIndexReader::~MergeTreeIndexReader() = default;
 
 void MergeTreeIndexReader::initStreamIfNeeded()
 {

@@ -1,4 +1,5 @@
 #include <Formats/ProtobufSerializer.h>
+#include <Common/Arena.h>
 
 #if USE_PROTOBUF
 #    include <AggregateFunctions/IAggregateFunction.h>

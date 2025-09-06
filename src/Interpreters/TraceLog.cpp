@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/SymbolIndex.h>
 #include <Common/Dwarf.h>
 #include <IO/WriteBufferFromArena.h>

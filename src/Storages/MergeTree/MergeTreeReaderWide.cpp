@@ -14,6 +14,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <IO/SharedThreadPools.h>
+#include <Compression/CachedCompressedReadBuffer.h>
 
 namespace DB
 {
