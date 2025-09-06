@@ -5,6 +5,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -21,6 +22,8 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/Exception.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -31,6 +34,11 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int UNKNOWN_DATABASE;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool enable_uuids_for_columns;
 }
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
@@ -44,6 +52,7 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
         { "database",           std::make_shared<DataTypeString>(), "Database name."},
         { "table",              std::make_shared<DataTypeString>(), "Table name."},
         { "name",               std::make_shared<DataTypeString>(), "Column name."},
+        { "uuid",               std::make_shared<DataTypeString>(), "Column uuid."},
         { "type",               std::make_shared<DataTypeString>(), "Column type."},
         { "position",           std::make_shared<DataTypeUInt64>(), "Ordinal position of a column in a table starting with 1."},
         { "default_kind",       std::make_shared<DataTypeString>(), "Expression type (DEFAULT, MATERIALIZED, ALIAS) for the default value, or an empty string if it is not defined."},
@@ -84,7 +93,6 @@ namespace
     using Storages = std::map<std::pair<std::string, std::string>, StoragePtr>;
 }
 
-
 class ColumnsSource : public ISource
 {
 public:
@@ -95,13 +103,14 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
-        ContextPtr context)
+        ContextPtr context_)
         : ISource(header_)
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
         , tables(std::move(tables_))
         , storages(std::move(storages_))
+        , context(Context::createCopy(context_))
         , client_info_interface(context->getClientInfo().interface)
         , total_tables(tables->size())
         , access(context->getAccess())
@@ -198,6 +207,15 @@ protected:
                     res_columns[res_index++]->insert(table_name);
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.name);
+
+                if (columns_mask[src_index++])
+                {
+                    if (context->getGlobalContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
+                        res_columns[res_index++]->insert(UUIDHelpers::uuidToStr(column.uuid));
+                    else
+                        res_columns[res_index++]->insert(UUIDHelpers::uuidToStr(UUIDHelpers::Nil));
+                }
+
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.type->getName());
                 if (columns_mask[src_index++])
@@ -343,6 +361,7 @@ private:
     ColumnPtr databases;
     ColumnPtr tables;
     Storages storages;
+    ContextPtr context;
     ClientInfo::Interface client_info_interface;
     size_t db_table_num = 0;
     size_t total_tables;
