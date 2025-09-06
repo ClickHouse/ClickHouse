@@ -19,9 +19,13 @@
 #include <string>
 
 #include <Common/ErrorCodes.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Interpreters/Context.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 
 #include <fmt/ranges.h>
 
@@ -31,6 +35,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int FORMAT_VERSION_TOO_OLD;
     extern const int LOGICAL_ERROR;
 }
@@ -50,6 +55,11 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsString storage_auth_header;
     extern DataLakeStorageSettingsString storage_oauth_server_uri;
     extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
+}
+
+namespace Setting
+{
+    extern const SettingsString iceberg_disk_name;
 }
 
 template <typename T>
@@ -159,6 +169,13 @@ public:
         assertInitialized();
         current_metadata->alter(params, context);
 
+    }
+
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override
+    {
+        if (ready_object_storage)
+            return ready_object_storage;
+        return BaseStorageConfiguration::createObjectStorage(context, is_readonly);
     }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
@@ -323,10 +340,52 @@ public:
         current_metadata->addDeleteTransformers(object_info, builder, format_settings, local_context);
     }
 
+    void fromDisk(ASTs & args, ContextPtr context, bool with_structure) override
+    {
+        auto disk = context->getDisk(context->getSettingsRef()[Setting::iceberg_disk_name].value);
+        ready_object_storage = disk->getObjectStorage();
+
+        if (args.size() > BaseStorageConfiguration::getMaxNumberOfArguments(with_structure))
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Storage Local requires 1 to {} arguments. All supported signatures:\n{}",
+                BaseStorageConfiguration::getMaxNumberOfArguments(with_structure),
+                BaseStorageConfiguration::getSignatures(with_structure));
+
+        if (auto object_storage_disk = std::static_pointer_cast<DiskObjectStorage>(disk); object_storage_disk)
+        {
+            String path = object_storage_disk->getObjectsKeyPrefix();
+            BaseStorageConfiguration::setPathForRead(path);
+        }
+        else
+            BaseStorageConfiguration::setPathForRead(disk->getPath());
+        BaseStorageConfiguration::setURL(disk->getObjectStorage()->getDescription());
+        if (args.size() > 0)
+        {
+            StorageObjectStorageConfiguration::format = checkAndGetLiteralArgument<String>(args[0], "format_name");
+        }
+
+        if (with_structure)
+        {
+            if (args.size() > 1)
+            {
+                StorageObjectStorageConfiguration::structure = checkAndGetLiteralArgument<String>(args[1], "structure");
+            }
+            if (args.size() > 2)
+            {
+                StorageObjectStorageConfiguration::compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
+            }
+        }
+        else if (args.size() > 1)
+        {
+            StorageObjectStorageConfiguration::compression_method = checkAndGetLiteralArgument<String>(args[1], "compression_method");
+        }
+    }
+
 private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
     const DataLakeStorageSettingsPtr settings;
+    ObjectStoragePtr ready_object_storage;
 
     void assertInitialized() const
     {

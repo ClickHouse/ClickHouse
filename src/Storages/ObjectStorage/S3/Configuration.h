@@ -7,6 +7,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 namespace DB
 {
@@ -72,13 +73,21 @@ public:
     size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
     S3::URI getURL() const { return url; }
+    void setURL(const String & url_to_set) override
+    {
+        url = S3::URI(url_to_set);
+    }
+
     const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
 
     Path getRawPath() const override { return url.key; }
     const String & getRawURI() const override { return url.uri_str; }
 
     const Paths & getPaths() const override { return keys; }
-    void setPaths(const Paths & paths) override { keys = paths; }
+    void setPaths(const Paths & paths) override
+    {
+        keys = paths;
+    }
 
     String getNamespace() const override { return url.bucket; }
     String getDataSourceDescription() const override;

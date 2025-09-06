@@ -13,6 +13,8 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <Common/Exception.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -98,6 +100,10 @@ public:
     void setPathForRead(const Path & path)
     {
         read_path = path;
+    }
+
+    virtual void setURL(const String & /*url*/)
+    {
     }
 
     /*
@@ -245,6 +251,10 @@ public:
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
+    virtual void fromDisk(ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Initialization from disk is not implemented for your storage");
+    }
 
     void assertInitialized() const;
 

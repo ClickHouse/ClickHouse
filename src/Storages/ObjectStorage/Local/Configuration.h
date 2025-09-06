@@ -47,7 +47,10 @@ public:
     const String & getRawURI() const override { return path.path; }
 
     const Paths & getPaths() const override { return paths; }
-    void setPaths(const Paths & paths_) override { paths = paths_; }
+    void setPaths(const Paths & paths_) override {
+        paths = paths_;
+        path = paths_[0];
+    }
 
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return ""; }

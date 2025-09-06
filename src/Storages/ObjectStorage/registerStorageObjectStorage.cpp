@@ -16,6 +16,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
+#include <Disks/DiskType.h>
 
 namespace DB
 {
@@ -28,6 +29,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool write_full_path_in_iceberg_metadata;
+    extern const SettingsString iceberg_disk_name;
 }
 
 
@@ -40,10 +42,6 @@ namespace
 std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
-    auto & engine_args = args.engine_args;
-    if (engine_args.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
-
     const auto context = args.getLocalContext();
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false);
 
@@ -204,7 +202,28 @@ void registerStorageIceberg(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+            StorageObjectStorageConfigurationPtr configuration;
+            const auto context = args.getLocalContext();
+            if (context->getSettingsRef()[Setting::iceberg_disk_name].changed)
+            {
+                auto disk = context->getDisk(context->getSettingsRef()[Setting::iceberg_disk_name].value);
+                switch (disk->getObjectStorage()->getType())
+                {
+                case ObjectStorageType::S3:
+                    configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+                    break;
+                case ObjectStorageType::Azure:
+                    configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
+                    break;
+                case ObjectStorageType::Local:
+                    configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+                    break;
+                default:
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for iceberg {}", disk->getObjectStorage()->getType());
+                }
+            }
+            else
+                configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {

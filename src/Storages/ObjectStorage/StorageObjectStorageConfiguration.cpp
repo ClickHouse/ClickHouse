@@ -17,6 +17,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace Setting
+{
+    extern const SettingsString iceberg_disk_name;
+}
+
 bool StorageObjectStorageConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context,
@@ -64,7 +69,9 @@ void StorageObjectStorageConfiguration::initialize(
     ContextPtr local_context,
     bool with_table_structure)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
+    if (local_context->getSettingsRef()[Setting::iceberg_disk_name].changed)
+        configuration_to_initialize.fromDisk(engine_args, local_context, with_table_structure);
+    else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
@@ -104,7 +111,8 @@ void StorageObjectStorageConfiguration::initialize(
         FormatFactory::instance().checkFormatName(configuration_to_initialize.format);
 
     /// It might be changed on `StorageObjectStorageConfiguration::initPartitionStrategy`
-    configuration_to_initialize.read_path = configuration_to_initialize.getRawPath();
+    if (!local_context->getSettingsRef()[Setting::iceberg_disk_name].changed)
+        configuration_to_initialize.read_path = configuration_to_initialize.getRawPath();
     configuration_to_initialize.initialized = true;
 }
 
