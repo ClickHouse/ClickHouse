@@ -66,6 +66,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace Setting
+{
+    extern const SettingsString iceberg_disk_name;
+}
+
 static const std::unordered_set<std::string_view> required_configuration_keys =
 {
     "url",
@@ -732,7 +737,10 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
             count -= key_value_asts.size();
         }
 
-        if (count == 0 || count > getMaxNumberOfArguments())
+        if (!count)
+            return;
+
+        if (count > getMaxNumberOfArguments())
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,

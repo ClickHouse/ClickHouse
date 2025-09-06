@@ -1,0 +1,16 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_local>
+                <type>local</type>
+                <path>/iceberg_data/default/test_single_iceberg_file/</path>
+            </disk_local>
+            <disk_s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/iceberg_data/default/test_single_iceberg_file/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </disk_s3>
+        </disks>
+    </storage_configuration>
+</clickhouse>
