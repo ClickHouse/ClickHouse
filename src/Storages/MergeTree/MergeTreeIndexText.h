@@ -5,6 +5,7 @@
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/GinQueryString.h>
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenExtractor.h>
@@ -62,7 +63,8 @@ public:
         void next()
         {
             ++idx;
-            row += postings->getDelta(idx);
+            if (isValid())
+                row += postings->getDelta(idx);
         }
 
     private:
