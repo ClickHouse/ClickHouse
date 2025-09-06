@@ -1878,4 +1878,17 @@
 
     <skip_binary_checksum_checks>false</skip_binary_checksum_checks>
     -->
+
+    <!-- Tune maximum core file size (RLIMIT_CORE) -->
+    <!--
+    <core_dump>
+        <size_limit></size_limit>
+    </core_dump>
+    -->
+
+    <!-- Tune maximum number of pending signals
+         (You may want to increase it if you see CANNOT_CREATE_TIMER exceptions) -->
+    <!--
+    <pending_signals></pending_signals>
+    -->
 </clickhouse>

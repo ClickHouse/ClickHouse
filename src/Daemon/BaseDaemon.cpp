@@ -282,6 +282,22 @@ void BaseDaemon::initialize(Application & self)
         }
     }
 
+#if defined(OS_LINUX)
+    /// Configure RLIMIT_SIGPENDING
+    /// (query profiler creates lots of timers - timer_create(), and this requires slot in pending signals)
+    if (auto pending_signals = config().getUInt64("pending_signals", 0); pending_signals > 0)
+    {
+        struct rlimit rlim;
+        if (getrlimit(RLIMIT_SIGPENDING, &rlim))
+            throw Poco::Exception("Cannot getrlimit");
+        rlim.rlim_cur = pending_signals;
+        if (setrlimit(RLIMIT_SIGPENDING, &rlim))
+        {
+            std::cerr << "Cannot set pending signals to " + std::to_string(rlim.rlim_cur) << std::endl;
+        }
+    }
+#endif
+
     /// This must be done before any usage of DateLUT. In particular, before any logging.
     if (config().has("timezone"))
     {
