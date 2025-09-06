@@ -90,6 +90,10 @@ workflow = Workflow.Config(
         ],
         *[
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.stress_test_azure_tsan_jobs
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.upgrade_test_jobs
         ],
         *[
