@@ -121,6 +121,7 @@ namespace Setting
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsUInt64 min_joined_block_size_rows;
     extern const SettingsUInt64 min_joined_block_size_bytes;
+    extern const SettingsBool use_disjunctions_push_down;
 }
 
 namespace ErrorCodes
@@ -1692,7 +1693,8 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             settings[Setting::max_threads],
             required_columns_after_join,
             false /*optimize_read_in_order*/,
-            true /*optimize_skip_unused_shards*/);
+            true /*optimize_skip_unused_shards*/,
+            settings[Setting::use_disjunctions_push_down] /*use_disjunctions_push_down*/);
 
         auto setting_swap = settings[Setting::query_plan_join_swap_table];
         join_step->swap_join_tables = setting_swap.is_auto ? std::nullopt : std::make_optional(setting_swap.base);
