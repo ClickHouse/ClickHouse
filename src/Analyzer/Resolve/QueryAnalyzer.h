@@ -297,6 +297,7 @@ private:
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
 
     const bool only_analyze;
+    bool do_not_execute = false;
 };
 
 }
