@@ -166,25 +166,19 @@ Filter
 1
 3
 > one condition of filter is pushed down before LEFT JOIN
-Join
-Join
+  Join
 Filter column: notEquals(number, 1)
-Join
 > (analyzer) one condition of filter is pushed down before LEFT JOIN
-Join
-Join
+  Join
 Filter column: notEquals(__table1.number, 1_UInt8)
 0	0
 3	3
 > one condition of filter is pushed down before INNER JOIN
-Join
-Join
+  Join
 Filter column: and(notEquals(number, 1), notEquals(number, 2))
-Join
 Filter column: and(notEquals(b, 2), notEquals(b, 1))
 > (analyzer) one condition of filter is pushed down before INNER JOIN
-Join
-Join
+  Join
 Filter column: and(notEquals(__table1.number, 1_UInt8), notEquals(__table1.number, 2_UInt8))
 Filter column: and(notEquals(__table2.b, 2_UInt8), notEquals(__table2.b, 1_UInt8))
 3	3

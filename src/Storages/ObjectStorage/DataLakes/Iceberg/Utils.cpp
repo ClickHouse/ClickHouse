@@ -59,7 +59,7 @@ namespace DB::DataLakeStorageSetting
     extern const DataLakeStorageSettingsString iceberg_metadata_table_uuid;
     extern const DataLakeStorageSettingsBool iceberg_recent_metadata_file_by_last_updated_ms_field;
     extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
-    extern const DataLakeStorageSettingsInt64 iceberg_format_version;
+    extern const DataLakeStorageSettingsNonZeroUInt64 iceberg_format_version;
 }
 
 namespace ProfileEvents
@@ -356,6 +356,7 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             return {"float", true};
         case TypeIndex::Float64:
             return {"double", true};
+        case TypeIndex::Date:
         case TypeIndex::Date32:
             return {"date", true};
         case TypeIndex::DateTime:
@@ -428,6 +429,38 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
     }
 }
 
+Poco::Dynamic::Var getAvroType(DataTypePtr type)
+{
+    switch (type->getTypeId())
+    {
+        case TypeIndex::UInt32:
+        case TypeIndex::Int32:
+        case TypeIndex::Date:
+        case TypeIndex::Date32:
+        case TypeIndex::Time:
+            return "int";
+        case TypeIndex::UInt64:
+        case TypeIndex::Int64:
+        case TypeIndex::DateTime:
+        case TypeIndex::DateTime64:
+            return "long";
+        case TypeIndex::Float32:
+            return "float";
+        case TypeIndex::Float64:
+            return "double";
+        case TypeIndex::String:
+        case TypeIndex::UUID:
+            return "string";
+        case TypeIndex::Nullable:
+        {
+            auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
+            return getAvroType(type_nullable->getNestedType());
+        }
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+    }
+}
+
 Poco::JSON::Object::Ptr getPartitionField(
     ASTPtr partition_by_element,
     const std::unordered_map<String, Int32> & column_name_to_source_id,
@@ -435,7 +468,22 @@ Poco::JSON::Object::Ptr getPartitionField(
 {
     const auto * partition_function = partition_by_element->as<ASTFunction>();
     if (!partition_function)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function in partition. Please use functions for iceberg partitioning, for example (identity(x), TRUNCATE(3, y))");
+    {
+        const auto * ast_identifier = partition_by_element->as<ASTIdentifier>();
+        if (!ast_identifier)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown expression for partitioning: {}", partition_by_element->formatForLogging());
+
+        Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
+        auto field = ast_identifier->name();
+        auto it = column_name_to_source_id.find(field);
+        if (it == column_name_to_source_id.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown field to partition {}", field);
+        result->set(Iceberg::f_name, field);
+        result->set(Iceberg::f_source_id, it->second);
+        result->set(Iceberg::f_field_id, ++partition_iter);
+        result->set(Iceberg::f_transform, "identity");
+        return result;
+    }
 
     std::optional<String> field;
     std::optional<Int64> param;
@@ -519,11 +567,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     Int32 partition_iter = 1000;
     if (partition_by)
     {
-        const auto * partition_function = partition_by->as<ASTFunction>();
-        if (!partition_function)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function in partitioning");
-
-        if (partition_function->name == "tuple")
+        if (const auto * partition_function = partition_by->as<ASTFunction>(); partition_function && partition_function->name == "tuple")
         {
             for (const auto & child : partition_function->children)
             {

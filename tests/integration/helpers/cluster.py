@@ -503,6 +503,7 @@ class ClickHouseCluster:
         custom_keeper_configs=[],
         enable_thread_fuzzer=False,
         thread_fuzzer_settings={},
+        azurite_default_port=0,
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -661,7 +662,13 @@ class ClickHouseCluster:
         self.with_azurite = False
         self.azurite_container = "azurite-container"
         self.blob_service_client = None
-        self._azurite_port = 0
+        # When using plugins for Spark, it expects Azurite to run on port 10000
+        self._azurite_port = azurite_default_port
+        self.azurite_host = "azurite1"
+        self.azurite_ip = None
+        self.azurite_account = "devstoreaccount1"
+        self.azurite_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+        self.azure_container_name = "cont"
 
         # available when with_kafka == True
         self.kafka_host = "kafka1"
@@ -1856,6 +1863,7 @@ class ClickHouseCluster:
         keeper_required_feature_flags=[],
         main_config_name="config.xml",
         users_config_name="users.xml",
+        metrika_xml=None,
         copy_common_configs=True,
         config_root_name="clickhouse",
         extra_configs=[],
@@ -1976,6 +1984,7 @@ class ClickHouseCluster:
             clickhouse_start_extra_args=extra_args,
             main_config_name=main_config_name,
             users_config_name=users_config_name,
+            metrika_xml=metrika_xml,
             copy_common_configs=copy_common_configs,
             hostname=hostname,
             env_variables=env_variables,
@@ -2980,6 +2989,7 @@ class ClickHouseCluster:
     def wait_azurite_to_start(self, timeout=180):
         from azure.storage.blob import BlobServiceClient
 
+        self.azurite_ip = self.get_instance_ip(self.azurite_host)
         connection_string = (
             f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
             f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
@@ -3897,14 +3907,22 @@ services:
             - /etc/passwd:/etc/passwd:ro
             - {HELPERS_DIR}/../integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
             - /debug:/debug:ro
+            {metrika_xml}
             {binary_volume}
             {external_dirs_volumes}
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
+            {lakehouses_path}
         entrypoint: /integration-tests-entrypoint.sh {entrypoint_cmd}
-        # increase it to allow jeprof to dump the profile report
-        stop_grace_period: 2m
+        # Increase it to allow jeprof to dump the profile report and gdb collect stacktraces
+        #
+        # NOTE: it has been proven that 5m is not enough slightly, but anyway
+        # this should not be a problem, since in
+        # integration-tests-entrypoint.sh we have "timeout" of 1 minute, and
+        # later we will attach with gdb to collect stacktraces, and once it
+        # will be done it will exit.
+        stop_grace_period: 10m
         tmpfs: {tmpfs}
         {mem_limit}
         cap_add:
@@ -3988,6 +4006,7 @@ class ClickHouseInstance:
         clickhouse_start_extra_args="",
         main_config_name="config.xml",
         users_config_name="users.xml",
+        metrika_xml=None,
         copy_common_configs=True,
         hostname=None,
         env_variables=None,
@@ -4089,6 +4108,10 @@ class ClickHouseInstance:
 
         self.main_config_name = main_config_name
         self.users_config_name = users_config_name
+        if metrika_xml:
+            self.metrika_xml = p.abspath(p.join(base_path, metrika_xml))
+        else:
+            self.metrika_xml = None
         self.copy_common_configs = copy_common_configs
 
         clickhouse_start_command_with_conf = clickhouse_start_command.replace(
@@ -4101,7 +4124,11 @@ class ClickHouseInstance:
         self.clickhouse_start_command_in_daemon = "{} --daemon -- {}".format(
             clickhouse_start_command_with_conf, clickhouse_start_extra_args
         )
-        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
+        # NOTE: as a child command we have only clickhouse, so it is OK to assume so
+        # and there is no other way to kill clickhouse properly (easily), since
+        # clickhosue is spawned with --daemon, and it is not a child neither in
+        # the same session.
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail; pkill clickhouse' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
             self.clickhouse_start_command_in_daemon
         )
 
@@ -4128,6 +4155,9 @@ class ClickHouseInstance:
         else:
             self.keytab_path = ""
             self.krb5_conf = ""
+
+        # Use a common path for data lakes on the filesystem
+        self.lakehouses_path = "- /lakehouses:/lakehouses" if with_dolor else ""
 
         self.docker_client = None
         self.ip_address = None
@@ -4473,11 +4503,12 @@ class ClickHouseInstance:
         return (None, str(code) + " " + http.client.responses[code] + ": " + r.text)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
-    def http_request(self, url, method="GET", params=None, data=None, headers=None):
-        logging.debug(f"Sending HTTP request {url} to {self.name}")
-        url = "http://" + self.ip_address + ":8123/" + url
+    # @param url - URI without leading slash
+    def http_request(self, url, method="GET", params=None, data=None, headers=None, *args, **kwargs):
+        logging.debug(f"Sending HTTP request '{url}' to {self.name}")
+        url = f"http://{self.ip_address}:8123/{url}"
         return requests.request(
-            method=method, url=url, params=params, data=data, headers=headers
+            method=method, url=url, params=params, data=data, headers=headers, *args, **kwargs
         )
 
     def stop_clickhouse(self, stop_wait_sec=30, kill=False):
@@ -5310,6 +5341,12 @@ class ClickHouseInstance:
                 self.coredns_config_dir, p.abspath(p.join(self.path, "coredns_config"))
             )
 
+        metrika_xml = ""
+        if self.metrika_xml:
+            metrika_xml_path = p.join(instance_config_dir, "metrika.xml")
+            shutil.copy(self.metrika_xml, metrika_xml_path)
+            metrika_xml = f"- {metrika_xml_path}:/etc/metrika.xml:ro"
+
         # Copy config.d configs
         logging.debug(
             f"Copy custom test config files {self.custom_main_config_paths} to {self.config_d_dir}"
@@ -5475,6 +5512,7 @@ class ClickHouseInstance:
                     config_d_dir=self.config_d_dir,
                     db_dir=db_dir,
                     external_dirs_volumes=external_dirs_volumes,
+                    metrika_xml=metrika_xml,
                     tmpfs=str(self.tmpfs),
                     mem_limit=self.mem_limit,
                     logs_dir=logs_dir,
@@ -5484,6 +5522,7 @@ class ClickHouseInstance:
                     odbc_ini_path=odbc_ini_path,
                     keytab_path=self.keytab_path,
                     krb5_conf=self.krb5_conf,
+                    lakehouses_path=self.lakehouses_path,
                     entrypoint_cmd=entrypoint_cmd,
                     networks=networks,
                     app_net=app_net,

@@ -123,7 +123,7 @@ private:
 
 bool operator==(const State & state1, const State & state2);
 
-static constexpr size_t MAX_TERM_LENGTH = 256;
+static constexpr size_t MAX_TOKEN_LENGTH = 256;
 
 /// Builder is used to build Finite State Transducer by adding words incrementally.
 /// Note that all the words have to be added in sorted order in order to achieve minimized result.
@@ -139,7 +139,7 @@ private:
     StatePtr findMinimized(const State & s, bool & found);
     void minimizePreviousWordSuffix(Int64 down_to);
 
-    std::array<StatePtr, MAX_TERM_LENGTH + 1> temp_states;
+    std::array<StatePtr, MAX_TOKEN_LENGTH + 1> temp_states;
     String previous_word;
     StatePtr initial_state;
 

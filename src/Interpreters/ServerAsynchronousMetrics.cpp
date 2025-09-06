@@ -348,6 +348,19 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granulas (only takes active parts into account)." };
     }
 
+    {
+        const auto user_info = getContext()->getProcessList().getUserInfo(true);
+        size_t queries_memory_usage = 0;
+        size_t queries_peak_memory_usage = 0;
+        for (const auto & [user, info] : user_info)
+        {
+            queries_memory_usage += info.memory_usage;
+            queries_peak_memory_usage += info.peak_memory_usage;
+        }
+        new_values["QueriesMemoryUsage"] = { queries_memory_usage, "Memory used by queries, in bytes." };
+        new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage, "Peak memory usage for queries, in bytes." };
+    }
+
 #if USE_NURAFT
     {
         auto keeper_dispatcher = getContext()->tryGetKeeperDispatcher();

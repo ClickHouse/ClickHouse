@@ -146,7 +146,9 @@ void QueryOracle::insertOnTableOrCluster(
             : (cluster.has_value() ? TableFunctionUsage::ClusterCall
                                    : (replaceable ? TableFunctionUsage::EngineReplace : TableFunctionUsage::RemoteCall));
 
-        gen.setTableFunction(rg, usage, false, t, tof->mutable_tfunc());
+        gen.setAllowNotDetermistic(false);
+        gen.setTableFunction(rg, usage, t, tof->mutable_tfunc());
+        gen.setAllowNotDetermistic(true);
     }
     else
     {
@@ -251,7 +253,7 @@ void QueryOracle::generateExportQuery(
                 first ? "" : ", ",
                 entry.columnPathRef(),
                 entry.path.size() > 1 ? "Array(" : "",
-                entry.getBottomType()->typeName(false),
+                entry.getBottomType()->typeName(false, false),
                 entry.path.size() > 1 ? ")" : "",
                 (entry.path.size() == 1 && entry.nullable.has_value()) ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
             first = false;
@@ -795,9 +797,12 @@ bool QueryOracle::findTablesWithPeersAndReplace(
             bool res = false;
             const ExprSchemaTable & est = torfunc.est();
 
-            if ((!est.has_database() || est.database().database() != "system") && est.table().table().at(0) == 't')
+            if ((!est.has_database()
+                 || (est.database().database() != "system" && est.database().database() != "INFORMATION_SCHEMA"
+                     && est.database().database() != "information_schema"))
+                && est.table().table().at(0) == 't')
             {
-                const uint32_t tname = static_cast<uint32_t>(std::stoul(est.table().table().substr(1)));
+                const uint32_t tname = gen.getIdentifierFromString(est.table().table());
 
                 if (gen.tables.find(tname) != gen.tables.end())
                 {

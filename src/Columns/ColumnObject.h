@@ -31,7 +31,7 @@ public:
         Source source;
         /// Statistics for dynamic paths: (path) -> (total number of not-null values).
         std::unordered_map<String, size_t> dynamic_paths_statistics;
-        /// Statistics for paths in shared data: path) -> (total number of not-null values).
+        /// Statistics for paths in shared data: (path) -> (total number of not-null values).
         /// We don't store statistics for all paths in shared data but only for some subset of them
         /// (is 10000 a good limit? It should not be expensive to store 10000 paths per part)
         static const size_t MAX_SHARED_DATA_STATISTICS_SIZE = 10000;
@@ -146,6 +146,7 @@ public:
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
+    std::optional<size_t> getSerializedValueSize(size_t) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
@@ -291,7 +292,7 @@ private:
     std::vector<std::string_view> sorted_typed_paths;
     /// Map path -> column for dynamically added paths. All columns
     /// here are Dynamic columns. This set of paths can be extended
-    /// during inerts into the column.
+    /// during inserts into the column.
     PathToColumnMap dynamic_paths;
     /// Sorted list of dynamic paths. Used to avoid sorting paths every time in some methods.
     std::set<std::string_view> sorted_dynamic_paths;
