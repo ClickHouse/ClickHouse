@@ -73,7 +73,7 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
     if (!query.cluster.empty())
     {
         query.replaceCurrentUserTag(getContext()->getUserName());
-        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext(), DDLQueryOnClusterParams{getContext()});
     }
 
     std::optional<RolesOrUsersSet> roles_from_query;

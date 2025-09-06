@@ -569,13 +569,13 @@ def test_alters_from_different_replicas(started_cluster):
 
     dummy_node.stop_clickhouse(kill=True)
 
-    settings = {"distributed_ddl_task_timeout": 5}
+    settings = {"distributed_ddl_task_timeout": 10}
     assert "is not finished on 1 of 3 hosts" in competing_node.query_and_get_error(
         "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN Added0 UInt32;",
         settings=settings,
     )
     settings = {
-        "distributed_ddl_task_timeout": 5,
+        "distributed_ddl_task_timeout": 10,
         "distributed_ddl_output_mode": "null_status_on_timeout",
     }
     assert "shard1\treplica2\tQUEUED\t" in main_node.query(
@@ -583,7 +583,7 @@ def test_alters_from_different_replicas(started_cluster):
         settings=settings,
     )
     settings = {
-        "distributed_ddl_task_timeout": 5,
+        "distributed_ddl_task_timeout": 10,
         "distributed_ddl_output_mode": "never_throw",
     }
     assert "shard1\treplica2\tQUEUED\t" in competing_node.query(
@@ -664,6 +664,15 @@ def test_alters_from_different_replicas(started_cluster):
     main_node.query(
         "ALTER TABLE alters_from_different_replicas.concurrent_test UPDATE StartDate = addYears(StartDate, 1) WHERE 1"
     )
+
+    # We only get text output from alter if the query is replicated, and for that at least 2 shards need to be active
+    # We must wait until main_node knows about shard2 (from snapshotting_node and snapshot_recovering_node)
+    # This background update can be slowed down by multiple factors, but mainly keeper faults
+    main_node.wait_for_log_line(
+        r"DatabaseReplicated \(alters_from_different_replicas\).*snapshotting_node.*snapshot_recovering_node.*",
+        look_behind_lines=1000,
+    )
+
     res = main_node.query(
         "ALTER TABLE alters_from_different_replicas.concurrent_test DELETE WHERE UserID % 2"
     )
@@ -964,14 +973,19 @@ def test_recover_staled_replica(started_cluster):
     )
     test_recover_staled_replica_run += 1
 
+    # Note that the table name is not deterministic
+    # It's formed as ${original_name}_${max_log_ptr}_${random_number_up_to_1000}
+    # And that fault injection might increase max_log_ptr as replicas are added or removed
     table = dummy_node.query(
-        "SHOW TABLES FROM recover_broken_tables LIKE 'mt1_41_%' LIMIT 1"
+        "SHOW TABLES FROM recover_broken_tables LIKE 'mt1_%' LIMIT 1"
     ).strip()
+    logging.debug(f"Table: {table}")
+    assert table
     assert (
         dummy_node.query(f"SELECT (*,).1 FROM recover_broken_tables.{table}") == "42\n"
     )
     table = dummy_node.query(
-        "SHOW TABLES FROM recover_broken_replicated_tables LIKE 'rmt5_41_%' LIMIT 1"
+        "SHOW TABLES FROM recover_broken_replicated_tables LIKE 'rmt5_%' LIMIT 1"
     ).strip()
     assert (
         dummy_node.query(f"SELECT (*,).1 FROM recover_broken_replicated_tables.{table}")

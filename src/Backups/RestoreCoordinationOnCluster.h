@@ -3,7 +3,7 @@
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/BackupCoordinationCleaner.h>
 #include <Backups/BackupCoordinationStageSync.h>
-#include <Backups/WithRetries.h>
+#include <Common/ZooKeeper/WithRetries.h>
 
 
 namespace DB
