@@ -253,7 +253,7 @@ namespace
         void scheduleAbortMultipartUpload()
         {
             bool expected = false;
-            if (!multipart_upload_aborted.compare_exchange_strong(expected, true))
+            if (!multipart_upload_aborted.compare_exchange_weak(expected, true))
                 return;
 
             if (schedule)
