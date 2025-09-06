@@ -360,7 +360,7 @@ public:
         else
             BaseStorageConfiguration::setPathForRead(disk->getPath());
         BaseStorageConfiguration::setURL(disk->getObjectStorage()->getDescription());
-        if (args.size() > 0)
+        if (!args.empty())
         {
             StorageObjectStorageConfiguration::format = checkAndGetLiteralArgument<String>(args[0], "format_name");
         }
