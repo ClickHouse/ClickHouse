@@ -8,6 +8,13 @@
 
 #include <Storages/IStorage_fwd.h>
 
+#include <Databases/DatabaseFactory.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTLiteral.h>
+#include <Interpreters/DatabaseCatalog.h>
+
 namespace DB
 {
 
@@ -187,6 +194,24 @@ ASTPtr DatabaseOverlay::getCreateDatabaseQuery() const
 {
     auto query = std::make_shared<ASTCreateQuery>();
     query->setDatabase(getDatabaseName());
+
+    // Build: ENGINE = Overlay('dbA','dbB',...)
+    auto storage = std::make_shared<ASTStorage>();
+
+    // makeASTFunction("Overlay") if you have it; otherwise construct manually:
+    auto engine_func = std::make_shared<ASTFunction>();
+    engine_func->name = "Overlay";
+
+    auto args = std::make_shared<ASTExpressionList>();
+    args->children.reserve(databases.size());
+    for (const auto & db : databases)
+        args->children.emplace_back(std::make_shared<ASTLiteral>(db->getDatabaseName()));
+    engine_func->arguments = args;
+
+    // attach to storage and query
+    storage->set(storage->engine, engine_func);
+    query->set(query->storage, storage);
+
     return query;
 }
 
@@ -566,6 +591,78 @@ void DatabaseOverlay::checkMetadataFilenameAvailability(const String & table_nam
         db->checkMetadataFilenameAvailability(table_name);
         return;
     }
+}
+
+void registerDatabaseOverlay(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        const auto * engine_def = args.create_query.storage;
+        const auto * engine = engine_def->engine;
+        const String & engine_name = engine->name;
+
+        /// Parse arguments: Overlay(db1, db2, ...)
+        /// Accept either identifiers or string literals:
+        ///   Overlay(db_mem, db_mem2)    -- identifiers
+        ///   Overlay('db_mem', 'db_mem2') -- strings
+        std::vector<String> sources;
+
+        if (!engine->arguments || engine->arguments->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "{} database requires at least 1 argument: underlying database name(s)", engine_name);
+
+        for (const auto & arg_ast : engine->arguments->children)
+        {
+            /// Turn identifiers OR expressions into a literal, then extract string
+            auto lit = evaluateConstantExpressionOrIdentifierAsLiteral(arg_ast, args.context);
+            const auto & value = lit->as<ASTLiteral &>().value;
+            // Let safeGet<String>() handle type validation and throw appropriate exceptions
+            sources.emplace_back(value.safeGet<String>());
+        }
+
+        /// Validate and clean up sources
+        if (sources.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} database requires at least 1 source database", engine_name);
+
+        /// Remove duplicates
+        std::sort(sources.begin(), sources.end());
+        sources.erase(std::unique(sources.begin(), sources.end()), sources.end());
+
+        /// Prevent self-reference
+        for (const auto & source_name : sources)
+        {
+            if (source_name == args.database_name)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, 
+                               "{} database cannot reference itself: {}", engine_name, source_name);
+        }
+
+        /// Create the overlay database
+        auto overlay = std::make_shared<DatabaseOverlay>(args.database_name, args.context);
+        
+        /// Register underlying databases
+        for (const auto & source_name : sources)
+        {
+            try 
+            {
+                auto source_db = DatabaseCatalog::instance().tryGetDatabase(source_name);
+                if (source_db->getEngineName() == "Memory")
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Overlay database cannot reference Memory database '{}'. "
+                        "Use Atomic/Ordinary (persistent) databases instead.", source_name);
+                overlay->registerNextDatabase(source_db);
+            }
+            catch (const Exception & e)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                               "{} database failed to access underlying database '{}': {}", 
+                               engine_name, source_name, e.message());
+            }
+        }
+
+        return overlay;
+    };
+
+    factory.registerDatabase("Overlay", create_fn, { .supports_arguments = true });
 }
 
 
