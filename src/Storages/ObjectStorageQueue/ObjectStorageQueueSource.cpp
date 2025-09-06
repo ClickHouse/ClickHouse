@@ -593,6 +593,18 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         if (current_bucket_holder && current_bucket_holder->isZooKeeperSessionExpired())
         {
             LOG_TRACE(log, "ZooKeeper session expired, bucket {} not longer hold", current_bucket_holder->getBucket());
+
+            for (auto & [bucket, bucket_info] : listed_keys_cache)
+            {
+                /// Reset current processor for the keys
+                /// to avoid the above error "Expected current processor {} to be equal to {} for bucket {}".
+                if (bucket_info.processor.has_value() && bucket_info.processor.value() == current_processor)
+                {
+                    LOG_DEBUG(log, "Resetting processor ({}) for bucket {}", current_processor, bucket);
+                    bucket_info.processor.reset();
+                }
+            }
+
             current_bucket_holder = {};
         }
 
