@@ -191,7 +191,7 @@ class ClickHouseSparkTypeMapper:
         decimal_match = re.match(r"Decimal(?:\d+)?\((\d+)(?:,\s*(\d+))?\)", ch_type)
         if decimal_match:
             nprecision = min(38, int(decimal_match.group(1)))
-            nscale = int(decimal_match.group(2) if decimal_match.group(2) else "0")
+            nscale = min(nprecision, int(decimal_match.group(2) if decimal_match.group(2) else "0"))
             return (
                 f"DECIMAL({nprecision}, {nscale})",
                 inside_nullable,
