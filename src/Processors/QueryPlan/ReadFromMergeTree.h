@@ -211,7 +211,7 @@ public:
     };
 
     static AnalysisResultPtr selectRangesToRead(
-        RangesInDataParts parts,
+        const RangesInDataParts & parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
         const StorageMetadataPtr & metadata_snapshot,

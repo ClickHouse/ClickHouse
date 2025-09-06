@@ -1936,7 +1936,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
-    RangesInDataParts parts,
+    const RangesInDataParts & parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const StorageMetadataPtr & metadata_snapshot,
@@ -2012,7 +2012,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool add_index_stat_row_for_pk_expand = false;
 
     {
-        MergeTreeDataSelectExecutor::filterPartsByPartition(
+        auto res = MergeTreeDataSelectExecutor::filterPartsByPartition(
             parts,
             indexes->partition_pruner,
             indexes->minmax_idx_condition,
@@ -2027,7 +2027,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         result.sampling = MergeTreeDataSelectExecutor::getSampling(
             query_info_,
             metadata_snapshot->getColumns().getAllPhysical(),
-            parts,
+            res,
             indexes->key_condition,
             data,
             metadata_snapshot,
@@ -2037,13 +2037,13 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         if (result.sampling.read_nothing)
             return std::make_shared<AnalysisResult>(std::move(result));
 
-        for (const auto & part : parts)
+        for (const auto & part : res)
             total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
-        parts_before_pk = parts.size();
+        parts_before_pk = res.size();
 
         auto reader_settings = MergeTreeReaderSettings::create(context_, query_info_);
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-            std::move(parts),
+            std::move(res),
             metadata_snapshot,
             mutations_snapshot,
             context_,
