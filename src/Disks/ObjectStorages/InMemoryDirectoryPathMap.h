@@ -7,6 +7,7 @@
 #include <functional>
 #include <filesystem>
 #include <base/defines.h>
+#include <unordered_set>
 
 #include <Common/CurrentMetrics.h>
 
@@ -67,6 +68,24 @@ public:
     {
         std::lock_guard lock(mutex);
         return map.contains(local_path);
+    }
+
+    bool existsPartialOrFullPath(const std::string & path) const
+    {
+        std::lock_guard lock(mutex);
+
+        auto it = map.lower_bound(path);
+        if (it == map.end())
+            return false;
+
+        const std::string & found_path = it->first.string();
+        if (found_path == path)
+            return true;
+
+        std::string normalized_path = path;
+        if (!normalized_path.ends_with('/')) //Prevent partial subdirectory match
+            normalized_path.push_back('/');
+        return found_path.starts_with(normalized_path);
     }
 
     void addOrReplacePath(std::string path, RemotePathInfo info)
@@ -210,22 +229,20 @@ public:
 
     void iterateSubdirectories(const std::string & path, std::function<void(const std::string &)> callback) const
     {
+        std::unordered_set<std::string> subdirectories;
         std::lock_guard lock(mutex);
         for (auto it = map.lower_bound(path); it != map.end(); ++it)
         {
-            const auto & subdirectory = it->first.string();
-            if (!subdirectory.starts_with(path))
+            const auto & full_path = it->first.string();
+            if (!full_path.starts_with(path))
                 break;
 
-            auto slash_num = count(subdirectory.begin() + path.size(), subdirectory.end(), '/');
-
-            /// The directory map comparator ensures that the paths with the smallest number of
-            /// hops from the local_path are iterated first. The paths do not end with '/', hence
-            /// break the loop if the number of slashes to the right from the offset is greater than 0.
-            if (slash_num != 0)
-                break;
-
-            callback(std::string(subdirectory.begin() + path.size(), subdirectory.end()) + "/");
+            auto start_of_subdirectory = full_path.begin() + path.size();
+            auto end_of_subdirectory = std::find(start_of_subdirectory, full_path.end(), '/');
+            std::string subdirectory = std::string(start_of_subdirectory, end_of_subdirectory);
+            subdirectory.push_back('/');
+            if (subdirectories.insert(subdirectory).second)
+                callback(subdirectory);
         }
     }
 

@@ -306,6 +306,20 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std:
     return path_map->getRemotePathInfoIfExists(path) != std::nullopt;
 }
 
+bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std::string & path, bool emulate_subdirectories) const
+{
+    if (emulate_subdirectories)
+    {
+        if (path == "/")
+            return true;
+        std::string normalized_path = path;
+        if (normalized_path.ends_with('/'))
+            normalized_path.pop_back();
+        return path_map->existsPartialOrFullPath(normalized_path);
+    }
+    return existsDirectory(path);
+}
+
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
 {
     std::unordered_set<std::string> result = getDirectChildrenOnDisk(fs::path(path) / "");

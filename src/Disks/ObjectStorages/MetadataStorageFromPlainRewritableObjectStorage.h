@@ -43,6 +43,8 @@ public:
 
     bool existsDirectory(const std::string & path) const override;
 
+    bool existsDirectory(const std::string & path, bool emulate_subdirectories) const override;
+
     bool existsFileOrDirectory(const std::string & path) const override;
 
     bool supportsPartitionCommand(const PartitionCommand & command) const override;
