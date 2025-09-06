@@ -202,16 +202,50 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
-    traverseQueryPlan(stack, root,
-        [&](auto & frame_node)
+    bool join_runtime_filters_were_added = false;
+    stack.push_back({.node = &root});
+    while (!stack.empty())
+    {
+        /// Re-run optimizePrewhere if join runtime filters were added
+        if (optimization_settings.enable_join_runtime_filters && optimization_settings.optimize_prewhere && join_runtime_filters_were_added)
+            optimizePrewhere(stack, nodes);
+
+        /// NOTE: optimizePrewhere can modify the stack.
+        auto & frame = stack.back();
+
+        if (frame.next_child == 0)
         {
-            optimizeJoinLogical(frame_node, nodes, optimization_settings);
-            optimizeJoinLegacy(frame_node, nodes, optimization_settings);
-        },
-        [&](auto & frame_node)
+            /// Re-run filter push down optimizations to move newly added runtime filter as deep in the tree as possible
+            if (optimization_settings.enable_join_runtime_filters && join_runtime_filters_were_added)
+            {
+                tryMergeExpressions(frame.node, nodes, {});
+                tryMergeFilters(frame.node, nodes, {});
+                tryPushDownFilter(frame.node, nodes, {});
+            }
+
+            optimizeJoinLogical(*frame.node, nodes, optimization_settings);
+            optimizeJoinLegacy(*frame.node, nodes, optimization_settings);
+
+            if (optimization_settings.enable_join_runtime_filters)
+                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(*frame.node, nodes, optimization_settings);
+        }
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
         {
-            convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
-        });
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+
+        /// After all children have been traversed
+        {
+            convertLogicalJoinToPhysical(*frame.node, nodes, optimization_settings);
+        }
+
+        stack.pop_back();
+    }
 
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)

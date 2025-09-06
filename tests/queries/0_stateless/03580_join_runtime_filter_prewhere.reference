@@ -1,0 +1,12 @@
+-- Check that filter on c_nationkey is moved to PREWHERE
+ReadFromMergeTree (default.customer)
+Prewhere filter column: __filterContains(_runtime_filter_UNIQ_ID_0, __table1.c_nationkey) (removed)
+BuildRuntimeFilter (Build runtime join filter on __table2.n_nationkey (_runtime_filter_UNIQ_ID_0))
+ReadFromMergeTree (default.nation)
+Prewhere filter column: equals(__table2.n_name, \'FRANCE\'_String) (removed)
+-- Check the same query but with swapped tables
+ReadFromMergeTree (default.customer)
+Prewhere filter column: __filterContains(_runtime_filter_UNIQ_ID_0, __table2.c_nationkey) (removed)
+BuildRuntimeFilter (Build runtime join filter on __table1.n_nationkey (_runtime_filter_UNIQ_ID_0))
+ReadFromMergeTree (default.nation)
+Prewhere filter column: equals(__table1.n_name, \'FRANCE\'_String) (removed)
