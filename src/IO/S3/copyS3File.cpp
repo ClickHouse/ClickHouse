@@ -392,12 +392,10 @@ namespace
                         }
                         catch (...)
                         {
+                            tryLogCurrentException(log, fmt::format("While writing part #{}", task->part_number));
                             std::lock_guard lock(bg_tasks_mutex);
                             if (!bg_exception)
-                            {
-                                tryLogCurrentException(log, fmt::format("While writing part #{}", task->part_number));
                                 bg_exception = std::current_exception(); /// The exception will be rethrown after all background tasks stop working.
-                            }
                         }
                         task_finish_notify();
                     }, Priority{});
