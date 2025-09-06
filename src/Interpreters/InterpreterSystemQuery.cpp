@@ -6,6 +6,7 @@
 #include <Access/Common/AllowedClientHosts.h>
 #include <Access/ContextAccess.h>
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
+#include <Columns/ColumnString.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
@@ -41,12 +42,14 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/Freeze.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -812,7 +815,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
             auto system_logs = getContext()->getSystemLogs();
-            system_logs.flush(true, query.logs);
+            system_logs.flush(query.logs);
             break;
         }
         case Type::STOP_LISTEN:
@@ -899,25 +902,29 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::JEMALLOC_PURGE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            purgeJemallocArenas();
+            Jemalloc::purgeArenas();
             break;
         }
         case Type::JEMALLOC_ENABLE_PROFILE:
         {
-            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            setJemallocProfileActive(true);
-            break;
-        }
-        case Type::JEMALLOC_DISABLE_PROFILE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            setJemallocProfileActive(false);
-            break;
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Queries for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler' or "
+                "enable it per query using setting 'jemalloc_enable_profiler'");
         }
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            flushJemallocProfile("/tmp/jemalloc_clickhouse");
+            Jemalloc::flushProfile(query.jemalloc_profile_path.empty() ? "/tmp/jemalloc_clickhouse" : query.jemalloc_profile_path);
+            auto filename = Jemalloc::getLastFlushProfileForThread();
+            auto col = ColumnString::create();
+            col->insertData(filename.data(), filename.size());
+            Columns columns;
+            columns.emplace_back(std::move(col));
+            Chunk chunk(std::move(columns), 1);
+            SharedHeader header = std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "filename")});
+            auto filename_source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
+            result.pipeline = QueryPipeline(filename_source);
             break;
         }
 #else
@@ -1132,7 +1139,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase());
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
-        for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getLightweightTablesIterator(getContext()); iterator->isValid(); iterator->next())
             dropReplicaImpl(query, iterator->table());
         LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
     }
@@ -1186,9 +1193,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             {
                 if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
                 {
-                    ReplicatedTableStatus status;
-                    storage_replicated->getStatus(status);
-                    if (status.replica_path == remote_replica_path)
+                    if (storage_replicated->getReplicaPath() == remote_replica_path)
                         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
                                         "There is a local table {}, which has the same table path in ZooKeeper. "
                                         "Please check the path in query. "
@@ -1227,11 +1232,10 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
     if (!storage_replicated)
         return false;
 
-    ReplicatedTableStatus status;
-    storage_replicated->getStatus(status);
+    const auto & replica_name = storage_replicated->getReplicaName();
 
     /// Do not allow to drop local replicas and active remote replicas
-    if (query.replica == status.zookeeper_info.replica_name)
+    if (query.replica == replica_name)
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
                         "We can't drop local replica, please use `DROP TABLE` if you want "
                         "to clean the data and drop this replica");

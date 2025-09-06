@@ -256,14 +256,13 @@ static void readAndInsertStringImpl(ReadBuffer & in, IColumn & column, size_t si
         auto & offsets = column_string.getOffsets();
 
         size_t old_chars_size = data.size();
-        size_t offset = old_chars_size + size + 1;
+        size_t offset = old_chars_size + size;
         offsets.push_back(offset);
 
         try
         {
             data.resize(offset);
-            in.readStrict(reinterpret_cast<char *>(&data[offset - size - 1]), size);
-            data.back() = 0;
+            in.readStrict(reinterpret_cast<char *>(&data[offset - size]), size);
         }
         catch (...)
         {

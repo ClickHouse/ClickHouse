@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/castTypeToEither.h>
 
 #include <Core/callOnTypeIndex.h>
 
@@ -23,8 +22,6 @@
 #include <Common/transformEndianness.h>
 #include <Common/memcpySmall.h>
 #include <Common/typeid_cast.h>
-
-#include <base/unaligned.h>
 
 
 namespace DB
@@ -195,7 +192,7 @@ public:
                     size_t offset = 0;
                     for (size_t i = 0; i < input_rows_count; ++i)
                     {
-                        size_t copy_size = std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1);
+                        size_t copy_size = std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset);
                         if constexpr (std::endian::native == std::endian::little)
                             memcpy(&vec_res[i],
                                 &data_from[offset],
@@ -290,8 +287,8 @@ public:
             return false;
         }))
         {
-            /// Destination could be array, source has to be String/FixedString
-            /// Above lambda block of callOnTwoTypeIndexes() only for scalar result type specializations.
+            /// Destination could be an array, source has to be String/FixedString
+            /// Above lambda block of callOnTwoTypeIndexes only for scalar result type specializations.
             /// All Array(T) result types are handled with a single code block below using insertData().
             if (WhichDataType(result_type).isArray())
             {
@@ -401,15 +398,13 @@ private:
                 index++;
             data.size -= index;
 #endif
-            data_to.resize(offset + data.size + 1);
+            data_to.resize(offset + data.size);
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
             memcpy(&data_to[offset], data.data, data.size);
 #else
             reverseMemcpy(&data_to[offset], data.data + index, data.size);
 #endif
             offset += data.size;
-            data_to[offset] = 0;
-            ++offset;
             offsets_to[i] = offset;
         }
     }

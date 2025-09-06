@@ -6,11 +6,9 @@ slug: /engines/table-engines/mergetree-family/annindexes
 title: 'Exact and Approximate Vector Search'
 ---
 
-import BetaBadge from '@theme/badges/BetaBadge';
-
 # Exact and approximate vector search
 
-The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, shorter, vector search.
+The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, in short: vector search.
 Two general approaches exist for solving vector search:
 - Exact vector search calculates the distance between the given point and all points in the vector space. This ensures the best possible accuracy, i.e. the returned points are guaranteed to be the actual nearest neighbors. Since the vector space is explored exhaustively, exact vector search can be too slow for real-world use.
 - Approximate vector search refers to a group of techniques (e.g., special data structures like graphs and random forests) which compute results much faster than exact vector search. The result accuracy is typically "good enough" for practical use. Many approximate techniques provide parameters to tune the trade-off between the result accuracy and the search time.
@@ -69,13 +67,10 @@ returns
 
 ## Approximate vector search {#approximate-nearest-neighbor-search}
 
-<BetaBadge/>
-
 ClickHouse provides a special "vector similarity" index to perform approximate vector search.
 
 :::note
-Vector similarity indexes are currently beta.
-To enable them, please first run `SET enable_vector_similarity_index = 1`.
+Vector similarity indexes are available in ClickHouse version 25.8 and higher.
 If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
 
@@ -138,7 +133,7 @@ ORDER BY [...]
 ```
 
 These HNSW-specific parameters are available:
-- `<quantization>` controls the quantization of the vectors in the proximity graph. Possible values are `f64`, `f32`, `f16`, `bf16`, or `i8`. The default value is `bf16`. Note that this parameter does not affect the representation of the vectors in the underlying column.
+- `<quantization>` controls the quantization of the vectors in the proximity graph. Possible values are `f64`, `f32`, `f16`, `bf16`, `i8`, or `b1`. The default value is `bf16`. Note that this parameter does not affect the representation of the vectors in the underlying column.
 - `<hnsw_max_connections_per_layer>` controls the number of neighbors per graph node, also known as HNSW hyperparameter `M`. The default value is `32`. Value `0` means using the default value.
 - `<hnsw_candidate_list_size_for_construction>` controls the size of the dynamic candidate list during construction of the HNSW graph, also known as HNSW hyperparameter `ef_construction`. The default value is `128`. Value `0` means using the default value.
 
@@ -151,6 +146,47 @@ Further restrictions apply:
 - Vector similarity indexes may be build on calculated expressions (e.g., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) but such indexes cannot be used for approximate neighbor search later on.
 - Vector similarity indexes require that all arrays in the underlying column have `<dimension>`-many elements - this is checked during index creation. To detect violations of this requirement as early as possible, users can add a [constraint](/sql-reference/statements/create/table.md#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
 - Likewise, array values in the underlying column must not be empty (`[]`) or have a default value (also `[]`).
+
+**Estimating storage and memory consumption**
+
+A vector generated for use with a typical AI model (e.g. a Large Language Model, [LLMs](https://en.wikipedia.org/wiki/Large_language_model)) consists of hundreds or thousands of floating-point values.
+Thus, a single vector value can have a memory consumption of multiple kilobyte.
+Users who like to estimate the storage required for the underlying vector column in the table, as well as the main memory needed for the vector similarity index, can use below two formula:
+
+Storage consumption of the vector column in the table (uncompressed):
+
+```text
+Storage consumption = Number of vectors * Dimension * Size of column data type
+```
+
+Example for the [dbpedia dataset](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
+
+```text
+Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
+```
+
+The vector similarity index must be fully loaded from disk into main memory to perform searches.
+Similarly, the vector index is also constructed fully in memory and then saved to disk.
+
+Memory consumption required to load a vector index:
+
+```text
+Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
+Memory for in-memory graph (mg) = Number of vectors * hnsw_max_connections_per_layer * 2 * 4
+
+Memory consumption: mv + mg
+```
+
+Example for the [dbpedia dataset](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
+
+```text
+Memory for vectors in the index (mv) = 1 million * 1536 * 2 (for BFloat16) = 3072 MB
+Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
+
+Memory consumption = 3072 + 512 = 3584 MB
+```
+
+Above formula does not account for additional memory required by vector similarity indexes to allocate runtime data structures like pre-allocated buffers and caches.
 
 ### Using a Vector Similarity Index {#using-a-vector-similarity-index}
 
@@ -291,7 +327,7 @@ LIMIT 10
 Assuming that only a very small number of books cost less than 2 dollar, post-filtering may return zero rows because the top 10 matches returned by the vector index could all be priced above 2 dollar.
 By forcing pre-filtering (add `SETTINGS vector_search_filter_strategy = 'prefilter'` to the query), ClickHouse first finds all books with a price of less than 2 dollar and then executes a brute-force vector search for the found books.
 
-As an alternative approach to resolve above issue, setting [vector_search_postfilter_multiplier](../../../operations/settings/settings#vector_search_postfilter_multiplier) (default: `1.0`, maximum: `1000.0`) may be configured to a value > `1.0` (for example, `2.0`).
+As an alternative approach to resolve above issue, setting [vector_search_index_fetch_multiplier](../../../operations/settings/settings#vector_search_index_fetch_multiplier) (default: `1.0`, maximum: `1000.0`) may be configured to a value > `1.0` (for example, `2.0`).
 The number of nearest neighbors fetched from the vector index is multiplied by the setting value and then the additional filter to be applied on those rows to return LIMIT-many rows.
 As an example, we can query again but with multiplier `3.0`:
 
@@ -301,12 +337,12 @@ FROM books
 WHERE price < 2.00
 ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empires'))
 LIMIT 10
-SETTING vector_search_postfilter_multiplier = 3.0;
+SETTING vector_search_index_fetch_multiplier = 3.0;
 ```
 
 ClickHouse will fetch 3.0 x 10 = 30 nearest neighbors from the vector index in each part and afterwards evaluate the additional filters.
 Only the ten closest neighbors will be returned.
-We note that setting `vector_search_postfilter_multiplier` can mitigate the problem but in extreme cases (very selective WHERE condition), it is still possible that less than N requested rows returned.
+We note that setting `vector_search_index_fetch_multiplier` can mitigate the problem but in extreme cases (very selective WHERE condition), it is still possible that less than N requested rows returned.
 
 **Rescoring**
 
@@ -317,7 +353,7 @@ ClickHouse will then load these granules from disk, and repeat the distance calc
 This step is called rescoring and while it can theoretically improve accuracy - remember the vector similarity index returns only an _approximate_ result, it is obvious not optimal in terms of performance.
 
 ClickHouse therefore provides an optimization which disables rescoring and returns the most similar vectors and their distances directly from the index.
-The optimization is disabled by default, see setting [vector_search_with_rescoring](../../../operations/settings/settings#vector_search_with_rescoring).
+The optimization is enabled by default, see setting [vector_search_with_rescoring](../../../operations/settings/settings#vector_search_with_rescoring).
 The way it works at a high level is that ClickHouse makes the most similar vectors and their distances available as a virtual column `_distances`.
 To see this, run a vector search query with `EXPLAIN header = 1`:
 
@@ -358,7 +394,7 @@ A query run without rescoring (`vector_search_with_rescoring = 0`) and with para
 
 ### Performance tuning {#performance-tuning}
 
-**Tuning Compression**
+**Tuning compression**
 
 In virtually all use cases, the vectors in the underlying column are dense and do not compress well.
 As a result, [compression](/sql-reference/statements/create/table.md#column_compression_codec) slows down inserts and reads into/from the vector column.
@@ -369,7 +405,7 @@ To do that, specify `CODEC(NONE)` for the vector column like this:
 CREATE TABLE tab(id Int32, vec Array(Float32) CODEC(NONE), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
 ```
 
-**Tuning Index Creation**
+**Tuning index creation**
 
 The life cycle of vector similarity indexes is tied to the life cycle of parts.
 In other words, whenever a new part with defined vector similarity index is created, the index is create as well.
@@ -391,7 +427,7 @@ Third, to speed up merges, users may disable the creation of skipping indexes on
 This, in conjunction with statement [ALTER TABLE \[...\] MATERIALIZE INDEX \[...\]](../../../sql-reference/statements/alter/skipping-index.md#materialize-index), provides explicit control over the life cycle of vector similarity indexes.
 For example, index creation can be deferred until all data was ingested or until a period of low system load such as the weekend.
 
-**Tuning Index Usage**
+**Tuning index usage**
 
 SELECT queries need to load vector similarity indexes into main memory to use them.
 To avoid that the same vector similarity index is loaded repeatedly into main memory, ClickHouse provides a dedicated in-memory cache for such indexes.
@@ -420,7 +456,29 @@ ORDER BY event_time_microseconds;
 
 For production use-cases, we recommend that the cache is sized large enough so that all vector indexes remain in memory at all times.
 
-**Tuning Data Transfer**
+**Tuning quantization**
+
+[Quantization](https://huggingface.co/blog/embedding-quantization) is a technique to reduce the memory footprint of vectors and the computational costs of building and traversing vector indexes.
+ClickHouse vector indexes supports the following quantization options:
+
+| Quantization   | Name                         | Storage per dimension |
+|----------------|------------------------------|---------------------- |
+| f32            | Single precision             | 4 bytes               |
+| f16            | Half precision               | 2 bytes               |
+| bf16 (default) | Half precision (brain float) | 2 bytes               |
+| i8             | Quarter precision            | 1 byte                |
+| b1             | Binary                       | 1 bit                 |
+
+Quantization reduces the precision of vector searches compared to searching the original full-precision floating-point values (`f32`).
+However, on most datasets, half-precision brain float quantization (`bf16`) results in a negligible precision loss, therefore vector similarity indexes use this quantization technique by default.
+Quarter precision (`i8`) and binary (`b1`) quantization causes appreciable precision loss in vector searches.
+We recommend both quantizations only if the the size of the vector similarity index is significantly larger than the available DRAM size.
+In this case, we also suggest enabling rescoring ([vector_search_index_fetch_multiplier](../../../operations/settings/settings#vector_search_index_fetch_multiplier), [vector_search_with_rescoring](../../../operations/settings/settings#vector_search_with_rescoring)) to improve accuracy.
+Binary quantization is only recommended for 1) normalized embeddings (i.e. vector length = 1, OpenAI models are usually normalized), and 2) if the cosine distance is used as distance function.
+Binary quantization internally uses the Hamming distance to construct and search the proximity graph.
+The rescoring step uses the original full-precision vectors stored in the table to identify the nearest neighbours via cosine distance.
+
+**Tuning data transfer**
 
 The reference vector in a vector search query is provided by the user and generally retrieved by making a call to a Large Language Model (LLM).
 Typical Python code which runs a vector search in ClickHouse might look like this
@@ -526,6 +584,12 @@ returns
 3. │  8 │ [0,2.2] │
    └────┴─────────┘
 ```
+
+Further example datasets that use approximate vector search:
+- [LAION-400M](../../../getting-started/example-datasets/laion-400m-dataset)
+- [LAION-5B](../../../getting-started/example-datasets/laion-5b-dataset)
+- [dbpedia](../../../getting-started/example-datasets/dbpedia-dataset)
+- [hackernews](../../../getting-started/example-datasets/hackernews-vector-search-dataset)
 
 ## References {#references}
 

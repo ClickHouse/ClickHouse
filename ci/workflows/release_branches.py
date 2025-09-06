@@ -23,7 +23,7 @@ workflow = Workflow.Config(
         ],
         JobConfigs.docker_sever,
         JobConfigs.docker_keeper,
-        *JobConfigs.install_check_jobs,
+        *JobConfigs.install_check_master_jobs,
         *[
             job
             for job in JobConfigs.integration_test_asan_master_jobs

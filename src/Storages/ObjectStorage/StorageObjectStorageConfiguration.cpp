@@ -33,7 +33,9 @@ void StorageObjectStorageConfiguration::create( ///NOLINT
     ContextPtr context,
     const std::optional<ColumnsDescription> & /*columns*/,
     ASTPtr /*partition_by*/,
-    bool /*if_not_exists*/)
+    bool /*if_not_exists*/,
+    std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const StorageID & /*table_id_*/)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
@@ -44,10 +46,11 @@ ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     bool supports_subset_of_columns,
+    bool supports_tuple_elements,
     ContextPtr local_context,
     const PrepareReadingFromFormatHiveParams & hive_parameters)
 {
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, hive_parameters);
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements, hive_parameters);
 }
 
 std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTableStructureFromMetadata() const
@@ -201,5 +204,12 @@ void StorageObjectStorageConfiguration::assertInitialized() const
     }
 }
 
+void StorageObjectStorageConfiguration::addDeleteTransformers(
+    ObjectInfoPtr,
+    QueryPipelineBuilder &,
+    const std::optional<FormatSettings> &,
+    ContextPtr) const
+{
+}
 
 }

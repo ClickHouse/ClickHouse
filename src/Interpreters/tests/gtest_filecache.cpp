@@ -9,6 +9,7 @@
 #include <thread>
 
 #include <Core/ServerUUID.h>
+#include <Common/ThreadStatus.h>
 #include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -304,13 +305,23 @@ void increasePriority(const HolderPtr & holder, size_t pos)
 class FileCacheTest : public ::testing::Test
 {
 public:
-    FileCacheTest() {
+    FileCacheTest()
+    {
+        /// Reset current_thread to avoid conflicts of ThreadStatus with MainThreadStatus
+        current_thread = nullptr;
+
         /// Context has to be created before calling cache.initialize();
         /// Otherwise the tests which run before FileCacheTest.get are failed
         /// It is logical to call destroyContext() at destructor.
         /// But that wouldn't work because for proper initialization and destruction global/static objects
         /// testing::Environment has to be used.
         getContext();
+    }
+
+    ~FileCacheTest() override
+    {
+        /// Reset current_thread back
+        current_thread = MainThreadStatus::get();
     }
 
     static void setupLogs(const std::string & level)

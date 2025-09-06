@@ -1,3 +1,4 @@
+#include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UncompressedCache.h>
@@ -13,7 +14,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Core/ServerSettings.h>
+#include <Daemon/BaseDaemon.h>
 
 #include <boost/locale/date_time_facet.hpp>
 
@@ -466,7 +467,7 @@ Value saveJemallocMetricImpl(
     const std::string & jemalloc_full_name,
     const std::string & clickhouse_full_name)
 {
-    auto value = getJemallocValue<Value>(jemalloc_full_name.c_str());
+    auto value = Jemalloc::getValue<Value>(jemalloc_full_name.c_str());
     values[clickhouse_full_name] = AsynchronousMetricValue(value, "An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html");
     return value;
 }
@@ -645,6 +646,19 @@ AsynchronousMetrics::NetworkInterfaceStatValues::operator-(const AsynchronousMet
 
 
 #if defined(OS_LINUX)
+
+void AsynchronousMetrics::applyCgroupCPUMetricsUpdate(
+    AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier)
+{
+    new_values["CGroupUserTime"]
+        = {delta_values.user * multiplier,
+           "The ratio of time the CPU core was running userspace code."
+           " This includes also the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline "
+           "stalls, branch mispredictions, running another SMT core)."};
+    new_values["CGroupSystemTime"]
+        = {delta_values.system * multiplier, "The ratio of time the CPU core was running OS kernel (system) code."};
+}
+
 void AsynchronousMetrics::applyCPUMetricsUpdate(
     AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier)
 {
@@ -721,6 +735,25 @@ void AsynchronousMetrics::applyCPUMetricsUpdate(
            "them [0..num cores]."};
 }
 
+void AsynchronousMetrics::applyCgroupNormalizedCPUMetricsUpdate(
+    AsynchronousMetricValues & new_values, double num_cpus_to_normalize, const ProcStatValuesCPU & delta_values_all_cpus, double multiplier)
+{
+    chassert(num_cpus_to_normalize);
+
+    new_values["CGroupUserTimeNormalized"]
+        = {delta_values_all_cpus.user * multiplier / num_cpus_to_normalize,
+           "The value is similar to `CGroupUserTime` but divided by the number of available CPU cores to be measured in the [0..1] "
+           "interval regardless of the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+    new_values["CGroupSystemTimeNormalized"]
+        = {delta_values_all_cpus.system * multiplier / num_cpus_to_normalize,
+           "The value is similar to `CGroupSystemTime` but divided by the number of available CPU cores to be measured in the [0..1] "
+           "interval regardless of the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+}
+
 void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
     AsynchronousMetricValues & new_values, double num_cpus_to_normalize, const ProcStatValuesCPU & delta_values_all_cpus, double multiplier)
 {
@@ -787,6 +820,7 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
            "non-uniform, and still get the average resource utilization metric."};
 }
+
 void readPressureFile(
     AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in,
     std::unordered_map<String, uint64_t> & prev_pressure_vals, bool first_run)
@@ -903,7 +937,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
     // the following calls will return stale values. It increments and returns
     // the current epoch number, which might be useful to log as a sanity check.
-    auto epoch = update_jemalloc_epoch ? updateJemallocEpoch() : getJemallocValue<uint64_t>("epoch");
+    auto epoch = update_jemalloc_epoch ? updateJemallocEpoch() : Jemalloc::getValue<uint64_t>("epoch");
     new_values["jemalloc.epoch"]
         = {epoch,
            "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other "
@@ -921,6 +955,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
     saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
     saveJemallocProf<bool>(new_values, "active");
+    saveJemallocProf<bool>(new_values, "thread_active_init");
     saveAllArenasMetric<size_t>(new_values, "pactive");
     saveAllArenasMetric<size_t>(new_values, "pdirty");
     saveAllArenasMetric<size_t>(new_values, "pmuzzy");
@@ -1120,8 +1155,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         new_values["CGroupMaxCPU"] = { max_cpu_cgroups, "The maximum number of CPU cores according to CGroups."};
     }
 
-    const bool cgroup_cpu_metrics_present = cgroupcpu_stat || cgroupcpuacct_stat;
-    if (cgroup_cpu_metrics_present)
+    if (cgroupcpu_stat || cgroupcpuacct_stat)
     {
         try
         {
@@ -1165,13 +1199,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 const double multiplier = 1.0 / cgroup_version_specific_divisor
                     / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
 
-                const ProcStatValuesCPU delta_values = current_values - proc_stat_values_all_cpus;
-                applyCPUMetricsUpdate(new_values, /*cpu_suffix=*/"", delta_values, multiplier);
+                const ProcStatValuesCPU delta_values = current_values - cgroup_values_all_cpus;
+                applyCgroupCPUMetricsUpdate(new_values, delta_values, multiplier);
                 if (max_cpu_cgroups > 0)
-                    applyNormalizedCPUMetricsUpdate(new_values, max_cpu_cgroups, delta_values, multiplier);
+                    applyCgroupNormalizedCPUMetricsUpdate(new_values, max_cpu_cgroups, delta_values, multiplier);
             }
 
-            proc_stat_values_all_cpus = current_values;
+            cgroup_values_all_cpus = current_values;
         }
         catch (...)
         {
@@ -1205,14 +1239,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 if (name.starts_with("cpu"))
                 {
-                    if (cgroup_cpu_metrics_present)
-                    {
-                        /// Skip the CPU metrics if we already have them from cgroup
-                        ProcStatValuesCPU current_values{};
-                        current_values.read(*proc_stat);
-                        continue;
-                    }
-
                     String cpu_num_str = name.substr(strlen("cpu"));
                     UInt64 cpu_num = 0;
                     if (!cpu_num_str.empty())
@@ -1299,7 +1325,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 Float64 num_cpus_to_normalize = max_cpu_cgroups > 0 ? max_cpu_cgroups : num_cpus;
 
-                if (num_cpus_to_normalize > 0 && !cgroup_cpu_metrics_present)
+                if (num_cpus_to_normalize > 0)
                     applyNormalizedCPUMetricsUpdate(new_values, num_cpus_to_normalize, delta_values_all_cpus, multiplier);
             }
 
@@ -2127,6 +2153,12 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
 
     new_values["OSCPUOverload"] = { ProfileEvents::global_counters.getCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold], /*reset*/ true), "Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics." };
+
+    for (const auto & metric : BaseDaemon::instance().getAsynchronousMetricsFromAsyncLogs())
+    {
+        new_values[fmt::format("AsyncLogging{}QueueSize", metric.first)]
+            = {static_cast<double>(metric.second), "Number of async messages queued pending for logging in this channel"};
+    }
 
     /// Add more metrics as you wish.
 
