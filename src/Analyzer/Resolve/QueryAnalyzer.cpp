@@ -3016,11 +3016,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
                 bool current_do_not_execute = do_not_execute;
                 do_not_execute = true;
-                auto dead_branch_argument_projection_name = resolveExpressionNode(possibly_invalid_argument_node,
+                auto dead_branch_argument_projection_names = resolveExpressionNode(possibly_invalid_argument_node,
                     scope,
                     false /*allow_lambda_expression*/,
                     false /*allow_table_expression*/);
                 do_not_execute = current_do_not_execute;
+
+                auto dead_branch_argument_projection_name =
+                    possibly_invalid_argument_node->getNodeType() == QueryTreeNodeType::IDENTIFIER ?
+                        possibly_invalid_argument_node->as<IdentifierNode>()->getIdentifier().getFullName() :
+                        dead_branch_argument_projection_names[0];
 
                 auto result_projection_name = resolveExpressionNode(constant_if_result_node,
                     scope,
@@ -3030,11 +3035,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (*constant_condition)
                 {
                     arguments_projection_names.push_back(result_projection_name[0]);
-                    arguments_projection_names.push_back(dead_branch_argument_projection_name[0]);
+                    arguments_projection_names.push_back(dead_branch_argument_projection_name);
                 }
                 else
                 {
-                    arguments_projection_names.push_back(dead_branch_argument_projection_name[0]);
+                    arguments_projection_names.push_back(dead_branch_argument_projection_name);
                     arguments_projection_names.push_back(result_projection_name[0]);
                 }
 
@@ -3100,11 +3105,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 {
                     bool current_do_not_execute = do_not_execute;
                     do_not_execute = true;
-                    auto second_argument = resolveExpressionNode(if_function_arguments[1],
+                    auto second_argument_projection_names = resolveExpressionNode(if_function_arguments[1],
                         scope,
                         false /*allow_lambda_expression*/,
-                        false /*allow_table_expression*/)[0];
+                        false /*allow_table_expression*/);
                     do_not_execute = current_do_not_execute;
+
+                    auto second_argument_projection_name =
+                    if_function_arguments[1]->getNodeType() == QueryTreeNodeType::IDENTIFIER ?
+                        if_function_arguments[1]->as<IdentifierNode>()->getIdentifier().getFullName() :
+                        second_argument_projection_names[0];
 
                     auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
                     for (size_t n = 2; n < if_function_arguments.size(); ++n)
@@ -3123,7 +3133,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         node = buildCastFunction(node, common_type, scope.context, true);
                     }
 
-                    result_projection_names[0].insert(strlen("multiIf") + 1, arguments_projection_names[0] + ", " + second_argument + ", ");
+                    result_projection_names[0].insert(strlen("multiIf") + 1, arguments_projection_names[0] + ", " + second_argument_projection_name + ", ");
 
                     return result_projection_names;
                 }
