@@ -20,11 +20,11 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserSystemQuery.h>
 #include <Parsers/ParserUseQuery.h>
-#include <Parsers/ParserExternalDDLQuery.h>
 #include <Parsers/ParserTransactionControl.h>
 #include <Parsers/ParserDeleteQuery.h>
 #include <Parsers/ParserUpdateQuery.h>
 #include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserCopyQuery.h>
 
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
@@ -71,10 +71,10 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserGrantQuery grant_p;
     ParserCheckGrantQuery check_grant_p;
     ParserSetRoleQuery set_role_p;
-    ParserExternalDDLQuery external_ddl_p;
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
     ParserUpdateQuery update_p;
+    ParserCopyQuery copy_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
@@ -102,10 +102,10 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || move_access_entity_p.parse(pos, node, expected)
         || grant_p.parse(pos, node, expected)
         || check_grant_p.parse(pos, node, expected)
-        || external_ddl_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
         || delete_p.parse(pos, node, expected)
-        || update_p.parse(pos, node, expected);
+        || update_p.parse(pos, node, expected)
+        || copy_p.parse(pos, node, expected);
 
     if (res && allow_in_parallel_with)
     {

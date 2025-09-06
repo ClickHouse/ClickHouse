@@ -11,6 +11,7 @@
 #include <Parsers/queryNormalization.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ViewDefinerDependencies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -120,6 +121,9 @@ StorageMaterializedView::StorageMaterializedView(
     if (storage_metadata.sql_security_type == SQLSecurityType::INVOKER)
         throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
 
+    if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
+        ViewDefinerDependencies::instance().addViewDependency(*storage_metadata.definer, table_id_);
+
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
@@ -224,8 +228,16 @@ StorageMaterializedView::StorageMaterializedView(
             /// Sanity-check permissions. This is just for usability, the main checks are done by the
             /// actual CREATE/INSERT/SELECT/EXCHANGE/DROP interpreters during refresh.
             String inner_db_name = has_inner_table ? table_id_.database_name : to_table_id.database_name;
-            auto refresh_context = storage_metadata.getSQLSecurityOverriddenContext(getContext());
-            refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, inner_db_name);
+
+            /// When restoring from backup, the definer user may not be backed up, which will cause the whole backup to be broken.
+            /// To fix this, we don't check the permissions for the target table for the first time.
+            /// If the table is created later when adding a new replica to Replicated database,
+            /// we may also not have the definer, so don't check the permissions to avoid the database becoming stuck.
+            if (!is_restore_from_backup && mode <= LoadingStrictnessLevel::CREATE)
+            {
+                auto refresh_context = storage_metadata.getSQLSecurityOverriddenContext(getContext());
+                refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, inner_db_name);
+            }
         }
 
         refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, mode >= LoadingStrictnessLevel::ATTACH, refresh_coordinated, query.is_create_empty, is_restore_from_backup);
@@ -432,9 +444,9 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
 void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
-    const auto & select_query = getInMemoryMetadataPtr()->getSelectQuery();
-    if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, table_id);
+
+    if (getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
+        ViewDefinerDependencies::instance().removeViewDependencies(table_id);
 
     /// Sync flag and the setting make sense for Atomic databases only.
     /// However, with Atomic databases, IStorage::drop() can be called only from a background task in DatabaseCatalog.
@@ -669,6 +681,14 @@ void StorageMaterializedView::alter(
     }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+
+    auto & instance = ViewDefinerDependencies::instance();
+    if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
+        instance.removeViewDependencies(table_id);
+
+    if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
+        instance.addViewDependency(*new_metadata.definer, table_id);
+
     setInMemoryMetadata(new_metadata);
 
     if (refresher)

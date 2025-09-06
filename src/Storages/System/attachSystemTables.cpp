@@ -14,6 +14,7 @@
 #include <Storages/System/StorageSystemClusters.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/System/StorageSystemCodecs.h>
+#include <Storages/System/StorageSystemCompletions.h>
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
@@ -101,7 +102,6 @@
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Storages/System/StorageSystemViewRefreshes.h>
 #include <Storages/System/StorageSystemDNSCache.h>
-#include <Storages/System/StorageSystemLatencyBuckets.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #include <Interpreters/Context.h>
 
@@ -248,10 +248,11 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     }
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
+    {
         attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");
-
-    attach<StorageSystemLatencyBuckets>(context, system_database, "latency_buckets", "Contains buckets bounds used by latency log.");
+    }
     attach<StorageSystemCodecs>(context, system_database, "codecs", "Contains information about system codecs.");
+    attach<StorageSystemCompletions>(context, system_database, "completions", "Contains a list of completion tokens.");
 }
 
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics)

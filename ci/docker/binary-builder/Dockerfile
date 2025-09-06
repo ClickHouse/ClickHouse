@@ -5,10 +5,10 @@ ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
 # If the cctools is updated, then first build it in the CI, then update here in a different commit
-COPY --from=clickhouse/cctools:425d6927d1efbd790bdb /cctools /cctools
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /cctools /cctools
 
 # We need OpenSSL FIPS in permissive mode for build on MasterCI
-COPY --from=clickhouse/cctools:425d6927d1efbd790bdb \
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \
@@ -31,39 +31,6 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         clang-tidy-${LLVM_VERSION} \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
-
-# Rust toolchain and libraries
-ENV RUSTUP_HOME=/rust/rustup
-ENV CARGO_HOME=/rust/cargo
-ENV PATH="/rust/cargo/bin:${PATH}"
-ENV RUSTUP_VERSION=1.28.1
-
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "x86_64" ]; then \
-        RUSTUP_ARCH="x86_64-unknown-linux-gnu"; \
-    elif [ "$ARCH" = "aarch64" ]; then \
-        RUSTUP_ARCH="aarch64-unknown-linux-gnu"; \
-    else \
-        echo "Unsupported architecture: $ARCH"; exit 1; \
-    fi && \
-    curl -fsSL -o rustup-init "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${RUSTUP_ARCH}/rustup-init" && \
-    chmod +x rustup-init && \
-    ./rustup-init -y && \
-    rm rustup-init && \
-    chmod 777 -R /rust && \
-    rustup toolchain install nightly-2025-07-07 --no-self-update && \
-    rustup default nightly-2025-07-07 && \
-    rustup toolchain remove stable && \
-    rustup component add rust-src && \
-    rustup target add x86_64-unknown-linux-gnu && \
-    rustup target add aarch64-unknown-linux-gnu && \
-    rustup target add x86_64-apple-darwin && \
-    rustup target add x86_64-unknown-freebsd && \
-    rustup target add aarch64-apple-darwin && \
-    rustup target add powerpc64le-unknown-linux-gnu && \
-    rustup target add x86_64-unknown-linux-musl && \
-    rustup target add aarch64-unknown-linux-musl && \
-    rustup target add riscv64gc-unknown-linux-gnu
 
 # Download and install mold 2.0 for s390x build
 RUN curl -Lo /tmp/mold.tar.gz "https://github.com/rui314/mold/releases/download/v2.0.0/mold-2.0.0-x86_64-linux.tar.gz" \

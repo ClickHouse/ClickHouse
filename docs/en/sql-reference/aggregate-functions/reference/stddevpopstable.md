@@ -22,7 +22,7 @@ stddevPopStable(x)
 
 **Returned value**
 
-Square root of standard deviation of `x`. [Float64](../../data-types/float.md).
+Square root of the variance of `x`. [Float64](../../data-types/float.md).
 
 **Example**
 

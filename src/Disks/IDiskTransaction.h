@@ -1,19 +1,19 @@
 #pragma once
 
-#include <functional>
 #include <string>
 #include <vector>
 #include <boost/noncopyable.hpp>
-#include <sys/types.h>
 #include <Disks/IDisk.h>
-
+#include <sys/types.h>
+#include <Disks/DiskCommitTransactionOptions.h>
 
 namespace DB
 {
 
-struct ReadSettings;
-struct WriteSettings;
-class WriteBufferFromFileBase;
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 struct RemoveRequest
 {
@@ -28,19 +28,22 @@ struct RemoveRequest
 
 using RemoveBatchRequest = std::vector<RemoveRequest>;
 
-struct IDiskTransaction;
-using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
-
 /// Simple interface batch execution of write disk operations.
 /// Method are almost equal to disk methods.
 struct IDiskTransaction : private boost::noncopyable
 {
 public:
+
     /// Tries to commit all accumulated operations simultaneously.
     /// If something fails rollback and throw exception.
-    virtual void commit() = 0;
+    virtual void commit(const TransactionCommitOptionsVariant & = NoCommitOptions{}) = 0; // NOLINT
 
     virtual void undo() = 0;
+
+    virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Commit with ZK connection not implemented");
+    }
 
     virtual ~IDiskTransaction() = default;
 
@@ -56,7 +59,7 @@ public:
     /// Move directory from `from_path` to `to_path`.
     virtual void moveDirectory(const std::string & from_path, const std::string & to_path) = 0;
 
-    virtual void moveFile(const std::string & from_path, const std::string & to_path) = 0;
+    virtual void moveFile(const String & from_path, const String & to_path) = 0;
 
     virtual void createFile(const String & path) = 0;
 
@@ -82,10 +85,10 @@ public:
         const WriteSettings & settings = {},
         bool autocommit = true) = 0;
 
-    using WriteBlobFunction = std::function<size_t(const std::vector<std::string> & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
+    using WriteBlobFunction = std::function<size_t(const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
 
     /// Write a file using a custom function to write an object to the disk's object storage.
-    virtual void writeFileUsingBlobWritingFunction(const std::string & path, WriteMode mode, WriteBlobFunction && write_blob_function) = 0;
+    virtual void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) = 0;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     virtual void removeFile(const std::string & path) = 0;
@@ -135,18 +138,8 @@ public:
 
     /// Truncate file to the target size.
     virtual void truncateFile(const std::string & src_path, size_t target_size) = 0;
-
-    virtual std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const = 0;
-    virtual std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction( /// NOLINT
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const = 0;
-
-    virtual bool isTransactional() const = 0;
-
-    virtual void validateTransaction(std::function<void(IDiskTransaction&)> check_function) = 0;
 };
 
+using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
 
 }

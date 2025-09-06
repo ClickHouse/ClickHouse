@@ -132,12 +132,14 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     FileStatusPtr file_status_,
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
+    bool use_persistent_processing_nodes_,
     LoggerPtr log_)
     : path(path_)
     , node_name(getNodeName(path_))
     , file_status(file_status_)
     , max_loading_retries(max_loading_retries_)
     , metadata_ref_count(metadata_ref_count_)
+    , use_persistent_processing_nodes(use_persistent_processing_nodes_)
     , processing_node_path(processing_node_path_)
     , processed_node_path(processed_node_path_)
     , failed_node_path(failed_node_path_)
@@ -188,6 +190,13 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+}
+
+std::string ObjectStorageQueueIFileMetadata::getProcessingNodesPath(bool use_persistent_processing_nodes)
+{
+    if (use_persistent_processing_nodes)
+        return "persistent_processing";
+    return "processing";
 }
 
 std::string ObjectStorageQueueIFileMetadata::getNodeName(const std::string & path)

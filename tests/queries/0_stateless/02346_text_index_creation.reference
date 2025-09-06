@@ -6,9 +6,12 @@ Test ngram_size argument.
 Test separators argument.
 -- separators must be array.
 -- separators must be an array of strings.
-Test max_rows_per_postings_list argument.
--- max_rows_per_posting_list is set to unlimited rows.
--- max_rows_per_posting_list should be at least 8192.
+Test segment_digestion_threshold_bytes argument.
+-- segment_digestion_threshold_bytes must be an integer.
+-- segment_digestion_threshold_bytes can be 0 (zero).
+Test bloom_filter_false_positive_rate argument.
+-- bloom_filter_false_positive_rate must be a double.
+-- bloom_filter_false_positive_rate must be between 0.0 and 1.0.
 Parameters are shuffled.
 Types are incorrect.
 Same argument appears >1 times.

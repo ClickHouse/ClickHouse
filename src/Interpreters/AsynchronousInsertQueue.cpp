@@ -129,14 +129,17 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     }
 
     setting_changes = settings->changes();
-    for (auto it = setting_changes.begin(); it != setting_changes.end(); ++it)
+    for (auto it = setting_changes.begin(); it != setting_changes.end();)
     {
         if (settings_to_skip.contains(it->name))
+        {
             it = setting_changes.erase(it);
+        }
         else
         {
             siphash.update(it->name);
             applyVisitor(FieldVisitorHash(siphash), it->value);
+            ++it;
         }
     }
 
@@ -383,7 +386,17 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
 AsynchronousInsertQueue::PushResult
 AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context)
 {
-    query = query->clone();
+    {
+        /// we clone query to avoid modifying the original one
+        /// but we move tail buffer to the new query
+        auto copy_ptr = query;
+        query = query->clone();
+        if (auto * insert_query = copy_ptr->as<ASTInsertQuery>())
+        {
+            if (insert_query->tail)
+                insert_query->tail.reset();
+        }
+    }
     preprocessInsertQuery(query, query_context);
 
     String bytes;

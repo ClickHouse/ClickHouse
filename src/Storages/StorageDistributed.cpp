@@ -65,6 +65,8 @@
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>
 
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
@@ -175,6 +177,7 @@ namespace Setting
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool prefer_global_in_and_join;
+    extern const SettingsBool enable_global_with_statement;
 }
 
 namespace DistributedSetting
@@ -269,6 +272,24 @@ ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, Con
     ASTPtr query = sharding_key;
     auto syntax_result = TreeRewriter(context).analyze(query, columns);
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
+}
+
+void checkShardingKeyExistsAndIsNumeric(const ASTPtr & sharding_key_ast, ContextPtr context, const NamesAndTypesList & columns)
+{
+    if (!sharding_key_ast)
+        return;
+
+    auto sharding_expr = buildShardingKeyExpression(sharding_key_ast, context, columns, true);
+    const Block & block = sharding_expr->getSampleBlock();
+
+    if (block.columns() != 1)
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Sharding expression must return exactly one column");
+
+    auto type = block.getByPosition(0).type;
+
+    if (!type->isValueRepresentedByInteger())
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Sharding expression has type {}, but should be one of integer type",
+            type->getName());
 }
 
 bool isExpressionActionsDeterministic(const ExpressionActionsPtr & actions)
@@ -384,6 +405,7 @@ StorageDistributed::StorageDistributed(
     , owned_cluster(std::move(owned_cluster_))
     , cluster_name(getContext()->getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
+    , sharding_key(sharding_key_)
     , relative_data_path(relative_data_path_)
     , distributed_settings(std::make_unique<DistributedSettings>(distributed_settings_))
     , rng(randomSeed())
@@ -912,9 +934,28 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         if (table_expression_modifiers)
             table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
 
-        QueryAnalysisPass query_analysis_pass;
-        QueryTreeNodePtr node = table_function_node;
-        query_analysis_pass.run(node, query_context);
+        /// Subquery in table function `view` may reference tables that don't exist on the initiator.
+        if (table_function_node->getTableFunctionName() == "view")
+        {
+            auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+            auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
+
+            StorageID fake_storage_id = StorageID::createEmpty();
+            if (auto * table_node = query_info.table_expression->as<TableNode>())
+                fake_storage_id = table_node->getStorage()->getStorageID();
+            else if (auto * original_table_function_node = query_info.table_expression->as<TableFunctionNode>())
+                fake_storage_id = original_table_function_node->getStorage()->getStorageID();
+
+            auto storage = std::make_shared<StorageDummy>(fake_storage_id, ColumnsDescription{column_names_and_types});
+
+            table_function_node->resolve({}, std::move(storage), query_context, /*unresolved_arguments_indexes_=*/{ 0 });
+        }
+        else
+        {
+            QueryAnalysisPass query_analysis_pass;
+            QueryTreeNodePtr node = table_function_node;
+            query_analysis_pass.run(node, query_context);
+        }
 
         replacement_table_expression = std::move(table_function_node);
     }
@@ -976,9 +1017,7 @@ void StorageDistributed::read(
 
     if (settings[Setting::allow_experimental_analyzer])
     {
-        StorageID remote_storage_id = StorageID::createEmpty();
-        if (!remote_table_function_ptr)
-            remote_storage_id = StorageID{remote_database, remote_table};
+        StorageID remote_storage_id = StorageID{remote_database, remote_table};
 
         auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
             query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
@@ -1302,9 +1341,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const auto cluster = getCluster();
 
     /// Select query is needed for pruining on virtual columns
-    auto number_of_replicas = static_cast<UInt64>(cluster->getShardsInfo().size());
     auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.get(), local_context, number_of_replicas);
+        predicate, filter.get(), local_context, cluster);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
@@ -1364,6 +1402,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     {
         if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
+            if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
+                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
+            ApplyWithSubqueryVisitor(local_context).visit(select.list_of_selects->children.at(0));
+
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
 
             if (joined_tables.tablesCount() == 1)
@@ -1414,6 +1456,10 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
             }
         }
     }
+
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    commands.apply(new_metadata, local_context);
+    checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
 }
 
 void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
@@ -2064,7 +2110,7 @@ void registerStorageDistributed(StorageFactory & factory)
         String remote_database = checkAndGetLiteralArgument<String>(engine_args[1], "remote_database");
         String remote_table = checkAndGetLiteralArgument<String>(engine_args[2], "remote_table");
 
-        const auto & sharding_key = engine_args.size() >= 4 ? engine_args[3] : nullptr;
+        const auto & sharding_key_ast = engine_args.size() >= 4 ? engine_args[3] : nullptr;
         String storage_policy = "default";
         if (engine_args.size() >= 5)
         {
@@ -2073,20 +2119,7 @@ void registerStorageDistributed(StorageFactory & factory)
         }
 
         /// Check that sharding_key exists in the table and has numeric type.
-        if (sharding_key)
-        {
-            auto sharding_expr = buildShardingKeyExpression(sharding_key, context, args.columns.getAllPhysical(), true);
-            const Block & block = sharding_expr->getSampleBlock();
-
-            if (block.columns() != 1)
-                throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Sharding expression must return exactly one column");
-
-            auto type = block.getByPosition(0).type;
-
-            if (!type->isValueRepresentedByInteger())
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Sharding expression has type {}, but should be one of integer type",
-                    type->getName());
-        }
+        checkShardingKeyExistsAndIsNumeric(sharding_key_ast, context, args.columns.getAllPhysical());
 
         /// TODO: move some arguments from the arguments to the SETTINGS.
         DistributedSettings distributed_settings = context->getDistributedSettings();
@@ -2127,7 +2160,7 @@ void registerStorageDistributed(StorageFactory & factory)
             remote_table,
             cluster_name,
             context,
-            sharding_key,
+            sharding_key_ast,
             storage_policy,
             args.relative_data_path,
             distributed_settings,

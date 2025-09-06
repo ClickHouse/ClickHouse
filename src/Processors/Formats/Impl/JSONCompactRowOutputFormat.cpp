@@ -70,7 +70,8 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
     factory.registerOutputFormat("JSONCompact", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & format_settings)
+        const FormatSettings & format_settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
         return std::make_shared<JSONCompactRowOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, false);
     });
@@ -81,7 +82,8 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
     factory.registerOutputFormat("JSONCompactStrings", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & format_settings)
+        const FormatSettings & format_settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
         return std::make_shared<JSONCompactRowOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, true);
     });
