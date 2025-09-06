@@ -2112,6 +2112,10 @@ Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both ta
 Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
 )", 0) \
     \
+    DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(
+Maximum length of step description in EXPLAIN PLAN.
+)", 0) \
+    \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
 )", 0) \
