@@ -443,8 +443,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     mutations_updating_task->deactivate();
 
-    mutations_watch_callback = std::make_shared<Coordination::WatchCallback>(mutations_updating_task->getWatchCallback());
-
     merge_selecting_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mergeSelectingTask)", [this] { mergeSelectingTask(); });
 
@@ -3912,7 +3910,7 @@ void StorageReplicatedMergeTree::mutationsUpdatingTask()
 {
     try
     {
-        queue.updateMutations(getZooKeeper(), mutations_watch_callback);
+        queue.updateMutations(getZooKeeper(), mutations_updating_task->getWatchCallback());
     }
     catch (const Coordination::Exception & e)
     {

@@ -282,6 +282,7 @@ public:
 
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
     bool existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
+    bool existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtr watch_callback);
 
     using MultiExistsResponse = MultiReadResponses<Coordination::ExistsResponse, true>;
     template <typename TIter>
@@ -540,6 +541,7 @@ public:
     FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {});
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureExists asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    FutureExists asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallbackPtr watch_callback = {});
 
     using FutureGetChildren = std::future<Coordination::ListResponse>;
     FutureGetChildren asyncGetChildren(
@@ -663,6 +665,7 @@ private:
     multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid);
 
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
+    Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallbackPtr watch_callback);
     Coordination::Error syncImpl(const std::string & path, std::string & returned_path);
 
     using RequestFactory = std::function<Coordination::RequestPtr(const std::string &)>;
