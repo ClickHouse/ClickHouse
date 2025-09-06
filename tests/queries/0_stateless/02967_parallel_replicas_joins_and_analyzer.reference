@@ -21,22 +21,21 @@ select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x
 explain description=0 select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z;
 Union
   Expression
-    Expression
-      Join
+    Join
+      Expression
         Expression
           Expression
-            Expression
-              Join
+            Join
+              Expression
                 Expression
                   Expression
-                    Expression
-                      ReadFromMergeTree
+                    ReadFromMergeTree
+              Expression
                 Expression
-                  Expression
-                    ReadFromMemoryStorage
+                  ReadFromMemoryStorage
+      Expression
         Expression
-          Expression
-            ReadFromMemoryStorage
+          ReadFromMemoryStorage
   Expression
     ReadFromRemoteParallelReplicas
 --
@@ -189,8 +188,7 @@ Expression
           Expression
             Union
               Expression
-                Expression
-                  ReadFromMergeTree
+                ReadFromMergeTree
               Expression
                 ReadFromRemoteParallelReplicas
 --
@@ -243,15 +241,13 @@ Expression
                   Expression
                     Union
                       Expression
-                        Expression
-                          ReadFromMergeTree
+                        ReadFromMergeTree
                       Expression
                         ReadFromRemoteParallelReplicas
           Expression
             Union
               Expression
-                Expression
-                  ReadFromMergeTree
+                ReadFromMergeTree
               Expression
                 ReadFromRemoteParallelReplicas
 --
@@ -286,22 +282,21 @@ sub5 as (select x, l.y, y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z
 select * from sub5;
 Union
   Expression
-    Expression
-      Join
+    Join
+      Expression
         Expression
           Expression
-            Expression
-              Join
+            Join
+              Expression
+                Expression
+                  ReadFromMemoryStorage
+              Expression
                 Expression
                   Expression
-                    ReadFromMemoryStorage
-                Expression
-                  Expression
-                    Expression
-                      ReadFromMergeTree
+                    ReadFromMergeTree
+      Expression
         Expression
-          Expression
-            ReadFromMemoryStorage
+          ReadFromMemoryStorage
   Expression
     ReadFromRemoteParallelReplicas
 --
@@ -473,15 +468,13 @@ Expression
                   Expression
                     Union
                       Expression
-                        Expression
-                          ReadFromMergeTree
+                        ReadFromMergeTree
                       Expression
                         ReadFromRemoteParallelReplicas
           Expression
             Union
               Expression
-                Expression
-                  ReadFromMergeTree
+                ReadFromMergeTree
               Expression
                 ReadFromRemoteParallelReplicas
 set parallel_replicas_prefer_local_join = 1;
@@ -505,24 +498,23 @@ select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x
 explain description=0 select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z;
 Union
   Expression
-    Expression
-      Join
+    Join
+      Expression
         Expression
           Expression
-            Expression
-              Join
+            Join
+              Expression
                 Expression
                   Expression
-                    Expression
-                      ReadFromMergeTree
+                    ReadFromMergeTree
+              Expression
                 Expression
                   Expression
-                    Expression
-                      ReadFromMergeTree
+                    ReadFromMergeTree
+      Expression
         Expression
           Expression
-            Expression
-              ReadFromMergeTree
+            ReadFromMergeTree
   Expression
     ReadFromRemoteParallelReplicas
 --
@@ -680,8 +672,7 @@ Expression
           Expression
             Union
               Expression
-                Expression
-                  ReadFromMergeTree
+                ReadFromMergeTree
               Expression
                 ReadFromRemoteParallelReplicas
 --
@@ -734,15 +725,13 @@ Expression
                   Expression
                     Union
                       Expression
-                        Expression
-                          ReadFromMergeTree
+                        ReadFromMergeTree
                       Expression
                         ReadFromRemoteParallelReplicas
           Expression
             Union
               Expression
-                Expression
-                  ReadFromMergeTree
+                ReadFromMergeTree
               Expression
                 ReadFromRemoteParallelReplicas
 --
@@ -777,24 +766,23 @@ sub5 as (select x, l.y, y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z
 select * from sub5;
 Union
   Expression
-    Expression
-      Join
+    Join
+      Expression
         Expression
           Expression
-            Expression
-              Join
+            Join
+              Expression
                 Expression
                   Expression
-                    Expression
-                      ReadFromMergeTree
+                    ReadFromMergeTree
+              Expression
                 Expression
                   Expression
-                    Expression
-                      ReadFromMergeTree
+                    ReadFromMergeTree
+      Expression
         Expression
           Expression
-            Expression
-              ReadFromMergeTree
+            ReadFromMergeTree
   Expression
     ReadFromRemoteParallelReplicas
 --
@@ -969,14 +957,12 @@ Expression
                   Expression
                     Union
                       Expression
-                        Expression
-                          ReadFromMergeTree
+                        ReadFromMergeTree
                       Expression
                         ReadFromRemoteParallelReplicas
           Expression
             Union
               Expression
-                Expression
-                  ReadFromMergeTree
+                ReadFromMergeTree
               Expression
                 ReadFromRemoteParallelReplicas
