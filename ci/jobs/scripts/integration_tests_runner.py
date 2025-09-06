@@ -547,7 +547,9 @@ class ClickhouseIntegrationTestsRunner:
             report_name = f"{test_group_str}_{i}.jsonl"
             report_path = os.path.join(self.repo_path, "tests/integration", report_name)
 
-            test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
+            with open(os.path.join(self.repo_path, "tests/integration", "test_names.txt"), "w") as f:
+                for test_name in test_names:
+                    f.write(test_name + "\n")
             parallel_cmd = f" --parallel {num_workers} " if num_workers > 0 else ""
             # Run flaky tests in a random order to increase chance to catch an error
             repeat_cmd = (
@@ -561,7 +563,7 @@ class ClickhouseIntegrationTestsRunner:
             cmd = (
                 f"cd {self.repo_path}/tests/integration && "
                 f"PYTHONPATH=../..:. timeout --verbose --signal=KILL {timeout} ./runner {self._get_runner_opts()} "
-                f"{image_cmd} -t {test_cmd} {parallel_cmd} {repeat_cmd} -- "
+                f"{image_cmd} {parallel_cmd} {repeat_cmd} --read-tests-from-file -- "
                 f"-rfEps --run-id={i} --color=no --durations=0 "
                 f"--report-log={report_name} --report-log-exclude-logs-on-passed-tests "
                 f"{_get_deselect_option(self.should_skip_tests())}"
@@ -570,7 +572,9 @@ class ClickhouseIntegrationTestsRunner:
             log_basename = f"{test_group_str}_{i}.log"
             log_path = os.path.join(self.repo_path, "tests/integration", log_basename)
             logging.info("Executing cmd: %s", cmd)
-            _ret_code = Shell.run(command=cmd, log_file=log_path)
+            _ret_code = Shell.run(command=cmd, log_file=log_path, verbose=True)
+            if not _ret_code == 0:
+                print(f"ERROR: Test run exit code [{_ret_code}]")
 
             extra_logs_names = [log_basename]
             log_result_path = os.path.join(
@@ -762,14 +766,16 @@ class ClickhouseIntegrationTestsRunner:
 
         return result_state, status_text, test_result, tests_log_paths
 
-    def run_impl(self):
+    def run_impl(self, only_parallel=False, only_sequential=False):
         if self.flaky_check or self.bugfix_validate_check:
             result_state, status_text, test_result, tests_log_paths = (
                 self.run_flaky_check(should_fail=self.bugfix_validate_check)
             )
         else:
             result_state, status_text, test_result, tests_log_paths = (
-                self.run_normal_check()
+                self.run_normal_check(
+                    only_parallel=only_parallel, only_sequential=only_sequential
+                )
             )
 
         if self.soft_deadline_time < time.time():
@@ -1022,14 +1028,15 @@ class ClickhouseIntegrationTestsRunner:
             self._tests_by_hash = self.all_tests
             return self._tests_by_hash
 
-        # Split tests in groups by historical execution time
-        try:
-            all_groups = self.group_tests_by_execution_time()
-            self._tests_by_hash = all_groups[self.run_by_hash_num]
-            return self._tests_by_hash
-        except Exception as e:
-            logging.error("Can't split tests by execution time: %s", e)
-            logging.error(e)
+        # TODO: check if it need/can be adapted after split
+        # # Split tests in groups by historical execution time
+        # try:
+        #     all_groups = self.group_tests_by_execution_time()
+        #     self._tests_by_hash = all_groups[self.run_by_hash_num]
+        #     return self._tests_by_hash
+        # except Exception as e:
+        #     logging.error("Can't split tests by execution time: %s", e)
+        #     logging.error(e)
 
         # Fallback in case play server doesn't work
         # Split tests in groups by number of tests in group
@@ -1048,7 +1055,7 @@ class ClickhouseIntegrationTestsRunner:
         self._tests_by_hash = groups_by_hash[self.run_by_hash_num]
         return self._tests_by_hash
 
-    def run_normal_check(self):
+    def run_normal_check(self, only_parallel=False, only_sequential=False):
         logging.info("Pulling images")
         self._pre_pull_images()
         logging.info(
@@ -1094,8 +1101,13 @@ class ClickhouseIntegrationTestsRunner:
             len(not_found_tests),
             " ".join(not_found_tests[:3]),
         )
-        grouped_tests = self.group_test_by_file(filtered_sequential_tests)
-        grouped_tests["parallel"] = filtered_parallel_tests
+        if not only_parallel:
+            grouped_tests = self.group_test_by_file(filtered_sequential_tests)
+        else:
+            grouped_tests = {}
+        if not only_sequential:
+            grouped_tests["parallel"] = filtered_parallel_tests
+
         logging.info("Found %s tests groups", len(grouped_tests))
         counters = {
             "ERROR": [],
@@ -1188,7 +1200,7 @@ def write_results(results_file, status_file, results, status):
         out.writerow(status)
 
 
-def run():
+def run(only_parallel=False, only_sequential=False):
     signal.signal(signal.SIGTERM, handle_sigterm)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
@@ -1210,7 +1222,9 @@ def run():
         logging.info("Clearing dmesg before run")
         subprocess.check_call("sudo -E dmesg --clear", shell=True)
 
-    state, description, test_results, _test_log_paths = runner.run_impl()
+    state, description, test_results, _test_log_paths = runner.run_impl(
+        only_parallel=only_parallel, only_sequential=only_sequential
+    )
     logging.info("Tests finished")
 
     if is_ci:
