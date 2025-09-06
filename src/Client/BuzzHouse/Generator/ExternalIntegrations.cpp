@@ -1580,9 +1580,10 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
 
     chassert(t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine());
     buf += fmt::format(
-        R"({{"seed":{},"database_name":"{}","table_name":"{}","storage":"{}","lake":"{}","format":"{}","deterministic":{},"columns":[)",
+        R"({{"seed":{},"catalog_name":"{}","database_name":"{}","table_name":"{}","storage":"{}","lake":"{}","format":"{}","deterministic":{},"columns":[)",
         rg.nextRandomUInt64(),
         t.getSparkCatalogName(),
+        t.getDatabaseName(),
         t.getTableName(false),
         t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"),
         t.isAnyDeltaLakeEngine() ? "deltalake" : "iceberg",
@@ -1653,6 +1654,16 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
             sv5->set_value("'" + cat->region + "'");
         }
     }
+}
+
+bool DolorIntegration::performExternalCommand(const uint64_t seed, const String & cname, const String & tname)
+{
+    RandomGenerator rg(seed, 0, 1);
+    const String & uri = rg.nextBool() ? "/sparkupdate" : "/sparkcheck";
+    const bool res
+        = httpPut(uri, fmt::format(R"({{"seed":{},"catalog_name":"{}","table_name":"{}"}})", rg.nextRandomUInt64(), cname, tname));
+
+    return uri == "/sparkupdate" || res;
 }
 
 ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
@@ -1759,6 +1770,22 @@ void ExternalIntegrations::createExternalDatabaseTable(
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performTableIntegration(rg, t, true, entries));
     next->setTableEngineDetails(rg, t, te);
+}
+
+bool ExternalIntegrations::performExternalCommand(const uint64_t seed, const IntegrationCall ic, const String & cname, const String & tname)
+{
+    ClickHouseIntegration * next = nullptr;
+
+    switch (ic)
+    {
+        case IntegrationCall::Dolor:
+            next = dolor.get();
+            break;
+        default:
+            chassert(0);
+            break;
+    }
+    return next ? next->performExternalCommand(seed, cname, tname) : true;
 }
 
 ClickHouseIntegratedDatabase * ExternalIntegrations::getPeerPtr(const PeerTableDatabase pt) const

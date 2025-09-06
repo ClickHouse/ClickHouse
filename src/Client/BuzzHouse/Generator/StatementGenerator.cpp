@@ -290,6 +290,8 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     SQLBase::setDeterministic(rg, next);
     this->allow_not_deterministic = !next.is_deterministic;
     this->enforce_final = next.is_deterministic;
+    next.is_temp = fc.allow_memory_tables && rg.nextMediumNumber() < 11;
+    cv->set_is_temp(next.is_temp);
     const auto replaceViewLambda = [&next](const SQLView & v) { return v.isAttached() && (v.is_deterministic || !next.is_deterministic); };
     const bool replace = collectionCount<SQLView>(replaceViewLambda) > 3 && rg.nextMediumNumber() < 16;
     if (replace)
@@ -301,14 +303,14 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     }
     else
     {
-        if (collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) && rg.nextSmallNumber() < 9)
+        if (!next.is_temp && collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) && rg.nextSmallNumber() < 9)
         {
             next.db = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
         }
         tname = next.tname = this->table_counter++;
     }
     cv->set_create_opt(replace ? CreateReplaceOption::Replace : CreateReplaceOption::Create);
-    next.is_materialized = rg.nextBool();
+    next.is_materialized = !next.is_temp && rg.nextBool();
     cv->set_materialized(next.is_materialized);
     next.setName(cv->mutable_est(), false);
     if (next.is_materialized)
@@ -457,6 +459,7 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
         const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
 
         cluster = v.getCluster();
+        dp->set_is_temp(v.is_temp);
         dp->set_sobject(SQLObject::VIEW);
         v.setName(sot->mutable_est(), false);
     }
@@ -665,7 +668,7 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
         /// Use table function
         const bool isCluster = (cluster_func && (nopt < cluster_func + 1));
 
-        setTableFunction(rg, isCluster ? TableFunctionUsage::ClusterCall : TableFunctionUsage::RemoteCall, true, t, tof->mutable_tfunc());
+        setTableFunction(rg, isCluster ? TableFunctionUsage::ClusterCall : TableFunctionUsage::RemoteCall, t, tof->mutable_tfunc());
         tof = isCluster ? const_cast<ClusterFunc &>(tof->tfunc().cluster()).mutable_tof()
                         : const_cast<RemoteFunc &>(tof->tfunc().remote()).mutable_tof();
     }
@@ -679,7 +682,7 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
 
     if (engine_func && (nopt2 < engine_func + 1))
     {
-        setTableFunction(rg, TableFunctionUsage::EngineReplace, true, t, tof->mutable_tfunc());
+        setTableFunction(rg, TableFunctionUsage::EngineReplace, t, tof->mutable_tfunc());
     }
     else if ((is_url = (url_func && (nopt2 < engine_func + url_func + 1))))
     {
@@ -1279,6 +1282,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
         this->allow_not_deterministic = !v.is_deterministic;
         this->enforce_final = v.is_deterministic;
         cluster = v.getCluster();
+        at->set_is_temp(v.is_temp);
         at->set_sobject(SQLObject::TABLE);
         v.setName(sot->mutable_est(), false);
         for (uint32_t i = 0; i < nalters; i++)

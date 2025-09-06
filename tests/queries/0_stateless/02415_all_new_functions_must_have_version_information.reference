@@ -1,6 +1,5 @@
 CAST
 DATE
-FQDN
 IPv4CIDRToRange
 IPv4NumToString
 IPv4NumToStringClassC
@@ -56,25 +55,16 @@ accurateCast
 accurateCastOrDefault
 accurateCastOrNull
 asin
-bar
-basename
-blockNumber
 blockSerializedSize
-blockSize
-byteSize
 caseWithExpression
 catboostEvaluate
-connectionId
 countDigits
 countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
-currentDatabase
 currentProfiles
 currentQueryID
 currentRoles
-currentSchemas
-currentUser
 cutFragment
 cutIPv6
 cutQueryString
@@ -139,7 +129,6 @@ dictGetUUID
 dictGetUUIDOrDefault
 dictHas
 dictIsIn
-displayName
 domain
 domainRFC
 domainWithoutWWW
@@ -171,10 +160,6 @@ formatQuery
 formatQueryOrNull
 formatQuerySingleLine
 formatQuerySingleLineOrNull
-formatReadableDecimalSize
-formatReadableQuantity
-formatReadableSize
-formatReadableTimeDelta
 formatRow
 formatRowNoNewline
 fragment
@@ -185,12 +170,8 @@ fromUnixTimestamp64Second
 generateRandomStructure
 generateSerialID
 generateUUIDv4
-getMacro
 getMaxTableNameLengthForDatabase
-getMergeTreeSetting
-getOSKernelVersion
 getServerPort
-getServerSetting
 getSizeOfEnumType
 getSubcolumn
 getTypeSerializationStreams
@@ -212,7 +193,6 @@ ilike
 in
 inIgnoreSet
 indexHint
-initialQueryStartTime
 initializeAggregation
 isDecimalOverflow
 isDynamicElementInSharedData
@@ -286,7 +266,6 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
-partitionId
 path
 pathFull
 polygonAreaCartesian
@@ -354,9 +333,6 @@ runningConcurrency
 runningDifference
 runningDifferenceStartingWithFirstValue
 serverUUID
-shardCount
-shardNum
-showCertificate
 sigmoid
 sin
 snowflakeToDateTime
@@ -512,4 +488,3 @@ variantType
 widthBucket
 windowID
 wkt
-zookeeperSessionUptime

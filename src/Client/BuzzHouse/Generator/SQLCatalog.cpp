@@ -62,9 +62,8 @@ String SQLDatabase::getSparkCatalogName() const
 bool SQLBase::isNotTruncableEngine() const
 {
     return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
-        || isMongoDBEngine() || isAnyS3Engine() || isAnyAzureEngine() || isHudiEngine() || isAnyDeltaLakeEngine() || isAnyIcebergEngine()
-        || isMergeEngine() || isDistributedEngine() || isDictionaryEngine() || isGenerateRandomEngine() || isMaterializedPostgreSQLEngine()
-        || isExternalDistributedEngine();
+        || isMongoDBEngine() || isHudiEngine() || isMergeEngine() || isDistributedEngine() || isDictionaryEngine()
+        || isGenerateRandomEngine() || isMaterializedPostgreSQLEngine() || isExternalDistributedEngine();
 }
 
 bool SQLBase::isEngineReplaceable() const
@@ -125,7 +124,7 @@ String SQLBase::getSparkCatalogName() const
 
 static const constexpr String PARTITION_STR = "{_partition_id}";
 
-void SQLBase::setTablePath(RandomGenerator & rg, const bool has_dolor)
+void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool has_dolor)
 {
     chassert(
         !bucket_path.has_value() && !file_format.has_value() && !file_comp.has_value() && !partition_strategy.has_value()
@@ -155,7 +154,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const bool has_dolor)
         if (isAnyIcebergEngine() || isAnyDeltaLakeEngine())
         {
             const bool onSpark = integration == IntegrationCall::Dolor;
-            const String base = isOnLocal() ? "/var/lib/clickhouse/user_files/lakehouse/" : (isOnAzure() ? "/" : "");
+            const String base = isOnLocal() ? (fc.lakes_path.generic_string() + "/") : (isOnAzure() ? "/" : "");
 
             /// Set bucket path, Spark has the warehouse concept on the path :(
             next_bucket_path = fmt::format(

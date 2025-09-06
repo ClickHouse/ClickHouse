@@ -1,24 +1,24 @@
 import random
 from abc import abstractmethod
+from datetime import datetime, timedelta
 
 from .clickhousetospark import ClickHouseSparkTypeMapper
-from .laketables import LakeFormat, SparkTable, FileFormat, SparkColumn
+from .laketables import LakeFormat, SparkTable, FileFormat, TableStorage, SparkColumn
 
 from pyspark.sql.types import DateType, TimestampType, StructType, DataType
 
 
 class LakeTableGenerator:
-    def __init__(self, _bucket: str):
-        self.bucket = _bucket
+    def __init__(self):
         self.type_mapper = ClickHouseSparkTypeMapper()
-        self.write_format = FileFormat.Parquet
+        self.write_format: FileFormat = FileFormat.Parquet
 
     @staticmethod
-    def get_next_generator(bucket: str, lake: LakeFormat):
+    def get_next_generator(lake: LakeFormat):
         return (
-            IcebergTableGenerator(bucket)
+            IcebergTableGenerator()
             if lake == LakeFormat.Iceberg
-            else DeltaLakePropertiesGenerator(bucket)
+            else DeltaLakePropertiesGenerator()
         )
 
     @abstractmethod
@@ -62,13 +62,32 @@ class LakeTableGenerator:
     def add_partition_clauses(self, columns_spark: dict[str, SparkColumn]) -> list[str]:
         return []
 
+    def random_ordered_columns(self, columns_spark, with_asc_desc: bool):
+        columns_list = []
+        flattened_columns = self.flat_columns(columns_spark)
+        for k in flattened_columns.keys():
+            if with_asc_desc:
+                columns_list.append(f"{k} ASC NULLS FIRST")
+                columns_list.append(f"{k} ASC NULLS LAST")
+                columns_list.append(f"{k} DESC NULLS FIRST")
+                columns_list.append(f"{k} DESC NULLS LAST")
+            else:
+                columns_list.append(f"{k}")
+        random_subset = random.sample(
+            columns_list, k=random.randint(1, min(4, len(columns_list)))
+        )
+        random.shuffle(random_subset)
+        return ",".join(random_subset)
+
     def generate_create_table_ddl(
         self,
         catalog_name: str,
+        database_name: str,
         table_name: str,
         columns: list[dict[str, str]],
         file_format: str,
         deterministic: bool,
+        next_storage: TableStorage,
         next_location: str,
     ) -> tuple[str, SparkTable]:
         """
@@ -123,33 +142,89 @@ class LakeTableGenerator:
             ddl += ")"
         return (
             ddl + ";",
-            SparkTable(table_name, columns_spark, deterministic, next_location),
+            SparkTable(
+                catalog_name,
+                database_name,
+                table_name,
+                columns_spark,
+                deterministic,
+                next_location,
+                LakeFormat.lakeformat_from_str(self.get_format()),
+                self.write_format,
+                next_storage,
+            ),
         )
 
     def generate_alter_table_statements(
         self,
-        table_name: str,
-        columns_spark: dict[str, SparkColumn],
-        deterministic: bool,
+        table: SparkTable,
     ) -> str:
         """Generate random ALTER TABLE statements for testing"""
-        properties = self.generate_table_properties(columns_spark, deterministic)
+        next_operation = random.randint(1, 1000)
 
-        if properties and random.randint(1, 2) == 1:
+        if next_operation <= 250:
             # Set random properties
-            key = random.choice(list(properties.keys()))
-            return f"ALTER TABLE {table_name} SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
-        elif properties:
+            properties = self.generate_table_properties(
+                table.columns, table.deterministic
+            )
+            if properties:
+                key = random.choice(list(properties.keys()))
+                return f"ALTER TABLE `{table.get_table_full_path()}` SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
+        elif next_operation <= 500:
             # Unset a property
-            key = random.choice(list(properties.keys()))
-            return f"ALTER TABLE {table_name} UNSET TBLPROPERTIES ('{key}');"
+            properties = self.generate_table_properties(
+                table.columns, table.deterministic
+            )
+            if properties:
+                key = random.choice(list(properties.keys()))
+                return f"ALTER TABLE `{table.get_table_full_path()}` UNSET TBLPROPERTIES ('{key}');"
+        elif next_operation <= 600:
+            # Add or drop partition field
+            partition_clauses = self.add_partition_clauses(table.columns)
+            random.shuffle(partition_clauses)
+            random_subset = random.sample(
+                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
+            )
+            return f"ALTER TABLE `{table.get_table_full_path()}` {random.choice(["ADD", "DROP"])} PARTITION FIELD {random.choice(list(random_subset))}"
+        elif next_operation <= 700:
+            # Replace partition field
+            partition_clauses = self.add_partition_clauses(table.columns)
+            random.shuffle(partition_clauses)
+            random_subset1 = random.sample(
+                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
+            )
+            random.shuffle(partition_clauses)
+            random_subset2 = random.sample(
+                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
+            )
+            return f"ALTER TABLE `{table.get_table_full_path()}` REPLACE PARTITION FIELD {random.choice(list(random_subset1))} WITH {random.choice(list(random_subset2))}"
+        elif next_operation <= 800:
+            # Set ORDER BY
+            if random.randint(1, 2) == 1:
+                return f"ALTER TABLE `{table.get_table_full_path()}` WRITE UNORDERED"
+            return f"ALTER TABLE `{table.get_table_full_path()}` WRITE{random.choice([" LOCALLY", ""])} ORDERED BY {self.random_ordered_columns(table.columns, True)}"
+        elif next_operation <= 900:
+            # Set distribution
+            if random.randint(1, 2) == 1:
+                return f"ALTER TABLE `{table.get_table_full_path()}` WRITE DISTRIBUTED BY PARTITION"
+            return f"ALTER TABLE `{table.get_table_full_path()}` WRITE DISTRIBUTED BY PARTITION LOCALLY ORDERED BY {self.random_ordered_columns(table.columns, True)}"
+        elif next_operation <= 1000:
+            # Set identifier fields
+            return f"ALTER TABLE `{table.get_table_full_path()}` {random.choice(["SET", "DROP"])} IDENTIFIER FIELDS {self.random_ordered_columns(table.columns, False)}"
+        return ""
+
+    @abstractmethod
+    def generate_extra_statement(
+        self,
+        table: SparkTable,
+    ) -> str:
         return ""
 
 
 class IcebergTableGenerator(LakeTableGenerator):
 
-    def __init__(self, _bucket):
-        super().__init__(_bucket)
+    def __init__(self):
+        super().__init__()
 
     def get_format(self) -> str:
         return "iceberg"
@@ -242,8 +317,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         properties = {}
 
         # Default file format
-        format_version = random.choice(["1", "2"])
-        properties["format-version"] = format_version
+        properties["format-version"] = random.choice(["1", "2"])
 
         # Parquet specific properties
         if self.write_format == FileFormat.Parquet:
@@ -253,18 +327,18 @@ class IcebergTableGenerator(LakeTableGenerator):
             properties["write.parquet.compression-level"] = str(random.randint(1, 9))
             properties["write.parquet.dict-size-bytes"] = str(
                 random.choice(
-                    [1, 16, 32, 128, 1024, 2097152, 4194304, 8388608]
-                )  # 2MB, 4MB, 8MB
+                    [1048576, 2097152, 4194304, 8388608]
+                )  # 1MB, 2MB, 4MB, 8MB
             )
             properties["write.parquet.page-size-bytes"] = str(
                 random.choice(
-                    [1, 16, 32, 128, 1024, 65536, 131072, 1048576]
-                )  # 64KB, 128KB, 1MB
+                    [1048576, 2097152, 4194304, 8388608]
+                )  # 1MB, 2MB, 4MB, 8MB
             )
             properties["write.parquet.row-group-size-bytes"] = str(
                 random.choice(
-                    [1, 16, 32, 128, 1024, 134217728, 268435456, 536870912]
-                )  # 128MB, 256MB, 512MB
+                    [1048576, 2097152, 4194304, 8388608]
+                )  # 1MB, 2MB, 4MB, 8MB
             )
 
         # ORC specific properties
@@ -277,13 +351,13 @@ class IcebergTableGenerator(LakeTableGenerator):
             )
             properties["write.orc.stripe-size-bytes"] = str(
                 random.choice(
-                    [1, 16, 32, 128, 1024, 67108864, 134217728, 268435456]
-                )  # 64MB, 128MB, 256MB
+                    [1048576, 2097152, 4194304, 8388608]
+                )  # 1MB, 2MB, 4MB, 8MB
             )
             properties["write.orc.block-size-bytes"] = str(
                 random.choice(
-                    [1, 16, 32, 128, 1024, 262144, 524288, 1048576]
-                )  # 256KB, 512KB, 1MB
+                    [1048576, 2097152, 4194304, 8388608]
+                )  # 1MB, 2MB, 4MB, 8MB
             )
 
         # AVRO specific properties
@@ -302,9 +376,8 @@ class IcebergTableGenerator(LakeTableGenerator):
         properties["write.target-file-size-bytes"] = str(
             random.choice(
                 [
-                    1,
-                    128,
-                    1024,
+                    1048576,  # 1MB
+                    2097152,  # 2MB
                     134217728,  # 128MB
                     268435456,  # 256MB
                     536870912,  # 512MB
@@ -316,15 +389,13 @@ class IcebergTableGenerator(LakeTableGenerator):
         # Compaction settings
         properties["commit.manifest.target-size-bytes"] = str(
             random.choice(
-                [1, 16, 32, 128, 1024, 2048, 8388608, 16777216, 33554432]
-            )  # 8MB, 16MB, 32MB
+                [1048576, 2097152, 4194304, 8388608, 16777216, 33554432]
+            )  # 1MB, 2MB, 4MB, 8MB, 16MB, 32MB
         )
         properties["commit.manifest.min-count-to-merge"] = str(
             random.choice([1, 2, 8, 50, 100, 200, 500])
         )
-        properties["commit.manifest-merge.enabled"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["commit.manifest-merge.enabled"] = random.choice(["true", "false"])
 
         return properties
 
@@ -374,9 +445,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         )
 
         # Locking
-        properties["commit.lock.enabled"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["commit.lock.enabled"] = random.choice(["true", "false"])
 
         if properties["commit.lock.enabled"] == "true":
             properties["commit.lock.timeout-ms"] = str(
@@ -397,9 +466,7 @@ class IcebergTableGenerator(LakeTableGenerator):
         )
 
         # Manifest list parallelism
-        properties["manifest-lists.enabled"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["manifest-lists.enabled"] = random.choice(["true", "false"])
 
         if properties["manifest-lists.enabled"] == "true":
             properties["manifest-lists.parallelism"] = str(
@@ -415,9 +482,9 @@ class IcebergTableGenerator(LakeTableGenerator):
         properties = {}
 
         # Metadata deletion
-        properties["write.metadata.delete-after-commit.enabled"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["write.metadata.delete-after-commit.enabled"] = random.choice(
+            ["true", "false"]
+        )
         properties["write.metadata.previous-versions-max"] = str(
             random.choice([1, 2, 3, 5, 10, 20])
         )
@@ -450,19 +517,12 @@ class IcebergTableGenerator(LakeTableGenerator):
         properties["write.tasks.min"] = str(random.choice([1, 2, 10, 50, 100]))
 
         # Sorting
-        properties["write.sort.enabled"] = str(random.choice(["true", "false"])).lower()
+        properties["write.sort.enabled"] = random.choice(["true", "false"])
 
         if properties["write.sort.enabled"] == "true":
-            columns_list = []
-            flattened_columns = self.flat_columns(columns_spark)
-            for k in flattened_columns.keys():
-                columns_list.append(f"{k} ASC")
-                columns_list.append(f"{k} DESC")
-            random_subset = random.sample(
-                columns_list, k=random.randint(1, len(columns_list))
+            properties["write.sort.order"] = self.random_ordered_columns(
+                columns_spark, True
             )
-            random.shuffle(random_subset)
-            properties["write.sort.order"] = ",".join(random_subset)
 
         # Write modes
         properties["write.update.mode"] = random.choice(
@@ -484,33 +544,31 @@ class IcebergTableGenerator(LakeTableGenerator):
         # Split size
         properties["read.split.target-size"] = str(
             random.choice(
-                [1, 16, 32, 128, 1024, 2048, 134217728, 268435456, 536870912]
+                [1048576, 2097152, 4194304, 8388608, 134217728, 268435456, 536870912]
             )  # 128MB  # 256MB  # 512MB
         )
         properties["read.split.metadata-target-size"] = str(
             random.choice(
-                [1, 16, 32, 128, 1024, 2048, 33554432, 67108864, 134217728]
+                [1048576, 2097152, 4194304, 8388608, 33554432, 67108864, 134217728]
             )  # 32MB  # 64MB  # 128MB
         )
         properties["read.split.planning-lookback"] = str(random.choice([10, 50, 100]))
 
         # Streaming
-        properties["read.stream.enabled"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["read.stream.enabled"] = random.choice(["true", "false"])
 
         if properties["read.stream.enabled"] == "true":
-            properties["read.stream.skip-delete-snapshots"] = str(
-                random.choice(["true", "false"])
-            ).lower()
-            properties["read.stream.skip-overwrite-snapshots"] = str(
-                random.choice(["true", "false"])
-            ).lower()
+            properties["read.stream.skip-delete-snapshots"] = random.choice(
+                ["true", "false"]
+            )
+            properties["read.stream.skip-overwrite-snapshots"] = random.choice(
+                ["true", "false"]
+            )
 
         # Parquet vectorization
-        properties["read.parquet.vectorization.enabled"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["read.parquet.vectorization.enabled"] = random.choice(
+            ["true", "false"]
+        )
 
         if properties["read.parquet.vectorization.enabled"] == "true":
             properties["read.parquet.vectorization.batch-size"] = str(
@@ -524,32 +582,85 @@ class IcebergTableGenerator(LakeTableGenerator):
         properties = {}
 
         # Compatibility
-        properties["compatibility.snapshot-id-inheritance.enabled"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["compatibility.snapshot-id-inheritance.enabled"] = random.choice(
+            ["true", "false"]
+        )
 
         # Schema evolution
-        properties["schema.auto-evolve"] = str(random.choice(["true", "false"])).lower()
-        properties["schema.name-mapping.default"] = random.choice(["v1", "v2", None])
-        if properties["schema.name-mapping.default"]:
-            properties["schema.name-mapping.default"] = str(
-                properties["schema.name-mapping.default"]
-            )
-        else:
-            del properties["schema.name-mapping.default"]
+        properties["schema.auto-evolve"] = random.choice(["true", "false"])
 
         # Data locality
-        properties["write.data.locality.enabled"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["write.data.locality.enabled"] = random.choice(["true", "false"])
 
         return properties
+
+    def generate_extra_statement(
+        self,
+        table: SparkTable,
+    ) -> str:
+        next_option = random.randint(1, 9)
+        restore_to = (
+            datetime.now() - timedelta(seconds=random.choice([1, 5, 10, 60]))
+        ).strftime("%Y-%m-%d %H:%M:%S.%f")
+
+        if next_option == 1:
+            return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{restore_to}')"
+        if next_option == 2:
+            res = f"CALL `{table.catalog_name}`.system.remove_orphan_files(table => '{table.get_namespace_path()}'"
+            if random.randint(1, 2) == 1:
+                res += f", dry_run => {random.choice(["true", "false"])}"
+            if random.randint(1, 2) == 1:
+                res += f", older_than => TIMESTAMP '{restore_to}'"
+            res += ")"
+            return res
+        if next_option == 3:
+            next_strategy = random.choice(["sort", "binpack"])
+
+            res = f"CALL `{table.catalog_name}`.system.rewrite_data_files(table => '{table.get_namespace_path()}', strategy => '{next_strategy}'"
+            if next_strategy == "sort" and random.randint(1, 4) != 4:
+                zorder = random.randint(1, 2) == 1
+                res += ", sort_order => '"
+                if zorder:
+                    res += "zorder("
+                res += self.random_ordered_columns(table.columns, not zorder)
+                if zorder:
+                    res += ")"
+                res += "'"
+            res += ")"
+            return res
+        if next_option == 4:
+            res = f"CALL `{table.catalog_name}`.system.rewrite_manifests(table => '{table.get_namespace_path()}'"
+            if random.randint(1, 2) == 1:
+                res += f", use_caching => {random.choice(["true", "false"])}"
+            res += ")"
+            return res
+        if next_option == 5:
+            return f"CALL `{table.catalog_name}`.system.rewrite_position_delete_files(table => '{table.get_namespace_path()}')"
+        if next_option == 6:
+            res = f"CALL `{table.catalog_name}`.system.expire_snapshots(table => '{table.get_namespace_path()}'"
+            if random.randint(1, 2) == 1:
+                res += f", older_than => TIMESTAMP '{restore_to}'"
+            if random.randint(1, 2) == 1:
+                res += f", stream_results => {random.choice(["true", "false"])}"
+            if random.randint(1, 2) == 1:
+                res += f", retain_last => {random.randint(1, 10)}"
+            res += ")"
+            return res
+        if next_option == 7:
+            return f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}')"
+        if next_option == 8:
+            return f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}')"
+        if next_option == 9:
+            return f"CALL `{table.catalog_name}`.system.ancestors_of(table => '{table.get_namespace_path()}')"
+        # if next_option == 10:
+        #    return f"CALL `{table.catalog_name}`.system.set_current_snapshot(table => '{table.get_namespace_path()}', snapshot_id => {random.randint(1, 10)})"
+        return ""
 
 
 class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
-    def __init__(self, _bucket):
-        super().__init__(_bucket)
+    def __init__(self):
+        super().__init__()
 
     def get_format(self) -> str:
         return "delta"
@@ -650,23 +761,21 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         properties = {}
 
         # Auto optimize
-        properties["delta.autoOptimize.optimizeWrite"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["delta.autoOptimize.optimizeWrite"] = random.choice(
+            ["true", "false"]
+        )
 
-        properties["delta.autoOptimize.autoCompact"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["delta.autoOptimize.autoCompact"] = random.choice(["true", "false"])
 
         # Optimize write
-        properties["spark.databricks.delta.autoCompact.enabled"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["spark.databricks.delta.autoCompact.enabled"] = random.choice(
+            ["true", "false"]
+        )
 
         # Adaptive shuffle
-        properties["spark.databricks.delta.optimizeWrite.enabled"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["spark.databricks.delta.optimizeWrite.enabled"] = random.choice(
+            ["true", "false"]
+        )
 
         return properties
 
@@ -675,9 +784,9 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         properties = {}
 
         # Delta cache
-        properties["spark.databricks.io.cache.enabled"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["spark.databricks.io.cache.enabled"] = random.choice(
+            ["true", "false"]
+        )
 
         if properties["spark.databricks.io.cache.enabled"] == "true":
             properties["spark.databricks.io.cache.maxDiskUsage"] = random.choice(
@@ -688,9 +797,9 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
                 ["1g", "2g", "5g", "10g"]
             )
 
-            properties["spark.databricks.io.cache.compression.enabled"] = str(
-                random.choice(["true", "false"])
-            ).lower()
+            properties["spark.databricks.io.cache.compression.enabled"] = random.choice(
+                ["true", "false"]
+            )
 
         return properties
 
@@ -718,7 +827,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         # Target file size
         properties["spark.databricks.delta.optimize.maxFileSize"] = random.choice(
-            ["1kb", "1mb", "64mb", "128mb", "256mb", "512mb", "1gb"]
+            ["1mb", "2mb", "8mb", "64mb", "128mb", "256mb", "512mb", "1gb"]
         )
 
         # Parquet compression
@@ -743,18 +852,18 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         )
 
         # Statistics collection
-        properties["delta.checkpoint.writeStatsAsJson"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["delta.checkpoint.writeStatsAsJson"] = random.choice(
+            ["true", "false"]
+        )
 
-        properties["delta.checkpoint.writeStatsAsStruct"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["delta.checkpoint.writeStatsAsStruct"] = random.choice(
+            ["true", "false"]
+        )
 
         # Sampling for stats
-        properties["spark.databricks.delta.stats.skipping"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["spark.databricks.delta.stats.skipping"] = random.choice(
+            ["true", "false"]
+        )
 
         return properties
 
@@ -764,7 +873,7 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         # Enable CDF
         cdf_enabled = random.choice(["true", "false"])
-        properties["delta.enableChangeDataFeed"] = cdf_enabled.lower()
+        properties["delta.enableChangeDataFeed"] = cdf_enabled
 
         if cdf_enabled == "true":
             # CDF requires specific versions
@@ -778,7 +887,12 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         properties = {}
 
         # Append-only table
-        properties["delta.appendOnly"] = str(random.choice(["true", "false"])).lower()
+        properties["delta.appendOnly"] = random.choice(["true", "false"])
+
+        # Isolation level
+        properties["delta.isolationLevel"] = str(
+            random.choice(["Serializable"])  # , "WriteSerializable" is not supported
+        )
 
         # Checkpoint interval
         properties["delta.checkpointInterval"] = str(
@@ -801,23 +915,31 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
         # Enable deletion vectors (Delta 3.0+)
         if "delta.compatibility.symlinkFormatManifest.enabled" == "false":
-            properties["delta.enableDeletionVectors"] = str(
-                random.choice(["true", "false"])
-            ).lower()
+            properties["delta.enableDeletionVectors"] = random.choice(["true", "false"])
 
         # Row tracking
-        properties["delta.enableRowTracking"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["delta.enableRowTracking"] = random.choice(["true", "false"])
 
         # Type widening
-        properties["delta.enableTypeWidening"] = str(
-            random.choice(["true", "false"])
-        ).lower()
+        properties["delta.enableTypeWidening"] = random.choice(["true", "false"])
 
         # Timestamp NTZ support
-        properties["delta.feature.timestampNtz"] = str(
-            random.choice(["supported", "enabled"])
+        properties["delta.feature.timestampNtz"] = random.choice(
+            ["supported", "enabled"]
         )
 
         return properties
+
+    def generate_extra_statement(
+        self,
+        table: SparkTable,
+    ) -> str:
+        next_option = random.randint(1, 100)
+
+        if next_option <= 50:
+            return f"VACUUM {table.get_table_full_path()} RETAIN 0 HOURS;"
+
+        restore_to = (
+            datetime.now() - timedelta(seconds=random.choice([1, 5, 10, 60]))
+        ).strftime("%Y-%m-%d %H:%M:%S.%f")
+        return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{restore_to}';"
