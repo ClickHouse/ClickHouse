@@ -48,7 +48,6 @@ accurateCastOrNull
 blockSerializedSize
 caseWithExpression
 catboostEvaluate
-connectionId
 countDigits
 countSubstrings
 countSubstringsCaseInsensitive
@@ -95,7 +94,6 @@ fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestamp64Second
 generateUUIDv4
-getOSKernelVersion
 getServerPort
 getSizeOfEnumType
 getTypeSerializationStreams
@@ -187,7 +185,6 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
-partitionId
 path
 pathFull
 polygonAreaCartesian
@@ -251,9 +248,6 @@ runningConcurrency
 runningDifference
 runningDifferenceStartingWithFirstValue
 serverUUID
-shardCount
-shardNum
-showCertificate
 sigmoid
 snowflakeToDateTime
 snowflakeToDateTime64
@@ -393,4 +387,3 @@ transactionOldestSnapshot
 validateNestedArraySizes
 windowID
 wkt
-zookeeperSessionUptime

@@ -58,7 +58,6 @@ asin
 blockSerializedSize
 caseWithExpression
 catboostEvaluate
-connectionId
 countDigits
 countSubstrings
 countSubstringsCaseInsensitive
@@ -130,7 +129,6 @@ dictGetUUID
 dictGetUUIDOrDefault
 dictHas
 dictIsIn
-displayName
 domain
 domainRFC
 domainWithoutWWW
@@ -174,10 +172,7 @@ generateRandomStructure
 generateSerialID
 generateUUIDv4
 getMaxTableNameLengthForDatabase
-getMergeTreeSetting
-getOSKernelVersion
 getServerPort
-getServerSetting
 getSetting
 getSettingOrDefault
 getSizeOfEnumType
@@ -202,7 +197,6 @@ in
 inIgnoreSet
 indexHint
 initialQueryID
-initialQueryStartTime
 initializeAggregation
 isDecimalOverflow
 isDynamicElementInSharedData
@@ -279,7 +273,6 @@ parseDateTimeOrZero
 parseReadableSize
 parseReadableSizeOrNull
 parseReadableSizeOrZero
-partitionId
 path
 pathFull
 polygonAreaCartesian
@@ -348,9 +341,6 @@ runningConcurrency
 runningDifference
 runningDifferenceStartingWithFirstValue
 serverUUID
-shardCount
-shardNum
-showCertificate
 sigmoid
 sin
 snowflakeToDateTime
@@ -506,4 +496,3 @@ variantType
 widthBucket
 windowID
 wkt
-zookeeperSessionUptime

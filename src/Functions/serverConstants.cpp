@@ -395,28 +395,88 @@ SELECT revision()
 
 REGISTER_FUNCTION(ZooKeeperSessionUptime)
 {
-    factory.registerFunction<FunctionZooKeeperSessionUptime>();
+    FunctionDocumentation::Description description_zookeeperSessionUptime = R"(
+Returns the uptime of the current ZooKeeper session in seconds.
+)";
+    FunctionDocumentation::Syntax syntax_zookeeperSessionUptime = "zookeeperSessionUptime()";
+    FunctionDocumentation::Arguments arguments_zookeeperSessionUptime = {};
+    FunctionDocumentation::ReturnedValue returned_value_zookeeperSessionUptime = {"Returns the uptime of the current ZooKeeper session in seconds.", {"UInt32"}};
+    FunctionDocumentation::Examples examples_zookeeperSessionUptime = {
+    {
+        "Usage example",
+        R"(
+SELECT zookeeperSessionUptime();
+        )",
+        R"(
+┌─zookeeperSessionUptime()─┐
+│                      286 │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_zookeeperSessionUptime = {21, 11};
+    FunctionDocumentation::Category category_zookeeperSessionUptime = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_zookeeperSessionUptime = {description_zookeeperSessionUptime, syntax_zookeeperSessionUptime, arguments_zookeeperSessionUptime, returned_value_zookeeperSessionUptime, examples_zookeeperSessionUptime, introduced_in_zookeeperSessionUptime, category_zookeeperSessionUptime};
+
+    factory.registerFunction<FunctionZooKeeperSessionUptime>(documentation_zookeeperSessionUptime);
 }
 
 
 REGISTER_FUNCTION(GetOSKernelVersion)
 {
-    factory.registerFunction<FunctionGetOSKernelVersion>();
+    FunctionDocumentation::Description description_getOSKernelVersion = R"(
+Returns a string with the OS kernel version.
+)";
+    FunctionDocumentation::Syntax syntax_getOSKernelVersion = "getOSKernelVersion()";
+    FunctionDocumentation::Arguments arguments_getOSKernelVersion = {};
+    FunctionDocumentation::ReturnedValue returned_value_getOSKernelVersion = {"Returns the current OS kernel version.", {"String"}};
+    FunctionDocumentation::Examples examples_getOSKernelVersion = {
+    {
+        "Usage example",
+        R"(
+SELECT getOSKernelVersion();
+        )",
+        R"(
+┌─getOSKernelVersion()────┐
+│ Linux 4.15.0-55-generic │
+└─────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_getOSKernelVersion = {21, 11};
+    FunctionDocumentation::Category category_getOSKernelVersion = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_getOSKernelVersion = {description_getOSKernelVersion, syntax_getOSKernelVersion, arguments_getOSKernelVersion, returned_value_getOSKernelVersion, examples_getOSKernelVersion, introduced_in_getOSKernelVersion, category_getOSKernelVersion};
+
+    factory.registerFunction<FunctionGetOSKernelVersion>(documentation_getOSKernelVersion);
 }
 
 
 REGISTER_FUNCTION(DisplayName)
 {
-    factory.registerFunction<FunctionDisplayName>(FunctionDocumentation
-        {
-            .description=R"(
-Returns the value of `display_name` from config or server FQDN if not set.
+    FunctionDocumentation::Description description = R"(
+Returns the value of `display_name` from [config](/operations/configuration-files) or the server's Fully Qualified Domain Name (FQDN) if not set.
+)";
+    FunctionDocumentation::Syntax syntax = "displayName()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the value of `display_name` from config or server FQDN if not set.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT displayName();
+        )",
+        R"(
+┌─displayName()─┐
+│ production    │
+└───────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-[example:displayName]
-)",
-            .examples{{"displayName", "SELECT displayName();", ""}},
-            .category = FunctionDocumentation::Category::Other
-        });
+    factory.registerFunction<FunctionDisplayName>(documentation);
 }
 
 
