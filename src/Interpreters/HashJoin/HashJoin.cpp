@@ -1770,7 +1770,7 @@ void HashJoin::tryRerangeRightTableData()
     ///    `...join on a.key1=b.key1 or a.key2=b.key2`.
     ///    We cannot rerange the right table on different sets of keys.
     /// 3. The number of right table rows exceeds the threshold, which may
-    ///    result in a significant cost for reranging and degrade performance.
+    ///    results in a significant cost for reranging and performance degradation.
     /// 4. The keys of the right table are very sparse, which may result in
     ///    insignificant performance improvement after reranging by key.
     if (!data
