@@ -25,6 +25,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 #include <fmt/ranges.h>
 

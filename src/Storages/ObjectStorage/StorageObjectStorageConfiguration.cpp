@@ -6,9 +6,15 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsString iceberg_disk_name;
+}
 
 namespace ErrorCodes
 {
