@@ -62,6 +62,8 @@ ISerialization::Kind ISerialization::stringToKind(const String & str)
 
 const std::set<SubstreamType> ISerialization::Substream::named_types
 {
+    StringSizes,
+    InlinedStringSizes,
     TupleElement,
     NamedOffsets,
     NamedNullMap,
@@ -113,6 +115,17 @@ void ISerialization::enumerateStreams(
     const ColumnPtr & column) const
 {
     EnumerateStreamsSettings settings;
+    auto data = SubstreamData(getPtr()).withType(type).withColumn(column);
+    enumerateStreams(settings, callback, data);
+}
+
+void ISerialization::enumerateAllStreams(
+    const StreamCallback & callback,
+    const DataTypePtr & type,
+    const ColumnPtr & column) const
+{
+    EnumerateStreamsSettings settings;
+    settings.enumerate_virtual_streams = true;
     auto data = SubstreamData(getPtr()).withType(type).withColumn(column);
     enumerateStreams(settings, callback, data);
 }
@@ -188,6 +201,8 @@ String getNameForSubstreamPath(
             stream_name += ".size" + toString(array_level);
         else if (it->type == Substream::ArrayElements)
             ++array_level;
+        else if (it->type == Substream::StringSizes || it->type == Substream::InlinedStringSizes)
+            stream_name += ".size";
         else if (it->type == Substream::DictionaryKeys)
             stream_name += ".dict";
         else if (it->type == Substream::DictionaryKeysPrefix)
@@ -359,12 +374,19 @@ std::optional<std::pair<ColumnPtr, size_t>> ISerialization::getColumnWithNumRead
     return std::make_pair(typed_element->column, typed_element->num_read_rows);
 }
 
-void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element)
+void ISerialization::addElementToSubstreamsCache(
+    ISerialization::SubstreamsCache * cache,
+    const ISerialization::SubstreamPath & path,
+    std::unique_ptr<ISubstreamsCacheElement> && element,
+    bool upsert)
 {
     if (!cache || path.empty())
         return;
 
-    cache->emplace(getSubcolumnNameForStream(path), std::move(element));
+    if (upsert)
+        cache->insert_or_assign(getSubcolumnNameForStream(path), std::move(element));
+    else
+        cache->emplace(getSubcolumnNameForStream(path), std::move(element));
 }
 
 ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path)
@@ -499,6 +521,8 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
     return path[last_elem].type == Substream::NullMap
             || path[last_elem].type == Substream::TupleElement
             || path[last_elem].type == Substream::ArraySizes
+            || path[last_elem].type == Substream::StringSizes
+            || path[last_elem].type == Substream::InlinedStringSizes
             || path[last_elem].type == Substream::VariantElement
             || path[last_elem].type == Substream::VariantElementNullMap
             || path[last_elem].type == Substream::ObjectTypedPath;
@@ -510,7 +534,7 @@ bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPat
         return false;
 
     size_t last_elem = prefix_len - 1;
-    return path[last_elem].type == Substream::VariantElementNullMap;
+    return path[last_elem].type == Substream::VariantElementNullMap || path[last_elem].type == Substream::InlinedStringSizes;
 }
 
 bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)

@@ -267,6 +267,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
     extern const MergeTreeSettingsUInt64 max_uncompressed_bytes_in_patches;
+    extern const MergeTreeSettingsBool serialize_string_with_size_stream;
 }
 
 namespace ServerSetting
@@ -9741,6 +9742,7 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
     {
         .ratio_of_defaults_for_sparse = (*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
         .choose_kind = true,
+        .string_with_size_stream = (*getSettings())[MergeTreeSetting::serialize_string_with_size_stream],
     };
 
     const auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -9769,10 +9771,7 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
 SerializationInfoByName MergeTreeData::getSerializationHints() const
 {
     auto lock = lockParts();
-    SerializationInfoByName res;
-    for (const auto & [name, info] : serialization_hints)
-        res.emplace(name, info->clone());
-    return res;
+    return serialization_hints.clone();
 }
 
 bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
@@ -9959,7 +9958,14 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     if ((*settings)[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    new_data_part->setColumns(columns, {}, metadata_snapshot->getMetadataVersion());
+    SerializationInfo::Settings info_settings
+    {
+        .ratio_of_defaults_for_sparse = (*settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        .choose_kind = false,
+        .string_with_size_stream = (*settings)[MergeTreeSetting::serialize_string_with_size_stream],
+    };
+
+    new_data_part->setColumns(columns, SerializationInfoByName{info_settings}, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();
     new_data_part->existing_rows_count = block.rows();
 
