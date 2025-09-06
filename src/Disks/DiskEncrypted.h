@@ -142,7 +142,7 @@ public:
         const WriteSettings & settings) override
     {
         auto tx = createEncryptedTransaction();
-        auto result = tx->writeFile(path, buf_size, mode, settings);
+        auto result = tx->writeFileWithAutoCommit(path, buf_size, mode, settings);
         return result;
     }
 

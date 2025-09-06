@@ -6,6 +6,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/logger_useful.h>
+
 #include <memory>
 #include <shared_mutex>
 
@@ -137,16 +139,7 @@ MetadataTransactionPtr MetadataStorageFromDisk::createTransaction()
 StoredObjects MetadataStorageFromDisk::getStorageObjects(const std::string & path) const
 {
     auto metadata = readMetadata(path);
-    const auto & keys_with_meta = metadata->getKeysWithMeta();
-
-    StoredObjects objects;
-    objects.reserve(keys_with_meta.size());
-    for (const auto & [object_key, object_meta] : keys_with_meta)
-    {
-        objects.emplace_back(object_key.serialize(), path, object_meta.size_bytes);
-    }
-
-    return objects;
+    return metadata->getStorageObjects(path);
 }
 
 uint32_t MetadataStorageFromDisk::getHardlinkCount(const std::string & path) const
@@ -260,16 +253,25 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromDiskTransaction::unlink
     return result;
 }
 
-TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile(const std::string & path, size_t target_size)
+TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile(const std::string & path, size_t size)
 {
-    auto operation = std::make_unique<TruncateMetadataFileOperation>(path, target_size, metadata_storage, *metadata_storage.getDisk());
+    auto operation = std::make_unique<TruncateMetadataFileOperation>(path, size, metadata_storage, *metadata_storage.getDisk(), *this);
     auto result = operation->outcome;
     addOperation(std::move(operation));
     return result;
 }
 
+DiskObjectStorageMetadataPtr MetadataStorageFromDiskTransaction::tryGetFileMetadataFromTransactionIfExists(const std::string & path, std::unique_lock<SharedMutex> & lock) const
+{
+    /// This function is called under metadata lock insise meratada transaction, so we can safely read metadata from disk
+    if (metadata_storage.existsFileOrDirectory(path))
+        return metadata_storage.readMetadataUnlocked(path, lock);
+    return nullptr;
+}
+
 std::optional<StoredObjects> MetadataStorageFromDiskTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
 {
+    /// This function is called outsize metadata lock before meratada transaction, so we can't use tryGetFileMetadataFromTransactionIfExists function here
     if (metadata_storage.existsFileOrDirectory(path))
         return metadata_storage.getStorageObjects(path);
     return std::nullopt;

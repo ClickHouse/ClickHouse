@@ -348,7 +348,6 @@ void MetadataStorageFromPlainObjectStorageTransaction::commit(const TransactionC
     MetadataOperationsHolder::commitImpl(options, metadata_storage.metadata_mutex);
 }
 
-
 std::optional<StoredObjects>
 MetadataStorageFromPlainObjectStorageTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
 {
