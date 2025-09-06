@@ -400,28 +400,23 @@ def rabbitmq_debuginfo(rabbitmq_id, cookie):
     p.communicate()
 
 
-async def check_nats_is_available(nats_port, ssl_ctx=None):
-    nc = await nats_connect_ssl(
-        nats_port,
-        user="click",
-        password="house",
-        ssl_ctx=ssl_ctx,
-        max_reconnect_attempts=1,
-    )
+async def check_nats_is_available(cluster):
+    nc = await nats_connect_ssl(cluster, max_reconnect_attempts=1)
     available = nc.is_connected
     await nc.close()
     return available
 
 
-async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None, **connect_options):
+async def nats_connect_ssl(cluster, **connect_options):
+    ssl_ctx = cluster.nats_ssl_context
     if not ssl_ctx:
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
         ssl_ctx.verify_mode = ssl.CERT_NONE
     nc = await nats.connect(
-        "tls://localhost:{}".format(nats_port),
-        user=user,
-        password=password,
+        "tls://localhost:{}".format(cluster.nats_port),
+        user=nats_user,
+        password=nats_pass,
         tls=ssl_ctx,
         **connect_options,
     )
@@ -736,7 +731,7 @@ class ClickHouseCluster:
         self.rabbitmq_cookie = self.get_instance_docker_id(self.rabbitmq_host)
 
         self.nats_host = "nats1"
-        self.nats_port = 4444
+        self._nats_port = 0
         self.nats_docker_id = None
         self.nats_dir = p.abspath(p.join(self.instances_dir, "nats"))
         self.nats_cert_dir = os.path.join(self.nats_dir, "cert")
@@ -960,6 +955,13 @@ class ClickHouseCluster:
             return self._redis_port
         self._redis_port = self.port_pool.get_port()
         return self._redis_port
+
+    @property
+    def nats_port(self):
+        if self._nats_port:
+            return self._nats_port
+        self._nats_port = self.port_pool.get_port()
+        return self._nats_port
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.port_pool.return_used_ports()
@@ -1490,6 +1492,8 @@ class ClickHouseCluster:
         env_variables["NATS_INTERNAL_PORT"] = "4444"
         env_variables["NATS_EXTERNAL_PORT"] = str(self.nats_port)
         env_variables["NATS_CERT_DIR"] = self.nats_cert_dir
+        env_variables["NATS_USER"] = nats_user
+        env_variables["NATS_PASSWORD"] = nats_pass
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_nats.yml")]
@@ -2808,7 +2812,7 @@ class ClickHouseCluster:
         retries = 0
         while True:
             if asyncio.run(
-                check_nats_is_available(self.nats_port, ssl_ctx=self.nats_ssl_context)
+                check_nats_is_available(self)
             ):
                 break
             else:
