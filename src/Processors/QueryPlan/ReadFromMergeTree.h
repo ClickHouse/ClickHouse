@@ -34,17 +34,6 @@ struct MergeTreeDataSelectSamplingData
 
 struct UsefulSkipIndexes
 {
-    struct DataSkippingIndexAndCondition
-    {
-        MergeTreeIndexPtr index;
-        MergeTreeIndexConditionPtr condition;
-
-        DataSkippingIndexAndCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
-            : index(index_), condition(condition_)
-        {
-        }
-    };
-
     struct MergedDataSkippingIndexAndCondition
     {
         std::vector<MergeTreeIndexPtr> indices;
@@ -59,7 +48,7 @@ struct UsefulSkipIndexes
 
     bool empty() const { return useful_indices.empty() && merged_indices.empty(); }
 
-    std::vector<DataSkippingIndexAndCondition> useful_indices;
+    std::vector<MergeTreeIndexWithCondition> useful_indices;
     std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
     std::vector<std::vector<size_t>> per_part_index_orders;
 };
@@ -272,6 +261,8 @@ public:
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
+    void replaceColumnsForTextSearch(const Names & removed_columns, const IndexReadTasks & added_index_tasks);
+
 private:
     MergeTreeReaderSettings reader_settings;
 
@@ -388,6 +379,7 @@ private:
 
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
+    IndexReadTasks index_read_tasks;
 
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;

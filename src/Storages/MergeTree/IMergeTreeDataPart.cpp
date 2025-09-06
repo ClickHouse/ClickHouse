@@ -2391,24 +2391,28 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
         auto index_ptr = MergeTreeIndexFactory::instance().get(index_description);
         auto index_name = index_ptr->getFileName();
         auto index_name_escaped = escapeForFileName(index_name);
+        auto index_substreams = index_ptr->getSubstreams();
 
-        auto index_file_name = index_name_escaped + index_ptr->getSerializedFileExtension();
-        auto index_marks_file_name = index_name_escaped + getMarksFileExtension();
-
-        /// If part does not contain index
-        auto bin_checksum = checksums.files.find(index_file_name);
-        if (bin_checksum != checksums.files.end())
+        for (const auto & index_substream : index_substreams)
         {
-            index_size.data_compressed = bin_checksum->second.file_size;
-            index_size.data_uncompressed = bin_checksum->second.uncompressed_size;
+            auto index_file_name = index_name_escaped + index_substream.suffix + index_substream.extension;
+            auto index_marks_file_name = index_name_escaped + index_substream.suffix + getMarksFileExtension();
+
+            /// If part does not contain index
+            auto bin_checksum = checksums.files.find(index_file_name);
+            if (bin_checksum != checksums.files.end())
+            {
+                index_size.data_compressed = bin_checksum->second.file_size;
+                index_size.data_uncompressed = bin_checksum->second.uncompressed_size;
+            }
+
+            auto mrk_checksum = checksums.files.find(index_marks_file_name);
+            if (mrk_checksum != checksums.files.end())
+                index_size.marks = mrk_checksum->second.file_size;
+
+            total_secondary_indices_size.add(index_size);
+            secondary_index_sizes[index_description.name] = index_size;
         }
-
-        auto mrk_checksum = checksums.files.find(index_marks_file_name);
-        if (mrk_checksum != checksums.files.end())
-            index_size.marks = mrk_checksum->second.file_size;
-
-        total_secondary_indices_size.add(index_size);
-        secondary_index_sizes[index_description.name] = index_size;
     }
 }
 

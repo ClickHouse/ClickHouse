@@ -71,7 +71,9 @@ public:
 
     MergeTreeReaderSettings & getMergeTreeReaderSettings() { return settings; }
 
-    virtual bool canSkipMark(size_t) const { return false; }
+    virtual bool canSkipMark(size_t, size_t) { return false; }
+
+    virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
 
 protected:
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
@@ -103,7 +105,7 @@ protected:
     MergeTreeReaderSettings settings;
 
     const StorageSnapshotPtr storage_snapshot;
-    const MarkRanges all_mark_ranges;
+    MarkRanges all_mark_ranges;
 
     /// Column, serialization and level (of nesting) of column
     /// which is used for reading offsets for missing nested column.
@@ -126,6 +128,7 @@ protected:
 
 private:
     friend class MergeTreeReaderIndex;
+    friend class MergeTreeReaderTextIndex;
 
     /// Returns actual column name in part, which can differ from table metadata.
     String getColumnNameInPart(const NameAndTypePair & required_column) const;

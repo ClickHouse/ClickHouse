@@ -431,6 +431,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         std::move(parts_with_range),
         mutations_snapshot,
         shared_virtual_fields,
+        index_read_tasks,
         storage_snapshot,
         prewhere_info,
         actions_settings,
@@ -510,6 +511,7 @@ Pipe ReadFromMergeTree::readFromPool(
             std::move(parts_with_range),
             mutations_snapshot,
             shared_virtual_fields,
+            index_read_tasks,
             storage_snapshot,
             prewhere_info,
             actions_settings,
@@ -525,6 +527,7 @@ Pipe ReadFromMergeTree::readFromPool(
             std::move(parts_with_range),
             mutations_snapshot,
             shared_virtual_fields,
+            index_read_tasks,
             storage_snapshot,
             prewhere_info,
             actions_settings,
@@ -597,6 +600,7 @@ Pipe ReadFromMergeTree::readInOrder(
             parts_with_ranges,
             mutations_snapshot,
             shared_virtual_fields,
+            index_read_tasks,
             has_limit_below_one_block,
             storage_snapshot,
             prewhere_info,
@@ -615,6 +619,7 @@ Pipe ReadFromMergeTree::readInOrder(
             parts_with_ranges,
             mutations_snapshot,
             shared_virtual_fields,
+            index_read_tasks,
             storage_snapshot,
             prewhere_info,
             actions_settings,
@@ -1857,20 +1862,25 @@ static void buildIndexes(
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
-        for (const auto& part : parts)
+        for (const auto & part : parts)
         {
-            auto &index_order = skip_indexes.per_part_index_orders.emplace_back();
+            auto & index_order = skip_indexes.per_part_index_orders.emplace_back();
             index_order.resize(skip_indexes.useful_indices.size());
             std::iota(index_order.begin(), index_order.end(), 0);
 
             index_sizes.clear();
 
-            for (const auto &idx : skip_indexes.useful_indices)
+            for (const auto & idx : skip_indexes.useful_indices)
             {
-                const auto *extension = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName()).extension;
-                auto sz = part.data_part->getFileSizeOrZero(idx.index->getFileName() + extension);
-                index_sizes.emplace_back(sz);
+                size_t index_size = 0;
+                auto format = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName());
+
+                for (const auto & substream : format.substreams)
+                    index_size += part.data_part->getFileSizeOrZero(idx.index->getFileName() + substream.suffix + substream.extension);
+
+                index_sizes.emplace_back(index_size);
             }
+
             // Move minmax indices to first positions, so they will be applied first as cheapest ones
             std::stable_sort(index_order.begin(), index_order.end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
             {
@@ -1900,9 +1910,7 @@ static void buildIndexes(
                 const auto r_size = idx_sizes[r];
 
                 return std::tie(l_index_priority, neg_l_granularity, l_size) < std::tie(r_index_priority, neg_r_granularity, r_size);
-
             });
-
         }
     }
 
@@ -2555,12 +2563,15 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     {
         /// Vector similarity indexes are not applicable on data reads.
         UsefulSkipIndexes applicable_skip_indexes = indexes->skip_indexes;
-        std::erase_if(applicable_skip_indexes.useful_indices, [](const auto & idx) { return idx.index->isVectorSimilarityIndex(); });
+        std::erase_if(applicable_skip_indexes.useful_indices, [](const auto & idx) { return idx.index->isVectorSimilarityIndex() || idx.index->hasHeavyGranules(); });
+
+        RangesByIndex read_ranges;
+        PartRemainingMarks part_remaining_marks;
+        MergeTreeIndexReadResultPoolPtr index_read_result_pool;
+        std::vector<MergeTreeIndexWithCondition> heavy_indexes;
 
         if (!applicable_skip_indexes.empty())
         {
-            RangesByIndex read_ranges;
-            PartRemainingMarks part_remaining_marks;
             for (const auto & ranges : result.parts_with_ranges)
             {
                 read_ranges.emplace(ranges.part_index_in_query, ranges);
@@ -2577,11 +2588,22 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
             /// TODO(ab): If projection index is available, build projection index reader and pass it into result pool.
 
-            MergeTreeIndexReadResultPoolPtr index_read_result_pool
-                = std::make_shared<MergeTreeIndexReadResultPool>(std::move(skip_index_reader));
+            index_read_result_pool = std::make_shared<MergeTreeIndexReadResultPool>(std::move(skip_index_reader));
+        }
 
+        for (const auto & index : indexes->skip_indexes.useful_indices)
+        {
+            if (index.index->hasHeavyGranules())
+                heavy_indexes.push_back(index);
+        }
+
+        if (index_read_result_pool || !heavy_indexes.empty())
+        {
             index_build_context = std::make_shared<MergeTreeIndexBuildContext>(
-                std::move(read_ranges), std::move(index_read_result_pool), std::move(part_remaining_marks));
+                std::move(read_ranges),
+                std::move(index_read_result_pool),
+                std::move(part_remaining_marks),
+                std::move(heavy_indexes));
         }
     }
 
@@ -3034,6 +3056,55 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount());
+}
+
+void ReadFromMergeTree::replaceColumnsForTextSearch(const Names & removed_columns, const IndexReadTasks & added_index_tasks)
+{
+    if (added_index_tasks.empty())
+        return;
+
+    for (const auto & removed_column : removed_columns)
+    {
+        auto it = std::ranges::find(all_column_names, removed_column);
+        all_column_names.erase(it);
+    }
+
+    auto new_virtual_columns = std::make_shared<VirtualColumnsDescription>(*storage_snapshot->virtual_columns);
+
+    for (const auto & [index_name, index_task] : added_index_tasks)
+    {
+        for (const auto & added_column : index_task.columns)
+        {
+            auto it = std::ranges::find(all_column_names, added_column.name);
+            if (it != all_column_names.end())
+                continue;
+
+            all_column_names.emplace(it, added_column.name);
+            new_virtual_columns->addEphemeral(added_column.name, added_column.type, "");
+        }
+
+        index_read_tasks[index_name] = index_task;
+    }
+
+    storage_snapshot = std::make_shared<StorageSnapshot>(
+        storage_snapshot->storage,
+        storage_snapshot->metadata,
+        std::move(new_virtual_columns),
+        storage_snapshot->object_columns,
+        std::move(storage_snapshot->data));
+
+    if (output_header != nullptr)
+    {
+        output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+            storage_snapshot->getSampleBlockForColumns(all_column_names),
+            lazily_read_info,
+            query_info.prewhere_info));
+    }
+
+    if (analyzed_result_ptr)
+    {
+        analyzed_result_ptr->column_names_to_read = all_column_names;
+    }
 }
 
 }
