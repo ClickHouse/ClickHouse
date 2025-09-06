@@ -285,7 +285,7 @@ namespace
                             }
                             task_finish_notify();
                         },
-                        Priority{0});
+                        Priority{});
                 }
                 /// Fallback to synchronous abort if scheduling fails.
                 catch (...)
@@ -463,7 +463,7 @@ namespace
                             }
                         }
                         task_finish_notify();
-                    }, Priority{1});
+                    }, Priority{});
                 }
                 catch (...)
                 {
