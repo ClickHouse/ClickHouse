@@ -207,6 +207,10 @@ public:
 
     virtual bool existsFile(const std::string & path) const = 0;
     virtual bool existsDirectory(const std::string & path) const = 0;
+    virtual bool existsDirectory(const std::string & path, bool /*emulate_subdirectories*/) const
+    {
+        return existsDirectory(path);
+    }
     virtual bool existsFileOrDirectory(const std::string & path) const = 0;
 
     virtual uint64_t getFileSize(const std::string & path) const = 0;
