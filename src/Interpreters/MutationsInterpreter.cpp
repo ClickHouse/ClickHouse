@@ -6,6 +6,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
@@ -528,7 +529,7 @@ static void validateUpdateColumns(
                 {
                     throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                                     "Updated column {} affects MATERIALIZED column {}, which is a key column. "
-                                    "Cannot UPDATE it.", backQuote(column_name), backQuote(materialized));
+                                    "Cannot UPDATE it", backQuote(column_name), backQuote(materialized));
                 }
             }
         }
@@ -676,6 +677,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (column.default_desc.kind == ColumnDefaultKind::Materialized && available_columns_set.contains(column.name))
             {
                 auto query = column.default_desc.expression->clone();
+                /// Replace all subcolumns to the getSubcolumn() to get only top level columns as required source columns.
+                replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns);
                 auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
                 for (const auto & dependency : syntax_result->requiredSourceColumns())
                     if (updated_columns.contains(dependency))
@@ -855,9 +858,14 @@ void MutationsInterpreter::prepare(bool dry_run)
                     {
                         auto type_literal = std::make_shared<ASTLiteral>(column.type->getName());
 
-                        auto materialized_column = makeASTFunction("_CAST",
+                        ASTPtr materialized_column = makeASTFunction("_CAST",
                             column.default_desc.expression->clone(),
                             type_literal);
+
+                        /// We need to replace all subcolumns used in materialized expression to getSubcolumn() function,
+                        /// because otherwise subcolumns are extracted before the source column is updated and we get
+                        /// old subcolumns values.
+                        replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized_column, all_columns);
 
                         stages.back().column_to_updated.emplace(
                             column.name,
