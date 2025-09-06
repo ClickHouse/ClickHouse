@@ -1128,7 +1128,16 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 \
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \
+    DECLARE(Int32, os_threads_nice_value_merge_mutate, 0, R"(
+    Linux nice value for merge and mutation threads. Lower values mean higher CPU priority.
 
+    Possible values: -20 to 19, negative values require CAP_SYS_NICE capability.
+    )", 0) \
+    DECLARE(Int32, os_threads_nice_value_zookeeper_client_send_receive, 0, R"(
+    Linux nice value for send and receive threads in ZooKeeper client. Lower values mean higher CPU priority.
+
+    Possible values: -20 to 19, negative values require CAP_SYS_NICE capability.
+    )", 0) \
 
 // clang-format on
 

@@ -157,7 +157,10 @@ std::unordered_map<String, CHSetting> performanceSettings = {
     {"optimize_use_projections", trueOrFalseSetting},
     {"optimize_use_projection_filtering", trueOrFalseSetting},
     /// {"optimize_using_constraints", trueOrFalseSetting},
-    {"os_thread_priority",
+    {"os_threads_nice_value_merge_mutate",
+     CHSetting(
+         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<int32_t>(-20, 19)); }, {"-20", "-10", "0", "10", "19"}, false)},
+    {"os_threads_nice_value_zookeeper_client_send_receive",
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.randomInt<int32_t>(-20, 19)); }, {"-20", "-10", "0", "10", "19"}, false)},
     {"parallel_replicas_only_with_analyzer", trueOrFalseSetting},

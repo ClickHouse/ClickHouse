@@ -106,10 +106,6 @@ static thread_local ThreadStack alt_stack;
 static thread_local bool has_alt_stack = false;
 #endif
 
-ThreadGroup::ThreadGroup()
-    : master_thread_id(CurrentThread::get().thread_id)
-    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(false))
-{}
 
 ThreadStatus::ThreadStatus()
     : thread_id(getThreadId())

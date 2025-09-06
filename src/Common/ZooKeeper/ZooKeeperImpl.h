@@ -220,6 +220,8 @@ public:
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
 private:
+    const Int32 send_receive_os_threads_nice_value;
+
     ACLs default_acls;
     zkutil::ZooKeeperArgs::PathAclMap path_acls;
 
