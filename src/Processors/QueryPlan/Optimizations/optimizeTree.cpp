@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -200,6 +201,12 @@ void optimizeTreeSecondPass(
         }
 
         stack.pop_back();
+    }
+
+    if (optimization_settings.enable_cascades_optimizer)
+    {
+        CascadesOptimizer cascades_optimizer(query_plan);
+        cascades_optimizer.optimize();
     }
 
     traverseQueryPlan(stack, root,
