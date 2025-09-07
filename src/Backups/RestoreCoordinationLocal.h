@@ -28,6 +28,9 @@ public:
     bool finish(bool) override { return true; }
     bool cleanup(bool) override { return true; }
 
+    /// Starts creating a shared database. Returns false if there is another host which is already creating this database.
+    bool acquireCreatingSharedDatabase(const String & database_name) override;
+
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
 
@@ -61,6 +64,7 @@ private:
     std::unordered_set<String /* table_zk_path */> acquired_data_in_replicated_tables TSA_GUARDED_BY(mutex);
     std::unordered_map<String, CreateQueryUUIDs> create_query_uuids TSA_GUARDED_BY(mutex);
     std::unordered_set<String /* root_zk_path */> acquired_data_in_keeper_map_tables TSA_GUARDED_BY(mutex);
+    std::unordered_set<String /* table_zk_path */> acquired_shared_databases;
 
     mutable std::mutex mutex;
 };

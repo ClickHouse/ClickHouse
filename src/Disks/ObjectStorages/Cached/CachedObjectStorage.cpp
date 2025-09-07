@@ -193,15 +193,6 @@ void CachedObjectStorage::copyObject( // NOLINT
     object_storage->copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
 }
 
-std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
-    const std::string & new_namespace,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    ContextPtr context)
-{
-    return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
-}
-
 void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     object_storage->listObjects(path, children, max_keys);
