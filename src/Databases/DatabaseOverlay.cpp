@@ -681,7 +681,7 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
         }
 
         auto overlay = std::make_shared<DatabaseOverlay>(args.database_name, args.context, DatabaseOverlay::Mode::FacadeOverCatalog);
-        
+
         for (const auto & source_name : sources)
         {
             auto source_db = DatabaseCatalog::instance().tryGetDatabase(source_name);
