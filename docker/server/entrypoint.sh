@@ -24,6 +24,7 @@ else
 fi
 
 # set some vars
+CLICKHOUSE_BIN_PATH=$(which clickhouse)
 CLICKHOUSE_CONFIG="${CLICKHOUSE_CONFIG:-/etc/clickhouse-server/config.xml}"
 
 # get CH directories locations
@@ -51,6 +52,21 @@ CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
 CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
 CLICKHOUSE_ACCESS_MANAGEMENT="${CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT:-0}"
 CLICKHOUSE_SKIP_USER_SETUP="${CLICKHOUSE_SKIP_USER_SETUP:-0}"
+
+# try_set_capabilities sets capabilities, treating them as options
+function try_set_capabilities() {
+    local cap_name cap_set
+
+    for cap_name in cap_net_admin cap_ipc_lock cap_sys_nice; do
+        if capsh "--has-p=$cap_name=+ep" >/dev/null 2>&1; then
+            cap_set="$cap_set $cap_name=+ep"
+        fi
+    done
+
+    if [ "$cap_set" != "" ]; then
+        setcap "$cap_set" "$CLICKHOUSE_BIN_PATH" >/dev/null 2>&1 || true
+    fi
+}
 
 function create_directory_and_do_chown() {
     local dir=$1
@@ -243,6 +259,8 @@ function init_clickhouse_db() {
 
 # if no args passed to `docker run` or first argument start with `--`, then the user is passing clickhouse-server arguments
 if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
+    try_set_capabilities
+
     # Watchdog is launched by default, but does not send SIGINT to the main process,
     # so the container can't be finished by ctrl+c
     CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}

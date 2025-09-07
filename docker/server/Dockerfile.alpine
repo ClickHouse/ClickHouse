@@ -74,7 +74,7 @@ RUN arch=${TARGETARCH:-amd64} \
     ; done \
     && rm /tmp/*.tgz /install -r \
     && chmod +x /entrypoint.sh \
-    && apk add --no-cache bash tzdata \
+    && apk add --no-cache bash tzdata libcap \
     && cp /usr/share/zoneinfo/UTC /etc/localtime \
     && echo "UTC" > /etc/timezone
 
