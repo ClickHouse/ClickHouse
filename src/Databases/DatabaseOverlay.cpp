@@ -68,7 +68,8 @@ StoragePtr DatabaseOverlay::tryGetTable(const String & table_name, ContextPtr co
 void DatabaseOverlay::createTable(ContextPtr context_, const String & table_name, const StoragePtr & table, const ASTPtr & query)
 {
     if (mode == Mode::FacadeOverCatalog)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
             "Database {} is an Overlay facade (read-only). "
             "Run CREATE TABLE in an underlying database (e.g. {}).",
             backQuote(getDatabaseName()),
