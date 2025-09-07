@@ -1,142 +1,175 @@
-# Overlay Database Engine {#database-engine-overlay}
+# DatabaseOverlay — design & behavior (current implementation)
 
-Overlay is a **virtual database engine** that sits on top of one or more existing databases and provides a single logical namespace for their tables. It does **not store data** by itself; it forwards reads and writes to its member databases.
-
-Typical use-cases:
-
-* A “search path” across multiple databases (e.g., a *base* DB plus a *tenant* DB).
-* A blue/green or A/B layout where new tables go to one DB but existing tables continue to be found in another.
-* Gradual migrations: create the overlay first, then shift tables between member DBs behind the scenes.
+This document describes the **Overlay** database engine you just implemented: what it is, how it’s constructed, how it behaves in each mode, what operations are supported/blocked, and how to test and troubleshoot it.
 
 ---
 
-## How it works {#overlay-how-it-works}
+## What is `DatabaseOverlay`?
 
-**Members & order.** An Overlay database is created with an ordered list of member databases. Order **matters**.
+`DatabaseOverlay` is a logical “view” database that exposes **the union of tables from multiple underlying databases**. It does **not** own data itself. It supports two modes:
 
-**Lookup (reads).**
+* `Mode::OwnedMembers` — used by **clickhouse-local** helper code; the overlay sits *on top of* member DBs it creates/owns.
+* `Mode::FacadeOverCatalog` — used by the SQL factory (`ENGINE = Overlay(...)`); the overlay is a **read-only facade** over existing, separately managed databases.
 
-* `SELECT ... FROM overlay_db.t` resolves to the **first** member that has table `t`.
-* If no member has `t`, the table is considered missing.
+---
 
-**Writes (DDL/DML).**
+## Construction
 
-* `CREATE TABLE overlay_db.t ...` is executed in the **first writable** member (i.e., not read-only).
-* `ALTER TABLE overlay_db.t ...` / `DROP TABLE overlay_db.t` are executed in the **member that actually owns** `t`.
-* `RENAME TABLE overlay_db.t TO overlay_db2.u`:
-
-  * If the destination is another Overlay database, the destination is the **first member** of that overlay.
-  * Otherwise, the rename goes directly into the destination database.
-
-**No data/metadata duplication.** Overlay does not copy or own table data. Tables *belong* to their member databases; Overlay just routes operations.
-
-**Persistence & SHOW CREATE.** The list of members is **persisted** in the database metadata.
-`SHOW CREATE DATABASE overlay_db` returns:
+### Factory (SQL)
 
 ```sql
-CREATE DATABASE overlay_db
-ENGINE = Overlay('db_a', 'db_b', ..., 'db_n')
+CREATE DATABASE dboverlay ENGINE = Overlay('db_overlay_a', 'db_overlay_b');
+```
+
+* The factory resolves every underlying DB name via `DatabaseCatalog::tryGetDatabase(name)`.
+* **Null checks are enforced**: a missing underlying DB throws `BAD_ARGUMENTS` with a clear message.
+* Self-reference is rejected.
+
+### Programmatic (clickhouse-local helper)
+
+```cpp
+auto overlay = std::make_shared<DatabaseOverlay>(
+    name_, context, DatabaseOverlay::Mode::OwnedMembers);
+
+overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(...));
+overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(...));
 ```
 
 ---
 
-## Syntax {#overlay-syntax}
+## UUID semantics
 
+* **FacadeOverCatalog**: `getUUID()` returns **`UUIDHelpers::Nil`**.
+  This makes the overlay **skip DB-UUID registration** in the global catalog, eliminating collisions with DB/table UUIDs.
+* **OwnedMembers**: `getUUID()` returns the **first member’s non-Nil UUID**, preserving the behavior expected by `clickhouse-local`.
+
+---
+
+## What operations does the overlay support?
+
+### Table/DB discovery
+
+* `SHOW TABLES FROM dboverlay` — returns the **union** of member DB tables.
+* `SELECT … FROM dboverlay.table` — **reads** transparently hit the underlying table.
+
+### Mutating operations (facade mode)
+
+| Operation                  | Behavior                                                                                                    |
+| :------------------------- | :---------------------------------------------------------------------------------------------------------- |
+| `CREATE TABLE dboverlay.*` | **Rejected** — throws `BAD_ARGUMENTS` with a clear message to create in an underlying DB.                   |
+| `ATTACH TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`.                                                                             |
+| `ALTER TABLE dboverlay.*`  | **Rejected** — `BAD_ARGUMENTS`.                                                                             |
+| `RENAME TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`.                                                                             |
+| `DROP TABLE dboverlay.*`   | **No-op** — ignored (allows `DROP DATABASE dboverlay` to succeed).                                          |
+| `INSERT INTO dboverlay.*`  | **Not supported** — typically fails with `TABLE_UUID_MISMATCH` since storage is bound to the underlying DB. |
+
+> Rationale: the facade is a **view**. Data-definition & data-mutation happen in the member databases.
+
+### Database lifecycle (facade mode)
+
+* `DROP DATABASE dboverlay` — **succeeds** and **does not** cascade to members.
+
+  * Implementation details that make this safe:
+
+    * `getUUID()` returns **Nil** (no DB UUID mapping).
+    * `getTablesIterator(ctx, filter, /*skip_not_loaded=*/true)` returns **empty** (so the dropper doesn’t see tables).
+    * `empty()` returns **true** (facade reports empty during destructive passes).
+    * `dropTable()` is a **no-op** (dropper won’t fail mid-way).
+    * `drop()` is a **no-op** (doesn’t touch member DBs).
+* `isReadOnly()` returns **false** (so the server doesn’t block `DROP DATABASE` up front). Mutating table ops are still guarded individually.
+
+---
+
+## Resilience & safety
+
+* **Null-safety**: all loops over `databases` skip `nullptr` entries; `registerNextDatabase()` rejects `nullptr`.
+  This prevents crashes from bad metadata or attach order.
+* **No-op on startup tasks** in facade mode: `loadStoredObjects`, `beforeLoadingMetadata`, `loadTablesMetadata`, `loadTableFromMetadata*`, `startup*`, `wait*`, `stopLoading` — all return immediately.
+  This avoids double registrations and keeps the overlay a pure view.
+
+---
+
+## Error codes and messages (facade mode)
+
+| Scenario                                   | Error                                                                                                                                              |
+| :----------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Overlay CREATE/ATTACH/ALTER/RENAME TABLE   | `BAD_ARGUMENTS` — “Database `<name>` is an Overlay facade (read-only view). Run this operation in an underlying database (e.g. `<first_member>`).” |
+| INSERT via overlay                         | `TABLE_UUID_MISMATCH` (from lower layers)                                                                                                          |
+| Overlay references itself                  | `BAD_ARGUMENTS`                                                                                                                                    |
+| Overlay references missing DB              | `BAD_ARGUMENTS`                                                                                                                                    |
+| DROP DATABASE overlay while tables “exist” | Succeeds (iterator/empty() semantics ensure no `DATABASE_NOT_EMPTY`)                                                                               |
+
+---
+
+## Logging
+
+* Uses `LOG_TRACE` (include `#include <Common/logger_useful.h>` or `#include <base/logger_useful.h>` depending on your tree).
+* On `DROP TABLE` in facade mode, logs a trace and **ignores** the drop.
+
+---
+Examples of usage
 ```sql
-CREATE DATABASE name
-ENGINE = Overlay('db1'[, 'db2', ...]);  -- members must already exist
+-- Create/prepare underlying DBs and tables
+CREATE DATABASE db_overlay_a ENGINE = Atomic;
+CREATE DATABASE db_overlay_b ENGINE = Atomic;
+
+CREATE TABLE db_overlay_a.t_a (id UInt32, s String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE db_overlay_b.t_b (id UInt32, s String) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO db_overlay_a.t_a VALUES (1,'a1'), (2,'a2');
+INSERT INTO db_overlay_b.t_b VALUES (10,'b10'), (20,'b20');
+
+-- Create the overlay facade
+CREATE DATABASE dboverlay ENGINE = Overlay('db_overlay_a', 'db_overlay_b');
+
+-- Discover and read through overlay
+SHOW TABLES FROM dboverlay;                -- t_a, t_b
+SELECT * FROM dboverlay.t_a ORDER BY id;   -- rows from db_overlay_a.t_a
+SELECT * FROM dboverlay.t_b ORDER BY id;   -- rows from db_overlay_b.t_b
+
+-- Add a new table in an underlying DB (overlay is read-only for DDL)
+CREATE TABLE db_overlay_a.t_new (k UInt32, v String) ENGINE = MergeTree ORDER BY k;
+INSERT INTO db_overlay_a.t_new VALUES (100,'x'), (200,'y');
+
+-- Read the new table via overlay
+SHOW TABLES FROM dboverlay;                -- now includes t_new
+SELECT * FROM dboverlay.t_new ORDER BY k;  -- rows from db_overlay_a.t_new
+
+-- Rename/drop in the underlying DB; overlay reflects changes
+RENAME TABLE db_overlay_a.t_new TO db_overlay_a.t_new_renamed;
+SELECT * FROM dboverlay.t_new_renamed ORDER BY k;
+
+DROP TABLE db_overlay_a.t_new_renamed;
+SHOW TABLES FROM dboverlay;                -- t_new_renamed disappears
+
+-- Remove the overlay (does not touch member DBs)
+DROP DATABASE dboverlay SYNC;
 ```
+---
 
-* Member names may be identifiers or string literals. They are stored and shown as strings.
-* At creation time, the engine validates that:
+## Troubleshooting
 
-  * Each member exists.
-  * There are no duplicates.
-  * The overlay does not reference itself.
+| Symptom                                                                               | Cause                                                                     | Fix                                                                                                                                |
+| :------------------------------------------------------------------------------------ | :------------------------------------------------------------------------ | :--------------------------------------------------------------------------------------------------------------------------------- |
+| `Logical error: 'Mapping for table with UUID=… already exists'` when creating overlay | Overlay DB had a non-Nil UUID colliding with existing DB/table            | In facade mode, **return Nil** from `getUUID()` (you already do).                                                                  |
+| `TABLE_ALREADY_EXISTS` under `store/000/00000000-…`                                   | Table was created **through** overlay; its storage bound to Nil-UUID path | Block `CREATE TABLE` via overlay; create in a member DB instead. Remove stale Nil dir if created.                                  |
+| `TABLE_UUID_MISMATCH` on `INSERT INTO dboverlay.t_new`                                | DML via overlay not supported; storage UUIDs must match                   | Write to the underlying DB and read via overlay.                                                                                   |
+| `DATABASE_NOT_EMPTY` while dropping overlay                                           | Dropper saw tables or `empty()` returned false                            | In facade mode: return **empty iterator** for `skip_not_loaded==true` and **true** from `empty()`. Make `dropTable()` a **no-op**. |
+| Segfault in `canContainMergeTreeTables()` (or similar)                                | `databases` contained a **null** member                                   | Enforce non-null on registration; add `if (db)` guards in all loops (done).                                                        |
 
 ---
 
-## Examples {#overlay-examples}
+## Compatibility notes
 
-```sql
--- Prepare two Atomic databases
-CREATE DATABASE db_a ENGINE = Atomic;
-CREATE DATABASE db_b ENGINE = Atomic;
-
--- Create the overlay
-CREATE DATABASE db_all ENGINE = Overlay('db_a', 'db_b');
-
--- Create: goes to first writable member (db_a)
-CREATE TABLE db_all.events (id UInt32, ts DateTime) ENGINE = MergeTree ORDER BY id;
-
--- Read: finds the table in db_a via the overlay
-SELECT count() FROM db_all.events;
-
--- Add a table in db_b directly
-CREATE TABLE db_b.users (id UInt32, name String) ENGINE = MergeTree ORDER BY id;
-
--- Read through overlay: resolves to db_b since 'users' is not in db_a
-SELECT * FROM db_all.users LIMIT 10;
-
--- Rename from overlay to another overlay: lands in the first member of the destination
-CREATE DATABASE db_shadow ENGINE = Overlay('db_b', 'db_a');
-RENAME TABLE db_all.events TO db_shadow.events_new;
-```
+* Facade overlay is intentionally **read-only** at the DDL/DML surface; it’s a **discovery & read** tool.
+* `clickhouse-local` path (`OwnedMembers`) preserves the legacy expectation that overlay UUID equals the first member’s UUID.
 
 ---
 
-## Semantics & limitations {#overlay-limitations}
+## Future work (if desired)
 
-* **Members engine types.** Best used with **Atomic** databases. Ordinary databases are deprecated; Memory databases are not recommended for persistence. (Overlay does not change member semantics.)
-* **Replication.** Overlay itself is not a replicated engine. If members are replicated, table replication remains fully owned by those members.
-* **UUIDs.** Overlay does not introduce its own database UUID. Tables keep their original UUIDs from their member databases.
-* **System tables.** Unchanged. Overlay affects only user databases listed as members.
-* **Backups & restore.** Backups enumerate tables via members. To restore, restore member databases first, then recreate the overlay.
-* **`ON CLUSTER`.** Overlay is a local metadata construct; distributed DDL may not be meaningful for it. Prefer creating Overlay on each node with the same member list.
-* **Conflicts.**
+* Add a **write-through** mode (retarget CREATE/INSERT ASTs to a chosen member).
+* Optional setting to **error** (instead of no-op) on `DROP TABLE dboverlay.*`.
+* Surface member list in `SHOW CREATE DATABASE` (already included) and possibly `system.databases` extras.
 
-  * If multiple members contain the same table name, the **first** one wins for reads.
-  * Creating a table with a name that already exists in an earlier member will fail with “table already exists”.
-* **Availability.** All member databases must exist when you create or load the overlay. If a member is missing at startup, the server will fail to load the overlay with a clear error.
-* **DROP DATABASE.** **Important:** in the current implementation, `DROP DATABASE overlay_db` iterates over members and calls `DROP DATABASE` on each. This **will drop underlying databases**. If you want to remove only the overlay wrapper and keep members, use `DETACH DATABASE overlay_db` (if available in your build) or manually delete the overlay metadata and **do not** run `DROP`. Consider changing this behavior in your environment if you want a non-destructive drop.
-
----
-
-## Privileges {#overlay-privileges}
-
-Overlay does not add new privilege types. Access control checks are performed against the **actual target database** (the member chosen for the operation):
-
-* To **create** through the overlay you need the privileges required to create in the chosen member (e.g., `CREATE TABLE ON db_a.*`).
-* To **alter/drop** a table through the overlay you need privileges on the member that owns the table.
-* `SHOW CREATE DATABASE overlay_db` requires metadata read on the overlay and the ability to see member names.
-
----
-
-## Operational notes {#overlay-operational-notes}
-
-* **Member changes.** To change the member list or order, re-create the overlay with the desired list. Order controls resolution precedence.
-* **Migrations.** To move a table from `db_a` to `db_b`: create it in `db_b`, copy data, adjust references (or `RENAME` across DBs), then drop the original. The overlay can hide the transition.
-* **Monitoring.** Because overlay is just routing, monitor utilization and health of member databases; Overlay has no independent storage metrics.
-
----
-
-## Error messages (selected) {#overlay-errors}
-
-* `Unknown database engine: Overlay`
-  The engine is not registered in your build.
-* `Overlay database failed to access underlying database 'X': Database X does not exist`
-  A member did not exist during create/load.
-* `Database was renamed to 'X', cannot create table in 'overlay_db'`
-  Indicates the DDL path resolved to a different effective database; verify member order and existence.
-* `Mapping for table with UUID=... already exists`
-  Symptom of trying to duplicate UUID mappings at attach time. Ensure the overlay itself does not try to register table UUIDs; leave that to members.
-
----
-
-## Best practices {#overlay-best-practices}
-
-* Prefer **Atomic** databases as members.
-* Keep member list **short and ordered**; first-match semantics are simple and predictable.
-* Avoid using **Memory** databases as members unless the overlay is intentionally ephemeral.
-* Treat Overlay as a **routing layer** only. All durability, replication, and performance characteristics come from member databases.
-* In production, make `DROP DATABASE` for Overlay **non-destructive** (drop the overlay only) to avoid accidental member loss. If your build currently cascades drop to members, change that behavior before adoption.
+If you want this as a `docs/` markdown file, say the word and I’ll format it to your repository’s style guide.

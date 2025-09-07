@@ -16,7 +16,8 @@ namespace DB
 class DatabaseOverlay : public IDatabase, protected WithContext
 {
 public:
-    DatabaseOverlay(const String & name_, ContextPtr context_);
+    enum class Mode { OwnedMembers, FacadeOverCatalog };
+    DatabaseOverlay(const String & name_, ContextPtr context_, Mode mode_ = Mode::OwnedMembers);
 
     /// Not thread-safe. Use only as factory to initialize database
     DatabaseOverlay & registerNextDatabase(DatabasePtr database);
@@ -100,10 +101,13 @@ public:
     void waitDatabaseStarted() const override;
     void stopLoading() override;
     void checkMetadataFilenameAvailability(const String & table_name) const override;
+    bool isReadOnly() const override;
 
 protected:
     std::vector<DatabasePtr> databases;
     LoggerPtr log;
+
+    Mode mode { Mode::OwnedMembers };
 };
 
 }
