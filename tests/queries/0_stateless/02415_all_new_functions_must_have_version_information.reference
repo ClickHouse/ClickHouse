@@ -141,7 +141,6 @@ enabledProfiles
 enabledRoles
 encodeURLComponent
 encodeURLFormComponent
-errorCodeToName
 evalMLMethod
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
@@ -173,8 +172,6 @@ generateSerialID
 generateUUIDv4
 getMaxTableNameLengthForDatabase
 getServerPort
-getSetting
-getSettingOrDefault
 getSizeOfEnumType
 getSubcolumn
 getTypeSerializationStreams
@@ -196,7 +193,6 @@ ilike
 in
 inIgnoreSet
 indexHint
-initialQueryID
 initializeAggregation
 isDecimalOverflow
 isDynamicElementInSharedData
@@ -270,9 +266,6 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
-parseReadableSize
-parseReadableSizeOrNull
-parseReadableSizeOrZero
 path
 pathFull
 polygonAreaCartesian
@@ -295,7 +288,6 @@ port
 portRFC
 proportionsZTest
 protocol
-queryID
 queryString
 queryStringAndFragment
 readWKTLineString
