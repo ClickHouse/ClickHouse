@@ -4,7 +4,7 @@ This document describes the **Overlay** database engine you just implemented: wh
 
 ---
 
-## What is `DatabaseOverlay`?
+## What is `DatabaseOverlay`? {#introduction}
 
 `DatabaseOverlay` is a logical “view” database that exposes **the union of tables from multiple underlying databases**. It does **not** own data itself. It supports two modes:
 
@@ -13,7 +13,7 @@ This document describes the **Overlay** database engine you just implemented: wh
 
 ---
 
-## Construction
+## Construction {#construction}
 
 ### Factory (SQL)
 
@@ -37,7 +37,7 @@ overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(...));
 
 ---
 
-## UUID semantics
+## UUID semantics {#uuid}
 
 * **FacadeOverCatalog**: `getUUID()` returns **`UUIDHelpers::Nil`**.
   This makes the overlay **skip DB-UUID registration** in the global catalog, eliminating collisions with DB/table UUIDs.
@@ -45,7 +45,7 @@ overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(...));
 
 ---
 
-## What operations does the overlay support?
+## What operations does the overlay support? {#implementation}
 
 ### Table/DB discovery
 
@@ -80,7 +80,7 @@ overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(...));
 
 ---
 
-## Resilience & safety
+## Resilience & safety {#safty}
 
 * **Null-safety**: all loops over `databases` skip `nullptr` entries; `registerNextDatabase()` rejects `nullptr`.
   This prevents crashes from bad metadata or attach order.
@@ -89,7 +89,7 @@ overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(...));
 
 ---
 
-## Error codes and messages (facade mode)
+## Error codes and messages (facade mode) {#error-codes}
 
 | Scenario                                   | Error                                                                                                                                              |
 | :----------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -101,13 +101,15 @@ overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(...));
 
 ---
 
-## Logging
+## Logging {#logging}
 
 * Uses `LOG_TRACE` (include `#include <Common/logger_useful.h>` or `#include <base/logger_useful.h>` depending on your tree).
 * On `DROP TABLE` in facade mode, logs a trace and **ignores** the drop.
 
 ---
-Examples of usage
+
+## Examples of use {#examples-of-use}
+
 ```sql
 -- Create/prepare underlying DBs and tables
 CREATE DATABASE db_overlay_a ENGINE = Atomic;
@@ -145,9 +147,10 @@ SHOW TABLES FROM dboverlay;                -- t_new_renamed disappears
 -- Remove the overlay (does not touch member DBs)
 DROP DATABASE dboverlay SYNC;
 ```
+
 ---
 
-## Troubleshooting
+## Troubleshooting {#troubleshooting}
 
 | Symptom                                                                               | Cause                                                                     | Fix                                                                                                                                |
 | :------------------------------------------------------------------------------------ | :------------------------------------------------------------------------ | :--------------------------------------------------------------------------------------------------------------------------------- |
@@ -159,14 +162,14 @@ DROP DATABASE dboverlay SYNC;
 
 ---
 
-## Compatibility notes
+## Compatibility notes {#compatibility}
 
 * Facade overlay is intentionally **read-only** at the DDL/DML surface; it’s a **discovery & read** tool.
 * `clickhouse-local` path (`OwnedMembers`) preserves the legacy expectation that overlay UUID equals the first member’s UUID.
 
 ---
 
-## Future work (if desired)
+## Future work {#future-work}
 
 * Add a **write-through** mode (retarget CREATE/INSERT ASTs to a chosen member).
 * Optional setting to **error** (instead of no-op) on `DROP TABLE dboverlay.*`.
