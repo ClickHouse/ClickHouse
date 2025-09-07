@@ -49,9 +49,9 @@ SELECT * FROM dboverlay.t_new ORDER BY k;
 
 INSERT INTO dboverlay.t_new VALUES (999, 'fail'); -- { serverError TABLE_UUID_MISMATCH }
 
-CREATE TABLE dboverlay.ct_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError TABLE_ALREADY_EXISTS }
+CREATE TABLE dboverlay.ct_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError BAD_ARGUMENTS }
 
-ATTACH TABLE dboverlay.at_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError STD_EXCEPTION }
+ATTACH TABLE dboverlay.at_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError BAD_ARGUMENTS }
 
 ALTER TABLE dboverlay.t_a ADD COLUMN z UInt8 DEFAULT 0; -- { serverError UNKNOWN_TABLE }
 

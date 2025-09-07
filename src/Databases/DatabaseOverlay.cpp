@@ -67,6 +67,12 @@ StoragePtr DatabaseOverlay::tryGetTable(const String & table_name, ContextPtr co
 
 void DatabaseOverlay::createTable(ContextPtr context_, const String & table_name, const StoragePtr & table, const ASTPtr & query)
 {
+    if (mode == Mode::FacadeOverCatalog)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Database {} is an Overlay facade (read-only). "
+            "Run CREATE TABLE in an underlying database (e.g. {}).",
+            backQuote(getDatabaseName()),
+            databases.empty() ? String("<none>") : databases.front()->getDatabaseName());
     for (auto & db : databases)
     {
         if (!db->isReadOnly())
@@ -236,6 +242,11 @@ ASTPtr DatabaseOverlay::getCreateDatabaseQuery() const
 
 String DatabaseOverlay::getTableDataPath(const String & table_name) const
 {
+    if (mode == Mode::FacadeOverCatalog)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Database {} is an Overlay facade (read-only). Path resolution is not supported here.",
+            backQuote(getDatabaseName()));
     String result;
     for (const auto & db : databases)
     {
@@ -248,6 +259,11 @@ String DatabaseOverlay::getTableDataPath(const String & table_name) const
 
 String DatabaseOverlay::getTableDataPath(const ASTCreateQuery & query) const
 {
+    if (mode == Mode::FacadeOverCatalog)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Database {} is an Overlay facade (read-only). Path resolution is not supported here.",
+            backQuote(getDatabaseName()));
     String result;
     for (const auto & db : databases)
     {
@@ -638,6 +654,11 @@ void DatabaseOverlay::stopLoading()
 
 void DatabaseOverlay::checkMetadataFilenameAvailability(const String & table_name) const
 {
+    if (mode == Mode::FacadeOverCatalog)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Database {} is an Overlay facade (read-only). Path resolution is not supported here.",
+            backQuote(getDatabaseName()));
     for (const auto & db : databases)
     {
         if (db->isReadOnly())
