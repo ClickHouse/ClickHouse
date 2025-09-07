@@ -215,20 +215,22 @@ ASTPtr DatabaseOverlay::getCreateDatabaseQuery() const
     auto query = std::make_shared<ASTCreateQuery>();
     query->setDatabase(getDatabaseName());
 
-    auto storage = std::make_shared<ASTStorage>();
+    if (mode == Mode::FacadeOverCatalog)
+    {
+        auto storage = std::make_shared<ASTStorage>();
 
-    auto engine_func = std::make_shared<ASTFunction>();
-    engine_func->name = "Overlay";
+        auto engine_func = std::make_shared<ASTFunction>();
+        engine_func->name = "Overlay";
 
-    auto args = std::make_shared<ASTExpressionList>();
-    args->children.reserve(databases.size());
-    for (const auto & db : databases)
-        args->children.emplace_back(std::make_shared<ASTLiteral>(db->getDatabaseName()));
-    engine_func->arguments = args;
+        auto args = std::make_shared<ASTExpressionList>();
+        args->children.reserve(databases.size());
+        for (const auto & db : databases)
+            args->children.emplace_back(std::make_shared<ASTLiteral>(db->getDatabaseName()));
+        engine_func->arguments = args;
 
-    storage->set(storage->engine, engine_func);
-    query->set(query->storage, storage);
-
+        storage->set(storage->engine, engine_func);
+        query->set(query->storage, storage);
+    }
     return query;
 }
 
@@ -675,8 +677,7 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
         for (const auto & source_name : sources)
         {
             if (source_name == args.database_name)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                               "{} database cannot reference itself: {}", engine_name, source_name);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} database cannot reference itself: {}", engine_name, source_name);
         }
 
         auto overlay = std::make_shared<DatabaseOverlay>(args.database_name, args.context, DatabaseOverlay::Mode::FacadeOverCatalog);

@@ -1,4 +1,4 @@
-# DatabaseOverlay — design & behavior (current implementation)
+# `DatabaseOverlay` — design & behavior (current implementation)
 
 This document describes the **Overlay** database engine you just implemented: what it is, how it’s constructed, how it behaves in each mode, what operations are supported/blocked, and how to test and troubleshoot it.
 
@@ -39,9 +39,9 @@ overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(...));
 
 ## UUID semantics {#uuid}
 
-* **FacadeOverCatalog**: `getUUID()` returns **`UUIDHelpers::Nil`**.
+* **Facade Over Catalog**: `getUUID()` returns **`UUIDHelpers::Nil`**.
   This makes the overlay **skip DB-UUID registration** in the global catalog, eliminating collisions with DB/table UUIDs.
-* **OwnedMembers**: `getUUID()` returns the **first member’s non-Nil UUID**, preserving the behavior expected by `clickhouse-local`.
+* **Owned Members**: `getUUID()` returns the **first member’s non-Nil UUID**, preserving the behavior expected by `clickhouse-local`.
 
 ---
 
@@ -65,7 +65,7 @@ overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(...));
 
 > Rationale: the facade is a **view**. Data-definition & data-mutation happen in the member databases.
 
-### Database lifecycle (facade mode)
+### Database life cycle (facade mode)
 
 * `DROP DATABASE dboverlay` — **succeeds** and **does not** cascade to members.
 
@@ -171,7 +171,7 @@ DROP DATABASE dboverlay SYNC;
 
 ## Future work {#future-work}
 
-* Add a **write-through** mode (retarget CREATE/INSERT ASTs to a chosen member).
+* Add a **write-through** mode (route CREATE/INSERT `ASTs` to a chosen member).
 * Optional setting to **error** (instead of no-op) on `DROP TABLE dboverlay.*`.
 * Surface member list in `SHOW CREATE DATABASE` (already included) and possibly `system.databases` extras.
 
