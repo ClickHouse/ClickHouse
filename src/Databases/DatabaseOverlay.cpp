@@ -195,10 +195,8 @@ ASTPtr DatabaseOverlay::getCreateDatabaseQuery() const
     auto query = std::make_shared<ASTCreateQuery>();
     query->setDatabase(getDatabaseName());
 
-    // Build: ENGINE = Overlay('dbA','dbB',...)
     auto storage = std::make_shared<ASTStorage>();
 
-    // makeASTFunction("Overlay") if you have it; otherwise construct manually:
     auto engine_func = std::make_shared<ASTFunction>();
     engine_func->name = "Overlay";
 
@@ -208,7 +206,6 @@ ASTPtr DatabaseOverlay::getCreateDatabaseQuery() const
         args->children.emplace_back(std::make_shared<ASTLiteral>(db->getDatabaseName()));
     engine_func->arguments = args;
 
-    // attach to storage and query
     storage->set(storage->engine, engine_func);
     query->set(query->storage, storage);
 
@@ -241,14 +238,7 @@ String DatabaseOverlay::getTableDataPath(const ASTCreateQuery & query) const
 
 UUID DatabaseOverlay::getUUID() const
 {
-    UUID result = UUIDHelpers::Nil;
-    for (const auto & db : databases)
-    {
-        result = db->getUUID();
-        if (result != UUIDHelpers::Nil)
-            break;
-    }
-    return result;
+    return UUIDHelpers::Nil;
 }
 
 UUID DatabaseOverlay::tryGetTableUUID(const String & table_name) const
@@ -363,18 +353,18 @@ bool DatabaseOverlay::canContainRocksDBTables() const
     return false;
 }
 
-void DatabaseOverlay::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
+void DatabaseOverlay::loadStoredObjects(ContextMutablePtr , LoadingStrictnessLevel)
 {
-    for (auto & db : databases)
-        if (!db->isReadOnly())
-            db->loadStoredObjects(local_context, mode);
+    // for (auto & db : databases)
+    //     if (!db->isReadOnly())
+    //         db->loadStoredObjects(local_context, mode);
 }
 
 bool DatabaseOverlay::supportsLoadingInTopologicalOrder() const
 {
-    for (const auto & db : databases)
-        if (db->supportsLoadingInTopologicalOrder())
-            return true;
+    // for (const auto & db : databases)
+    //     if (db->supportsLoadingInTopologicalOrder())
+    //         return true;
     return false;
 }
 
@@ -601,10 +591,6 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
         const auto * engine = engine_def->engine;
         const String & engine_name = engine->name;
 
-        /// Parse arguments: Overlay(db1, db2, ...)
-        /// Accept either identifiers or string literals:
-        ///   Overlay(db_mem, db_mem2)    -- identifiers
-        ///   Overlay('db_mem', 'db_mem2') -- strings
         std::vector<String> sources;
 
         if (!engine->arguments || engine->arguments->children.empty())
@@ -613,22 +599,17 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
 
         for (const auto & arg_ast : engine->arguments->children)
         {
-            /// Turn identifiers OR expressions into a literal, then extract string
             auto lit = evaluateConstantExpressionOrIdentifierAsLiteral(arg_ast, args.context);
             const auto & value = lit->as<ASTLiteral &>().value;
-            // Let safeGet<String>() handle type validation and throw appropriate exceptions
             sources.emplace_back(value.safeGet<String>());
         }
 
-        /// Validate and clean up sources
         if (sources.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} database requires at least 1 source database", engine_name);
 
-        /// Remove duplicates
         std::sort(sources.begin(), sources.end());
         sources.erase(std::unique(sources.begin(), sources.end()), sources.end());
 
-        /// Prevent self-reference
         for (const auto & source_name : sources)
         {
             if (source_name == args.database_name)
@@ -636,19 +617,13 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
                                "{} database cannot reference itself: {}", engine_name, source_name);
         }
 
-        /// Create the overlay database
         auto overlay = std::make_shared<DatabaseOverlay>(args.database_name, args.context);
         
-        /// Register underlying databases
         for (const auto & source_name : sources)
         {
             try 
             {
                 auto source_db = DatabaseCatalog::instance().tryGetDatabase(source_name);
-                if (source_db->getEngineName() == "Memory")
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Overlay database cannot reference Memory database '{}'. "
-                        "Use Atomic/Ordinary (persistent) databases instead.", source_name);
                 overlay->registerNextDatabase(source_db);
             }
             catch (const Exception & e)
