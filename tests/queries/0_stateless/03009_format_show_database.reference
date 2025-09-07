@@ -1,2 +1,2 @@
-CREATE DATABASE default
+CREATE DATABASE default\nENGINE = Overlay(\'default\', \'default\')
 UNKNOWN_DATABASE

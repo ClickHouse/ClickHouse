@@ -264,7 +264,8 @@ bool DatabaseOverlay::isReadOnly() const
 
 UUID DatabaseOverlay::getUUID() const
 {
-    if (mode == Mode::OwnedMembers){
+    if (mode == Mode::OwnedMembers)
+    {
         UUID result = UUIDHelpers::Nil;
         for (const auto & db : databases)
         {
@@ -674,7 +675,7 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
         for (const auto & source_name : sources)
         {
             if (source_name == args.database_name)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, 
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                "{} database cannot reference itself: {}", engine_name, source_name);
         }
 
