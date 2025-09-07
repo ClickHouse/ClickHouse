@@ -150,15 +150,6 @@ static void checkOverflow(Int64 value)
 
 
 template <typename Type>
-DataTypeEnum<Type>::FieldType DataTypeEnum<Type>::readValue(ReadBuffer & istr) const
-{
-    FieldType x;
-    readText(x, istr);
-    return this->findByValue(x)->first;
-}
-
-
-template <typename Type>
 Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
 {
     if (value_or_name.getType() == Field::Types::String)

@@ -52,8 +52,6 @@ public:
     TypeIndex getTypeId() const override { return type_id; }
     TypeIndex getColumnType() const override { return sizeof(FieldType) == 1 ? TypeIndex::Int8 : TypeIndex::Int16; }
 
-    FieldType readValue(ReadBuffer & istr) const;
-
     Field castToName(const Field & value_or_name) const override;
     Field castToValue(const Field & value_or_name) const override;
 
