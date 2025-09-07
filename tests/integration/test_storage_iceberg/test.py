@@ -3154,7 +3154,7 @@ def test_writes_cluster_table_function(started_cluster, format_version, storage_
     assert len(select_regular) == 600
     assert len(select_cluster) == 600
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME_2, started_cluster, "(x Int32, y Int32)", format_version)
+    create_iceberg_table(storage_type, instance, TABLE_NAME_2, started_cluster, "(a Int32, b String)", format_version)
     instance.query(f"INSERT INTO {TABLE_NAME_2} SELECT * FROM {table_function_expr_cluster};", settings={"allow_experimental_insert_into_iceberg": 1})
 
     assert instance.query(f"SELECT * FROM {table_function_expr_cluster}") == instance.query(f"SELECT * FROM {TABLE_NAME_2}")
