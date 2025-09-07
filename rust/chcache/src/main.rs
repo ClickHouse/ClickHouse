@@ -32,6 +32,7 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
 
     let compiler_path_or_command: String = std::env::args().nth(1).unwrap();
     let rest_of_args: Vec<String> = std::env::args().skip(2).collect();
+    let compiler_cmdline = rest_of_args.clone();
 
     match compiler_path_or_command.as_str() {
         "stats" => {
@@ -46,7 +47,8 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
     trace!("Compiler: {}", compiler_path.display());
     trace!("Args: {:?}", rest_of_args);
 
-    let mut compiler_binary_name = compiler_path.file_name()
+    let mut compiler_binary_name = compiler_path
+        .file_name()
         .and_then(|name| name.to_str())
         .unwrap()
         .to_string();
@@ -62,18 +64,9 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
     }
 
     let compiler = match compiler_binary_name.as_str() {
-        RustC::NAME => RustC::from_args(
-            compiler_path.as_path(),
-            rest_of_args.clone(),
-        ),
-        Clang::NAME => Clang::from_args(
-            compiler_path.as_path(),
-            rest_of_args.clone(),
-        ),
-        ClangXX::NAME => ClangXX::from_args(
-            compiler_path.as_path(),
-            rest_of_args.clone(),
-        ),
+        RustC::NAME => RustC::from_args(compiler_path.as_path(), rest_of_args.clone()),
+        Clang::NAME => Clang::from_args(compiler_path.as_path(), rest_of_args.clone()),
+        ClangXX::NAME => ClangXX::from_args(compiler_path.as_path(), rest_of_args.clone()),
         _ => {
             panic!("Unknown compiler: {}", compiler_path.display());
         }
@@ -175,7 +168,14 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
         let mut tries = 3;
         loop {
             let upload_result = clickhouse_disk
-                .write(&compiler_version, &total_hash, &compiled_bytes)
+                .write(
+                    &compiler_version,
+                    compiler_cmdline.clone(),
+                    compiler.get_args(),
+                    compiler.get_compile_duration(),
+                    &total_hash,
+                    &compiled_bytes,
+                )
                 .await;
 
             if upload_result.is_ok() {

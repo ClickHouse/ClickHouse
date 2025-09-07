@@ -293,7 +293,7 @@ void DefaultTokenExtractor::substringToGinFilter(const char * data, size_t lengt
         // first token is ignored, unless substring is prefix and
         // last token is ignored, unless substring is suffix
         if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
-            query_string.addTerm({data + token_start, token_len});
+            query_string.addToken({data + token_start, token_len});
 }
 
 SplitTokenExtractor::SplitTokenExtractor(const std::vector<String> & separators_)

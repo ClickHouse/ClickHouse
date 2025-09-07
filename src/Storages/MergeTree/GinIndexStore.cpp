@@ -49,7 +49,7 @@ const CompressionCodecPtr & GinCompressionFactory::zstdCodec()
 }
 
 #if USE_FASTPFOR
-UInt64 GinIndexPostingListDeltaPforSerialization::serialize(WriteBuffer & buffer, const GinPostingsList & rowids)
+UInt64 GinPostingListDeltaPforSerialization::serialize(WriteBuffer & buffer, const GinPostingsList & rowids)
 {
     std::vector<UInt32> deltas = encodeDeltaScalar(rowids);
 
@@ -81,7 +81,7 @@ UInt64 GinIndexPostingListDeltaPforSerialization::serialize(WriteBuffer & buffer
     return written_bytes;
 }
 
-GinPostingsListPtr GinIndexPostingListDeltaPforSerialization::deserialize(ReadBuffer & buffer)
+GinPostingsListPtr GinPostingListDeltaPforSerialization::deserialize(ReadBuffer & buffer)
 {
     size_t num_deltas = 0;
     size_t compressed_size = 0;
@@ -108,13 +108,13 @@ GinPostingsListPtr GinIndexPostingListDeltaPforSerialization::deserialize(ReadBu
     return postings_list;
 }
 
-std::shared_ptr<FastPForLib::IntegerCODEC> GinIndexPostingListDeltaPforSerialization::codec()
+std::shared_ptr<FastPForLib::IntegerCODEC> GinPostingListDeltaPforSerialization::codec()
 {
     static thread_local std::shared_ptr<FastPForLib::IntegerCODEC> codec = FastPForLib::simdfastpfor128_codec();
     return codec;
 }
 
-std::vector<UInt32> GinIndexPostingListDeltaPforSerialization::encodeDeltaScalar(const GinPostingsList & rowids)
+std::vector<UInt32> GinPostingListDeltaPforSerialization::encodeDeltaScalar(const GinPostingsList & rowids)
 {
     const UInt64 num_rowids = rowids.cardinality();
     std::vector<UInt32> deltas(num_rowids);
@@ -128,14 +128,14 @@ std::vector<UInt32> GinIndexPostingListDeltaPforSerialization::encodeDeltaScalar
     return deltas;
 }
 
-void GinIndexPostingListDeltaPforSerialization::decodeDeltaScalar(std::vector<UInt32> & deltas)
+void GinPostingListDeltaPforSerialization::decodeDeltaScalar(std::vector<UInt32> & deltas)
 {
     for (size_t i = 1; i < deltas.size(); ++i)
         deltas[i] += deltas[i - 1];
 }
 #endif
 
-UInt64 GinIndexPostingListRoaringZstdSerialization::serialize(WriteBuffer & buffer, const GinPostingsList & rowids)
+UInt64 GinPostingListRoaringZstdSerialization::serialize(WriteBuffer & buffer, const GinPostingsList & rowids)
 {
     const UInt64 num_rowids = rowids.cardinality();
 
@@ -205,7 +205,7 @@ UInt64 GinIndexPostingListRoaringZstdSerialization::serialize(WriteBuffer & buff
     }
 }
 
-GinPostingsListPtr GinIndexPostingListRoaringZstdSerialization::deserialize(ReadBuffer & buffer)
+GinPostingsListPtr GinPostingListRoaringZstdSerialization::deserialize(ReadBuffer & buffer)
 {
     /// Header value maps into following states:
     /// The lowest bit indicates if values are stored as an array or Roaring bitmap
@@ -275,13 +275,13 @@ UInt64 GinPostingsListBuilder::serialize(WriteBuffer & buffer)
     writeChar(ch, buffer);
     written_bytes += 1;
 
-    written_bytes += GinIndexPostingListDeltaPforSerialization::serialize(buffer, rowids);
+    written_bytes += GinPostingListDeltaPforSerialization::serialize(buffer, rowids);
 #else
     auto ch = static_cast<char>(Serialization::ROARING_ZSTD);
     writeChar(ch, buffer);
     written_bytes += 1;
 
-    written_bytes += GinIndexPostingListRoaringZstdSerialization::serialize(buffer, rowids);
+    written_bytes += GinPostingListRoaringZstdSerialization::serialize(buffer, rowids);
 #endif
     return written_bytes;
 }
@@ -294,7 +294,7 @@ GinPostingsListPtr GinPostingsListBuilder::deserialize(ReadBuffer & buffer)
     if (serialization == static_cast<std::underlying_type_t<Serialization>>(Serialization::DELTA_PFOR))
     {
 #if USE_FASTPFOR
-        return GinIndexPostingListDeltaPforSerialization::deserialize(buffer);
+        return GinPostingListDeltaPforSerialization::deserialize(buffer);
 #else
         throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
@@ -302,7 +302,7 @@ GinPostingsListPtr GinPostingsListBuilder::deserialize(ReadBuffer & buffer)
 #endif
     }
 
-    return GinIndexPostingListRoaringZstdSerialization::deserialize(buffer);
+    return GinPostingListRoaringZstdSerialization::deserialize(buffer);
 }
 
 GinDictionaryBloomFilter::GinDictionaryBloomFilter(UInt64 unique_count_, size_t bits_per_rows_, size_t num_hashes_)
@@ -474,7 +474,7 @@ bool GinIndexStore::needToWriteCurrentSegment() const
 
 void GinIndexStore::finalize()
 {
-    if (!current_postings_list_builder_container.empty())
+    if (!token_postings_lists.empty())
     {
         writeSegment();
         writeSegmentId();
@@ -509,7 +509,7 @@ void GinIndexStore::cancel() noexcept
 }
 
 GinIndexStore::Statistics::Statistics(const GinIndexStore & store)
-    : num_terms(store.current_postings_list_builder_container.size())
+    : num_tokens(store.token_postings_lists.size())
     , current_size_bytes(store.current_size_bytes)
     , segment_descriptor_file_size(store.segment_descriptor_file_stream ? store.segment_descriptor_file_stream->count() : 0)
     , bloom_filter_file_size(store.bloom_filter_file_stream ? store.bloom_filter_file_stream->count() : 0)
@@ -521,8 +521,8 @@ GinIndexStore::Statistics::Statistics(const GinIndexStore & store)
 String GinIndexStore::Statistics::toString() const
 {
     return fmt::format(
-        "number of terms = {}, terms size = {}, segment descriptor size = {}, bloom filter size = {}, dictionary size = {}, posting lists size = {}",
-        num_terms,
+        "number of tokens = {}, tokens byte size = {}, segment descriptor size = {}, bloom filter size = {}, dictionary size = {}, posting lists size = {}",
+        num_tokens,
         ReadableSize(current_size_bytes),
         ReadableSize(segment_descriptor_file_size),
         ReadableSize(bloom_filter_file_size),
@@ -586,15 +586,15 @@ void GinIndexStore::writeSegmentId()
 namespace
 {
 
-/// Initialize bloom filter from tokens from the term dictionary
+/// Initialize bloom filter from tokens from the token dictionary
 GinDictionaryBloomFilter initializeBloomFilter(
-    const GinIndexStore::GinPostingsListBuilderContainer & postings_list_builder_container,
+    const GinIndexStore::GinTokenPostingsLists & token_postings_lists,
     double bloom_filter_false_positive_rate)
 {
-    auto number_of_unique_terms = postings_list_builder_container.size(); /// postings_list_builder_container is a dictionary
-    const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
-    GinDictionaryBloomFilter bloom_filter(number_of_unique_terms, bits_per_rows, num_hashes);
-    for (const auto & [token, _] : postings_list_builder_container)
+    size_t unique_token_count = token_postings_lists.size(); /// token_postings_lists is a dictionary
+    const auto & [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
+    GinDictionaryBloomFilter bloom_filter(unique_token_count, bits_per_rows, num_hashes);
+    for (const auto & [token, _] : token_postings_lists)
         bloom_filter.add(token);
     return bloom_filter;
 }
@@ -617,11 +617,11 @@ void GinIndexStore::writeSegment()
     using TokenPostingsBuilderPairs = std::vector<TokenPostingsBuilderPair>;
 
     TokenPostingsBuilderPairs token_postings_list_pairs;
-    token_postings_list_pairs.reserve(current_postings_list_builder_container.size());
-    for (const auto & [token, postings_list] : current_postings_list_builder_container)
+    token_postings_list_pairs.reserve(token_postings_lists.size());
+    for (const auto & [token, postings_list] : token_postings_lists)
         token_postings_list_pairs.push_back({token, postings_list});
 
-    GinDictionaryBloomFilter bloom_filter = initializeBloomFilter(current_postings_list_builder_container, bloom_filter_false_positive_rate);
+    GinDictionaryBloomFilter bloom_filter = initializeBloomFilter(token_postings_lists, bloom_filter_false_positive_rate);
 
     /// Sort token-postings list pairs since all tokens have to be added in FST in sorted order
     std::ranges::sort(token_postings_list_pairs,
@@ -631,7 +631,7 @@ void GinIndexStore::writeSegment()
                     });
 
     /// Write postings
-    std::vector<UInt64> posting_list_byte_sizes(current_postings_list_builder_container.size(), 0);
+    std::vector<UInt64> posting_list_byte_sizes(token_postings_lists.size(), 0);
 
     for (size_t i = 0; const auto & [token, postings_list] : token_postings_list_pairs)
     {
@@ -702,7 +702,7 @@ void GinIndexStore::writeSegment()
         statistics.toString());
 
     current_size_bytes = 0;
-    current_postings_list_builder_container.clear();
+    token_postings_lists.clear();
     current_segment.segment_id = getNextSegmentId();
 
     segment_descriptor_file_stream->sync();
@@ -863,7 +863,7 @@ void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinDictionary 
         ReadableSize(dict_file_stream->count() - dictionary.dict_start_offset));
 }
 
-GinSegmentPostingsLists GinIndexStoreDeserializer::readSegmentPostingsLists(const String & term)
+GinSegmentPostingsLists GinIndexStoreDeserializer::readSegmentPostingsLists(const String & token)
 {
     chassert(postings_file_stream != nullptr);
 
@@ -879,23 +879,23 @@ GinSegmentPostingsLists GinIndexStoreDeserializer::readSegmentPostingsLists(cons
 
             if (dictionary->fst == nullptr)
             {
-                /// Segment dictionary is not loaded, first check if the term is in bloom filter
-                if (dictionary->bloom_filter && !dictionary->bloom_filter->contains(term))
+                /// Segment dictionary is not loaded, first check if the token is in bloom filter
+                if (dictionary->bloom_filter && !dictionary->bloom_filter->contains(token))
                     continue;
 
-                /// Term might be in segment dictionary
+                /// token might be in segment dictionary
                 readSegmentFST(segment_id, *dictionary);
             }
 
-            fst_output = dictionary->fst->getOutput(term);
+            fst_output = dictionary->fst->getOutput(token);
             if (!fst_output.found)
                 continue;
         }
 
         LOG_TRACE(
             logger,
-            "Start reading the posting list for term '{}' from text index '{}' segment id {} of part '{}'",
-            term,
+            "Start reading the posting list for token '{}' from text index '{}' segment id {} of part '{}'",
+            token,
             store->getName(),
             segment_id,
             store->storage->getPartDirectory());
@@ -909,8 +909,8 @@ GinSegmentPostingsLists GinIndexStoreDeserializer::readSegmentPostingsLists(cons
 
         LOG_TRACE(
             logger,
-            "Done reading the posting list for term '{}' from text index '{}' segment id {} of part '{}': size = {}",
-            term,
+            "Done reading the posting list for token '{}' from text index '{}' segment id {} of part '{}': size = {}",
+            token,
             store->getName(),
             segment_id,
             store->storage->getPartDirectory(),
@@ -919,17 +919,17 @@ GinSegmentPostingsLists GinIndexStoreDeserializer::readSegmentPostingsLists(cons
     return segment_postings_lists;
 }
 
-GinPostingsListsCachePtr GinIndexStoreDeserializer::createPostingsListsCacheFromTerms(const std::vector<String> & terms)
+GinPostingsListsCachePtr GinIndexStoreDeserializer::createPostingsListsCacheFromTokens(const std::vector<String> & tokens)
 {
     auto postings_lists_cache = std::make_shared<GinPostingsListsCache>();
-    for (const auto & term : terms)
+    for (const auto & token : tokens)
     {
-        /// Make sure don't read for duplicated terms
-        if (postings_lists_cache->contains(term))
+        /// Make sure don't read for duplicated tokens
+        if (postings_lists_cache->contains(token))
             continue;
 
-        auto segment_postings_lists = readSegmentPostingsLists(term);
-        (*postings_lists_cache)[term] = segment_postings_lists;
+        auto segment_postings_lists = readSegmentPostingsLists(token);
+        (*postings_lists_cache)[token] = segment_postings_lists;
     }
     return postings_lists_cache;
 }

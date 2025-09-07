@@ -203,6 +203,14 @@ char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory) const
     return getNestedColumn().serializeValueIntoMemory(n, memory);
 }
 
+std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n) const
+{
+    auto nested_size = getNestedColumn().getSerializedValueSize(n);
+    if (!nested_size)
+        return std::nullopt;
+    return 1 + *nested_size; /// +1 for null mask byte.
+}
+
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
 {
     UInt8 val = unalignedLoad<UInt8>(pos);
@@ -973,6 +981,12 @@ void ColumnNullable::takeDynamicStructureFromSourceColumns(const Columns & sourc
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
     nested_column->takeDynamicStructureFromSourceColumns(nested_source_columns);
+}
+
+bool ColumnNullable::dynamicStructureEquals(const IColumn & rhs) const
+{
+    const auto & rhs_nested_column = assert_cast<const ColumnNullable &>(rhs).getNestedColumn();
+    return nested_column->dynamicStructureEquals(rhs_nested_column);
 }
 
 ColumnPtr makeNullable(const ColumnPtr & column)

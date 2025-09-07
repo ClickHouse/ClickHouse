@@ -60,6 +60,11 @@ SELECT timeSeriesRateToGrid(120, 120, 0, 40)([89, 101, 109]::Array(UInt32), [89,
 SELECT timeSeriesInstantRateToGrid(120, 120, 0, 40)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
 SELECT timeSeriesInstantDeltaToGrid(120, 120, 0, 20)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
 
+-- First bucket doesn't have a value.
+SELECT timeSeriesResampleToGridWithStaleness(105, 210, 15, 30)([110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(UInt32), [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32));
+SELECT timeSeriesResampleToGridWithStaleness(105, 210, 15, 300)([110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(UInt32), [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32));
+SELECT timeSeriesResampleToGridWithStaleness(90, 210, 15, 300)([110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(UInt32), [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32));
+
 SELECT timeSeriesResampleToGridWithStaleness(100, 150, 10, 30)(toDateTime(105), [1., 2., 3.]); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 SELECT timeSeriesRateToGrid(100, 150, 10, 30)(toDateTime(105), [1., 2., 3.]); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 SELECT timeSeriesInstantDeltaToGrid(100, 150, 10, 30)(toDateTime(105), [1., 2., 3.]); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
