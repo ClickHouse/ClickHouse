@@ -581,7 +581,7 @@ The function takes a variable number of input parameters.
 Arguments can be any of the supported data types.
 For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed Tuple with the same data, Map and the corresponding Array(Tuple(key, value)) type with the same data).
     )";
-    FunctionDocumentation::Syntax halfMD5_syntax = "SELECT halfMD5(arg1[, arg2, ..., argN])";
+    FunctionDocumentation::Syntax halfMD5_syntax = "halfMD5(arg1[, arg2, ..., argN])";
     FunctionDocumentation::Arguments halfMD5_arguments = {{"arg1[, arg2, ..., argN]", "Variable number of arguments for which to compute the hash.", {"Any"}}};
     FunctionDocumentation::ReturnedValue halfMD5_returned_value = {"Returns the computed half MD5 hash of the given input params returned as a `UInt64` in big-endian byte order.", {"UInt64"}};
     FunctionDocumentation::Examples halfMD5_examples = {
