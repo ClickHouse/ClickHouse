@@ -273,6 +273,10 @@ def test_create_table():
             f"IcebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
             "DNS_ERROR",
         ),
+        (
+            f"Iceberg(storage_type='s3', 'http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
+            "DNS_ERROR",
+        ),
         f"AzureBlobStorage('{azure_conn_string}', 'cont', 'test_simple.csv', 'CSV')",
         f"AzureBlobStorage('{azure_conn_string}', 'cont', 'test_simple_1.csv', 'CSV', 'none')",
 
