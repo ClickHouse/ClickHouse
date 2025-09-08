@@ -570,7 +570,7 @@ For the 32-bit version see [`xxHash32`](#xxHash32)
 
 #if USE_SSL
     FunctionDocumentation::Description halfMD5_description = R"(
-[Interprets](../..//sql-reference/functions/type-conversion-functions.md/#type_conversion_functions-reinterpretAsString) all the input
+[Interprets](/sql-reference/functions/type-conversion-functions#reinterpretasstring) all the input
 parameters as strings and calculates the MD5 hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the
 resulting string, and interprets them as [UInt64](/sql-reference/data-types/int-uint) in big-endian byte order. The function is
 relatively slow (5 million short strings per second per processor core).
@@ -581,7 +581,7 @@ The function takes a variable number of input parameters.
 Arguments can be any of the supported data types.
 For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed Tuple with the same data, Map and the corresponding Array(Tuple(key, value)) type with the same data).
     )";
-    FunctionDocumentation::Syntax halfMD5_syntax = "SELECT halfMD5(arg1[, arg2, ..., argN])";
+    FunctionDocumentation::Syntax halfMD5_syntax = "halfMD5(arg1[, arg2, ..., argN])";
     FunctionDocumentation::Arguments halfMD5_arguments = {{"arg1[, arg2, ..., argN]", "Variable number of arguments for which to compute the hash.", {"Any"}}};
     FunctionDocumentation::ReturnedValue halfMD5_returned_value = {"Returns the computed half MD5 hash of the given input params returned as a `UInt64` in big-endian byte order.", {"UInt64"}};
     FunctionDocumentation::Examples halfMD5_examples = {

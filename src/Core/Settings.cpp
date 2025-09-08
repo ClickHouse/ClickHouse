@@ -5700,7 +5700,7 @@ Whether to use constant size tasks for reading from a remote table.
     DECLARE(Bool, merge_tree_determine_task_size_by_prewhere_columns, true, R"(
 Whether to use only prewhere columns size to determine reading task size.
 )", 0) \
-    DECLARE(UInt64, merge_tree_min_read_task_size, 8, R"(
+    DECLARE(NonZeroUInt64, merge_tree_min_read_task_size, 8, R"(
 Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks
 )", 0) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(

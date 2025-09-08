@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
-#include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>

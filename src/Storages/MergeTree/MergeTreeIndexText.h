@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/HashTable/HashMap.h>

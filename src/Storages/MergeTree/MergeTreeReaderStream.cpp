@@ -45,6 +45,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 {
 }
 
+MergeTreeReaderStream::~MergeTreeReaderStream() = default;
+
 void MergeTreeReaderStream::loadMarks()
 {
     if (!marks_getter)

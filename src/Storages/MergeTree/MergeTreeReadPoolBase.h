@@ -8,6 +8,9 @@
 namespace DB
 {
 
+class UncompressedCache;
+using UncompressedCachePtr = std::shared_ptr<UncompressedCache>;
+
 class MergeTreeReadPoolBase : public IMergeTreeReadPool, protected WithContext
 {
 public:

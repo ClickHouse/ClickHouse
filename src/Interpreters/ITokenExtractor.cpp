@@ -28,7 +28,7 @@ std::vector<std::string_view> ITokenExtractor::getTokensView(const char * data, 
     size_t token_start = 0;
     size_t token_len = 0;
 
-    while (cur < length && nextInStringPadded(data, length, &cur, &token_start, &token_len))
+    while (cur < length && nextInString(data, length, &cur, &token_start, &token_len))
         tokens.emplace_back(data + token_start, token_len);
 
     return tokens;
