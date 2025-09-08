@@ -21,6 +21,7 @@ from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
+# from jobs.scripts.clickhouse_version import CHVersion
 
 
 _GH_authenticated = False
@@ -115,9 +116,17 @@ class Runner:
 
         print("Read GH Environment")
         env = _Environment.from_env()
+        try:
+            version_string = Info().get_custom_data("version")['string']
+            os.environ["CLICKHOUSE_VERSION_STRING"] = version_string
+            env.CLICKHOUSE_VERSION_STRING = version_string
+        except Exception as e:
+            print(e)
+
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
+
         env.JOB_CONFIG = job
         env.dump()
         print(env)
@@ -501,7 +510,7 @@ class Runner:
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
 
             # Altinity workflow report
-            cmd = f"./.github/actions/create_workflow_report/workflow_report_hook.sh"
+            cmd = f"PR_NUMBER={env.PR_NUMBER} ./.github/actions/create_workflow_report/workflow_report_hook.sh"
             workflow_report_url = Shell.get_output(cmd).splitlines()[-1]
             print(f"::notice ::Workflow report: {workflow_report_url}")
 

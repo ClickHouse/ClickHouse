@@ -189,19 +189,12 @@ IStorageURLBase::IStorageURLBase(
 
     auto & storage_columns = storage_metadata.columns;
 
-    if (context_->getSettingsRef()[Setting::use_hive_partitioning])
-    {
-        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
-            storage_columns,
-            hive_partition_columns_to_read_from_file_path,
-            getSampleURI(uri, context_),
-            columns_.empty(),
-            format_settings,
-            context_);
-    }
-
-    /// If the `partition_strategy` argument is ever implemented for URL storage, this must be updated
-    file_columns = storage_columns.getAllPhysical();
+    std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
+        storage_columns,
+        getSampleURI(uri, context_),
+        columns_.empty(),
+        format_settings,
+        context_);
 
     auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
     if (!storage_metadata.getColumns().has("_headers"))
@@ -476,16 +469,9 @@ Chunk StorageURLSource::generate()
                 chunk_size = input_format->getApproxBytesReadForChunk();
 
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
-                chunk,
-                requested_virtual_columns,
-                {
-                    .path = curr_uri.getPath(),
-                    .size = current_file_size,
-                },
-                getContext());
 
-            // The order is important, hive partition columns must be added after virtual columns
+            /// The order is important, hive partition columns must be added before virtual columns
+            /// because they are part of the schema
             if (!hive_partition_columns_to_read_from_file_path.empty())
             {
                 const auto path = curr_uri.getPath();
@@ -494,6 +480,15 @@ Chunk StorageURLSource::generate()
                     hive_partition_columns_to_read_from_file_path,
                     path);
             }
+
+            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
+                chunk,
+                requested_virtual_columns,
+                {
+                    .path = curr_uri.getPath(),
+                    .size = current_file_size,
+                },
+                getContext());
 
             chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
             if (need_headers_virtual_column)
@@ -805,7 +800,7 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
     return nullptr;
 }
 
-namespace
+namespace internal
 {
     class ReadBufferIterator : public IReadBufferIterator, WithContext
     {
@@ -1054,7 +1049,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     else
         urls_to_check = {uri};
 
-    ReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
+    internal::ReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
     return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
@@ -1689,6 +1684,7 @@ void registerStorageURL(StorageFactory & factory)
             ASTs & engine_args = args.engine_args;
             auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext());
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
+            auto context = args.getLocalContext();
 
             ASTPtr partition_by;
             if (args.storage_def->partition_by)
@@ -1702,7 +1698,7 @@ void registerStorageURL(StorageFactory & factory)
                 args.columns,
                 args.constraints,
                 args.comment,
-                args.getContext(),
+                context,
                 configuration.compression_method,
                 configuration.headers,
                 configuration.http_method,

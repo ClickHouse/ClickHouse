@@ -302,7 +302,7 @@ void WriteBufferFromAzureBlobStorage::allocateBuffer()
     }
 
     auto size = buffer_allocation_policy->getBufferSize();
-    memory = Memory(size);
+    memory = Memory<>(size);
     WriteBuffer::set(memory.data(), memory.size());
 }
 

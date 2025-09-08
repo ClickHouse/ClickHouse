@@ -40,6 +40,7 @@ class _Environment(MetaClasses.Serializable):
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
     JOB_CONFIG: Optional[Job.Config] = None
     TRACEBACKS: List[str] = dataclasses.field(default_factory=list)
+    CLICKHOUSE_VERSION_STRING : Optional[str] = None
     name = "environment"
 
     @classmethod

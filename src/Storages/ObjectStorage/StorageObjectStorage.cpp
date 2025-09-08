@@ -11,6 +11,7 @@
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -172,56 +173,13 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
-    /*
-     * If `partition_strategy=hive`, the partition columns shall be extracted from the `PARTITION BY` expression.
-     * There is no need to read from the file's path.
-     *
-     * Otherwise, in case `use_hive_partitioning=1`, we can keep the old behavior of extracting it from the sample path.
-     * And if the schema was inferred (not specified in the table definition), we need to enrich it with the path partition columns
-     */
-    if (configuration->partition_strategy && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
-    {
-        hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
-    }
-    else if (context->getSettingsRef()[Setting::use_hive_partitioning])
-    {
-        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
-           columns,
-           hive_partition_columns_to_read_from_file_path,
-           sample_path,
-           columns_in_table_or_function_definition.empty(),
-           format_settings,
-           context);
-    }
-
-    if (hive_partition_columns_to_read_from_file_path.size() == columns.size())
-    {
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "A hive partitioned file can't contain only partition columns. Try reading it with `partition_strategy=wildcard` and `use_hive_partitioning=0`");
-    }
-
-    if (configuration->partition_columns_in_data_file)
-    {
-        file_columns = columns;
-    }
-    else
-    {
-        std::unordered_set<String> hive_partition_columns_to_read_from_file_path_set;
-
-        for (const auto & [name, type] : hive_partition_columns_to_read_from_file_path)
-        {
-            hive_partition_columns_to_read_from_file_path_set.insert(name);
-        }
-
-        for (const auto & [name, type] : columns.getAllPhysical())
-        {
-            if (!hive_partition_columns_to_read_from_file_path_set.contains(name))
-            {
-                file_columns.add({name, type});
-            }
-        }
-    }
+    std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
+        columns,
+        configuration,
+        sample_path,
+        columns_in_table_or_function_definition.empty(),
+        format_settings,
+        context);
 
     // Assert file contains at least one column. The assertion only takes place if we were able to deduce the schema. The storage might be empty.
     if (!columns.empty() && file_columns.empty())
@@ -341,121 +299,6 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
     return configuration->totalBytes(query_context);
 }
 
-namespace
-{
-class ReadFromObjectStorageStep : public SourceStepWithFilter
-{
-public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
-    ReadFromObjectStorageStep(
-        ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
-        const String & name_,
-        const Names & columns_to_read,
-        const NamesAndTypesList & virtual_columns_,
-        const SelectQueryInfo & query_info_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const std::optional<DB::FormatSettings> & format_settings_,
-        bool distributed_processing_,
-        ReadFromFormatInfo info_,
-        const bool need_only_count_,
-        ContextPtr context_,
-        size_t max_block_size_,
-        size_t num_streams_)
-        : SourceStepWithFilter(info_.source_header, columns_to_read, query_info_, storage_snapshot_, context_)
-        , object_storage(object_storage_)
-        , configuration(configuration_)
-        , info(std::move(info_))
-        , virtual_columns(virtual_columns_)
-        , format_settings(format_settings_)
-        , name(name_ + "Source")
-        , need_only_count(need_only_count_)
-        , max_block_size(max_block_size_)
-        , num_streams(num_streams_)
-        , distributed_processing(distributed_processing_)
-    {
-    }
-
-    std::string getName() const override { return name; }
-
-    void applyFilters(ActionDAGNodes added_filter_nodes) override
-    {
-        SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-        createIterator();
-    }
-
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
-    {
-        createIterator();
-
-        Pipes pipes;
-        auto context = getContext();
-        const size_t max_threads = context->getSettingsRef()[Setting::max_threads];
-        size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
-
-        if (estimated_keys_count > 1)
-            num_streams = std::min(num_streams, estimated_keys_count);
-        else
-        {
-            /// The amount of keys (zero) was probably underestimated.
-            /// We will keep one stream for this particular case.
-            num_streams = 1;
-        }
-
-        const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
-
-        for (size_t i = 0; i < num_streams; ++i)
-        {
-            auto source = std::make_shared<StorageObjectStorageSource>(
-                getName(), object_storage, configuration, info, format_settings,
-                context, max_block_size, iterator_wrapper, max_parsing_threads, need_only_count);
-
-            source->setKeyCondition(filter_actions_dag, context);
-            pipes.emplace_back(std::move(source));
-        }
-
-        auto pipe = Pipe::unitePipes(std::move(pipes));
-        if (pipe.empty())
-            pipe = Pipe(std::make_shared<NullSource>(info.source_header));
-
-        for (const auto & processor : pipe.getProcessors())
-            processors.emplace_back(processor);
-
-        pipeline.init(std::move(pipe));
-    }
-
-private:
-    ObjectStoragePtr object_storage;
-    ConfigurationPtr configuration;
-    std::shared_ptr<IObjectIterator> iterator_wrapper;
-
-    const ReadFromFormatInfo info;
-    const NamesAndTypesList virtual_columns;
-    const std::optional<DB::FormatSettings> format_settings;
-    const String name;
-    const bool need_only_count;
-    const size_t max_block_size;
-    size_t num_streams;
-    const bool distributed_processing;
-
-    void createIterator()
-    {
-        if (iterator_wrapper)
-            return;
-
-        const ActionsDAG::Node * predicate = nullptr;
-        if (filter_actions_dag.has_value())
-            predicate = filter_actions_dag->getOutputs().at(0);
-
-        auto context = getContext();
-        iterator_wrapper = StorageObjectStorageSource::createFileIterator(
-            configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
-            context, predicate, filter_actions_dag, virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback());
-    }
-};
-}
-
 ReadFromFormatInfo StorageObjectStorage::Configuration::prepareReadingFromFormat(
     ObjectStoragePtr,
     const Strings & requested_columns,
@@ -500,15 +343,13 @@ void StorageObjectStorage::read(
                         getName());
     }
 
-    auto all_file_columns = file_columns.getAll();
-
     auto read_from_format_info = configuration->prepareReadingFromFormat(
         object_storage,
         column_names,
         storage_snapshot,
         supportsSubsetOfColumns(local_context),
         local_context,
-        PrepareReadingFromFormatHiveParams { all_file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+        PrepareReadingFromFormatHiveParams { file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
 
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
                                  && local_context->getSettingsRef()[Setting::optimize_count_from_files];

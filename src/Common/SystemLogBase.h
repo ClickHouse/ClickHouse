@@ -10,6 +10,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Common/ThreadPool_fwd.h>
 
+
 #define SYSTEM_LOG_ELEMENTS(M) \
     M(AsynchronousMetricLogElement) \
     M(CrashLogElement) \
@@ -31,6 +32,11 @@
     M(BackupLogElement) \
     M(BlobStorageLogElement) \
     M(QueryMetricLogElement)
+
+#define SYSTEM_LOG_ELEMENTS_CLOUD(M) \
+    M(DistributedCacheLogElement) \
+    M(DistributedCacheServerLogElement) \
+
 
 namespace Poco
 {

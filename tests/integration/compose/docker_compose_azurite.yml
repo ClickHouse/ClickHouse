@@ -1,6 +1,6 @@
 services:
   azurite1:
-    image: mcr.microsoft.com/azure-storage/azurite
+    image: altinityinfra/azurite:3.35.0 # NOTE(strtgbb): Use mirror to avoid access denied error from mcr.microsoft.com
     ports:
       - "${AZURITE_PORT}:${AZURITE_PORT}"
     volumes:
