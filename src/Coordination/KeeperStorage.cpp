@@ -1952,9 +1952,23 @@ class ToDeleteTreeCollector
     uint32_t nodes_observed = 1;  /// root node
 
     std::list<KeeperStorageBase::Delta> deltas;
-    using UncommittedChildren
+    using ProcessedUncommittedChildren
         = std::unordered_set<std::string_view, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 
+    struct PathCmp
+    {
+        auto operator()(const std::string_view a,
+                        const std::string_view b) const
+        {
+            size_t level_a = std::count(a.begin(), a.end(), '/');
+            size_t level_b = std::count(b.begin(), b.end(), '/');
+            return level_a < level_b || (level_a == level_b && a < b);
+        }
+
+        using is_transparent = void; // required to make find() work with different type than key_type
+    };
+
+    std::map<std::string_view, typename Storage::UncommittedState::UncommittedNode *, PathCmp> uncommitted_children;
 public:
     enum class CollectStatus
     {
@@ -1978,6 +1992,15 @@ public:
         if (checkLimits(root_node))
             return CollectStatus::LimitExceeded;
 
+        /// Collect uncommitted children of root node in a specialized structure so we avoid iterating all uncommitted
+        /// nodes for each child node.
+        auto & nodes = storage.uncommitted_state.nodes;
+        for (auto & [node_path, uncommitted_node] : nodes)
+        {
+            if (Coordination::matchPath(node_path, root_path) == Coordination::PathMatchResult::IS_CHILD)
+                uncommitted_children[node_path] = &uncommitted_node;
+        }
+
         addDelta(root_path, root_node.stats, storage.uncommitted_state.getACLs(root_path), std::string{root_node.getData()});
 
         for (auto current_delta_it = deltas.rbegin(); current_delta_it != deltas.rend(); ++current_delta_it)
@@ -1988,18 +2011,18 @@ public:
             if (!storage.checkACL(current_path, Coordination::ACL::Delete, session_id, /*is_local=*/false))
                 return CollectStatus::NoAuth;
 
-            UncommittedChildren uncommitted_children;
-            if (auto status = visitUncommitted(current_path, uncommitted_children); status != CollectStatus::Ok)
+            ProcessedUncommittedChildren processed_uncommitted_children;
+            if (auto status = visitUncommitted(current_path, processed_uncommitted_children); status != CollectStatus::Ok)
                 return status;
 
             if constexpr (Storage::use_rocksdb)
             {
-                if (auto status = visitRocksDBNode(current_path, uncommitted_children); status != CollectStatus::Ok)
+                if (auto status = visitRocksDBNode(current_path, processed_uncommitted_children); status != CollectStatus::Ok)
                     return status;
             }
             else
             {
-                if (auto status = visitMemNode(current_path, uncommitted_children); status != CollectStatus::Ok)
+                if (auto status = visitMemNode(current_path, processed_uncommitted_children); status != CollectStatus::Ok)
                     return status;
             }
         }
@@ -2013,7 +2036,7 @@ public:
     }
 
 private:
-    CollectStatus visitRocksDBNode(std::string_view current_path, const UncommittedChildren & uncommitted_children) requires Storage::use_rocksdb
+    CollectStatus visitRocksDBNode(std::string_view current_path, const ProcessedUncommittedChildren & processed_uncommitted_children) requires Storage::use_rocksdb
     {
         std::filesystem::path current_path_fs(current_path);
 
@@ -2027,7 +2050,7 @@ private:
         {
             auto child_path = (current_path_fs / child_name).generic_string();
 
-            if (uncommitted_children.contains(child_path))
+            if (processed_uncommitted_children.contains(child_path))
                 continue;
 
             if (checkLimits(child_node))
@@ -2039,7 +2062,7 @@ private:
         return CollectStatus::Ok;
     }
 
-    CollectStatus visitMemNode(std::string_view current_path, const UncommittedChildren & uncommitted_children) requires (!Storage::use_rocksdb)
+    CollectStatus visitMemNode(std::string_view current_path, const ProcessedUncommittedChildren & processed_uncommitted_children) requires (!Storage::use_rocksdb)
     {
         std::lock_guard lock(storage.storage_mutex);
         auto node_it = storage.container.find(current_path);
@@ -2053,7 +2076,7 @@ private:
         {
             auto child_path = (current_path_fs / child_name).generic_string();
 
-            if (uncommitted_children.contains(child_path))
+            if (processed_uncommitted_children.contains(child_path))
                 continue;
 
             auto child_it = storage.container.find(child_path);
@@ -2069,18 +2092,17 @@ private:
         return CollectStatus::Ok;
     }
 
-    CollectStatus visitUncommitted(const std::string & path, UncommittedChildren & uncommitted_children)
+    CollectStatus visitUncommitted(const std::string & path, ProcessedUncommittedChildren & processed_uncommitted_children)
     {
-        auto & nodes = storage.uncommitted_state.nodes;
-
-        for (auto & [node_path, uncommitted_node] : nodes)
+        for (auto nodes_it = uncommitted_children.upper_bound(path + "/");
+             nodes_it != uncommitted_children.end() && Coordination::parentNodePath(StringRef{nodes_it->first}) == path;
+             ++nodes_it)
         {
-            if (Coordination::parentNodePath(node_path) != path)
-                continue;
+            const auto & [node_path, uncommitted_node] = *nodes_it;
 
-            uncommitted_children.insert(node_path);
+            processed_uncommitted_children.insert(node_path);
 
-            const auto node_ptr = uncommitted_node.node;
+            const auto node_ptr = uncommitted_node->node;
 
             if (node_ptr == nullptr) /// node was deleted in previous step of multi transaction
                 continue;
@@ -2088,8 +2110,8 @@ private:
             if (checkLimits(*node_ptr))
                 return CollectStatus::LimitExceeded;
 
-            uncommitted_node.materializeACL(storage.acl_map);
-            addDelta(node_path, node_ptr->stats, *uncommitted_node.acls, std::string{node_ptr->getData()});
+            uncommitted_node->materializeACL(storage.acl_map);
+            addDelta(std::string{node_path}, node_ptr->stats, *uncommitted_node->acls, std::string{node_ptr->getData()});
         }
 
         return CollectStatus::Ok;
