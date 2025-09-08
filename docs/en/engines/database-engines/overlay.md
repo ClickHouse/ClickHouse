@@ -19,7 +19,7 @@ sidebar_position: 51
 
 ## Construction {#construction}
 
-### Factory (SQL)
+### Factory (SQL) {#sql}
 
 ```sql
 CREATE DATABASE dboverlay ENGINE = Overlay('db_overlay_a', 'db_overlay_b');
@@ -28,16 +28,6 @@ CREATE DATABASE dboverlay ENGINE = Overlay('db_overlay_a', 'db_overlay_b');
 * The factory resolves every underlying DB name via `DatabaseCatalog::tryGetDatabase(name)`.
 * **Null checks are enforced**: a missing underlying DB throws `BAD_ARGUMENTS` with a clear message.
 * Self-reference is rejected.
-
-### Programmatic (clickhouse-local helper)
-
-```cpp
-auto overlay = std::make_shared<DatabaseOverlay>(
-    name_, context, DatabaseOverlay::Mode::OwnedMembers);
-
-overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(...));
-overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(...));
-```
 
 ---
 
@@ -51,12 +41,12 @@ overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(...));
 
 ## What operations does the overlay support? {#implementation}
 
-### Table/DB discovery
+### Table/DB discovery {#discovery}
 
 * `SHOW TABLES FROM dboverlay` — returns the **union** of member DB tables.
 * `SELECT … FROM dboverlay.table` — **reads** transparently hit the underlying table.
 
-### Mutating operations (facade mode)
+### Mutating operations (facade mode) {#operations}
 
 | Operation                  | Behavior                                                                                                    |
 | :------------------------- | :---------------------------------------------------------------------------------------------------------- |
@@ -69,7 +59,7 @@ overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(...));
 
 > Rationale: the facade is a **view**. Data-definition & data-mutation happen in the member databases.
 
-### Database life cycle (facade mode)
+### Database life cycle (facade mode) {#life-cycle}
 
 * `DROP DATABASE dboverlay` — **succeeds** and **does not** cascade to members.
 
