@@ -52,6 +52,8 @@ accurateCast
 accurateCastOrDefault
 accurateCastOrNull
 asin
+caseWithExpression
+catboostEvaluate
 countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
@@ -181,6 +183,7 @@ hasTokenCaseInsensitiveOrNull
 ilike
 in
 inIgnoreSet
+initializeAggregation
 isDynamicElementInSharedData
 isIPAddressInRange
 isIPv4String
