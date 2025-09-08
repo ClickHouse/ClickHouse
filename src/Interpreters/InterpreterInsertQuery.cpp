@@ -760,7 +760,7 @@ InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClu
         return {};
 
     StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
-    if (!dst_storage->isMergeTree() || !dst_storage->isDataLake() || !dst_storage->supportsReplication())
+    if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
         return {};
 
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();
