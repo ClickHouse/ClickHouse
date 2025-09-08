@@ -1,5 +1,4 @@
 
-#include "Disks/DiskType.h"
 #include "config.h"
 #if USE_AVRO
 
@@ -26,6 +25,7 @@
 #include <Common/Exception.h>
 
 #include <Databases/DataLake/Common.h>
+#include <Disks/DiskType.h>
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 #include <Disks/ObjectStorages/StoredObject.h>
