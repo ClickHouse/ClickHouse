@@ -77,6 +77,15 @@ bad_settings_node = cluster.add_instance(
     macros={"shard": 1, "replica": 4},
     keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
+no_retries_node = cluster.add_instance(
+    "no_retries_node",
+    main_configs=["configs/config.xml"],
+    user_configs=["configs/settings_no_keeper_retries.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
+    macros={"shard": 1, "replica": 4},
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+)
 
 uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
@@ -741,21 +750,21 @@ def test_alters_from_different_replicas(started_cluster):
     snapshot_recovering_node.query("DROP DATABASE alters_from_different_replicas SYNC")
 
 
-def create_some_tables(db):
+def create_some_tables(db, extra_node=dummy_node):
     settings = {
         "distributed_ddl_task_timeout": 0,
         "allow_experimental_object_type": 1,
         "allow_suspicious_codecs": 1,
     }
     main_node.query(f"CREATE TABLE {db}.t1 (n int) ENGINE=Memory", settings=settings)
-    dummy_node.query(
+    extra_node.query(
         f"CREATE TABLE {db}.t2 (s String) ENGINE=Memory", settings=settings
     )
     main_node.query(
         f"CREATE TABLE {db}.mt1 (n int) ENGINE=MergeTree order by n",
         settings=settings,
     )
-    dummy_node.query(
+    extra_node.query(
         f"CREATE TABLE {db}.mt2 (n int) ENGINE=MergeTree order by n",
         settings=settings,
     )
@@ -763,7 +772,7 @@ def create_some_tables(db):
         f"CREATE TABLE {db}.rmt1 (n int) ENGINE=ReplicatedMergeTree order by n",
         settings=settings,
     )
-    dummy_node.query(
+    extra_node.query(
         f"CREATE TABLE {db}.rmt2 (n int CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12))) ENGINE=ReplicatedMergeTree order by n",
         settings=settings,
     )
@@ -771,7 +780,7 @@ def create_some_tables(db):
         f"CREATE TABLE {db}.rmt3 (n int, json Object('json') materialized '') ENGINE=ReplicatedMergeTree order by n",
         settings=settings,
     )
-    dummy_node.query(
+    extra_node.query(
         f"CREATE TABLE {db}.rmt5 (n int) ENGINE=ReplicatedMergeTree order by n",
         settings=settings,
     )
@@ -779,7 +788,7 @@ def create_some_tables(db):
         f"CREATE MATERIALIZED VIEW {db}.mv1 (n int) ENGINE=ReplicatedMergeTree order by n AS SELECT n FROM {db}.rmt1",
         settings=settings,
     )
-    dummy_node.query(
+    extra_node.query(
         f"CREATE MATERIALIZED VIEW {db}.mv2 (n int) ENGINE=ReplicatedMergeTree order by n  AS SELECT n FROM {db}.rmt2",
         settings=settings,
     )
@@ -788,7 +797,7 @@ def create_some_tables(db):
         "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) "
         "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())"
     )
-    dummy_node.query(
+    extra_node.query(
         f"CREATE DICTIONARY {db}.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
         "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt2' PASSWORD '' DB 'recover')) "
         "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())"
@@ -812,18 +821,22 @@ def test_recover_staled_replica(started_cluster):
     started_cluster.get_kazoo_client("zoo1").set(
         "/clickhouse/databases/recover/logs_to_keep", b"10"
     )
-    dummy_node.query(
+    # We use a node with no retries so it's stalled faster and we don't have retries interfering with the test
+    # For example, with retries it will recover the DDLWorker and might execute some DDLs sooner, keeping Memory tables
+    # alive (which is good for prod, but bad for this test as it creates inconsistency and avoids the need to handle
+    # broken tables)
+    no_retries_node.query(
         "CREATE DATABASE recover ENGINE = Replicated('/clickhouse/databases/recover', 'shard1', 'replica2');"
     )
 
     settings = {"distributed_ddl_task_timeout": 0}
-    create_some_tables("recover")
+    create_some_tables("recover", no_retries_node)
     create_table_for_exchanges("recover")
 
     for table in ["t1", "t2", "mt1", "mt2", "rmt1", "rmt2", "rmt3", "rmt5"]:
         main_node.query(f"INSERT INTO recover.{table} VALUES (42)")
     for table in ["t1", "t2", "mt1", "mt2"]:
-        dummy_node.query(f"INSERT INTO recover.{table} VALUES (42)")
+        no_retries_node.query(f"INSERT INTO recover.{table} VALUES (42)")
 
     for i, table in enumerate(["a1", "a2", "a3", "a4", "a5", "a6"]):
         main_node.query(f"INSERT INTO recover.{table} VALUES ('{str(i + 1) * 10}')")
@@ -834,8 +847,8 @@ def test_recover_staled_replica(started_cluster):
         main_node.query(f"SYSTEM SYNC REPLICA recover.{table}")
 
     with PartitionManager() as pm:
-        pm.drop_instance_zk_connections(dummy_node)
-        dummy_node.query_and_get_error("RENAME TABLE recover.t1 TO recover.m1")
+        pm.drop_instance_zk_connections(no_retries_node)
+        no_retries_node.query_and_get_error("RENAME TABLE recover.t1 TO recover.m1")
 
         main_node.query_with_retry(
             "RENAME TABLE recover.t1 TO recover.m1", settings=settings
@@ -860,7 +873,7 @@ def test_recover_staled_replica(started_cluster):
 
         inner_table = (
             ".inner_id."
-            + dummy_node.query_with_retry(
+            + no_retries_node.query_with_retry(
                 "SELECT uuid FROM system.tables WHERE database='recover' AND name='mv1'"
             ).strip()
         )
@@ -907,7 +920,7 @@ def test_recover_staled_replica(started_cluster):
         "ORDER BY name SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1"
     )
     expected = main_node.query(query)
-    assert_eq_with_retry(dummy_node, query, expected)
+    assert_eq_with_retry(no_retries_node, query, expected)
     assert (
         main_node.query(
             "SELECT count() FROM system.tables WHERE database='recover' AND name LIKE '.inner_id.%'"
@@ -915,7 +928,7 @@ def test_recover_staled_replica(started_cluster):
         == "2\n"
     )
     assert (
-        dummy_node.query(
+        no_retries_node.query(
             "SELECT count() FROM system.tables WHERE database='recover' AND name LIKE '.inner_id.%'"
         )
         == "2\n"
@@ -924,7 +937,7 @@ def test_recover_staled_replica(started_cluster):
     # Check that Database Replicated renamed all the tables correctly
     for i, table in enumerate(["a2", "a8", "a5", "a7", "a4", "a3"]):
         assert (
-            dummy_node.query(f"SELECT * FROM recover.{table}") == f"{str(i + 1) * 10}\n"
+                no_retries_node.query(f"SELECT * FROM recover.{table}") == f"{str(i + 1) * 10}\n"
         )
 
     for table in [
@@ -943,30 +956,30 @@ def test_recover_staled_replica(started_cluster):
         assert main_node.query(f"SELECT (*,).1 FROM recover.{table}") == "42\n"
     for table in ["t2", "rmt1", "rmt2", "rmt4", "d1", "d2", "mt2", "mv1", "mv3"]:
         assert (
-            dummy_node.query(f"SELECT '{table}', (*,).1 FROM recover.{table}")
+                no_retries_node.query(f"SELECT '{table}', (*,).1 FROM recover.{table}")
             == f"{table}\t42\n"
         )
     for table in ["m1", "mt1"]:
-        assert dummy_node.query(f"SELECT count() FROM recover.{table}") == "0\n"
+        assert no_retries_node.query(f"SELECT count() FROM recover.{table}") == "0\n"
 
-    logging.debug("Result: %s", dummy_node.query("SHOW DATABASES"))
+    logging.debug("Result: %s", no_retries_node.query("SHOW DATABASES"))
     logging.debug(
-        "Result: %s", dummy_node.query("SHOW TABLES FROM recover_broken_tables")
+        "Result: %s", no_retries_node.query("SHOW TABLES FROM recover_broken_tables")
     )
     logging.debug(
         "Result: %s",
-        dummy_node.query("SHOW TABLES FROM recover_broken_replicated_tables"),
+        no_retries_node.query("SHOW TABLES FROM recover_broken_replicated_tables"),
     )
 
     global test_recover_staled_replica_run
     assert (
-        dummy_node.query(
+            no_retries_node.query(
             "SELECT count() FROM system.tables WHERE database='recover_broken_tables'"
         )
         == f"{test_recover_staled_replica_run}\n"
     )
     assert (
-        dummy_node.query(
+        no_retries_node.query(
             "SELECT count() FROM system.tables WHERE database='recover_broken_replicated_tables'"
         )
         == f"{test_recover_staled_replica_run}\n"
@@ -976,38 +989,38 @@ def test_recover_staled_replica(started_cluster):
     # Note that the table name is not deterministic
     # It's formed as ${original_name}_${max_log_ptr}_${random_number_up_to_1000}
     # And that fault injection might increase max_log_ptr as replicas are added or removed
-    table = dummy_node.query(
+    table = no_retries_node.query(
         "SHOW TABLES FROM recover_broken_tables LIKE 'mt1_%' LIMIT 1"
     ).strip()
     logging.debug(f"Table: {table}")
     assert table
     assert (
-        dummy_node.query(f"SELECT (*,).1 FROM recover_broken_tables.{table}") == "42\n"
+        no_retries_node.query(f"SELECT (*,).1 FROM recover_broken_tables.{table}") == "42\n"
     )
-    table = dummy_node.query(
+    table = no_retries_node.query(
         "SHOW TABLES FROM recover_broken_replicated_tables LIKE 'rmt5_%' LIMIT 1"
     ).strip()
     assert (
-        dummy_node.query(f"SELECT (*,).1 FROM recover_broken_replicated_tables.{table}")
+        no_retries_node.query(f"SELECT (*,).1 FROM recover_broken_replicated_tables.{table}")
         == "42\n"
     )
 
     expected = "Cleaned 6 outdated objects: dropped 1 dictionaries and 3 tables, moved 2 tables"
-    assert_logs_contain(dummy_node, expected)
+    assert_logs_contain(no_retries_node, expected)
 
-    dummy_node.query("DROP TABLE recover.tmp")
+    no_retries_node.query("DROP TABLE recover.tmp")
     assert_eq_with_retry(
         main_node,
         "SELECT count() FROM system.tables WHERE database='recover' AND name='tmp'",
         "0\n",
     )
     main_node.query("DROP DATABASE recover SYNC")
-    dummy_node.query("DROP DATABASE recover SYNC")
+    no_retries_node.query("DROP DATABASE recover SYNC")
 
 
 def test_recover_staled_replica_many_mvs(started_cluster):
     main_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
+    no_retries_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
 
     main_node.query_with_retry(
         "CREATE DATABASE IF NOT EXISTS recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica1');"
