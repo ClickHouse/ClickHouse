@@ -1152,8 +1152,9 @@ toDateTime(1685457500, 'UTC'):     2023-05-30 14:38:20
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDateTime = {1, 1};
     FunctionDocumentation::Category category_toDateTime = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateTime = {description_toDateTime, syntax_toDateTime, arguments_toDateTime, returned_value_toDateTime, examples_toDateTime, category_toDateTime};
+    FunctionDocumentation documentation_toDateTime = {description_toDateTime, syntax_toDateTime, arguments_toDateTime, returned_value_toDateTime, examples_toDateTime, introduced_in_toDateTime, category_toDateTime};
 
     factory.registerFunction<detail::FunctionToDateTime>(documentation_toDateTime);
 
@@ -1209,8 +1210,9 @@ SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDateTime32 = {20, 9};
     FunctionDocumentation::Category category_toDateTime32 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateTime32 = {description_toDateTime32, syntax_toDateTime32, arguments_toDateTime32, returned_value_toDateTime32, examples_toDateTime32, category_toDateTime32};
+    FunctionDocumentation documentation_toDateTime32 = {description_toDateTime32, syntax_toDateTime32, arguments_toDateTime32, returned_value_toDateTime32, examples_toDateTime32, introduced_in_toDateTime32, category_toDateTime32};
 
     factory.registerFunction<detail::FunctionToDateTime32>(documentation_toDateTime32);
 
