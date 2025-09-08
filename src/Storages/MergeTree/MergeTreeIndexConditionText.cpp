@@ -81,16 +81,13 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
 
 TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement & element)
 {
-    if (element.function == RPNElement::FUNCTION_OR)
-        return TextSearchMode::Any;
+    if (element.function == RPNElement::FUNCTION_SEARCH_ALL
+        || element.function == RPNElement::FUNCTION_AND
+        || element.function == RPNElement::FUNCTION_EQUALS
+        || (element.function == RPNElement::FUNCTION_MATCH && element.text_search_queries.size() == 1))
+        return TextSearchMode::All;
 
-    if (element.text_search_queries.size() > 1)
-        return TextSearchMode::Any;
-
-    if (element.text_search_queries.size() == 1 && element.text_search_queries.front()->mode == TextSearchMode::Any)
-        return TextSearchMode::Any;
-
-    return TextSearchMode::All;
+    return TextSearchMode::Any;
 }
 
 bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)
@@ -132,7 +129,7 @@ std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const 
         return std::nullopt;
 
     String function_name = it->second->function_name;
-    size_t index = search_query_to_index[query_hash]++;
+    size_t index = function_name_to_index[query.function_name]++;
     String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, function_name, index);
 
     virtual_column_to_search_query[virtual_column_name] = it->second;

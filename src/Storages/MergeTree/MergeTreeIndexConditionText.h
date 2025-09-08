@@ -106,7 +106,7 @@ private:
 
     std::vector<String> all_search_tokens;
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
-    std::unordered_map<UInt128, size_t> search_query_to_index;
+    std::unordered_map<String, size_t> function_name_to_index;
     std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query;
 
     bool use_bloom_filter = true;

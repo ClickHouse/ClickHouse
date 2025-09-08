@@ -11,6 +11,8 @@
 namespace ProfileEvents
 {
     extern const Event TextIndexReaderTotalMicroseconds;
+    extern const Event TextIndexReadPostings;
+    extern const Event TextIndexUsedEmbeddedPostings;
 }
 
 namespace DB
@@ -234,10 +236,12 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
     {
         if (postings.hasEmbeddedPostings())
         {
+            ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
             granule.postings[token] = postings.getEmbeddedPostings().getIterator();
             continue;
         }
 
+        ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
         const auto & future_postings = postings.getFuturePostings();
 
         auto * postings_stream = index_reader->getStreams().at(IndexSubstream::Type::TextIndexPostings);
