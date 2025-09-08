@@ -14,10 +14,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-}
-
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(ActionsDAG::Node * filter, ActionsDAG::Node * prewhere) const
 {
     if (filter == nullptr && prewhere == nullptr)
