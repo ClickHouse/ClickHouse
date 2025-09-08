@@ -1,4 +1,3 @@
--- { echo }
 -- No arguments passed
 SELECT countDigits(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 -- Invalid 1st argument passed
