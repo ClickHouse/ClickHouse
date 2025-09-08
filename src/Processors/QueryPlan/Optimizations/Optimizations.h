@@ -16,7 +16,7 @@ namespace QueryPlanOptimizations
 void optimizeTreeFirstPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan);
 /// Second pass is used to apply read-in-order and attach a predicate to PK.
-void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan);
+void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 /// Third pass is used to apply filters such as key conditions and skip indexes to the storages that support them.
 /// After that it add CreateSetsStep for the subqueries that has not be used in the filters.
 void addStepsToBuildSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);

@@ -493,7 +493,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
         QueryPlanOptimizations::tryRemoveRedundantSorting(root);
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes, *this);
-    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes, *this);
+    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
     if (optimization_settings.build_sets)
         QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
 }

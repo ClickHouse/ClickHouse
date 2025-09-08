@@ -21,15 +21,9 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-void unwrapReadFromLocalParallelReplica(
-    QueryPlan & query_plan, QueryPlan::Node & root, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
+/// Find `ReadFromLocalParallelReplicaStep` and replace it with local plan.
+void unwrapReadFromLocalParallelReplica(QueryPlan & query_plan, QueryPlan::Node & root, QueryPlan::Nodes &)
 {
-    /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.
-    /// Place it after projection optimization to avoid executing projection optimization twice in the local plan,
-    /// Which would cause an exception when force_use_projection is enabled.
-    // bool read_from_local_parallel_replica_plan = false;
-    auto settings = optimization_settings;
-    settings.optimize_projection = settings.force_use_projection = false;
     Stack stack;
     stack.push_back({.node = &root});
     while (!stack.empty())
@@ -46,23 +40,13 @@ void unwrapReadFromLocalParallelReplica(
         }
         if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep *>(frame.node->step.get()))
         {
-            // read_from_local_parallel_replica_plan = true;
-
             auto local_plan = read_from_local->extractQueryPlan();
-            local_plan->optimize(settings);
-
             auto * local_plan_node = frame.node;
             query_plan.replaceNodeWithPlan(local_plan_node, std::move(local_plan));
         }
 
-        // if (settings.merge_expressions)
-        //     tryMergeExpressions(frame.node, nodes, {});
-
         stack.pop_back();
     }
-    // local plan can contain redundant sorting
-    // if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
-    // tryRemoveRedundantSorting(&root);
 }
 
 void optimizeTreeFirstPass(
@@ -71,7 +55,7 @@ void optimizeTreeFirstPass(
     if (!optimization_settings.optimize_plan)
         return;
 
-    unwrapReadFromLocalParallelReplica(query_plan, root, nodes, optimization_settings);
+    unwrapReadFromLocalParallelReplica(query_plan, root, nodes);
 
     const auto & optimizations = getOptimizations();
 
@@ -206,11 +190,7 @@ void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter,
 }
 
 
-void optimizeTreeSecondPass(
-    const QueryPlanOptimizationSettings & optimization_settings,
-    QueryPlan::Node & root,
-    QueryPlan::Nodes & nodes,
-    [[maybe_unused]] QueryPlan & query_plan)
+void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     std::unordered_set<String> applied_projection_names;
