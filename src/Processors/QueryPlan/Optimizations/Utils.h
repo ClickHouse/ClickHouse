@@ -2,7 +2,6 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include "base/defines.h"
 
 namespace DB
 {
@@ -21,7 +20,7 @@ class DescriptionHolder : public IDescriptionHolder
 {
 public:
     template <size_t size>
-    ALWAYS_INLINE explicit DescriptionHolder(const char (&description_)[size]) : description(description_, size) {}
+    ALWAYS_INLINE explicit DescriptionHolder(const char (&description_)[size]) : description(description_, size - 1) {}
 
     void setStepDescription(IQueryPlanStep & step) const override
     {

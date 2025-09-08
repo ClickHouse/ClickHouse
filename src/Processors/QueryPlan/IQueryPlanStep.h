@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/CurrentThread.h>
-#include "base/defines.h"
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -63,7 +62,7 @@ public:
     void setStepDescription(const IQueryPlanStep & step);
 
     template <size_t size>
-    ALWAYS_INLINE void setStepDescription(const char (&description)[size]) { step_description = std::string_view(description); }
+    ALWAYS_INLINE void setStepDescription(const char (&description)[size]) { step_description = std::string_view(description, size - 1); }
 
     struct Serialization;
     struct Deserialization;
