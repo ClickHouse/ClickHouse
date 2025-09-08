@@ -146,7 +146,7 @@ ManifestFileContent::ManifestFileContent(
     const String & manifest_file_name,
     Int32 format_version_,
     const String & common_path,
-    const IcebergSchemaProcessor & schema_processor,
+    IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number,
     Int64 inherited_snapshot_id,
     const String & table_location,
@@ -198,6 +198,8 @@ ManifestFileContent::ManifestFileContent(
     Poco::Dynamic::Var json = parser.parse(*schema_json_string);
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
     Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
+
+    schema_processor.addIcebergTableSchema(schema_object);
 
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
@@ -265,6 +267,8 @@ ManifestFileContent::ManifestFileContent(
         const auto schema_id_opt = schema_processor.tryGetSchemaIdForSnapshot(snapshot_id);
         if (!schema_id_opt.has_value())
         {
+            /// Error logged but not thrown to avoid breaking whole query because of backward compatibility reasons.
+            /// That's actually an error because it can lead to incorrect query results, so we are creating an exception to put it to system.error_log.
             try
             {
                 throw Exception(
