@@ -3048,7 +3048,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         if (!in_first_argument->as<ConstantNode>())
         {
-            auto & in_second_argument = function_in_arguments_nodes[1];
+            auto in_second_argument = function_in_arguments_nodes[1]->clone();
+
+            /// Resolve second argument of IN to determine if it is a subquery.
+            resolveExpressionNode(
+                in_second_argument,
+                scope,
+                true /*allow_lambda_expression*/,
+                true /*allow_table_expression*/
+            );
 
             if (in_second_argument->as<QueryNode>())
             {
@@ -3057,9 +3065,36 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// Rename subquery projection to a unique name to avoid collisions with names from outer scope
                 /// E.g. when rewriting "SELECT number IN (SELECT * FROM numbers(3)) FROM numbers(5)" the inner
                 /// query "SELECT * FROM numbers(3)" returns column `number` which will collide with outer column `number`
-                auto subquery_node = in_second_argument->clone();
+                auto subquery_node = std::move(in_second_argument);
+
                 String unique_column_name = "__subquery_column_" + toString(UUIDHelpers::generateV4());
-                subquery_node->as<QueryNode>()->setProjectionAliasesToOverride({unique_column_name});
+
+                /// Re-resolve subquery columns setting the unique alias
+                auto subquery_projection_columns = subquery_node->as<QueryNode>()->getProjectionColumns();
+                subquery_node->as<QueryNode>()->clearProjectionColumns();
+                if (subquery_projection_columns.size() == 1)
+                {
+                    subquery_node->as<QueryNode>()->setProjectionAliasesToOverride({unique_column_name});
+                    subquery_node->as<QueryNode>()->resolveProjectionColumns(subquery_projection_columns);
+                }
+                else
+                {
+                    /// It there are multiple columns, wrap them in a Tuple()
+                    auto projection = subquery_node->as<QueryNode>()->getProjection().clone();
+
+                    QueryTreeNodePtr wrapper_tuple_node = std::make_shared<FunctionNode>("tuple");
+                    wrapper_tuple_node->as<FunctionNode>()->getArguments().getNodes() = std::move(projection->as<ListNode>()->getNodes());
+                    resolveFunction(wrapper_tuple_node, scope);
+
+                    /// Replace the original projection columns with one Tuple column
+                    subquery_node->as<QueryNode>()->getProjection().getNodes() = { std::move(wrapper_tuple_node) };
+                    DataTypes wrapper_tuple_element_types;
+                    for (const auto & c : subquery_projection_columns)
+                        wrapper_tuple_element_types.push_back(c.type);
+                    auto wrapper_tuple_data_type = std::make_shared<DataTypeTuple>(wrapper_tuple_element_types);
+                    /// Return the Tuple under unique name
+                    subquery_node->as<QueryNode>()->resolveProjectionColumns(NamesAndTypes{{unique_column_name, wrapper_tuple_data_type}});
+                }
 
                 /// SELECT * AS _unique_name_ FROM subquery
                 auto internal_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
