@@ -267,7 +267,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, ActionsDAG::Node * f
 
     if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
     {
-        auto & dag = filter_step->getExpression();
+        const auto & dag = filter_step->getExpression();
         auto * predicate = const_cast<ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
         auto stats = estimateReadRowsCount(*node.children.front(), predicate);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
