@@ -70,7 +70,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             std::move(merged),
             parent_filter->getFilterColumnName(),
             parent_filter->removesFilterColumn());
-            filter->setStepDescription(fmt::format("({} + {})", parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
+        filter->setStepDescription(fmt::format("({} + {})", parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);
