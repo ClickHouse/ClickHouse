@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
 #include <Databases/LoadingStrictnessLevel.h>
@@ -27,7 +28,7 @@ namespace
 // LocalObjectStorage is only supported for Iceberg Datalake operations where Avro format is required. For regular file access, use FileStorage instead.
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
 
-std::shared_ptr<StorageObjectStorage>
+StoragePtr
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorage::ConfigurationPtr configuration)
 {
     auto & engine_args = args.engine_args;
@@ -35,7 +36,16 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     const auto context = args.getLocalContext();
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false);
+
+    std::string cluster_name;
+
+    if (args.storage_def->settings)
+    {
+        if (const auto * value = args.storage_def->settings->changes.tryGet("object_storage_cluster"))
+            cluster_name = value->safeGet<std::string>();
+    }
+
+    configuration->initialize(args.engine_args, context, false);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -63,20 +73,20 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     Settings settings_copy = args.getLocalContext()->getSettingsCopy();
     context_copy->setSettings(settings_copy);
 
-    return std::make_shared<StorageObjectStorage>(
+    return std::make_shared<StorageObjectStorageCluster>(
+        cluster_name,
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
         configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE),
-        context_copy,
         args.table_id,
         args.columns,
         args.constraints,
+        partition_by,
+        context_copy,
         args.comment,
         format_settings,
-        args.mode,
-        /* distributed_processing */ false,
-        partition_by);
+        args.mode);
 }
 
 #endif
@@ -180,22 +190,22 @@ static DataLakeStorageSettingsPtr getDataLakeStorageSettings(const ASTStorage & 
 
 void registerStorageIceberg(StorageFactory & factory)
 {
-#if USE_AWS_S3
     factory.registerStorage(
         "Iceberg",
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessType::S3,
+            .source_access_type = AccessType::NONE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         });
 
+#    if USE_AWS_S3
     factory.registerStorage(
         "IcebergS3",
         [&](const StorageFactory::Arguments & args)

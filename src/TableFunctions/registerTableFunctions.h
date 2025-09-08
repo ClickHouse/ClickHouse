@@ -61,6 +61,7 @@ void registerTableFunctionExplain(TableFunctionFactory & factory);
 
 void registerTableFunctionObjectStorage(TableFunctionFactory & factory);
 void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory);
+void registerTableFunctionObjectStorageClusterFallback(TableFunctionFactory & factory);
 void registerDataLakeTableFunctions(TableFunctionFactory & factory);
 void registerDataLakeClusterTableFunctions(TableFunctionFactory & factory);
 

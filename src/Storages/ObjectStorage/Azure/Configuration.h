@@ -87,6 +87,8 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
+    ASTPtr createArgsWithAccessData() const override;
+
 protected:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
@@ -94,6 +96,8 @@ protected:
     Path blob_path;
     Paths blobs_paths;
     AzureBlobStorage::ConnectionParams connection_params;
+    std::optional<std::string> account_name;
+    std::optional<std::string> account_key;
 };
 
 }

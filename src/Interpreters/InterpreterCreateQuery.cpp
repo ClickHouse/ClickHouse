@@ -1949,8 +1949,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
-        if (!table_function->canBeUsedToCreateTable())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", table_function->getName());
+        table_function->validateUseToCreateTable();
 
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
