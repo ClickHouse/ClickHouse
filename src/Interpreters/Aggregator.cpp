@@ -833,28 +833,14 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         if (has_low_cardinality)
             return AggregatedDataVariants::Type::low_cardinality_key_string;
 
-        if (CurrentThread::isInitialized())
-        {
-            auto query_context = CurrentThread::get().getQueryContext();
-            if (query_context && query_context->getSettingsRef().has("SQL_ab_string"))
-                return AggregatedDataVariants::Type::key_ab_string;
-        }
-
-        return AggregatedDataVariants::Type::key_string;
+        return AggregatedDataVariants::Type::key_ab_string;
     }
 
     if (params.keys_size > 1 && all_keys_are_numbers_or_strings)
     {
         /// TODO(ab): We can optimize more cases
         if (num_string_keys <= 1 && !has_low_cardinality && !has_nullable_key)
-        {
-            if (CurrentThread::isInitialized())
-            {
-                auto query_context = CurrentThread::get().getQueryContext();
-                if (query_context && query_context->getSettingsRef().has("SQL_ab_string"))
-                    return AggregatedDataVariants::Type::ab_serialized;
-            }
-        }
+            return AggregatedDataVariants::Type::ab_serialized;
 
         return AggregatedDataVariants::Type::prealloc_serialized;
     }
