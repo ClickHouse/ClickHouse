@@ -174,17 +174,16 @@ Expression
           Expression
             Union
               Expression
-                Sorting
+                Expression
                   Expression
-                    Expression
-                      Join
+                    Join
+                      Expression
                         Expression
                           Expression
-                            Expression
-                              ReadFromMergeTree
+                            ReadFromMergeTree
+                      Expression
                         Expression
-                          Expression
-                            ReadFromMemoryStorage
+                          ReadFromMemoryStorage
               Expression
                 ReadFromRemoteParallelReplicas
           Expression
@@ -236,10 +235,9 @@ Expression
                   Expression
                     Union
                       Expression
-                        Sorting
+                        Expression
                           Expression
-                            Expression
-                              ReadFromMergeTree
+                            ReadFromMergeTree
                       Expression
                         ReadFromRemoteParallelReplicas
                   Expression
@@ -666,18 +664,17 @@ Expression
           Expression
             Union
               Expression
-                Sorting
+                Expression
                   Expression
-                    Expression
-                      Join
+                    Join
+                      Expression
                         Expression
                           Expression
-                            Expression
-                              ReadFromMergeTree
+                            ReadFromMergeTree
+                      Expression
                         Expression
                           Expression
-                            Expression
-                              ReadFromMergeTree
+                            ReadFromMergeTree
               Expression
                 ReadFromRemoteParallelReplicas
           Expression
@@ -729,10 +726,9 @@ Expression
                   Expression
                     Union
                       Expression
-                        Sorting
+                        Expression
                           Expression
-                            Expression
-                              ReadFromMergeTree
+                            ReadFromMergeTree
                       Expression
                         ReadFromRemoteParallelReplicas
                   Expression

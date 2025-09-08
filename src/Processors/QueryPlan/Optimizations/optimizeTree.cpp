@@ -320,6 +320,9 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         stack.pop_back();
     }
 
+    if (optimization_settings.remove_redundant_sorting)
+        tryRemoveRedundantSorting(&root);
+
     /// Vector search first pass optimization sets up everything for vector index usage.
     /// In the 2nd pass, we optimize further by attempting to do an "index-only scan".
     if (optimization_settings.try_use_vector_search && !extra_settings.vector_search_with_rescoring)
