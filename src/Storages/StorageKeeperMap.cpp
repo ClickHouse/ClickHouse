@@ -998,7 +998,7 @@ private:
             holder.retries_ctl.retryLoop(
             [&, &zk = holder.faulty_zookeeper]()
             {
-                with_retries->renewZooKeeper(zk);
+                with_retries->renewZooKeeper(holder);
                 data_children = zk->getChildren(data_zookeeper_path);
             });
         }
@@ -1016,7 +1016,7 @@ private:
             holder.retries_ctl.retryLoop(
             [&, &zk = holder.faulty_zookeeper]
             {
-                with_retries->renewZooKeeper(zk);
+                with_retries->renewZooKeeper(holder);
                 data = zk->tryGet(keys_full_path);
                 data.waitForResponses();
             });
@@ -1127,7 +1127,7 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
         holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries->renewZooKeeper(zk);
+            with_retries->renewZooKeeper(holder);
             zk->get(zk_data_path, &data_stats);
         });
 
@@ -1187,7 +1187,7 @@ void StorageKeeperMap::restoreDataImpl(
         holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries->renewZooKeeper(zk);
+            with_retries->renewZooKeeper(holder);
             Coordination::Responses create_responses;
             if (auto res = zk->tryMulti(create_requests, create_responses);
                 res != Coordination::Error::ZOK && res != Coordination::Error::ZNODEEXISTS)
@@ -1209,7 +1209,7 @@ void StorageKeeperMap::restoreDataImpl(
             holder.retries_ctl.retryLoop(
             [&, &zk = holder.faulty_zookeeper]()
             {
-                with_retries->renewZooKeeper(zk);
+                with_retries->renewZooKeeper(holder);
                 if (auto res = zk->tryCreate(data_path_fs / key, value, zkutil::CreateMode::Persistent);
                     res != Coordination::Error::ZOK && res != Coordination::Error::ZNODEEXISTS)
                     throw zkutil::KeeperException::fromPath(res, data_path_fs / key);

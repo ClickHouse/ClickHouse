@@ -37,7 +37,7 @@ void BackupCoordinationCleaner::cleanupImpl(bool throw_if_error, WithRetries::Ki
         auto holder = with_retries.createRetriesControlHolderForBackup("removeAllNodes", retries_kind);
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zookeeper);
+            with_retries.renewZooKeeper(holder);
             zookeeper->removeRecursive(zookeeper_path);
         });
 

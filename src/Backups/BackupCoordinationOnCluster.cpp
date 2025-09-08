@@ -207,7 +207,7 @@ void BackupCoordinationOnCluster::createRootNodes()
     holder.retries_ctl.retryLoop(
     [&, &zk = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
 
         zk->createAncestors(zookeeper_path);
         zk->createIfNotExists(zookeeper_path, "");
@@ -290,7 +290,7 @@ void BackupCoordinationOnCluster::serializeToMultipleZooKeeperNodes(const String
         holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
             zk->createIfNotExists(path, "");
         });
     }
@@ -315,7 +315,7 @@ void BackupCoordinationOnCluster::serializeToMultipleZooKeeperNodes(const String
         holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
             zk->createIfNotExists(part_path, part);
         });
     }
@@ -330,7 +330,7 @@ String BackupCoordinationOnCluster::deserializeFromMultipleZooKeeperNodes(const 
         holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
             part_names = zk->getChildren(path);
             std::sort(part_names.begin(), part_names.end());
         });
@@ -345,7 +345,7 @@ String BackupCoordinationOnCluster::deserializeFromMultipleZooKeeperNodes(const 
         holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
             part = zk->get(part_path);
         });
         res += part;
@@ -370,7 +370,7 @@ void BackupCoordinationOnCluster::addReplicatedPartNames(
     holder.retries_ctl.retryLoop(
     [&, &zk = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
         String path = zookeeper_path + "/repl_part_names/" + escapeForFileName(table_zk_path);
         zk->createIfNotExists(path, "");
         path += "/" + escapeForFileName(replica_name);
@@ -401,7 +401,7 @@ void BackupCoordinationOnCluster::addReplicatedMutations(
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
             String path = zookeeper_path + "/repl_mutations/" + escapeForFileName(table_zk_path);
             zk->createIfNotExists(path, "");
             path += "/" + escapeForFileName(replica_name);
@@ -430,7 +430,7 @@ void BackupCoordinationOnCluster::addReplicatedDataPath(
     holder.retries_ctl.retryLoop(
     [&, &zk = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
         String path = zookeeper_path + "/repl_data_paths/" + escapeForFileName(table_zk_path);
         zk->createIfNotExists(path, "");
         path += "/" + escapeForFileName(data_path);
@@ -458,7 +458,7 @@ void BackupCoordinationOnCluster::prepareReplicatedTables() const
             [&, &zk = holder.faulty_zookeeper]()
         {
             part_names_for_replicated_tables.clear();
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
 
             String path = zookeeper_path + "/repl_part_names";
             for (const String & escaped_table_zk_path : zk->getChildren(path))
@@ -483,7 +483,7 @@ void BackupCoordinationOnCluster::prepareReplicatedTables() const
             [&, &zk = holder.faulty_zookeeper]()
         {
             mutations_for_replicated_tables.clear();
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
 
             String path = zookeeper_path + "/repl_mutations";
             for (const String & escaped_table_zk_path : zk->getChildren(path))
@@ -508,7 +508,7 @@ void BackupCoordinationOnCluster::prepareReplicatedTables() const
             [&, &zk = holder.faulty_zookeeper]()
         {
             data_paths_for_replicated_tables.clear();
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
 
             String path = zookeeper_path + "/repl_data_paths";
             for (const String & escaped_table_zk_path : zk->getChildren(path))
@@ -545,7 +545,7 @@ void BackupCoordinationOnCluster::addReplicatedAccessFilePath(const String & acc
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
         String path = zookeeper_path + "/repl_access/" + escapeForFileName(access_zk_path);
         zk->createIfNotExists(path, "");
         path += "/" + AccessEntityTypeInfo::get(access_entity_type).name;
@@ -573,7 +573,7 @@ void BackupCoordinationOnCluster::prepareReplicatedAccess() const
         [&, &zk = holder.faulty_zookeeper]()
     {
         file_path_for_access_entities.clear();
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
 
         String path = zookeeper_path + "/repl_access";
         for (const String & escaped_access_zk_path : zk->getChildren(path))
@@ -610,7 +610,7 @@ void BackupCoordinationOnCluster::addReplicatedSQLObjectsDir(const String & load
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
         String path = zookeeper_path + "/repl_sql_objects/" + escapeForFileName(loader_zk_path);
         zk->createIfNotExists(path, "");
 
@@ -646,7 +646,7 @@ void BackupCoordinationOnCluster::prepareReplicatedSQLObjects() const
         [&, &zk = holder.faulty_zookeeper]()
     {
         directories_for_sql_objects.clear();
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
 
         String path = zookeeper_path + "/repl_sql_objects";
         for (const String & escaped_loader_zk_path : zk->getChildren(path))
@@ -683,7 +683,7 @@ void BackupCoordinationOnCluster::addKeeperMapTable(const String & table_zookeep
     holder.retries_ctl.retryLoop(
     [&, &zk = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
         String path = zookeeper_path + "/keeper_map_tables/" + escapeForFileName(table_id);
         if (auto res
             = zk->tryCreate(path, fmt::format("{}\n{}", table_zookeeper_root_path, data_path_in_backup), zkutil::CreateMode::Persistent);
@@ -704,7 +704,7 @@ void BackupCoordinationOnCluster::prepareKeeperMapTables() const
     {
         keeper_map_table_infos.clear();
 
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
 
         fs::path tables_path = fs::path(zookeeper_path) / "keeper_map_tables";
 
@@ -785,7 +785,7 @@ void BackupCoordinationOnCluster::prepareFileInfos() const
         holder.retries_ctl.retryLoop(
             [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
             hosts_with_file_infos = zk->getChildren(zookeeper_path + "/file_infos");
         });
     }
@@ -816,7 +816,7 @@ bool BackupCoordinationOnCluster::startWritingFile(size_t data_file_index)
     holder.retries_ctl.retryLoop(
             [&, &zk = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zk);
+        with_retries.renewZooKeeper(holder);
         auto code = zk->tryCreate(full_path, host_index_str, zkutil::CreateMode::Persistent);
 
         if (code == Coordination::Error::ZOK)

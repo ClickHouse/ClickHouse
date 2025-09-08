@@ -221,7 +221,7 @@ void BackupCoordinationStageSync::createRootNodes()
     holder.retries_ctl.retryLoop(
         [&, &zookeeper = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zookeeper);
+            with_retries.renewZooKeeper(holder);
             zookeeper->createAncestors(root_zookeeper_path);
             zookeeper->createIfNotExists(root_zookeeper_path, "");
         });
@@ -234,7 +234,7 @@ void BackupCoordinationStageSync::createStartAndAliveNodesAndCheckConcurrency()
         "BackupCoordinationStageSync::createStartAndAliveNodes", WithRetries::kInitialization);
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zookeeper);
+        with_retries.renewZooKeeper(holder);
         createStartAndAliveNodesAndCheckConcurrency(zookeeper);
     });
 
@@ -471,7 +471,7 @@ void BackupCoordinationStageSync::watchingThread()
             /// Recreate the 'alive' node if necessary and read a new state from ZooKeeper.
             auto holder = with_retries.createRetriesControlHolderForBackup("BackupCoordinationStageSync::watchingThread");
             auto & zookeeper = holder.faulty_zookeeper;
-            with_retries.renewZooKeeper(zookeeper);
+            with_retries.renewZooKeeper(holder);
 
             if (should_stop())
                 return;
@@ -789,7 +789,7 @@ void BackupCoordinationStageSync::setStage(const String & stage, const String & 
     auto holder = with_retries.createRetriesControlHolderForBackup("BackupCoordinationStageSync::setStage");
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zookeeper);
+        with_retries.renewZooKeeper(holder);
         createStageNode(stage, stage_result, zookeeper);
     });
 
@@ -982,7 +982,7 @@ void BackupCoordinationStageSync::finishImpl(bool throw_if_error, WithRetries::K
         auto holder = with_retries.createRetriesControlHolderForBackup("BackupCoordinationStageSync::finish", retries_kind);
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zookeeper);
+            with_retries.renewZooKeeper(holder);
             createFinishNodeAndRemoveAliveNode(zookeeper, throw_if_error);
         });
     }
@@ -1404,7 +1404,7 @@ void BackupCoordinationStageSync::setError(const Exception & exception, bool thr
             = with_retries.createRetriesControlHolderForBackup("BackupCoordinationStageSync::setError", WithRetries::kErrorHandling);
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zookeeper);
+            with_retries.renewZooKeeper(holder);
             createErrorNode(exception, zookeeper);
         });
     }

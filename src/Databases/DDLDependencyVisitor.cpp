@@ -207,7 +207,6 @@ namespace
         /// (for example, CREATE VIEW).
         void visitTableExpression(const ASTTableExpression & expr)
         {
-            LOG_TRACE(&Poco::Logger::get("DDLDependencyVisitor"), "visitTableExpression for {}", expr.formatForLogging());
             if (!expr.database_and_table_name)
                 return;
 

@@ -4259,23 +4259,19 @@ DDLWorker & Context::getDDLWorker() const
 
 zkutil::ZooKeeperPtr Context::getZooKeeper(UInt64 max_lock_milliseconds) const
 {
-    if (max_lock_milliseconds)
-    {
-        if (!shared->zookeeper_mutex.try_lock_for(std::chrono::milliseconds(max_lock_milliseconds)))
-            throw zkutil::KeeperException(
-                Coordination::Error::ZOPERATIONTIMEOUT,
-                "Cannot get a Keeper connection, other threads have held the creation lock for more than {} ms",
-                max_lock_milliseconds);
-    }
-    else
-    {
-        shared->zookeeper_mutex.lock();
-    }
+    Stopwatch get_keeper_watch;
+    max_lock_milliseconds = std::max(UInt64(100), max_lock_milliseconds);
 
+    if (!shared->zookeeper_mutex.try_lock_for(std::chrono::milliseconds(max_lock_milliseconds)))
+        throw zkutil::KeeperException(
+            Coordination::Error::ZOPERATIONTIMEOUT,
+            "Cannot get a Keeper connection. Other thread is creating a new one");
     std::lock_guard lock(shared->zookeeper_mutex, std::adopt_lock);
 
     if (!shared->zookeeper)
     {
+        LOG_DEBUG(shared->log, "getZooKeeper No keeper");
+
         const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
         shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
@@ -4286,7 +4282,8 @@ zkutil::ZooKeeperPtr Context::getZooKeeper(UInt64 max_lock_milliseconds) const
 
     if (shared->zookeeper->expired())
     {
-        Stopwatch watch;
+        LOG_DEBUG(shared->log, "getZooKeeper expired");
+        Stopwatch creation_watch;
         LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper (Old session id: {})", shared->zookeeper->getClientID());
 
         auto old_zookeeper = shared->zookeeper;
@@ -4303,7 +4300,8 @@ zkutil::ZooKeeperPtr Context::getZooKeeper(UInt64 max_lock_milliseconds) const
 
         if (isServerCompletelyStarted())
             shared->zookeeper->setServerCompletelyStarted();
-        LOG_DEBUG(shared->log, "Establishing a new connection (session id {}) with Keeper took {} ms", shared->zookeeper->getClientID(), watch.elapsedMilliseconds());
+        LOG_DEBUG(shared->log, "Establishing a new connection (session id {}) with Keeper took {} ms ({}ms in total)",
+            shared->zookeeper->getClientID(), creation_watch.elapsedMilliseconds(), get_keeper_watch.elapsedMilliseconds());
     }
 
     return shared->zookeeper;

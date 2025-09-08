@@ -82,20 +82,20 @@ WithRetries::RetriesControlHolder WithRetries::createRetriesControlHolderForBack
     return RetriesControlHolder(this, name, kind);
 }
 
-void WithRetries::renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const
+void WithRetries::renewZooKeeper(RetriesControlHolder & holder) const
 {
     std::lock_guard lock(zookeeper_mutex);
 
     if (!zookeeper || zookeeper->expired())
     {
-        zookeeper = get_zookeeper(backup_settings ? backup_settings->retry_max_backoff_ms.count() : info->max_backoff_ms);
-        my_faulty_zookeeper->setKeeper(zookeeper);
+        zookeeper = get_zookeeper(holder.retries_ctl.getCurrentBackoffMs());
+        holder.faulty_zookeeper->setKeeper(zookeeper);
         if (callback)
-            callback(my_faulty_zookeeper);
+            callback(holder.faulty_zookeeper);
     }
     else
     {
-        my_faulty_zookeeper->setKeeper(zookeeper);
+        holder.faulty_zookeeper->setKeeper(zookeeper);
     }
 }
 

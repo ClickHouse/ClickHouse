@@ -315,7 +315,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     auto holder = with_retries.createRetriesControlHolderForOperations("DDLWorker::scheduleTasks");
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zookeeper);
+        with_retries.renewZooKeeper(holder);
 
         /// Main thread of DDLWorker was restarted, probably due to lost connection with ZooKeeper.
         /// We have some unfinished tasks.
@@ -635,7 +635,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const WithRetries & with_retries
     auto holder = with_retries.createRetriesControlHolderForOperations("DDLWorker::processTask");
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zookeeper);
+        with_retries.renewZooKeeper(holder);
 
         /// Step 1: Create ephemeral node in active/ status dir.
         /// It allows other hosts to understand that task is currently executing (useful for system.distributed_ddl_queue)
@@ -774,7 +774,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const WithRetries & with_retries
 
         holder.retries_ctl.retryLoop([&, &zookeeper_create_node = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zookeeper_create_node);
+            with_retries.renewZooKeeper(holder);
             task.createSyncedNodeIfNeed(zookeeper_create_node);
         });
     },
@@ -1146,7 +1146,7 @@ String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry, const WithRetries & w
     auto holder = with_retries.createRetriesControlHolderForOperations("enqueueQueryAttempt");
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zookeeper);
+        with_retries.renewZooKeeper(holder);
 
         String query_path_prefix = fs::path(queue_dir) / "query-";
         zookeeper->createAncestors(query_path_prefix);

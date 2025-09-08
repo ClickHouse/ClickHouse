@@ -171,6 +171,8 @@ public:
 
     LoggerPtr getLogger() const { return logger; }
 
+    UInt64 getCurrentBackoffMs() const { return current_backoff_ms; }
+
 private:
     struct KeeperError
     {

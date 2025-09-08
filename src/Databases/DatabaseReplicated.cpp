@@ -510,7 +510,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
         auto holder = with_retries.createRetriesControlHolderForOperations("tryConnectToZooKeeperAndInitDatabase");
         holder.retries_ctl.retryLoop([&, &current_zookeeper = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(current_zookeeper);
+            with_retries.renewZooKeeper(holder);
 
             if (!current_zookeeper->exists(zookeeper_path))
             {
@@ -728,7 +728,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const WithRetries & with_
     auto holder = with_retries.createRetriesControlHolderForOperations("createReplicaNodesInZooKeeper");
     holder.retries_ctl.retryLoop([&, &current_zookeeper = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(current_zookeeper);
+        with_retries.renewZooKeeper(holder);
         bool nodes_exist = false;
 
         if (!looksLikeReplicatedDatabasePath(current_zookeeper, zookeeper_path))
@@ -1282,14 +1282,14 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     auto holder = with_retries.createRetriesControlHolderForOperations("tryEnqueueReplicatedDDL::get_hosts_to_wait");
     holder.retries_ctl.retryLoop([&, &current_zookeeper = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(current_zookeeper);
+        with_retries.renewZooKeeper(holder);
 
         Strings unfiltered_hosts = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
         std::vector<String> paths;
         for (const auto & host : unfiltered_hosts)
             paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
 
-        auto replica_groups = getZooKeeper()->tryGet(paths);
+        auto replica_groups = current_zookeeper->tryGet(paths);
 
         for (size_t i = 0; i < paths.size(); ++i)
         {
@@ -1347,7 +1347,7 @@ void DatabaseReplicated::recoverLostReplica(WithRetries & with_retries, UInt32 o
         auto holder = with_retries.createRetriesControlHolderForOperations("recoverLostReplica::tryGetConsistentMetadataSnapshot");
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zookeeper);
+            with_retries.renewZooKeeper(holder);
             table_name_to_metadata = tryGetConsistentMetadataSnapshot(zookeeper, max_log_ptr);
         });
     }
@@ -1413,7 +1413,7 @@ void DatabaseReplicated::recoverLostReplica(WithRetries & with_retries, UInt32 o
         auto in_zk = table_name_to_metadata.find(name);
         if (in_zk == table_name_to_metadata.end() || in_zk->second != readMetadataFile(name))
         {
-            LOG_DEBUG(log, "Table to detach {}", name);
+            LOG_DEBUG(log, "Table to detach {}. Reason: {}", name, in_zk == table_name_to_metadata.end() ? "Not in metadata snapshot" : "Different metadata vs snapshot");
             /// Local table does not exist in ZooKeeper or has different metadata
             tables_to_detach.emplace_back(std::move(name));
         }
@@ -1445,7 +1445,7 @@ void DatabaseReplicated::recoverLostReplica(WithRetries & with_retries, UInt32 o
         auto holder = with_retries.createRetriesControlHolderForOperations("recoverLostReplica::make_query_context");
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zookeeper);
+            with_retries.renewZooKeeper(holder);
             auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper->getKeeper(), zookeeper_path, false, "");
             query_context->initZooKeeperMetadataTransaction(txn);
         });
@@ -1638,6 +1638,7 @@ void DatabaseReplicated::recoverLostReplica(WithRetries & with_retries, UInt32 o
                 const auto & create_query_string = metadata_it->second;
                 if (isTableExist(table_name, getContext()))
                 {
+                    LOG_DEBUG(log, "Table {} already exists. Skipping it", table_name);
                     assert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
                     return;
                 }
@@ -1652,7 +1653,7 @@ void DatabaseReplicated::recoverLostReplica(WithRetries & with_retries, UInt32 o
                 /// TL;DR applySettingsFromQuery will move the settings from engine to query level
                 /// making it possible to overcome a backward incompatible change.
                 InterpreterSetQuery::applySettingsFromQuery(query_ast, create_query_context);
-                LOG_INFO(log, "Executing {}", query_ast->formatForLogging());
+                LOG_INFO(log, "Table {} does not exist. Executing {}", table_name, query_ast->formatForLogging());
                 InterpreterCreateQuery(query_ast, create_query_context).execute();
             };
 
@@ -1686,7 +1687,7 @@ void DatabaseReplicated::recoverLostReplica(WithRetries & with_retries, UInt32 o
             auto holder = with_retries.createRetriesControlHolderForOperations("recoverLostReplica::mark_finished");
             holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
             {
-                with_retries.renewZooKeeper(zookeeper);
+                with_retries.renewZooKeeper(holder);
 
                 auto res_finished = zookeeper->tryCreate(finished, status, zkutil::CreateMode::Persistent);
                 auto res_synced = zookeeper->tryCreate(synced, status, zkutil::CreateMode::Persistent);
@@ -1701,7 +1702,7 @@ void DatabaseReplicated::recoverLostReplica(WithRetries & with_retries, UInt32 o
     auto holder = with_retries.createRetriesControlHolderForOperations("recoverLostReplica::set_digest");
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zookeeper);
+        with_retries.renewZooKeeper(holder);
 
         std::lock_guard lock{metadata_mutex};
         assertDigest(getContext());
@@ -1847,7 +1848,7 @@ void DatabaseReplicated::dropReplica(
     auto holder = with_retries.createRetriesControlHolderForOperations("DatabaseReplicated::dropReplica");
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zookeeper);
+        with_retries.renewZooKeeper(holder);
 
         String database_mark;
         bool db_path_exists = zookeeper->tryGet(database_zookeeper_path, database_mark);
@@ -1937,7 +1938,7 @@ void DatabaseReplicated::drop(ContextPtr context_)
     auto holder = with_retries.createRetriesControlHolderForOperations("DatabaseReplicated::drop");
     holder.retries_ctl.retryLoop([&, &current_zookeeper = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(current_zookeeper);
+        with_retries.renewZooKeeper(holder);
         current_zookeeper->set(replica_path, DROPPED_MARK, -1);
     });
 
@@ -1946,7 +1947,7 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
     holder.retries_ctl.retryLoop([&, &current_zookeeper = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(current_zookeeper);
+        with_retries.renewZooKeeper(holder);
         current_zookeeper->tryRemoveRecursive(replica_path);
         auto removed_replicas_code = current_zookeeper->tryRemove(zookeeper_path + "/replicas");
         if (removed_replicas_code == Coordination::Error::ZOK || removed_replicas_code == Coordination::Error::ZNONODE)

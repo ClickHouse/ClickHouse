@@ -187,7 +187,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         auto holder = with_retries.createRetriesControlHolderForOperations("initializeReplication::preparation");
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zookeeper);
+            with_retries.renewZooKeeper(holder);
 
             zookeeper->deleteEphemeralNodeIfContentMatches(
                 active_path,
@@ -251,7 +251,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         auto holder = with_retries.createRetriesControlHolderForOperations("initializeReplication::log_ptr");
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zookeeper);
+            with_retries.renewZooKeeper(holder);
             zookeeper->set(database->replica_path + "/log_ptr", toString(max_log_ptr));
         });
         initializeLogPointer(DDLTaskBase::getLogEntryName(max_log_ptr));
@@ -280,7 +280,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         auto holder = with_retries.createRetriesControlHolderForOperations("initializeReplication::max_log_ptr");
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zookeeper);
+            with_retries.renewZooKeeper(holder);
             new_max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
         });
 
@@ -302,7 +302,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         auto holder = with_retries.createRetriesControlHolderForOperations("initializeReplication::mark_as_active");
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zookeeper);
+            with_retries.renewZooKeeper(holder);
             zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
             active_node_holder_zookeeper = zookeeper->getKeeper();
             active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
@@ -334,7 +334,7 @@ void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
         auto holder = with_retries.createRetriesControlHolderForOperations("DatabaseReplicatedDDLWorker::markReplicasActive");
         holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zookeeper);
+            with_retries.renewZooKeeper(holder);
 
             LOG_TRACE(log, "Trying to delete ephemeral active node: active_path={}, active_id={}", active_path, active_id);
 
@@ -434,7 +434,7 @@ String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const WithRetries & with_re
     auto holder = with_retries.createRetriesControlHolderForOperations("tryEnqueueReplicatedDDL::get_hosts_to_wait");
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zookeeper);
+        with_retries.renewZooKeeper(holder);
 
         String counter_path;
         size_t iters = 1000;
@@ -498,7 +498,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(const WithRetries 
     auto holder = with_retries.createRetriesControlHolderForOperations("max_log_ptr::check");
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zookeeper);
+        with_retries.renewZooKeeper(holder);
 
         UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
 
@@ -510,7 +510,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(const WithRetries 
     String entry_path;
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
-        with_retries.renewZooKeeper(zookeeper);
+        with_retries.renewZooKeeper(holder);
 
         entry_path = enqueueQueryImpl(with_retries, entry, database, false, query_context->getDDLAdditionalChecksOnEnqueue());
         String try_path = entry_path + "/try";

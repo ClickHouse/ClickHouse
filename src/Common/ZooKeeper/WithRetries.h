@@ -66,7 +66,7 @@ public:
     ~WithRetries();
 
     /// Used to re-establish new connection inside a retry loop.
-    void renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const;
+    void renewZooKeeper(RetriesControlHolder & holder) const;
 
     const BackupKeeperSettings & getBackupKeeperSettings() const;
 

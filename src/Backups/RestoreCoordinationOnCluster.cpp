@@ -57,7 +57,7 @@ void RestoreCoordinationOnCluster::createRootNodes()
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
 
             zk->createAncestors(zookeeper_path);
             zk->createIfNotExists(zookeeper_path, "");
@@ -140,7 +140,7 @@ bool RestoreCoordinationOnCluster::acquireCreatingSharedDatabase(const String & 
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
 
             String path = fs::path(zookeeper_path) / "shared_databases_acquired" / escapeForFileName(database_name);
             auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
@@ -166,7 +166,7 @@ bool RestoreCoordinationOnCluster::acquireCreatingTableInReplicatedDatabase(cons
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
 
             String path = zookeeper_path + "/repl_databases_tables_acquired/" + escapeForFileName(database_zk_path);
             zk->createIfNotExists(path, "");
@@ -195,7 +195,7 @@ bool RestoreCoordinationOnCluster::acquireInsertingDataIntoReplicatedTable(const
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
 
             String path = zookeeper_path + "/repl_tables_data_acquired/" + escapeForFileName(table_zk_path);
             auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
@@ -221,7 +221,7 @@ bool RestoreCoordinationOnCluster::acquireReplicatedAccessStorage(const String &
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
 
             String path = zookeeper_path + "/repl_access_storages_acquired/" + escapeForFileName(access_storage_zk_path);
             auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
@@ -247,7 +247,7 @@ bool RestoreCoordinationOnCluster::acquireReplicatedSQLObjects(const String & lo
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
 
             String path = zookeeper_path + "/repl_sql_objects_acquired/" + escapeForFileName(loader_zk_path);
             zk->createIfNotExists(path, "");
@@ -283,7 +283,7 @@ bool RestoreCoordinationOnCluster::acquireInsertingDataForKeeperMap(const String
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
 
             /// we need to remove leading '/' from root_zk_path
             auto normalized_root_zk_path = root_zk_path.substr(1);
@@ -315,7 +315,7 @@ void RestoreCoordinationOnCluster::generateUUIDForTable(ASTCreateQuery & create_
     holder.retries_ctl.retryLoop(
         [&, &zk = holder.faulty_zookeeper]()
         {
-            with_retries.renewZooKeeper(zk);
+            with_retries.renewZooKeeper(holder);
 
             String path = zookeeper_path + "/table_uuids/" + escapeForFileName(query_str);
             Coordination::Error res = zk->tryCreate(path, new_uuids_str, zkutil::CreateMode::Persistent);
