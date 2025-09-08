@@ -20,7 +20,16 @@ ASTFunction * extractTableFunctionFromSelectQuery(ASTPtr & query)
     if (!table_expression->table_function)
         return nullptr;
 
-    return table_expression->table_function->as<ASTFunction>();
+    auto * table_function = table_expression->table_function->as<ASTFunction>();
+    return table_function;
+}
+
+ASTExpressionList * extractTableFunctionArgumentsFromSelectQuery(ASTPtr & query)
+{
+    auto * table_function = extractTableFunctionFromSelectQuery(query);
+    if (!table_function)
+        return nullptr;
+    return table_function->arguments->as<ASTExpressionList>();
 }
 
 }

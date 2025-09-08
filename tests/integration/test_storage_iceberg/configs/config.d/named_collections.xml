@@ -14,7 +14,7 @@
     <s3_with_type>
         <url>http://minio1:9001/root/</url>
         <access_key_id>minio</access_key_id>
-        <secret_access_key>minio123</secret_access_key>
+        <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
         <storage_type>s3</storage_type>
     </s3_with_type>
     <azure_with_type>

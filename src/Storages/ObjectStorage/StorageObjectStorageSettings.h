@@ -68,7 +68,17 @@ private:
 
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 
+// clang-format off
+
+#define STORAGE_OBJECT_STORAGE_RELATED_SETTINGS(DECLARE, ALIAS) \
+    DECLARE(String, object_storage_cluster, "", R"(
+Cluster for distributed requests
+)", 0) \
+
+// clang-format on
+
 #define LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(M, ALIAS) \
+    STORAGE_OBJECT_STORAGE_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 }

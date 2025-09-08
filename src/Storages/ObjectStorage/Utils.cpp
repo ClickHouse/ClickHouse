@@ -46,14 +46,13 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
 
 void resolveSchemaAndFormat(
     ColumnsDescription & columns,
-    std::string & format,
     ObjectStoragePtr object_storage,
-    const StorageObjectStorage::ConfigurationPtr & configuration,
+    StorageObjectStorage::ConfigurationPtr configuration,
     std::optional<FormatSettings> format_settings,
     std::string & sample_path,
     const ContextPtr & context)
 {
-    if (format == "auto")
+    if (configuration->getFormat() == "auto")
     {
         if (configuration->isDataLakeConfiguration())
         {
@@ -75,21 +74,23 @@ void resolveSchemaAndFormat(
 
         if (columns.empty())
         {
-            if (format == "auto")
+            if (configuration->getFormat() == "auto")
             {
+                std::string format;
                 std::tie(columns, format) = StorageObjectStorage::resolveSchemaAndFormatFromData(
                     object_storage, configuration, format_settings, sample_path, context);
+                configuration->setFormat(format);
             }
             else
             {
-                chassert(!format.empty());
+                chassert(!configuration->getFormat().empty());
                 columns = StorageObjectStorage::resolveSchemaFromData(object_storage, configuration, format_settings, sample_path, context);
             }
         }
     }
-    else if (format == "auto")
+    else if (configuration->getFormat() == "auto")
     {
-        format = StorageObjectStorage::resolveFormatFromData(object_storage, configuration, format_settings, sample_path, context);
+        configuration->setFormat(StorageObjectStorage::resolveFormatFromData(object_storage, configuration, format_settings, sample_path, context));
     }
 
     validateSupportedColumns(columns, *configuration);

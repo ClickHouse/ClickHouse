@@ -2,8 +2,7 @@ import csv
 import logging
 import os
 import shutil
-import time
-from email.errors import HeaderParseError
+import uuid
 
 import pytest
 
@@ -234,6 +233,21 @@ def test_wrong_cluster(started_cluster):
 
     assert "not found" in error
 
+    error = node.query_and_get_error(
+        f"""
+    SELECT count(*) from s3(
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    UNION ALL
+    SELECT count(*) from s3(
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    SETTINGS object_storage_cluster = 'non_existing_cluster'
+    """
+    )
+
+    assert "not found" in error
+
 
 def test_ambiguous_join(started_cluster):
     node = started_cluster.instances["s0_0_0"]
@@ -248,6 +262,20 @@ def test_ambiguous_join(started_cluster):
         'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as r
     ON l.name = r.name
+    """
+    )
+    assert "AMBIGUOUS_COLUMN_NAME" not in result
+
+    result = node.query(
+        f"""
+    SELECT l.name, r.value from s3(
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as l
+    JOIN s3(
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as r
+    ON l.name = r.name
+    SETTINGS object_storage_cluster = 'cluster_simple'
     """
     )
     assert "AMBIGUOUS_COLUMN_NAME" not in result
@@ -267,6 +295,17 @@ def test_skip_unavailable_shards(started_cluster):
 
     assert result == "10\n"
 
+    result = node.query(
+        f"""
+    SELECT count(*) from s3(
+        'http://minio1:9001/root/data/clickhouse/part1.csv',
+        'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    SETTINGS skip_unavailable_shards = 1, object_storage_cluster = 'cluster_non_existent_port'
+    """
+    )
+
+    assert result == "10\n"
+
 
 def test_unset_skip_unavailable_shards(started_cluster):
     # Although skip_unavailable_shards is not set, cluster table functions should always skip unavailable shards.
@@ -277,6 +316,17 @@ def test_unset_skip_unavailable_shards(started_cluster):
         'cluster_non_existent_port',
         'http://minio1:9001/root/data/clickhouse/part1.csv',
         'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    """
+    )
+
+    assert result == "10\n"
+
+    result = node.query(
+        f"""
+    SELECT count(*) from s3(
+        'http://minio1:9001/root/data/clickhouse/part1.csv',
+        'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+    SETTINGS object_storage_cluster = 'cluster_non_existent_port'
     """
     )
 
@@ -462,6 +512,18 @@ def test_cluster_format_detection(started_cluster):
 
     assert result == expected_result
 
+    result = node.query(
+        f"SELECT * FROM s3('http://minio1:9001/root/data/generated/*', 'minio', '{minio_secret_key}') order by c1, c2 SETTINGS object_storage_cluster = 'cluster_simple'"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        f"SELECT * FROM s3('http://minio1:9001/root/data/generated/*', 'minio', '{minio_secret_key}', auto, 'a String, b UInt64') order by a, b SETTINGS object_storage_cluster = 'cluster_simple'"
+    )
+
+    assert result == expected_result
+
 
 def test_cluster_default_expression(started_cluster):
     node = started_cluster.instances["s0_0_0"]
@@ -509,3 +571,262 @@ def test_cluster_default_expression(started_cluster):
     )
 
     assert result == expected_result
+
+    result = node.query(
+        f"SELECT * FROM s3('http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262') order by id SETTINGS object_storage_cluster = 'cluster_simple'"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        f"SELECT * FROM s3('http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'auto', 'id UInt32, date Date DEFAULT 18262') order by id SETTINGS object_storage_cluster = 'cluster_simple'"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        f"SELECT * FROM s3('http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262', 'auto') order by id SETTINGS object_storage_cluster = 'cluster_simple'"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        f"SELECT * FROM s3('http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'auto', 'id UInt32, date Date DEFAULT 18262', 'auto') order by id SETTINGS object_storage_cluster = 'cluster_simple'"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        "SELECT * FROM s3(test_s3_with_default) order by id SETTINGS object_storage_cluster = 'cluster_simple'"
+    )
+
+    assert result == expected_result
+
+
+def test_distributed_s3_table_engine(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+
+    resp_def = node.query(
+        f"""
+        SELECT * from s3Cluster(
+            'cluster_simple',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)
+        """
+    )
+
+    node.query("DROP TABLE IF EXISTS single_node");
+    node.query(
+        f"""
+        CREATE TABLE single_node
+            (name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64))))
+            ENGINE=S3('http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV')
+        """
+    )
+    query_id_engine_single_node = str(uuid.uuid4())
+    resp_engine_single_node = node.query(
+        """
+        SELECT * FROM single_node ORDER BY (name, value, polygon)
+        """,
+        query_id = query_id_engine_single_node
+    )
+    assert resp_def == resp_engine_single_node
+
+    node.query("DROP TABLE IF EXISTS distributed");
+    node.query(
+       f"""
+        CREATE TABLE distributed
+            (name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64))))
+            ENGINE=S3('http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV')
+            SETTINGS object_storage_cluster='cluster_simple'
+        """
+    )
+    query_id_engine_distributed = str(uuid.uuid4())
+    resp_engine_distributed = node.query(
+        """
+        SELECT * FROM distributed ORDER BY (name, value, polygon)
+        """,
+        query_id = query_id_engine_distributed
+    )
+    assert resp_def == resp_engine_distributed
+
+    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster_simple'")
+
+    hosts_engine_single_node = node.query(
+        f"""
+        SELECT uniq(hostname)
+            FROM clusterAllReplicas('cluster_simple', system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_engine_single_node}'
+        """
+    )
+    assert int(hosts_engine_single_node) == 1
+    hosts_engine_distributed = node.query(
+        f"""
+        SELECT uniq(hostname)
+            FROM clusterAllReplicas('cluster_simple', system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_engine_distributed}'
+        """
+    )
+    assert int(hosts_engine_distributed) == 3
+
+
+def test_distributed_s3_table_engine(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+
+    resp_def = node.query(
+        f"""
+        SELECT * from s3Cluster(
+            'cluster_simple',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)
+        """
+    )
+
+    node.query("DROP TABLE IF EXISTS single_node");
+    node.query(
+        f"""
+        CREATE TABLE single_node
+            (name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64))))
+            ENGINE=S3('http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV')
+        """
+    )
+    query_id_engine_single_node = str(uuid.uuid4())
+    resp_engine_single_node = node.query(
+        """
+        SELECT * FROM single_node ORDER BY (name, value, polygon)
+        """,
+        query_id = query_id_engine_single_node
+    )
+    assert resp_def == resp_engine_single_node
+
+    node.query("DROP TABLE IF EXISTS distributed");
+    node.query(
+        f"""
+        CREATE TABLE distributed
+            (name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64))))
+            ENGINE=S3('http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV')
+            SETTINGS object_storage_cluster='cluster_simple'
+        """
+    )
+    query_id_engine_distributed = str(uuid.uuid4())
+    resp_engine_distributed = node.query(
+        """
+        SELECT * FROM distributed ORDER BY (name, value, polygon)
+        """,
+        query_id = query_id_engine_distributed
+    )
+    assert resp_def == resp_engine_distributed
+
+    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster_simple'")
+
+    hosts_engine_single_node = node.query(
+        f"""
+        SELECT uniq(hostname)
+            FROM clusterAllReplicas('cluster_simple', system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_engine_single_node}'
+        """
+    )
+    assert int(hosts_engine_single_node) == 1
+    hosts_engine_distributed = node.query(
+        f"""
+        SELECT uniq(hostname)
+            FROM clusterAllReplicas('cluster_simple', system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_engine_distributed}'
+        """
+    )
+    assert int(hosts_engine_distributed) == 3
+
+
+def test_cluster_hosts_limit(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+
+    query_id_def = str(uuid.uuid4())
+    resp_def = node.query(
+        f"""
+        SELECT * from s3Cluster(
+            'cluster_simple',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)
+        """,
+        query_id = query_id_def
+    )
+
+    #  object_storage_max_nodes is greater than number of hosts in cluster
+    query_id_4_hosts = str(uuid.uuid4())
+    resp_4_hosts = node.query(
+        f"""
+        SELECT * from s3Cluster(
+            'cluster_simple',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)
+            SETTINGS object_storage_max_nodes=4
+        """,
+        query_id = query_id_4_hosts
+    )
+    assert resp_def == resp_4_hosts
+
+    #  object_storage_max_nodes is equal number of hosts in cluster
+    query_id_3_hosts = str(uuid.uuid4())
+    resp_3_hosts = node.query(
+        f"""
+        SELECT * from s3Cluster(
+            'cluster_simple',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)
+            SETTINGS object_storage_max_nodes=3
+        """,
+        query_id = query_id_3_hosts
+    )
+    assert resp_def == resp_3_hosts
+
+    #  object_storage_max_nodes is less than number of hosts in cluster
+    query_id_2_hosts = str(uuid.uuid4())
+    resp_2_hosts = node.query(
+        f"""
+        SELECT * from s3Cluster(
+            'cluster_simple',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
+            'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)
+            SETTINGS object_storage_max_nodes=2
+        """,
+        query_id = query_id_2_hosts
+    )
+    assert resp_def == resp_2_hosts
+
+    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster_simple'")
+
+    hosts_def = node.query(
+        f"""
+        SELECT uniq(hostname)
+            FROM clusterAllReplicas('cluster_simple', system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_def}' AND query_id!='{query_id_def}'
+        """
+    )
+    assert int(hosts_def) == 3
+
+    hosts_4 = node.query(
+        f"""
+        SELECT uniq(hostname)
+            FROM clusterAllReplicas('cluster_simple', system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_4_hosts}' AND query_id!='{query_id_4_hosts}'
+        """
+    )
+    assert int(hosts_4) == 3
+
+    hosts_3 = node.query(
+        f"""
+        SELECT uniq(hostname)
+            FROM clusterAllReplicas('cluster_simple', system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_3_hosts}' AND query_id!='{query_id_3_hosts}'
+        """
+    )
+    assert int(hosts_3) == 3
+
+    hosts_2 = node.query(
+        f"""
+        SELECT uniq(hostname)
+            FROM clusterAllReplicas('cluster_simple', system.query_log)
+            WHERE type='QueryFinish' AND initial_query_id='{query_id_2_hosts}' AND query_id!='{query_id_2_hosts}'
+        """
+    )
+    assert int(hosts_2) == 2
