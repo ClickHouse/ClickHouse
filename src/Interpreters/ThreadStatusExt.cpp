@@ -155,9 +155,9 @@ ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::funct
     return group;
 }
 
-ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_thread_nice_value)
+ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_value)
 {
-    auto group = std::make_shared<ThreadGroup>(context, os_thread_nice_value);
+    auto group = std::make_shared<ThreadGroup>(context, os_threads_nice_value);
 
     /// However settings from storage context have to be applied
     const Settings & settings = context->getSettingsRef();
