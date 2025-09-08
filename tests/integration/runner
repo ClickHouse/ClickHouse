@@ -395,7 +395,7 @@ if __name__ == "__main__":
 
     parallel_args = ""
     if args.parallel:
-        parallel_args += "--dist=loadfile"
+        parallel_args += "--dist=loadscope"
         parallel_args += f" -n {args.parallel}".format()
 
     repeat_args = (
