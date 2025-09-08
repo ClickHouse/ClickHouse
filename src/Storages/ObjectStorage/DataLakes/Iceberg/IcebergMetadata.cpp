@@ -1,4 +1,5 @@
 
+#include "Disks/DiskType.h"
 #include "config.h"
 #if USE_AVRO
 
@@ -513,10 +514,12 @@ void IcebergMetadata::createInitial(
     const StorageID & table_id_)
 {
     auto configuration_ptr = configuration.lock();
-    auto user_files_path = local_context->getUserFilesPath();
-    if (!fileOrSymlinkPathStartsWith(configuration_ptr->getPathForRead().path, user_files_path))
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", configuration_ptr->getPathForRead().path, user_files_path);
-
+    if (object_storage->getType() == ObjectStorageType::Local)
+    {
+        auto user_files_path = local_context->getUserFilesPath();
+        if (!fileOrSymlinkPathStartsWith(configuration_ptr->getPathForRead().path, user_files_path))
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", configuration_ptr->getPathForRead().path, user_files_path);
+    }
     std::vector<String> metadata_files;
     try
     {
