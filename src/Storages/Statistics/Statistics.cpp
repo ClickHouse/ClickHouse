@@ -269,7 +269,7 @@ UInt64 ColumnStatistics::rowCount() const
 String ColumnStatistics::debugString() const
 {
     String ret;
-    for (auto [type, single_stats] : stats)
+    for (const auto & [type, single_stats] : stats)
     {
         ret += single_stats->debugString();
         ret += " | ";
