@@ -275,10 +275,10 @@ ManifestFileContent::ManifestFileContent(
             }
             catch (const Exception &)
             {
-                LOG_ERROR(&Poco::Logger::get("ICEBERG_SPECIFICATION_VIOLATION"), "{}", getCurrentExceptionMessage(true));
+                tryLogCurrentException("ICEBERG_SPECIFICATION_VIOLATION", "", LogsLevel::error);
             }
         }
-        const auto schema_id = schema_id_opt.value();
+        const auto schema_id = schema_id_opt.has_value() ? schema_id_opt.value() : manifest_schema_id;
 
         const auto file_path_key
             = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>();
