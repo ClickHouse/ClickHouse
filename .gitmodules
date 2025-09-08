@@ -124,7 +124,7 @@
 	url = https://github.com/anrieff/libcpuid
 [submodule "contrib/openldap"]
 	path = contrib/openldap
-	url = https://github.com/ClickHouse/openldap
+	url = https://github.com/openldap/openldap
 [submodule "contrib/AMQP-CPP"]
 	path = contrib/AMQP-CPP
 	url = https://github.com/ClickHouse/AMQP-CPP
