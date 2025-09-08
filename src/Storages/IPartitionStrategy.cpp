@@ -160,11 +160,6 @@ namespace
         bool contains_partition_wildcard,
         bool partition_columns_in_data_file)
     {
-        if (!partition_by)
-        {
-            return nullptr;
-        }
-
         /// Backwards incompatible in the sense that `create table s3_table engine=s3('path_without_wildcard') PARTITION BY ... used to be valid,
         /// but it is not anymore
         if (!contains_partition_wildcard)
@@ -208,6 +203,11 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
                                                                  bool contains_partition_wildcard,
                                                                  bool partition_columns_in_data_file)
 {
+    if (!partition_by)
+    {
+        return nullptr;
+    }
+
     Block block;
     for (const auto & partition_column : partition_columns)
     {
