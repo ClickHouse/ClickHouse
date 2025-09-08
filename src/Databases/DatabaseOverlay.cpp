@@ -361,7 +361,8 @@ void DatabaseOverlay::createTableRestoredFromBackup(
     UInt64 /*timeout_ms*/)
 {
     if (mode == Mode::FacadeOverCatalog)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
             "Database {} is an Overlay facade (read-only). "
             "Run CREATE TABLE in an underlying database (e.g. {}).",
             backQuote(getDatabaseName()),
