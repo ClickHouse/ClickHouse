@@ -152,9 +152,12 @@ String FunctionDocumentation::syntaxAsString() const
 
     /// It is tempting to write 'SELECT someFunction(arg1, arg2)' in the syntax field but we
     /// really want 'someFunction(arg1, arg2)'.
-    if (boost::algorithm::istarts_with(trimmed_syntax, "SELECT ") || syntax.ends_with(";"))
+    if (boost::algorithm::istarts_with(trimmed_syntax, "SELECT "))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Syntax field must not start with 'SELECT': {}", syntax);
-
+   
+    if (syntax.ends_with(";"))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Syntax field must not end with ';': {}", syntax);
+    
     return trimmed_syntax;
 }
 
