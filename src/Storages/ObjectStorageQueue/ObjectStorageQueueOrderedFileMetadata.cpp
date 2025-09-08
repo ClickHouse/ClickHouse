@@ -128,7 +128,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
         path_,
-        /* processing_node_path */zk_path_ / getProcessingNodesPath(use_persistent_processing_nodes_) / getNodeName(path_),
+        /* processing_node_path */zk_path_ / "processing" / getNodeName(path_),
         /* processed_node_path */getProcessedPath(zk_path_, path_, buckets_num_),
         /* failed_node_path */zk_path_ / "failed" / getNodeName(path_),
         file_status_,
