@@ -22,7 +22,7 @@ namespace QueryPlanOptimizations
 {
 
 void unwrapReadFromLocalParallelReplica(
-    QueryPlan & query_plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+    QueryPlan & query_plan, QueryPlan::Node & root, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.
     /// Place it after projection optimization to avoid executing projection optimization twice in the local plan,
@@ -55,8 +55,8 @@ void unwrapReadFromLocalParallelReplica(
             query_plan.replaceNodeWithPlan(local_plan_node, std::move(local_plan));
         }
 
-        if (settings.merge_expressions)
-            tryMergeExpressions(frame.node, nodes, {});
+        // if (settings.merge_expressions)
+        //     tryMergeExpressions(frame.node, nodes, {});
 
         stack.pop_back();
     }
