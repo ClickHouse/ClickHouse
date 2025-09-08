@@ -11,7 +11,7 @@ from helpers.iceberg_utils import (
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_writes_multiple_files(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
-    TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = "test_writes_multiple_files_" + storage_type + "_" + get_uuid_str()
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x Int32)", format_version)
 

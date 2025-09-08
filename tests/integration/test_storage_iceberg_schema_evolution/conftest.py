@@ -36,40 +36,10 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__, with_spark=True)
         cluster.add_instance(
             "node1",
-            main_configs=[
-                "configs/config.d/query_log.xml",
-                "configs/config.d/cluster.xml",
-                "configs/config.d/named_collections.xml",
-                "configs/config.d/filesystem_caches.xml",
-                "configs/config.d/metadata_log.xml",
-            ],
+            main_configs=["configs/config.d/cluster.xml", "configs/config.d/named_collections.xml"],
             user_configs=["configs/users.d/users.xml"],
             with_minio=True,
             with_azurite=True,
-            stay_alive=True,
-        )
-        cluster.add_instance(
-            "node2",
-            main_configs=[
-                "configs/config.d/query_log.xml",
-                "configs/config.d/cluster.xml",
-                "configs/config.d/named_collections.xml",
-                "configs/config.d/filesystem_caches.xml",
-                "configs/config.d/metadata_log.xml",
-            ],
-            user_configs=["configs/users.d/users.xml"],
-            stay_alive=True,
-        )
-        cluster.add_instance(
-            "node3",
-            main_configs=[
-                "configs/config.d/query_log.xml",
-                "configs/config.d/cluster.xml",
-                "configs/config.d/named_collections.xml",
-                "configs/config.d/filesystem_caches.xml",
-                "configs/config.d/metadata_log.xml",
-            ],
-            user_configs=["configs/users.d/users.xml"],
             stay_alive=True,
         )
 

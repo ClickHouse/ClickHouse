@@ -10,7 +10,7 @@ from helpers.iceberg_utils import (
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_writes_nullable_bugs2(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
-    TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = "test_writes_nullable_bugs2_" + storage_type + "_" + get_uuid_str()
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(c0 Nullable(String))", format_version, "(c0)")
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (NULL), ('Monetochka'), ('Maneskin'), ('Noize MC');", settings={"allow_experimental_insert_into_iceberg": 1})

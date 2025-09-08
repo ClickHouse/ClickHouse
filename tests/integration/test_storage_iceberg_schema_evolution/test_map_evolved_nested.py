@@ -17,7 +17,7 @@ def test_map_evolved_nested(
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
-        "test_tuple_evolved_nested_"
+        "test_map_evolved_nested_"
         + format_version
         + "_"
         + storage_type

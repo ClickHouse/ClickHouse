@@ -12,7 +12,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 def test_time_travel_bug_fix_validation(started_cluster):
     instance = started_cluster.instances["node1"]
-    TABLE_NAME = "test_bucket_partition_pruning_" + get_uuid_str()
+    TABLE_NAME = "test_time_travel_bug_fix_validation_" + get_uuid_str()
 
     create_iceberg_table("local", instance, TABLE_NAME, started_cluster, "(x String, y Int64)")
 
