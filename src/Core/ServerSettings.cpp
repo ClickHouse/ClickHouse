@@ -1131,12 +1131,16 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Int32, os_threads_nice_value_merge_mutate, 0, R"(
     Linux nice value for merge and mutation threads. Lower values mean higher CPU priority.
 
-    Possible values: -20 to 19, negative values require CAP_SYS_NICE capability.
+    Requires CAP_SYS_NICE capability, otherwise no-op.
+
+    Possible values: -20 to 19.
     )", 0) \
     DECLARE(Int32, os_threads_nice_value_zookeeper_client_send_receive, 0, R"(
     Linux nice value for send and receive threads in ZooKeeper client. Lower values mean higher CPU priority.
 
-    Possible values: -20 to 19, negative values require CAP_SYS_NICE capability.
+    Requires CAP_SYS_NICE capability, otherwise no-op.
+
+    Possible values: -20 to 19.
     )", 0) \
 
 // clang-format on

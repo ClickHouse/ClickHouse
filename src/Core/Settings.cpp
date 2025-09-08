@@ -6874,12 +6874,16 @@ Collect jemalloc profile samples in trace log.
     DECLARE(Int32, os_threads_nice_value_query, 0, R"(
 Linux nice value for query processing threads. Lower values mean higher CPU priority.
 
-Possible values: -20 to 19, negative values require CAP_SYS_NICE capability.
+Requires CAP_SYS_NICE capability, otherwise no-op.
+
+Possible values: -20 to 19.
     )", 0) \
     DECLARE(Int32, os_threads_nice_value_materialized_view, 0, R"(
 Linux nice value for materialized view threads. Lower values mean higher CPU priority.
 
-Possible values: -20 to 19, negative values require CAP_SYS_NICE capability.
+Requires CAP_SYS_NICE capability, otherwise no-op.
+
+Possible values: -20 to 19.
     )", 0) \
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
 Use roaring bitmap for iceberg positional deletes.

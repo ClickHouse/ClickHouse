@@ -18,7 +18,7 @@ namespace DB
     void OSThreadNiceValue::set(const Int32 value, const UInt32 thread_id)
     {
 #if defined(OS_LINUX)
-        if (value >= 0 || hasLinuxCapability(CAP_SYS_NICE))
+        if (hasLinuxCapability(CAP_SYS_NICE))
         {
             if (setpriority(PRIO_PROCESS, thread_id, value) != 0)
             {
@@ -31,6 +31,7 @@ namespace DB
 
     scope_guard OSThreadNiceValue::scoped(const Int32 value, const UInt32 thread_id)
     {
+#if defined(OS_LINUX)
         errno = 0;
         const Int32 original_value = getpriority(PRIO_PROCESS, thread_id);
         if (original_value == -1 && errno != 0)
@@ -52,5 +53,8 @@ namespace DB
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         };
+#else
+        return [](){};
+#endif
     }
 }
