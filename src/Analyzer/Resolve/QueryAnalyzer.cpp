@@ -3014,13 +3014,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     constant_if_result_node = if_function_arguments[2];
                 }
 
-                bool current_do_not_execute = do_not_execute;
-                do_not_execute = true;
+                bool current_do_not_execute = disable_constant_folding;
+                disable_constant_folding = true;
                 auto dead_branch_argument_projection_names = resolveExpressionNode(possibly_invalid_argument_node,
                     scope,
                     false /*allow_lambda_expression*/,
                     false /*allow_table_expression*/);
-                do_not_execute = current_do_not_execute;
+                disable_constant_folding = current_do_not_execute;
 
                 auto dead_branch_argument_projection_name =
                     possibly_invalid_argument_node->getNodeType() == QueryTreeNodeType::IDENTIFIER ?
@@ -3070,10 +3070,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         multi_if_function->getArguments().getNodes().push_back(if_function_arguments[n]);
 
                     QueryTreeNodePtr function_query_node = multi_if_function;
-                    bool current_do_not_execute = do_not_execute;
-                    do_not_execute = true;
+                    bool current_do_not_execute = disable_constant_folding;
+                    disable_constant_folding = true;
                     auto result_projection_names = resolveFunction(function_query_node, scope);
-                    do_not_execute = current_do_not_execute;
+                    disable_constant_folding = current_do_not_execute;
 
                     auto second_argument = resolveExpressionNode(if_function_arguments[1],
                         scope,
@@ -3103,13 +3103,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 }
                 else
                 {
-                    bool current_do_not_execute = do_not_execute;
-                    do_not_execute = true;
+                    bool current_do_not_execute = disable_constant_folding;
+                    disable_constant_folding = true;
                     auto second_argument_projection_names = resolveExpressionNode(if_function_arguments[1],
                         scope,
                         false /*allow_lambda_expression*/,
                         false /*allow_table_expression*/);
-                    do_not_execute = current_do_not_execute;
+                    disable_constant_folding = current_do_not_execute;
 
                     auto second_argument_projection_name =
                     if_function_arguments[1]->getNodeType() == QueryTreeNodeType::IDENTIFIER ?
@@ -3884,7 +3884,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (!argument_columns.empty())
                     num_rows = argument_columns.front().column->size();
 
-                if (do_not_execute)
+                if (disable_constant_folding)
                 {
                     if (isNothing(result_type))
                         column = ColumnConst::create(ColumnNothing::create(1), 1);
@@ -4078,7 +4078,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
             if (!resolved_identifier_node)
             {
-                if (do_not_execute)
+                if (disable_constant_folding)
                     break;
 
                 std::string message_clarification;
@@ -4333,7 +4333,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
             result_nodes.push_back(std::move(node_to_resolve));
         }
 
-        if (expression_node_projection_names.size() != expected_projection_names_size)
+        if (!disable_constant_folding && expression_node_projection_names.size() != expected_projection_names_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Expression nodes list expected {} projection names. Actual: {}",
                 expected_projection_names_size,
