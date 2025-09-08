@@ -19,7 +19,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     const ASTPtr & /*function*/, ContextPtr context,
     const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
-    auto configuration = Base::getConfiguration();
+    auto configuration = Base::getConfiguration(context);
 
     ColumnsDescription columns;
     if (configuration->structure != "auto")

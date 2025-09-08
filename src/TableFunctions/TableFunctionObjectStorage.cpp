@@ -52,12 +52,33 @@ ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_l
 }
 
 template <typename Definition, typename Configuration, bool is_data_lake>
-StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getConfiguration() const
+StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getConfiguration(ContextPtr context) const
 {
     if (!configuration)
     {
         if constexpr (is_data_lake)
-            configuration = std::make_shared<Configuration>(settings);
+        {
+            if (context->getSettingsRef()[Setting::iceberg_disk_name].changed)
+            {
+                auto disk = context->getDisk(context->getSettingsRef()[Setting::iceberg_disk_name].value);
+                switch (disk->getObjectStorage()->getType())
+                {
+                case ObjectStorageType::S3:
+                    configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
+                    break;
+                case ObjectStorageType::Azure:
+                    configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
+                    break;
+                case ObjectStorageType::Local:
+                    configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
+                    break;
+                default:
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for iceberg {}", disk->getObjectStorage()->getType());
+                }
+            }
+            else
+                configuration = std::make_shared<Configuration>(settings);
+        }
         else
             configuration = std::make_shared<Configuration>();
     }
@@ -211,9 +232,15 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         client_info.collaborate_with_initiator &&
         context->hasClusterFunctionReadTaskCallback();
 
+    ObjectStoragePtr object_storage_;
+    if (configuration->isDataLakeConfiguration() && context->getSettingsRef()[Setting::iceberg_disk_name].changed)
+        object_storage_ = context->getDisk(context->getSettingsRef()[Setting::iceberg_disk_name].value)->getObjectStorage();
+    else
+        object_storage_ = getObjectStorage(context, !is_insert_query);
+
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
-        getObjectStorage(context, !is_insert_query),
+        object_storage_,
         context,
         StorageID(getDatabaseName(), table_name),
         columns,

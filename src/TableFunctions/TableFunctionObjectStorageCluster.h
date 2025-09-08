@@ -5,6 +5,7 @@
 #include <TableFunctions/ITableFunctionCluster.h>
 #include <TableFunctions/TableFunctionObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB
@@ -45,8 +46,8 @@ protected:
 
     const char * getStorageEngineName() const override { return Definition::storage_engine_name; }
     const char * getNonClusteredStorageEngineName() const override { return Definition::non_clustered_storage_engine_name; }
-    bool hasStaticStructure() const override { return Base::getConfiguration()->structure != "auto"; }
-    bool needStructureHint() const override { return Base::getConfiguration()->structure == "auto"; }
+    bool hasStaticStructure() const override { return Base::getConfiguration(CurrentThread::getQueryContext())->structure != "auto"; }
+    bool needStructureHint() const override { return Base::getConfiguration(CurrentThread::getQueryContext())->structure == "auto"; }
     void setStructureHint(const ColumnsDescription & structure_hint_) override { Base::structure_hint = structure_hint_; }
 };
 

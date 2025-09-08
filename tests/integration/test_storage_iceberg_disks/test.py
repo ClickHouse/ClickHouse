@@ -130,15 +130,14 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type):
 
     try:
         write_iceberg_from_df(spark, generate_data(spark, 0, 100), TABLE_NAME)
+        default_upload_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
     except:
         pass
-
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
 
     instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type} ENGINE=Iceberg() SETTINGS iceberg_disk_name = 'disk_{storage_type}'")
 
@@ -155,3 +154,6 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type):
     assert instance.query(f"SELECT * FROM iceberg() SETTINGS iceberg_disk_name = 'disk_{storage_type}'") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
+
+    instance.query(f"DROP TABLE {TABLE_NAME}_{storage_type}_2")
+    instance.query(f"DROP TABLE {TABLE_NAME}_{storage_type}")

@@ -356,10 +356,10 @@ public:
         {
             String path = object_storage_disk->getObjectsKeyPrefix();
             BaseStorageConfiguration::setPathForRead(path);
+            BaseStorageConfiguration::setURL(disk->getObjectStorage()->getDescription());
         }
         else
             BaseStorageConfiguration::setPathForRead(disk->getPath());
-        BaseStorageConfiguration::setURL(disk->getObjectStorage()->getDescription());
         if (!args.empty())
         {
             StorageObjectStorageConfiguration::format = checkAndGetLiteralArgument<String>(args[0], "format_name");
