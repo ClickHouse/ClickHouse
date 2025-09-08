@@ -597,6 +597,11 @@ class JobConfigs:
             requires=["Build (arm_asan)"],
         ),
         Job.ParamSet(
+            parameter="arm_asan, s3",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=["Build (arm_asan)"],
+        ),
+        Job.ParamSet(
             parameter="amd_ubsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=["Build (amd_ubsan)"],
