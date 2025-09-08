@@ -14,13 +14,14 @@ SELECT tx.c0.null FROM t0 tx;
 SELECT tx.c0.null FROM t0 tx JOIN t0 ty ON tx.c0 = ty.c0;
 
 
+-- Cleanup first table and view
+DROP VIEW v0;
+DROP TABLE t0;
+
+-- Test case from issue: GLOBAL RIGHT JOIN with parallel reading
 DROP TABLE IF EXISTS t0_replicated;
 CREATE TABLE t0_replicated (c0 Nullable(Int)) ENGINE = MergeTree() ORDER BY tuple();
 INSERT INTO TABLE t0_replicated (c0) VALUES (1);
 SELECT tx.c0.null FROM t0_replicated tx GLOBAL RIGHT JOIN t0_replicated AS ty ON tx.c0 = ty.c0 SETTINGS allow_experimental_parallel_reading_from_replicas = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_two_replicas';
 DROP TABLE t0_replicated;
-
--- Cleanup
-DROP VIEW v0;
-DROP TABLE t0;
 
