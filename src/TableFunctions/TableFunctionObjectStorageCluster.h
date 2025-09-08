@@ -46,8 +46,8 @@ protected:
 
     const char * getStorageEngineName() const override { return Definition::storage_engine_name; }
     const char * getNonClusteredStorageEngineName() const override { return Definition::non_clustered_storage_engine_name; }
-    bool hasStaticStructure() const override { return Base::getConfiguration(CurrentThread::getQueryContext())->structure != "auto"; }
-    bool needStructureHint() const override { return Base::getConfiguration(CurrentThread::getQueryContext())->structure == "auto"; }
+    bool hasStaticStructure() const override { return Base::getConfiguration(CurrentThread::getQueryContext() ? CurrentThread::getQueryContext() : Context::getGlobalContextInstance())->structure != "auto"; }
+    bool needStructureHint() const override { return Base::getConfiguration(CurrentThread::getQueryContext() ? CurrentThread::getQueryContext() : Context::getGlobalContextInstance())->structure == "auto"; }
     void setStructureHint(const ColumnsDescription & structure_hint_) override { Base::structure_hint = structure_hint_; }
 };
 
@@ -65,6 +65,7 @@ using TableFunctionHDFSCluster = TableFunctionObjectStorageCluster<HDFSClusterDe
 
 #if USE_AVRO && USE_AWS_S3
 using TableFunctionIcebergS3Cluster = TableFunctionObjectStorageCluster<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration, true>;
+using TableFunctionIcebergCluster = TableFunctionObjectStorageCluster<IcebergClusterDefinition, StorageS3IcebergConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE

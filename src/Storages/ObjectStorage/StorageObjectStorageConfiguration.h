@@ -252,7 +252,7 @@ public:
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
-    virtual void fromDisk(ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)
+    virtual void fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Initialization from disk is not implemented for your storage");
     }

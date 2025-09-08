@@ -24,6 +24,7 @@
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -347,16 +348,15 @@ public:
         current_metadata->addDeleteTransformers(object_info, builder, format_settings, local_context);
     }
 
-    void fromDisk(ASTs & args, ContextPtr context, bool with_structure) override
+    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
     {
-        auto disk = context->getDisk(context->getSettingsRef()[Setting::iceberg_disk_name].value);
+        auto disk = context->getDisk(disk_name);
         ready_object_storage = disk->getObjectStorage();
 
-        if (args.size() > BaseStorageConfiguration::getMaxNumberOfArguments(with_structure))
+        if (args.size() > 2 + with_structure)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Storage Local requires 1 to {} arguments. All supported signatures:\n{}",
-                BaseStorageConfiguration::getMaxNumberOfArguments(with_structure),
-                BaseStorageConfiguration::getSignatures(with_structure));
+                "Storage requires {} arguments maximum.",
+                2 + with_structure);
 
         if (auto object_storage_disk = std::static_pointer_cast<DiskObjectStorage>(disk); object_storage_disk)
         {
@@ -366,25 +366,48 @@ public:
         }
         else
             BaseStorageConfiguration::setPathForRead(disk->getPath());
-        if (!args.empty())
-        {
-            StorageObjectStorageConfiguration::format = checkAndGetLiteralArgument<String>(args[0], "format_name");
-        }
+
+        std::unordered_map<std::string_view, size_t> engine_args_to_idx;
 
         if (with_structure)
         {
-            if (args.size() > 1)
-            {
-                StorageObjectStorageConfiguration::structure = checkAndGetLiteralArgument<String>(args[1], "structure");
-            }
             if (args.size() > 2)
-            {
-                StorageObjectStorageConfiguration::compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
-            }
+                engine_args_to_idx = {{"format", 0}, {"structure", 1}, {"compression_method", 2}};
+            else if (args.size() > 1)
+                engine_args_to_idx = {{"format", 0}, {"structure", 1}};
+            else if (!args.empty())
+                engine_args_to_idx = {{"format", 0}};
         }
         else if (args.size() > 1)
+            engine_args_to_idx = {{"format", 0}, {"compression_method", 1}};
+        else if (!args.empty())
+            engine_args_to_idx = {{"format", 0}};
+
+        ASTs key_value_asts;
+        if (auto * first_key_value_arg_it = getFirstKeyValueArgument(args);
+            first_key_value_arg_it != args.end())
         {
-            StorageObjectStorageConfiguration::compression_method = checkAndGetLiteralArgument<String>(args[1], "compression_method");
+            key_value_asts = ASTs(first_key_value_arg_it, args.end());
+        }
+
+        auto key_value_args = parseKeyValueArguments(key_value_asts, context);
+
+        if (auto format_value = getFromPositionOrKeyValue<String>("format", args, engine_args_to_idx, key_value_args);
+            format_value.has_value())
+        {
+            StorageObjectStorageConfiguration::format = format_value.value();
+        }
+
+        if (auto structure_value = getFromPositionOrKeyValue<String>("structure", args, engine_args_to_idx, key_value_args);
+            structure_value.has_value())
+        {
+            StorageObjectStorageConfiguration::structure = structure_value.value();
+        }
+
+        if (auto compression_method_value = getFromPositionOrKeyValue<String>("compression_method", args, engine_args_to_idx, key_value_args);
+            compression_method_value.has_value())
+        {
+            StorageObjectStorageConfiguration::compression_method = compression_method_value.value();
         }
     }
 

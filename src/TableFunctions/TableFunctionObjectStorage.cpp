@@ -61,6 +61,8 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
         {
             if (context->getSettingsRef()[Setting::iceberg_disk_name].changed)
             {
+                if (Definition::name != "iceberg" && Definition::name != "icebergCluster")
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg with disk configuration is supported only for default iceberg or icebergCluster");
                 auto disk = context->getDisk(context->getSettingsRef()[Setting::iceberg_disk_name].value);
                 switch (disk->getObjectStorage()->getType())
                 {
@@ -364,6 +366,7 @@ template class TableFunctionObjectStorage<HDFSClusterDefinition, StorageHDFSConf
 
 #if USE_AVRO && USE_AWS_S3
 template class TableFunctionObjectStorage<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration, true>;
+template class TableFunctionObjectStorage<IcebergClusterDefinition, StorageS3IcebergConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AZURE_BLOB_STORAGE

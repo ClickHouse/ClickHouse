@@ -32,4 +32,25 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const ContextPtr & context_,
     const LoggerPtr & log,
     const std::optional<ReadSettings> & read_settings = std::nullopt);
+
+ASTs::iterator getFirstKeyValueArgument(ASTs & args);
+std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context);
+
+template <typename T>
+std::optional<T> getFromPositionOrKeyValue(
+    const std::string & key,
+    const ASTs & args,
+    const std::unordered_map<std::string_view, size_t> & engine_args_to_idx,
+    const std::unordered_map<std::string, Field> & key_value_args)
+{
+    if (auto arg_it = key_value_args.find(key); arg_it != key_value_args.end())
+        return arg_it->second.safeGet<T>();
+
+    if (auto arg_it = engine_args_to_idx.find(key); arg_it != engine_args_to_idx.end())
+        return checkAndGetLiteralArgument<T>(args[arg_it->second], key);
+
+    return std::nullopt;
+};
+
+
 }

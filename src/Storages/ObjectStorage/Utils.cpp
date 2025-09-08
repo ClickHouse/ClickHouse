@@ -9,6 +9,8 @@
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Parsers/ASTFunction.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 namespace DB
 {
@@ -115,6 +117,64 @@ void validateSupportedColumns(
             configuration.getTypeName());
     }
 }
+
+ASTs::iterator getFirstKeyValueArgument(ASTs & args)
+{
+    ASTs::iterator first_key_value_arg_it = args.end();
+    for (auto * it = args.begin(); it != args.end(); ++it)
+    {
+        const auto * function_ast = (*it)->as<ASTFunction>();
+        if (function_ast && function_ast->name == "equals")
+        {
+             if (first_key_value_arg_it == args.end())
+                first_key_value_arg_it = it;
+        }
+        else if (first_key_value_arg_it != args.end())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Expected positional arguments to go before key-value arguments");
+        }
+    }
+    return first_key_value_arg_it;
+}
+
+std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context)
+{
+    std::unordered_map<std::string, Field> key_value_args;
+    for (const auto & arg : function_args)
+    {
+        const auto * function_ast = arg->as<ASTFunction>();
+        if (!function_ast || function_ast->name != "equals")
+            continue;
+
+        auto * args_expr = assert_cast<ASTExpressionList *>(function_ast->arguments.get());
+        auto & children = args_expr->children;
+        if (children.size() != 2)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Key value argument is incorrect: expected 2 arguments, got {}",
+                children.size());
+        }
+
+        auto key_literal = evaluateConstantExpressionOrIdentifierAsLiteral(children[0], context);
+        auto value_literal = evaluateConstantExpressionOrIdentifierAsLiteral(children[1], context);
+
+        auto arg_name_value = key_literal->as<ASTLiteral>()->value;
+        if (arg_name_value.getType() != Field::Types::Which::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as credential name");
+
+        auto arg_name = arg_name_value.safeGet<String>();
+        auto arg_value = value_literal->as<ASTLiteral>()->value;
+
+        auto inserted = key_value_args.emplace(arg_name, arg_value).second;
+        if (!inserted)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate key value argument: {}", arg_name);
+    }
+    return key_value_args;
+}
+
 
 namespace Setting
 {
