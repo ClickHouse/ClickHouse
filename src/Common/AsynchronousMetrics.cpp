@@ -8,10 +8,10 @@
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
+#include <Common/formatReadable.h>
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
-#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Daemon/BaseDaemon.h>
@@ -902,6 +902,88 @@ void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetri
     else
     {
         context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_OVER_THRESHOLD);
+    }
+}
+
+void AsynchronousMetrics::processWarningForMemoryOverload(const AsynchronousMetricValues & new_values) const
+{
+    const auto memory_resident = tryGetMetricValue(new_values, "MemoryResident");
+    const auto memory_total = tryGetMetricValue(new_values, "OSMemoryTotal");
+
+    if (memory_resident == 0 || memory_total == 0)
+        return;
+
+    const double ratio = static_cast<double>(memory_resident) / static_cast<double>(memory_total);
+
+    const auto & cfg = context->getConfigRef();
+    const double mem_warn_ratio = cfg.getDouble("resource_overload_warnings.memory_overload_warn_ratio", 0.9);
+    const double mem_clear_ratio = cfg.getDouble("resource_overload_warnings.memory_overload_clear_ratio", 0.85);
+    const UInt64 min_duration = cfg.getUInt64("resource_overload_warnings.memory_overload_duration_seconds", 600);
+
+    const auto now = Clock::now();
+    const int usage_percent = static_cast<int>(std::lround(ratio * 100.0));
+
+    const auto warning_message = PreformattedMessage::create(
+        "High ClickHouse memory usage: {} of {} used ({}%) for at least {} second(s)",
+        formatReadableSizeWithDecimalSuffix(memory_resident),
+        formatReadableSizeWithDecimalSuffix(memory_total),
+        usage_percent,
+        min_duration);
+
+    if (ratio >= mem_warn_ratio)
+    {
+        if (!mem_overload_started)
+            mem_overload_started = now;
+
+        if (now - *mem_overload_started >= std::chrono::seconds{min_duration})
+            context->addOrUpdateWarningMessage(Context::WarningType::SERVER_MEMORY_OVERLOAD, warning_message);
+        else
+            context->removeWarningMessage(Context::WarningType::SERVER_MEMORY_OVERLOAD);
+    }
+    else
+    {
+        mem_overload_started.reset();
+        if (ratio <= mem_clear_ratio)
+            context->removeWarningMessage(Context::WarningType::SERVER_MEMORY_OVERLOAD);
+    }
+}
+
+void AsynchronousMetrics::processWarningForCPUOverload(const AsynchronousMetricValues & new_values) const
+{
+    const auto it = new_values.find("OSIdleTimeNormalized");
+    if (it == new_values.end())
+        return;
+
+    /// ensure that the value is always in [0.0, 1.0]
+    const double idle_time = std::clamp(1.0 - it->second.value, 0.0, 1.0);
+
+    const auto & cfg = context->getConfigRef();
+    const double cpu_warn_ratio = cfg.getDouble("resource_overload_warnings.cpu_overload_warn_ratio", 0.9);
+    const double cpu_clear_ratio = cfg.getDouble("resource_overload_warnings.cpu_overload_clear_ratio", 0.85);
+    const UInt64 min_duration = cfg.getUInt64("resource_overload_warnings.cpu_overload_duration_seconds", 600);
+
+    const auto now = Clock::now();
+    const int busy_percent = static_cast<int>(std::lround(idle_time * 100.0));
+    const int threshold_percent = static_cast<int>(std::lround(cpu_warn_ratio * 100.0));
+
+    const auto warning_message = PreformattedMessage::create(
+        "High CPU usage: {}% busy (>= {}%) for at least {} second(s)", busy_percent, threshold_percent, min_duration);
+
+    if (idle_time >= cpu_warn_ratio)
+    {
+        if (!cpu_overload_started)
+            cpu_overload_started = now;
+
+        if (now - *cpu_overload_started >= std::chrono::seconds{min_duration})
+            context->addOrUpdateWarningMessage(Context::WarningType::SERVER_CPU_OVERLOAD, warning_message);
+        else
+            context->removeWarningMessage(Context::WarningType::SERVER_CPU_OVERLOAD);
+    }
+    else
+    {
+        cpu_overload_started.reset();
+        if (idle_time <= cpu_clear_ratio)
+            context->removeWarningMessage(Context::WarningType::SERVER_CPU_OVERLOAD);
     }
 }
 
@@ -2178,6 +2260,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         // These methods look at Asynchronous metrics and add,update or remove warnings
         // which later get inserted into the system.warnings table:
         processWarningForMutationStats(new_values);
+        // server resource overload warnings
+        processWarningForMemoryOverload(new_values);
+        processWarningForCPUOverload(new_values);
     }
 }
 
