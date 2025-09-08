@@ -1,6 +1,5 @@
 #include <memory>
 #include <Dictionaries/FlatDictionary.h>
-
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>

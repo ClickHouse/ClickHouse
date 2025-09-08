@@ -20,7 +20,7 @@ The full SQL parser is used in all cases except for the `INSERT` query, which us
 
 Let's examine the query below:
 
-```sql
+``` sql
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
@@ -38,6 +38,7 @@ When the aforementioned setting is set to `1`,
 ClickHouse first tries to parse values with the fast stream parser. 
 If it fails, ClickHouse tries to use the full parser for the data, treating it like an SQL [expression](#expressions).
 </details>
+
 
 The data can have any format. 
 When a query is received, the server calculates no more than [max_query_size](../operations/settings/settings.md#max_query_size) bytes of the request in RAM 
@@ -108,6 +109,7 @@ See the table below for examples of valid and invalid identifiers:
 | Valid identifiers                              | Invalid identifiers                    |
 |------------------------------------------------|----------------------------------------|
 | `xyz`, `_internal`, `Id_with_underscores_123_` | `1x`, `tom@gmail.com`, `äußerst_schön` |
+
 
 If you want to use identifiers the same as keywords or you want to use other symbols in identifiers, quote it using double quotes or backticks, for example, `"id"`, `` `id` ``.
 
@@ -223,7 +225,7 @@ The following should be noted for `NULL`:
 
 - Depending on the data format (input or output), `NULL` may have a different representation. For more information, see [data formats](/interfaces/formats).
 - `NULL` processing is nuanced. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. We recommend to read the documentation for each operation.
-- In queries, you can check `NULL` using the [`IS NULL`](/sql-reference/functions/functions-for-nulls#isNull) and [`IS NOT NULL`](/sql-reference/functions/functions-for-nulls#isNotNull) operators and the related functions `isNull` and `isNotNull`.
+- In queries, you can check `NULL` using the [`IS NULL`](/sql-reference/functions/functions-for-nulls#isnull) and [`IS NOT NULL`](/sql-reference/functions/functions-for-nulls#isnotnull) operators and the related functions `isNull` and `isNotNull`.
 :::
 
 ### Heredoc {#heredoc}
@@ -366,28 +368,25 @@ For more information, see the sections:
 
 ## Expressions {#expressions}
 
-An expression can be any of the following:
+An expression can be the following: 
 - a function
 - an identifier
 - a literal
-- the application of an operator
+- an application of an operator
 - an expression in brackets
 - a subquery
-- an asterisk
+- or an asterisk. 
 
 It can also contain an [alias](#expression-aliases).
 
 A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
 
-A constant expression is an expression whose result is known during query analysis, i.e. before execution.
-For example, expressions over literals are constant expressions.
-
 ## Expression Aliases {#expression-aliases}
 
 An alias is a user-defined name for an [expression](#expressions) in a query.
 
-```sql
+``` sql
 expr AS alias
 ```
 
@@ -421,7 +420,7 @@ SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 
 - Be careful with aliases that are the same as column or table names. Let's consider the following example:
 
-```sql
+``` sql
 CREATE TABLE t
 (
     a Int,

@@ -15,8 +15,6 @@ node = cluster.add_instance(
     "node",
     main_configs=["configs/enable_keeper.xml"],
     stay_alive=True,
-    # When `with_remote_database_disk` is enalbed, `with_zookeeper` might be enabled and the feature flag `CHECK_NOT_EXISTS` is enabled, causing the test `test_keeper_feature_flags` to fail
-    with_remote_database_disk=False,
 )
 
 
@@ -36,7 +34,7 @@ def get_connection_zk(nodename, timeout=30.0):
     return _fake_zk_instance
 
 
-def restart_clickhouse(feature_flags=[], expect_fail=False):
+def restart_clickhouse(feature_flags=[], expect_fail=True):
     node.stop_clickhouse()
     node.copy_file_to_container(
         os.path.join(CURRENT_TEST_DIR, "configs/enable_keeper.xml"),
@@ -57,10 +55,8 @@ def restart_clickhouse(feature_flags=[], expect_fail=False):
             feature_flags_config,
         )
 
-    node.start_clickhouse(expected_to_fail=expect_fail)
-
-    if not expect_fail:
-        keeper_utils.wait_until_connected(cluster, node)
+    node.start_clickhouse(retry_start=not expect_fail)
+    keeper_utils.wait_until_connected(cluster, node)
 
 
 def test_keeper_feature_flags(started_cluster):
@@ -68,27 +64,27 @@ def test_keeper_feature_flags(started_cluster):
 
     def assert_feature_flags(feature_flags):
         res = keeper_utils.send_4lw_cmd(started_cluster, node, "ftfl")
-        node.query("SYSTEM FLUSH LOGS")
+
         for feature, is_enabled in feature_flags:
             node.wait_for_log_line(
                 f"ZooKeeperClient: Keeper feature flag {feature.upper()}: {'enabled' if is_enabled else 'disabled'}",
-                look_behind_lines="+1",
+                look_behind_lines=10000,
             )
 
             node.wait_for_log_line(
                 f"KeeperContext: Keeper feature flag {feature.upper()}: {'enabled' if is_enabled else 'disabled'}",
-                look_behind_lines="+1",
+                look_behind_lines=10000,
             )
 
             assert f"{feature}\t{1 if is_enabled else 0}" in res
 
     assert_feature_flags(
-        [("filtered_list", 1), ("multi_read", 1), ("remove_recursive", 1)]
+        [("filtered_list", 1), ("multi_read", 1), ("check_not_exists", 0)]
     )
 
     feature_flags = [
         ("multi_read", 0),
-        ("remove_recursive", 1),
+        ("check_not_exists", 1),
         ("create_if_not_exists", 1),
     ]
     restart_clickhouse(feature_flags)
@@ -103,4 +99,5 @@ def test_keeper_feature_flags(started_cluster):
     restart_clickhouse(feature_flags)
     assert_feature_flags(feature_flags)
 
-    restart_clickhouse([("invalid_feature", 1)], expect_fail=True)
+    with pytest.raises(Exception):
+        restart_clickhouse([("invalid_feature", 1)], expect_fail=True)
