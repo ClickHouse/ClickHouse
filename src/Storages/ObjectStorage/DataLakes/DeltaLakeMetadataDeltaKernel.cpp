@@ -177,16 +177,20 @@ static DataTypePtr replaceTypeNamesToPhysicalRecursively(
 /// Returns physical column and whether it is readable from data file.
 /// We do not change given column actual type,
 /// but can only change names inside the type (in case of Tuple).
-static std::pair<NameAndTypePair, bool> setPhysicalNameAndType(
+static std::pair<NameAndTypePair, bool> getPhysicalNameAndType(
     const NameAndTypePair & column,
     const NamesAndTypesList & read_schema,
     const NameToNameMap & physical_names_map,
-    bool,
     LoggerPtr log)
 {
     auto physical_name_in_storage = DeltaLake::getPhysicalName(column.getNameInStorage(), physical_names_map);
     auto physical_type_in_storage = replaceTypeNamesToPhysicalRecursively(column.getTypeInStorage(), column.getNameInStorage(), physical_names_map);
 
+    /// Take column from read_schema, but only use it to check if column is readable,
+    /// because read_schema_column.type can be different from physical_type_in_storage,
+    /// because column.type is what user specified in CREATE TABLE query,
+    /// and the second is what we parsed ourselves from delta-lake metadata.
+    /// E.g. we abive by manually specified schema if it exists.
     auto read_schema_column = read_schema.tryGetByName(physical_name_in_storage);
 
     LOG_TEST(
@@ -234,8 +238,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     {
         std::lock_guard lock(table_snapshot_mutex);
         physical_names_map = table_snapshot->getPhysicalNamesMap();
-        //table_columns_description = ColumnsDescription(table_snapshot->getTableSchema());
         read_columns_desc = ColumnsDescription(table_snapshot->getReadSchema());
+
         auto columns = table_snapshot->getPartitionColumns();
         partition_columns.insert(columns.begin(), columns.end());
     }
@@ -270,11 +274,10 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// so we want it to be verified that chunk contains all the requested columns.
     for (auto & name_and_type : info.requested_columns)
     {
-        auto [result_name_and_type, _] = setPhysicalNameAndType(
+        auto [result_name_and_type, _] = getPhysicalNameAndType(
             name_and_type,
             readable_columns_with_subcolumns,
             physical_names_map,
-            /* get_name_in_storage */true,
             log);
         name_and_type = result_name_and_type;
     }
@@ -298,11 +301,10 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     auto columns_to_read_desc = info.columns_description.get(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
     for (auto & name_and_type : columns_to_read_desc)
     {
-        auto [result_name_and_type, readable] = setPhysicalNameAndType(
+        auto [result_name_and_type, readable] = getPhysicalNameAndType(
             name_and_type,
             readable_columns_with_subcolumns,
             physical_names_map,
-            /* get_name_in_storage */false,
             log);
 
         if (readable)
