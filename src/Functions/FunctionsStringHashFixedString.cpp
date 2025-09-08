@@ -355,7 +355,7 @@ REGISTER_FUNCTION(HashFixedStrings)
 
     factory.registerFunction<FunctionRIPEMD160>(FunctionDocumentation{
         .description = R"(Calculates the RIPEMD-160 hash of the given string.)",
-        .syntax = "SELECT RIPEMD160(s);",
+        .syntax = "RIPEMD160(s)",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
         = {"Returns the RIPEMD160 hash of the given input string as a fixed-length string.", {"FixedString(20)"}},
@@ -371,7 +371,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     });
     factory.registerFunction<FunctionMD4>(FunctionDocumentation{
         .description = R"(Calculates the MD4 hash of the given string.)",
-        .syntax = "SELECT MD4(s);",
+        .syntax = "MD4(s)",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
         = {"Returns the MD4 hash of the given input string as a fixed-length string.", {"FixedString(16)"}},
@@ -387,7 +387,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     });
     factory.registerFunction<FunctionMD5>(FunctionDocumentation{
         .description = R"(Calculates the MD5 hash of the given string.)",
-        .syntax = "SELECT MD5(s);",
+        .syntax = "MD5(s)",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
         = {"Returns the MD5 hash of the given input string as a fixed-length string.", {"FixedString(16)"}},
@@ -403,7 +403,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     });
     factory.registerFunction<FunctionSHA1>(FunctionDocumentation{
         .description = R"(Calculates the SHA1 hash of the given string.)",
-        .syntax = "SELECT SHA1(s);",
+        .syntax = "SHA1(s)",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
         = {"Returns the SHA1 hash of the given input string as a fixed-length string.", {"FixedString(20)"}},
@@ -419,7 +419,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     });
     factory.registerFunction<FunctionSHA224>(FunctionDocumentation{
         .description = R"(Calculates the SHA224 hash of the given string.)",
-        .syntax = "SELECT SHA224(s);",
+        .syntax = "SHA224(s)",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
         = {"Returns the SHA224 hash of the given input string as a fixed-length string.", {"FixedString(28)"}},
@@ -435,7 +435,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     });
     factory.registerFunction<FunctionSHA256>(FunctionDocumentation{
         .description = R"(Calculates the SHA256 hash of the given string.)",
-        .syntax = "SELECT SHA256(s);",
+        .syntax = "SHA256(s)",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
         = {"Returns the SHA256 hash of the given input string as a fixed-length string.", {"FixedString(32)"}},
@@ -451,7 +451,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     });
     factory.registerFunction<FunctionSHA384>(FunctionDocumentation{
         .description = R"(Calculates the SHA384 hash of the given string.)",
-        .syntax = "SELECT SHA384(s);",
+        .syntax = "SHA384(s)",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
         = {"Returns the SHA384 hash of the given input string as a fixed-length string.", {"FixedString(48)"}},
@@ -467,7 +467,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     });
     factory.registerFunction<FunctionSHA512>(FunctionDocumentation{
         .description = R"(Calculates the SHA512 hash of the given string.)",
-        .syntax = "SELECT SHA512(s);",
+        .syntax = "SHA512(s)",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
         = {"Returns the SHA512 hash of the given input string as a fixed-length string.", {"FixedString(64)"}},
@@ -483,7 +483,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     });
     factory.registerFunction<FunctionSHA512_256>(FunctionDocumentation{
         .description = R"(Calculates the SHA512_256 hash of the given string.)",
-        .syntax = "SELECT SHA512_256(s);",
+        .syntax = "SHA512_256(s)",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
         = {"Returns the SHA512_256 hash of the given input string as a fixed-length string.", {"FixedString(32)"}},
@@ -510,7 +510,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     The function is rather fast and shows approximately two times faster performance compared to SHA-2, while generating hashes of the same length as SHA-256.
     It returns a BLAKE3 hash as a byte array with type FixedString(32).
     )",
-        .syntax = "SELECT BLAKE3(message)",
+        .syntax = "BLAKE3(message)",
         .arguments = {{"message", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
         = {"Returns the 32-byte BLAKE3 hash of the input string as a fixed-length string.", {"FixedString(32)"}},
@@ -523,7 +523,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     factory.registerFunction<FunctionKeccak256>(FunctionDocumentation{
         .description = R"(Calculates the Keccak-256 cryptographic hash of the given string.
         This hash function is widely used in blockchain applications, particularly Ethereum.)",
-        .syntax = "SELECT keccak256(message)",
+        .syntax = "keccak256(message)",
         .arguments = {{"message", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
         = {"Returns the 32-byte Keccak-256 hash of the input string as a fixed-length string.", {"FixedString(32)"}},
