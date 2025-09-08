@@ -1039,9 +1039,17 @@ void ZooKeeper::receiveEvent()
                 {
                     if (callbacks.insert(watch).second)
                     {
-                        chassert(callbacks.size() < 100);
+                        /// Warn only for debug or sanitizers builds (i.e. CI), since it is OK to have 100 replicas,
+                        /// but if we will log only if the number of watches > 1000..10000, then, CI will not capture anything.
+                        ///
+                        /// And we do have tests that create > 100 replicas, so we cannot assert for 100 watches here
+                        /// (since all replicas shares some paths in ZooKeeper)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+                        static constexpr size_t WATCHES_CALLBACK_SANITY_LIMIT = 10000;
+                        chassert(callbacks.size() <= WATCHES_CALLBACK_SANITY_LIMIT);
                         if (callbacks.size() > 100)
                             LOG_WARNING(log, "Too many watches for path {}: {} (This is likely an error)", req_path, callbacks.size());
+#endif
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
                     }
                 }
