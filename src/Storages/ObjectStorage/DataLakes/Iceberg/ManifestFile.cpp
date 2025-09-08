@@ -22,6 +22,9 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
+#include <Common/logger_useful.h>
+
+
 namespace DB::ErrorCodes
 {
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
@@ -262,11 +265,18 @@ ManifestFileContent::ManifestFileContent(
         const auto schema_id_opt = schema_processor.tryGetSchemaIdForSnapshot(snapshot_id);
         if (!schema_id_opt.has_value())
         {
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Cannot read Iceberg table: manifest file '{}' has entry with snapshot_id '{}' for which write file schema is unknown",
-                manifest_file_name,
-                snapshot_id);
+            try
+            {
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Cannot read Iceberg table: manifest file '{}' has entry with snapshot_id '{}' for which write file schema is unknown",
+                    manifest_file_name,
+                    snapshot_id);
+            }
+            catch (const Exception &)
+            {
+                LOG_ERROR(&Poco::Logger::get("ICEBERG_SPECIFICATION_VIOLATION"), "{}", getCurrentExceptionMessage(true));
+            }
         }
         const auto schema_id = schema_id_opt.value();
 
