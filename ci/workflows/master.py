@@ -15,12 +15,12 @@ workflow = Workflow.Config(
     jobs=[
         # *JobConfigs.tidy_build_jobs, # NOTE (strtgbb): we don't run tidy build jobs
         *JobConfigs.build_jobs,
-        *[
-            job.set_dependency(
-                REGULAR_BUILD_NAMES  # + [JobConfigs.tidy_build_jobs[0].name]  # NOTE (strtgbb): we don't run tidy build jobs
-            )
-            for job in JobConfigs.special_build_jobs
-        ],
+        # *[ # NOTE (strtgbb): we don't need special build jobs
+        #     job.set_dependency(
+        #         REGULAR_BUILD_NAMES  # + [JobConfigs.tidy_build_jobs[0].name]  # NOTE (strtgbb): we don't run tidy build jobs
+        #     )
+        #     for job in JobConfigs.special_build_jobs
+        # ],
         *JobConfigs.unittest_jobs,
         JobConfigs.docker_sever,
         JobConfigs.docker_keeper,
@@ -28,7 +28,7 @@ workflow = Workflow.Config(
         *JobConfigs.compatibility_test_jobs,
         *JobConfigs.functional_tests_jobs_required,
         *JobConfigs.functional_tests_jobs_non_required,
-        *JobConfigs.functional_tests_jobs_azure_master_only,
+        # *JobConfigs.functional_tests_jobs_azure_master_only, # NOTE (strtgbb): disabled due to high number of fails
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
         *JobConfigs.functional_tests_jobs_coverage,

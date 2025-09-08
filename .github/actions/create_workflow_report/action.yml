@@ -21,6 +21,7 @@ runs:
 
     - name: Create and upload workflow report
       env:
+        PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
         ACTIONS_RUN_URL: ${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}
         COMMIT_SHA: ${{ steps.set_version.outputs.commit_sha || github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         FINAL: ${{ inputs.final }}
@@ -29,7 +30,7 @@ runs:
         pip install clickhouse-driver==0.2.8 numpy==1.26.4 pandas==2.0.3 jinja2==3.1.5
 
         CMD="python3 .github/actions/create_workflow_report/create_workflow_report.py"
-        ARGS="--actions-run-url $ACTIONS_RUN_URL --commit-sha $COMMIT_SHA --known-fails tests/broken_tests.json --cves"
+        ARGS="--actions-run-url $ACTIONS_RUN_URL --known-fails tests/broken_tests.json --cves --pr-number $PR_NUMBER"
 
         set +e -x
         if [[ "$FINAL" == "false" ]]; then

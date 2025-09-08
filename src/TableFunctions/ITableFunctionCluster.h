@@ -16,6 +16,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 /// Base class for *Cluster table functions that require cluster_name for the first argument.
@@ -46,7 +47,10 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected table function name: {}", table_function->name);
     }
 
-    bool canBeUsedToCreateTable() const override { return false; }
+    void validateUseToCreateTable() const override
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", getName());
+    }
 
 protected:
     void parseArguments(const ASTPtr & ast, ContextPtr context) override
