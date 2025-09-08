@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import concurrent.futures
 import json
@@ -911,7 +913,9 @@ def _run_test(job_name: str, run_command: str) -> int:
         if retcode != 0:
             print(f"Run action failed for: [{job_name}] with exit code [{retcode}]")
         if process.timeout_exceeded:
-            print(f"Job timed out: [{job_name}] exit code [{retcode}]")
+            print(
+                f"Job timed out: [{job_name}], timeout [{timeout}], exit code [{retcode}]"
+            )
             assert JobReport.exist(), "JobReport real or dummy must be present"
             jr = JobReport.load()
             if jr.dummy:
@@ -1030,8 +1034,12 @@ def main() -> int:
         git_ref = git_runner.run(f"{GIT_PREFIX} rev-parse HEAD")
 
         # let's get CH version
-        version = get_version_from_repo(git=Git(True)).string
-        print(f"Got CH version for this commit: [{version}]")
+        git = Git(True)
+        version = get_version_from_repo(git = git).string
+        print(f"""Got CH version for this commit: [{version}]
+            latest tag: {git.latest_tag} ({git.commits_since_latest} commits back),
+            latest upstream tag: {git.latest_upstream_tag} ({git.commits_since_upstream} commits back)
+        """)
 
         docker_data = (
             _configure_docker_jobs(args.docker_digest_or_latest)

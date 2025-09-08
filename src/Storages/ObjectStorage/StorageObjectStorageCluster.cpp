@@ -29,7 +29,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_DATA;
     extern const int INVALID_SETTING_VALUE;
 }
 
@@ -89,37 +88,14 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->isDataLakeConfiguration() && !configuration->partition_strategy)
         sample_path = getPathSample(context_);
 
-    /*
-     * If `partition_strategy=hive`, the partition columns shall be extracted from the `PARTITION BY` expression.
-     * There is no need to read from the filepath.
-     *
-     * Otherwise, in case `use_hive_partitioning=1`, we can keep the old behavior of extracting it from the sample path.
-     * And if the schema was inferred (not specified in the table definition), we need to enrich it with the path partition columns
-     */
-    if (configuration->partition_strategy && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
-    {
-        hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
-    }
-    else if (context_->getSettingsRef()[Setting::use_hive_partitioning])
-    {
-        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
-            columns,
-            hive_partition_columns_to_read_from_file_path,
-            sample_path,
-            columns_in_table_or_function_definition.empty(),
-            std::nullopt,
-            context_
-        );
-    }
-
-    if (hive_partition_columns_to_read_from_file_path.size() == columns.size())
-    {
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "A hive partitioned file can't contain only partition columns. Try reading it with `partition_strategy=wildcard` and `use_hive_partitioning=0`");
-    }
-
-    /// Hive: Not building the file_columns like `StorageObjectStorage` does because it is not necessary to do it here.
+    /// Not grabbing the file_columns because it is not necessary to do it here.
+    std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
+        columns,
+        configuration,
+        sample_path,
+        columns_in_table_or_function_definition.empty(),
+        std::nullopt,
+        context_);
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);

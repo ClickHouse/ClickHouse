@@ -67,6 +67,8 @@ void RestoreCoordinationOnCluster::createRootNodes()
             zk->createIfNotExists(zookeeper_path + "/repl_sql_objects_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/keeper_map_tables", "");
             zk->createIfNotExists(zookeeper_path + "/table_uuids", "");
+
+            zk->createIfNotExists(zookeeper_path + "/shared_databases_acquired", "");
         });
 }
 
@@ -124,6 +126,32 @@ ZooKeeperRetriesInfo RestoreCoordinationOnCluster::getOnClusterInitializationKee
                                 static_cast<UInt64>(keeper_settings.retry_initial_backoff_ms.count()),
                                 static_cast<UInt64>(keeper_settings.retry_max_backoff_ms.count()),
                                 process_list_element};
+}
+
+bool RestoreCoordinationOnCluster::acquireCreatingSharedDatabase(const String & database_name)
+{
+    bool result = false;
+    auto holder = with_retries.createRetriesControlHolder("acquireCreatingTableInReplicatedDatabase");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zk);
+
+            String path = fs::path(zookeeper_path) / "shared_databases_acquired" / escapeForFileName(database_name);
+            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
+            if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
+                throw zkutil::KeeperException::fromPath(code, path);
+
+            if (code == Coordination::Error::ZOK)
+            {
+                result = true;
+                return;
+            }
+
+            /// We need to check who created that node
+            result = zk->get(path) == toString(current_host_index);
+        });
+    return result;
 }
 
 bool RestoreCoordinationOnCluster::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)

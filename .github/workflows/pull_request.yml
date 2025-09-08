@@ -2022,7 +2022,7 @@ jobs:
 
   stateless_tests_amd_coverage_1_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsMS82KQ==') }}
     name: "Stateless tests (amd_coverage,1/6)"
     outputs:
@@ -2067,7 +2067,7 @@ jobs:
 
   stateless_tests_amd_coverage_2_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsMi82KQ==') }}
     name: "Stateless tests (amd_coverage,2/6)"
     outputs:
@@ -2112,7 +2112,7 @@ jobs:
 
   stateless_tests_amd_coverage_3_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsMy82KQ==') }}
     name: "Stateless tests (amd_coverage,3/6)"
     outputs:
@@ -2157,7 +2157,7 @@ jobs:
 
   stateless_tests_amd_coverage_4_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsNC82KQ==') }}
     name: "Stateless tests (amd_coverage,4/6)"
     outputs:
@@ -2202,7 +2202,7 @@ jobs:
 
   stateless_tests_amd_coverage_5_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsNS82KQ==') }}
     name: "Stateless tests (amd_coverage,5/6)"
     outputs:
@@ -2247,7 +2247,7 @@ jobs:
 
   stateless_tests_amd_coverage_6_6:
     runs-on: [self-hosted, altinity-on-demand, altinity-func-tester-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, build_arm_coverage]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_coverage]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfY292ZXJhZ2UsNi82KQ==') }}
     name: "Stateless tests (amd_coverage,6/6)"
     outputs:
@@ -3924,7 +3924,7 @@ jobs:
     secrets: inherit
     with:
       docker_image: altinityinfra/clickhouse-server
-      # version: ${{ fromJson(needs.config_workflow.outputs.data).custom_data.version.string }}
+      version: ${{ fromJson(needs.config_workflow.outputs.data).custom_data.version.string }}
       tag-suffix: ${{ matrix.suffix }}
   GrypeScanKeeper:
       needs: [config_workflow, docker_keeper_image]
@@ -3933,28 +3933,28 @@ jobs:
       secrets: inherit
       with:
         docker_image: altinityinfra/clickhouse-keeper
-        # version: ${{ fromJson(needs.config_workflow.outputs.data).custom_data.version.string }}
+        version: ${{ fromJson(needs.config_workflow.outputs.data).custom_data.version.string }}
 
   RegressionTestsRelease:
     needs: [config_workflow, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9yZWxlYXNlKQ==') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_regression')}}
+    if: ${{ !failure() && !cancelled() && !contains(github.event.pull_request.body, '[x] <!---ci_exclude_regression')}}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
       runner_type: altinity-on-demand, altinity-regression-tester
-      commit: 38b4f3c4cbcf7b38c97e16793c210a1496075af7
+      commit: c5f44e1c6fdc201a22f3f073b2311de10d2695b0
       arch: release
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout_minutes: 300
       workflow_config: ${{ needs.config_workflow.outputs.data }}
   RegressionTestsAarch64:
     needs: [config_workflow, build_arm_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9yZWxlYXNlKQ==') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_regression') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_aarch64')}}
+    if: ${{ !failure() && !cancelled() && !contains(github.event.pull_request.body, '[x] <!---ci_exclude_regression') && !contains(github.event.pull_request.body, '[x] <!---ci_exclude_aarch64')}}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
       runner_type: altinity-on-demand, altinity-regression-tester-aarch64
-      commit: 38b4f3c4cbcf7b38c97e16793c210a1496075af7
+      commit: c5f44e1c6fdc201a22f3f073b2311de10d2695b0
       arch: aarch64
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout_minutes: 300

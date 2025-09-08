@@ -157,15 +157,19 @@ class Info:
 
         if pr_number:
             ref_param = f"PR={pr_number}"
+            # Hotfix for bug that is fixed properly in latest upstream
+            workflow_name = "PR"
         else:
             assert branch
             ref_param = f"REF={branch}"
+            # Hotfix for bug that is fixed properly in latest upstream
+            workflow_name = "MasterCI"
         path = Settings.HTML_S3_PATH
         for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
-        res = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?{ref_param}&sha={sha}&name_0={urllib.parse.quote(self.env.WORKFLOW_NAME, safe='')}"
+        res = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?{ref_param}&sha={sha}&name_0={urllib.parse.quote(workflow_name, safe='')}"
         if job_name:
             res += f"&name_1={urllib.parse.quote(job_name, safe='')}"
         return res

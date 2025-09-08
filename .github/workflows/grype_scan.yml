@@ -69,7 +69,6 @@ jobs:
                 VERSION=$SPECIFIED_VERSION
             fi
             echo "docker_image=${{ inputs.docker_image }}:$PR_NUMBER-$VERSION$TAG_SUFFIX" >> $GITHUB_OUTPUT
-            echo "commit_sha=$CLICKHOUSE_VERSION_GITHASH" >> $GITHUB_OUTPUT
 
         - name: Run Grype Scan
           run: |
@@ -85,7 +84,7 @@ jobs:
           id: upload_results
           env:
             S3_BUCKET: "altinity-build-artifacts"
-            COMMIT_SHA: ${{ steps.set_version.outputs.commit_sha || github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+            COMMIT_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
             PR_NUMBER: ${{ env.PR_NUMBER || github.event.pull_request.number || 0 }}
             DOCKER_IMAGE: ${{ steps.set_version.outputs.docker_image || inputs.docker_image }}
           run: |
@@ -132,15 +131,18 @@ jobs:
           with:
             github-token: ${{ secrets.GITHUB_TOKEN }}
             script: |
+              const totalHighCritical = '${{ steps.create_summary.outputs.total_high_critical }}';
+              const hasError = totalHighCritical === '';
+              const hasVulnerabilities = parseInt(totalHighCritical) > 0;
               github.rest.repos.createCommitStatus({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 sha: '${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}',
-                state: '${{ steps.create_summary.outputs.total_high_critical > 0 && 'failure' || 'success' }}',
+                state: hasError ? 'error' : hasVulnerabilities ? 'failure' : 'success',
                 target_url: '${{ steps.upload_results.outputs.https_s3_path }}/results.html',
-                description: 'Grype Scan Completed with ${{ steps.create_summary.outputs.total_high_critical }} high/critical vulnerabilities',
+                description: hasError ? 'An error occurred' : `Grype Scan Completed with ${totalHighCritical} high/critical vulnerabilities`,
                 context: 'Grype Scan ${{ steps.set_version.outputs.docker_image || inputs.docker_image }}'
-              })
+              });
 
         - name: Upload artifacts
           if: always()

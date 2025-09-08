@@ -13,6 +13,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <IO/copyData.h>
+#include <Disks/ObjectStorages/IObjectStorageConnectionInfo.h>
 
 #include <Core/Types.h>
 #include <Disks/DirectoryIterator.h>
@@ -39,14 +40,33 @@ namespace DB::AzureBlobStorage
 class ContainerClientWrapper;
 using ContainerClient = ContainerClientWrapper;
 
+class StaticCredential : public Azure::Core::Credentials::TokenCredential
+{
+public:
+    StaticCredential(std::string token_, std::chrono::system_clock::time_point expires_on_)
+        : token(std::move(token_)), expires_on(expires_on_)
+    {}
+
+    Azure::Core::Credentials::AccessToken GetToken(
+        Azure::Core::Credentials::TokenRequestContext const &,
+        Azure::Core::Context const &) const override
+    {
+        return Azure::Core::Credentials::AccessToken { .Token = token, .ExpiresOn = expires_on };
+    }
+
+private:
+    std::string token;
+    std::chrono::system_clock::time_point expires_on;
+};
+
 using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
 
 using AuthMethod = std::variant<
     ConnectionString,
     std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
-    std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>;
-
+    std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
+    std::shared_ptr<AzureBlobStorage::StaticCredential>>;
 }
 
 
@@ -194,6 +214,8 @@ public:
     /// at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
 
+    virtual ObjectStorageConnectionInfoPtr getConnectionInfo() const { return nullptr; }
+
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
@@ -260,13 +282,6 @@ public:
     /// Sometimes object storages have something similar to chroot or namespace, for example
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual String getObjectsNamespace() const = 0;
-
-    /// FIXME: confusing function required for a very specific case. Create new instance of object storage
-    /// in different namespace.
-    virtual std::unique_ptr<IObjectStorage> cloneObjectStorage(
-        const std::string & new_namespace,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix, ContextPtr context) = 0;
 
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.

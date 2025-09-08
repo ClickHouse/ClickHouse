@@ -53,7 +53,7 @@ class Job:
 
         allow_merge_on_failure: bool = False
 
-        enable_commit_status: bool = False
+        enable_commit_status: bool = True
 
         # If a job Result contains multiple sub-results, and only a specific sub-result should be sent to CIDB, set its name here.
         result_name_for_cidb: str = ""
