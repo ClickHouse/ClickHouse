@@ -10,7 +10,6 @@ namespace DB
 {
 
 using PostingsMap = absl::flat_hash_map<StringRef, CompressedPostings::Iterator>;
-static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
 
 class MergeTreeReaderTextIndex : public IMergeTreeReader
 {
@@ -19,13 +18,8 @@ public:
 
     MergeTreeReaderTextIndex(
         const IMergeTreeReader * main_reader_,
-        MergeTreeIndexWithCondition index_);
-
-    MergeTreeReaderTextIndex(
-        const IMergeTreeReader * main_reader_,
-        NamesAndTypesList columns_,
-        std::vector<TextSearchMode> search_modes_,
-        MergeTreeIndexWithCondition index_);
+        MergeTreeIndexWithCondition index_,
+        NamesAndTypesList columns_);
 
     size_t readRows(
         size_t from_mark,
@@ -53,11 +47,9 @@ private:
     void createEmptyColumns(Columns & columns) const;
     void readPostingsIfNeeded(Granule & granule);
     void fillSkippedColumn(IColumn & column, size_t num_rows);
-    void fillColumn(IColumn & column, Granule & granule, TextSearchMode search_mode, size_t granule_offset, size_t num_rows);
+    void fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows) const;
 
-    std::vector<TextSearchMode> search_modes;
     MergeTreeIndexWithCondition index;
-
     MarkRanges all_index_ranges;
     std::optional<MergeTreeIndexReader> index_reader;
 

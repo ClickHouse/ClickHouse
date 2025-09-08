@@ -61,17 +61,24 @@ bool injectRequiredColumnsRecursively(
 
         auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
 
-        if (column_in_part
-            && (!column_in_storage->isSubcolumn()
-                || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName())))
+        if (column_in_part)
         {
-            /// ensure each column is added only once
-            if (!required_columns.contains(column_name))
+            if (!column_in_storage->isSubcolumn() || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName()))
             {
-                columns.emplace_back(column_name);
-                required_columns.emplace(column_name);
-                injected_columns.emplace(column_name);
+                /// Ensure each column is added only once
+                if (!required_columns.contains(column_name))
+                {
+                    columns.emplace_back(column_name);
+                    required_columns.emplace(column_name);
+                    injected_columns.emplace(column_name);
+                }
+
+                return true;
             }
+        }
+        /// TODO: fix this
+        else if (column_name_in_part.starts_with("__text_index_"))
+        {
             return true;
         }
     }
@@ -365,12 +372,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     /// Inject columns required for defaults evaluation
     injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
 
-    for (const auto & [_, index_read_task] : index_read_tasks)
-    {
-        for (const auto & column : index_read_task.columns)
-            columns_from_previous_steps.insert(column.name);
-    }
-
     auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withExtendedObjects()
         .withVirtuals()
@@ -431,12 +432,14 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     for (const auto & step : mutation_steps)
         add_step(*step);
 
-    if (prewhere_info)
+    if (prewhere_info || !index_read_tasks.empty())
     {
         auto prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
             prewhere_info,
+            index_read_tasks,
             actions_settings,
-            reader_settings.enable_multiple_prewhere_read_steps, reader_settings.force_short_circuit_execution);
+            reader_settings.enable_multiple_prewhere_read_steps,
+            reader_settings.force_short_circuit_execution);
 
         for (const auto & step : prewhere_actions.steps)
             add_step(*step);

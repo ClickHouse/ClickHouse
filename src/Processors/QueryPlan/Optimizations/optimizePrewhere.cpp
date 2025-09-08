@@ -159,7 +159,6 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (!optimize)
         return;
 
-    const auto & storage_metadata = storage_snapshot->metadata;
     auto column_sizes = storage.getColumnSizes();
     if (column_sizes.empty())
         return;
@@ -182,7 +181,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     const auto & source_filter_actions_dag = source_step_with_filter->getFilterActionsDAG();
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
-        storage_metadata,
+        storage_snapshot,
         storage.getConditionSelectivityEstimatorByPredicate(storage_snapshot, source_filter_actions_dag ? &*source_filter_actions_dag : nullptr, context),
         queried_columns,
         storage.supportedPrewhereColumns(),

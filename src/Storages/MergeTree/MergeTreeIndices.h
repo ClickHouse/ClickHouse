@@ -353,6 +353,8 @@ struct MergeTreeIndexWithCondition
         : index(std::move(index_)), condition(std::move(condition_))
     {
     }
+
+    MergeTreeIndexWithCondition() = default;
 };
 
 class MergeTreeIndexFactory : private boost::noncopyable

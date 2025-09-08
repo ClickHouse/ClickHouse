@@ -60,36 +60,35 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
     return min_position;
 }
 
-static NameSet getTableColumns(const StorageMetadataPtr & metadata_snapshot, const Names & queried_columns)
+static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot)
 {
-    const auto & columns_description = metadata_snapshot->getColumns();
-    NameSet table_columns(std::from_range_t{},
-          metadata_snapshot->getColumns().getAllPhysical() | std::views::transform([](const auto & col) { return col.name; }));
+    GetColumnsOptions options(GetColumnsOptions::All);
+    options.withVirtuals();
+    options.withSubcolumns();
 
-    /// Add also requested subcolumns to known table columns.
-    for (const auto & column : queried_columns)
-    {
-        if (columns_description.hasSubcolumn(column))
-            table_columns.insert(column);
-    }
+    auto columns_list = storage_snapshot->getColumns(options);
+    NameSet table_columns;
+
+    for (const auto & column : columns_list)
+        table_columns.insert(column.name);
 
     return table_columns;
 }
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     const ConditionSelectivityEstimator & estimator_,
     const Names & queried_columns_,
     const std::optional<NameSet> & supported_columns_,
     LoggerPtr log_)
     : estimator(estimator_)
-    , table_columns(getTableColumns(metadata_snapshot, queried_columns_))
+    , table_columns(getTableColumns(storage_snapshot))
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
     , sorting_key_names{NameSet(
-          metadata_snapshot->getSortingKey().column_names.begin(), metadata_snapshot->getSortingKey().column_names.end())}
-    , primary_key_names_positions(fillNamesPositions(metadata_snapshot->getPrimaryKey().column_names))
+          storage_snapshot->metadata->getSortingKey().column_names.begin(), storage_snapshot->metadata->getSortingKey().column_names.end())}
+    , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
 {

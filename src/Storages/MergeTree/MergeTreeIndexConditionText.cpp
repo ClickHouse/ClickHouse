@@ -16,11 +16,25 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 namespace Setting
 {
     extern const SettingsBool text_index_use_bloom_filter;
+}
+
+UInt128 TextSearchQuery::getHash() const
+{
+    SipHash hash;
+    hash.update(function_name);
+    hash.update(mode);
+    hash.update(tokens.size());
+
+    for (const auto & token : tokens)
+        hash.update(token);
+
+    return hash.get128();
 }
 
 MergeTreeIndexConditionText::MergeTreeIndexConditionText(
@@ -39,37 +53,26 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         return;
     }
 
-    rpn = std::move(RPNBuilder<RPNElement>(predicate, context_,
+    rpn = std::move(RPNBuilder<RPNElement>(
+        predicate,
+        context_,
         [&](const RPNBuilderTreeNode & node, RPNElement & out)
         {
-            return this->traverseAtomAST(node, out);
+            return this->traverseAtomNode(node, out);
         }).extractRPN());
 
     NameSet all_search_tokens_set;
 
-    auto collect_tokens = [&](const auto & gin_query_string)
-    {
-        for (const auto & token : gin_query_string.getTokens())
-            all_search_tokens_set.insert(token);
-    };
-
     for (const auto & element : rpn)
     {
-        if (element.gin_query_string)
+        for (const auto & search_query : element.text_search_queries)
         {
-            collect_tokens(*element.gin_query_string);
-        }
-
-        for (const auto & gin_query_strings : element.gin_query_strings_for_set)
-        {
-            for (const auto & gin_query_string : gin_query_strings)
-                collect_tokens(gin_query_string);
+            all_search_tokens_set.insert(search_query->tokens.begin(), search_query->tokens.end());
+            all_search_queries[search_query->getHash()] = search_query;
         }
 
         if (getTextSearchMode(element) == TextSearchMode::Any)
-        {
             global_search_mode = TextSearchMode::Any;
-        }
     }
 
     all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
@@ -78,20 +81,71 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
 
 TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement & element)
 {
-    if (element.function == RPNElement::FUNCTION_SEARCH_ANY
-        || element.function == RPNElement::FUNCTION_OR
-        || element.function == RPNElement::FUNCTION_IN
-        || element.function == RPNElement::FUNCTION_NOT_IN)
-    {
+    if (element.function == RPNElement::FUNCTION_OR)
         return TextSearchMode::Any;
-    }
 
-    if (element.function == RPNElement::FUNCTION_MATCH)
-    {
-        return element.gin_query_strings_for_set.empty() ? TextSearchMode::All : TextSearchMode::Any;
-    }
+    if (element.text_search_queries.size() > 1)
+        return TextSearchMode::Any;
+
+    if (element.text_search_queries.size() == 1 && element.text_search_queries.front()->mode == TextSearchMode::Any)
+        return TextSearchMode::Any;
 
     return TextSearchMode::All;
+}
+
+bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)
+{
+    return function_name == "equals" ||
+        function_name == "notEquals" ||
+        function_name == "like" ||
+        function_name == "notLike" ||
+        function_name == "hasToken" ||
+        function_name == "hasTokenOrNull" ||
+        function_name == "startsWith" ||
+        function_name == "endsWith" ||
+        function_name == "searchAny" ||
+        function_name == "searchAll" ||
+        function_name == "match";
+}
+
+TextSearchQueryPtr MergeTreeIndexConditionText::createSearchQuery(const ActionsDAG::Node & node) const
+{
+    RPNElement rpn_element;
+    RPNBuilderTreeContext rpn_tree_context(getContext());
+    RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
+
+    if (!traverseAtomNode(rpn_node, rpn_element))
+        return nullptr;
+
+    if (rpn_element.text_search_queries.size() != 1)
+        return nullptr;
+
+    return rpn_element.text_search_queries.front();
+}
+
+std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
+{
+    auto query_hash = query.getHash();
+    auto it = all_search_queries.find(query_hash);
+
+    if (it == all_search_queries.end())
+        return std::nullopt;
+
+    String function_name = it->second->function_name;
+    size_t index = search_query_to_index[query_hash]++;
+    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, function_name, index);
+
+    virtual_column_to_search_query[virtual_column_name] = it->second;
+    return virtual_column_name;
+}
+
+TextSearchQueryPtr MergeTreeIndexConditionText::getSearchQueryForVirtualColumn(const String & column_name) const
+{
+    auto it = virtual_column_to_search_query.find(column_name);
+    if (it == virtual_column_to_search_query.end())
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Virtual column {} not found in MergeTreeIndexConditionText", column_name);
+
+    return it->second;
 }
 
 /// Keep in-sync with MergeTreeIndexConditionText::alwaysUnknownOrTrue
@@ -124,13 +178,23 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         }
         else if (element.function == RPNElement::FUNCTION_SEARCH_ANY)
         {
-            chassert(element.gin_query_strings_for_set.size() == 1);
-            const auto & gin_query_strings = element.gin_query_strings_for_set.front();
-            bool exists_in_granule = gin_query_strings.empty();
+            chassert(element.text_search_queries.size() == 1);
+            const auto & text_search_query = element.text_search_queries.front();
+            bool exists_in_granule = granule->hasAnyTokenFromQuery(*text_search_query);
+            rpn_stack.emplace_back(exists_in_granule, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_SEARCH_ALL
+            || element.function == RPNElement::FUNCTION_EQUALS
+            || element.function == RPNElement::FUNCTION_NOT_EQUALS
+            || element.function == RPNElement::FUNCTION_MATCH
+            || element.function == RPNElement::FUNCTION_IN
+            || element.function == RPNElement::FUNCTION_NOT_IN)
+        {
+            bool exists_in_granule = false;
 
-            for (const auto & gin_query : gin_query_strings)
+            for (const auto & text_search_query : element.text_search_queries)
             {
-                if (granule->hasAllTokensFromQuery(gin_query))
+                if (granule->hasAllTokensFromQuery(*text_search_query))
                 {
                     exists_in_granule = true;
                     break;
@@ -138,64 +202,8 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             }
 
             rpn_stack.emplace_back(exists_in_granule, true);
-        }
-        else if (element.function == RPNElement::FUNCTION_SEARCH_ALL)
-        {
-            chassert(element.gin_query_strings_for_set.size() == 1);
-            const auto & gin_query_strings = element.gin_query_strings_for_set.front();
-            bool exists_in_granule = true;
-
-            for (const auto & gin_query : gin_query_strings)
-            {
-                if (!granule->hasAllTokensFromQuery(gin_query))
-                {
-                    exists_in_granule = false;
-                    break;
-                }
-            }
-
-            rpn_stack.emplace_back(exists_in_granule, true);
-        }
-        else if (element.function == RPNElement::FUNCTION_EQUALS || element.function == RPNElement::FUNCTION_NOT_EQUALS)
-        {
-            rpn_stack.emplace_back(granule->hasAllTokensFromQuery(*element.gin_query_string), true);
-
-            if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
+            if (element.function == RPNElement::FUNCTION_NOT_EQUALS ||element.function == RPNElement::FUNCTION_NOT_IN)
                 rpn_stack.back() = !rpn_stack.back();
-        }
-        else if (element.function == RPNElement::FUNCTION_IN || element.function == RPNElement::FUNCTION_NOT_IN)
-        {
-            std::vector<bool> result(element.gin_query_strings_for_set.back().size(), true);
-
-            for (size_t column = 0; column < element.set_key_position.size(); ++column)
-            {
-                const auto & gin_query_strings = element.gin_query_strings_for_set[column];
-                for (size_t row = 0; row < gin_query_strings.size(); ++row)
-                    result[row] = result[row] && granule->hasAllTokensFromQuery(gin_query_strings[row]);
-            }
-
-            rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
-            if (element.function == RPNElement::FUNCTION_NOT_IN)
-                rpn_stack.back() = !rpn_stack.back();
-        }
-        else if (element.function == RPNElement::FUNCTION_MATCH)
-        {
-            if (!element.gin_query_strings_for_set.empty())
-            {
-                /// Alternative substrings
-                std::vector<bool> result(element.gin_query_strings_for_set.back().size(), true);
-
-                const auto & gin_query_strings = element.gin_query_strings_for_set[0];
-
-                for (size_t row = 0; row < gin_query_strings.size(); ++row)
-                    result[row] = granule->hasAllTokensFromQuery(gin_query_strings[row]);
-
-                rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
-            }
-            else if (element.gin_query_string)
-            {
-                rpn_stack.emplace_back(granule->hasAllTokensFromQuery(*element.gin_query_string), true);
-            }
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
@@ -225,7 +233,7 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         }
         else
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in MergeTreeIndexConditionText::RPNElement");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type {} in MergeTreeIndexConditionText::RPNElement", element.function);
         }
     }
 
@@ -235,7 +243,7 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
     return rpn_stack[0].can_be_true;
 }
 
-bool MergeTreeIndexConditionText::traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out)
+bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     {
         Field const_value;
@@ -278,7 +286,7 @@ bool MergeTreeIndexConditionText::traverseAtomAST(const RPNBuilderTreeNode & nod
 
         if (functionIsInOrGlobalInOperator(function_name))
         {
-            if (tryPrepareSetGinFilter(lhs_argument, rhs_argument, out))
+            if (tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
             {
                 if (function_name == "notIn")
                 {
@@ -292,29 +300,19 @@ bool MergeTreeIndexConditionText::traverseAtomAST(const RPNBuilderTreeNode & nod
                 }
             }
         }
-        else if (function_name == "equals" ||
-                    function_name == "notEquals" ||
-                    function_name == "like" ||
-                    function_name == "notLike" ||
-                    function_name == "hasToken" ||
-                    function_name == "hasTokenOrNull" ||
-                    function_name == "startsWith" ||
-                    function_name == "endsWith" ||
-                    function_name == "searchAny" ||
-                    function_name == "searchAll" ||
-                    function_name == "match")
+        else if (isSupportedFunction(function_name))
         {
             Field const_value;
             DataTypePtr const_type;
 
             if (rhs_argument.tryGetConstant(const_value, const_type))
             {
-                if (traverseASTEquals(function, lhs_argument, const_type, const_value, out))
+                if (traverseFunctionNode(function, lhs_argument, const_type, const_value, out))
                     return true;
             }
             else if (lhs_argument.tryGetConstant(const_value, const_type) && (function_name == "equals" || function_name == "notEquals"))
             {
-                if (traverseASTEquals(function, rhs_argument, const_type, const_value, out))
+                if (traverseFunctionNode(function, rhs_argument, const_type, const_value, out))
                     return true;
             }
         }
@@ -323,14 +321,30 @@ bool MergeTreeIndexConditionText::traverseAtomAST(const RPNBuilderTreeNode & nod
     return false;
 }
 
-bool MergeTreeIndexConditionText::traverseASTEquals(
+static std::vector<String> stringToTokens(const Field & field, const ITokenExtractor & token_extractor)
+{
+    std::vector<String> tokens;
+    const auto & value = field.safeGet<String>();
+    token_extractor.stringToTokens(value.data(), value.size(), tokens);
+    return tokens;
+}
+
+static std::vector<String> substringToTokens(const Field & field, const ITokenExtractor & token_extractor, bool is_prefix, bool is_suffix)
+{
+    std::vector<String> tokens;
+    const auto & value = field.safeGet<String>();
+    token_extractor.substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
+    return tokens;
+}
+
+bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
-    const RPNBuilderTreeNode & index_column_ast,
+    const RPNBuilderTreeNode & index_column_node,
     const DataTypePtr & value_type,
     const Field & value_field,
-    RPNElement & out)
+    RPNElement & out) const
 {
-    bool index_column_exists = header.has(index_column_ast.getColumnName());
+    bool index_column_exists = header.has(index_column_node.getColumnName());
     if (!index_column_exists)
         return false;
 
@@ -343,23 +357,20 @@ bool MergeTreeIndexConditionText::traverseASTEquals(
 
     if (function_name == "notEquals")
     {
+        auto tokens = stringToTokens(const_value, *token_extractor);
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.gin_query_string = std::make_unique<GinQueryString>();
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_query_string);
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
     if (function_name == "equals")
     {
+        auto tokens = stringToTokens(const_value, *token_extractor);
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_query_string = std::make_unique<GinQueryString>();
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_query_string);
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
     if (function_name == "searchAny" || function_name == "searchAll")
     {
-        std::vector<GinQueryString> gin_query_strings;
         std::vector<String> search_tokens;
 
         for (const auto & element : const_value.safeGet<Array>())
@@ -367,79 +378,77 @@ bool MergeTreeIndexConditionText::traverseASTEquals(
             if (element.getType() != Field::Types::String)
                 return false;
 
-            const auto & value = element.safeGet<String>();
-            gin_query_strings.emplace_back(GinQueryString(value, {value}));
-            search_tokens.push_back(value);
+            search_tokens.push_back(element.safeGet<String>());
         }
 
-        out.function = function_name == "searchAny" ? RPNElement::FUNCTION_SEARCH_ANY : RPNElement::FUNCTION_SEARCH_ALL;
-        out.gin_query_strings_for_set = std::vector<std::vector<GinQueryString>>{std::move(gin_query_strings)};
+        /// TODO(ahmadov): move this block to another place, e.g. optimizations or query tree re-write.
+        const auto * function_dag_node = function_node.getDAGNode();
+        chassert(function_dag_node != nullptr && function_dag_node->function_base != nullptr);
 
+        const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_dag_node->function_base.get());
+        chassert(adaptor != nullptr);
+
+        if (function_name == "searchAny")
         {
-            /// TODO(ahmadov): move this block to another place, e.g. optimizations or query tree re-write.
-            const auto * function_dag_node = function_node.getDAGNode();
-            chassert(function_dag_node != nullptr && function_dag_node->function_base != nullptr);
+            out.function = RPNElement::FUNCTION_SEARCH_ANY;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Any, search_tokens));
 
-            const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_dag_node->function_base.get());
-            chassert(adaptor != nullptr);
+            auto & search_function = typeid_cast<FunctionSearchImpl<traits::SearchAnyTraits> &>(*adaptor->getFunction());
+            search_function.setTokenExtractor(token_extractor->clone());
+            search_function.setSearchTokens(search_tokens);
+        }
+        else
+        {
+            out.function = RPNElement::FUNCTION_SEARCH_ALL;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, search_tokens));
 
-            if (function_name == "searchAny")
-            {
-                auto * search_function = typeid_cast<FunctionSearchImpl<traits::SearchAnyTraits> *>(adaptor->getFunction().get());
-                chassert(search_function != nullptr);
-                search_function->setTokenExtractor(token_extractor->clone());
-                search_function->setSearchTokens(search_tokens);
-            }
-            else
-            {
-                auto * search_function = typeid_cast<FunctionSearchImpl<traits::SearchAllTraits> *>(adaptor->getFunction().get());
-                chassert(search_function != nullptr);
-                search_function->setTokenExtractor(token_extractor->clone());
-                search_function->setSearchTokens(search_tokens);
-            }
+            auto & search_function = typeid_cast<FunctionSearchImpl<traits::SearchAllTraits> &>(*adaptor->getFunction());
+            search_function.setTokenExtractor(token_extractor->clone());
+            search_function.setSearchTokens(search_tokens);
         }
 
         return true;
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
+        auto tokens = stringToTokens(const_value, *token_extractor);
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_query_string = std::make_unique<GinQueryString>();
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.gin_query_string);
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
     if (function_name == "startsWith")
     {
+        auto tokens = substringToTokens(const_value, *token_extractor, true, false);
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_query_string = std::make_unique<GinQueryString>();
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_query_string, true, false);
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
     if (function_name == "endsWith")
     {
+        auto tokens = substringToTokens(const_value, *token_extractor, false, true);
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_query_string = std::make_unique<GinQueryString>();
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->substringToGinFilter(value.data(), value.size(), *out.gin_query_string, false, true);
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
     /// Currently, not all token extractors support LIKE-style matching.
     if (function_name == "like" && token_extractor->supportsStringLike())
     {
-        out.function = RPNElement::FUNCTION_EQUALS;
-        out.gin_query_string = std::make_unique<GinQueryString>();
+        std::vector<String> tokens;
         const auto & value = const_value.safeGet<String>();
-        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_query_string);
+        token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
+
+        out.function = RPNElement::FUNCTION_EQUALS;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, tokens));
         return true;
     }
     if (function_name == "notLike" && token_extractor->supportsStringLike())
     {
-        out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.gin_query_string = std::make_unique<GinQueryString>();
+        std::vector<String> tokens;
         const auto & value = const_value.safeGet<String>();
-        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.gin_query_string);
+        token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
+
+        out.function = RPNElement::FUNCTION_NOT_EQUALS;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, tokens));
         return true;
     }
     if (function_name == "match" && token_extractor->supportsStringLike())
@@ -448,67 +457,61 @@ bool MergeTreeIndexConditionText::traverseASTEquals(
 
         const auto & value = const_value.safeGet<String>();
         RegexpAnalysisResult result = OptimizedRegularExpression::analyze(value);
-        if (result.required_substring.empty() && result.alternatives.empty())
-            return false;
 
-        /// out.gin_query_strings_for_set means alternatives exist
-        /// out.gin_filter means required_substring exists
         if (!result.alternatives.empty())
         {
-            std::vector<std::vector<GinQueryString>> gin_query_strings;
-            gin_query_strings.emplace_back();
             for (const auto & alternative : result.alternatives)
             {
-                gin_query_strings.back().emplace_back();
-                token_extractor->substringToGinFilter(alternative.data(), alternative.size(), gin_query_strings.back().back(), false, false);
+                auto tokens = substringToTokens(alternative, *token_extractor, false, false);
+                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
             }
-            out.gin_query_strings_for_set = std::move(gin_query_strings);
+            return true;
         }
-        else
+        if (!result.required_substring.empty())
         {
-            out.gin_query_string = std::make_unique<GinQueryString>();
-            token_extractor->substringToGinFilter(result.required_substring.data(), result.required_substring.size(), *out.gin_query_string, false, false);
+            auto tokens = substringToTokens(result.required_substring, *token_extractor, false, false);
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+            return true;
         }
 
-        return true;
+        return false;
     }
 
     return false;
 }
 
-bool MergeTreeIndexConditionText::tryPrepareSetGinFilter(
+bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const RPNBuilderTreeNode & lhs,
     const RPNBuilderTreeNode & rhs,
-    RPNElement & out)
+    const String & function_name,
+    RPNElement & out) const
 {
-    std::vector<KeyTuplePositionMapping> key_tuple_mapping;
-    DataTypes data_types;
+    std::optional<size_t> set_key_position;
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
     {
         const auto function = lhs.toFunctionNode();
         auto arguments_size = function.getArgumentsSize();
+
         for (size_t i = 0; i < arguments_size; ++i)
         {
             if (header.has(function.getArgumentAt(i).getColumnName()))
             {
-                auto key = header.getPositionByName(function.getArgumentAt(i).getColumnName());
-                key_tuple_mapping.emplace_back(i, key);
-                data_types.push_back(header.getByPosition(key).type);
+                /// Text index support only one index column.
+                if (set_key_position.has_value())
+                    return false;
+
+                set_key_position = i;
             }
         }
     }
     else
     {
         if (header.has(lhs.getColumnName()))
-        {
-            auto key = header.getPositionByName(lhs.getColumnName());
-            key_tuple_mapping.emplace_back(0, key);
-            data_types.push_back(header.getByPosition(key).type);
-        }
+            set_key_position = 0;
     }
 
-    if (key_tuple_mapping.empty())
+    if (!set_key_position.has_value())
         return false;
 
     auto future_set = rhs.tryGetPreparedSet();
@@ -519,32 +522,22 @@ bool MergeTreeIndexConditionText::tryPrepareSetGinFilter(
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
-    for (const auto & data_type : prepared_set->getDataTypes())
-        if (data_type->getTypeId() != TypeIndex::String && data_type->getTypeId() != TypeIndex::FixedString)
-            return false;
-
-    std::vector<std::vector<GinQueryString>> gin_query_infos;
-    std::vector<size_t> key_position;
-
     Columns columns = prepared_set->getSetElements();
-    for (const auto & elem : key_tuple_mapping)
+    const auto & set_column = *columns[*set_key_position];
+
+    if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
+        return false;
+
+    size_t total_row_count = prepared_set->getTotalRowCount();
+
+    for (size_t row = 0; row < total_row_count; ++row)
     {
-        gin_query_infos.emplace_back();
-        gin_query_infos.back().reserve(prepared_set->getTotalRowCount());
-        key_position.push_back(elem.key_index);
+        auto ref = set_column.getDataAt(row);
 
-        size_t tuple_idx = elem.tuple_index;
-        const auto & column = columns[tuple_idx];
-        for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
-        {
-            gin_query_infos.back().emplace_back();
-            auto ref = column->getDataAt(row);
-            token_extractor->stringToGinFilter(ref.data, ref.size, gin_query_infos.back().back());
-        }
+        std::vector<String> tokens;
+        token_extractor->stringToTokens(ref.data, ref.size, tokens);
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
     }
-
-    out.set_key_position = std::move(key_position);
-    out.gin_query_strings_for_set = std::move(gin_query_infos);
 
     return true;
 }

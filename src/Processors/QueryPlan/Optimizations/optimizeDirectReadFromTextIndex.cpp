@@ -1,73 +1,20 @@
-#include <Columns/ColumnConst.h>
-#include <Core/Field.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Common/logger_useful.h>
 #include <base/defines.h>
 
 #include <algorithm>
-#include <cstdio>
 #include <memory>
 
 namespace DB::QueryPlanOptimizations
 {
 
-namespace
-{
-
-struct IndexInfo : public IndexSize
-{
-    String name;
-
-    IndexInfo(String name_, IndexSize index_size)
-        : IndexSize(index_size)
-        , name(name_)
-    {
-    }
-};
-
-std::unordered_map<String, IndexInfo> getIndexInfosForColumns(const ReadFromMergeTree & read_from_mergetree_step)
-{
-    std::unordered_map<String, IndexInfo> columns_to_index_infos;
-
-    auto metadata = read_from_mergetree_step.getStorageMetadata();
-    if (!metadata || !metadata->hasSecondaryIndices())
-        return {};
-
-    auto secondary_index_sizes = read_from_mergetree_step.getMergeTreeData().getSecondaryIndexSizes();
-
-    /// Get the list of columns: text_index we use latter and construct the size information needed by Replacer
-    for (const auto & index_description : metadata->getSecondaryIndices())
-    {
-        if (index_description.type != "text")
-            continue;
-
-        auto size_it = secondary_index_sizes.find(index_description.name);
-        if (size_it == secondary_index_sizes.end())
-            continue;
-
-        /// Poor man's detection if the index is not materialized.
-        /// TODO This needs more work because the materialization is per part but here we check per column.
-        if (size_it->second.marks == 0 || size_it->second.data_uncompressed == 0)
-            continue;
-
-        chassert(index_description.column_names.size() == 1);
-        columns_to_index_infos.emplace(index_description.column_names.front(), IndexInfo(index_description.name, size_it->second));
-    }
-
-    return columns_to_index_infos;
-}
-
-}
+using IndexToConditionMap = std::unordered_map<String, MergeTreeIndexConditionText *>;
 
 /// This class substitutes filters with text-search functions by new internal functions which skip IO and read less data.
 ///
@@ -102,9 +49,9 @@ std::unordered_map<String, IndexInfo> getIndexInfosForColumns(const ReadFromMerg
 class FullTextMatchingFunctionDAGReplacer
 {
 public:
-    FullTextMatchingFunctionDAGReplacer(ActionsDAG & actions_dag_, const std::unordered_map<String, IndexInfo> & columns_to_index_info_)
+    FullTextMatchingFunctionDAGReplacer(ActionsDAG & actions_dag_, const IndexToConditionMap & index_conditions_)
         : actions_dag(actions_dag_)
-        , columns_to_index_info(columns_to_index_info_)
+        , index_conditions(index_conditions_)
     {
     }
 
@@ -120,97 +67,55 @@ public:
     ///
     /// The function returns a pair with <number of replacements, wector with removed column names>
     /// Not all replacements end with a column removal, so the number of replacements >= column names size
-    std::pair<IndexReadTasks, Names> replace()
+    std::pair<IndexReadColumns, Names> replace()
     {
-        IndexReadTasks index_read_tasks;
+        IndexReadColumns added_columns;
         Names original_inputs = actions_dag.getRequiredColumnsNames();
 
         for (ActionsDAG::Node & node : actions_dag.nodes)
         {
-            auto text_search_mode = getTextSearchMode(node);
-            if (!text_search_mode.has_value())
-                continue;
-
-            if (!hasChildColumnNodeWithTextIndex(node))
-                continue;
-
-            /// TODO: rework the analysis to support multiple functions.
-            if (actions_dag.getOutputs().empty() || actions_dag.getOutputs().front()->result_name != node.result_name)
-                continue;
-
             auto replaced = tryReplaceFunctionNodeInplace(node);
 
             if (replaced.has_value())
             {
                 const auto & [index_name, column_name] = replaced.value();
-
-                auto & index_task = index_read_tasks[index_name];
-                index_task.search_modes.push_back(text_search_mode.value());
-                index_task.columns.emplace_back(column_name, node.result_type);
-
-                auto split = actions_dag.splitActionsForFilter(column_name);
-
-                PrewhereExprStep step
-                {
-                    .type = PrewhereExprStep::Filter,
-                    .actions = std::make_shared<ExpressionActions>(split.first.clone()),
-                    .filter_column_name = split.first.getOutputs().front()->result_name,
-                    .remove_filter_column = false,
-                    .need_filter = true,
-                    .perform_alter_conversions = true,
-                    .mutation_version = std::nullopt,
-                };
-
-                index_task.prewhere_step = std::make_shared<PrewhereExprStep>(std::move(step));
+                added_columns[index_name].emplace_back(column_name, node.result_type);
             }
         }
 
-        if (index_read_tasks.empty())
+        if (added_columns.empty())
             return {{}, {}};
 
         actions_dag.removeUnusedActions();
 
         Names removed_columns;
         Names replaced_columns = actions_dag.getRequiredColumnsNames();
-        std::ranges::set_difference(original_inputs, replaced_columns, std::back_inserter(removed_columns));
+        NameSet replaced_columns_set(replaced_columns.begin(), replaced_columns.end());
 
-        return {index_read_tasks, removed_columns};
+        for (const auto & column : original_inputs)
+        {
+            if (!replaced_columns_set.contains(column))
+                removed_columns.push_back(column);
+        }
+
+        return std::make_pair(added_columns, removed_columns);
     }
 
 private:
     ActionsDAG & actions_dag;
-    const std::unordered_map<String, IndexInfo> & columns_to_index_info;
+    std::unordered_map<String, MergeTreeIndexConditionText *> index_conditions;
 
-    static std::optional<TextSearchMode> getTextSearchMode(const ActionsDAG::Node & node)
+    bool isSupportedCondition(const ActionsDAG::Node & lhs_arg, const ActionsDAG::Node & rhs_arg, const MergeTreeIndexConditionText & condition) const
     {
-        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function)
-            return std::nullopt;
+        const auto & header = condition.getHeader();
 
-        const auto & function_name = node.function->getName();
+        if (lhs_arg.type == ActionsDAG::ActionType::INPUT && rhs_arg.type == ActionsDAG::ActionType::COLUMN)
+            return header.has(lhs_arg.result_name);
 
-        if (function_name == "searchAny")
-            return TextSearchMode::Any;
+        if (lhs_arg.type == ActionsDAG::ActionType::COLUMN && rhs_arg.type == ActionsDAG::ActionType::INPUT)
+            return header.has(rhs_arg.result_name);
 
-        if (function_name == "hasToken" || function_name == "searchAll")
-            return TextSearchMode::All;
-
-        return std::nullopt;
-    }
-
-    bool isColumnNodeWithTextIndex(const ActionsDAG::Node * node) const
-    {
-        return (node->type == ActionsDAG::ActionType::INPUT
-                && node->result_type->getTypeId() == TypeIndex::String
-                && node->children.empty()
-                && columns_to_index_info.contains(node->result_name));
-    }
-
-    bool hasChildColumnNodeWithTextIndex(const ActionsDAG::Node & node) const
-    {
-        return std::ranges::any_of(
-            node.children,
-            [&](const ActionsDAG::Node * child) { return isColumnNodeWithTextIndex(child); }
-        );
+        return false;
     }
 
     /// Attempt to add a new node with the replacement function.
@@ -218,34 +123,49 @@ private:
     /// Returns the number of columns (inputs) replaced with an index name in the new function.
     std::optional<std::pair<String, String>> tryReplaceFunctionNodeInplace(ActionsDAG::Node & function_node)
     {
-        chassert(getTextSearchMode(function_node).has_value());
+        if (function_node.type != ActionsDAG::ActionType::FUNCTION || !function_node.function)
+            return std::nullopt;
 
-        size_t num_text_columns = 0;
-        size_t text_column_position = 0;
+        if (function_node.children.size() != 2)
+            return std::nullopt;
 
-        for (size_t i = 0; i < function_node.children.size(); ++i)
+        if (!MergeTreeIndexConditionText::isSupportedFunction(function_node.function->getName()))
+            return std::nullopt;
+
+        IndexToConditionMap::iterator selected_condition_it = index_conditions.end();
+
+        for (auto it = index_conditions.begin(); it != index_conditions.end(); ++it)
         {
-            if (isColumnNodeWithTextIndex(function_node.children[i]))
+            if (isSupportedCondition(*function_node.children[0], *function_node.children[1], *it->second))
             {
-                ++num_text_columns;
-                text_column_position = i;
+                if (selected_condition_it != index_conditions.end())
+                    return std::nullopt;
+
+                selected_condition_it = it;
             }
         }
 
-        if (num_text_columns != 1)
+        if (selected_condition_it == index_conditions.end())
             return std::nullopt;
 
-        const auto & index_info = columns_to_index_info.at(function_node.children[text_column_position]->result_name);
-        String virtual_column_name = fmt::format("{}{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_info.name, function_node.function->getName());
+        const auto & [index_name, condition] = *selected_condition_it;
+        auto search_query = condition->createSearchQuery(function_node);
+
+        if (!search_query)
+            return std::nullopt;
+
+        auto virtual_column_name = condition->replaceToVirtualColumn(*search_query, index_name);
+        if (!virtual_column_name)
+            return std::nullopt;
 
         function_node.type = ActionsDAG::ActionType::INPUT;
-        function_node.result_name = virtual_column_name;
+        function_node.result_name = virtual_column_name.value();
         function_node.function.reset();
         function_node.function_base.reset();
         function_node.children.clear();
         actions_dag.inputs.push_back(&function_node);
 
-        return std::make_pair(index_info.name, virtual_column_name);
+        return std::make_pair(index_name, virtual_column_name.value());
     }
 };
 
@@ -281,9 +201,18 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
     if (!read_from_merge_tree_step)
         return;
 
-    /// Get information of MATERIALIZED indices
-    std::unordered_map<String, IndexInfo> columns_to_index_info = getIndexInfosForColumns(*read_from_merge_tree_step);
-    if (columns_to_index_info.empty())
+    const auto & indexes = read_from_merge_tree_step->getIndexes();
+    if (!indexes || indexes->skip_indexes.useful_indices.empty())
+        return;
+
+    IndexToConditionMap index_conditions;
+    for (const auto & index : indexes->skip_indexes.useful_indices)
+    {
+        if (auto * text_index_condition = typeid_cast<MergeTreeIndexConditionText *>(index.condition.get()))
+            index_conditions[index.index->index.name] = text_index_condition;
+    }
+
+    if (index_conditions.empty())
         return;
 
     QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
@@ -291,30 +220,19 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
     if (!filter_step)
         return;
 
-    /// If the expression contains no columns with a text index as input, do nothing.
-    bool input_node_has_column_with_text_index = false;
-    for (const auto * const input_node : filter_step->getExpression().getInputs())
-    {
-        if (columns_to_index_info.contains(input_node->result_name))
-        {
-            input_node_has_column_with_text_index = true;
-            break;
-        }
-    }
-
-    if (!input_node_has_column_with_text_index)
-        return;
-
     /// Now try to modify the ActionsDAG.
-    FullTextMatchingFunctionDAGReplacer replacer(filter_step->getExpression(), columns_to_index_info);
-    const auto [added_index_tasks, removed_columns] = replacer.replace();
+    auto & filter_dag = filter_step->getExpression();
+    FullTextMatchingFunctionDAGReplacer replacer(filter_dag, index_conditions);
+    auto [added_columns, removed_columns] = replacer.replace();
 
-    if (added_index_tasks.empty())
+    if (added_columns.empty())
         return;
 
-    read_from_merge_tree_step->replaceColumnsForTextSearch(removed_columns, added_index_tasks);
-    auto new_filter_column_name = filter_step->getExpression().getOutputs().front()->result_name;
-    filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_step->getExpression().clone(), new_filter_column_name, true);
+    read_from_merge_tree_step->replaceColumnsForTextSearch(added_columns, removed_columns);
+
+    bool removes_filter_column = filter_step->removesFilterColumn();
+    auto new_filter_column_name = filter_dag.getOutputs().front()->result_name;
+    filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_step->getExpression().clone(), new_filter_column_name, removes_filter_column);
 }
 
 }

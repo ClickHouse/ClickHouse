@@ -394,9 +394,19 @@ void MergeTreeIndexGranuleText::analyzeDictionary(IndexReaderStream & stream, In
     }
 }
 
-bool MergeTreeIndexGranuleText::hasAllTokensFromQuery(const GinQueryString & query) const
+bool MergeTreeIndexGranuleText::hasAnyTokenFromQuery(const TextSearchQuery & query) const
 {
-    for (const auto & token : query.getTokens())
+    for (const auto & token : query.tokens)
+    {
+        if (remaining_tokens.contains(token))
+            return true;
+    }
+    return query.tokens.empty();
+}
+
+bool MergeTreeIndexGranuleText::hasAllTokensFromQuery(const TextSearchQuery & query) const
+{
+    for (const auto & token : query.tokens)
     {
         if (!remaining_tokens.contains(token))
             return false;

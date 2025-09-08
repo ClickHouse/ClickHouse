@@ -448,7 +448,14 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
-            pool, std::move(algorithm), prewhere_info, lazily_read_info, actions_settings, reader_settings, index_build_context);
+            pool,
+            std::move(algorithm),
+            prewhere_info,
+            lazily_read_info,
+            index_read_tasks,
+            actions_settings,
+            reader_settings,
+            index_build_context);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -550,6 +557,7 @@ Pipe ReadFromMergeTree::readFromPool(
             std::move(algorithm),
             prewhere_info,
             lazily_read_info,
+            index_read_tasks,
             actions_settings,
             reader_settings,
             index_build_context);
@@ -659,7 +667,14 @@ Pipe ReadFromMergeTree::readInOrder(
             algorithm = std::make_unique<MergeTreeInOrderSelectAlgorithm>(i);
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
-            pool, std::move(algorithm), prewhere_info, lazily_read_info, actions_settings, reader_settings, index_build_context);
+            pool,
+            std::move(algorithm),
+            prewhere_info,
+            lazily_read_info,
+            index_read_tasks,
+            actions_settings,
+            reader_settings,
+            index_build_context);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
@@ -2568,7 +2583,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         RangesByIndex read_ranges;
         PartRemainingMarks part_remaining_marks;
         MergeTreeIndexReadResultPoolPtr index_read_result_pool;
-        std::vector<MergeTreeIndexWithCondition> heavy_indexes;
 
         if (!applicable_skip_indexes.empty())
         {
@@ -2591,19 +2605,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             index_read_result_pool = std::make_shared<MergeTreeIndexReadResultPool>(std::move(skip_index_reader));
         }
 
-        for (const auto & index : indexes->skip_indexes.useful_indices)
-        {
-            if (index.index->hasHeavyGranules())
-                heavy_indexes.push_back(index);
-        }
-
-        if (index_read_result_pool || !heavy_indexes.empty())
+        if (index_read_result_pool)
         {
             index_build_context = std::make_shared<MergeTreeIndexBuildContext>(
                 std::move(read_ranges),
                 std::move(index_read_result_pool),
-                std::move(part_remaining_marks),
-                std::move(heavy_indexes));
+                std::move(part_remaining_marks));
         }
     }
 
@@ -3058,32 +3065,48 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount());
 }
 
-void ReadFromMergeTree::replaceColumnsForTextSearch(const Names & removed_columns, const IndexReadTasks & added_index_tasks)
+void ReadFromMergeTree::replaceColumnsForTextSearch(const IndexReadColumns & added_columns, const Names & removed_columns)
 {
-    if (added_index_tasks.empty())
+    if (added_columns.empty())
         return;
 
-    for (const auto & removed_column : removed_columns)
+    for (const auto & column_name : removed_columns)
     {
-        auto it = std::ranges::find(all_column_names, removed_column);
+        auto it = std::ranges::find(all_column_names, column_name);
         all_column_names.erase(it);
     }
 
     auto new_virtual_columns = std::make_shared<VirtualColumnsDescription>(*storage_snapshot->virtual_columns);
 
-    for (const auto & [index_name, index_task] : added_index_tasks)
+    for (const auto & [index_name, columns] : added_columns)
     {
-        for (const auto & added_column : index_task.columns)
-        {
-            auto it = std::ranges::find(all_column_names, added_column.name);
-            if (it != all_column_names.end())
-                continue;
+        auto [task_it, inserted] = index_read_tasks.try_emplace(index_name);
+        auto & index_task = task_it->second;
 
-            all_column_names.emplace(it, added_column.name);
-            new_virtual_columns->addEphemeral(added_column.name, added_column.type, "");
+        if (inserted)
+        {
+            if (!indexes)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} not found in analyzed indexes, indexes are not initialized", index_name);
+
+            const auto & useful_indices = indexes->skip_indexes.useful_indices;
+            auto index_it = std::ranges::find_if(useful_indices, [index_name](const auto & index) { return index.index->index.name == index_name; });
+
+            if (index_it == useful_indices.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} not found in analyzed indexes", index_name);
+
+            index_task.index = *index_it;
         }
 
-        index_read_tasks[index_name] = index_task;
+        for (const auto & [column_name, column_type] : columns)
+        {
+            auto it = std::ranges::find(all_column_names, column_name);
+            if (it != all_column_names.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} already added for reading", column_name);
+
+            all_column_names.push_back(column_name);
+            new_virtual_columns->addEphemeral(column_name, column_type, "");
+            index_task.columns.emplace_back(column_name, column_type);
+        }
     }
 
     storage_snapshot = std::make_shared<StorageSnapshot>(

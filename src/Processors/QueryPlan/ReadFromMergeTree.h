@@ -261,7 +261,9 @@ public:
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
-    void replaceColumnsForTextSearch(const Names & removed_columns, const IndexReadTasks & added_index_tasks);
+    void replaceColumnsForTextSearch(const IndexReadColumns & added_columns, const Names & removed_columns);
+
+    const std::optional<Indexes> & getIndexes() const { return indexes; }
 
 private:
     MergeTreeReaderSettings reader_settings;
@@ -307,16 +309,19 @@ private:
         size_t max_streams,
         size_t min_marks_for_concurrent_read,
         bool use_uncompressed_cache);
+
     Pipe readFromPool(
         RangesInDataParts parts_with_range,
         const MergeTreeIndexBuildContextPtr & index_build_context,
         Names required_columns,
         PoolSettings pool_settings);
+
     Pipe readFromPoolParallelReplicas(
         RangesInDataParts parts_with_range,
         const MergeTreeIndexBuildContextPtr & index_build_context,
         Names required_columns,
         PoolSettings pool_settings);
+
     Pipe readInOrder(
         RangesInDataParts parts_with_ranges,
         const MergeTreeIndexBuildContextPtr & index_build_context,

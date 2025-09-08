@@ -160,7 +160,10 @@ public:
 
     bool empty() const override { return bloom_filter_elements == 0; }
     size_t memoryUsageBytes() const override { return 0; }
-    bool hasAllTokensFromQuery(const GinQueryString & query) const;
+
+    bool hasAnyTokenFromQuery(const TextSearchQuery & query) const;
+    bool hasAllTokensFromQuery(const TextSearchQuery & query) const;
+
     const TokensMap & getRemainingTokens() const { return remaining_tokens; }
     void resetAfterAnalysis();
 

@@ -395,6 +395,21 @@ bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node
     return false;
 }
 
+static std::unique_ptr<GinQueryString> stringToGinFilter(const Field & field, const ITokenExtractor & token_extractor)
+{
+    std::vector<String> tokens;
+    const auto & value = field.safeGet<String>();
+    token_extractor.stringToTokens(value.data(), value.size(), tokens);
+
+    auto query_string = std::make_unique<GinQueryString>();
+    query_string->setQueryString(value);
+
+    for (const auto & token : tokens)
+        query_string->addToken(token);
+
+    return query_string;
+}
+
 bool MergeTreeIndexConditionGin::traverseASTEquals(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_ast,
@@ -416,17 +431,13 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     if (function_name == "notEquals")
     {
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.query_string = std::make_unique<GinQueryString>();
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.query_string);
+        out.query_string = stringToGinFilter(const_value, *token_extractor);
         return true;
     }
     if (function_name == "equals")
     {
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.query_string = std::make_unique<GinQueryString>();
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.query_string);
+        out.query_string = stringToGinFilter(const_value, *token_extractor);
         return true;
     }
     if (function_name == "searchAny" || function_name == "searchAll")
@@ -471,24 +482,24 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     {
         out.function = RPNElement::FUNCTION_EQUALS;
         out.query_string = std::make_unique<GinQueryString>();
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->stringToGinFilter(value.data(), value.size(), *out.query_string);
+        // const auto & value = const_value.safeGet<String>();
+        // token_extractor->stringToGinFilter(value.data(), value.size(), *out.query_string);
         return true;
     }
     if (function_name == "startsWith")
     {
         out.function = RPNElement::FUNCTION_EQUALS;
         out.query_string = std::make_unique<GinQueryString>();
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->substringToGinFilter(value.data(), value.size(), *out.query_string, true, false);
+        // const auto & value = const_value.safeGet<String>();
+        // token_extractor->substringToGinFilter(value.data(), value.size(), *out.query_string, true, false);
         return true;
     }
     if (function_name == "endsWith")
     {
         out.function = RPNElement::FUNCTION_EQUALS;
         out.query_string = std::make_unique<GinQueryString>();
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->substringToGinFilter(value.data(), value.size(), *out.query_string, false, true);
+        // const auto & value = const_value.safeGet<String>();
+        // token_extractor->substringToGinFilter(value.data(), value.size(), *out.query_string, false, true);
         return true;
     }
     /// Currently, not all token extractors support LIKE-style matching.
@@ -496,16 +507,16 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
     {
         out.function = RPNElement::FUNCTION_EQUALS;
         out.query_string = std::make_unique<GinQueryString>();
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.query_string);
+        // const auto & value = const_value.safeGet<String>();
+        // token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.query_string);
         return true;
     }
     if (function_name == "notLike" && token_extractor->supportsStringLike())
     {
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.query_string = std::make_unique<GinQueryString>();
-        const auto & value = const_value.safeGet<String>();
-        token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.query_string);
+        // const auto & value = const_value.safeGet<String>();
+        // token_extractor->stringLikeToGinFilter(value.data(), value.size(), *out.query_string);
         return true;
     }
     if (function_name == "match" && token_extractor->supportsStringLike())
@@ -525,15 +536,16 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
             query_strings.emplace_back();
             for (const auto & alternative : result.alternatives)
             {
+                UNUSED(alternative);
                 query_strings.back().emplace_back();
-                token_extractor->substringToGinFilter(alternative.data(), alternative.size(), query_strings.back().back(), false, false);
+                // token_extractor->substringToGinFilter(alternative.data(), alternative.size(), query_strings.back().back(), false, false);
             }
             out.query_strings_for_set = std::move(query_strings);
         }
         else
         {
             out.query_string = std::make_unique<GinQueryString>();
-            token_extractor->substringToGinFilter(result.required_substring.data(), result.required_substring.size(), *out.query_string, false, false);
+            // token_extractor->substringToGinFilter(result.required_substring.data(), result.required_substring.size(), *out.query_string, false, false);
         }
 
         return true;
@@ -605,7 +617,8 @@ bool MergeTreeIndexConditionGin::tryPrepareSetGinFilter(
         {
             gin_query_infos.back().emplace_back();
             std::string_view value = column->getDataAt(row).toView();
-            token_extractor->stringToGinFilter(value.data(), value.size(), gin_query_infos.back().back());
+            // token_extractor->stringToGinFilter(value.data(), value.size(), gin_query_infos.back().back());
+            UNUSED(value);
         }
     }
 

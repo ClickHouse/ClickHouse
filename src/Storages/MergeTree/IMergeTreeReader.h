@@ -163,4 +163,11 @@ MergeTreeReaderPtr createMergeTreeReader(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
+struct MergeTreeIndexWithCondition;
+
+MergeTreeReaderPtr createMergeTreeReaderIndex(
+    const IMergeTreeReader * main_reader,
+    const MergeTreeIndexWithCondition & index,
+    const NamesAndTypesList & columns_to_read);
+
 }

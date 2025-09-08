@@ -60,11 +60,11 @@ enum class MergeTreeReadType : uint8_t
 struct IndexReadTask
 {
     NamesAndTypesList columns;
-    std::vector<TextSearchMode> search_modes;
-    PrewhereExprStepPtr prewhere_step;
+    MergeTreeIndexWithCondition index;
 };
 
 using IndexReadTasks = std::unordered_map<String, IndexReadTask>;
+using IndexReadColumns = std::unordered_map<String, NamesAndTypesList>;
 
 struct MergeTreeReadTaskColumns
 {
@@ -176,9 +176,7 @@ public:
         MergeTreeIndexBuildContextPtr index_build_context,
         ReadStepsPerformanceCounters & read_steps_performance_counters);
 
-    void initializeIndexReaders(
-        const MergeTreeIndexBuildContext & index_build_context,
-        PrewhereExprInfo & all_prewhere_actions);
+    void initializeIndexReader(const MergeTreeIndexBuildContext & index_build_context);
 
     BlockAndProgress read();
     bool isFinished() const { return mark_ranges.empty() && readers_chain.isCurrentRangeFinished(); }

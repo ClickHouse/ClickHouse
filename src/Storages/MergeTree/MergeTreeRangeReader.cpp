@@ -1415,7 +1415,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     if (is_vector_search && (part_offsets_filter_for_vector_search.size() == result.num_rows))
         result.optimize(part_offsets_filter_for_vector_search, merge_tree_reader->canReadIncompleteGranules());
 
-    if (!prewhere_info)
+    if (!prewhere_info || prewhere_info->type == PrewhereExprStep::None)
         return;
 
     const auto & header = read_sample_block;

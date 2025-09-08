@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Columns/ColumnsNumber.h>
@@ -23,16 +24,8 @@ namespace ErrorCodes
 
 MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     const IMergeTreeReader * main_reader_,
-    MergeTreeIndexWithCondition index_)
-    : MergeTreeReaderTextIndex(main_reader_, {}, {}, std::move(index_))
-{
-}
-
-MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
-    const IMergeTreeReader * main_reader_,
-    NamesAndTypesList columns_,
-    std::vector<TextSearchMode> search_modes_,
-    MergeTreeIndexWithCondition index_)
+    MergeTreeIndexWithCondition index_,
+    NamesAndTypesList columns_)
     : IMergeTreeReader(
         main_reader_->data_part_info_for_read,
         columns_,
@@ -42,11 +35,8 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         Context::getGlobalContextInstance()->getIndexMarkCache().get(),
         main_reader_->all_mark_ranges,
         main_reader_->settings)
-    , search_modes(std::move(search_modes_))
     , index(std::move(index_))
 {
-    chassert(search_modes.size() == columns_.size());
-
     for (const auto & column : columns_)
     {
         if (!column.name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX) || !WhichDataType(column.type).isUInt8())
@@ -207,7 +197,7 @@ size_t MergeTreeReaderTextIndex::readRows(
             for (size_t i = 0; i < res_columns.size(); ++i)
             {
                 auto & column_mutable = res_columns[i]->assumeMutableRef();
-                fillColumn(column_mutable, granule, search_modes[i], granule_offset, rows_to_read);
+                fillColumn(column_mutable, granule, columns_to_read[i].name, granule_offset, rows_to_read);
             }
         }
 
@@ -266,14 +256,20 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
 void applyPostingsAny(
     IColumn & column,
     PostingsMap & postings_map,
+    const std::vector<String> & search_tokens,
     size_t column_offset,
     size_t granule_offset,
     size_t num_rows)
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
 
-    for (auto & [_, postings_it] : postings_map)
+    for (const auto & token : search_tokens)
     {
+        auto it = postings_map.find(token);
+        if (it == postings_map.end())
+            continue;
+
+        auto & postings_it = it->second;
         for (; postings_it.isValid(); postings_it.next())
         {
             size_t row = postings_it.getRow();
@@ -292,6 +288,7 @@ void applyPostingsAny(
 void applyPostingsAll(
     IColumn & column,
     PostingsMap & postings_map,
+    const std::vector<String> & search_tokens,
     size_t column_offset,
     size_t granule_offset,
     size_t num_rows)
@@ -301,12 +298,22 @@ void applyPostingsAll(
 
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     PaddedPODArray<UInt16> counters(num_rows, 0);
+    std::vector<CompressedPostings::Iterator *> iterators;
 
-    for (auto & [_, postings_it] : postings_map)
+    for (const auto & token : search_tokens)
     {
-        for (; postings_it.isValid(); postings_it.next())
+        auto it = postings_map.find(token);
+        if (it == postings_map.end())
+            return;
+
+        iterators.push_back(&it->second);
+    }
+
+    for (auto & postings_it : iterators)
+    {
+        for (; postings_it->isValid(); postings_it->next())
         {
-            size_t row = postings_it.getRow();
+            size_t row = postings_it->getRow();
             if (row < granule_offset)
                 continue;
 
@@ -318,26 +325,31 @@ void applyPostingsAll(
         }
     }
 
-    size_t total_tokens = postings_map.size();
+    size_t total_tokens = iterators.size();
     for (size_t i = 0; i < num_rows; ++i)
         column_data[column_offset + i] = static_cast<UInt8>(counters[i] == total_tokens);
 }
 
-void MergeTreeReaderTextIndex::fillColumn(IColumn & column, Granule & granule, TextSearchMode search_mode, size_t granule_offset, size_t num_rows)
+void MergeTreeReaderTextIndex::fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows) const
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
-    size_t old_size = column_data.size();
-    column_data.resize_fill(old_size + num_rows, 0);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
 
-    if (granule.postings.empty())
+    size_t old_size = column_data.size();
+    /// Always return true for empty needles.
+    UInt8 default_value = search_query->tokens.empty() ? 1 : 0;
+    column_data.resize_fill(old_size + num_rows, default_value);
+
+    if (granule.postings.empty() || search_query->tokens.empty())
         return;
 
-    if (search_mode == TextSearchMode::Any || granule.postings.size() == 1)
-        applyPostingsAny(column, granule.postings, old_size, granule_offset, num_rows);
-    else if (search_mode == TextSearchMode::All)
-        applyPostingsAll(column, granule.postings, old_size, granule_offset, num_rows);
+    if (search_query->mode == TextSearchMode::Any || granule.postings.size() == 1)
+        applyPostingsAny(column, granule.postings, search_query->tokens, old_size, granule_offset, num_rows);
+    else if (search_query->mode == TextSearchMode::All)
+        applyPostingsAll(column, granule.postings, search_query->tokens, old_size, granule_offset, num_rows);
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_mode);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->mode);
 }
 
 void MergeTreeReaderTextIndex::RemainingMarks::increment()
@@ -358,6 +370,14 @@ bool MergeTreeReaderTextIndex::RemainingMarks::decrement(size_t granularity)
 bool MergeTreeReaderTextIndex::RemainingMarks::finished(size_t granularity) const
 {
     return remaining == 0 && total == granularity;
+}
+
+MergeTreeReaderPtr createMergeTreeReaderTextIndex(
+    const IMergeTreeReader * main_reader,
+    const MergeTreeIndexWithCondition & index,
+    const NamesAndTypesList & columns_to_read)
+{
+    return std::make_unique<MergeTreeReaderTextIndex>(main_reader, index, columns_to_read);
 }
 
 }
