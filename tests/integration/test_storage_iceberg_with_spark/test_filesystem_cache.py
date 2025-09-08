@@ -10,9 +10,9 @@ from helpers.iceberg_utils import (
 )
 
 @pytest.mark.parametrize("storage_type", ["s3"])
-def test_filesystem_cache(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_filesystem_cache(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_filesystem_cache_" + storage_type + "_" + get_uuid_str()
 
     write_iceberg_from_df(
@@ -25,13 +25,13 @@ def test_filesystem_cache(started_cluster, storage_type):
     )
 
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(

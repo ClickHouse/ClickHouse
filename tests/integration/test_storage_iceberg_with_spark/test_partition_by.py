@@ -11,9 +11,9 @@ from helpers.iceberg_utils import (
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_partition_by(started_cluster, format_version, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_partition_by(started_cluster_iceberg_with_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = (
         "test_partition_by_"
         + format_version
@@ -33,13 +33,13 @@ def test_partition_by(started_cluster, format_version, storage_type):
     )
 
     files = default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
     assert len(files) == 14  # 10 partitions + 4 metadata files
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
     assert int(instance.query(f"SELECT count() FROM system.iceberg_history WHERE table = '{TABLE_NAME}'")) == 1

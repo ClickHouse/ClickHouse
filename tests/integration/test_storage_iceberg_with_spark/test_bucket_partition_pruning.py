@@ -9,15 +9,15 @@ from helpers.iceberg_utils import (
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_bucket_partition_pruning(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_bucket_partition_pruning(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
 
     def execute_spark_query(query: str):
         return execute_spark_query_general(
             spark,
-            started_cluster,
+            started_cluster_iceberg_with_spark,
             storage_type,
             TABLE_NAME,
             query,
@@ -66,7 +66,7 @@ def test_bucket_partition_pruning(started_cluster, storage_type):
         )
 
     creation_expression = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True
     )
 
     queries = [

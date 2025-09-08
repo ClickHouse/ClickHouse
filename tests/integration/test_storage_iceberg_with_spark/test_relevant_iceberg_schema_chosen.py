@@ -8,9 +8,9 @@ from helpers.iceberg_utils import (
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_relevant_iceberg_schema_chosen(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_relevant_iceberg_schema_chosen(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_relevant_iceberg_schema_chosen_" + storage_type + "_" + get_uuid_str()
     
     spark.sql(
@@ -47,7 +47,7 @@ def test_relevant_iceberg_schema_chosen(started_cluster, storage_type):
     spark.sql(f"CALL system.rewrite_manifests('{TABLE_NAME}')")
 
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -57,7 +57,7 @@ def test_relevant_iceberg_schema_chosen(started_cluster, storage_type):
     table_creation_expression = get_creation_expression(
         storage_type,
         TABLE_NAME,
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         table_function=True,
     )
 

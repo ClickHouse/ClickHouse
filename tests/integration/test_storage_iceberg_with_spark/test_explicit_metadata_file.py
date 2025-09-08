@@ -7,9 +7,9 @@ from helpers.iceberg_utils import (
 )
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_explicit_metadata_file(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_explicit_metadata_file(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = (
         "test_explicit_metadata_file_"
         + storage_type
@@ -27,25 +27,25 @@ def test_explicit_metadata_file(started_cluster, storage_type):
         )
 
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, explicit_metadata_path="")
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, explicit_metadata_path="")
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 500
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, explicit_metadata_path="metadata/v31.metadata.json")
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, explicit_metadata_path="metadata/v31.metadata.json")
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, explicit_metadata_path="metadata/v11.metadata.json")
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, explicit_metadata_path="metadata/v11.metadata.json")
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     with pytest.raises(Exception):
-        create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, explicit_metadata_path=chr(0) + chr(1))
+        create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, explicit_metadata_path=chr(0) + chr(1))
     with pytest.raises(Exception):
-        create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, explicit_metadata_path="../metadata/v11.metadata.json")
+        create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, explicit_metadata_path="../metadata/v11.metadata.json")

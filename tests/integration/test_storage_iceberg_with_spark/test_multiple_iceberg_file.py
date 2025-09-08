@@ -11,9 +11,9 @@ from helpers.iceberg_utils import (
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_multiple_iceberg_files(started_cluster, format_version, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_multiple_iceberg_files(started_cluster_iceberg_with_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = (
         "test_multiple_iceberg_files_"
         + format_version
@@ -32,7 +32,7 @@ def test_multiple_iceberg_files(started_cluster, format_version, storage_type):
     )
 
     files = default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -45,7 +45,7 @@ def test_multiple_iceberg_files(started_cluster, format_version, storage_type):
     # '/iceberg_data/default/test_multiple_iceberg_files/metadata/v1.metadata.json']
     assert len(files) == 5
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     write_iceberg_from_df(
@@ -56,7 +56,7 @@ def test_multiple_iceberg_files(started_cluster, format_version, storage_type):
         format_version=format_version,
     )
     files = default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         "",

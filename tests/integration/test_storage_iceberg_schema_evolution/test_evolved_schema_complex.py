@@ -10,9 +10,9 @@ from helpers.iceberg_utils import (
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_evolved_schema_complex(started_cluster, format_version, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_evolved_schema_complex(started_cluster_iceberg_schema_evolution, format_version, storage_type):
+    instance = started_cluster_iceberg_schema_evolution.instances["node1"]
+    spark = started_cluster_iceberg_schema_evolution.spark_session
     TABLE_NAME = (
         "test_evolved_schema_complex_"
         + format_version
@@ -25,7 +25,7 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
     def execute_spark_query(query: str):
         return execute_spark_query_general(
             spark,
-            started_cluster,
+            started_cluster_iceberg_schema_evolution,
             storage_type,
             TABLE_NAME,
             query,
@@ -61,7 +61,7 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
     )
 
     table_function = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True
+        storage_type, TABLE_NAME, started_cluster_iceberg_schema_evolution, table_function=True
     )
     execute_spark_query(
         f"""

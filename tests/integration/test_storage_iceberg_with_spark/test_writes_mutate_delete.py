@@ -9,13 +9,13 @@ from helpers.iceberg_utils import (
 
 @pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
 @pytest.mark.parametrize("partition_type", ["", "identity(x)", "icebergBucket(3, x)"])
-def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
+def test_writes_mutate_delete(started_cluster_iceberg_with_spark, storage_type, partition_type):
     format_version = 2
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_writes_mutate_delete_" + storage_type + "_" + get_uuid_str()
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version, partition_type)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x String)", format_version, partition_type)
 
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
     instance.query(f"ALTER TABLE {TABLE_NAME} DELETE WHERE x = 'pudge1000-7';", settings={"allow_experimental_insert_into_iceberg": 1})
@@ -39,7 +39,7 @@ def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
     if storage_type != "local":
         return
     initial_files = default_download_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -50,7 +50,7 @@ def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
         instance.query(f"ALTER TABLE {TABLE_NAME} DELETE WHERE x = '456';", settings={"allow_experimental_insert_into_iceberg": 1})
 
     files = default_download_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",

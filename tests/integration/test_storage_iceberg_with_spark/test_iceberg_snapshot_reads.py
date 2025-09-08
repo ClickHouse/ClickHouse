@@ -16,9 +16,9 @@ from helpers.iceberg_utils import (
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_iceberg_snapshot_reads(started_cluster_iceberg_with_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = (
         "test_iceberg_snapshot_reads"
         + format_version
@@ -36,13 +36,13 @@ def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
         format_version=format_version,
     )
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         "",
     )
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
     snapshot1_timestamp = datetime.now(timezone.utc)
     snapshot1_id = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
@@ -56,7 +56,7 @@ def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
         format_version=format_version,
     )
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         "",
@@ -73,7 +73,7 @@ def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
         format_version=format_version,
     )
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         "",

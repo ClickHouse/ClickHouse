@@ -11,9 +11,9 @@ from helpers.iceberg_utils import (
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
-def test_system_iceberg_metadata(started_cluster, format_version, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_system_iceberg_metadata(started_cluster_iceberg_with_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = (
         "test_system_iceberg_metadata_"
         + format_version
@@ -26,14 +26,14 @@ def test_system_iceberg_metadata(started_cluster, format_version, storage_type):
     write_iceberg_from_df(spark, generate_data(spark, 0, 100), TABLE_NAME)
 
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
     def get_iceberg_metadata_to_dict(query_id: str):
-        instance = started_cluster.instances["node1"]
+        instance = started_cluster_iceberg_with_spark.instances["node1"]
         result = dict()
         for name in ['content', 'content_type', 'table_path', 'file_path', 'row_in_file']:
             # We are ok with duplicates in the table itself but for test purposes we want to remove duplicates here
@@ -99,7 +99,7 @@ def test_system_iceberg_metadata(started_cluster, format_version, storage_type):
                     raise ValueError("Missing row value for file path: {}, missing row index: {}".format(file_path, i))
 
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
     content_types = ["Metadata", "ManifestListMetadata", "ManifestListEntry", "ManifestFileMetadata", "ManifestFileEntry"]
     settings = ["none", "metadata", "manifest_list_metadata", "manifest_list_entry", "manifest_file_metadata", "manifest_file_entry"]

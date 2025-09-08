@@ -6,8 +6,8 @@ from helpers.iceberg_utils import (
 )
 
 
-def test_writes_create_table_bugs(started_cluster):
-    instance = started_cluster.instances["node1"]
+def test_writes_create_table_bugs(started_cluster_iceberg_no_spark):
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
     TABLE_NAME = "test_writes_create_table_bugs_" + get_uuid_str()
     TABLE_NAME_1 = "test_writes_create_table_bugs_" + get_uuid_str()
     instance.query(

@@ -9,9 +9,9 @@ from helpers.iceberg_utils import (
 
 @pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_position_deletes(started_cluster_iceberg_with_spark, use_roaring_bitmaps,  storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_position_deletes_" + storage_type + "_" + get_uuid_str()
     instance.query(f"SET use_roaring_bitmap_iceberg_positional_deletes={use_roaring_bitmaps};")
 
@@ -29,19 +29,19 @@ def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
         return arr
 
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 90
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -63,7 +63,7 @@ def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
     # Check deletes after deletes
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 90")
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -77,7 +77,7 @@ def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
         f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100, 200)"
     )
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -89,7 +89,7 @@ def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
     # Check deletes after adds
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 150")
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",

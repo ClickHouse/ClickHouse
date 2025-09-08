@@ -11,9 +11,9 @@ from helpers.iceberg_utils import (
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_delete_files(started_cluster, format_version, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_delete_files(started_cluster_iceberg_with_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = (
         "test_delete_files_"
         + format_version
@@ -32,12 +32,12 @@ def test_delete_files(started_cluster, format_version, storage_type):
     )
 
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
     # Test trivial count with deleted files
     query_id = "test_trivial_count_" + get_uuid_str()
@@ -47,7 +47,7 @@ def test_delete_files(started_cluster, format_version, storage_type):
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE a >= 0")
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         "",
@@ -68,7 +68,7 @@ def test_delete_files(started_cluster, format_version, storage_type):
     )
 
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         "",
@@ -82,7 +82,7 @@ def test_delete_files(started_cluster, format_version, storage_type):
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE a >= 150")
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         "",

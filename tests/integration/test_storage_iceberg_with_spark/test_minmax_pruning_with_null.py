@@ -9,15 +9,15 @@ from helpers.iceberg_utils import (
 )
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_minmax_pruning_with_null(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_minmax_pruning_with_null(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_minmax_pruning_with_null" + storage_type + "_" + get_uuid_str()
 
     def execute_spark_query(query: str):
         return execute_spark_query_general(
             spark,
-            started_cluster,
+            started_cluster_iceberg_with_spark,
             storage_type,
             TABLE_NAME,
             query,
@@ -79,7 +79,7 @@ def test_minmax_pruning_with_null(started_cluster, storage_type):
     )
 
     creation_expression = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True
     )
 
     def check_validity_and_get_prunned_files(select_expression):

@@ -11,15 +11,15 @@ from helpers.iceberg_utils import (
     "storage_type, run_on_cluster",
     [("s3", False), ("s3", True), ("azure", False), ("local", False)],
 )
-def test_partition_pruning(started_cluster, storage_type, run_on_cluster):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_partition_pruning(started_cluster_iceberg_with_spark, storage_type, run_on_cluster):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_partition_pruning_" + storage_type + "_" + get_uuid_str()
 
     def execute_spark_query(query: str):
         return execute_spark_query_general(
             spark,
-            started_cluster,
+            started_cluster_iceberg_with_spark,
             storage_type,
             TABLE_NAME,
             query,
@@ -58,7 +58,7 @@ def test_partition_pruning(started_cluster, storage_type, run_on_cluster):
     )
 
     creation_expression = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True, run_on_cluster=run_on_cluster
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True, run_on_cluster=run_on_cluster
     )
 
     def check_validity_and_get_prunned_files(select_expression):

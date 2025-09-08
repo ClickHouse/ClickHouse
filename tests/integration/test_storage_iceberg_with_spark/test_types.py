@@ -24,9 +24,9 @@ from helpers.test_tools import TSV
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_types(started_cluster, format_version, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_types(started_cluster_iceberg_with_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = (
         "test_types_" + format_version + "_" + storage_type + "_" + get_uuid_str()
     )
@@ -56,13 +56,13 @@ def test_types(started_cluster, format_version, storage_type):
     )
 
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 1
     assert (
         instance.query(f"SELECT a, b, c, d, e FROM {TABLE_NAME}").strip()
@@ -70,7 +70,7 @@ def test_types(started_cluster, format_version, storage_type):
     )
 
     table_function_expr = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True
     )
     assert (
         instance.query(f"SELECT a, b, c, d, e FROM {table_function_expr}").strip()

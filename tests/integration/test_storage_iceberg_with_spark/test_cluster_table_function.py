@@ -12,9 +12,9 @@ import logging
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
-def test_cluster_table_function(started_cluster, format_version, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_cluster_table_function(started_cluster_iceberg_with_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
 
     TABLE_NAME = (
         "test_iceberg_cluster_"
@@ -35,7 +35,7 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
         )
 
         files = default_upload_directory(
-            started_cluster,
+            started_cluster_iceberg_with_spark,
             storage_type,
             f"/iceberg_data/default/{TABLE_NAME}/",
             f"/iceberg_data/default/{TABLE_NAME}/",
@@ -46,18 +46,18 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
         return files
 
     files = add_df(mode="overwrite")
-    for i in range(1, len(started_cluster.instances)):
+    for i in range(1, len(started_cluster_iceberg_with_spark.instances)):
         files = add_df(mode="append")
 
     logging.info(f"Setup complete. files: {files}")
-    assert len(files) == 5 + 4 * (len(started_cluster.instances) - 1)
+    assert len(files) == 5 + 4 * (len(started_cluster_iceberg_with_spark.instances) - 1)
 
     clusters = instance.query(f"SELECT * FROM system.clusters")
     logging.info(f"Clusters setup: {clusters}")
 
     # Regular Query only node1
     table_function_expr = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True
     )
     select_regular = (
         instance.query(f"SELECT * FROM {table_function_expr}").strip().split()
@@ -67,7 +67,7 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
     table_function_expr_cluster = get_creation_expression(
         storage_type,
         TABLE_NAME,
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         table_function=True,
         run_on_cluster=True,
     )
@@ -83,10 +83,10 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
     assert select_cluster == select_regular
 
     # Check query_log
-    for replica in started_cluster.instances.values():
+    for replica in started_cluster_iceberg_with_spark.instances.values():
         replica.query("SYSTEM FLUSH LOGS")
 
-    for node_name, replica in started_cluster.instances.items():
+    for node_name, replica in started_cluster_iceberg_with_spark.instances.items():
         cluster_secondary_queries = (
             replica.query(
                 f"""

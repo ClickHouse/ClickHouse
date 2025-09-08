@@ -11,9 +11,9 @@ from helpers.test_tools import TSV
 @pytest.mark.parametrize("infer_format", [True, False])
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_schema_inference(started_cluster, format_version, storage_type, infer_format):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_schema_inference(started_cluster_iceberg_with_spark, format_version, storage_type, infer_format):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     for format in ["Parquet", "ORC", "Avro"]:
         TABLE_NAME = (
             "test_schema_inference_"
@@ -35,7 +35,7 @@ def test_schema_inference(started_cluster, format_version, storage_type, infer_f
             f"insert into {TABLE_NAME} select 42, 4242, 42.42, 4242.4242, decimal(42.42), decimal(42.42), decimal(42.42), date('2020-01-01'), timestamp('2020-01-01 20:00:00'), 'hello', binary('hello'), array(1,2,3), map('key', 'value'), struct(42, 'hello'), array(struct(map('key', array(map('key', 42))), struct(42, 'hello')))"
         )
         default_upload_directory(
-            started_cluster,
+            started_cluster_iceberg_with_spark,
             storage_type,
             f"/iceberg_data/default/{TABLE_NAME}/",
             f"/iceberg_data/default/{TABLE_NAME}/",
@@ -43,11 +43,11 @@ def test_schema_inference(started_cluster, format_version, storage_type, infer_f
 
         if infer_format:
             create_iceberg_table(
-                storage_type, instance, TABLE_NAME, started_cluster
+                storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark
             )
         else:
             create_iceberg_table(
-                storage_type, instance, TABLE_NAME, started_cluster, format=format
+                storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, format=format
             )
         res = instance.query(
             f"DESC {TABLE_NAME} FORMAT TSVRaw", settings={"print_pretty_type_names": 0}

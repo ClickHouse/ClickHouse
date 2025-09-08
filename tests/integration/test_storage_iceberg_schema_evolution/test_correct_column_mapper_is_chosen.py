@@ -13,12 +13,12 @@ from pandas.testing import assert_frame_equal
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_correct_column_mapper_is_chosen(
-    started_cluster,
+    started_cluster_iceberg_schema_evolution,
     storage_type,
     format_version
 ):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+    instance = started_cluster_iceberg_schema_evolution.instances["node1"]
+    spark = started_cluster_iceberg_schema_evolution.spark_session
     TABLE_NAME = (
         "test_correct_column_mapper_is_chosen_"
         + format_version
@@ -78,14 +78,14 @@ def test_correct_column_mapper_is_chosen(
     table_function = get_creation_expression(
         storage_type,
         TABLE_NAME,
-        started_cluster,
+        started_cluster_iceberg_schema_evolution,
         table_function=True,
         is_cluster=True,
     )
 
 
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_schema_evolution,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",

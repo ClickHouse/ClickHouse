@@ -8,9 +8,9 @@ from helpers.iceberg_utils import (
 )
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_minmax_pruning_for_arrays_and_maps_subfields_disabled(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_minmax_pruning_for_arrays_and_maps_subfields_disabled(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = (
         "test_disable_minmax_pruning_for_arrays_and_maps_subfields_"
         + storage_type
@@ -21,7 +21,7 @@ def test_minmax_pruning_for_arrays_and_maps_subfields_disabled(started_cluster, 
     def execute_spark_query(query: str):
         return execute_spark_query_general(
             spark,
-            started_cluster,
+            started_cluster_iceberg_with_spark,
             storage_type,
             TABLE_NAME,
             query,
@@ -58,7 +58,7 @@ def test_minmax_pruning_for_arrays_and_maps_subfields_disabled(started_cluster, 
     )
 
     default_upload_directory(
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -67,7 +67,7 @@ def test_minmax_pruning_for_arrays_and_maps_subfields_disabled(started_cluster, 
     table_creation_expression = get_creation_expression(
         storage_type,
         TABLE_NAME,
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         table_function=True,
     )
 

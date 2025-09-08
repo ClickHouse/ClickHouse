@@ -10,15 +10,15 @@ from helpers.iceberg_utils import (
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 @pytest.mark.parametrize("is_table_function", [False, True])
-def test_minmax_pruning(started_cluster, storage_type, is_table_function):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+def test_minmax_pruning(started_cluster_iceberg_with_spark, storage_type, is_table_function):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_minmax_pruning_" + storage_type + "_" + get_uuid_str()
 
     def execute_spark_query(query: str):
         return execute_spark_query_general(
             spark,
-            started_cluster,
+            started_cluster_iceberg_with_spark,
             storage_type,
             TABLE_NAME,
             query,
@@ -72,11 +72,11 @@ def test_minmax_pruning(started_cluster, storage_type, is_table_function):
 
     if is_table_function:
         creation_expression = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True
     )
     else:
         instance.query(get_creation_expression(
-            storage_type, TABLE_NAME, started_cluster, table_function=False
+            storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=False
         ))
         creation_expression = TABLE_NAME
 

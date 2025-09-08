@@ -11,10 +11,10 @@ from helpers.iceberg_utils import (
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_array_evolved_nested(
-    started_cluster, format_version, storage_type
+    started_cluster_iceberg_schema_evolution, format_version, storage_type
 ):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+    instance = started_cluster_iceberg_schema_evolution.instances["node1"]
+    spark = started_cluster_iceberg_schema_evolution.spark_session
     TABLE_NAME = (
         "test_array_evolved_nested_"
         + format_version
@@ -27,7 +27,7 @@ def test_array_evolved_nested(
     def execute_spark_query(query: str):
         spark.sql(query)
         default_upload_directory(
-            started_cluster,
+            started_cluster_iceberg_schema_evolution,
             storage_type,
             f"/iceberg_data/default/{TABLE_NAME}/",
             f"/iceberg_data/default/{TABLE_NAME}/",
@@ -69,7 +69,7 @@ def test_array_evolved_nested(
     )
 
     table_function = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True
+        storage_type, TABLE_NAME, started_cluster_iceberg_schema_evolution, table_function=True
     )
     check_schema_and_data(
         instance,

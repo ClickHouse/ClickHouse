@@ -9,8 +9,8 @@ from helpers.iceberg_utils import (
 
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_writes_statistics_by_minmax_pruning(started_cluster, format_version, storage_type):
-    instance = started_cluster.instances["node1"]
+def test_writes_statistics_by_minmax_pruning(started_cluster_iceberg_no_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
     TABLE_NAME = "test_writes_statistics_by_minmax_pruning_" + storage_type + "_" + get_uuid_str()
 
     schema = """
@@ -20,7 +20,7 @@ def test_writes_statistics_by_minmax_pruning(started_cluster, format_version, st
     name String,
     number Int64)
     """
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, schema, format_version)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_no_spark, schema, format_version)
 
     instance.query(
     f"""

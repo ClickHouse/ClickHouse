@@ -9,10 +9,10 @@ from helpers.iceberg_utils import (
 @pytest.mark.parametrize("format_version", ["2"])
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_cluster_table_function_with_partition_pruning(
-    started_cluster, format_version, storage_type
+    started_cluster_iceberg_with_spark, format_version, storage_type
 ):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
 
     TABLE_NAME = (
         "test_cluster_table_function_with_partition_pruning_"
@@ -26,7 +26,7 @@ def test_cluster_table_function_with_partition_pruning(
     def execute_spark_query(query: str):
         return execute_spark_query_general(
             spark,
-            started_cluster,
+            started_cluster_iceberg_with_spark,
             storage_type,
             TABLE_NAME,
             query,
@@ -55,7 +55,7 @@ def test_cluster_table_function_with_partition_pruning(
     table_function_expr_cluster = get_creation_expression(
         storage_type,
         TABLE_NAME,
-        started_cluster,
+        started_cluster_iceberg_with_spark,
         table_function=True,
         run_on_cluster=True,
     )
