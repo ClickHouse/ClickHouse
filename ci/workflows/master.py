@@ -31,10 +31,7 @@ workflow = Workflow.Config(
         *JobConfigs.functional_tests_jobs_azure_master_only,
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
-        *[
-            job.set_dependency(REQUIRED_STATELESS_TESTS_JOB_NAMES)
-            for job in JobConfigs.functional_tests_jobs_coverage
-        ],
+        *JobConfigs.functional_tests_jobs_coverage,
         *JobConfigs.stress_test_jobs,
         # *JobConfigs.stress_test_azure_master_jobs, # NOTE (strtgbb): disabled due to ASAN build failure
         *JobConfigs.ast_fuzzer_jobs,

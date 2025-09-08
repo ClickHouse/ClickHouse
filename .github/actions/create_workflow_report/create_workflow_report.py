@@ -7,6 +7,7 @@ import json
 from datetime import datetime
 from functools import lru_cache
 from glob import glob
+import urllib.parse
 
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader
@@ -478,11 +479,15 @@ def format_test_name_for_linewrap(text: str) -> str:
 
 def format_test_status(text: str) -> str:
     """Format the test status for better readability."""
-    color = (
-        "red"
-        if text.lower().startswith("fail")
-        else "orange" if text.lower() in ("error", "broken", "pending") else "green"
-    )
+    if text.lower().startswith("fail"):
+        color = "red"
+    elif text.lower() == "skipped":
+        color = "grey"
+    elif text.lower() in ("success", "ok", "passed", "pass"):
+        color = "green"
+    else:
+        color = "orange"
+
     return f'<span style="font-weight: bold; color: {color}">{text}</span>'
 
 
@@ -508,6 +513,103 @@ def format_results_as_html_table(results) -> str:
         classes=["test-results-table"],
     )
     return html
+
+
+def backfill_skipped_statuses(
+    job_statuses: pd.DataFrame, pr_number: int, branch: str, commit_sha: str
+):
+    """
+    Fill in the job statuses for skipped jobs.
+    """
+
+    if pr_number == 0:
+        ref_param = f"REF={branch}"
+        workflow_name = "MasterCI"
+    else:
+        ref_param = f"PR={pr_number}"
+        workflow_name = "PR"
+
+    status_file = f"result_{workflow_name.lower()}.json"
+    s3_path = f"https://{S3_BUCKET}.s3.amazonaws.com/{ref_param.replace('=', 's/')}/{commit_sha}/{status_file}"
+    response = requests.get(s3_path)
+
+    if response.status_code != 200:
+        return job_statuses
+
+    status_data = response.json()
+    skipped_jobs = []
+    for job in status_data["results"]:
+        if job["status"] == "skipped" and len(job["links"]) > 0:
+            skipped_jobs.append(
+                {
+                    "job_name": job["name"],
+                    "job_status": job["status"],
+                    "message": job["info"],
+                    "results_link": job["links"][0],
+                }
+            )
+
+    return pd.concat([job_statuses, pd.DataFrame(skipped_jobs)], ignore_index=True)
+
+
+def get_build_report_links(
+    job_statuses: pd.DataFrame, pr_number: int, branch: str, commit_sha: str
+):
+    """
+    Get the build report links for the given PR number, branch, and commit SHA.
+
+    First checks if a build job submitted a success or skipped status.
+    If not available, it guesses the links.
+    """
+    build_job_names = [
+        "Build (amd_release)",
+        "Build (arm_release)",
+        "Docker server image",
+        "Docker keeper image",
+    ]
+    build_report_links = {}
+
+    for job in job_statuses.itertuples():
+        if (
+            job.job_name in build_job_names
+            and job.job_status
+            in (
+                "success",
+                "skipped",
+            )
+            and job.results_link
+        ):
+            build_report_links[job.job_name] = job.results_link
+
+    if 0 < len(build_report_links) < len(build_job_names):
+        # Only have some of the build jobs, guess the rest.
+        # (It was straightforward to force the build jobs to always appear in the cache,
+        # however doing the same for the docker image jobs is difficult.)
+        ref_job, ref_link = list(build_report_links.items())[0]
+        link_template = ref_link.replace(
+            urllib.parse.quote(ref_job, safe=""), "{job_name}"
+        )
+        for job in build_job_names:
+            if job not in build_report_links:
+                build_report_links[job] = link_template.format(job_name=job)
+
+    if len(build_report_links) > 0:
+        return build_report_links
+
+    # No cache or build result was found, guess the links
+    if pr_number == 0:
+        ref_param = f"REF={branch}"
+        workflow_name = "MasterCI"
+    else:
+        ref_param = f"PR={pr_number}"
+        workflow_name = "PR"
+
+    build_report_link_base = f"https://{S3_BUCKET}.s3.amazonaws.com/json.html?{ref_param}&sha={commit_sha}&name_0={urllib.parse.quote(workflow_name, safe='')}"
+    build_report_links = {
+        job_name: f"{build_report_link_base}&name_1={urllib.parse.quote(job_name, safe='')}"
+        for job_name in build_job_names
+    }
+    return build_report_links
 
 
 def parse_args() -> argparse.Namespace:
@@ -626,6 +728,10 @@ def create_workflow_report(
         except Exception as e:
             pr_info_html = e
 
+    fail_results["job_statuses"] = backfill_skipped_statuses(
+        fail_results["job_statuses"], pr_number, branch_name, commit_sha
+    )
+
     high_cve_count = 0
     if not cves_not_checked and len(fail_results["docker_images_cves"]) > 0:
         high_cve_count = (
@@ -666,6 +772,9 @@ def create_workflow_report(
             ),
             "pr_new_fails": len(fail_results["pr_new_fails"]),
         },
+        "build_report_links": get_build_report_links(
+            fail_results["job_statuses"], pr_number, branch_name, commit_sha
+        ),
         "ci_jobs_status_html": format_results_as_html_table(
             fail_results["job_statuses"]
         ),

@@ -18,6 +18,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
+#include <Storages/HivePartitioningUtils.h>
 
 
 namespace DB
@@ -113,7 +114,7 @@ StoragePtr TableFunctionURL::getStorage(
             format,
             compression_method,
             StorageID(getDatabaseName(), table_name),
-            getActualTableStructure(global_context, /* is_insert_query */ true),
+            columns,
             ConstraintsDescription{},
             configuration);
     }
@@ -138,21 +139,36 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
 {
     if (structure == "auto")
     {
+	ColumnsDescription columns;
+
         context->checkAccess(getSourceAccessType());
         if (format == "auto")
-            return StorageURL::getTableStructureAndFormatFromData(
-                       filename,
-                       chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
-                       configuration.headers,
-                       std::nullopt,
-                       context).first;
+        {
+            columns = StorageURL::getTableStructureAndFormatFromData(
+                filename,
+                chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
+                configuration.headers,
+                std::nullopt,
+                context).first;
+        }
+        else
+        {
+            columns = StorageURL::getTableStructureFromData(format,
+                filename,
+                chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
+                configuration.headers,
+                std::nullopt,
+                context);
+        }
 
-        return StorageURL::getTableStructureFromData(format,
+        HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
+            columns,
             filename,
-            chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
-            configuration.headers,
-            std::nullopt,
+            /* inferred_schema */ true,
+            /* format_settings */ std::nullopt,
             context);
+
+        return columns;
     }
 
     return parseColumnsListFromString(structure, context);

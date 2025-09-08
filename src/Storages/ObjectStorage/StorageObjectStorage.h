@@ -177,7 +177,7 @@ protected:
     bool update_configuration_on_read_write = true;
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-    ColumnsDescription file_columns;
+    NamesAndTypesList file_columns;
 
     LoggerPtr log;
 };

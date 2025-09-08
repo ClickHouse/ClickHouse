@@ -2,11 +2,14 @@
 #include <Poco/String.h>
 #include <Common/Exception.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int LOGICAL_ERROR;
 }
 
 MetadataStorageType metadataTypeFromString(const std::string & type)
@@ -20,6 +23,10 @@ MetadataStorageType metadataTypeFromString(const std::string & type)
         return MetadataStorageType::PlainRewritable;
     if (check_type == "web")
         return MetadataStorageType::StaticWeb;
+    if (check_type == "keeper")
+        return MetadataStorageType::Keeper;
+    if (check_type == "memory")
+        return MetadataStorageType::Memory;
 
     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
                     "MetadataStorageFactory: unknown metadata storage type: {}", type);
@@ -27,7 +34,7 @@ MetadataStorageType metadataTypeFromString(const std::string & type)
 
 bool DataSourceDescription::operator==(const DataSourceDescription & other) const
 {
-    return std::tie(type, object_storage_type, description, is_encrypted) == std::tie(other.type, other.object_storage_type, other.description, other.is_encrypted);
+    return std::tie(type, object_storage_type, description, is_encrypted, zookeeper_name) == std::tie(other.type, other.object_storage_type, other.description, other.is_encrypted, other.zookeeper_name);
 }
 
 bool DataSourceDescription::sameKind(const DataSourceDescription & other) const
@@ -93,6 +100,8 @@ std::string toString(ObjectStorageType type)
             return "web";
         case ObjectStorageType::None:
             return "none";
+        case ObjectStorageType::Max:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage type: Max");
     }
 }
 

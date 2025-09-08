@@ -69,6 +69,10 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     if (args.storage_def->partition_by)
         partition_by = args.storage_def->partition_by->clone();
 
+    ContextMutablePtr context_copy = Context::createCopy(args.getContext());
+    Settings settings_copy = args.getLocalContext()->getSettingsCopy();
+    context_copy->setSettings(settings_copy);
+
     return std::make_shared<StorageObjectStorageCluster>(
         cluster_name,
         configuration,
@@ -79,7 +83,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         args.columns,
         args.constraints,
         partition_by,
-        args.getContext(), /// Use global context.
+        context_copy,
         args.comment,
         format_settings,
         args.mode);

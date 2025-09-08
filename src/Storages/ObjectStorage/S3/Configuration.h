@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 #include <IO/S3Settings.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -73,7 +74,7 @@ public:
     size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
     S3::URI getURL() const { return url; }
-    const S3::S3AuthSettings & getAuthSettings() const { return auth_settings; }
+    const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
 
     Path getRawPath() const override { return url.key; }
 
@@ -102,6 +103,9 @@ public:
 
     ASTPtr createArgsWithAccessData() const override;
 
+    static ASTPtr extractExtraCredentials(ASTs & args);
+    static bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context);
+
 private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
@@ -109,8 +113,9 @@ private:
     S3::URI url;
     Paths keys;
 
-    S3::S3AuthSettings auth_settings;
-    S3::S3RequestSettings request_settings;
+    std::unique_ptr<S3Settings> s3_settings;
+    std::unique_ptr<S3Capabilities> s3_capabilities;
+
     HTTPHeaderEntries headers_from_ast; /// Headers from ast is a part of static configuration.
     /// If s3 configuration was passed from ast, then it is static.
     /// If from config - it can be changed with config reload.

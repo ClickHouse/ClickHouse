@@ -152,7 +152,7 @@
       </tr>
       <tr>
         <th class="hth no-sort">Build Report</th>
-        <td><a href="https://s3.amazonaws.com/{{ s3_bucket }}/{{ pr_number }}/{{ commit_sha }}/builds/report.html">Build Report</a></td>
+        <td>{% for job_name, link in build_report_links.items() %}<a href="{{ link }}">[{{ job_name }}]</a> {% endfor %}</td>
       </tr>
       <tr>
         <th class="hth no-sort">Date</th>

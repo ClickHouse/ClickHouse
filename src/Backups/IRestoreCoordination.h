@@ -41,6 +41,9 @@ public:
     /// Removes temporary nodes in ZooKeeper.
     virtual bool cleanup(bool throw_if_error) = 0;
 
+    /// Starts creating a shared database. Returns false if there is another host which is already creating this database.
+    virtual bool acquireCreatingSharedDatabase(const String & database_name) = 0;
+
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     virtual bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) = 0;
 
