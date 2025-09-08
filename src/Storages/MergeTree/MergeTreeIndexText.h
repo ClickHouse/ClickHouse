@@ -7,10 +7,9 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
-#include <Interpreters/GinQueryString.h>
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenExtractor.h>
-#include <absl/container/flat_hash_set.h>
+#include <absl/container/flat_hash_map.h>
 
 namespace DB
 {

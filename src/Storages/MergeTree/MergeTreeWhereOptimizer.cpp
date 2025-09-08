@@ -60,7 +60,7 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
     return min_position;
 }
 
-static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot)
+static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names & queried_columns)
 {
     GetColumnsOptions options(GetColumnsOptions::All);
     options.withVirtuals();
@@ -71,6 +71,14 @@ static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot)
 
     for (const auto & column : columns_list)
         table_columns.insert(column.name);
+
+    const auto & storage_columns = storage_snapshot->metadata->getColumns();
+    /// Add also requested subcolumns to known table columns.
+    for (const auto & column : queried_columns)
+    {
+        if (storage_columns.hasSubcolumn(column))
+            table_columns.insert(column);
+    }
 
     return table_columns;
 }
@@ -83,7 +91,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     const std::optional<NameSet> & supported_columns_,
     LoggerPtr log_)
     : estimator(estimator_)
-    , table_columns(getTableColumns(storage_snapshot))
+    , table_columns(getTableColumns(storage_snapshot, queried_columns_))
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
     , sorting_key_names{NameSet(

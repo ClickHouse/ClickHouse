@@ -8,39 +8,27 @@
 #include <Common/logger_useful.h>
 #include <base/defines.h>
 
-#include <algorithm>
-#include <memory>
-
 namespace DB::QueryPlanOptimizations
 {
 
 using IndexToConditionMap = std::unordered_map<String, MergeTreeIndexConditionText *>;
 
-/// This class substitutes filters with text-search functions by new internal functions which skip IO and read less data.
+/// This class substitutes filters with text-search functions by virtual columns which skip IO and read less data.
 ///
-/// The substitution is performed in this early optimization step because:
-/// 1, We want to exclude the column information to read as soon as possible
-/// 2. At some point we pretend to take advantage of lazy materialization
+/// The substitution is performed after the index analysis and before PREWHERE optimization:
+/// 1, We need the result of index analysis.
+/// 2. We want to leverage the PREWHERE for virtual columns, because text index
+///    is usually created with high granularit and PREHERE with virtual columns
+///    may significantly reduce the amount of data to read.
 ///
-/// The optimization could be implemented in two variants: function -> function and function -> column. We choose the first approach because
-/// in the new function the main cost is the decompression of the compressed posting lists (currently stored as roaring bitmap). So, the
-/// function -> function approach is more efficient and parallelizable.
-///
-/// For a query like
+/// For example, for a query like
 ///     SELECT count() FROM table WHERE hasToken(text_col, 'token')
 /// if 1) text_col has an associated text index called text_col_idx, and 2) hasToken is an replaceable function (according to
 /// isReplaceableFunction), then this class replaces some nodes in the ActionsDAG (and references to them) to generate an
 /// equivalent query
-///     SELECT count() FROM table where _hasToken_index('text_col_idx', 'token', _part_index, _part_offset)
+///     SELECT count() FROM table where __text_index_text_col_idx_hasToken_0
 ///
-/// The new query will execute a lot faster the original one because:
-/// 1. It does not require direct access to text_col but only to text_col_idx (intended to be much smaller than the text column)
-/// 2. With no access needed if can totally bypass the cost IO operations
-/// 3. The text index was already read during the granules filter step
-/// 4. Still uses all the parallelization infrastructure out of the box
-///
-/// The main entry point of this class are the constructor and the replace function. All the other api is support functionality
-/// to ensure that the replacement is possible and correct.
+/// The supported functions can be found in MergeTreeIndexConditionText::isSupportedFunction.
 ///
 /// This class is a (C++) friend of ActionsDAG and can therefore access its private members.
 ///
@@ -55,18 +43,10 @@ public:
     {
     }
 
-    /// This optimization replaces text-search functions by internal functions.
-    /// Example: hasToken(text_col, 'token') -> hasToken('text_col_idx', 'token', _part_index, _part_offset)
+    /// This optimization replaces text-search functions by virtual columns.
+    /// Example: hasToken(text_col, 'token') -> __text_index_text_col_idx_hasToken_0
     ///
-    /// In detail:
-    /// 0. Insert a new temporal node with the replacement function, including extra column nodes.
-    /// 1. Remove the `text_col` column input + node if it is no longer referenced after substitution.
-    /// 2. Replace inplace the old function node with the new one (memcpy to keep the memory address)
-    /// 3. Pop the temporal node.
-    /// 4. Update the output references if needed.
-    ///
-    /// The function returns a pair with <number of replacements, wector with removed column names>
-    /// Not all replacements end with a column removal, so the number of replacements >= column names size
+    /// Returns a pair of (added columns by index name, removed columns)
     std::pair<IndexReadColumns, Names> replace()
     {
         IndexReadColumns added_columns;
@@ -120,7 +100,7 @@ private:
 
     /// Attempt to add a new node with the replacement function.
     /// This also adds extra input columns if needed.
-    /// Returns the number of columns (inputs) replaced with an index name in the new function.
+    /// Returns the pair of (index name, virtual column name) if the replacement is successful.
     std::optional<std::pair<String, String>> tryReplaceFunctionNodeInplace(ActionsDAG::Node & function_node)
     {
         if (function_node.type != ActionsDAG::ActionType::FUNCTION || !function_node.function)
@@ -176,14 +156,10 @@ private:
 /// where
 /// - text_function is a text-matching functions, e.g. 'hasToken',
 ///   text-matching functions expect that the column on which the function is called has a text index
-/// TODO: add support for other function, before that support AND and OR operators
 ///
-/// This function replaces text function nodes from the user query (using semi-brute-force process) with internal functions which use only
-/// the index information to bypass the normal column scan (read step) which can consume more than 90% of execution time. The optimization
-/// checks if the function's column node is a text column with a text index.
-///
-/// (*) Text search only makes sense if a text index exists on text. In the scope of this function, we don't care.
-///     That check is left to query runtime, ReadFromMergeTree specifically.
+/// This function replaces text function nodes from the user query (using semi-brute-force process) with internal virtual columns which use only
+/// the index information to bypass the normal column scan which can consume significant amount of the execution time.
+/// The optimization checks if the function's column node is a text column with a text index.
 void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*nodes*/)
 {
     if (stack.size() < 2)

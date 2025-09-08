@@ -3,12 +3,17 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <Interpreters/GinQueryString.h>
 
 namespace DB
 {
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
+
+enum class TextSearchMode : uint8_t
+{
+    Any,
+    All,
+};
 
 struct TextSearchQuery
 {

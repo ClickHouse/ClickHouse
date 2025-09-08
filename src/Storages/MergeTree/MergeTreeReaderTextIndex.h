@@ -1,6 +1,4 @@
 #pragma once
-
-#include <Interpreters/GinQueryString.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>

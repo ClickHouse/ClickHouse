@@ -11,7 +11,6 @@
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Interpreters/GinQueryString.h>
 
 namespace DB
 {
