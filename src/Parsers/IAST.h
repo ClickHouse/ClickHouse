@@ -336,7 +336,6 @@ public:
         SetTransactionSnapshot,
         AsyncInsertFlush,
         ParallelWithQuery,
-        Copy,
     };
 
     /// Return QueryKind of this AST query.

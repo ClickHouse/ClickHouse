@@ -3,7 +3,6 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/GinFilter.h>
-#include <Interpreters/ITokenExtractor.h>
 
 namespace DB
 {
@@ -23,9 +22,6 @@ struct SearchAllTraits
 };
 }
 
-/// Map needle into a position (for bitmap operations).
-using FunctionSearchNeedles = absl::flat_hash_map<String, UInt64>;
-
 template <class SearchTraits>
 class FunctionSearchImpl : public IFunction
 {
@@ -40,15 +36,13 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    void trySetGinFilterParameters(const GinFilter::Parameters & params);
-    void trySetSearchTokens(const std::vector<String> & tokens);
+    void setGinFilterParameters(const GinFilterParameters & params);
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
     const bool allow_experimental_full_text_index;
-    std::unique_ptr<ITokenExtractor> token_extractor;
-    std::optional<FunctionSearchNeedles> needles;
+    std::optional<GinFilterParameters> parameters;
 };
 }

@@ -42,8 +42,6 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 {
 }
 
-MergeTreeReaderStream::~MergeTreeReaderStream() = default;
-
 void MergeTreeReaderStream::loadMarks()
 {
     if (!marks_getter)
@@ -144,10 +142,6 @@ void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_
     }
 }
 
-void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
-{
-    compressed_data_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
-}
 
 void MergeTreeReaderStream::seekToStart()
 {

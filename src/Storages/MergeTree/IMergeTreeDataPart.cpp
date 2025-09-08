@@ -132,7 +132,6 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
     size_t minmax_idx_size = minmax_column_types.size();
 
     hyperrectangle.reserve(minmax_idx_size);
-    FormatSettings format_settings;
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
         String file_name = "minmax_" + getFileColumnName(minmax_column_names[i], part.checksums) + ".idx";
@@ -140,9 +139,9 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
         auto serialization = minmax_column_types[i]->getDefaultSerialization();
 
         Field min_val;
-        serialization->deserializeBinary(min_val, *file, format_settings);
+        serialization->deserializeBinary(min_val, *file, {});
         Field max_val;
-        serialization->deserializeBinary(max_val, *file, format_settings);
+        serialization->deserializeBinary(max_val, *file, {});
 
         // NULL_LAST
         if (min_val.isNull())
@@ -683,7 +682,7 @@ void IMergeTreeDataPart::removeIfNeeded()
         std::this_thread::sleep_for(sleep_time);
     });
 
-    chassert(assertHasValidVersionMetadata());
+    assert(assertHasValidVersionMetadata());
     std::string path;
 
     try
@@ -1102,11 +1101,10 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     for (size_t j = 0; j < key_size; ++j)
         key_serializations[j] = primary_key.data_types[j]->getDefaultSerialization();
 
-    FormatSettings format_settings;
     for (size_t i = 0; i < marks_count; ++i)
     {
         for (size_t j = 0; j < key_size; ++j)
-            key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, format_settings);
+            key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
     }
 
     optimizeIndexColumns(marks_count, loaded_index);
@@ -1146,8 +1144,8 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     if (getDataPartStorage().existsFile(METADATA_VERSION_FILE_NAME))
         result.emplace(METADATA_VERSION_FILE_NAME);
 
-    if (getDataPartStorage().existsFile(COLUMNS_SUBSTREAMS_FILE_NAME))
-        result.emplace(COLUMNS_SUBSTREAMS_FILE_NAME);
+    if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
+        result.emplace("columns_substreams.txt");
 
     return result;
 }
@@ -1746,28 +1744,19 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     setColumns(loaded_columns, infos, *loaded_metadata_version);
 }
 
-void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_)
-{
-    columns_substreams_.validateColumns(getColumns().getNames());
-    columns_substreams = columns_substreams_;
-}
-
 void IMergeTreeDataPart::loadColumnsSubstreams()
 {
-    if (auto in = readFileIfExists(COLUMNS_SUBSTREAMS_FILE_NAME))
-    {
-        columns_substreams.readText(*in);
-    }
-    /// In Compact part with marks for substreams we must have substreams file. For other cases it's not mandatory.
-    else if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
-    {
-        throw Exception(
-            ErrorCodes::NO_FILE_IN_DATA_PART,
-            "No columns_substreams.txt in part {}, expected path {} on drive {}",
-            name,
-            fs::path(getDataPartStorage().getRelativePath()) / COLUMNS_SUBSTREAMS_FILE_NAME,
-            getDataPartStorage().getDiskName());
-    }
+    if (part_type != MergeTreeDataPartType::Compact || !index_granularity_info.mark_type.with_substreams)
+        return;
+
+    String path = fs::path(getDataPartStorage().getRelativePath()) / "columns_substreams.txt";
+
+    auto in = readFileIfExists("columns_substreams.txt");
+    if (!in)
+        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns_substreams.txt in part {}, expected path {} on drive {}", name, path, getDataPartStorage().getDiskName());
+
+    columns_substreams.readText(*in);
+
 }
 
 bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
@@ -2041,7 +2030,7 @@ void IMergeTreeDataPart::initializeIndexGranularityInfo()
 
 void IMergeTreeDataPart::remove()
 {
-    chassert(assertHasValidVersionMetadata());
+    assert(assertHasValidVersionMetadata());
     part_is_probably_removed_from_disk = true;
 
     auto can_remove_callback = [this] ()
@@ -2067,7 +2056,7 @@ void IMergeTreeDataPart::remove()
     /// Projections should be never removed by themselves, they will be removed
     /// with by parent part.
     if (isProjectionPart() && !is_temp)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection part {} should be removed by its parent {}", name, parent_part_name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection part {} should be removed by its parent {}.", name, parent_part->name);
 
     GinIndexStoreFactory::instance().remove(getDataPartStoragePtr()->getRelativePath());
 
@@ -2362,19 +2351,19 @@ void IMergeTreeDataPart::checkConsistencyWithProjections(bool require_part_metad
         proj_part->checkConsistency(require_part_metadata);
 }
 
-void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk() const
+void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample) const
 {
-    calculateColumnsSizesOnDisk();
+    calculateColumnsSizesOnDisk(columns_sample);
     calculateSecondaryIndicesSizesOnDisk();
     are_columns_and_secondary_indices_sizes_calculated = true;
 }
 
-void IMergeTreeDataPart::calculateColumnsSizesOnDisk() const
+void IMergeTreeDataPart::calculateColumnsSizesOnDisk(std::optional<Block> columns_sample) const
 {
     if (getColumns().empty() || checksums.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate columns sizes when columns or checksums are not initialized");
 
-    calculateEachColumnSizes(columns_sizes, total_columns_size);
+    calculateEachColumnSizes(columns_sizes, total_columns_size, columns_sample);
 }
 
 void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
@@ -2648,13 +2637,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
     MergeTreeReaderSettings settings;
-    /// We need to read only prefixes, so no data will be read.
-    /// Use read settings without prefetches/filesystem cache/etc.
-    settings.read_settings = getReadSettingsForMetadata();
     settings.can_read_part_without_marks = true;
-    /// Use prefixes deserialization thread pool to read prefixes faster.
-    /// In JSON type there might be hundreds of small files that needs to be read.
-    settings.use_prefixes_deserialization_thread_pool = true;
 
     auto alter_conversions = std::make_shared<AlterConversions>();
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);

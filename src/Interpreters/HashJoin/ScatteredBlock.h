@@ -8,7 +8,6 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
-#include <span>
 #include <boost/noncopyable.hpp>
 #include <fmt/ranges.h>
 
@@ -97,15 +96,17 @@ public:
         }
     }
 
-    static size_t size(const Range & range) { return range.second - range.first; }
-    static size_t size(const Indexes & indexes) { return indexes.size(); }
-
     size_t size() const
     {
         if (std::holds_alternative<Range>(data))
-            return size(std::get<Range>(data));
+        {
+            const auto range = std::get<Range>(data);
+            return range.second - range.first;
+        }
         else
-            return size(*std::get<IndexesPtr>(data));
+        {
+            return std::get<IndexesPtr>(data)->size();
+        }
     }
 
     /// First selector contains first `num_rows` rows, second selector contains the rest
@@ -223,7 +224,7 @@ struct ScatteredBlock : private boost::noncopyable
     Block && getSourceBlock() && { return std::move(block); }
 
     const auto & getSelector() const { return selector; }
-    std::pair<Block, Selector> detachData() && { return {std::move(block), std::move(selector)}; }
+    auto detachSelector() { return std::move(selector); }
 
     bool empty() const { return block.empty(); }
 
@@ -264,21 +265,14 @@ struct ScatteredBlock : private boost::noncopyable
         return block.getByName(name);
     }
 
-    void filter(std::span<UInt64> matched_rows)
+    /// Filters selector by mask discarding rows for which filter is false
+    void filter(const IColumnFilter & filter)
     {
-        if (matched_rows.empty())
-        {
-            selector = Selector();
-            return;
-        }
-        else if (matched_rows.size() == rows())
-            return;
-
-        IndexesPtr new_selector = Indexes::create(matched_rows.size());
-        auto & data = new_selector->getData();
-        size_t i = 0;
-        for (const auto pos : matched_rows)
-            data[i++] = selector[pos];
+        chassert(!block.empty() && block.rows() == filter.size());
+        IndexesPtr new_selector = Indexes::create();
+        new_selector->reserve(selector.size());
+        std::copy_if(
+            selector.begin(), selector.end(), std::back_inserter(new_selector->getData()), [&](size_t idx) { return filter[idx]; });
         selector = Selector(std::move(new_selector));
     }
 

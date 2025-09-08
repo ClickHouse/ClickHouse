@@ -681,6 +681,7 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
+        ColumnString::Chars zero_buf(16, '\0'); /// Needs 15 extra bytes for memcpySmallAllowReadWriteOverflow15
         std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
@@ -709,6 +710,9 @@ struct ArrayElementStringImpl
             }
             else
             {
+                /// Insert an empty row.
+                total_result_bytes += 1;
+                selected_bufs.emplace_back(zero_buf.data(), 1);
                 result_offsets[i] = total_result_bytes;
                 builder.update();
             }
@@ -740,6 +744,7 @@ struct ArrayElementStringImpl
         size_t size = offsets.size();
         result_offsets.resize(size);
 
+        ColumnString::Chars zero_buf(16, '\0'); /// Needs 15 extra bytes for memcpySmallAllowReadWriteOverflow15
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
@@ -774,7 +779,11 @@ struct ArrayElementStringImpl
             }
             else
             {
+                /// Insert empty string
+                total_result_bytes += 1;
+                selected_bufs.emplace_back(zero_buf.data(), 1);
                 result_offsets[i] = total_result_bytes;
+
                 builder.update();
             }
 

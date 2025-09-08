@@ -62,8 +62,7 @@ void registerOutputFormatMarkdown(FormatFactory & factory)
     factory.registerOutputFormat("Markdown", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings,
-        FormatFilterInfoPtr /*format_filter_info*/)
+        const FormatSettings & settings)
     {
         return std::make_shared<MarkdownRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });

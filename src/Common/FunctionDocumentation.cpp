@@ -18,7 +18,7 @@ VersionNumber VERSION_UNKNOWN = {0};
 
 /// Example input 'types' vector: {"(U)Int*", "Float*"}
 /// Example output string: [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
-String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const FunctionDocumentation::Syntax & syntax)
+String mapTypesToTypesWithLinks(const std::vector<std::string> & types)
 {
     String result;
     bool is_first = true;
@@ -34,11 +34,7 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
         if (type.starts_with("const "))
             type = type.substr(6); // Remove "const " prefix
 
-        if (type == "NULL")
-            result += "`](/sql-reference/syntax#null)";
-        else if (type == "Any")
-            result += "`](/sql-reference/data-types)";
-        else if (type == "String" || type == "String literal")
+        if (type == "String" || type == "String literal")
             result += "`](/sql-reference/data-types/string)";
         else if (type.starts_with("FixedString"))
             result += "`](/sql-reference/data-types/fixedstring)";
@@ -115,7 +111,7 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
         else if (type == "NULL")
             result += "`](/sql-reference/syntax#null)";
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected data type in function {}: {}", syntax, type);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected data type: {}", type);
     }
     result += "\n";
     return result;
@@ -132,7 +128,7 @@ String FunctionDocumentation::argumentsAsString() const
         /// We assume that if 'type' is empty(), 'description' already ends with a type definition. This is a reasonable assumption to be
         /// able to handle special cases which cannot be represented by the type mapping in mapTypesToTypesWithLinks.
         if (!types.empty())
-            result += mapTypesToTypesWithLinks(types, syntax);
+            result += mapTypesToTypesWithLinks(types);
     }
     return result;
 }
@@ -157,7 +153,7 @@ String FunctionDocumentation::returnedValueAsString() const
     /// We assume that if 'type' is empty(), 'description' already ends with a type definition. This is a reasonable assumption to be
     /// able to handle special cases which cannot be represented by the type mapping in mapTypesToTypesWithLinks.
     if (!returned_value.types.empty())
-        result += mapTypesToTypesWithLinks(returned_value.types, syntax);
+        result += mapTypesToTypesWithLinks(returned_value.types);
     return boost::algorithm::trim_copy(result);
 }
 
@@ -204,6 +200,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Geo, "Geo"},
         {Category::Encoding, "Encoding"},
         {Category::Encryption, "Encryption"},
+        {Category::File, "File"},
         {Category::Financial, "Financial"},
         {Category::Hash, "Hash"},
         {Category::IPAddress, "IP Address"},
@@ -214,7 +211,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Map, "Map"},
         {Category::Mathematical, "Mathematical"},
         {Category::NLP, "Natural Language Processing"},
-        {Category::Null, "Null"},
+        {Category::Nullable, "Nullable"},
         {Category::NumericIndexedVector, "NumericIndexedVector"},
         {Category::Other, "Other"},
         {Category::RandomNumber, "Random Number"},

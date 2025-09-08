@@ -151,8 +151,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
     factory.registerOutputFormat("JSON", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & format_settings,
-        FormatFilterInfoPtr /*format_filter_info*/)
+        const FormatSettings & format_settings)
     {
         return std::make_shared<JSONRowOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, false);
     });
@@ -164,8 +163,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
     factory.registerOutputFormat("JSONStrings", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & format_settings,
-        FormatFilterInfoPtr /*format_filter_info*/)
+        const FormatSettings & format_settings)
     {
         return std::make_shared<JSONRowOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, true);
     });

@@ -282,7 +282,7 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             // In case of plain stream all ways are questionable, but lets send the error any way.
 
             // no point to drain request, transmission has been already started hence the request has been read
-            // but make sense to try to send proper `connection: close` header if headers are not finished yet
+            // but make sense to try to send proper `connnection: close` header if headers are not finished yet
             response.setKeepAlive(false);
 
             // try to send proper header in case headers are not finished yet
