@@ -22,7 +22,7 @@ def process_os_check(log_path: Path) -> Result:
     with open(log_path, "r", encoding="utf-8") as log:
         line = log.read().split("\n")[0].strip()
         if line != "OK":
-            return Result(name=name, status=Result.StatusExtended.FAIL)
+            return Result(name=name, status=Result.StatusExtended.FAIL, files=[log_path])
         return Result(name=name, status=Result.StatusExtended.OK)
 
 
@@ -128,7 +128,16 @@ def main():
     check_distributions = (
         "aarch64" not in check_name.lower() and "arm" not in check_name.lower()
     )
-    Shell.check(f"chmod +x {temp_path}/clickhouse", verbose=True, strict=True)
+
+    for package in temp_path.iterdir():
+        if package.suffix == ".deb":
+            Shell.check(
+                f"dpkg -x {package} {temp_path} && rm {package}",
+                verbose=True,
+                strict=True,
+            )
+    Shell.check(f"mv {temp_path}/usr/bin/clickhouse {temp_path}/clickhouse", verbose=True, strict=True)
+    # Shell.check(f"chmod +x {temp_path}/clickhouse", verbose=True, strict=True)
 
     run_commands = []
 

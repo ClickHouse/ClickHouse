@@ -781,12 +781,12 @@ class JobConfigs:
         Job.ParamSet(
             parameter="amd_release",
             runs_on=RunnerLabels.STYLE_CHECK_AMD,
-            requires=[ArtifactNames.CH_AMD_RELEASE],
+            requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
         Job.ParamSet(
             parameter="arm_release",
             runs_on=RunnerLabels.STYLE_CHECK_ARM,
-            requires=[ArtifactNames.CH_ARM_RELEASE],
+            requires=[ArtifactNames.DEB_ARM_RELEASE],
         ),
     )
     ast_fuzzer_jobs = Job.Config(
