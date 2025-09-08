@@ -23,6 +23,6 @@ DROP TABLE t0;
 DROP TABLE IF EXISTS t0_replicated;
 CREATE TABLE t0_replicated (c0 Nullable(Int)) ENGINE = MergeTree() ORDER BY tuple();
 INSERT INTO TABLE t0_replicated (c0) VALUES (1);
-SELECT tx.c0.null FROM t0_replicated tx GLOBAL RIGHT JOIN t0_replicated AS ty ON tx.c0 = ty.c0;
+SELECT tx.c0.null FROM t0_replicated tx RIGHT JOIN t0_replicated AS ty ON tx.c0 = ty.c0;
 DROP TABLE t0_replicated;
 
