@@ -21,10 +21,57 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void unwrapReadFromLocalParallelReplica(
+    QueryPlan & query_plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.
+    /// Place it after projection optimization to avoid executing projection optimization twice in the local plan,
+    /// Which would cause an exception when force_use_projection is enabled.
+    // bool read_from_local_parallel_replica_plan = false;
+    auto settings = optimization_settings;
+    settings.optimize_projection = settings.force_use_projection = false;
+    Stack stack;
+    stack.push_back({.node = &root});
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+        if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep *>(frame.node->step.get()))
+        {
+            // read_from_local_parallel_replica_plan = true;
+
+            auto local_plan = read_from_local->extractQueryPlan();
+            local_plan->optimize(settings);
+
+            auto * local_plan_node = frame.node;
+            query_plan.replaceNodeWithPlan(local_plan_node, std::move(local_plan));
+        }
+
+        if (settings.merge_expressions)
+            tryMergeExpressions(frame.node, nodes, {});
+
+        stack.pop_back();
+    }
+    // local plan can contain redundant sorting
+    // if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
+    // tryRemoveRedundantSorting(&root);
+}
+
+void optimizeTreeFirstPass(
+    const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
 {
     if (!optimization_settings.optimize_plan)
         return;
+
+    unwrapReadFromLocalParallelReplica(query_plan, root, nodes, optimization_settings);
 
     const auto & optimizations = getOptimizations();
 
@@ -160,48 +207,11 @@ void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter,
 
 
 void optimizeTreeSecondPass(
-    const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
+    const QueryPlanOptimizationSettings & optimization_settings,
+    QueryPlan::Node & root,
+    QueryPlan::Nodes & nodes,
+    [[maybe_unused]] QueryPlan & query_plan)
 {
-    {
-        /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.
-        /// Place it after projection optimization to avoid executing projection optimization twice in the local plan,
-        /// Which would cause an exception when force_use_projection is enabled.
-        bool read_from_local_parallel_replica_plan = false;
-        Stack stack;
-        stack.push_back({.node = &root});
-        while (!stack.empty())
-        {
-            auto & frame = stack.back();
-
-            /// Traverse all children first.
-            if (frame.next_child < frame.node->children.size())
-            {
-                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
-                ++frame.next_child;
-                stack.push_back(next_frame);
-                continue;
-            }
-            if (auto * read_from_local = typeid_cast<ReadFromLocalParallelReplicaStep *>(frame.node->step.get()))
-            {
-                read_from_local_parallel_replica_plan = true;
-
-                auto local_plan = read_from_local->extractQueryPlan();
-                local_plan->optimize(optimization_settings);
-
-                auto * local_plan_node = frame.node;
-                query_plan.replaceNodeWithPlan(local_plan_node, std::move(local_plan));
-            }
-
-            if (optimization_settings.merge_expressions)
-                tryMergeExpressions(frame.node, nodes, {});
-
-            stack.pop_back();
-        }
-        // local plan can contain redundant sorting
-        if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
-            tryRemoveRedundantSorting(&root);
-    }
-
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     std::unordered_set<String> applied_projection_names;
     bool has_reading_from_mt = false;
