@@ -57,6 +57,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"promql_evaluation_time", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."},
             {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
             {"optimize_empty_string_comparisons", true, true, "A new setting."},
+            {"count_distinct_optimization", false, true, "Changed setting value."},
+            {"optimize_trivial_group_by_limit_query", true, true, "A new setting."},
+            {"query_plan_push_down_order_by_limit",true, true, "A new setting."},
+            {"query_plan_rewrite_order_by_limit",true, true, "Added new setting to use rewrite for optimize order by limit"},
+            {"query_plan_max_limit_for_rewrite_order_by_limit", 1000000, 1000000, "Added new setting to control maximum limit value that allows to use rewrite sql for optimize order by limit. If zero, there is no limit"},
+            {"query_plan_min_columns_to_use_rewrite_order_by_limit", 50, 50, "Added new setting"},
+            {"max_limit_to_push_down_topn_predicate", 100, 100, "Added new setting"},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
@@ -148,12 +155,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_plan_force_shuffle_aggregation", 0, 0, "New experimental setting"},
             {"allow_experimental_insert_into_iceberg", false, false, "New setting."},
             /// RELEASE CLOSED
-            {"optimize_empty_string_comparisons", true, true, "A new setting."},
-            {"data_type_string_use_size_stream", false, false, "A new setting."},
-            {"optimize_rewrite_regexp_functions", "true", "true", "A new setting"},
-            {"query_plan_rewrite_order_by_limit",false, false, "Added new setting to use rewrite for optimize order by limit"},
-            {"query_plan_max_limit_for_rewrite_order_by_limit", 1000000, 1000000, "Added new setting to control maximum limit value that allows to use rewrite sql for optimize order by limit. If zero, there is no limit"},
-            {"query_plan_min_columns_to_use_rewrite_order_by_limit", 50, 50, "Added new setting"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
