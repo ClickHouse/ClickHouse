@@ -100,6 +100,8 @@
     M(TextIndexBloomFilterHits, "Number of times a token has been filtered by bloom filter.", ValueType::Number) \
     M(TextIndexBloomFilterMisses, "Number of times a token has passed the bloom filter and was found in the dictionary.", ValueType::Number) \
     M(TextIndexBloomFilterFalsePositives, "Number of times a token has passed the bloom filter and was not found in the dictionary.", ValueType::Number) \
+    M(TextIndexReadPostings, "Number of times a posting list has been read from the text index.", ValueType::Number) \
+    M(TextIndexUsedEmbeddedPostings, "Number of times a posting list embedded in the dictionary has been used.", ValueType::Number) \
     M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \

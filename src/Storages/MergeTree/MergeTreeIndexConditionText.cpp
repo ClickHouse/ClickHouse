@@ -90,19 +90,24 @@ TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement &
     return TextSearchMode::Any;
 }
 
+bool MergeTreeIndexConditionText::isSupportedFunctionForDirectRead(const String & function_name)
+{
+    return function_name == "hasToken"
+        || function_name == "searchAny"
+        || function_name == "searchAll";
+}
+
 bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)
 {
-    return function_name == "equals" ||
-        function_name == "notEquals" ||
-        function_name == "like" ||
-        function_name == "notLike" ||
-        function_name == "hasToken" ||
-        function_name == "hasTokenOrNull" ||
-        function_name == "startsWith" ||
-        function_name == "endsWith" ||
-        function_name == "searchAny" ||
-        function_name == "searchAll" ||
-        function_name == "match";
+    return isSupportedFunctionForDirectRead(function_name)
+        || function_name == "equals"
+        || function_name == "notEquals"
+        || function_name == "like"
+        || function_name == "notLike"
+        || function_name == "hasTokenOrNull"
+        || function_name == "startsWith"
+        || function_name == "endsWith"
+        || function_name == "match";
 }
 
 TextSearchQueryPtr MergeTreeIndexConditionText::createSearchQuery(const ActionsDAG::Node & node) const
@@ -182,8 +187,17 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         }
         else if (element.function == RPNElement::FUNCTION_SEARCH_ALL
             || element.function == RPNElement::FUNCTION_EQUALS
-            || element.function == RPNElement::FUNCTION_NOT_EQUALS
-            || element.function == RPNElement::FUNCTION_MATCH
+            || element.function == RPNElement::FUNCTION_NOT_EQUALS)
+        {
+            chassert(element.text_search_queries.size() == 1);
+            const auto & text_search_query = element.text_search_queries.front();
+            bool exists_in_granule = granule->hasAllTokensFromQuery(*text_search_query);
+            rpn_stack.emplace_back(exists_in_granule, true);
+
+            if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
+                rpn_stack.back() = !rpn_stack.back();
+        }
+        else if (element.function == RPNElement::FUNCTION_MATCH
             || element.function == RPNElement::FUNCTION_IN
             || element.function == RPNElement::FUNCTION_NOT_IN)
         {
@@ -199,7 +213,7 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             }
 
             rpn_stack.emplace_back(exists_in_granule, true);
-            if (element.function == RPNElement::FUNCTION_NOT_EQUALS ||element.function == RPNElement::FUNCTION_NOT_IN)
+            if (element.function == RPNElement::FUNCTION_NOT_IN)
                 rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
@@ -435,7 +449,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
 
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, tokens));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
     if (function_name == "notLike" && token_extractor->supportsStringLike())
@@ -445,7 +459,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
 
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, tokens));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
     if (function_name == "match" && token_extractor->supportsStringLike())

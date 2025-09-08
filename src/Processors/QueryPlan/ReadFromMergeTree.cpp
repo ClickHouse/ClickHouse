@@ -2570,22 +2570,28 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// Optionally initializes index build context to filter on data reading. This context is shared across multiple
     /// MergeTreeSelectProcessor instances, and is used to construct and apply index filters in a thread-safe manner.
     MergeTreeIndexBuildContextPtr index_build_context;
-    bool build_skip_index_reader = indexes && indexes->use_skip_indexes && !indexes->skip_indexes.empty()
+    bool build_skip_index_reader = indexes
+        && indexes->use_skip_indexes
+        && !indexes->skip_indexes.empty()
         && (!query_info.isFinal() || !settings[Setting::use_skip_indexes_if_final_exact_mode])
-        && settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
+        && settings[Setting::use_skip_indexes_on_data_read]
+        && !is_parallel_reading_from_replicas;
 
     if (build_skip_index_reader)
     {
         /// Vector similarity indexes are not applicable on data reads.
         UsefulSkipIndexes applicable_skip_indexes = indexes->skip_indexes;
-        std::erase_if(applicable_skip_indexes.useful_indices, [](const auto & idx) { return idx.index->isVectorSimilarityIndex() || idx.index->hasHeavyGranules(); });
 
-        RangesByIndex read_ranges;
-        PartRemainingMarks part_remaining_marks;
-        MergeTreeIndexReadResultPoolPtr index_read_result_pool;
+        std::erase_if(applicable_skip_indexes.useful_indices, [this](const auto & idx)
+        {
+            return idx.index->isVectorSimilarityIndex() || index_read_tasks.contains(idx.index->index.name);
+        });
 
         if (!applicable_skip_indexes.empty())
         {
+            RangesByIndex read_ranges;
+            PartRemainingMarks part_remaining_marks;
+
             for (const auto & ranges : result.parts_with_ranges)
             {
                 read_ranges.emplace(ranges.part_index_in_query, ranges);
@@ -2602,11 +2608,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
             /// TODO(ab): If projection index is available, build projection index reader and pass it into result pool.
 
-            index_read_result_pool = std::make_shared<MergeTreeIndexReadResultPool>(std::move(skip_index_reader));
-        }
+            auto index_read_result_pool = std::make_shared<MergeTreeIndexReadResultPool>(std::move(skip_index_reader));
 
-        if (index_read_result_pool)
-        {
             index_build_context = std::make_shared<MergeTreeIndexBuildContext>(
                 std::move(read_ranges),
                 std::move(index_read_result_pool),
@@ -3089,7 +3092,7 @@ void ReadFromMergeTree::replaceColumnsForTextSearch(const IndexReadColumns & add
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} not found in analyzed indexes, indexes are not initialized", index_name);
 
             const auto & useful_indices = indexes->skip_indexes.useful_indices;
-            auto index_it = std::ranges::find_if(useful_indices, [index_name](const auto & index) { return index.index->index.name == index_name; });
+            auto index_it = std::ranges::find_if(useful_indices, [&](const auto & index) { return index.index->index.name == index_name; });
 
             if (index_it == useful_indices.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} not found in analyzed indexes", index_name);

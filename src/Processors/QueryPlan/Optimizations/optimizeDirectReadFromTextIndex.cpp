@@ -28,7 +28,7 @@ using IndexToConditionMap = std::unordered_map<String, MergeTreeIndexConditionTe
 /// equivalent query
 ///     SELECT count() FROM table where __text_index_text_col_idx_hasToken_0
 ///
-/// The supported functions can be found in MergeTreeIndexConditionText::isSupportedFunction.
+/// The supported functions can be found in MergeTreeIndexConditionText::isSupportedFunctionForDirectRead.
 ///
 /// This class is a (C++) friend of ActionsDAG and can therefore access its private members.
 ///
@@ -109,7 +109,7 @@ private:
         if (function_node.children.size() != 2)
             return std::nullopt;
 
-        if (!MergeTreeIndexConditionText::isSupportedFunction(function_node.function->getName()))
+        if (!MergeTreeIndexConditionText::isSupportedFunctionForDirectRead(function_node.function->getName()))
             return std::nullopt;
 
         IndexToConditionMap::iterator selected_condition_it = index_conditions.end();

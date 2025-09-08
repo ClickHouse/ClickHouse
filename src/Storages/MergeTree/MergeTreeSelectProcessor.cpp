@@ -97,13 +97,11 @@ MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
     , index_reader_pool(std::move(index_reader_pool_))
     , part_remaining_marks(std::move(part_remaining_marks_))
 {
+    chassert(index_reader_pool);
 }
 
 MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTask & task) const
 {
-    if (!index_reader_pool)
-        return nullptr;
-
     const auto & part_ranges = read_ranges.at(task.getInfo().part_index_in_query);
     auto & remaining_marks = part_remaining_marks.at(task.getInfo().part_index_in_query).value;
     auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(part_ranges);
@@ -327,7 +325,7 @@ void MergeTreeSelectProcessor::cancel() noexcept
 {
     is_cancelled = true;
 
-    if (merge_tree_index_build_context && merge_tree_index_build_context->index_reader_pool)
+    if (merge_tree_index_build_context)
         merge_tree_index_build_context->index_reader_pool->cancel();
 }
 

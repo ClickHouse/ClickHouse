@@ -42,6 +42,7 @@ public:
         TokenExtractorPtr token_extactor_);
 
     ~MergeTreeIndexConditionText() override = default;
+    static bool isSupportedFunctionForDirectRead(const String & function_name);
     static bool isSupportedFunction(const String & function_name);
 
     bool alwaysUnknownOrTrue() const override;
