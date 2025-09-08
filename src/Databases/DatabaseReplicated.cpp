@@ -404,7 +404,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
     return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params);
 }
 
-ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const
+ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_, ContextPtr query_context) const
 {
     Strings paths;
 
@@ -422,46 +422,63 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
         }
     }
 
+    const auto & settings = query_context->getSettingsRef();
+    auto with_retries = WithRetries(
+        log,
+        [&](UInt64 max_lock_milliseconds) { return query_context->getZooKeeper(max_lock_milliseconds); },
+        {
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            query_context->getProcessListElement()
+        },
+        settings[Setting::keeper_fault_injection_probability],
+        settings[Setting::keeper_fault_injection_seed]
+        );
+
     try
     {
-        auto current_zookeeper = getZooKeeper();
-        auto zk_res = current_zookeeper->tryGet(paths);
-
-        auto max_log_ptr_zk = zk_res[0];
-        if (max_log_ptr_zk.error != Coordination::Error::ZOK)
-            throw Coordination::Exception(max_log_ptr_zk.error);
-
-        UInt32 max_log_ptr = parse<UInt32>(max_log_ptr_zk.data);
-
         ReplicasInfo replicas_info;
-        replicas_info.resize((zk_res.size() - 1) / 2);
-
-        size_t global_replica_index = 0;
-        for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
+        auto holder = with_retries.createRetriesControlHolderForOperations("DatabaseReplicated::tryGetReplicasInfo");
+        holder.retries_ctl.retryLoop([&, &current_zookeeper = holder.faulty_zookeeper]()
         {
-            for (const auto & replica : addresses_with_failover[shard_index])
+            with_retries.renewZooKeeper(holder);
+
+            auto zk_res = current_zookeeper->tryGet(paths);
+
+            auto max_log_ptr_zk = zk_res[0];
+            if (max_log_ptr_zk.error != Coordination::Error::ZOK)
+                throw Coordination::Exception(max_log_ptr_zk.error);
+
+            UInt32 max_log_ptr = parse<UInt32>(max_log_ptr_zk.data);
+            replicas_info.resize((zk_res.size() - 1) / 2);
+
+            size_t global_replica_index = 0;
+            for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
             {
-                auto replica_active = zk_res[2 * global_replica_index + 1];
-                auto replica_log_ptr = zk_res[2 * global_replica_index + 2];
-
-                UInt64 recovery_time = 0;
+                for (const auto & replica : addresses_with_failover[shard_index])
                 {
-                    std::lock_guard lock(ddl_worker_mutex);
-                    if (replica.is_local && ddl_worker)
-                        recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                    auto replica_active = zk_res[2 * global_replica_index + 1];
+                    auto replica_log_ptr = zk_res[2 * global_replica_index + 2];
+
+                    UInt64 recovery_time = 0;
+                    {
+                        std::lock_guard lock(ddl_worker_mutex);
+                        if (replica.is_local && ddl_worker)
+                            recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                    }
+
+                    replicas_info[global_replica_index] = ReplicaInfo{
+                        .is_active = replica_active.error == Coordination::Error::ZOK,
+                        .unsynced_after_recovery = ddl_worker && ddl_worker->isUnsyncedAfterRecovery(),
+                        .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
+                        .recovery_time = recovery_time,
+                    };
+
+                    ++global_replica_index;
                 }
-
-                replicas_info[global_replica_index] = ReplicaInfo{
-                    .is_active = replica_active.error == Coordination::Error::ZOK,
-                    .unsynced_after_recovery = ddl_worker && ddl_worker->isUnsyncedAfterRecovery(),
-                    .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
-                    .recovery_time = recovery_time,
-                };
-
-                ++global_replica_index;
             }
-        }
-
+        });
         return replicas_info;
     }
     catch (...)
@@ -736,12 +753,9 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const WithRetries & with_
                             "already contains some data and it does not look like Replicated database path.", zookeeper_path);
 
         zkutil::ZooKeeper::MultiTryGetResponse check_responses = current_zookeeper->tryGet(check_paths);
-        LOG_DEBUG(log, "Check responses size {}", check_responses.size());
         for (size_t i = 0; i < check_responses.size(); ++i)
         {
             const auto & response = check_responses[i];
-            LOG_DEBUG(log, "Response {}. Path: {}. Result {}", i, check_paths[i], response.error);
-
             if (response.error == Coordination::Error::ZOK)
                 nodes_exist = true;
 

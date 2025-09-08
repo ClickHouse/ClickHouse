@@ -50,7 +50,7 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
 void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const
 {
     for (const auto & name_and_cluster : context->getClusters())
-        writeCluster(res_columns, columns_mask, name_and_cluster, /* replicated= */ nullptr);
+        writeCluster(res_columns, context, columns_mask, name_and_cluster, /* replicated= */ nullptr);
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
     for (const auto & name_and_database : databases)
@@ -59,15 +59,15 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
         {
 
             if (auto database_cluster = replicated->tryGetCluster())
-                writeCluster(res_columns, columns_mask, {name_and_database.first, database_cluster}, replicated);
+                writeCluster(res_columns, context, columns_mask, {name_and_database.first, database_cluster}, replicated);
 
             if (auto database_cluster = replicated->tryGetAllGroupsCluster())
-                writeCluster(res_columns, columns_mask, {DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + name_and_database.first, database_cluster}, replicated);
+                writeCluster(res_columns, context, columns_mask, {DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + name_and_database.first, database_cluster}, replicated);
         }
     }
 }
 
-void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std::vector<UInt8> & columns_mask, const NameAndCluster & name_and_cluster, const DatabaseReplicated * replicated)
+void StorageSystemClusters::writeCluster(MutableColumns & res_columns, ContextPtr context, const std::vector<UInt8> & columns_mask, const NameAndCluster & name_and_cluster, const DatabaseReplicated * replicated)
 {
     const String & cluster_name = name_and_cluster.first;
     const ClusterPtr & cluster = name_and_cluster.second;
@@ -80,7 +80,7 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
     size_t is_active_column_idx = columns_mask.size() - 4;
     ReplicasInfo replicas_info;
     if (replicated && (columns_mask[recovery_time_column_idx] || columns_mask[replication_lag_column_idx] || columns_mask[is_unsynced_column_idx] || columns_mask[is_active_column_idx]))
-        replicas_info = replicated->tryGetReplicasInfo(name_and_cluster.second);
+        replicas_info = replicated->tryGetReplicasInfo(name_and_cluster.second, context);
 
     size_t replica_idx = 0;
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)

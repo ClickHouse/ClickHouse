@@ -111,7 +111,7 @@ public:
 
     void restoreDatabaseMetadataInKeeper(ContextPtr ctx);
 
-    ReplicasInfo tryGetReplicasInfo(const ClusterPtr & cluster_) const;
+    ReplicasInfo tryGetReplicasInfo(const ClusterPtr & cluster_, ContextPtr query_context) const;
 
     void renameDatabase(ContextPtr query_context, const String & new_name) override;
 
