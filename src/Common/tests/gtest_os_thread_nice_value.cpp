@@ -45,6 +45,11 @@ TEST(OSThreadNiceValue, SetCurrentThread)
 
 TEST(OSThreadNiceValue, ScopedGuard)
 {
+    if (!hasLinuxCapability(CAP_SYS_NICE))
+    {
+        GTEST_SKIP() << "No CAP_SYS_NICE capability";
+    }
+
     const int original = getCurrentNiceValue();
 
     OSThreadNiceValue::set(3);
@@ -67,6 +72,11 @@ TEST(OSThreadNiceValue, ScopedGuard)
 
 TEST(OSThreadNiceValue, NonPrivilegedPositiveValue)
 {
+    if (!hasLinuxCapability(CAP_SYS_NICE))
+    {
+        GTEST_SKIP() << "No CAP_SYS_NICE capability";
+    }
+
     const int original = getCurrentNiceValue();
 
     ASSERT_NO_THROW(OSThreadNiceValue::set(5));
