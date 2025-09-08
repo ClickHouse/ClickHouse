@@ -6,7 +6,6 @@ from helpers.iceberg_utils import (
     default_download_directory,
 )
 
-
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
 def test_writes_schema_evolution(started_cluster, format_version, storage_type):

@@ -7,8 +7,6 @@ from helpers.iceberg_utils import (
     get_uuid_str
 )
 
-    
-
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 @pytest.mark.parametrize("is_table_function", [False, True])

@@ -13,7 +13,6 @@ import logging
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
 def test_cluster_table_function(started_cluster, format_version, storage_type):
-
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
 

@@ -4,7 +4,6 @@ import subprocess
 from helpers.iceberg_utils import (
     create_iceberg_table,
     get_uuid_str,      
-    default_download_directory,
     default_upload_directory
 )
 

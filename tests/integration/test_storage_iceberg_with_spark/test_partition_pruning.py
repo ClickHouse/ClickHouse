@@ -7,9 +7,6 @@ from helpers.iceberg_utils import (
     get_uuid_str
 )
 
-    
-
-
 @pytest.mark.parametrize(
     "storage_type, run_on_cluster",
     [("s3", False), ("s3", True), ("azure", False), ("local", False)],

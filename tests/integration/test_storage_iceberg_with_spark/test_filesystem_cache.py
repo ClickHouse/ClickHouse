@@ -9,8 +9,6 @@ from helpers.iceberg_utils import (
     generate_data
 )
 
-
-
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_filesystem_cache(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]

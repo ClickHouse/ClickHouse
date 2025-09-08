@@ -6,8 +6,6 @@ from helpers.iceberg_utils import (
     default_download_directory,
 )
 
-
-
 @pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
 @pytest.mark.parametrize("partition_type", ["", "identity(x)", "icebergBucket(3, x)"])
 def test_writes_mutate_update(started_cluster, storage_type, partition_type):

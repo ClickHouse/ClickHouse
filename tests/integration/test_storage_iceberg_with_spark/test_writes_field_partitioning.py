@@ -5,8 +5,6 @@ from helpers.iceberg_utils import (
     get_uuid_str,
     default_download_directory,
 )
-
-
     
 @pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
 def test_writes_field_partitioning(started_cluster, storage_type):

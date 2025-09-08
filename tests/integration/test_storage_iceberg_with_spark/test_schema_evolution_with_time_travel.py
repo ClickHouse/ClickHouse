@@ -11,8 +11,6 @@ from helpers.iceberg_utils import (
     get_uuid_str
 )
 
-import logging
-
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_schema_evolution_with_time_travel(

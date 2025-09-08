@@ -1,5 +1,4 @@
 import pytest
-import json
 
 from helpers.iceberg_utils import (
     default_upload_directory,

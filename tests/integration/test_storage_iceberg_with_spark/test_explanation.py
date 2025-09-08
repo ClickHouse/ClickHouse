@@ -6,8 +6,6 @@ from helpers.iceberg_utils import (
     get_uuid_str
 )
 
-from helpers.test_tools import TSV
-
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])

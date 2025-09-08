@@ -11,7 +11,6 @@ from helpers.iceberg_utils import (
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_writes_statistics_by_minmax_pruning(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
     TABLE_NAME = "test_minmax_pruning_" + storage_type + "_" + get_uuid_str()
 
     schema = """

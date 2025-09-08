@@ -1,14 +1,9 @@
 import pytest
-import json
-import datetime
-import time
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
     default_upload_directory,
-    default_download_directory,
-    get_uuid_str,
-    get_last_snapshot
+    get_uuid_str
 )
 
 

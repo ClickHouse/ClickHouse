@@ -6,8 +6,6 @@ from helpers.iceberg_utils import (
     get_uuid_str
 )
 
-
-
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_metadata_file_selection_from_version_hint(started_cluster, format_version, storage_type):

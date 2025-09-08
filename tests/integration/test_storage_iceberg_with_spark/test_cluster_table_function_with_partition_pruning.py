@@ -1,7 +1,6 @@
 import pytest
 
 from helpers.iceberg_utils import (
-    check_validity_and_get_prunned_files_general,
     execute_spark_query_general,
     get_creation_expression,
     get_uuid_str
