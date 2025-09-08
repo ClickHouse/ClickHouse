@@ -90,6 +90,11 @@ public:
     bool supportsStat() const override { return false; }
     bool supportsPartitionCommand(const PartitionCommand & command) const override;
 
+    bool isReadOnly() const override { return true; }
+
+private:
+    ObjectStorageKey getObjectKeyForPath(const std::string & path) const;
+
 protected:
     /// Get the object storage prefix for storing metadata files.
     virtual std::string getMetadataKeyPrefix() const { return object_storage->getCommonKeyPrefix(); }
@@ -153,7 +158,9 @@ public:
 
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
-    void commit() override;
+    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
+
+    void commit(const TransactionCommitOptionsVariant & options) override;
 
     bool supportsChmod() const override { return false; }
 };
