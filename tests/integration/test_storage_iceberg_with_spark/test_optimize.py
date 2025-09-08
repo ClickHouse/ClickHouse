@@ -14,7 +14,7 @@ from helpers.iceberg_utils import (
 def test_optimize(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    TABLE_NAME = "test_position_deletes_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = "test_optimize_" + storage_type + "_" + get_uuid_str()
 
     spark.sql(
         f"""

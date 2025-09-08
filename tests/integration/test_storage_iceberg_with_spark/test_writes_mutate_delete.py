@@ -13,7 +13,7 @@ def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
     format_version = 2
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = "test_writes_mutate_delete_" + storage_type + "_" + get_uuid_str()
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version, partition_type)
 

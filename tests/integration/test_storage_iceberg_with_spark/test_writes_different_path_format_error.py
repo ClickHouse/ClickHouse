@@ -13,7 +13,7 @@ def test_writes_different_path_format_error(started_cluster, format_version, sto
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
 
-    TABLE_NAME = "test_row_based_deletes_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = "test_writes_different_path_format_error_" + storage_type + "_" + get_uuid_str()
 
     spark.sql(
         f"CREATE TABLE {TABLE_NAME} (id string) USING iceberg TBLPROPERTIES ('format-version' = '{format_version}')")

@@ -13,7 +13,7 @@ def test_writes_from_zero(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
 
-    TABLE_NAME = "test_row_based_deletes_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = "test_writes_from_zero_" + storage_type + "_" + get_uuid_str()
 
     spark.sql(
         f"CREATE TABLE {TABLE_NAME} (id int) USING iceberg TBLPROPERTIES ('format-version' = '{format_version}')")

@@ -12,7 +12,6 @@ from helpers.s3_tools import (
     prepare_s3_bucket,
 )
 
-
 def get_spark():
     builder = (
         pyspark.sql.SparkSession.builder.appName("spark_test")

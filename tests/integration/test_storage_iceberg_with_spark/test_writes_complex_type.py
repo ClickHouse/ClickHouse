@@ -11,7 +11,7 @@ from helpers.iceberg_utils import (
 def test_writes_complex_types(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = "test_writes_complex_types_" + storage_type + "_" + get_uuid_str()
 
     schema = "(x Array(Nullable(Int32)), z Map(Int32, Nullable(Int64)), y Tuple(zip Nullable(Int32), foo Nullable(Int32)))"
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, schema, format_version)
