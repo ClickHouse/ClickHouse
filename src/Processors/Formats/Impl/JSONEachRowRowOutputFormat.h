@@ -1,5 +1,6 @@
 #pragma once
 
+#include <IO/PeekableWriteBuffer.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 #include <Formats/FormatSettings.h>
@@ -18,7 +19,7 @@ class JSONEachRowRowOutputFormat : public RowOutputFormatWithExceptionHandlerAda
 public:
     JSONEachRowRowOutputFormat(
         WriteBuffer & out_,
-        SharedHeader header_,
+        const Block & header_,
         const FormatSettings & settings_,
         bool pretty_json_ = false);
 

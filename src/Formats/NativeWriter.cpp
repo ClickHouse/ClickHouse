@@ -31,7 +31,7 @@ namespace ErrorCodes
 NativeWriter::NativeWriter(
     WriteBuffer & ostr_,
     UInt64 client_revision_,
-    SharedHeader header_,
+    const Block & header_,
     std::optional<FormatSettings> format_settings_,
     bool remove_low_cardinality_,
     IndexForNativeFormat * index_,
@@ -85,16 +85,7 @@ void NativeWriter::flush()
     settings.low_cardinality_max_dictionary_size = 0;
     settings.native_format = true;
     settings.format_settings = format_settings ? &*format_settings : nullptr;
-    if (client_revision < DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION)
-    {
-        settings.dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V1;
-        settings.object_serialization_version = MergeTreeObjectSerializationVersion::V1;
-    }
-    else
-    {
-        settings.dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V2;
-        settings.object_serialization_version = MergeTreeObjectSerializationVersion::V2;
-    }
+    settings.use_v1_object_and_dynamic_serialization = client_revision < DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION;
 
     ISerialization::SerializeBinaryBulkStatePtr state;
     serialization.serializeBinaryBulkStatePrefix(*full_column, settings, state);

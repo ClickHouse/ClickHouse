@@ -2,7 +2,6 @@
 
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
-#include <IO/ReadBuffer.h>
 
 class SipHash;
 
@@ -35,7 +34,7 @@ public:
     const char * end = nullptr;
 
     /// Data from buffer to insert after inlined one - may be nullptr.
-    mutable ReadBufferPtr tail = nullptr;
+    ReadBuffer * tail = nullptr;
 
     bool async_insert_flush = false;
 

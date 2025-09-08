@@ -1,5 +1,4 @@
 #include <Formats/ProtobufSerializer.h>
-#include <Common/Arena.h>
 
 #if USE_PROTOBUF
 #    include <AggregateFunctions/IAggregateFunction.h>
@@ -670,6 +669,7 @@ namespace
                 }
                 try
                 {
+                    data.push_back(0 /* terminating zero */);
                     column_string.getOffsets().push_back(data.size());
                 }
                 catch (...)
@@ -705,6 +705,7 @@ namespace
             {
                 try
                 {
+                    data.push_back(0 /* terminating zero */);
                     column_string.getOffsets().push_back(data.size());
                 }
                 catch (...)
@@ -3621,9 +3622,9 @@ namespace
 
                     if (const auto * message_type = field_descriptor.message_type())
                     {
-                        bool has_explicit_names = tuple_data_type.hasExplicitNames();
+                        bool have_explicit_names = tuple_data_type.haveExplicitNames();
                         Names element_names;
-                        if (has_explicit_names)
+                        if (have_explicit_names)
                         {
                             element_names = tuple_data_type.getElementNames();
                         }

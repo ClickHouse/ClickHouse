@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/Progress.h>
+#include <IO/PeekableWriteBuffer.h>
 #include <Common/Stopwatch.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
@@ -17,7 +18,7 @@ class JSONRowOutputFormat : public RowOutputFormatWithExceptionHandlerAdaptor<Ro
 public:
     JSONRowOutputFormat(
         WriteBuffer & out_,
-        SharedHeader header,
+        const Block & header,
         const FormatSettings & settings_,
         bool yield_strings_);
 

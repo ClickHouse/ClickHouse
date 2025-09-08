@@ -67,6 +67,7 @@ FROM employees;
 
 Result:
 
+
 ```response
    ┌─no_overflow─┬─overflow─┬─toTypeName(no_overflow)─┬─toTypeName(overflow)─┐
 1. │      118700 │    53164 │ UInt64                  │ UInt16               │

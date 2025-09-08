@@ -65,6 +65,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
 
+
 ### Dynamic column selection {#dynamic-column-selection}
 
 Dynamic column selection (also known as a COLUMNS expression) allows you to match some columns in a result with a [re2](https://en.wikipedia.org/wiki/RE2_(software)) regular expression.
@@ -189,7 +190,7 @@ SELECT <expr> APPLY( <func> ) FROM [db.]table_name
 **Example:**
 
 ```sql
-CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER BY (i);
+CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
 INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
 SELECT * APPLY(sum) FROM columns_transformers;
 ```
@@ -238,7 +239,7 @@ SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
 **Example:**
 
 ```sql
-SELECT * REPLACE(i + 1 AS i) FROM columns_transformers;
+SELECT * REPLACE(i + 1 AS i) from columns_transformers;
 ```
 
 ```response
@@ -257,7 +258,7 @@ You can use each modifier separately or combine them.
 Using the same modifier multiple times.
 
 ```sql
-SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) FROM columns_transformers;
+SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) from columns_transformers;
 ```
 
 ```response
@@ -283,8 +284,6 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed.
 
 Other ways to make settings see [here](/operations/settings/overview).
-
-For boolean settings set to true, you can use a shorthand syntax by omitting the value assignment. When only the setting name is specified, it is automatically set to `1` (true).
 
 **Example**
 

@@ -7,12 +7,14 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
 #include <Databases/IDatabase.h>
 
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
+#include <Common/PageCache.h>
 #include <Common/quoteString.h>
 
 #include "config.h"
@@ -21,13 +23,20 @@
 #endif
 
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MarkCache.h>
 
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INVALID_SETTING_VALUE;
+}
 
 namespace
 {
@@ -62,6 +71,9 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     , update_heavy_metrics(update_heavy_metrics_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
+    /// sanity check
+    if (update_period_seconds == 0 || heavy_metrics_update_period_seconds == 0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting asynchronous_metrics_update_period_s and asynchronous_heavy_metrics_update_period_s must not be zero");
 }
 
 ServerAsynchronousMetrics::~ServerAsynchronousMetrics()
@@ -346,19 +358,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["TotalPrimaryKeyBytesInMemoryAllocated"] = { total_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account)." };
         new_values["TotalIndexGranularityBytesInMemory"] = { total_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by index granulas (only takes active parts into account)." };
         new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granulas (only takes active parts into account)." };
-    }
-
-    {
-        const auto user_info = getContext()->getProcessList().getUserInfo(true);
-        size_t queries_memory_usage = 0;
-        size_t queries_peak_memory_usage = 0;
-        for (const auto & [user, info] : user_info)
-        {
-            queries_memory_usage += info.memory_usage;
-            queries_peak_memory_usage += info.peak_memory_usage;
-        }
-        new_values["QueriesMemoryUsage"] = { queries_memory_usage, "Memory used by queries, in bytes." };
-        new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage, "Peak memory usage for queries, in bytes." };
     }
 
 #if USE_NURAFT

@@ -1,5 +1,7 @@
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryIdHolder.h>
+#include "base/defines.h"
 
 namespace DB
 {
