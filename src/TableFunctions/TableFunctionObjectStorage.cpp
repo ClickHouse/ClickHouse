@@ -66,15 +66,21 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                 auto disk = context->getDisk(context->getSettingsRef()[Setting::iceberg_disk_name].value);
                 switch (disk->getObjectStorage()->getType())
                 {
+#if USE_AWS_S3 && USE_AVRO
                 case ObjectStorageType::S3:
                     configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
                     break;
+#endif
+#if USE_AZURE_BLOB_STORAGE && USE_AVRO
                 case ObjectStorageType::Azure:
                     configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
                     break;
+#endif
+#if USE_AVRO
                 case ObjectStorageType::Local:
                     configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
                     break;
+#endif
                 default:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for iceberg {}", disk->getObjectStorage()->getType());
                 }
