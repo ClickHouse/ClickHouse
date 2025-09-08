@@ -91,7 +91,7 @@ inline bool parseIPv4(T & src, IsEOF eof, unsigned char * dst, int32_t first_oct
 
 
 #if defined(__SSE4_1__)
-int parseIPv4SSE(const char * ipv4_string, const size_t ipv4_string_length, uint32_t * destination);
+int parseIPv4SSE(const char * ipv4_string, size_t ipv4_string_length, uint32_t * destination);
 #endif
 
 

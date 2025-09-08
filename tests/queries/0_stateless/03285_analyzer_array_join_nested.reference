@@ -66,6 +66,11 @@ FROM default.hourly AS __table2
 ARRAY JOIN nested(_CAST([\'names\', \'values\'], \'Array(String)\'), __table2.`metric.names`, __table2.`metric.values`) AS __array_join_exp_1
 -- { echoOn }
 
+SELECT nested(['click', 'house'], x.b.first, x.b.second) AS n, toTypeName(n) FROM tab;
+[([1,2,3],['b1','b2','b3']),([4,5,6],['b4','b5','b6'])]	Array(Tuple(\n    click Array(UInt32),\n    house Array(String)))
+SELECT nested([['click', 'house']], x.b.first, x.b.second) AS n, toTypeName(n) FROM tab;
+[[(1,'b1'),(2,'b2'),(3,'b3')],[(4,'b4'),(5,'b5'),(6,'b6')]]	Array(Array(Tuple(\n    click UInt32,\n    house String)))
+SELECT nested([['click'], ['house']], x.b.first, x.b.second) AS n, toTypeName(n) FROM tab; -- {serverError BAD_ARGUMENTS}
 set analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested = 0;
 select x from tab;
 [('a1'),('a2')]

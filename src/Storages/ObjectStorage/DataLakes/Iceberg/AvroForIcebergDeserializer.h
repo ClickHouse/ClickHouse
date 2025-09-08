@@ -50,6 +50,9 @@ public:
     DB::Field getValueFromRowByName(size_t row_num, const std::string & path, std::optional<DB::TypeIndex> expected_type = std::nullopt) const;
 
     std::optional<std::string> tryGetAvroMetadataValue(std::string metadata_key) const;
+
+    String getContent(size_t row_number) const;
+    String getMetadataContent() const;
 };
 
 }

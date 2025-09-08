@@ -21,6 +21,7 @@
 #include <Common/ErrorCodes.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 
 #include <fmt/ranges.h>
 
@@ -36,7 +37,6 @@ namespace ErrorCodes
 
 namespace DataLakeStorageSetting
 {
-    extern DataLakeStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
     extern DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
     extern DataLakeStorageSettingsString object_storage_endpoint;
     extern DataLakeStorageSettingsString storage_aws_access_key_id;
@@ -66,6 +66,12 @@ public:
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
 
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
+
+    StorageObjectStorageConfiguration::Path getRawPath() const override
+    {
+        auto result = BaseStorageConfiguration::getRawPath().path;
+        return StorageObjectStorageConfiguration::Path(result.ends_with('/') ? result : result + "/");
+    }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
     bool update(
@@ -190,8 +196,7 @@ public:
     bool hasExternalDynamicMetadata() override
     {
         assertInitialized();
-        return (*settings)[DataLakeStorageSetting::allow_dynamic_metadata_for_data_lakes]
-            && current_metadata->supportsSchemaEvolution();
+        return current_metadata->supportsSchemaEvolution();
     }
 
     IDataLakeMetadata * getExternalMetadata() override
@@ -240,9 +245,21 @@ public:
         current_metadata->modifyFormatSettings(settings_);
     }
 
-    ColumnMapperPtr getColumnMapper() const override
+    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override
     {
-        return current_metadata->getColumnMapper();
+        assertInitialized();
+        return current_metadata->getColumnMapperForObject(object_info);
+    }
+    ColumnMapperPtr getColumnMapperForCurrentSchema() const override
+    {
+        assertInitialized();
+        return current_metadata->getColumnMapperForCurrentSchema();
+    }
+
+    void drop(ContextPtr local_context) override
+    {
+        if (current_metadata)
+            current_metadata->drop(local_context);
     }
 
     SinkToStoragePtr write(
@@ -328,6 +345,7 @@ private:
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
+        bool supports_tuple_elements,
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams &) override
     {
@@ -339,7 +357,7 @@ private:
                 local_context);
         }
         return current_metadata->prepareReadingFromFormat(
-            requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
+            requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements);
     }
 
     bool updateMetadataIfChanged(

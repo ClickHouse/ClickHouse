@@ -62,7 +62,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
     , buffer_allocation_policy(createBufferAllocationPolicy(*settings_))
     , max_single_part_upload_size(settings_->max_single_part_upload_size)
-    , max_unexpected_write_error_retries(settings_->max_unexpected_write_error_retries)
+    , max_unexpected_write_error_retries(write_settings_.is_initial_access_check ? settings_->max_unexpected_write_error_retries * 3 : settings_->max_unexpected_write_error_retries)
     , blob_path(blob_path_)
     , write_settings(write_settings_)
     , blob_container_client(blob_container_client_)
@@ -121,7 +121,7 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void(size_t)> 
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            if (i == num_tries - 1 || !isRetryableAzureException(e))
+            if (i == num_tries - 1 || !isRetryableAzureException(e, /* may_be_provisioning_access */ write_settings.is_initial_access_check))
                 throw;
 
             LOG_DEBUG(log, "Write at attempt {} for blob `{}` failed: {} {}", i + 1, blob_path, e.what(), e.Message);

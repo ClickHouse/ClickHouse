@@ -180,7 +180,7 @@ def test_multiple_schemes_tables(started_cluster):
 
     node1.query(
         f"create database multi_schema_test{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={"allow_database_unity_catalog": "1"},
     )
     multi_schema_tables = list(
         sorted(
@@ -225,7 +225,7 @@ create database complex_schema
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
         """,
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={"allow_database_unity_catalog": "1"},
     )
 
     complex_schema_tables = list(
@@ -285,7 +285,7 @@ create database {table_name_src}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
         """,
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={"allow_database_unity_catalog": "1"},
     )
 
     ntz_tables = list(
@@ -360,7 +360,7 @@ create database {schema_name}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=True
         """,
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={"allow_database_unity_catalog": "1"},
     )
 
     # This query will fail if bug exists

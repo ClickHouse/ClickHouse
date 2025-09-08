@@ -354,7 +354,7 @@ struct ReplaceStringImpl
             res_data.assign(haystack_data.begin(), haystack_data.end());
             res_offsets.resize(input_rows_count);
             for (size_t i = 1; i <= input_rows_count; ++i)
-                res_offsets[i] = i * n;
+                res_offsets[i - 1] = i * n;
             return;
         }
 

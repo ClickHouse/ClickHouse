@@ -10,6 +10,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Interpreters/Context.h>
 
 namespace ProfileEvents
 {
@@ -246,7 +247,7 @@ static std::pair<UInt64, UInt64> getMinMaxValues(const IMergeTreeIndexGranule & 
     return {min, max};
 }
 
-MaybeMinMaxStats getMinMaxStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name)
+MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name, const MergeTreeReaderSettings & settings)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AnalyzePatchRangesMicroseconds);
 
@@ -272,15 +273,19 @@ MaybeMinMaxStats getMinMaxStats(const DataPartPtr & patch_part, const MarkRanges
     size_t total_marks_without_final = patch_part->index_granularity->getMarksCountWithoutFinal();
     MarkRanges index_mark_ranges = {{0, total_marks_without_final}};
 
+    auto context = Context::getGlobalContextInstance();
+    auto mark_cache = context->getIndexMarkCache();
+    auto uncompressed_cache = context->getIndexUncompressedCache();
+
     MergeTreeIndexReader reader(
         index_ptr,
         patch_part,
         total_marks_without_final,
         index_mark_ranges,
-        /*mark_cache=*/ nullptr,
-        /*uncompressed_cache=*/ nullptr,
+        mark_cache.get(),
+        uncompressed_cache.get(),
         /*vector_similarity_index_cache=*/ nullptr,
-        /*settings_=*/ {});
+        settings);
 
     MergeTreeIndexGranulePtr granule = nullptr;
     MinMaxStats result(ranges.size());

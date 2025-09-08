@@ -66,7 +66,7 @@
  * // All target-specific and default implementations are available here via
  * TargetSpecific::<Arch>::funcImpl. Use runtime detection to choose one.
  *
- * If you want to write IFunction or IExecutableFuncionImpl with several implementations
+ * If you want to write IFunction or IExecutableFunctionImpl with several implementations
  * see PerformanceAdaptors.h.
  */
 
@@ -75,18 +75,19 @@ namespace DB
 
 enum class TargetArch : UInt32
 {
-    Default  = 0,         /// Without any additional compiler options.
-    SSE42    = (1 << 0),  /// SSE4.2
-    AVX      = (1 << 1),
-    AVX2     = (1 << 2),
-    AVX512F  = (1 << 3),
-    AVX512BW    = (1 << 4),
-    AVX512VBMI  = (1 << 5),
+    Default = 0, /// Without any additional compiler options.
+    SSE42 = (1 << 0), /// SSE4.2
+    AVX = (1 << 1),
+    AVX2 = (1 << 2),
+    AVX512F = (1 << 3),
+    AVX512BW = (1 << 4),
+    AVX512VBMI = (1 << 5),
     AVX512VBMI2 = (1 << 6),
     AVX512BF16 = (1 << 7),
     AMXBF16 = (1 << 8),
     AMXTILE = (1 << 9),
     AMXINT8 = (1 << 10),
+    GenuineIntel = (1 << 11), /// Not an instruction set, but a CPU vendor.
 };
 
 /// Runtime detection.

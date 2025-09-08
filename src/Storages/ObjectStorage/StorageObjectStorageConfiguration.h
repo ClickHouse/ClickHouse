@@ -88,6 +88,9 @@ public:
     // Path provided by the user in the query
     virtual Path getRawPath() const = 0;
 
+    /// Raw URI, specified by a user. Used in permission check.
+    virtual const String & getRawURI() const = 0;
+
     const Path & getPathForRead() const;
     // Path used for writing, it should not be globbed and might contain a partition key
     Path getPathForWrite(const std::string & partition_id = "") const;
@@ -152,6 +155,7 @@ public:
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
+        bool supports_tuple_elements,
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams & hive_parameters);
 
@@ -217,7 +221,10 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
+
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema() const { return nullptr; }
+
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }
 
@@ -225,6 +232,8 @@ public:
     {
         return false;
     }
+
+    virtual void drop(ContextPtr) {}
 
     String format = "auto";
     String compression_method = "auto";
