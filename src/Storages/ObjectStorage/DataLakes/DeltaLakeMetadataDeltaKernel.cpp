@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/transformTypesRecursively.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -134,6 +135,45 @@ static std::pair<Names, NamesAndTypesList> splitVirtualColumns(
     return {non_virtual_columns, virtual_columns};
 }
 
+static DataTypePtr replaceTypeNamesToPhysicalRecursively(
+    const DataTypePtr & type,
+    const std::string & parent_explicit_name,
+    const NameToNameMap & physical_names_map)
+{
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+    if (!tuple_type || !tuple_type->hasExplicitNames())
+        return type;
+
+    const auto & element_names = tuple_type->getElementNames();
+    const auto & elements = tuple_type->getElements();
+
+    Names result_element_names;
+    DataTypes result_elements;
+    result_element_names.resize(element_names.size());
+    result_elements.resize(element_names.size());
+
+    for (size_t i = 0; i < element_names.size(); ++i)
+    {
+        const auto & element_name = element_names[i];
+        const auto full_element_name = parent_explicit_name.empty() ? element_name : parent_explicit_name + "." + element_name;
+
+        auto physical_name = DeltaLake::tryGetPhysicalName(full_element_name, physical_names_map);
+        if (physical_name)
+        {
+            auto pos = physical_name->find_last_of('.');
+            if (pos != std::string::npos)
+                physical_name = physical_name->substr(pos + 1);
+            result_element_names[i] = *physical_name;
+        }
+        else
+            result_element_names[i] = element_name;
+
+        const auto & child_type = elements[i];
+        result_elements[i] = replaceTypeNamesToPhysicalRecursively(child_type, full_element_name, physical_names_map);
+    }
+    return std::make_shared<DataTypeTuple>(result_elements, result_element_names);
+}
+
 /// Returns physical column and whether it is readable from data file.
 /// We do not change given column actual type,
 /// but can only change names inside the type (in case of Tuple).
@@ -141,77 +181,37 @@ static std::pair<NameAndTypePair, bool> setPhysicalNameAndType(
     const NameAndTypePair & column,
     const NamesAndTypesList & read_schema,
     const NameToNameMap & physical_names_map,
-    bool get_name_in_storgae,
+    bool,
     LoggerPtr log)
 {
-    auto physical_name = DeltaLake::getPhysicalName(get_name_in_storgae ? column.getNameInStorage() : column.name, physical_names_map);
-    auto physical_name_and_type = read_schema.tryGetByName(physical_name);
+    auto physical_name_in_storage = DeltaLake::getPhysicalName(column.getNameInStorage(), physical_names_map);
+    auto physical_type_in_storage = replaceTypeNamesToPhysicalRecursively(column.getTypeInStorage(), column.getNameInStorage(), physical_names_map);
 
-    /// Not a readable column.
-    if (!physical_name_and_type.has_value())
-    {
-        LOG_TEST(
-            log, "Name: {}, name in storage: {}, " "subcolumn name: {}, physical name: {}",
-            column.name, column.getNameInStorage(), column.getSubcolumnName(), physical_name);
-
-        /// Not a readable column, but if columnMapping.mode == 'name'
-        /// we will still have it named as col-<uuid> in metadata.
-        NameAndTypePair result_column = column;
-        result_column.name = physical_name;
-        return {result_column, /* readable */false};
-    }
-
-    std::string physical_subcolumn_name;
-    if (!get_name_in_storgae && column.isSubcolumn())
-    {
-        auto pos = physical_name.find_first_of('.');
-        physical_subcolumn_name = physical_name.substr(pos + 1);
-        physical_name = physical_name.substr(0, pos);
-    }
+    auto read_schema_column = read_schema.tryGetByName(physical_name_in_storage);
 
     LOG_TEST(
         log, "Name: {}, name in storage: {}, subcolumn name: {}, "
-        "physical name: {}, physical subcolumn name: {}, physical type: {}",
+        "physical name in storage: {}, physical type in storage: {}, read schema: {}",
         column.name, column.getNameInStorage(), column.getSubcolumnName(),
-        physical_name, physical_subcolumn_name, physical_name_and_type->type->getName());
+        physical_name_in_storage, physical_type_in_storage, read_schema_column.has_value() ? read_schema_column->dump() : "None");
 
-    auto get_tuple = [&](DataTypePtr type)
-    {
-        if (type->isNullable())
-        {
-            type = assert_cast<const DataTypeNullable *>(physical_name_and_type->type.get())->getNestedType();
-        }
-        return dynamic_cast<const DataTypeTuple *>(physical_name_and_type->type.get());
-    };
-
-    DataTypePtr type_in_storage;
-    if (const auto * tuple = get_tuple(column.type); tuple != nullptr)
-    {
-        auto tuple_types = get_tuple(column.type)->getElements();
-        auto tuple_names = get_tuple(physical_name_and_type->type)->getElementNames();
-
-        type_in_storage = std::make_shared<DataTypeTuple>(tuple_types, tuple_names);
-    }
-    else
-        type_in_storage = column.type;
-
+    /// If column is not a readable column, but if columnMapping.mode == 'name'
+    /// we will still have it named as col-<uuid> in metadata.
     NameAndTypePair result_column;
     if (column.isSubcolumn())
     {
         result_column = NameAndTypePair(
-            physical_name,
-            /// physical_subcolumn_name can be empty here while column.getSubcolumnName() is not,
-            /// if that subcolumn is size0, null, etc.
-            physical_subcolumn_name.empty() ? column.getSubcolumnName() : physical_subcolumn_name,
-            /* type_in_storage */type_in_storage,
-            /* subcolumn_type */result_column.type);
+            physical_name_in_storage,
+            column.getSubcolumnName(),
+            physical_type_in_storage,
+            column.type);
     }
     else
     {
-        result_column = NameAndTypePair(physical_name, type_in_storage);
+        result_column = NameAndTypePair(physical_name_in_storage, physical_type_in_storage);
     }
 
-    return {result_column, /* readable */true};
+    return {result_column, /* readable */read_schema_column.has_value()};
 }
 
 ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(

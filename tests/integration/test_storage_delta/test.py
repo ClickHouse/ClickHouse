@@ -3649,44 +3649,61 @@ def test_write_column_order(started_cluster):
     assert num_rows * 2 == int(instance.query(f"SELECT count() FROM {table_name}"))
 
 
-def test_type_from_storage_def(started_cluster):
+@pytest.mark.parametrize("column_mapping", ["", "name"])
+def test_type_from_storage_def(started_cluster, column_mapping):
     instance = started_cluster.instances["node1"]
     table_name = randomize_table_name("test_types_2")
     spark = started_cluster.spark_session
     path = f"/{table_name}"
 
-    schema = pa.schema(
-        [
-            ("c0", pa.int32(), False),
-            ("c1", pa.string(), False),
-            ("c2", pa.timestamp("us"), False),  # new datetime column
-        ]
-    )
-
-    # Empty arrays must match schema types
-    empty_arrays = [
-        pa.array([], type=pa.int32()),
-        pa.array([], type=pa.string()),
-        pa.array([], type=pa.timestamp("us")),
+    spark_schema = StructType([
+        StructField("c0", IntegerType(), nullable=False),
+        StructField("c1", TimestampType(), nullable=False),
+        StructField("c2", StructType([
+            StructField("created_at", TimestampType(), nullable=True),
+            StructField("updated_at", TimestampType(), nullable=True),
+        ]), nullable=False),
+    ])
+    data = [
+        (
+            1,
+            datetime(2000, 10, 10, 0, 0, 0),
+            {
+                "created_at": datetime(2000, 11, 11, 0, 0, 0),
+                "updated_at": datetime(2000, 12, 12, 0, 0, 0),
+            }
+        )
     ]
 
-    # Write empty Delta table with new schema
-    write_deltalake(
-        f"file://{path}",
-        pa.Table.from_arrays(empty_arrays, schema=schema),
-        mode="overwrite",
-    )
+    df = spark.createDataFrame(data, schema=spark_schema)
+    if len(column_mapping) > 0:
+        df.write.format("delta").option(
+            "delta.minReaderVersion", "2"
+        ).option("delta.minWriterVersion", "5").option(
+            "delta.columnMapping.mode", column_mapping
+        ).save(
+            path
+        )
+    else:
+        df.write.format("delta").save(path)
+
     LocalUploader(instance).upload_directory(f"{path}/", f"{path}/")
 
     instance.query(
-        f"CREATE TABLE {table_name} (c0 Int32, c1 String, c2 DateTime) ENGINE = DeltaLakeLocal('{path}') SETTINGS output_format_parquet_compression_method = 'none'"
-    )
-    num_rows = 10
-    instance.query(
-        f"INSERT INTO {table_name} SELECT number as c1, toString(number), toDateTime('2000-10-10 00:00:00') FROM numbers(2)"
-    )
+        f"""CREATE TABLE {table_name}
+        (c0 Int32, c1 DateTime, c2 Tuple(created_at DateTime, updated_at DateTime))
+        ENGINE = DeltaLakeLocal('{path}') SETTINGS output_format_parquet_compression_method = 'none'
+    """)
 
     assert (
-        "2000-10-10 00:00:00\n2000-10-10 00:00:00"
+        "('2000-11-11 00:00:00','2000-12-12 00:00:00')"
         == instance.query(f"SELECT c2 FROM {table_name}").strip()
+    )
+    assert (
+        "2000-11-11 00:00:00"
+        == instance.query(f"SELECT c2.created_at FROM {table_name}").strip()
+    )
+    assert (
+        "2000-11-11 00:00:00"
+        == instance.query(f"SELECT c2.created_at FROM {table_name}").strip()
     )
