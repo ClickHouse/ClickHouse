@@ -100,6 +100,7 @@ Checks: [
   '-modernize-use-trailing-return-type',
   '-modernize-use-designated-initializers',
   '-modernize-use-integer-sign-comparison',
+  '-modernize-use-scoped-lock',  # TODO could be fixed
 
   '-performance-avoid-endl',
   '-performance-enum-size',
@@ -110,6 +111,7 @@ Checks: [
 
   '-portability-simd-intrinsics',
   '-portability-template-virtual-member-function',
+  '-portability-avoid-pragma-once',
 
   '-readability-avoid-nested-conditional-operator',
   '-readability-avoid-unconditional-preprocessor-if',
@@ -137,6 +139,7 @@ Checks: [
   '-readability-use-anyofallof',
   '-readability-math-missing-parentheses',
   '-readability-container-contains',
+  '-readability-use-concise-preprocessor-directives',
 
   '-zircon-*'
 ]
