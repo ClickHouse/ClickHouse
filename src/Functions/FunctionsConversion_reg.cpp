@@ -33,7 +33,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
     };
     FunctionDocumentation::ReturnedValue toUInt8_returned_value = {"Returns an 8-bit unsigned integer value.", {"UInt8"}};
-    FunctionDocumentation::Examples toUInt8_examples = 
+    FunctionDocumentation::Examples toUInt8_examples =
     {
     {
         "Usage example",
@@ -85,7 +85,7 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
     };
     FunctionDocumentation::ReturnedValue toUInt16_returned_value = {"Returns a 16-bit unsigned integer value.", {"UInt16"}};
-    FunctionDocumentation::Examples toUInt16_examples = 
+    FunctionDocumentation::Examples toUInt16_examples =
     {
     {
         "Usage example",
@@ -137,8 +137,8 @@ The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding
     FunctionDocumentation::Arguments toUInt32_arguments = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
     };
-    FunctionDocumentation::ReturnedValue toUInt32_returned_value = {"32-bit unsigned integer value.", {"UInt32"}};
-    FunctionDocumentation::Examples toUInt32_examples = 
+    FunctionDocumentation::ReturnedValue toUInt32_returned_value = {"Returns a 32-bit unsigned integer value.", {"UInt32"}};
+    FunctionDocumentation::Examples toUInt32_examples =
     {
     {
         "Usage example",
@@ -723,7 +723,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64('0xc0fe', 1);`.
 
 :::note
-An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`: `( -1 * 10^(18 - S), 1 * 10^(18 - S) )`.
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`:`(-1*10^(18 - S), 1*10^(18 - S))`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
 :::
@@ -779,7 +779,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32('0xc0fe', 1);`.
 
 :::note
-An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`:`(-1*10^(9 - S), 1*10^(9 - S))`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
 :::
@@ -834,7 +834,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128('0xc0fe', 1);`.
 
 :::note
-An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`: `( -1 * 10^(38 - S), 1 * 10^(38 - S) )`.
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`:`(-1*10^(38 - S), 1*10^(38 - S))`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
 :::
@@ -891,7 +891,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256('0xc0fe', 1);`.
 
 :::note
-An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`.
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
 :::
@@ -1213,7 +1213,7 @@ SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
     FunctionDocumentation documentation_toDateTime32 = {description_toDateTime32, syntax_toDateTime32, arguments_toDateTime32, returned_value_toDateTime32, examples_toDateTime32, category_toDateTime32};
 
     factory.registerFunction<detail::FunctionToDateTime32>(documentation_toDateTime32);
- 
+
     /// toDateTime64 documentation
     FunctionDocumentation::Description description_toDateTime64 = R"(
 Converts an input value to a value of type [DateTime64](../data-types/datetime64.md).
@@ -2230,7 +2230,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values.
 
 :::note
-If the input value exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`, the function returns `0`.
+If the input value exceeds the bounds of `Decimal32`:`(-1*10^(9 - S), 1*10^(9 - S))`, the function returns `0`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_toDecimal32OrZero = "toDecimal32OrZero(expr, S)";
@@ -2271,7 +2271,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values.
 
 :::note
-If the input value exceeds the bounds of `Decimal64`: `( -1 * 10^(18 - S), 1 * 10^(18 - S) )`, the function returns `0`.
+If the input value exceeds the bounds of `Decimal64`:`(-1*10^(18 - S), 1*10^(18 - S))`, the function returns `0`.
 :::
 )";
     FunctionDocumentation::Syntax syntax_toDecimal64OrZero = "toDecimal64OrZero(expr, S)";
@@ -2312,7 +2312,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values.
 
 :::note
-If the input value exceeds the bounds of `Decimal128`: `( -1 * 10^(38 - S), 1 * 10^(38 - S) )`, the function returns `0`.
+If the input value exceeds the bounds of `Decimal128`:`(-1*10^(38 - S), 1*10^(38 - S))`, the function returns `0`.
 :::
 )";
     FunctionDocumentation::Syntax syntax_toDecimal128OrZero = "toDecimal128OrZero(expr, S)";
@@ -2353,7 +2353,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values.
 
 :::note
-If the input value exceeds the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`, the function returns `0`.
+If the input value exceeds the bounds of `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`, the function returns `0`.
 :::
 )";
     FunctionDocumentation::Syntax syntax_toDecimal256OrZero = "toDecimal256OrZero(expr, S)";
@@ -3338,7 +3338,7 @@ Supported arguments:
 Unsupported arguments (return `NULL`):
 - Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
-- Values that exceed the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
+- Values that exceed the bounds of `Decimal32`:`(-1*10^(9 - S), 1*10^(9 - S))`.
     )";
     FunctionDocumentation::Syntax syntax_toDecimal32OrNull = "toDecimal32OrNull(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal32OrNull =
@@ -3378,7 +3378,7 @@ Supported arguments:
 Unsupported arguments (return `NULL`):
 - Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
-- Values that exceed the bounds of `Decimal64`: `( -1 * 10^(18 - S), 1 * 10^(18 - S) )`.
+- Values that exceed the bounds of `Decimal64`:`(-1*10^(18 - S), 1*10^(18 - S))`.
 )";
     FunctionDocumentation::Syntax syntax_toDecimal64OrNull = "toDecimal64OrNull(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal64OrNull =
@@ -3418,7 +3418,7 @@ Supported arguments:
 Unsupported arguments (return `NULL`):
 - Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
-- Values that exceed the bounds of `Decimal128`: `( -1 * 10^(38 - S), 1 * 10^(38 - S) )`.
+- Values that exceed the bounds of `Decimal128`:`(-1*10^(38 - S), 1*10^(38 - S))`.
     )";
     FunctionDocumentation::Syntax syntax_toDecimal128OrNull = "toDecimal128OrNull(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal128OrNull = {
@@ -3457,7 +3457,7 @@ Supported arguments:
 Unsupported arguments (return `NULL`):
 - Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
-- Values that exceed the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`.
+- Values that exceed the bounds of `Decimal256`: `(-1 * 10^(76 - S), 1 * 10^(76 - S))`.
     )";
     FunctionDocumentation::Syntax syntax_toDecimal256OrNull = "toDecimal256OrNull(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal256OrNull =
@@ -3693,7 +3693,7 @@ For all of the formats with separator the function parses months names expressed
 If the year is not specified, it is considered to be equal to the current year.
     )";
     FunctionDocumentation::Syntax parseDateTimeBestEffortOrZero_syntax = "parseDateTimeBestEffortOrZero(time_string[, time_zone])";
-    FunctionDocumentation::Arguments parseDateTimeBestEffortOrZero_arguments = 
+    FunctionDocumentation::Arguments parseDateTimeBestEffortOrZero_arguments =
     {
         {"time_string", "String containing a date and time to convert.", {"String"}},
         {"time_zone", "Optional. Time zone. The function parses time_string according to the time zone.", {"String"}}
