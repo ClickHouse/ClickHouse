@@ -352,13 +352,13 @@ REGISTER_FUNCTION(HashFixedStrings)
     using FunctionSHA512 = FunctionStringHashFixedString<OpenSSLProvider<SHA512Impl>>;
     using FunctionSHA512_256 = FunctionStringHashFixedString<OpenSSLProvider<SHA512Impl256>>;
     using FunctionRIPEMD160 = FunctionStringHashFixedString<OpenSSLProvider<RIPEMD160Impl>>;
-    
+
     FunctionDocumentation::Description description_RIPEMD160 = "Calculates the RIPEMD-160 hash of the given string.";
     FunctionDocumentation::Syntax syntax_RIPEMD160 = "RIPEMD160(s)";
     FunctionDocumentation::Arguments arguments_RIPEMD160 = {
         {"s", "The input string to hash.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_RIPEMD160 = {"Returns the RIPEMD160 hash of the given input string as a fixed-length string.", {"FixedString(20)"}}; 
+    FunctionDocumentation::ReturnedValue returned_value_RIPEMD160 = {"Returns the RIPEMD160 hash of the given input string as a fixed-length string.", {"FixedString(20)"}};
     FunctionDocumentation::Examples example_RIPEMD160 = {
     {
         "Usage example",
@@ -376,7 +376,7 @@ SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));
     FunctionDocumentation::IntroducedIn introduced_in_RIPEMD160 = {24, 10};
 
     FunctionDocumentation documentation_RIPEMD160 = {description_RIPEMD160, syntax_RIPEMD160, arguments_RIPEMD160, returned_value_RIPEMD160, example_RIPEMD160, introduced_in_RIPEMD160, category_RIPEMD160};
-    
+
     factory.registerFunction<FunctionRIPEMD160>(documentation_RIPEMD160);
 
     FunctionDocumentation::Description description_MD4 = R"(
@@ -406,7 +406,7 @@ SELECT HEX(MD4('abc'));
 
     factory.registerFunction<FunctionMD4>(documentation_MD4);
 
-    
+
     FunctionDocumentation::Description description_MD5 = R"(
 Calculates the MD5 hash of the given string.
     )";
@@ -430,7 +430,7 @@ SELECT HEX(MD5('abc'));
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_MD5 = {1, 1}; 
+    FunctionDocumentation::IntroducedIn introduced_in_MD5 = {1, 1};
     FunctionDocumentation::Category category_MD5 = FunctionDocumentation::Category::Hash;
     FunctionDocumentation documentation_MD5 = {description_MD5, syntax_MD5, arguments_MD5, returned_value_MD5, example_MD5, introduced_in_MD5, category_MD5};
 
@@ -492,7 +492,7 @@ SELECT HEX(SHA224('abc'));
     FunctionDocumentation::IntroducedIn introduced_in_SHA224 = {1, 1};
     FunctionDocumentation::Category category_SHA224 = FunctionDocumentation::Category::Hash;
     FunctionDocumentation documentation_SHA224 = {description_SHA224, syntax_SHA224, arguments_SHA224, returned_value_SHA224, example_SHA224, introduced_in_SHA224, category_SHA224};
-    
+
     factory.registerFunction<FunctionSHA224>(documentation_SHA224);
 
     FunctionDocumentation::Description description_SHA256 = R"(
@@ -523,7 +523,7 @@ SELECT HEX(SHA256('abc'));
     FunctionDocumentation documentation_SHA256 = {description_SHA256, syntax_SHA256, arguments_SHA256, returned_value_SHA256, example_SHA256, introduced_in_SHA256, category_SHA256};
 
     factory.registerFunction<FunctionSHA256>(documentation_SHA256);
-    
+
     FunctionDocumentation::Description description_SHA384 = R"(
 Calculates the SHA384 hash of the given string.
     )";
@@ -615,8 +615,8 @@ SELECT HEX(SHA512_256('abc'));
 
 #    if USE_BLAKE3
     using FunctionBLAKE3 = FunctionStringHashFixedString<GenericProvider<ImplBLAKE3>>;
-    
-    
+
+
     FunctionDocumentation::Description description_BLAKE3  = R"(
 Calculates BLAKE3 hash string and returns the resulting set of bytes as FixedString.
 This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust library.
@@ -652,7 +652,7 @@ SELECT hex(BLAKE3('ABC'))
 
 #   if USE_SHA3IUF
     using FunctionKeccak256 = FunctionStringHashFixedString<GenericProvider<Keccak256Impl>>;
-    
+
     FunctionDocumentation::Description description_keccak256 = R"(
 Calculates the Keccak-256 cryptographic hash of the given string.
 This hash function is widely used in blockchain applications, particularly Ethereum.
