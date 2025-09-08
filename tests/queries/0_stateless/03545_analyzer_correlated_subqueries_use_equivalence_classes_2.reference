@@ -10,15 +10,17 @@ SELECT
     )
 FROM b;
 Expression ((Project names + Projection))
-  Expression
-    Join (JOIN to generate result stream)
-      Expression (Change column names to column identifiers)
-        ReadFromMergeTree (default.b)
-      Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
-        Aggregating
-          Expression (Before GROUP BY)
-            Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-              ReadFromMergeTree (default.a)
+  Expression (Post Join Actions)
+    Join
+      Expression (Left Pre Join Actions)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.b)
+      Expression (Right Pre Join Actions)
+        Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
+          Aggregating
+            Expression (Before GROUP BY)
+              Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
+                ReadFromMergeTree (default.a)
 -- Same query but with slightly different order of conditions in subquery
 EXPLAIN
 SELECT
@@ -30,12 +32,14 @@ SELECT
     )
 FROM b;
 Expression ((Project names + Projection))
-  Expression
-    Join (JOIN to generate result stream)
-      Expression (Change column names to column identifiers)
-        ReadFromMergeTree (default.b)
-      Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
-        Aggregating
-          Expression (Before GROUP BY)
-            Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
-              ReadFromMergeTree (default.a)
+  Expression (Post Join Actions)
+    Join
+      Expression (Left Pre Join Actions)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.b)
+      Expression (Right Pre Join Actions)
+        Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
+          Aggregating
+            Expression (Before GROUP BY)
+              Expression ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
+                ReadFromMergeTree (default.a)

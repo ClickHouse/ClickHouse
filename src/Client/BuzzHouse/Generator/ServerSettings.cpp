@@ -24,222 +24,224 @@ static const auto setSetting = CHSetting(
 
 std::unordered_map<String, CHSetting> hotSettings;
 
-std::unordered_map<String, CHSetting> performanceSettings
-    = {{"allow_aggregate_partitions_independently", trueOrFalseSetting},
-       {"allow_execute_multiif_columnar", trueOrFalseSetting},
-       {"allow_experimental_query_deduplication", trueOrFalseSetting},
-       {"allow_general_join_planning", trueOrFalseSetting},
-       {"allow_hyperscan", trueOrFalseSetting},
-       {"allow_prefetched_read_pool_for_local_filesystem", trueOrFalseSetting},
-       {"allow_prefetched_read_pool_for_remote_filesystem", trueOrFalseSetting},
-       {"allow_push_predicate_ast_for_distributed_subqueries", trueOrFalseSetting},
-       {"allow_push_predicate_when_subquery_contains_with", trueOrFalseSetting},
-       {"allow_reorder_prewhere_conditions", trueOrFalseSetting},
-       {"allow_simdjson", trueOrFalseSetting},
-       {"allow_statistics_optimize", trueOrFalseSetting},
-       {"cluster_function_process_archive_on_multiple_nodes", trueOrFalseSetting},
-       {"compile_aggregate_expressions", trueOrFalseSetting},
-       {"compile_expressions", trueOrFalseSetting},
-       {"compile_sort_description", trueOrFalseSetting},
-       {"correlated_subqueries_substitute_equivalent_expressions", trueOrFalseSetting},
-       {"count_distinct_implementation",
-        CHSetting(
-            [](RandomGenerator & rg)
-            {
-                static const DB::Strings & choices = {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"};
-                return rg.pickRandomly(choices);
-            },
-            {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"},
-            false)},
-       {"count_distinct_optimization", trueOrFalseSetting},
-       {"enable_adaptive_memory_spill_scheduler", trueOrFalseSetting},
-       {"enable_add_distinct_to_in_subqueries", trueOrFalseSetting},
-       {"enable_analyzer", trueOrFalseSetting},
-       {"enable_optimize_predicate_expression", trueOrFalseSetting},
-       {"enable_optimize_predicate_expression_to_final_subquery", trueOrFalseSetting},
-       {"enable_parallel_replicas", trueOrFalseSetting},
-       {"enable_producing_buckets_out_of_order_in_aggregation", trueOrFalseSetting},
-       {"join_algorithm",
-        CHSetting(
-            [](RandomGenerator & rg)
-            {
-                String res;
-                DB::Strings choices
-                    = {"auto",
-                       "default",
-                       "direct",
-                       "full_sorting_merge",
-                       "grace_hash",
-                       "hash",
-                       "parallel_hash",
-                       "partial_merge",
-                       "prefer_partial_merge"};
+std::unordered_map<String, CHSetting> performanceSettings = {
+    {"allow_aggregate_partitions_independently", trueOrFalseSetting},
+    {"allow_execute_multiif_columnar", trueOrFalseSetting},
+    {"allow_experimental_query_deduplication", trueOrFalseSetting},
+    {"allow_general_join_planning", trueOrFalseSetting},
+    {"allow_hyperscan", trueOrFalseSetting},
+    {"allow_prefetched_read_pool_for_local_filesystem", trueOrFalseSetting},
+    {"allow_prefetched_read_pool_for_remote_filesystem", trueOrFalseSetting},
+    {"allow_push_predicate_ast_for_distributed_subqueries", trueOrFalseSetting},
+    {"allow_push_predicate_when_subquery_contains_with", trueOrFalseSetting},
+    {"allow_reorder_prewhere_conditions", trueOrFalseSetting},
+    {"allow_simdjson", trueOrFalseSetting},
+    {"allow_statistics_optimize", trueOrFalseSetting},
+    {"cluster_function_process_archive_on_multiple_nodes", trueOrFalseSetting},
+    {"compile_aggregate_expressions", trueOrFalseSetting},
+    {"compile_expressions", trueOrFalseSetting},
+    {"compile_sort_description", trueOrFalseSetting},
+    {"correlated_subqueries_substitute_equivalent_expressions", trueOrFalseSetting},
+    {"count_distinct_implementation",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             static const DB::Strings & choices = {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"};
+             return rg.pickRandomly(choices);
+         },
+         {"'uniq'", "'uniqCombined'", "'uniqCombined64'", "'uniqHLL12'", "'uniqExact'"},
+         false)},
+    {"count_distinct_optimization", trueOrFalseSetting},
+    {"enable_adaptive_memory_spill_scheduler", trueOrFalseSetting},
+    {"enable_add_distinct_to_in_subqueries", trueOrFalseSetting},
+    {"enable_analyzer", trueOrFalseSetting},
+    {"enable_optimize_predicate_expression", trueOrFalseSetting},
+    {"enable_optimize_predicate_expression_to_final_subquery", trueOrFalseSetting},
+    {"enable_parallel_replicas", trueOrFalseSetting},
+    {"enable_producing_buckets_out_of_order_in_aggregation", trueOrFalseSetting},
+    {"join_algorithm",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             String res;
+             DB::Strings choices
+                 = {"auto",
+                    "default",
+                    "direct",
+                    "full_sorting_merge",
+                    "grace_hash",
+                    "hash",
+                    "parallel_hash",
+                    "partial_merge",
+                    "prefer_partial_merge"};
 
-                if (rg.nextBool())
-                {
-                    res = rg.pickRandomly(choices);
-                }
-                else
-                {
-                    const uint32_t nalgo = (rg.nextMediumNumber() % static_cast<uint32_t>(choices.size())) + 1;
+             if (rg.nextBool())
+             {
+                 res = rg.pickRandomly(choices);
+             }
+             else
+             {
+                 const uint32_t nalgo = (rg.nextMediumNumber() % static_cast<uint32_t>(choices.size())) + 1;
 
-                    std::shuffle(choices.begin(), choices.end(), rg.generator);
-                    for (uint32_t i = 0; i < nalgo; i++)
-                    {
-                        if (i != 0)
-                        {
-                            res += ",";
-                        }
-                        res += choices[i];
-                    }
-                }
-                return "'" + res + "'";
-            },
-            {"'default'",
-             "'grace_hash'",
-             "'direct, hash'",
-             "'hash'",
-             "'parallel_hash'",
-             "'partial_merge'",
-             "'direct'",
-             "'auto'",
-             "'full_sorting_merge'",
-             "'prefer_partial_merge'"},
-            false)},
-       {"join_any_take_last_row", trueOrFalseSetting},
-       {"low_cardinality_use_single_dictionary_for_part", trueOrFalseSetting},
-       {"max_bytes_ratio_before_external_group_by", probRangeNoZeroSetting},
-       {"max_bytes_ratio_before_external_sort", probRangeNoZeroSetting},
-       {"max_streams_to_max_threads_ratio", probRangeSetting},
-       {"merge_tree_determine_task_size_by_prewhere_columns", trueOrFalseSetting},
-       {"min_count_to_compile_aggregate_expression", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
-       {"min_count_to_compile_expression", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
-       {"min_count_to_compile_sort_description", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
-       {"move_all_conditions_to_prewhere", trueOrFalseSetting},
-       {"move_primary_key_columns_to_end_of_prewhere", trueOrFalseSetting},
-       {"optimize_aggregation_in_order", trueOrFalseSetting},
-       {"optimize_aggregators_of_group_by_keys", trueOrFalseSetting},
-       {"optimize_append_index", trueOrFalseSetting},
-       {"optimize_arithmetic_operations_in_aggregate_functions", trueOrFalseSetting},
-       {"optimize_and_compare_chain", trueOrFalseSetting},
-       {"optimize_distinct_in_order", trueOrFalseSetting},
-       {"optimize_distributed_group_by_sharding_key", trueOrFalseSetting},
-       {"optimize_functions_to_subcolumns", trueOrFalseSetting},
-       {"optimize_group_by_constant_keys", trueOrFalseSetting},
-       {"optimize_group_by_function_keys", trueOrFalseSetting},
-       {"optimize_if_chain_to_multiif", trueOrFalseSetting},
-       {"optimize_if_transform_strings_to_enum", trueOrFalseSetting},
-       {"optimize_injective_functions_in_group_by", trueOrFalseSetting},
-       {"optimize_injective_functions_inside_uniq", trueOrFalseSetting},
-       {"optimize_move_to_prewhere", trueOrFalseSetting},
-       {"optimize_move_to_prewhere_if_final", trueOrFalseSetting},
-       {"optimize_multiif_to_if", trueOrFalseSetting},
-       {"optimize_normalize_count_variants", trueOrFalseSetting},
-       {"optimize_read_in_order", trueOrFalseSetting},
-       {"optimize_read_in_window_order", trueOrFalseSetting},
-       {"optimize_redundant_functions_in_order_by", trueOrFalseSetting},
-       {"optimize_respect_aliases", trueOrFalseSetting},
-       {"optimize_rewrite_aggregate_function_with_if", trueOrFalseSetting},
-       {"optimize_rewrite_array_exists_to_has", trueOrFalseSetting},
-       {"optimize_rewrite_regexp_functions", trueOrFalseSetting},
-       {"optimize_rewrite_sum_if_to_count_if", trueOrFalseSetting},
-       {"optimize_skip_merged_partitions", trueOrFalseSetting},
-       {"optimize_skip_unused_shards", trueOrFalseSetting},
-       {"optimize_skip_unused_shards_nesting", CHSetting(zeroOneTwo, {"0", "1", "2"}, false)},
-       {"optimize_skip_unused_shards_rewrite_in", trueOrFalseSetting},
-       {"optimize_sorting_by_input_stream_properties", trueOrFalseSetting},
-       {"optimize_substitute_columns", trueOrFalseSetting},
-       {"optimize_syntax_fuse_functions", trueOrFalseSetting},
-       {"optimize_trivial_approximate_count_query", trueOrFalseSetting},
-       {"optimize_trivial_count_query", trueOrFalseSetting},
-       {"optimize_uniq_to_count", trueOrFalseSetting},
-       {"optimize_use_implicit_projections", trueOrFalseSetting},
-       {"optimize_use_projections", trueOrFalseSetting},
-       {"optimize_use_projection_filtering", trueOrFalseSetting},
-       /// {"optimize_using_constraints", trueOrFalseSetting},
-       {"os_thread_priority",
-        CHSetting(
-            [](RandomGenerator & rg) { return std::to_string(rg.randomInt<int32_t>(-20, 19)); }, {"-20", "-10", "0", "10", "19"}, false)},
-       {"parallel_replicas_only_with_analyzer", trueOrFalseSetting},
-       {"parallel_replicas_prefer_local_join", trueOrFalseSetting},
-       {"parallel_view_processing", trueOrFalseSetting},
-       {"parallelize_output_from_storages", trueOrFalseSetting},
-       {"partial_merge_join_optimizations", trueOrFalseSetting},
-       {"prefer_global_in_and_join", trueOrFalseSetting},
-       {"prefer_localhost_replica", trueOrFalseSetting},
-       {"query_plan_aggregation_in_order", trueOrFalseSetting},
-       {"query_plan_convert_join_to_in", trueOrFalseSetting},
-       {"query_plan_convert_outer_join_to_inner_join", trueOrFalseSetting},
-       {"query_plan_enable_multithreading_after_window_functions", trueOrFalseSetting},
-       {"query_plan_enable_optimizations", trueOrFalseSetting},
-       {"query_plan_execute_functions_after_sorting", trueOrFalseSetting},
-       {"query_plan_filter_push_down", trueOrFalseSetting},
-       {"query_plan_join_shard_by_pk_ranges", trueOrFalseSetting},
-       {"query_plan_join_swap_table",
-        CHSetting(
-            [](RandomGenerator & rg)
-            {
-                static const DB::Strings & choices = {"'false'", "'true'", "'auto'"};
-                return rg.pickRandomly(choices);
-            },
-            {"'false'", "'true'", "'auto'"},
-            false)},
-       {"query_plan_lift_up_array_join", trueOrFalseSetting},
-       {"query_plan_lift_up_union", trueOrFalseSetting},
-       {"query_plan_merge_expressions", trueOrFalseSetting},
-       {"query_plan_merge_filter_into_join_condition", trueOrFalseSetting},
-       {"query_plan_merge_filters", trueOrFalseSetting},
-       {"query_plan_optimize_lazy_materialization", trueOrFalseSetting},
-       {"query_plan_optimize_prewhere", trueOrFalseSetting},
-       {"query_plan_push_down_limit", trueOrFalseSetting},
-       {"query_plan_read_in_order", trueOrFalseSetting},
-       {"query_plan_remove_redundant_distinct", trueOrFalseSetting},
-       {"query_plan_remove_redundant_sorting", trueOrFalseSetting},
-       {"query_plan_reuse_storage_ordering_for_window_functions", trueOrFalseSetting},
-       {"query_plan_split_filter", trueOrFalseSetting},
-       {"query_plan_try_use_vector_search", trueOrFalseSetting},
-       {"read_in_order_two_level_merge_threshold",
-        CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 100)); }, {"0", "1", "10", "100"}, false)},
-       {"read_in_order_use_buffering", trueOrFalseSetting},
-       {"read_in_order_use_virtual_row", trueOrFalseSetting},
-       {"remerge_sort_lowered_memory_bytes_ratio",
-        CHSetting(
-            [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 4.0)); },
-            {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1", "1.5", "2", "2.5"},
-            false)},
-       {"rewrite_count_distinct_if_with_count_distinct_implementation", trueOrFalseSetting},
-       {"short_circuit_function_evaluation",
-        CHSetting(
-            [](RandomGenerator & rg)
-            {
-                static const DB::Strings & choices = {"'enable'", "'force_enable'", "'disable'"};
-                return rg.pickRandomly(choices);
-            },
-            {"'enable'", "'force_enable'", "'disable'"},
-            false)},
-       {"single_join_prefer_left_table", trueOrFalseSetting},
-       {"split_intersecting_parts_ranges_into_layers_final", trueOrFalseSetting},
-       {"split_parts_ranges_into_intersecting_and_non_intersecting_final", trueOrFalseSetting},
-       {"temporary_files_codec",
-        CHSetting(
-            [](RandomGenerator & rg)
-            {
-                static const DB::Strings & choices = {"'lz4'", "'none'"};
-                return rg.pickRandomly(choices);
-            },
-            {},
-            false)},
-       {"transform_null_in", trueOrFalseSetting},
-       {"use_concurrency_control", trueOrFalseSetting},
-       {"use_iceberg_partition_pruning", trueOrFalseSetting},
-       {"use_index_for_in_with_subqueries", trueOrFalseSetting},
-       {"use_index_for_in_with_subqueries_max_values", trueOrFalseSetting},
-       {"use_page_cache_with_distributed_cache", trueOrFalseSetting},
-       {"use_query_condition_cache", trueOrFalseSetting},
-       {"use_skip_indexes", trueOrFalseSetting},
-       {"use_skip_indexes_if_final", trueOrFalseSetting},
-       {"use_skip_indexes_on_data_read", trueOrFalseSetting},
-       {"use_uncompressed_cache", trueOrFalseSetting}};
+                 std::shuffle(choices.begin(), choices.end(), rg.generator);
+                 for (uint32_t i = 0; i < nalgo; i++)
+                 {
+                     if (i != 0)
+                     {
+                         res += ",";
+                     }
+                     res += choices[i];
+                 }
+             }
+             return "'" + res + "'";
+         },
+         {"'default'",
+          "'grace_hash'",
+          "'direct, hash'",
+          "'hash'",
+          "'parallel_hash'",
+          "'partial_merge'",
+          "'direct'",
+          "'auto'",
+          "'full_sorting_merge'",
+          "'prefer_partial_merge'"},
+         false)},
+    {"join_any_take_last_row", trueOrFalseSetting},
+    {"low_cardinality_use_single_dictionary_for_part", trueOrFalseSetting},
+    {"max_bytes_ratio_before_external_group_by", probRangeNoZeroSetting},
+    {"max_bytes_ratio_before_external_sort", probRangeNoZeroSetting},
+    {"max_streams_to_max_threads_ratio", probRangeSetting},
+    {"merge_tree_determine_task_size_by_prewhere_columns", trueOrFalseSetting},
+    {"min_count_to_compile_aggregate_expression", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
+    {"min_count_to_compile_expression", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
+    {"min_count_to_compile_sort_description", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
+    {"move_all_conditions_to_prewhere", trueOrFalseSetting},
+    {"move_primary_key_columns_to_end_of_prewhere", trueOrFalseSetting},
+    {"optimize_aggregation_in_order", trueOrFalseSetting},
+    {"optimize_aggregators_of_group_by_keys", trueOrFalseSetting},
+    {"optimize_append_index", trueOrFalseSetting},
+    {"optimize_arithmetic_operations_in_aggregate_functions", trueOrFalseSetting},
+    {"optimize_and_compare_chain", trueOrFalseSetting},
+    {"optimize_distinct_in_order", trueOrFalseSetting},
+    {"optimize_distributed_group_by_sharding_key", trueOrFalseSetting},
+    {"optimize_functions_to_subcolumns", trueOrFalseSetting},
+    {"optimize_group_by_constant_keys", trueOrFalseSetting},
+    {"optimize_group_by_function_keys", trueOrFalseSetting},
+    {"optimize_if_chain_to_multiif", trueOrFalseSetting},
+    {"optimize_if_transform_strings_to_enum", trueOrFalseSetting},
+    {"optimize_injective_functions_in_group_by", trueOrFalseSetting},
+    {"optimize_injective_functions_inside_uniq", trueOrFalseSetting},
+    {"optimize_move_to_prewhere", trueOrFalseSetting},
+    {"optimize_move_to_prewhere_if_final", trueOrFalseSetting},
+    {"optimize_multiif_to_if", trueOrFalseSetting},
+    {"optimize_normalize_count_variants", trueOrFalseSetting},
+    {"optimize_read_in_order", trueOrFalseSetting},
+    {"optimize_read_in_window_order", trueOrFalseSetting},
+    {"optimize_redundant_functions_in_order_by", trueOrFalseSetting},
+    {"optimize_respect_aliases", trueOrFalseSetting},
+    {"optimize_rewrite_aggregate_function_with_if", trueOrFalseSetting},
+    {"optimize_rewrite_array_exists_to_has", trueOrFalseSetting},
+    {"optimize_rewrite_regexp_functions", trueOrFalseSetting},
+    {"optimize_rewrite_sum_if_to_count_if", trueOrFalseSetting},
+    {"optimize_skip_merged_partitions", trueOrFalseSetting},
+    {"optimize_skip_unused_shards", trueOrFalseSetting},
+    {"optimize_skip_unused_shards_nesting", CHSetting(zeroOneTwo, {"0", "1", "2"}, false)},
+    {"optimize_skip_unused_shards_rewrite_in", trueOrFalseSetting},
+    {"optimize_sorting_by_input_stream_properties", trueOrFalseSetting},
+    {"optimize_substitute_columns", trueOrFalseSetting},
+    {"optimize_syntax_fuse_functions", trueOrFalseSetting},
+    {"optimize_trivial_approximate_count_query", trueOrFalseSetting},
+    {"optimize_trivial_count_query", trueOrFalseSetting},
+    {"optimize_uniq_to_count", trueOrFalseSetting},
+    {"optimize_use_implicit_projections", trueOrFalseSetting},
+    {"optimize_use_projections", trueOrFalseSetting},
+    {"optimize_use_projection_filtering", trueOrFalseSetting},
+    /// {"optimize_using_constraints", trueOrFalseSetting},
+    {"os_thread_priority",
+     CHSetting(
+         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<int32_t>(-20, 19)); }, {"-20", "-10", "0", "10", "19"}, false)},
+    {"parallel_replicas_only_with_analyzer", trueOrFalseSetting},
+    {"parallel_replicas_prefer_local_join", trueOrFalseSetting},
+    {"parallel_view_processing", trueOrFalseSetting},
+    {"parallelize_output_from_storages", trueOrFalseSetting},
+    {"partial_merge_join_optimizations", trueOrFalseSetting},
+    {"prefer_global_in_and_join", trueOrFalseSetting},
+    {"prefer_localhost_replica", trueOrFalseSetting},
+    {"query_plan_aggregation_in_order", trueOrFalseSetting},
+    {"query_plan_convert_join_to_in", trueOrFalseSetting},
+    {"query_plan_convert_outer_join_to_inner_join", trueOrFalseSetting},
+    {"query_plan_enable_multithreading_after_window_functions", trueOrFalseSetting},
+    {"query_plan_enable_optimizations", trueOrFalseSetting},
+    {"query_plan_execute_functions_after_sorting", trueOrFalseSetting},
+    {"query_plan_filter_push_down", trueOrFalseSetting},
+    {"query_plan_optimize_join_order_limit",
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<int32_t>(0, 64)); }, {"0", "1", "2", "4", "16", "64"}, false)},
+    {"query_plan_join_shard_by_pk_ranges", trueOrFalseSetting},
+    {"query_plan_join_swap_table",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             static const DB::Strings & choices = {"'false'", "'true'", "'auto'"};
+             return rg.pickRandomly(choices);
+         },
+         {"'false'", "'true'", "'auto'"},
+         false)},
+    {"query_plan_lift_up_array_join", trueOrFalseSetting},
+    {"query_plan_lift_up_union", trueOrFalseSetting},
+    {"query_plan_merge_expressions", trueOrFalseSetting},
+    {"query_plan_merge_filter_into_join_condition", trueOrFalseSetting},
+    {"query_plan_merge_filters", trueOrFalseSetting},
+    {"query_plan_optimize_lazy_materialization", trueOrFalseSetting},
+    {"query_plan_optimize_prewhere", trueOrFalseSetting},
+    {"query_plan_push_down_limit", trueOrFalseSetting},
+    {"query_plan_read_in_order", trueOrFalseSetting},
+    {"query_plan_remove_redundant_distinct", trueOrFalseSetting},
+    {"query_plan_remove_redundant_sorting", trueOrFalseSetting},
+    {"query_plan_reuse_storage_ordering_for_window_functions", trueOrFalseSetting},
+    {"query_plan_split_filter", trueOrFalseSetting},
+    {"query_plan_try_use_vector_search", trueOrFalseSetting},
+    {"read_in_order_two_level_merge_threshold",
+     CHSetting([](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 100)); }, {"0", "1", "10", "100"}, false)},
+    {"read_in_order_use_buffering", trueOrFalseSetting},
+    {"read_in_order_use_virtual_row", trueOrFalseSetting},
+    {"remerge_sort_lowered_memory_bytes_ratio",
+     CHSetting(
+         [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 4.0)); },
+         {"0", "0.001", "0.01", "0.1", "0.5", "0.9", "0.99", "0.999", "1", "1.5", "2", "2.5"},
+         false)},
+    {"rewrite_count_distinct_if_with_count_distinct_implementation", trueOrFalseSetting},
+    {"short_circuit_function_evaluation",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             static const DB::Strings & choices = {"'enable'", "'force_enable'", "'disable'"};
+             return rg.pickRandomly(choices);
+         },
+         {"'enable'", "'force_enable'", "'disable'"},
+         false)},
+    {"single_join_prefer_left_table", trueOrFalseSetting},
+    {"split_intersecting_parts_ranges_into_layers_final", trueOrFalseSetting},
+    {"split_parts_ranges_into_intersecting_and_non_intersecting_final", trueOrFalseSetting},
+    {"temporary_files_codec",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             static const DB::Strings & choices = {"'lz4'", "'none'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
+    {"transform_null_in", trueOrFalseSetting},
+    {"use_concurrency_control", trueOrFalseSetting},
+    {"use_iceberg_partition_pruning", trueOrFalseSetting},
+    {"use_index_for_in_with_subqueries", trueOrFalseSetting},
+    {"use_index_for_in_with_subqueries_max_values", trueOrFalseSetting},
+    {"use_page_cache_with_distributed_cache", trueOrFalseSetting},
+    {"use_query_condition_cache", trueOrFalseSetting},
+    {"use_skip_indexes", trueOrFalseSetting},
+    {"use_skip_indexes_if_final", trueOrFalseSetting},
+    {"use_skip_indexes_on_data_read", trueOrFalseSetting},
+    {"use_uncompressed_cache", trueOrFalseSetting}};
 
 std::unordered_map<String, CHSetting> serverSettings = {
     {"add_http_cors_header", trueOrFalseSettingNoOracle},
@@ -494,6 +496,22 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"http_skip_not_found_url_for_globs", trueOrFalseSettingNoOracle},
     {"http_wait_end_of_query", trueOrFalseSettingNoOracle},
     {"http_write_exception_in_output_format", trueOrFalseSettingNoOracle},
+    {"iceberg_delete_data_on_drop", trueOrFalseSettingNoOracle},
+    {"iceberg_metadata_log_level",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             static const DB::Strings & choices
+                 = {"'none'",
+                    "'metadata'",
+                    "'manifest_list_metadata'",
+                    "'manifest_list_entry'",
+                    "'manifest_file_metadata'",
+                    "'manifest_file_entry'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     /// ClickHouse cloud setting
     {"ignore_cold_parts_seconds",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 60)); }, {}, false)},
@@ -890,6 +908,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_condition_cache_selectivity_threshold",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0)); }, {}, false)},
     {"query_condition_cache_store_conditions_as_plaintext", trueOrFalseSettingNoOracle},
+    {"query_plan_display_internal_aliases", trueOrFalseSettingNoOracle},
     {"query_plan_use_new_logical_join_step", trueOrFalseSetting},
     {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_from_page_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
@@ -1093,6 +1112,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     /// Number of rows values
     for (const auto & entry :
          {"cross_join_min_rows_to_compress",
+          "delta_lake_insert_max_rows_in_data_file",
           "distributed_plan_max_rows_to_broadcast",
           "external_storage_max_read_rows",
           "function_range_max_elements_in_block",
@@ -1138,6 +1158,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "azure_max_single_part_upload_size",
           "cross_join_min_bytes_to_compress",
           "default_max_bytes_in_join",
+          "delta_lake_insert_max_bytes_in_data_file",
           "distributed_cache_alignment",
           "distributed_cache_min_bytes_for_seek",
           "distributed_cache_read_alignment",

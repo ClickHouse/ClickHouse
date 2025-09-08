@@ -852,69 +852,50 @@ def test_partition_columns(started_cluster, use_delta_kernel, cluster):
     TABLE_NAME = randomize_table_name("test_partition_columns")
     result_file = f"{TABLE_NAME}"
     partition_columns = ["b", "c", "d", "e", "f", "g"]
-
-    delta_table = (
-        DeltaTable.create(spark)
-        .tableName(TABLE_NAME)
-        .location(f"/{result_file}")
-        .addColumn("a", "INT")
-        .addColumn("b", "STRING")
-        .addColumn("c", "DATE")
-        .addColumn("d", "INT")
-        .addColumn("e", "TIMESTAMP")
-        .addColumn("f", "BOOLEAN")
-        .addColumn("g", "DECIMAL(10,2)")
-        .addColumn("h", "BOOLEAN")
-        .partitionedBy(partition_columns)
-        .execute()
-    )
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
     num_rows = 9
 
-    schema = StructType(
+    schema = pa.schema(
         [
-            StructField("a", IntegerType()),
-            StructField("b", StringType()),
-            StructField("c", DateType()),
-            StructField("d", IntegerType()),
-            StructField("e", TimestampType()),
-            StructField("f", BooleanType()),
-            StructField("g", DecimalType(10, 2)),
-            StructField("h", BooleanType()),
+            pa.field("a", pa.int32(), nullable=True),
+            pa.field("b", pa.string(), nullable=True),
+            pa.field("c", pa.date32(), nullable=True),
+            pa.field("d", pa.int32(), nullable=True),
+            pa.field("e", pa.timestamp("us"), nullable=True),
+            pa.field("f", pa.bool_(), nullable=True),
+            pa.field("g", pa.decimal128(10, 2), nullable=True),
+            pa.field("h", pa.bool_(), nullable=True),
         ]
     )
 
     now = datetime.now()
     for i in range(1, num_rows + 1):
-        data = [
-            (
-                i,
-                "test" + str(i),
-                datetime.strptime(f"2000-01-0{i}", "%Y-%m-%d"),
-                i,
+        data = {
+            "a": [i],
+            "b": [f"test{i}"],
+            "c": [datetime.strptime(f"2000-01-0{i}", "%Y-%m-%d").date()],
+            "d": [i],
+            "e": [
                 (
                     now
                     if i % 2 == 0
                     else datetime.strptime(
                         f"2012-01-0{i} 12:34:56.789123", "%Y-%m-%d %H:%M:%S.%f"
                     )
-                ),
-                True if i % 2 == 0 else False,
-                Decimal(f"{i * 1.11:.2f}"),
-                False if i % 2 == 0 else True,
-            )
-        ]
-        df = spark.createDataFrame(data=data, schema=schema)
-        df.printSchema()
-        df.write.mode("append").format("delta").partitionBy(partition_columns).save(
-            f"/{TABLE_NAME}"
+                )
+            ],
+            "f": [True if i % 2 == 0 else False],
+            "g": [Decimal(f"{i * 1.11:.2f}")],
+            "h": [False if i % 2 == 0 else True],
+        }
+        write_deltalake(
+            f"s3://{bucket}/{result_file}",
+            pa.Table.from_pydict(data, schema=schema),
+            storage_options=get_storage_options(started_cluster),
+            partition_by=partition_columns,
+            mode="append",
         )
-
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
-
-    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    assert len(files) > 0
-    print(f"Uploaded files: {files}")
 
     if cluster:
         table_function = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
@@ -1031,40 +1012,51 @@ test9	2000-01-09	9"""
         == instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY b").strip()
     )
 
-    for i in range(num_rows + 1, 2 * num_rows + 1):
-        data = [
-            (
-                i,
-                "test" + str(i),
-                datetime.strptime(f"2000-01-{i}", "%Y-%m-%d"),
-                i,
+    num_commits = 100  # to create a checkpoint
+    for i in range(num_rows + 1, num_rows + 1 + num_commits):
+        data = {
+            "a": [i],
+            "b": [f"test{i}"],
+            "c": [
+                datetime.strptime(
+                    f"2000-01-{i%30 if i%30 != 0 else 1}", "%Y-%m-%d"
+                ).date()
+            ],
+            "d": [i],
+            "e": [
                 (
                     now
                     if i % 2 == 0
                     else datetime.strptime(
-                        f"2012-01-{i} 12:34:56.789123", "%Y-%m-%d %H:%M:%S.%f"
+                        f"2012-01-{i%30 if i%30 != 0 else 1} 12:34:56.789123",
+                        "%Y-%m-%d %H:%M:%S.%f",
                     )
-                ),
-                True if i % 2 == 0 else False,
-                Decimal(f"{i * 1.1:.2f}"),
-                False if i % 2 == 0 else True,
-            )
-        ]
-        df = spark.createDataFrame(data=data, schema=schema)
-        df.printSchema()
-        df.write.mode("append").format("delta").partitionBy(partition_columns).save(
-            f"/{TABLE_NAME}"
+                )
+            ],
+            "f": [True if i % 2 == 0 else False],
+            "g": [Decimal(f"{i * 1.1:.2f}")],
+            "h": [False if i % 2 == 0 else True],
+        }
+        write_deltalake(
+            f"s3://{bucket}/{result_file}",
+            pa.Table.from_pydict(data, schema=schema),
+            storage_options=get_storage_options(started_cluster),
+            partition_by=partition_columns,
+            mode="append",
         )
 
-    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    files = [
+        obj.object_name
+        for obj in minio_client.list_objects(bucket, result_file, recursive=True)
+    ]
     ok = False
     for file in files:
         if file.endswith("last_checkpoint"):
             ok = True
-    assert ok
+    assert ok, f"Files: {files}"
 
     result = int(instance.query(f"SELECT count() FROM {table_function}"))
-    assert result == num_rows * 2
+    assert result == num_rows + num_commits
 
     assert (
         f"""1	test1	2000-01-01	1	2012-01-01 12:34:56.789123	false	1.11	true
@@ -1085,12 +1077,12 @@ test9	2000-01-09	9"""
 16	test16	2000-01-16	16	{now}	true	17.6	false
 17	test17	2000-01-17	17	2012-01-17 12:34:56.789123	false	18.7	true
 18	test18	2000-01-18	18	{now}	true	19.8	false"""
-        == instance.query(f"SELECT * FROM {table_function} ORDER BY c").strip()
+        == instance.query(f"SELECT * FROM {table_function} ORDER BY a LIMIT 18").strip()
     )
     assert (
         int(
             instance.query(
-                f"SELECT count() FROM {TABLE_NAME} WHERE c == toDateTime('2000/01/15')"
+                f"SELECT count() FROM {TABLE_NAME} WHERE c == toDateTime('2000/01/15') and d < 20"
             )
         )
         == 1
@@ -2096,38 +2088,37 @@ deltaLakeCluster(cluster_old,
 
 def test_partition_columns_3(started_cluster):
     instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_partition_columns_3")
     result_file = f"{TABLE_NAME}"
     partition_columns = ["year"]
-
-    schema = StructType(
-        [
-            StructField("id", IntegerType(), nullable=False),
-            StructField("name", StringType(), nullable=False),
-            StructField("age", IntegerType(), nullable=False),
-            StructField("country", StringType(), nullable=False),
-            StructField("year", StringType(), nullable=False),
-        ]
-    )
-
-    num_rows = 10
-    now = datetime.now()
-    data = [(i, f"name_{i}", 32, "US", "2025") for i in range(num_rows)]
-    df = spark.createDataFrame(data=data, schema=schema)
-    df.printSchema()
-    df.write.mode("append").format("delta").partitionBy(partition_columns).save(
-        f"/{TABLE_NAME}"
-    )
-
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
+    num_rows = 10
 
-    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    assert len(files) > 0
-    print(f"Uploaded files: {files}")
+    schema = pa.schema([
+        pa.field("id", pa.int32(), nullable=False),
+        pa.field("name", pa.string(), nullable=False),
+        pa.field("age", pa.int32(), nullable=False),
+        pa.field("country", pa.string(), nullable=False),
+        pa.field("year", pa.string(), nullable=False),
+    ])
+    data = {
+        "id": list(range(num_rows)),
+        "name": [f"name_{i}" for i in range(num_rows)],
+        "age": [32] * num_rows,
+        "country": ["US"] * num_rows,
+        "year": ["2025"] * num_rows,
+    }
+
+    write_deltalake(
+        f"s3://root/{TABLE_NAME}",
+        pa.Table.from_pydict(data, schema=schema),
+        mode="append",
+        storage_options=get_storage_options(started_cluster),
+        partition_by=partition_columns
+    )
 
     table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
@@ -2152,38 +2143,36 @@ def test_partition_columns_3(started_cluster):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_filtering_by_virtual_columns(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_filtering_by_virtual_columns")
     result_file = f"{TABLE_NAME}"
     partition_columns = ["year"]
-
-    schema = StructType(
-        [
-            StructField("id", IntegerType(), nullable=False),
-            StructField("name", StringType(), nullable=False),
-            StructField("age", IntegerType(), nullable=False),
-            StructField("country", StringType(), nullable=False),
-            StructField("year", StringType(), nullable=False),
-        ]
-    )
-
-    num_rows = 10
-    now = datetime.now()
-    data = [(i, f"name_{i}", 32, "US", f"202{i}") for i in range(num_rows)]
-    df = spark.createDataFrame(data=data, schema=schema)
-    df.printSchema()
-    df.write.mode("append").format("delta").partitionBy(partition_columns).save(
-        f"/{TABLE_NAME}"
-    )
-
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
+    num_rows = 10
 
-    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    assert len(files) > 0
-    print(f"Uploaded files: {files}")
+    schema = pa.schema([
+        pa.field("id", pa.int32(), nullable=False),
+        pa.field("name", pa.string(), nullable=False),
+        pa.field("age", pa.int32(), nullable=False),
+        pa.field("country", pa.string(), nullable=False),
+        pa.field("year", pa.string(), nullable=False),
+    ])
+    data = {
+        "id": list(range(num_rows)),
+        "name": [f"name_{i}" for i in range(num_rows)],
+        "age": [32] * num_rows,
+        "country": ["US"] * num_rows,
+        "year": [f"202{i}" for i in range(num_rows)],
+    }
+    write_deltalake(
+        f"s3://root/{TABLE_NAME}",
+        pa.Table.from_pydict(data, schema=schema),
+        mode="append",
+        storage_options=get_storage_options(started_cluster),
+        partition_by=partition_columns
+    )
 
     table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
@@ -2318,41 +2307,37 @@ def test_column_pruning(started_cluster):
 
 def test_concurrent_reads(started_cluster):
     instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     TABLE_NAME = randomize_table_name("test_concurrent_reads")
     result_file = f"{TABLE_NAME}"
     partition_columns = []
-
-    schema = StructType(
-        [
-            StructField("id", IntegerType(), nullable=False),
-            StructField("name", StringType(), nullable=False),
-            StructField("age", IntegerType(), nullable=False),
-            StructField("country", StringType(), nullable=False),
-            StructField("year", StringType(), nullable=False),
-        ]
-    )
-
-    num_rows = 500000
-    now = datetime.now()
-    data = [
-        (i, f"name_{i}", 32, "".join("a" for _ in range(100)), "2025")
-        for i in range(num_rows)
-    ]
-    df = spark.createDataFrame(data=data, schema=schema)
-    df.printSchema()
-    df.write.mode("append").format("delta").partitionBy(partition_columns).save(
-        f"/{TABLE_NAME}"
-    )
-
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
+    num_rows = 500000
 
-    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    assert len(files) > 0
-    print(f"Uploaded files: {files}")
+    schema = pa.schema([
+        pa.field("id", pa.int32(), nullable=False),
+        pa.field("name", pa.string(), nullable=False),
+        pa.field("age", pa.int32(), nullable=False),
+        pa.field("country", pa.string(), nullable=False),
+        pa.field("year", pa.string(), nullable=False),
+    ])
+    data = {
+        "id": list(range(num_rows)),
+        "name": [f"name_{i}" for i in range(num_rows)],
+        "age": [32] * num_rows,
+        "country": ["a" * 100] * num_rows,
+        "year": ["2025"] * num_rows,
+    }
+    write_deltalake(
+        f"s3://{bucket}/{result_file}",
+        pa.Table.from_pydict(data, schema=schema),
+        storage_options=get_storage_options(started_cluster),
+        partition_by=partition_columns,
+        mode="append",
+    )
+
     instance.query(
         f"create table {TABLE_NAME} (id Int32, name String, age Int32, country String, year String) engine = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     )
@@ -3206,40 +3191,49 @@ def test_concurrent_queries(started_cluster, partitioned):
         f"create table {TABLE_NAME} (id Int32, name String) engine = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
     )
 
-    def select(_):
-        instance.query(f"SELECT * FROM {TABLE_NAME}")
+    num_insert_threads = 15
+    num_select_threads = 5
+    errors = ["" for _ in range(num_insert_threads)]
+    success = [0 for _ in range(num_insert_threads)]
 
-    num_threads = 20
-    num_rows = 50
-    errors = ["" for _ in range(num_threads)]
-    success = [0 for _ in range(num_threads)]
+    def run_concurrent_queries():
+        def select(_):
+            instance.query(f"SELECT * FROM {TABLE_NAME}")
 
-    def insert(i):
-        try:
+        def insert(i):
+            try:
+                instance.query(
+                    f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers(50)",
+                )
+                success[i] += 1
+            except Exception as e:
+                errors[i] = str(e)
+
+        for _ in range(10):
+            insert(_)
+
+        select_pool = Pool(num_select_threads)
+        insert_pool = Pool(num_insert_threads)
+        sp = select_pool.map_async(select, range(num_select_threads))
+        ip = insert_pool.map_async(insert, range(num_insert_threads))
+        sp.wait()
+        ip.wait()
+
+        select(0)
+
+        num_rows = sum(success) * 50
+        assert num_rows == int(
             instance.query(
-                f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers({num_rows})",
+                f"SELECT count() FROM {TABLE_NAME}",
             )
-            success[i] += 1
-        except Exception as e:
-            errors[i] = str(e)
-
-    for _ in range(num_threads):
-        insert(_)
-
-    select_pool = Pool(num_threads)
-    insert_pool = Pool(num_threads)
-    sp = select_pool.map_async(select, range(num_threads))
-    ip = insert_pool.map_async(insert, range(num_threads))
-    sp.wait()
-    ip.wait()
-
-    select(0)
-
-    assert sum(success) * num_rows == int(
-        instance.query(
-            f"SELECT count() FROM {TABLE_NAME}",
         )
-    )
+
+    for _ in range(3):
+        run_concurrent_queries()
+        if len([e for e in errors if e != ""]) > 0:
+            break
+        print("Did not catch commit conflict, will retry")
+
     non_empty_errors = [e for e in errors if e != ""]
     assert len(non_empty_errors) > 0
     for e in non_empty_errors:
@@ -3254,7 +3248,7 @@ def test_concurrent_queries(started_cluster, partitioned):
         ):
             file_names.append(obj.object_name)
     if partitioned:
-        assert len(file_names) == sum(success) * num_rows
+        assert len(file_names) == sum(success) * 50
     else:
         assert len(file_names) == sum(success)
 
@@ -3372,7 +3366,9 @@ def test_write_limits(started_cluster, partitioned, limit_enabled):
         f"INSERT INTO {table_name} SELECT number % {partitions_num}, randomString(10) FROM numbers({num_rows}) SETTINGS delta_lake_insert_max_rows_in_data_file = {limit_rows}, max_insert_block_size = 1000, min_chunk_bytes_for_parallel_parsing = 1000"
     )
 
-    files = LocalDownloader(instance).download_directory(f"/{result_file}/", f"/{result_file}/")
+    files = LocalDownloader(instance).download_directory(
+        f"/{result_file}/", f"/{result_file}/"
+    )
     data_files = [file for file in files if file.endswith(".parquet")]
     assert len(data_files) > 0, f"No data files: {files}"
 

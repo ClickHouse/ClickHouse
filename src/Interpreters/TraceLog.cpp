@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/SymbolIndex.h>
 #include <Common/Dwarf.h>
 #include <IO/WriteBufferFromArena.h>
@@ -30,6 +31,8 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"MemorySample", static_cast<UInt8>(TraceType::MemorySample)},
     {"MemoryPeak", static_cast<UInt8>(TraceType::MemoryPeak)},
     {"ProfileEvent", static_cast<UInt8>(TraceType::ProfileEvent)},
+    {"JemallocSample", static_cast<UInt8>(TraceType::JemallocSample)},
+
 };
 
 ColumnsDescription TraceLogElement::getColumnsDescription()

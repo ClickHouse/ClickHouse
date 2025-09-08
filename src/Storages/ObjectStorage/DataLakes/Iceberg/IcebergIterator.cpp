@@ -239,7 +239,8 @@ IcebergIterator::IcebergIterator(
     , data_files_iterator(
           object_storage,
           local_context_,
-          [](const Iceberg::ManifestFilePtr & manifest_file) { return manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::DATA); },
+          [](const Iceberg::ManifestFilePtr & manifest_file)
+          { return manifest_file->getFilesWithoutDeleted(Iceberg::FileContentType::DATA); },
           Iceberg::ManifestFileContentType::DATA,
           configuration_,
           filter_dag.get(),
@@ -283,8 +284,6 @@ IcebergIterator::IcebergIterator(
               blocking_queue.finish();
           }))
     , callback(std::move(callback_))
-    , format(configuration_.lock()->format)
-    , compression_method(configuration_.lock()->compression_method)
 {
     auto delete_file = deletes_iterator.next();
     while (delete_file.has_value())
