@@ -62,6 +62,11 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
     }
 }
 
+/// Here we check for ColumnUInt8.
+/// If the agrument has a different type, convert it to ColumnUInt8.
+/// If the argument is ColumnUInt8, check if we own it to avoid copying.
+/// Fill the filter if we own the column and can modify the data later.
+/// For ColumnUInt8 which is shared, return the fererence to existing filter.
 static const IColumnFilter & unpackOrConvertFilter(ColumnPtr & column, std::optional<IColumnFilter> & filter)
 {
     if (const auto * column_uint8 = typeid_cast<const ColumnUInt8 *>(column.get()))
@@ -101,12 +106,15 @@ FilterDescription::FilterDescription(const IColumn & column_)
     }
 
     std::optional<IColumnFilter> column_filter;
+    /// We pass argument by reference, so for UInt8 or Nullable(UInt8) column we return the reference to existing filter.
+    /// If the conversion or cast happened, column_filter will contain the newly-created data, so we avoid extra copying.
     data = &unpackOrConvertFilter(column, column_filter);
 
     if (null_map_column)
     {
         if (!column_filter)
         {
+            /// If we don't own the filter yet, the copy will happen here.
             auto mut_col = IColumn::mutate(std::move(column));
             column_filter = std::move(assert_cast<ColumnUInt8 &>(*mut_col).getData());
             data = &*column_filter;
