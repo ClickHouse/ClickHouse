@@ -310,6 +310,7 @@ inline size_t hashLessThan16(const char * data, size_t size)
 
 struct CRC32Hash
 {
+    size_t operator()(std::string_view x) const { return (*this)(StringRef{x}); }
     size_t operator() (StringRef x) const
     {
         const char * pos = x.data;
@@ -348,6 +349,8 @@ struct CRC32Hash
 };
 
 struct StringRefHash : CRC32Hash {};
+
+using StringViewHash = StringRefHash;
 
 #else
 
