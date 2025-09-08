@@ -73,9 +73,11 @@ def create_table(
 def create_clickhouse_iceberg_database(
     started_cluster, node, name, additional_settings={}
 ):
+    # minio_ip = started_cluster.get_instance_ip('minio')
     settings = {
         "catalog_type": "rest",
         "warehouse": "warehouse", 
+        # "storage_endpoint": f"http://{minio_ip}:9000/warehouse-rest",
         "storage_endpoint": "http://minio:9000/warehouse-rest",
     }
 
@@ -127,7 +129,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=[],
+            main_configs=["configs/backups.xml"],
             user_configs=[],
             stay_alive=True,
             with_iceberg_catalog=True,
@@ -345,3 +347,237 @@ def test_tables_with_same_location(started_cluster):
 
     assert 'aaa\naaa\naaa' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name}`").strip()
     assert 'bbb\nbbb\nbbb' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name_2}`").strip()
+
+def test_backup_database(started_cluster):
+    node = started_cluster.instances["node1"]
+    create_clickhouse_iceberg_database(started_cluster, node, "backup_database")
+
+    backup_id = uuid.uuid4().hex
+    backup_name = f"File('/backups/test_backup_{backup_id}/')"
+
+    node.query(f"BACKUP DATABASE backup_database TO {backup_name}")
+    node.query("DROP DATABASE backup_database SYNC")
+    assert "backup_database" not in node.query("SHOW DATABASES")
+
+    node.query(f"RESTORE DATABASE backup_database FROM {backup_name}", settings={"allow_experimental_database_iceberg": 1})
+    assert (
+        node.query("SHOW CREATE DATABASE backup_database")
+        == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://nessie:19120/iceberg/\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'warehouse\\', storage_endpoint = \\'http://minio:9000/warehouse-rest\\'\n"
+    )
+
+# def test_non_existing_tables(started_cluster):
+#     node = started_cluster.instances["node1"]
+#
+#     test_ref = f"test_list_tables_{uuid.uuid4()}"
+#     table_name = f"{test_ref}_table"
+#     root_namespace = f"{test_ref}_namespace"
+#
+#     namespace = f"{root_namespace}.A.B.C"
+#     namespaces_to_create = [
+#         root_namespace,
+#         f"{root_namespace}.A",
+#         f"{root_namespace}.A.B",
+#         f"{root_namespace}.A.B.C",
+#     ]
+#
+#     catalog = load_catalog_impl(started_cluster)
+#
+#     for ns in namespaces_to_create:
+#         catalog.create_namespace((ns,))
+#         assert (ns,) in catalog.list_namespaces(), f"Namespace {ns} was not created"
+#
+#     # existing_tables = catalog.list_tables(namespace=namespace)
+#     #
+#     # if table_name in existing_tables:
+#     #         catalog.drop_table(table_name)
+#     # except Exception as e:
+#     #     pass
+#     table = create_table(catalog, namespace, table_name)
+#     assert table is not None, "Table creation failed"
+#
+#     # Insert data into the table
+#     num_rows = 10
+#     data = [
+#         {
+#             "datetime": datetime.now(),
+#             "symbol": f"symbol_{i}",
+#             "bid": random.uniform(100, 200),
+#             "ask": random.uniform(200, 300),
+#             "details": "test_details",
+#         }
+#         for i in range(num_rows)
+#     ]
+#     df = pa.Table.from_pylist(data)
+#     table.append(df)
+#
+#     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+#
+#     # Extract table location from metadata
+#     table_metadata = table.metadata
+#     table_location = table_metadata.location
+#     if "s3://" in table_location:
+#         extracted_table_path = table_location.split("s3://")[1]
+#
+#     expected = f"CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`\n(\n    `datetime` Nullable(DateTime64(3)),\n    `symbol` Nullable(String),\n    `bid` Nullable(Float64),\n    `ask` Nullable(Float64),\n    `details` Nullable(String)\n)\nENGINE = Iceberg(\'http://minio:9000/{extracted_table_path}/\', \'minio\', \'[HIDDEN]\')\n"
+#     assert expected == node.query(
+#         f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+#     )
+#
+#     try:
+#         node.query(
+#             f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.qweqwe`"
+#         )
+#     except Exception as e:
+#         assert "DB::Exception: Table" in str(e)
+#         assert "doesn't exist" in str(e)
+#
+#     try:
+#         node.query(
+#             f"SHOW CREATE TABLE {CATALOG_NAME}.`qweqwe.qweqwe`"
+#         )
+#     except Exception as e:
+#         assert "DB::Exception: Table" in str(e)
+#         assert "doesn't exist" in str(e)
+
+def test_timestamps(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    test_namespace = (f"{test_ref}_namespace",)
+    test_table_identifier = (test_namespace[0], table_name)
+    
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(test_namespace)
+
+    simple_schema = Schema(
+        NestedField(
+            field_id=1, name="timestamp", field_type=TimestampType(), required=False
+        ),
+        NestedField(
+            field_id=2, name="timestamptz", field_type=TimestampType(), required=False
+        ),
+    )
+    
+    table = catalog.create_table(
+        test_table_identifier,
+        schema=simple_schema,
+        properties={"write.metadata.compression-codec": "none"},
+    )
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    data = [
+        {
+            "timestamp": datetime(2024, 1, 1, hour=12, minute=0, second=0, microsecond=0),
+            "timestamptz": datetime(2024, 1, 1, hour=12, minute=0, second=0, microsecond=0),
+        }
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    # Extract table location from metadata
+    table_metadata = table.metadata
+    table_location = table_metadata.location
+    if "warehouse-rest/" in table_location:
+        extracted_table_path = table_location.split("warehouse-rest/")[1]
+
+    result = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`")
+    assert result == f"CREATE TABLE {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-rest/{extracted_table_path}/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
+
+def test_insert(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_insert_{uuid.uuid4().hex[:8]}"
+    test_namespace = (f"{test_ref}_namespace",)
+
+    catalog.create_namespace(test_namespace)
+
+    test_table_name = f"{test_ref}_table"
+    test_table_identifier = (test_namespace[0], test_table_name)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=DoubleType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+
+    table = catalog.create_table(
+        test_table_identifier,
+        schema=schema,
+        properties={"write.metadata.compression-codec": "none"},
+    )
+
+    data = [
+    {"id": float(i), "data": f"data_{i}"} for i in range(10)
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    result = node.query(f"SELECT * FROM {CATALOG_NAME}.`{test_namespace[0]}.{test_table_name}` ORDER BY id")
+    expected = "\n".join([f"{i}\tdata_{i}" for i in range(10)])
+    assert result.strip() == expected
+
+def test_create(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_create_{uuid.uuid4().hex[:8]}"
+    test_namespace = (f"{test_ref}_namespace",)
+
+    catalog.create_namespace(test_namespace)
+
+    test_table_name = f"{test_ref}_table"
+    test_table_identifier = (test_namespace[0], test_table_name)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=DoubleType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+
+    catalog.create_table(
+        test_table_identifier,
+        schema=schema,
+        properties={"write.metadata.compression-codec": "none"},
+    )
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    result = node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+    assert test_table_name in result
+
+def test_drop_table(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_drop_table_{uuid.uuid4().hex[:8]}"
+    test_namespace = (f"{test_ref}_namespace",)
+
+    catalog.create_namespace(test_namespace)
+
+    test_table_name = f"{test_ref}_table"
+    test_table_identifier = (test_namespace[0], test_table_name)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=DoubleType(), required=False),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+
+    catalog.create_table(
+        test_table_identifier,
+        schema=schema,
+        properties={"write.metadata.compression-codec": "none"},
+    )
+
+    catalog.drop_table(test_table_identifier)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    result = node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+    assert test_table_name not in result
