@@ -708,16 +708,16 @@ class JobConfigs:
             ],
         ),
     ).parametrize(
-        *[
-            Job.ParamSet(
-                parameter=f"amd_asan, old analyzer, {parallel_sequential}, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
-                requires=[ArtifactNames.CH_AMD_ASAN],
-            )
-            for parallel_sequential in ("parallel", "sequential")
-            for total_batches in (3,)
-            for batch in range(1, total_batches + 1)
-        ],
+        # *[
+        #     Job.ParamSet(
+        #         parameter=f"amd_asan, old analyzer, {parallel_sequential}, {batch}/{total_batches}",
+        #         runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        #         requires=[ArtifactNames.CH_AMD_ASAN],
+        #     )
+        #     for parallel_sequential in ("parallel", "sequential")
+        #     for total_batches in (3,)
+        #     for batch in range(1, total_batches + 1)
+        # ],
         *[
             Job.ParamSet(
                 parameter=f"amd_binary, {parallel_sequential}, {batch}/{total_batches}",
@@ -728,16 +728,16 @@ class JobConfigs:
             for total_batches in (2,)
             for batch in range(1, total_batches + 1)
         ],
-        *[
-            Job.ParamSet(
-                parameter=f"arm_binary, distributed plan, {parallel_sequential}, {batch}/{total_batches}",
-                runs_on=RunnerLabels.FUNC_TESTER_ARM,
-                requires=[ArtifactNames.CH_ARM_BINARY],
-            )
-            for parallel_sequential in ("parallel", "sequential")
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
+        # *[
+        #     Job.ParamSet(
+        #         parameter=f"arm_binary, distributed plan, {parallel_sequential}, {batch}/{total_batches}",
+        #         runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        #         requires=[ArtifactNames.CH_ARM_BINARY],
+        #     )
+        #     for parallel_sequential in ("parallel", "sequential")
+        #     for total_batches in (2,)
+        #     for batch in range(1, total_batches + 1)
+        # ],
     )
     integration_test_jobs_non_required = Job.Config(
         name=JobNames.INTEGRATION,

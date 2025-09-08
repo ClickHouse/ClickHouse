@@ -487,7 +487,7 @@ if __name__ == "__main__":
         )
     elif args.read_tests_from_file:
         assert Path(f"{args.cases_dir}/test_names.txt").exists(), f"test_names.txt with tests to run not found in {args.cases_dir}"
-        tests_list = "< /ClickHouse/tests/integration/test_names.txt"
+        tests_list = "$(cat /ClickHouse/tests/integration/test_names.txt)"
 
     # Mount debug root into container if debug flag is set
     debug_mount = f"--volume={CLICKHOUSE_ROOT}:/debug:ro" if args.debug else ""
@@ -509,7 +509,7 @@ if __name__ == "__main__":
         f"{DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version} "
     )
 
-    cmd = cmd_base + f"sh -c 'pytest {parallel_args} {repeat_args} {pytest_opts} {rand_args} -vvv {tests_list}'" + args.command
+    cmd = cmd_base + f"sh -c 'pytest {tests_list} {parallel_args} {repeat_args} {pytest_opts} {rand_args} -vvv'" + args.command
     cmd_pre_pull = (
         f"{cmd_base} find /ClickHouse/tests/integration/compose -name docker_compose_*.yml "
         r"-exec docker compose -f '{}' pull --quiet \;"
