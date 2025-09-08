@@ -361,11 +361,11 @@ void DatabaseOverlay::createTableRestoredFromBackup(
     UInt64 /*timeout_ms*/)
 {
     if (mode == Mode::FacadeOverCatalog)
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "Database {} is an Overlay facade (read-only). "
-        "Run CREATE TABLE in an underlying database (e.g. {}).",
-        backQuote(getDatabaseName()),
-        databases.empty() ? String("<none>") : databases.front()->getDatabaseName());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Database {} is an Overlay facade (read-only). "
+            "Run CREATE TABLE in an underlying database (e.g. {}).",
+            backQuote(getDatabaseName()),
+            databases.empty() ? String("<none>") : databases.front()->getDatabaseName());
     /// Creates a tables by executing a "CREATE TABLE" query.
     InterpreterCreateQuery interpreter{create_table_query, local_context};
     interpreter.setInternal(true);

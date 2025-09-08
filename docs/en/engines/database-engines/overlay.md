@@ -1,9 +1,5 @@
 # `DatabaseOverlay` — design & behavior (current implementation)
 
-This document describes the **Overlay** database engine you just implemented: what it is, how it’s constructed, how it behaves in each mode, what operations are supported/blocked, and how to test and troubleshoot it.
-
----
-
 ## What is `DatabaseOverlay`? {#introduction}
 
 `DatabaseOverlay` is a logical “view” database that exposes **the union of tables from multiple underlying databases**. It does **not** own data itself. It supports two modes:
