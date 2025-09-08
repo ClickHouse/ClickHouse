@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/CurrentThread.h>
+#include "base/defines.h"
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -62,7 +63,7 @@ public:
     void setStepDescription(const IQueryPlanStep & step);
 
     template <size_t size>
-    void setStepDescription(const char (&description)[size]) { step_description = std::string_view(description); }
+    ALWAYS_INLINE void setStepDescription(const char (&description)[size]) { step_description = std::string_view(description); }
 
     struct Serialization;
     struct Deserialization;
@@ -126,6 +127,8 @@ protected:
 
     /// Text description about what current step does.
     std::variant<std::string, std::string_view> step_description;
+
+    friend class DescriptionHolder;
 
     /// This field is used to store added processors from this step.
     /// It is used only for introspection (EXPLAIN PIPELINE).

@@ -412,7 +412,7 @@ public:
 };
 
 template <size_t size>
-void addExpressionStep(
+ALWAYS_INLINE void addExpressionStep(
     const PlannerContextPtr & planner_context,
     QueryPlan & query_plan,
     ActionsAndProjectInputsFlagPtr & expression_actions,
@@ -449,7 +449,7 @@ void addExpressionStep(
 }
 
 template <size_t size>
-void addFilterStep(
+ALWAYS_INLINE void addFilterStep(
     const PlannerContextPtr & planner_context,
     QueryPlan & query_plan,
     FilterAnalysisResult & filter_analysis_result,
@@ -790,7 +790,7 @@ void addSortingStep(QueryPlan & query_plan,
 }
 
 template<size_t size>
-void addMergeSortingStep(QueryPlan & query_plan,
+ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
     const char (&description)[size])

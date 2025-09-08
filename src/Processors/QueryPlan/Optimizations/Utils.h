@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include "base/defines.h"
 
 namespace DB
 {
@@ -10,28 +11,31 @@ class ActionsDAG;
 
 struct IDescriptionHolder
 {
-    virtual void setStepDescription(IQueryPlanStep & step) = 0;
+    virtual void setStepDescription(IQueryPlanStep & step) const = 0;
     virtual ~IDescriptionHolder() = default;
 };
 
-using DescriptionHolderPtr = std::unique_ptr<IDescriptionHolder>;
+using DescriptionHolderPtr = std::unique_ptr<const IDescriptionHolder>;
 
-template <size_t size>
-struct DescriptionHolder : public IDescriptionHolder
+class DescriptionHolder : public IDescriptionHolder
 {
-    const char (&description)[size];
-    explicit DescriptionHolder(const char (&description_)[size]) : description(description_) {}
+public:
+    template <size_t size>
+    ALWAYS_INLINE explicit DescriptionHolder(const char (&description_)[size]) : description(description_, size) {}
 
-    void setStepDescription(IQueryPlanStep & step) override
+    void setStepDescription(IQueryPlanStep & step) const override
     {
-        step.setStepDescription(description);
+        step.step_description = description;
     }
+
+private:
+    std::string_view description;
 };
 
 template <size_t size>
-DescriptionHolderPtr makeDescription(const char (&description)[size])
+ALWAYS_INLINE DescriptionHolderPtr makeDescription(const char (&description)[size])
 {
-    return std::make_unique<DescriptionHolder<size>>(description);
+    return std::make_unique<DescriptionHolder>(description);
 }
 
 /** Creates a new ExpressionStep or FilterStep node on top of an existing query plan node.
