@@ -10,6 +10,7 @@
 #include <Common/ZooKeeper/ShuffleHost.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -1640,13 +1641,20 @@ Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version
     return request;
 }
 
-Coordination::RequestPtr makeRemoveRecursiveRequest(const std::string & path, uint32_t remove_nodes_limit)
+template <class Client>
+Coordination::RequestPtr makeRemoveRecursiveRequest(const Client & client, const std::string & path, uint32_t remove_nodes_limit)
 {
+    if (!client.isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Trying to use RemoveRecursive request while Keeper doesn't support it or feature flag is disabled");
+
     auto request = std::make_shared<Coordination::RemoveRecursiveRequest>();
     request->path = path;
     request->remove_nodes_limit = remove_nodes_limit;
     return request;
 }
+
+template Coordination::RequestPtr makeRemoveRecursiveRequest<zkutil::ZooKeeper>(const zkutil::ZooKeeper & client, const std::string & path, uint32_t remove_nodes_limit);
+template Coordination::RequestPtr makeRemoveRecursiveRequest<DB::ZooKeeperWithFaultInjection>(const DB::ZooKeeperWithFaultInjection & client, const std::string & path, uint32_t remove_nodes_limit);
 
 Coordination::RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version)
 {
