@@ -507,7 +507,6 @@ public:
         }
         else
         {
-            // Data -> AggregationSumData; addMany()<typename T>
             this->data(place).addMany(column.getData().data(), row_begin, row_end);
         }
     }

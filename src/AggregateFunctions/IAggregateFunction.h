@@ -716,8 +716,6 @@ protected:
     using Data = T;
 
     static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }  /// NOLINT(readability-non-const-parameter)
-    
-    // pointer convert, wondering what's this for, the result or input type for sum.
     static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
 public:

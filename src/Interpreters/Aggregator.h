@@ -211,29 +211,28 @@ public:
         {
         public:
             virtual ~IInlinedSumHelper() = default;
-            virtual UInt64 add(const DB::IColumn* column, size_t row) = 0;
+            virtual UInt64 get(const DB::IColumn* column, size_t row) = 0;
             virtual UInt64 addSparse(const DB::IColumn* column, size_t row_begin, size_t row_end) = 0;
             virtual UInt64 addMany(const DB::IColumn* column, size_t row_begin, size_t row_end) = 0;
         };
-            
 
         template <typename T>
         struct InlineAggregationSumHelper : public IInlinedSumHelper
         {
             using ColVecType = ColumnVectorOrDecimal<T>;
-    
-            UInt64 add(const DB::IColumn* column, size_t row) override
+
+            UInt64 get(const DB::IColumn* column, size_t row) override
             {
                 const auto & typed_column = assert_cast<const ColVecType &>(*column);
                 return static_cast<UInt64>(typed_column.getData()[row]);
             }
-    
+
             UInt64 addSparse(const DB::IColumn* column, size_t row_begin, size_t row_end) override
             {
                 const auto & column_sparse = assert_cast<const ColumnSparse &>(*column);
                 const auto * values = &column_sparse.getValuesColumn();
                 const auto & offsets = column_sparse.getOffsetsData();
-    
+
                 size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
                 size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
                 const auto & typed_column = assert_cast<const ColVecType &>(*values);
@@ -243,7 +242,7 @@ public:
                     result += static_cast<UInt64>(data[i+1]);
                 return result;
             }
-    
+
             UInt64 addMany(const DB::IColumn* column, size_t row_begin, size_t row_end) override
             {
                 const auto & typed_column = assert_cast<const ColVecType &>(*column);
@@ -252,8 +251,9 @@ public:
                 return sum_data.get();
             }
         };
-    
-        static std::unique_ptr<IInlinedSumHelper> createSumExtractorForType(DB::DataTypePtr type) {
+
+        static std::unique_ptr<IInlinedSumHelper> createSumExtractorForType(DB::DataTypePtr type)
+        {
             WhichDataType which(type);
             if (false) {} // NOLINT
 #define M(TYPE) \
@@ -263,9 +263,7 @@ public:
 
             FOR_INLINABLE_UINT_TYPES_FOO(M)
 #undef M
-            else {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type index for sum extractor");
-            }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type index for sum extractor");
         }
 
     /** This array serves two purposes.
@@ -276,7 +274,6 @@ public:
     struct AggregateFunctionInstruction
     {
         const IAggregateFunction * that{};
-        // std::unique_ptr<IInlinedSumHelper> sum_helper;
         size_t state_offset{};
         const IColumn ** arguments{};
         const IAggregateFunction * batch_that{};
@@ -408,11 +405,6 @@ private:
     /// If true, we apply similar optimization as is_simple_count.
     bool is_simple_sum = false;
     std::unique_ptr<IInlinedSumHelper> inline_sum_helper;
-
-    /// Function pointer for optimized sum extraction when is_simple_sum is true.
-    /// This eliminates runtime type checking overhead during aggregation.
-    using ExtractAndSumFunc = std::function<UInt64(const IColumn*, size_t, size_t, bool)>;
-    ExtractAndSumFunc optimized_extract_sum_func = nullptr;
 
     LoggerPtr log = getLogger("Aggregator");
 
@@ -734,6 +726,11 @@ private:
         AggregateFunctionInstruction * inst,
         AggregateDataPtr place,
         Arena * arena);
+
+    static UInt64 addBatchForSimpleSum(
+        const std::unique_ptr<IInlinedSumHelper> & inline_sum_helper,
+        size_t row_begin, size_t row_end,
+        AggregateFunctionInstruction * inst);
 };
 
 /// NOTE: For non-Analyzer it does not include the database name
