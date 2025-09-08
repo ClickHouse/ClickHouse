@@ -929,10 +929,28 @@ def broken_s3(init_broken_s3):
     yield init_broken_s3
 
 
-def test_backup_restore_with_s3_throttle(broken_s3):
+@pytest.mark.parametrize(
+    "to_disk",
+    [
+        pytest.param(
+            None,
+            id="to_s3",
+        ),
+        pytest.param(
+            "disk_s3",
+            id="to_disk_s3",
+        ),
+    ],
+)
+def test_backup_restore_with_s3_throttle(broken_s3, to_disk):
     storage_policy = "default"
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://resolver:8083/root/data/backups/multipart/{backup_name}', 'minio', '{minio_secret_key}')"
+
+    backup_destination = (
+        f"Disk('{to_disk}', '{backup_name}')"
+        if to_disk
+        else f"S3('http://resolver:8083/root/data/backups/multipart/{backup_name}', 'minio', '{minio_secret_key}')"
+    )
     node = cluster.instances["node"]
     backup_settings = {
         "backup_restore_s3_retry_attempts": "10",

@@ -89,7 +89,6 @@ RUN set -x \
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
 COPY misc/ /misc/
-COPY integration-tests-entrypoint.sh /integration-tests-entrypoint.sh
 
 COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"

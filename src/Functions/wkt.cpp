@@ -71,7 +71,7 @@ public:
                 str.exceptions(std::ios::failbit);
                 str << boost::geometry::wkt(figures[i]);
                 std::string serialized = str.str();
-                res_column->insertData(serialized.c_str(), serialized.size());
+                res_column->insertData(serialized.data(), serialized.size());
             }
         }
         );

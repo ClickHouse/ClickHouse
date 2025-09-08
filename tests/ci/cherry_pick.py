@@ -611,7 +611,9 @@ class CherryPickPRs:
         self.repo = gh.get_repo(repo)
         self.dry_run = dry_run
         self.error = None  # type: Optional[Exception]
+
         self.release_prs = gh.get_release_pulls(repo)
+        logging.info(f"Release PRs: {self.release_prs}")
 
     def get_open_cherry_pick_prs(self) -> PullRequests:
         """

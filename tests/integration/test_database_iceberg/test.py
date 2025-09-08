@@ -135,7 +135,7 @@ def create_clickhouse_iceberg_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-SET allow_experimental_database_iceberg=true;
+SET allow_database_iceberg=true;
 SET write_full_path_in_iceberg_metadata=1;
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
@@ -421,7 +421,7 @@ def test_backup_database(started_cluster):
     node.query("DROP DATABASE backup_database SYNC")
     assert "backup_database" not in node.query("SHOW DATABASES")
 
-    node.query(f"RESTORE DATABASE backup_database FROM {backup_name}", settings={"allow_experimental_database_iceberg": 1})
+    node.query(f"RESTORE DATABASE backup_database FROM {backup_name}", settings={"allow_database_iceberg": 1})
     assert (
         node.query("SHOW CREATE DATABASE backup_database")
         == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://rest:8181/v1\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'demo\\', storage_endpoint = \\'http://minio:9000/warehouse-rest\\'\n"

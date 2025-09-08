@@ -1001,6 +1001,14 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         Stopwatch watch(CLOCK_MONOTONIC);
 
+        if (implementation_buffer->internalBuffer().empty())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Internal buffer cannot be empty (use external buffer: {}; {})",
+                use_external_buffer, getInfoForLog());
+        }
+
         result = implementation_buffer->next();
 
         watch.stop();
@@ -1125,18 +1133,26 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         else
             download_finished_time = "None";
 
+        std::optional<size_t> object_size;
+        if (read_type != ReadType::CACHED)
+        {
+            object_size = implementation_buffer->tryGetFileSize();
+        }
+
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Having zero bytes, but range is not finished: "
             "result: {}, "
             "file offset: {}, "
             "read bytes: {}, "
+            "object size: {}, "
             "initial read offset: {}, "
             "nextimpl working buffer offset: {},"
             "reading until: {}, "
             "read type: {}, "
             "working buffer size: {}, "
             "internal buffer size: {}, "
+            "available: {}, "
             "finished download time: {}, "
             "cache file size: {}, "
             "cache file path: {}, "
@@ -1146,12 +1162,14 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             result,
             file_offset_of_buffer_end,
             size,
+            object_size ? std::to_string(*object_size) : "None",
             first_offset,
             nextimpl_working_buffer_offset,
             read_until_position,
             toString(read_type),
-            implementation_buffer->buffer().size(),
-            implementation_buffer->internalBuffer().size(),
+            buffer().size(),
+            internalBuffer().size(),
+            available(),
             download_finished_time,
             cache_file_size ? std::to_string(cache_file_size) : "None",
             cache_file_path,

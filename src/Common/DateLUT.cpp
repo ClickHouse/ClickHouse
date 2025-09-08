@@ -187,7 +187,7 @@ DateLUT::DateLUT()
 }
 
 
-const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) const
+const DateLUTImpl & DateLUT::getImplementation(std::string_view time_zone) const
 {
     std::lock_guard lock(mutex);
 

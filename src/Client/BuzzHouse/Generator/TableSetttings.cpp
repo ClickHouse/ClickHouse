@@ -26,6 +26,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"add_minmax_index_for_string_columns", trueOrFalseSetting},
        {"allow_experimental_replacing_merge_with_cleanup", trueOrFalseSetting},
        {"allow_floating_point_partition_key", trueOrFalseSettingNoOracle},
+       {"allow_part_offset_column_in_projections", trueOrFalseSetting},
        {"allow_reduce_blocking_parts_task", trueOrFalseSetting},
        {"allow_remote_fs_zero_copy_replication", trueOrFalseSetting},
        {"allow_suspicious_indices", trueOrFalseSettingNoOracle},
@@ -123,6 +124,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
         CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 100)); }, {}, false)},
        {"max_suspicious_broken_parts", highRangeSetting},
        {"max_suspicious_broken_parts_bytes", bytesRangeSetting},
+       {"max_uncompressed_bytes_in_patches", bytesRangeSetting},
        {"merge_max_block_size", highRangeSetting},
        {"merge_max_block_size_bytes", bytesRangeSetting},
        {"merge_max_bytes_to_prewarm_cache", bytesRangeSetting},
@@ -190,7 +192,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"replicated_max_mutations_in_one_entry",
         CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10000)); }, {}, false)},
        {"replicated_max_ratio_of_wrong_parts", probRangeSetting},
-       {"search_orphaned_parts_drives",
+       {"search_orphaned_parts_disks",
         CHSetting(
             [](RandomGenerator & rg)
             {
@@ -244,6 +246,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"shared_merge_tree_use_outdated_parts_compact_format", trueOrFalseSetting},
        /// ClickHouse cloud setting
        {"shared_merge_tree_use_too_many_parts_count_from_virtual_parts", trueOrFalseSetting},
+       /// ClickHouse cloud setting
+       {"shared_merge_tree_virtual_parts_discovery_batch", rowsRangeSetting},
        {"simultaneous_parts_removal_limit",
         CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); }, {}, false)},
        {"table_disk", trueOrFalseSetting},
@@ -348,7 +352,6 @@ static std::unordered_map<String, CHSetting> ipTreeLayoutSettings = {{"ACCESS_TO
 
 static std::unordered_map<String, CHSetting> dataLakeSettings
     = {{"allow_dynamic_metadata_for_data_lakes", CHSetting(trueOrFalse, {}, false)},
-       {"allow_experimental_delta_kernel_rs", CHSetting(trueOrFalse, {}, false)},
        {"iceberg_format_version", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "1" : "2"; }, {}, false)},
        {"iceberg_metadata_compression_method",
         CHSetting([](RandomGenerator & rg) { return "'" + rg.pickRandomly(compressionMethods) + "'"; }, {}, false)},
@@ -528,7 +531,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {KeeperMap, {}},
          {ExternalDistributed, {}},
          {MaterializedPostgreSQL, {}},
-         {ArrowFlight, {}}});
+         {ArrowFlight, {}},
+         {Alias, {}}});
 
     allColumnSettings.insert(
         {{MergeTree, mergeTreeColumnSettings},
@@ -572,7 +576,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {KeeperMap, {}},
          {ExternalDistributed, {}},
          {MaterializedPostgreSQL, {}},
-         {ArrowFlight, {}}});
+         {ArrowFlight, {}},
+         {Alias, {}}});
 
     allDictionaryLayoutSettings.insert(
         {{CACHE, cachedLayoutSettings},

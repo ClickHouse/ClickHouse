@@ -1,9 +1,11 @@
-#include <optional>
 #include "config.h"
 
 #if USE_AVRO
 
 #include <compare>
+#include <optional>
+
+#include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
@@ -22,7 +24,6 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int UNSUPPORTED_METHOD;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
@@ -132,7 +133,7 @@ const std::vector<ManifestFileEntry> & ManifestFileContent::getFilesWithoutDelet
     else if (content_type == FileContentType::POSITION_DELETE)
         return position_deletes_files_without_deleted;
     else
-        throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_METHOD, "Unsupported content type: {}", static_cast<int>(content_type));
+        return equality_deletes_files;
 }
 
 using namespace DB;
@@ -150,6 +151,14 @@ ManifestFileContent::ManifestFileContent(
     const String & path_to_manifest_file_)
     : path_to_manifest_file(path_to_manifest_file_)
 {
+    insertRowToLogTable(
+        context,
+        manifest_file_deserializer.getMetadataContent(),
+        DB::IcebergMetadataLogLevel::ManifestFileMetadata,
+        common_path,
+        path_to_manifest_file,
+        std::nullopt);
+
     for (const auto & column_name : {f_status, f_data_file})
     {
         if (!manifest_file_deserializer.hasPath(column_name))
@@ -215,14 +224,16 @@ ManifestFileContent::ManifestFileContent(
 
     for (size_t i = 0; i < manifest_file_deserializer.rows(); ++i)
     {
+        insertRowToLogTable(
+            context,
+            manifest_file_deserializer.getContent(i),
+            DB::IcebergMetadataLogLevel::ManifestFileEntry,
+            common_path,
+            path_to_manifest_file,
+            i);
         FileContentType content_type = FileContentType::DATA;
         if (format_version_ > 1)
-        {
             content_type = FileContentType(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
-            if (content_type == FileContentType::EQUALITY_DELETE)
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: files of content type {} are not supported", content_type);
-        }
         const auto status = ManifestEntryStatus(manifest_file_deserializer.getValueFromRowByName(i, f_status, TypeIndex::Int32).safeGet<UInt64>());
 
 
@@ -248,10 +259,19 @@ ManifestFileContent::ManifestFileContent(
             snapshot_id = snapshot_id_value.safeGet<Int64>();
         }
 
+        const auto schema_id_opt = schema_processor.tryGetSchemaIdForSnapshot(snapshot_id);
+        if (!schema_id_opt.has_value())
+        {
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot read Iceberg table: manifest file '{}' has entry with snapshot_id '{}' for which write file schema is unknown",
+                manifest_file_name,
+                snapshot_id);
+        }
+        const auto schema_id = schema_id_opt.value();
 
-        const auto schema_id = schema_processor.getSchemaIdForSnapshot(snapshot_id);
-
-        const auto file_path_key = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>();
+        const auto file_path_key
+            = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>();
         const auto file_path = getProperFilePathFromMetadataInfo(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>(), common_path, table_location);
 
         /// NOTE: This is weird, because in manifest file partition looks like this:
@@ -392,16 +412,20 @@ ManifestFileContent::ManifestFileContent(
                     common_partition_specification,
                     columns_infos,
                     file_format,
-                    /*reference_data_file = */ std::nullopt);
+                    /*reference_data_file = */ std::nullopt,
+                    /*equality_ids*/ std::nullopt);
                 break;
-            case FileContentType::POSITION_DELETE: {
+            case FileContentType::POSITION_DELETE:
+            {
                 /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
                 std::optional<String> reference_file_path = std::nullopt;
                 if (manifest_file_deserializer.hasPath(c_data_file_referenced_data_file))
                 {
-                    reference_file_path
-                        = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file, TypeIndex::String)
-                              .safeGet<String>();
+                    Field reference_file_path_field = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file);
+                    if (!reference_file_path_field.isNull())
+                    {
+                        reference_file_path = reference_file_path_field.safeGet<String>();
+                    }
                 }
                 this->position_deletes_files_without_deleted.emplace_back(
                     file_path_key,
@@ -414,12 +438,38 @@ ManifestFileContent::ManifestFileContent(
                     common_partition_specification,
                     columns_infos,
                     file_format,
-                    reference_file_path);
+                    reference_file_path,
+                    /*equality_ids*/ std::nullopt);
                 break;
             }
-            default:
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD, "FileContentType {} is not supported", content_type);
+            case FileContentType::EQUALITY_DELETE:
+            {
+                std::vector<Int32> equality_ids;
+                if (manifest_file_deserializer.hasPath(c_data_file_equality_ids))
+                {
+                    Field equality_ids_field = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_equality_ids);
+                    for (const Field & id : equality_ids_field.safeGet<Array>())
+                        equality_ids.push_back(id.safeGet<Int32>());
+                }
+                else
+                    throw Exception(
+                            DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                            "Couldn't find field {} in equality delete file entry", c_data_file_equality_ids);
+                this->equality_deletes_files.emplace_back(
+                    file_path_key,
+                    file_path,
+                    status,
+                    added_sequence_number,
+                    snapshot_id,
+                    schema_id,
+                    partition_key_value,
+                    common_partition_specification,
+                    columns_infos,
+                    file_format,
+                    /*reference_data_file = */ std::nullopt,
+                    equality_ids);
+                break;
+            }
         }
     }
     sortManifestEntriesBySchemaId(data_files_without_deleted);

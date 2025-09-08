@@ -78,15 +78,15 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            StringRef source = column_concrete->getDataAt(i);
-            auto demangled = tryDemangle(source.data);
+            String source = column_concrete->getDataAt(i).toString();
+            auto demangled = tryDemangle(source.c_str());
             if (demangled)
             {
                 result_column->insertData(demangled.get(), strlen(demangled.get()));
             }
             else
             {
-                result_column->insertData(source.data, source.size);
+                result_column->insertData(source.data(), source.size());
             }
         }
 

@@ -40,7 +40,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    void trySetGinFilterParameters(const GinFilterParameters & params);
+    void trySetGinFilterParameters(const GinFilter::Parameters & params);
     void trySetSearchTokens(const std::vector<String> & tokens);
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;

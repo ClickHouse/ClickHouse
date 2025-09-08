@@ -7,6 +7,7 @@ import os
 import re
 import random
 import time
+import subprocess
 import uuid
 from datetime import datetime, timedelta
 from helpers.cluster import ClickHouseCluster
@@ -179,7 +180,7 @@ def test_multiple_schemes_tables(started_cluster):
 
     node1.query(
         f"create database multi_schema_test{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={"allow_database_unity_catalog": "1"},
     )
     multi_schema_tables = list(
         sorted(
@@ -224,7 +225,7 @@ create database complex_schema
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
         """,
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={"allow_database_unity_catalog": "1"},
     )
 
     complex_schema_tables = list(
@@ -284,7 +285,7 @@ create database {table_name_src}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
         """,
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={"allow_database_unity_catalog": "1"},
     )
 
     ntz_tables = list(
@@ -359,8 +360,60 @@ create database {schema_name}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=True
         """,
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={"allow_database_unity_catalog": "1"},
     )
 
     # This query will fail if bug exists
     print(node1.query(f"SHOW TABLES FROM {schema_name}"))
+
+
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_view_with_void(started_cluster, use_delta_kernel):
+    #25/08/20 16:45:23 WARN ObjectStore: Version information not found in metastore. hive.metastore.schema.verification is not enabled so recording the schema version 2.3.0
+    #25/08/20 16:45:23 WARN ObjectStore: setMetaStoreSchemaVersion called but recording version is disabled: version = 2.3.0, comment = Set by MetaStore UNKNOWN@172.18.0.2
+    #25/08/20 16:45:24 WARN ObjectStore: Failed to get database global_temp, returning NoSuchObjectException
+    # Catalog unity does not support views.
+    pytest.skip("Unfortunately open source Unity Catalog doesn't support views")
+    table_name_src = f"ntz_schema_{uuid.uuid4()}".replace("-", "_")
+    node1 = started_cluster.instances["node1"]
+    node1.query(f"drop database if exists {table_name_src}")
+
+    schema_name = f"schema_with_timetstamp_ntz_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
+    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}")
+    table_name = f"table_with_timestamp_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
+    view_name = f"test_view_{table_name}"
+    schema = "event_date DATE, event_time TIMESTAMP"
+    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/{table_name_src}/{table_name}'"
+    execute_spark_query(node1, create_query)
+    execute_spark_query(
+        node1,
+        f"CREATE VIEW {schema_name}.{view_name} AS SELECT * FROM {schema_name}.{table_name}",
+    )
+
+    node1.query(
+        f"""
+drop database if exists {table_name};
+create database {table_name_src}
+engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
+        """,
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    ntz_tables = list(
+        sorted(
+            node1.query(
+                f"SHOW TABLES FROM {table_name_src} LIKE '{schema_name}%'",
+                settings={"use_hive_partitioning": "0"},
+            )
+            .strip()
+            .split("\n")
+        )
+    )
+
+    assert len(ntz_tables) == 1
+
+    def get_schemas():
+        return execute_spark_query(node1, f"SHOW SCHEMAS")
+
+    assert schema_name in get_schemas()

@@ -128,6 +128,7 @@ Float64 extractFloatParameter(const std::string & function_name, const std::stri
 namespace Setting
 {
     extern const SettingsBool allow_experimental_time_series_aggregate_functions;
+    extern const SettingsBool allow_experimental_time_series_table;
 }
 
 namespace
@@ -218,7 +219,7 @@ template <
 >
 AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    if (settings && (*settings)[Setting::allow_experimental_time_series_aggregate_functions] == 0)
+    if (settings && (*settings)[Setting::allow_experimental_time_series_aggregate_functions] == 0 && (*settings)[Setting::allow_experimental_time_series_table] == 0)
         throw Exception(
             ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
             "Aggregate function {} is experimental and disabled by default. Enable it with setting allow_experimental_time_series_aggregate_functions",

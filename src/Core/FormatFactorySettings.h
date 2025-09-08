@@ -168,7 +168,7 @@ Ignore case when matching ORC columns with CH columns.
 Ignore case when matching Parquet columns with CH columns.
 )", 0) \
     DECLARE(Bool, input_format_parquet_preserve_order, false, R"(
-Avoid reordering rows when reading from Parquet files. Usually makes it much slower.
+Avoid reordering rows when reading from Parquet files. Usually makes it much slower. Not recommended as row ordering is generally not guaranteed, and other parts of query pipeline may break it.
 )", 0) \
     DECLARE(Bool, input_format_parquet_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.
@@ -176,12 +176,27 @@ When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE ex
     DECLARE(Bool, input_format_parquet_bloom_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.
 )", 0) \
-    DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
-When reading Parquet files, to use native reader instead of arrow reader.
+    DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
+When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
 )", 0) \
-DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
-  When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
-  )", 0) \
+    DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
+Use native parquet reader v1. It's relatively fast but unfinished. Deprecated.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_use_native_reader_v3, false, R"(
+Use Parquet reader v3. Experimental.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, input_format_parquet_memory_low_watermark, 2ul << 20, R"(
+Schedule prefetches more aggressively if memory usage is below than threshold. Potentially useful e.g. if there are many small bloom filters to read over network.
+)", 0) \
+    DECLARE(UInt64, input_format_parquet_memory_high_watermark, 4ul << 30, R"(
+Approximate memory limit for Parquet reader v3. Limits how many row groups or columns can be read in parallel. When reading multiple files in one query, the limit is on total memory usage across those files.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_page_filter_push_down, true, R"(
+Skip pages using min/max values from column index.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
+Minor tweak to how pages are read from parquet file when no page filtering is used.
+)", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
 Allow seeks while reading in ORC/Parquet/Arrow input formats.
 
@@ -524,6 +539,9 @@ Possible values:
     DECLARE(Bool, type_json_skip_duplicated_paths, false, R"(
 When enabled, during parsing JSON object into JSON type duplicated paths will be ignored and only the first one will be inserted instead of an exception
 )", 0) \
+    DECLARE(Bool, json_type_escape_dots_in_keys, false, R"(
+When enabled, dots in JSON keys will be escaped during parsing.
+)", 0) \
     DECLARE(UInt64, input_format_json_max_depth, 1000, R"(
 Maximum depth of a field in JSON. This is not a strict limit, it does not have to be applied precisely.
 )", 0) \
@@ -737,7 +755,7 @@ Read values of [JSON](../../sql-reference/data-types/newjson.md) data type as JS
 Write values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary output format.
 )", 0) \
     \
-    DECLARE(Bool, output_format_json_quote_64bit_integers, true, R"(
+    DECLARE(Bool, output_format_json_quote_64bit_integers, false, R"(
 Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](/interfaces/formats/JSON) format.
 Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
 
@@ -1104,7 +1122,10 @@ Write DateTime values as raw unix timestamp (read back as UInt32), instead of co
     DECLARE(Bool, output_format_parquet_date_as_uint16, false, R"(
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit parquet DATE type (read back as Date32).
 )", 0) \
-    DECLARE(Bool, output_format_parquet_enum_as_byte_array, false, R"(
+    DECLARE(UInt64, output_format_parquet_max_dictionary_size, 1024 * 1024, R"(
+If dictionary size grows bigger than this many bytes, switch to encoding without dictionary. Set to 0 to disable dictionary encoding.
+)", 0) \
+    DECLARE(Bool, output_format_parquet_enum_as_byte_array, true, R"(
 Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(

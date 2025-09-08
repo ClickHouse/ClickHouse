@@ -321,7 +321,6 @@ private:
     const ServerSideEncryptionKMSConfig sse_kms_config;
 
     LoggerPtr log;
-    LogSeriesLimiterPtr limited_log;
 };
 
 class ClientFactory
