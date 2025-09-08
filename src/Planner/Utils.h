@@ -70,6 +70,9 @@ bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescripti
 /// Returns true if query node JOIN TREE contains ARRAY JOIN node, false otherwise
 bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node);
 
+/// Returns true if any query tree children have WITH TOTALS, false otherwise.
+bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node);
+
 /** Returns true if query node JOIN TREE contains QUERY node with WITH TOTALS, false otherwise.
   * Function is applied recursively to subqueries in JOIN TREE.
   */

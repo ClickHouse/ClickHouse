@@ -423,9 +423,6 @@ The maximum number of retries in case of unexpected errors during Azure blob sto
     DECLARE(UInt64, s3_max_unexpected_write_error_retries, S3::DEFAULT_MAX_UNEXPECTED_WRITE_ERROR_RETRIES, R"(
 The maximum number of retries in case of unexpected errors during S3 write.
 )", 0) \
-    DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
-Max number of S3 redirects hops allowed.
-)", 0) \
     DECLARE(UInt64, azure_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
 Max number of azure redirects hops allowed.
 )", 0) \
@@ -589,9 +586,6 @@ Possible values:
 )", 0) \
     DECLARE(Bool, s3_disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, R"(
 Do not calculate a checksum when sending a file to S3. This speeds up writes by avoiding excessive processing passes on a file. It is mostly safe as the data of MergeTree tables is checksummed by ClickHouse anyway, and when S3 is accessed with HTTPS, the TLS layer already provides integrity while transferring through the network. While additional checksums on S3 give defense in depth.
-)", 0) \
-    DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(
-Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries
 )", 0) \
     DECLARE(UInt64, s3_request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, R"(
 Idleness timeout for sending and receiving data to/from S3. Fail if a single TCP read or write call blocks for this long.
@@ -2105,10 +2099,18 @@ DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
     - 'false': Never swap tables (the right table is the build table).
     - 'true': Always swap tables (the left table is the build table).
 )", 0) \
+DECLARE(UInt64, query_plan_optimize_join_order_limit, 1, R"(
+    Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
+    Value is the maximum number of tables to optimize.
+)", 0) \
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
 Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
  )", 0) \
+    \
+    DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
+Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
+)", 0) \
     \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
@@ -5695,7 +5697,7 @@ Whether to use constant size tasks for reading from a remote table.
     DECLARE(Bool, merge_tree_determine_task_size_by_prewhere_columns, true, R"(
 Whether to use only prewhere columns size to determine reading task size.
 )", 0) \
-    DECLARE(UInt64, merge_tree_min_read_task_size, 8, R"(
+    DECLARE(NonZeroUInt64, merge_tree_min_read_task_size, 8, R"(
 Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks
 )", 0) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
@@ -6883,6 +6885,12 @@ Possible values:
 - 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
+    DECLARE(Bool, jemalloc_enable_profiler, false, R"(
+Enable jemalloc profiler.
+    )", 0) \
+    DECLARE(Bool, jemalloc_collect_profile_samples_in_trace_log, false, R"(
+Collect jemalloc profile samples in trace log.
+    )", 0) \
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
 Use roaring bitmap for iceberg positional deletes.
 )", 0) \
@@ -7138,6 +7146,8 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_replicated_fetches_network_bandwidth_for_server, 0) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_replicated_sends_network_bandwidth_for_server, 0) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_entries_for_hash_table_stats, 10'000) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS) \
     /* ---- */ \
     MAKE_OBSOLETE(M, DefaultDatabaseEngine, default_database_engine, DefaultDatabaseEngine::Atomic) \
     MAKE_OBSOLETE(M, UInt64, max_pipeline_depth, 0) \
@@ -7617,7 +7627,7 @@ void Settings::addToClientOptions(Poco::Util::LayeredConfiguration &config, cons
     for (const auto & setting : impl->all())
     {
         const auto & name = setting.getName();
-        if (options.count(name))
+        if (options.contains(name))
         {
             if (repeated_settings)
                 config.setString(name, options[name].as<Strings>().back());
