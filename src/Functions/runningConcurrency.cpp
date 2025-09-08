@@ -230,6 +230,10 @@ If this requirement is violated the function raises an exception.
 Every data block is processed separately.
 If events from different data blocks overlap then they can not be processed correctly.
 :::
+
+:::warning Deprecated
+It is advised to use [window functions](/sql-reference/window-functions) instead.
+:::
 )";
         FunctionDocumentation::Syntax syntax_runningConcurrency = "runningConcurrency(start, end)";
         FunctionDocumentation::Arguments arguments_runningConcurrency = {
@@ -245,10 +249,10 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
             )",
             R"(
 ┌──────start─┬─runningConcurrency(start, end)─┐
-│ 2021-03-03 │                              1 │
-│ 2021-03-06 │                              2 │
-│ 2021-03-07 │                              3 │
-│ 2021-03-11 │                              2 │
+│ 2025-03-03 │                              1 │
+│ 2025-03-06 │                              2 │
+│ 2025-03-07 │                              3 │
+│ 2025-03-11 │                              2 │
 └────────────┴────────────────────────────────┘
             )"
         }

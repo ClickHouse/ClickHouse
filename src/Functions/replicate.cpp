@@ -63,10 +63,6 @@ REGISTER_FUNCTION(Replicate)
 {
     FunctionDocumentation::Description description_replicate = R"(
 Creates an array with a single value.
-
-:::note
-This function is used for the internal implementation of the [`arrayJoin`](../../sql-reference/functions/array-join.md) function.
-:::
 )";
     FunctionDocumentation::Syntax syntax_replicate = "replicate(x, arr)";
     FunctionDocumentation::Arguments arguments_replicate = {
@@ -88,7 +84,7 @@ SELECT replicate(1, ['a', 'b', 'c']);
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_replicate = {1, 1};
-    FunctionDocumentation::Category category_replicate = FunctionDocumentation::Category::Other;
+    FunctionDocumentation::Category category_replicate = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_replicate = {description_replicate, syntax_replicate, arguments_replicate, returned_value_replicate, examples_replicate, introduced_in_replicate, category_replicate};
 
     factory.registerFunction<FunctionReplicate>(documentation_replicate);

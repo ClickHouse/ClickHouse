@@ -14,7 +14,7 @@ Returns `0` for the first row, and for subsequent rows the difference to the pre
 :::warning Deprecated
 Only returns differences inside the currently processed data block.
 Because of this error-prone behavior, the function is deprecated.
-It is advised to use proper [window functions](/sql-reference/window-functions) instead.
+It is advised to use [window functions](/sql-reference/window-functions) instead.
 
 You can use setting [`allow_deprecated_error_prone_window_functions`](/operations/settings/settings#allow_deprecated_error_prone_window_functions) to allow usage of this function.
 :::
@@ -40,18 +40,18 @@ FROM
         EventID,
         EventTime
     FROM events
-    WHERE EventDate = '2016-11-24'
+    WHERE EventDate = '2025-11-24'
     ORDER BY EventTime ASC
     LIMIT 5
 );
         )",
         R"(
 ┌─EventID─┬───────────EventTime─┬─delta─┐
-│    1106 │ 2016-11-24 00:00:04 │     0 │
-│    1107 │ 2016-11-24 00:00:05 │     1 │
-│    1108 │ 2016-11-24 00:00:05 │     0 │
-│    1109 │ 2016-11-24 00:00:09 │     4 │
-│    1110 │ 2016-11-24 00:00:10 │     1 │
+│    1106 │ 2025-11-24 00:00:04 │     0 │
+│    1107 │ 2025-11-24 00:00:05 │     1 │
+│    1108 │ 2025-11-24 00:00:05 │     0 │
+│    1109 │ 2025-11-24 00:00:09 │     4 │
+│    1110 │ 2025-11-24 00:00:10 │     1 │
 └─────────┴─────────────────────┴───────┘
         )"
     },

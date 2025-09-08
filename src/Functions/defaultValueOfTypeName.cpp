@@ -68,8 +68,7 @@ REGISTER_FUNCTION(DefaultValueOfTypeName)
 {
     FunctionDocumentation::Description description_defaultValueOfTypeName = R"(
 Returns the default value for the given type name.
-Does not include default values for custom columns set by the user.
-)";
+    )";
     FunctionDocumentation::Syntax syntax_defaultValueOfTypeName = "defaultValueOfTypeName(type)";
     FunctionDocumentation::Arguments arguments_defaultValueOfTypeName = {
         {"type", "A string representing a type name.", {"String"}}

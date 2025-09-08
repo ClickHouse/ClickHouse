@@ -59,21 +59,22 @@ public:
 REGISTER_FUNCTION(ToColumnTypeName)
 {
     FunctionDocumentation::Description description_toColumnTypeName = R"(
-Returns the internal name of the data type that represents the value.
+Returns the internal name of the data type of the given value.
+Unlike function [`toTypeName`](#toTypeName), the returned data type potentially includes internal wrapper columns like `Const` and `LowCardinality`.
 )";
     FunctionDocumentation::Syntax syntax_toColumnTypeName = "toColumnTypeName(value)";
     FunctionDocumentation::Arguments arguments_toColumnTypeName = {
-        {"value", "Value for which to return the internal data type name.", {"Any"}}
+        {"value", "Value for which to return the internal data type.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toColumnTypeName = {"Returns the internal data type name used to represent the value.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value_toColumnTypeName = {"Returns the internal data type used to represent the value.", {"String"}};
     FunctionDocumentation::Examples examples_toColumnTypeName = {
     {
         "Usage example",
         R"(
-SELECT toColumnTypeName(CAST('2018-01-01 01:02:03' AS DateTime));
+SELECT toColumnTypeName(CAST('2025-01-01 01:02:03' AS DateTime));
         )",
         R"(
-┌─toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
+┌─toColumnTypeName(CAST('2025-01-01 01:02:03', 'DateTime'))─┐
 │ Const(UInt32)                                             │
 └───────────────────────────────────────────────────────────┘
         )"

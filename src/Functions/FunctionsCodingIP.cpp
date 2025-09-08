@@ -1180,7 +1180,7 @@ REGISTER_FUNCTION(Coding)
     factory.registerFunction<FunctionCutIPv6>();
     factory.registerFunction<FunctionIPv4ToIPv6>();
     FunctionDocumentation::Description description_MACNumToString = R"(
-Interprets a 64-bit unsigned integer as a MAC address in big endian format and returns the corresponding MAC address as a string with format `AA:BB:CC:DD:EE:FF` (colon-separated numbers in hexadecimal form)..
+Interprets a 64-bit unsigned integer as a MAC address in big endian format and returns the corresponding MAC address as a string with format `AA:BB:CC:DD:EE:FF` (colon-separated numbers in hexadecimal form).
 )";
     FunctionDocumentation::Syntax syntax_MACNumToString = "MACNumToString(num)";
     FunctionDocumentation::Arguments arguments_MACNumToString = {

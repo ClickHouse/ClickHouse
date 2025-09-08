@@ -79,7 +79,6 @@ REGISTER_FUNCTION(GetSizeOfEnumType)
 {
     FunctionDocumentation::Description description_getSizeOfEnumType = R"(
 Returns the number of fields in the given [`Enum`](../../sql-reference/data-types/enum.md).
-An exception is thrown if the type is not `Enum`.
 )";
     FunctionDocumentation::Syntax syntax_getSizeOfEnumType = "getSizeOfEnumType(x)";
     FunctionDocumentation::Arguments arguments_getSizeOfEnumType = {
