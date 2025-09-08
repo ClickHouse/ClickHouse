@@ -71,8 +71,14 @@ public:
     {
     public:
         explicit ArgumentsTreeNode(const QueryTreeNodes * arguments_) : arguments(arguments_) {}
-        size_t size() const override { return arguments ? arguments->size() : 0; }
-        std::unique_ptr<Argument> at(size_t n) const override { return std::make_unique<ArgumentTreeNode>(arguments->at(n).get()); }
+        size_t size() const override
+        { /// size withous skipped indexes
+            return arguments ? arguments->size() - skippedSize() : 0;
+        }
+        std::unique_ptr<Argument> at(size_t n) const override
+        { /// n is relative index, some can be skipped
+            return std::make_unique<ArgumentTreeNode>(arguments->at(getRealIndex(n)).get());
+        }
     private:
         const QueryTreeNodes * arguments = nullptr;
     };

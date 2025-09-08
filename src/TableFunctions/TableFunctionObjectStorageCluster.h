@@ -10,8 +10,6 @@ namespace DB
 
 class Context;
 
-class StorageS3Settings;
-class StorageAzureBlobSettings;
 class StorageS3Configuration;
 class StorageAzureConfiguration;
 
@@ -31,6 +29,12 @@ struct HDFSClusterDefinition
 {
     static constexpr auto name = "hdfsCluster";
     static constexpr auto storage_type_name = "HDFSCluster";
+};
+
+struct IcebergClusterDefinition
+{
+    static constexpr auto name = "icebergCluster";
+    static constexpr auto storage_type_name = "UNDEFINED";
 };
 
 struct IcebergS3ClusterDefinition
@@ -91,23 +95,27 @@ protected:
 
     const char * getStorageTypeName() const override { return Definition::storage_type_name; }
 
-    bool hasStaticStructure() const override { return Base::getConfiguration()->structure != "auto"; }
+    bool hasStaticStructure() const override { return Base::getConfiguration()->getStructure() != "auto"; }
 
-    bool needStructureHint() const override { return Base::getConfiguration()->structure == "auto"; }
+    bool needStructureHint() const override { return Base::getConfiguration()->getStructure() == "auto"; }
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { Base::structure_hint = structure_hint_; }
 };
 
 #if USE_AWS_S3
-using TableFunctionS3Cluster = TableFunctionObjectStorageCluster<S3ClusterDefinition, StorageS3Configuration>;
+using TableFunctionS3Cluster = TableFunctionObjectStorageCluster<S3ClusterDefinition, StorageS3Configuration, false>;
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-using TableFunctionAzureBlobCluster = TableFunctionObjectStorageCluster<AzureClusterDefinition, StorageAzureConfiguration>;
+using TableFunctionAzureBlobCluster = TableFunctionObjectStorageCluster<AzureClusterDefinition, StorageAzureConfiguration, false>;
 #endif
 
 #if USE_HDFS
-using TableFunctionHDFSCluster = TableFunctionObjectStorageCluster<HDFSClusterDefinition, StorageHDFSConfiguration>;
+using TableFunctionHDFSCluster = TableFunctionObjectStorageCluster<HDFSClusterDefinition, StorageHDFSConfiguration, false>;
+#endif
+
+#if USE_AVRO
+using TableFunctionIcebergCluster = TableFunctionObjectStorageCluster<IcebergClusterDefinition, StorageIcebergConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AWS_S3

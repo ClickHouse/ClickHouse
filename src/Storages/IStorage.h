@@ -65,6 +65,9 @@ class RestorerFromBackup;
 
 class ConditionSelectivityEstimator;
 
+class IObjectStorage;
+using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
+
 class ActionsDAG;
 
 /** Storage. Describes the table. Responsible for

@@ -510,7 +510,7 @@ class Runner:
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
 
             # Altinity workflow report
-            cmd = f"./.github/actions/create_workflow_report/workflow_report_hook.sh"
+            cmd = f"PR_NUMBER={env.PR_NUMBER} ./.github/actions/create_workflow_report/workflow_report_hook.sh"
             workflow_report_url = Shell.get_output(cmd).splitlines()[-1]
             print(f"::notice ::Workflow report: {workflow_report_url}")
 

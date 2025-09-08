@@ -196,9 +196,9 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
      * Otherwise, in case `use_hive_partitioning=1`, we can keep the old behavior of extracting it from the sample path.
      * And if the schema was inferred (not specified in the table definition), we need to enrich it with the path partition columns
      */
-     if (configuration->partition_strategy && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
+     if (configuration->getPartitionStrategy() && configuration->getPartitionStrategyType() == PartitionStrategyFactory::StrategyType::HIVE)
      {
-         hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
+         hive_partition_columns_to_read_from_file_path = configuration->getPartitionStrategy()->getPartitionColumns();
      }
      else if (context->getSettingsRef()[Setting::use_hive_partitioning])
      {
@@ -213,7 +213,7 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
 
      sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns);
 
-     if (configuration->partition_columns_in_data_file)
+     if (configuration->getPartitionColumnsInDataFile())
      {
          file_columns = columns.getAllPhysical();
      }

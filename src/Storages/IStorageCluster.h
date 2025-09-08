@@ -31,10 +31,17 @@ public:
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
-        size_t /*max_block_size*/,
-        size_t /*num_streams*/) override;
+        size_t max_block_size,
+        size_t num_streams) override;
 
-    ClusterPtr getCluster(ContextPtr context) const;
+    SinkToStoragePtr write(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert) override;
+
+    ClusterPtr getCluster(ContextPtr context) const { return getClusterImpl(context, cluster_name); }
+
     /// Query is needed for pruning by virtual columns (_file, _path)
     virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context, size_t number_of_replicas) const = 0;
 
@@ -45,11 +52,38 @@ public:
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
+    const String & getOriginalClusterName() const { return cluster_name; }
+    virtual String getClusterName(ContextPtr /* context */) const { return getOriginalClusterName(); }
+
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}
     virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
 
+    virtual void readFallBackToPure(
+        QueryPlan & /* query_plan */,
+        const Names & /* column_names */,
+        const StorageSnapshotPtr & /* storage_snapshot */,
+        SelectQueryInfo & /* query_info */,
+        ContextPtr /* context */,
+        QueryProcessingStage::Enum /* processed_stage */,
+        size_t /* max_block_size */,
+        size_t /* num_streams */)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readFallBackToPure is not supported by storage {}", getName());
+    }
+    
+    virtual SinkToStoragePtr writeFallBackToPure(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr /*context*/,
+        bool /*async_insert*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method writeFallBackToPure is not supported by storage {}", getName());
+    }
+
 private:
+    static ClusterPtr getClusterImpl(ContextPtr context, const String & cluster_name_, size_t max_hosts = 0);
+
     LoggerPtr log;
     String cluster_name;
 };
