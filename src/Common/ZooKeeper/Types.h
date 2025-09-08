@@ -30,12 +30,14 @@ using AsyncResponses = std::vector<std::pair<std::string, std::future<R>>>;
 
 Coordination::RequestPtr makeCreateRequest(const std::string & path, const std::string & data, int create_mode, bool ignore_if_exists = false);
 Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version);
-Coordination::RequestPtr makeRemoveRecursiveRequest(const std::string & path, uint32_t remove_nodes_limit);
 Coordination::RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version);
 Coordination::RequestPtr makeCheckRequest(const std::string & path, int version);
 Coordination::RequestPtr makeGetRequest(const std::string & path, Coordination::WatchCallbackPtr watch = nullptr);
 Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL, Coordination::WatchCallbackPtr watch = nullptr);
 Coordination::RequestPtr makeSimpleListRequest(const std::string & path, Coordination::WatchCallbackPtr watch = nullptr);
 Coordination::RequestPtr makeExistsRequest(const std::string & path, Coordination::WatchCallbackPtr watch = nullptr);
+
+template <class Client>
+Coordination::RequestPtr makeRemoveRecursiveRequest(const Client & client, const std::string & path, uint32_t remove_nodes_limit);
 
 }

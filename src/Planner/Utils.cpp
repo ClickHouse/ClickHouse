@@ -342,16 +342,14 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
     return false;
 }
 
-bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node)
+bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
 {
-    const auto & query_node_typed = query_node->as<const QueryNode &>();
-
-    std::vector<QueryTreeNodePtr> join_tree_nodes_to_process;
-    join_tree_nodes_to_process.push_back(query_node_typed.getJoinTree());
+    std::vector<const IQueryTreeNode *> join_tree_nodes_to_process;
+    join_tree_nodes_to_process.push_back(node);
 
     while (!join_tree_nodes_to_process.empty())
     {
-        auto join_tree_node_to_process = join_tree_nodes_to_process.back();
+        const auto * join_tree_node_to_process = join_tree_nodes_to_process.back();
         join_tree_nodes_to_process.pop_back();
 
         auto join_tree_node_type = join_tree_node_to_process->getNodeType();
@@ -366,41 +364,41 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
             }
             case QueryTreeNodeType::QUERY:
             {
-                auto & query_node_to_process = join_tree_node_to_process->as<QueryNode &>();
+                const auto & query_node_to_process = join_tree_node_to_process->as<QueryNode &>();
                 if (query_node_to_process.isGroupByWithTotals())
                     return true;
 
-                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTree());
+                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTree().get());
                 break;
             }
             case QueryTreeNodeType::UNION:
             {
-                auto & union_node = join_tree_node_to_process->as<UnionNode &>();
-                auto & union_queries = union_node.getQueries().getNodes();
+                const auto & union_node = join_tree_node_to_process->as<UnionNode &>();
+                const auto & union_queries = union_node.getQueries().getNodes();
 
-                for (auto & union_query : union_queries)
-                    join_tree_nodes_to_process.push_back(union_query);
+                for (const auto & union_query : union_queries)
+                    join_tree_nodes_to_process.push_back(union_query.get());
                 break;
             }
             case QueryTreeNodeType::ARRAY_JOIN:
             {
-                auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
-                join_tree_nodes_to_process.push_back(array_join_node.getTableExpression());
+                const auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
+                join_tree_nodes_to_process.push_back(array_join_node.getTableExpression().get());
                 break;
             }
             case QueryTreeNodeType::CROSS_JOIN:
             {
-                auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
+                const auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
                 for (const auto & expr : cross_join_node.getTableExpressions())
-                    join_tree_nodes_to_process.push_back(expr);
+                    join_tree_nodes_to_process.push_back(expr.get());
 
                 break;
             }
             case QueryTreeNodeType::JOIN:
             {
-                auto & join_node = join_tree_node_to_process->as<JoinNode &>();
-                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression());
-                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression());
+                const auto & join_node = join_tree_node_to_process->as<JoinNode &>();
+                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression().get());
+                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression().get());
                 break;
             }
             default:
@@ -415,6 +413,13 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
 
     return false;
 }
+
+bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node)
+{
+    const auto & query_node_typed = query_node->as<const QueryNode &>();
+    return queryTreeHasWithTotalsInAnySubqueryInJoinTree(query_node_typed.getJoinTree().get());
+}
+
 
 QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context)
 {
