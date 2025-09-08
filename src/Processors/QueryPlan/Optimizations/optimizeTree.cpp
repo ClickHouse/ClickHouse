@@ -52,10 +52,10 @@ void unwrapReadFromLocalParallelReplica(QueryPlan & query_plan, QueryPlan::Node 
 void optimizeTreeFirstPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
 {
+    unwrapReadFromLocalParallelReplica(query_plan, root, nodes);
+
     if (!optimization_settings.optimize_plan)
         return;
-
-    unwrapReadFromLocalParallelReplica(query_plan, root, nodes);
 
     const auto & optimizations = getOptimizations();
 
