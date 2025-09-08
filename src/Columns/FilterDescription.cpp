@@ -63,7 +63,7 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 }
 
 /// Here we check for ColumnUInt8.
-/// If the agrument has a different type, convert it to ColumnUInt8.
+/// If the argument has a different type, convert it to ColumnUInt8.
 /// If the argument is ColumnUInt8, check if we own it to avoid copying.
 /// Fill the filter if we own the column and can modify the data later.
 /// For ColumnUInt8 which is shared, return the fererence to existing filter.
