@@ -56,6 +56,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
             {"promql_evaluation_time", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."},
             {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
+            {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
@@ -121,7 +122,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"promql_table", "", "", "New experimental setting"},
             {"evaluation_time", 0, 0, "New experimental setting"},
             {"output_format_parquet_date_as_uint16", false, false, "Added a compatibility setting for a minor compatibility-breaking change introduced back in 24.12."},
-            {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
             {"allow_experimental_delta_lake_writes", false, false, "New setting."},
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
