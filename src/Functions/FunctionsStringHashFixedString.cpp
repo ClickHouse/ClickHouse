@@ -353,7 +353,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     using FunctionSHA512_256 = FunctionStringHashFixedString<OpenSSLProvider<SHA512Impl256>>;
     using FunctionRIPEMD160 = FunctionStringHashFixedString<OpenSSLProvider<RIPEMD160Impl>>;
 
-FunctionDocumentation::Description description_RIPEMD160 = "Calculates the RIPEMD-160 hash of the given string.";
+    FunctionDocumentation::Description description_RIPEMD160 = "Calculates the RIPEMD-160 hash of the given string.";
     FunctionDocumentation::Syntax syntax_RIPEMD160 = "RIPEMD160(s)";
     FunctionDocumentation::Arguments arguments_RIPEMD160 = {
         {"s", "The input string to hash.", {"String"}}
