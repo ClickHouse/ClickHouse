@@ -8,8 +8,6 @@ from helpers.iceberg_utils import (
     get_creation_expression
 )
 
-
-
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_array_evolved_nested(
