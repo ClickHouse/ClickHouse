@@ -9,6 +9,7 @@
 #include <Common/Throttler.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -33,6 +34,12 @@ namespace Setting
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
     extern const SettingsBool s3_slow_all_threads_after_retryable_error;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 s3_max_redirects;
+    extern const ServerSettingsUInt64 s3_retry_attempts;
 }
 
 namespace S3AuthSetting
@@ -63,6 +70,16 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString request_token_path;
 }
 
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsUInt64 max_redirects;
+    extern const S3RequestSettingsUInt64 retry_attempts;
+    extern const S3RequestSettingsUInt64 retry_initial_delay_ms;
+    extern const S3RequestSettingsUInt64 retry_max_delay_ms;
+    extern const S3RequestSettingsBool slow_all_threads_after_network_error;
+    extern const S3RequestSettingsBool enable_request_logging;
+}
+
 namespace ErrorCodes
 {
 extern const int NO_ELEMENTS_IN_CONFIG;
@@ -86,8 +103,8 @@ std::unique_ptr<S3::Client> getClient(
     ContextPtr context,
     bool for_disk_s3)
 {
-    const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
     const auto & auth_settings = settings.auth_settings;
+    const auto & server_settings = context->getGlobalContext()->getServerSettings();
     const auto & request_settings = settings.request_settings;
 
     const bool is_s3_express_bucket = S3::isS3ExpressEndpoint(url.endpoint);
@@ -100,31 +117,44 @@ std::unique_ptr<S3::Client> getClient(
 
     const Settings & local_settings = context->getSettingsRef();
 
-    int s3_max_redirects = static_cast<int>(global_settings[Setting::s3_max_redirects]);
-    if (!for_disk_s3 && local_settings.isChanged("s3_max_redirects"))
-        s3_max_redirects = static_cast<int>(local_settings[Setting::s3_max_redirects]);
+    unsigned int s3_max_redirects = static_cast<unsigned int>(server_settings[ServerSetting::s3_max_redirects]);
+    if (request_settings[S3RequestSetting::max_redirects].changed)
+        s3_max_redirects = static_cast<unsigned int>(request_settings[S3RequestSetting::max_redirects]);
+    else
+        // just for compatibility with old setting
+        if (!for_disk_s3 && local_settings.isChanged("s3_max_redirects"))
+            s3_max_redirects = static_cast<unsigned int>(local_settings[Setting::s3_max_redirects]);
 
-    int s3_retry_attempts = static_cast<int>(global_settings[Setting::s3_retry_attempts]);
-    if (!for_disk_s3 && local_settings.isChanged("s3_retry_attempts"))
-        s3_retry_attempts = static_cast<int>(local_settings[Setting::s3_retry_attempts]);
+    unsigned int s3_retry_attempts = static_cast<unsigned int>(server_settings[ServerSetting::s3_retry_attempts]);
+    if (request_settings[S3RequestSetting::retry_attempts].changed)
+        s3_retry_attempts = static_cast<unsigned int>(request_settings[S3RequestSetting::retry_attempts]);
+    else
+        // just for compatibility with old setting
+        if (!for_disk_s3 && local_settings.isChanged("s3_retry_attempts"))
+            s3_retry_attempts = static_cast<unsigned int>(local_settings[Setting::s3_retry_attempts]);
 
-    bool s3_slow_all_threads_after_network_error = static_cast<int>(global_settings[Setting::s3_slow_all_threads_after_network_error]);
+    bool s3_slow_all_threads_after_network_error = request_settings[S3RequestSetting::slow_all_threads_after_network_error];
     if (!for_disk_s3 && local_settings.isChanged("s3_slow_all_threads_after_network_error"))
-        s3_slow_all_threads_after_network_error = static_cast<int>(local_settings[Setting::s3_slow_all_threads_after_network_error]);
+        s3_slow_all_threads_after_network_error = local_settings[Setting::s3_slow_all_threads_after_network_error];
 
-    bool s3_slow_all_threads_after_retryable_error = static_cast<int>(global_settings[Setting::s3_slow_all_threads_after_retryable_error]);
+    bool s3_slow_all_threads_after_retryable_error = static_cast<int>(local_settings[Setting::s3_slow_all_threads_after_retryable_error]);
     if (!for_disk_s3 && local_settings.isChanged("s3_slow_all_threads_after_retryable_error"))
         s3_slow_all_threads_after_retryable_error = static_cast<int>(local_settings[Setting::s3_slow_all_threads_after_retryable_error]);
 
-    bool enable_s3_requests_logging = global_settings[Setting::enable_s3_requests_logging];
+    bool enable_s3_requests_logging = request_settings[S3RequestSetting::enable_request_logging];
     if (!for_disk_s3 && local_settings.isChanged("enable_s3_requests_logging"))
         enable_s3_requests_logging = local_settings[Setting::enable_s3_requests_logging];
+
+    S3::PocoHTTPClientConfiguration::RetryStrategy retry_strategy;
+    retry_strategy.max_retries = s3_retry_attempts;
+    retry_strategy.initial_delay_ms = static_cast<unsigned int>(request_settings[S3RequestSetting::retry_initial_delay_ms]);
+    retry_strategy.max_delay_ms = static_cast<unsigned int>(request_settings[S3RequestSetting::retry_max_delay_ms]);
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         auth_settings[S3AuthSetting::region],
         context->getRemoteHostFilter(),
         s3_max_redirects,
-        S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = static_cast<unsigned>(s3_retry_attempts)},
+        retry_strategy,
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
