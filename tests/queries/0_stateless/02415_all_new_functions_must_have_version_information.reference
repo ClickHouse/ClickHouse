@@ -1,6 +1,5 @@
 CAST
 DATE
-FQDN
 IPv4CIDRToRange
 IPv4NumToString
 IPv4NumToStringClassC
@@ -56,25 +55,16 @@ accurateCast
 accurateCastOrDefault
 accurateCastOrNull
 asin
-bar
-basename
-blockNumber
 blockSerializedSize
-blockSize
-byteSize
 caseWithExpression
 catboostEvaluate
-connectionId
 countDigits
 countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
-currentDatabase
 currentProfiles
 currentQueryID
 currentRoles
-currentSchemas
-currentUser
 cutFragment
 cutIPv6
 cutQueryString
@@ -139,7 +129,6 @@ dictGetUUID
 dictGetUUIDOrDefault
 dictHas
 dictIsIn
-displayName
 domain
 domainRFC
 domainWithoutWWW
@@ -152,7 +141,6 @@ enabledProfiles
 enabledRoles
 encodeURLComponent
 encodeURLFormComponent
-errorCodeToName
 evalMLMethod
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
@@ -172,10 +160,6 @@ formatQuery
 formatQueryOrNull
 formatQuerySingleLine
 formatQuerySingleLineOrNull
-formatReadableDecimalSize
-formatReadableQuantity
-formatReadableSize
-formatReadableTimeDelta
 formatRow
 formatRowNoNewline
 fragment
@@ -186,14 +170,8 @@ fromUnixTimestamp64Second
 generateRandomStructure
 generateSerialID
 generateUUIDv4
-getMacro
 getMaxTableNameLengthForDatabase
-getMergeTreeSetting
-getOSKernelVersion
 getServerPort
-getServerSetting
-getSetting
-getSettingOrDefault
 getSizeOfEnumType
 getSubcolumn
 getTypeSerializationStreams
@@ -215,8 +193,6 @@ ilike
 in
 inIgnoreSet
 indexHint
-initialQueryID
-initialQueryStartTime
 initializeAggregation
 isDecimalOverflow
 isDynamicElementInSharedData
@@ -290,10 +266,6 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
-parseReadableSize
-parseReadableSizeOrNull
-parseReadableSizeOrZero
-partitionId
 path
 pathFull
 polygonAreaCartesian
@@ -316,7 +288,6 @@ port
 portRFC
 proportionsZTest
 protocol
-queryID
 queryString
 queryStringAndFragment
 readWKTLineString
@@ -362,9 +333,6 @@ runningConcurrency
 runningDifference
 runningDifferenceStartingWithFirstValue
 serverUUID
-shardCount
-shardNum
-showCertificate
 sigmoid
 sin
 snowflakeToDateTime
@@ -520,4 +488,3 @@ variantType
 widthBucket
 windowID
 wkt
-zookeeperSessionUptime

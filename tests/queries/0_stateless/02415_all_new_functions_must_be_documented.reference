@@ -1,6 +1,5 @@
 CAST
 DATE
-FQDN
 IPv4CIDRToRange
 IPv4NumToString
 IPv4NumToStringClassC
@@ -46,23 +45,15 @@ __scalarSubqueryResult
 accurateCast
 accurateCastOrDefault
 accurateCastOrNull
-bar
-basename
-blockNumber
 blockSerializedSize
-blockSize
-byteSize
 caseWithExpression
 catboostEvaluate
-connectionId
 countDigits
 countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
-currentDatabase
 currentProfiles
 currentRoles
-currentUser
 cutFragment
 cutIPv6
 cutQueryString
@@ -84,7 +75,6 @@ enabledProfiles
 enabledRoles
 encodeURLComponent
 encodeURLFormComponent
-errorCodeToName
 evalMLMethod
 extractURLParameter
 extractURLParameterNames
@@ -95,9 +85,6 @@ filesystemUnreserved
 finalizeAggregation
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
-formatReadableQuantity
-formatReadableSize
-formatReadableTimeDelta
 formatRow
 formatRowNoNewline
 fragment
@@ -106,8 +93,6 @@ fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestamp64Second
 generateUUIDv4
-getMacro
-getOSKernelVersion
 getServerPort
 getSizeOfEnumType
 getTypeSerializationStreams
@@ -127,7 +112,6 @@ ilike
 in
 inIgnoreSet
 indexHint
-initialQueryID
 initializeAggregation
 isDecimalOverflow
 isIPAddressInRange
@@ -199,7 +183,6 @@ parseDateTimeInJodaSyntaxOrNull
 parseDateTimeInJodaSyntaxOrZero
 parseDateTimeOrNull
 parseDateTimeOrZero
-partitionId
 path
 pathFull
 polygonAreaCartesian
@@ -220,7 +203,6 @@ polygonsWithinCartesian
 polygonsWithinSpherical
 proportionsZTest
 protocol
-queryID
 queryString
 queryStringAndFragment
 readWKTMultiPolygon
@@ -263,9 +245,6 @@ runningConcurrency
 runningDifference
 runningDifferenceStartingWithFirstValue
 serverUUID
-shardCount
-shardNum
-showCertificate
 sigmoid
 snowflakeToDateTime
 snowflakeToDateTime64
@@ -405,4 +384,3 @@ transactionOldestSnapshot
 validateNestedArraySizes
 windowID
 wkt
-zookeeperSessionUptime
