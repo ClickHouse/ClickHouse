@@ -1050,6 +1050,9 @@ void ZooKeeper::receiveEvent()
                         if (callbacks.size() > 100)
                             LOG_WARNING(log, "Too many watches for path {}: {} (This is likely an error)", req_path, callbacks.size());
 #endif
+                        /// It is unlikely that 10K watches is OK, let's warn even in release builds.
+                        if (callbacks.size() > 10000)
+                            LOG_WARNING(log, "Too many watches for path {}: {} (This is likely an error)", req_path, callbacks.size());
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
                     }
                 }
