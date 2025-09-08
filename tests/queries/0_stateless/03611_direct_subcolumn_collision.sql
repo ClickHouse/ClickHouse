@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 -- Test case for direct subcolumn collision
 -- This tries to trigger the addSubcolumns function multiple times
 
@@ -22,6 +23,6 @@ DROP TABLE t0;
 DROP TABLE IF EXISTS t0_replicated;
 CREATE TABLE t0_replicated (c0 Nullable(Int)) ENGINE = MergeTree() ORDER BY tuple();
 INSERT INTO TABLE t0_replicated (c0) VALUES (1);
-SELECT tx.c0.null FROM t0_replicated tx GLOBAL RIGHT JOIN t0_replicated AS ty ON tx.c0 = ty.c0 SETTINGS allow_experimental_parallel_reading_from_replicas = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_two_replicas';
+SELECT tx.c0.null FROM t0_replicated tx GLOBAL RIGHT JOIN t0_replicated AS ty ON tx.c0 = ty.c0;
 DROP TABLE t0_replicated;
 
