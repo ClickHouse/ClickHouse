@@ -122,7 +122,7 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            std::string_view filename = column_src->getDataAt(row).toView();
+            std::string_view filename = column_src->getDataAt(row);
             fs::path file_path(filename.data(), filename.data() + filename.size());
 
             if (file_path.is_relative())

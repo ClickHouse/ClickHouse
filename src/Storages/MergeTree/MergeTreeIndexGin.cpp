@@ -123,7 +123,7 @@ void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size
     size_t current_position = *pos;
     for (size_t i = 0; i < rows_read; ++i)
     {
-        std::string_view value = index_column.column->getDataAt(current_position + i).toView();
+        std::string_view value = index_column.column->getDataAt(current_position + i);
         for (const auto & token : token_extractor->getTokensView(value.data(), value.length()))
             granule->gin_filter.add(String(token), start_row_id + i, store);
         store->incrementCurrentSizeBy(value.size());
@@ -604,7 +604,7 @@ bool MergeTreeIndexConditionGin::tryPrepareSetGinFilter(
         for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
         {
             gin_query_infos.back().emplace_back();
-            std::string_view value = column->getDataAt(row).toView();
+            std::string_view value = column->getDataAt(row);
             token_extractor->stringToGinFilter(value.data(), value.size(), gin_query_infos.back().back());
         }
     }

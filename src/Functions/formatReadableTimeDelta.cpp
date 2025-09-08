@@ -116,14 +116,14 @@ public:
             const ColumnPtr & maximum_unit_column = arguments[1].column;
             const ColumnConst * maximum_unit_const_col = checkAndGetColumnConstStringOrFixedString(maximum_unit_column.get());
             if (maximum_unit_const_col)
-                maximum_unit_str = maximum_unit_const_col->getDataColumn().getDataAt(0).toView();
+                maximum_unit_str = maximum_unit_const_col->getDataColumn().getDataAt(0);
 
             if (arguments.size() == 3)
             {
                 const ColumnPtr & minimum_unit_column = arguments[2].column;
                 const ColumnConst * minimum_unit_const_col = checkAndGetColumnConstStringOrFixedString(minimum_unit_column.get());
                 if (minimum_unit_const_col)
-                    minimum_unit_str = minimum_unit_const_col->getDataColumn().getDataAt(0).toView();
+                    minimum_unit_str = minimum_unit_const_col->getDataColumn().getDataAt(0);
             }
         }
         /// Default means "use all available whole units".

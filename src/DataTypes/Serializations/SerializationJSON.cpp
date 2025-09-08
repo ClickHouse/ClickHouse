@@ -138,7 +138,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
     }
     for (size_t i = shared_data_offset; i != shared_data_end; ++i)
     {
-        auto path = shared_data_paths->getDataAt(i).toString();
+        std::string path{shared_data_paths->getDataAt(i)};
         sorted_paths.emplace_back(path);
     }
 

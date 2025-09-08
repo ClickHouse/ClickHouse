@@ -21,7 +21,7 @@ namespace DB
 namespace
 {
 
-class FunctionAddressToLineWithInlines: public FunctionAddressToLineBase<StringRefs, Dwarf::LocationInfoMode::FULL_WITH_INLINE>
+class FunctionAddressToLineWithInlines: public FunctionAddressToLineBase<StringViews, Dwarf::LocationInfoMode::FULL_WITH_INLINE>
 {
 public:
     static constexpr auto name = "addressToLineWithInlines";
@@ -48,7 +48,7 @@ protected:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            StringRefs res = implCached(data[i]);
+            StringViews res = implCached(data[i]);
             for (auto & r : res)
                 result_strings.insertData(r.data, r.size);
             current_offset += res.size();
@@ -58,7 +58,7 @@ protected:
         return result_column;
     }
 
-    void setResult(StringRefs & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> & inline_frames) const override
+    void setResult(StringViews & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> & inline_frames) const override
     {
         appendLocationToResult(result, location, nullptr);
         for (const auto & inline_frame : inline_frames)
@@ -66,7 +66,7 @@ protected:
     }
 
 private:
-    void appendLocationToResult(StringRefs & result, const Dwarf::LocationInfo & location, const Dwarf::SymbolizedFrame * frame) const
+    void appendLocationToResult(StringViews & result, const Dwarf::LocationInfo & location, const Dwarf::SymbolizedFrame * frame) const
     {
         const char * arena_begin = nullptr;
         WriteBufferFromArena out(cache.arena, arena_begin);

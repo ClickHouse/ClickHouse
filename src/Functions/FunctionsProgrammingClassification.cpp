@@ -57,8 +57,8 @@ struct FunctionDetectProgrammingLanguageImpl
             const size_t str_len = offsets[i] - offsets[i - 1];
 
             std::unordered_map<String, Float64> data_freq;
-            StringRef prev_command;
-            StringRef command;
+            std::string_view prev_command;
+            std::string_view command;
 
             /// Select all commands from the string
             for (size_t ind = 0; ind < str_len; ++ind)

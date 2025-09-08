@@ -11,7 +11,7 @@
 
 #include <IO/ReadHelpers.h>
 
-#include <base/StringRef.h>
+#include <base/std::string_view.h>
 
 #include <Common/HashTable/HashMap.h>
 
@@ -44,7 +44,7 @@ public:
 struct SimpleHash
 {
     size_t operator() (UInt64 x) const { return x; }
-    size_t operator() (StringRef x) const { return DB::parse<UInt64>(x.data); }
+    size_t operator() (std::string_view x) const { return DB::parse<UInt64>(x.data); }
 };
 
 struct Grower : public HashTableGrower<2>
@@ -58,25 +58,25 @@ struct Grower : public HashTableGrower<2>
 int main(int, char **)
 {
     using Map = HashMapWithDump<
-        StringRef,
+        std::string_view,
         UInt64,
         SimpleHash,
         Grower,
         HashTableAllocatorWithStackMemory<
-            4 * sizeof(HashMapCell<StringRef, UInt64, SimpleHash>)>>;
+            4 * sizeof(HashMapCell<std::string_view, UInt64, SimpleHash>)>>;
 
     Map map;
 
     map.dump();
     std::cerr << "size: " << map.size() << std::endl;
-    map[StringRef("1", 1)] = 1;
+    map[std::string_view("1", 1)] = 1;
     map.dump();
     std::cerr << "size: " << map.size() << std::endl;
-    map[StringRef("9", 1)] = 1;
+    map[std::string_view("9", 1)] = 1;
     map.dump();
     std::cerr << "size: " << map.size() << std::endl;
     std::cerr << "Collisions: " << map.getCollisions() << std::endl;
-    map[StringRef("3", 1)] = 2;
+    map[std::string_view("3", 1)] = 2;
     map.dump();
     std::cerr << "size: " << map.size() << std::endl;
     std::cerr << "Collisions: " << map.getCollisions() << std::endl;

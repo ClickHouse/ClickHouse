@@ -142,10 +142,10 @@ namespace
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                StringRef str_ref = str_column->getDataAt(i);
+                std::string_view str_ref = str_column->getDataAt(i);
                 Int64 count = count_column->getInt(i);
 
-                StringRef res_ref;
+                std::string_view res_ref;
                 if constexpr (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
                 else if (all_ascii)
@@ -175,9 +175,9 @@ namespace
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                StringRef str_ref = str_column->getDataAt(i);
+                std::string_view str_ref = str_column->getDataAt(i);
 
-                StringRef res_ref;
+                std::string_view res_ref;
                 if constexpr (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
                 else if (all_ascii)
@@ -205,12 +205,12 @@ namespace
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
                 = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
 
-            StringRef str_ref{str.data(), str.size()};
+            std::string_view str_ref{str.data(), str.size()};
             for (size_t i = 0; i < rows; ++i)
             {
                 Int64 count = count_column->getInt(i);
 
-                StringRef res_ref;
+                std::string_view res_ref;
                 if constexpr (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
                 else if (all_ascii)
@@ -223,7 +223,7 @@ namespace
         }
 
         template <bool padded>
-        static void appendToResultColumn(const StringRef & res_ref, ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
+        static void appendToResultColumn(const std::string_view & res_ref, ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
         {
             size_t res_offset = res_data.size();
             res_data.resize(res_offset + res_ref.size);
@@ -237,8 +237,8 @@ namespace
             res_offsets.emplace_back(res_offset);
         }
 
-        static StringRef substringIndexUTF8(
-            const PositionCaseSensitiveUTF8::SearcherInBigHaystack * searcher, const StringRef & str_ref, const String & delim, Int64 count)
+        static std::string_view substringIndexUTF8(
+            const PositionCaseSensitiveUTF8::SearcherInBigHaystack * searcher, const std::string_view & str_ref, const String & delim, Int64 count)
         {
             if (count == 0)
                 return {str_ref.data, 0};
@@ -285,7 +285,7 @@ namespace
             return {pos, static_cast<size_t>(end - pos)};
         }
 
-        static StringRef substringIndex(const StringRef & str_ref, char delim, Int64 count)
+        static std::string_view substringIndex(const std::string_view & str_ref, char delim, Int64 count)
         {
             if (count == 0)
                 return {str_ref.data, 0};

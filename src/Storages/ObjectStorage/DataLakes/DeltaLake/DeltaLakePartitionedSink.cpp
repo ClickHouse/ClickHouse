@@ -106,7 +106,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
     size_t chunk_rows = chunk.getNumRows();
     chunk_row_index_to_partition_index.resize(chunk_rows);
 
-    HashMapWithSavedHash<StringRef, size_t> partition_id_to_chunk_index;
+    HashMapWithSavedHash<std::string_view, size_t> partition_id_to_chunk_index;
 
     for (size_t row = 0; row < chunk_rows; ++row)
     {
@@ -167,7 +167,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
 }
 
 DeltaLakePartitionedSink::PartitionInfoPtr
-DeltaLakePartitionedSink::getPartitionDataForPartitionKey(StringRef partition_key)
+DeltaLakePartitionedSink::getPartitionDataForPartitionKey(std::string_view partition_key)
 {
     auto it = partitions_data.find(partition_key);
     if (it == partitions_data.end())
@@ -176,7 +176,7 @@ DeltaLakePartitionedSink::getPartitionDataForPartitionKey(StringRef partition_ke
 }
 
 DeltaLakePartitionedSink::StorageSinkPtr
-DeltaLakePartitionedSink::createSinkForPartition(StringRef partition_key)
+DeltaLakePartitionedSink::createSinkForPartition(std::string_view partition_key)
 {
     auto data_prefix = std::filesystem::path(delta_transaction->getDataPath()) / partition_key.toString();
     return std::make_unique<StorageObjectStorageSink>(

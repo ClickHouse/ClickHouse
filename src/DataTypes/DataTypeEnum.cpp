@@ -161,7 +161,7 @@ Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
     {
         Int64 value = value_or_name.safeGet<Int64>();
         checkOverflow<Type>(value);
-        return this->getNameForValue(static_cast<Type>(value)).toString();
+        return std::string{this->getNameForValue(static_cast<Type>(value))};
     }
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
 }

@@ -8,9 +8,9 @@
 namespace DB
 {
 
-void assert_byte_equality(StringRef lhs, const std::vector<uint8_t> & rhs)
+void assert_byte_equality(std::string_view lhs, const std::vector<uint8_t> & rhs)
 {
-    std::vector<uint8_t> lhs_vector {lhs.data, lhs.data + lhs.size};
+    std::vector<uint8_t> lhs_vector {lhs.data(), lhs.data() + lhs.size()};
     ASSERT_EQ(lhs_vector, rhs);
 }
 
@@ -29,8 +29,8 @@ TEST(extractKVPairEscapingKeyValuePairExtractor, EscapeSequences)
     ASSERT_EQ(keys->size(), pairs_count);
     ASSERT_EQ(keys->size(), values->size());
 
-    ASSERT_EQ(keys->getDataAt(0).toView(), "key1");
-    ASSERT_EQ(keys->getDataAt(1).toView(), "key2");
+    ASSERT_EQ(keys->getDataAt(0), "key1");
+    ASSERT_EQ(keys->getDataAt(1), "key2");
 
     assert_byte_equality(values->getDataAt(0), {'a', 0xFF});
     assert_byte_equality(values->getDataAt(1), {'a', 0xA, 0x9, 0xD});

@@ -48,7 +48,7 @@ ColumnPtr createIndexes(
         else if (global_discr == shared_variant_discr)
         {
             auto value = shared_variant_column.getDataAt(offsets[i]);
-            ReadBufferFromMemory buf(value.data, value.size);
+            ReadBufferFromMemory buf(value.data(), value.size());
             auto type = decodeDataType(buf);
             data.push_back(static_cast<IndexesColumn::ValueType>(shared_variant_type_to_index.at(type->getName())));
         }
@@ -91,7 +91,7 @@ FlattenedDynamicColumn flattenDynamicColumn(const ColumnDynamic & dynamic_column
     for (size_t i = 0; i != shared_variant_column.size(); ++i)
     {
         auto value = shared_variant_column.getDataAt(i);
-        ReadBufferFromMemory buf(value.data, value.size);
+        ReadBufferFromMemory buf(value.data(), value.size());
         auto type = decodeDataType(buf);
         auto type_name = type->getName();
         auto it = shared_variant_type_to_index.find(type_name);

@@ -667,7 +667,7 @@ private:
 
     static NGramHash hashContext(const CodePoint * begin, const CodePoint * end)
     {
-        return CRC32Hash()(StringRef(reinterpret_cast<const char *>(begin), (end - begin) * sizeof(CodePoint)));
+        return CRC32Hash()(std::string_view(reinterpret_cast<const char *>(begin), (end - begin) * sizeof(CodePoint)));
     }
 
     /// By the way, we don't have to use actual Unicode numbers. We use just arbitrary bijective mapping.
@@ -951,8 +951,8 @@ public:
 
         for (size_t i = 0; i < size; ++i)
         {
-            StringRef string = column_string.getDataAt(i);
-            markov_model.consume(string.data, string.size);
+            auto string = column_string.getDataAt(i);
+            markov_model.consume(string.data(), string.size());
         }
     }
 
@@ -972,8 +972,8 @@ public:
         std::string new_string;
         for (size_t i = 0; i < size; ++i)
         {
-            StringRef src_string = column_string.getDataAt(i);
-            size_t desired_string_size = transform(src_string.size, seed);
+            auto src_string = column_string.getDataAt(i);
+            size_t desired_string_size = transform(src_string.size(), seed);
             new_string.resize(desired_string_size * 2);
 
             size_t actual_size = 0;
@@ -1238,20 +1238,20 @@ try
     po::variables_map options;
     po::store(parsed, options);
 
-    if (options.count("help")
-        || !options.count("seed")
-        || !options.count("input-format")
-        || !options.count("output-format"))
+    if (options.contains("help")
+        || !options.contains("seed")
+        || !options.contains("input-format")
+        || !options.contains("output-format"))
     {
         std::cout << documentation << "\n"
             << "\nUsage: " << argv[0] << " [options] < in > out\n"
             << "\nInput must be seekable file (it will be read twice).\n"
             << "\n" << description << "\n"
-            << "\nExample:\n    " << argv[0] << " --seed \"$(head -c16 /dev/urandom | base64)\" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
+            << "\nExample:\n    " << argv[0] << " --seed \"$(head -c16 /dev/urandom | base64)\" --input-format TSV --output-format TSV --structure 'containserID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
         return 0;
     }
 
-    if (options.count("save") && options.count("load"))
+    if (options.contains("save") && options.contains("load"))
     {
         std::cerr << "The options --save and --load cannot be used together.\n";
         return 1;
@@ -1261,7 +1261,7 @@ try
 
     std::string structure;
 
-    if (options.count("structure"))
+    if (options.contains("structure"))
         structure = options["structure"].as<std::string>();
 
     std::string input_format = options["input-format"].as<std::string>();
@@ -1270,13 +1270,13 @@ try
     std::string load_from_file;
     std::string save_into_file;
 
-    if (options.count("load"))
+    if (options.contains("load"))
         load_from_file = options["load"].as<std::string>();
-    else if (options.count("save"))
+    else if (options.contains("save"))
         save_into_file = options["save"].as<std::string>();
 
     UInt64 limit = 0;
-    if (options.count("limit"))
+    if (options.contains("limit"))
         limit = options["limit"].as<UInt64>();
 
     bool silent = options["silent"].as<bool>();
@@ -1430,7 +1430,7 @@ try
         model_file_out.finalize();
     }
 
-    if (!options.count("limit"))
+    if (!options.contains("limit"))
         limit = source_rows;
 
     /// Generation step

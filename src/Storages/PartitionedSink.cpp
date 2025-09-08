@@ -36,7 +36,7 @@ PartitionedSink::PartitionedSink(
 }
 
 
-SinkPtr PartitionedSink::getSinkForPartitionKey(StringRef partition_key)
+SinkPtr PartitionedSink::getSinkForPartitionKey(std::string_view partition_key)
 {
     auto it = partition_id_to_sink.find(partition_key);
     if (it == partition_id_to_sink.end())

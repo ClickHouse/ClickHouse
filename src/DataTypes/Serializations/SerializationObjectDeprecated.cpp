@@ -359,7 +359,7 @@ void SerializationObjectDeprecated<Parser>::deserializeBinaryBulkFromString(
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         const auto & val = column_string->getDataAt(i);
-        ReadBufferFromMemory read_buffer(val.data, val.size);
+        ReadBufferFromMemory read_buffer(val.data(), val.size());
         deserializeWholeText(column_object, read_buffer, format_settings);
 
         if (!read_buffer.eof())

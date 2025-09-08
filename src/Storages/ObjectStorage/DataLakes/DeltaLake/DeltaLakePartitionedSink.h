@@ -62,9 +62,9 @@ private:
     };
     struct PartitionInfo
     {
-        explicit PartitionInfo(StringRef partition_key_) : partition_key(partition_key_) {}
+        explicit PartitionInfo(std::string_view partition_key_) : partition_key(partition_key_) {}
 
-        const StringRef partition_key;
+        const std::string_view partition_key;
         std::vector<DataFileInfo> data_files;
     };
     using PartitionInfoPtr = std::shared_ptr<PartitionInfo>;
@@ -79,13 +79,13 @@ private:
     const std::unique_ptr<IPartitionStrategy> partition_strategy;
     const DeltaLake::WriteTransactionPtr delta_transaction;
 
-    absl::flat_hash_map<StringRef, PartitionInfoPtr> partitions_data;
+    absl::flat_hash_map<std::string_view, PartitionInfoPtr> partitions_data;
     size_t total_data_files_count = 0;
     IColumn::Selector chunk_row_index_to_partition_index;
     Arena partition_keys_arena;
 
-    StorageSinkPtr createSinkForPartition(StringRef partition_key);
-    PartitionInfoPtr getPartitionDataForPartitionKey(StringRef partition_key);
+    StorageSinkPtr createSinkForPartition(std::string_view partition_key);
+    PartitionInfoPtr getPartitionDataForPartitionKey(std::string_view partition_key);
 };
 
 }

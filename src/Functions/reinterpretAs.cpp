@@ -309,7 +309,7 @@ public:
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    StringRef ref = col_from->getDataAt(i);
+                    std::string_view ref = col_from->getDataAt(i);
                     col_res->insertData(ref.data, ref.size);
                 }
 
@@ -355,7 +355,7 @@ private:
         ColumnFixedString::Offset offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view data = src.getDataAt(i).toView();
+            std::string_view data = src.getDataAt(i);
 
             if constexpr (std::endian::native == std::endian::little)
                 memcpy(&data_to[offset], data.data(), std::min(n, data.size()));
@@ -386,7 +386,7 @@ private:
         ColumnString::Offset offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            StringRef data = src.getDataAt(i);
+            std::string_view data = src.getDataAt(i);
 
             /// Cut trailing zero bytes.
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__

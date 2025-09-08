@@ -64,7 +64,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                 getItemsShortCircuitImpl<ValueType, false>(
                     attribute, modified_key_columns, [&](size_t, const Array & value, bool) { out->insert(value); }, default_mask);
             }
-            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 auto * out = column.get();
 
@@ -72,7 +72,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                     getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         modified_key_columns,
-                        [&](size_t row, StringRef value, bool is_null)
+                        [&](size_t row, std::string_view value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
                             out->insertData(value.data, value.size);
@@ -82,7 +82,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                     getItemsShortCircuitImpl<ValueType, false>(
                         attribute,
                         modified_key_columns,
-                        [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
+                        [&](size_t, std::string_view value, bool) { out->insertData(value.data, value.size); },
                         default_mask);
             }
             else
@@ -124,7 +124,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                     },
                     default_value_extractor);
             }
-            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 auto * out = column.get();
 
@@ -132,7 +132,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                     getItemsImpl<ValueType, true>(
                         attribute,
                         modified_key_columns,
-                        [&](size_t row, StringRef value, bool is_null)
+                        [&](size_t row, std::string_view value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
                             out->insertData(value.data, value.size);
@@ -142,7 +142,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                     getItemsImpl<ValueType, false>(
                         attribute,
                         modified_key_columns,
-                        [&](size_t, StringRef value, bool)
+                        [&](size_t, std::string_view value, bool)
                         {
                             out->insertData(value.data, value.size);
                         },

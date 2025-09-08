@@ -80,7 +80,7 @@ private:
 
     struct MethodString
     {
-        using Set = ClearableHashSetWithStackMemory<StringRef, StringRefHash,
+        using Set = ClearableHashSetWithStackMemory<std::string_view, StringViewHash,
             INITIAL_SIZE_DEGREE>;
 
         using Method = ColumnsHashing::HashMethodString<typename Set::value_type, void, false, false>;
@@ -88,7 +88,7 @@ private:
 
     struct MethodFixedString
     {
-        using Set = ClearableHashSetWithStackMemory<StringRef, StringRefHash,
+        using Set = ClearableHashSetWithStackMemory<std::string_view, StringViewHash,
             INITIAL_SIZE_DEGREE>;
 
         using Method = ColumnsHashing::HashMethodFixedString<typename Set::value_type, void, false, false>;

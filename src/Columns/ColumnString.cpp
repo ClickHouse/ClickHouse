@@ -256,17 +256,18 @@ void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, c
 }
 
 
-StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     size_t string_size = sizeAt(n);
     size_t offset = offsetAt(n);
 
-    StringRef res;
-    res.size = sizeof(string_size) + string_size;
-    char * pos = arena.allocContinue(res.size, begin);
+    auto result_size = sizeof(string_size) + string_size;
+    char * pos = arena.allocContinue(result_size, begin);
     memcpy(pos, &string_size, sizeof(string_size));
     memcpy(pos + sizeof(string_size), &chars[offset], string_size);
-    res.data = pos;
+    std::string_view res{pos, result_size};
+
+
 
     return res;
 }
@@ -494,7 +495,7 @@ size_t ColumnString::estimateCardinalityInPermutedRange(const Permutation & perm
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        StringRef value = getDataAt(permuted_i);
+        auto value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();

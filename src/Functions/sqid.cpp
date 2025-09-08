@@ -126,7 +126,7 @@ public:
         {
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string_view sqid = col_non_const->getDataAt(i).toView();
+                std::string_view sqid = col_non_const->getDataAt(i);
                 std::vector<UInt64> integers = sqids.decode(String(sqid));
                 if (!integers.empty())
                     res_nested_data.insert(integers.begin(), integers.end());

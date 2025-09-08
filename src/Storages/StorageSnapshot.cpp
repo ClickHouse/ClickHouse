@@ -242,7 +242,7 @@ ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & colum
 
 namespace
 {
-    using DenseHashSet = google::dense_hash_set<StringRef, StringRefHash>;
+    using DenseHashSet = google::dense_hash_set<std::string_view, StringViewHash>;
 }
 
 void StorageSnapshot::check(const Names & column_names) const
@@ -259,7 +259,7 @@ void StorageSnapshot::check(const Names & column_names) const
     }
 
     DenseHashSet unique_names;
-    unique_names.set_empty_key(StringRef());
+    unique_names.set_empty_key(std::string_view());
 
     for (const auto & name : column_names)
     {

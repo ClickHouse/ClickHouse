@@ -72,7 +72,7 @@ static rocksdb::Status buildSSTFile(const String & path, const ColumnString & ke
             ++next_idx;
 
         auto row = perm[next_idx - 1];
-        status = sst_file_writer.Put(keys.getDataAt(row).toView(), values.getDataAt(row).toView());
+        status = sst_file_writer.Put(keys.getDataAt(row), values.getDataAt(row));
         if (!status.ok())
             return status;
 

@@ -38,14 +38,14 @@ struct SpaceSavingArena
 };
 
 /*
- * Specialized storage for StringRef with a freelist arena.
+ * Specialized storage for std::string_view with a freelist arena.
  * Keys of this type that are retained on insertion must be serialized into local storage,
  * otherwise the reference would be invalid after the processed block is released.
  */
 template <>
-struct SpaceSavingArena<StringRef>
+struct SpaceSavingArena<std::string_view>
 {
-    StringRef emplace(StringRef key)
+    std::string_view emplace(std::string_view key)
     {
         if (!key.data)
             return key;
@@ -53,7 +53,7 @@ struct SpaceSavingArena<StringRef>
         return copyStringInArena(arena, key);
     }
 
-    void free(StringRef key)
+    void free(std::string_view key)
     {
         if (key.data)
             arena.free(const_cast<char *>(key.data), key.size);
@@ -92,7 +92,7 @@ public:
 
         void write(WriteBuffer & wb) const
         {
-            if constexpr (std::is_same_v<TKey, StringRef>)
+            if constexpr (std::is_same_v<TKey, std::string_view>)
                 writeBinary(key, wb);
             else
                 writeBinaryLittleEndian(key, wb);
@@ -102,7 +102,7 @@ public:
 
         void read(ReadBuffer & rb)
         {
-            if constexpr (std::is_same_v<TKey, StringRef>)
+            if constexpr (std::is_same_v<TKey, std::string_view>)
                 readBinary(key, rb);
             else
                 readBinaryLittleEndian(key, rb);

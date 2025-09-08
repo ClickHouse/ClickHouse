@@ -1,6 +1,5 @@
 #pragma once
 #include <Core/Types.h>
-#include <base/StringRef.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Disks/IDisk.h>
 #include <map>
@@ -35,7 +34,7 @@ private:
         V value;
     };
     using Queue = std::list<ListNode>;
-    using IndexMap = std::unordered_map<StringRef, typename Queue::iterator, StringRefHash>;
+    using IndexMap = std::unordered_map<std::string_view, typename Queue::iterator, StringViewHash>;
 
     Queue queue;
     IndexMap map;

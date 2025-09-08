@@ -158,21 +158,21 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
         }
         case TypeIndex::String:
         {
-            const std::string_view & string = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
+            const std::string_view & string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
             packer.pack_bin(static_cast<unsigned>(string.size()));
             packer.pack_bin_body(string.data(), static_cast<unsigned>(string.size()));
             return;
         }
         case TypeIndex::FixedString:
         {
-            const std::string_view & string = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num).toView();
+            const std::string_view & string = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num);
             packer.pack_bin(static_cast<unsigned>(string.size()));
             packer.pack_bin_body(string.data(), static_cast<unsigned>(string.size()));
             return;
         }
         case TypeIndex::IPv6:
         {
-            const std::string_view & data = assert_cast<const ColumnIPv6 &>(column).getDataAt(row_num).toView();
+            const std::string_view & data = assert_cast<const ColumnIPv6 &>(column).getDataAt(row_num);
             packer.pack_bin(static_cast<unsigned>(data.size()));
             packer.pack_bin_body(data.data(), static_cast<unsigned>(data.size()));
             return;

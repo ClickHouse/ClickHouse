@@ -45,7 +45,7 @@ void TSKVRowInputFormat::readPrefix()
   * A temporary `tmp` buffer can also be used to copy the field name to it.
   * When reading, skips the name and the equal sign after it.
   */
-static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
+static bool readName(ReadBuffer & buf, std::string_view & ref, String & tmp)
 {
     tmp.clear();
 
@@ -68,7 +68,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
             if (tmp.empty())
             {
                 /// No need to copy data, you can refer directly to the `buf`.
-                ref = StringRef(buf.position(), next_pos - buf.position());
+                ref = std::string_view(buf.position(), next_pos - buf.position());
                 buf.position() += next_pos + have_value - buf.position();
             }
             else
@@ -76,7 +76,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
                 /// Copy the data to a temporary string and return a reference to it.
                 tmp.append(buf.position(), next_pos - buf.position());
                 buf.position() += next_pos + have_value - buf.position();
-                ref = StringRef(tmp);
+                ref = std::string_view(tmp);
             }
             return have_value;
         }
@@ -116,7 +116,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
     {
         while (true)
         {
-            StringRef name_ref;
+            std::string_view name_ref;
             bool has_value = readName(*in, name_ref, name_buf);
             ssize_t index = -1;
 
@@ -261,7 +261,7 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
     }
 
     NamesAndTypesList names_and_types;
-    StringRef name_ref;
+    std::string_view name_ref;
     String name_buf;
     String value;
     do

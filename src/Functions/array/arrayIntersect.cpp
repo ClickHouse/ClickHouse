@@ -486,8 +486,8 @@ ColumnPtr FunctionArrayIntersect<Mode>::executeImpl(const ColumnsWithTypeAndName
         DataTypeDateTime::FieldType, size_t,
         DefaultHash<DataTypeDateTime::FieldType>, INITIAL_SIZE_DEGREE>;
 
-    using StringMap = ClearableHashMapWithStackMemory<StringRef, size_t,
-        StringRefHash, INITIAL_SIZE_DEGREE>;
+    using StringMap = ClearableHashMapWithStackMemory<std::string_view, size_t,
+        StringViewHash, INITIAL_SIZE_DEGREE>;
 
     if (!result_column)
     {

@@ -14,7 +14,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
@@ -50,9 +49,9 @@ done
 */
 
 
-#define DefineStringRef(STRUCT) \
+#define DefineStringView(STRUCT) \
 \
-struct STRUCT : public StringRef {}; \
+struct STRUCT : public std::string_view {}; \
 \
 namespace ZeroTraits \
 { \
@@ -73,11 +72,11 @@ struct DefaultHash<STRUCT> \
 };
 
 
-DefineStringRef(StringRef_CompareMemcmp)
-DefineStringRef(StringRef_CompareAlwaysTrue)
+DefineStringView(StringView_CompareMemcmp)
+DefineStringView(StringView_CompareAlwaysTrue)
 
 
-inline bool operator==(StringRef_CompareMemcmp lhs, StringRef_CompareMemcmp rhs)
+inline bool operator==(StringView_CompareMemcmp lhs, StringView_CompareMemcmp rhs)
 {
     if (lhs.size != rhs.size)
         return false;
@@ -88,7 +87,7 @@ inline bool operator==(StringRef_CompareMemcmp lhs, StringRef_CompareMemcmp rhs)
     return 0 == memcmp(lhs.data, rhs.data, lhs.size);
 }
 
-inline bool operator==(StringRef_CompareAlwaysTrue, StringRef_CompareAlwaysTrue)
+inline bool operator==(StringView_CompareAlwaysTrue, StringView_CompareAlwaysTrue)
 {
     return true;
 }
@@ -104,7 +103,7 @@ struct FastHash64
         return h;
     }
 
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
         const char * buf = x.data;
         size_t len = x.size;
@@ -146,7 +145,7 @@ struct FastHash64
 
 struct FNV1a
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
         size_t res = 0xcbf29ce484222325ULL;
 
@@ -168,7 +167,7 @@ struct FNV1a
 
 struct CrapWow
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
         const char * key = x.data;
         size_t len = x.size;
@@ -241,7 +240,7 @@ struct CrapWow
 
 struct SimpleHash
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
         const char * pos = x.data;
         size_t size = x.size;
@@ -278,7 +277,7 @@ struct SimpleHash
 
 struct VerySimpleHash
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
         const char * pos = x.data;
         size_t size = x.size;
@@ -318,7 +317,7 @@ struct VerySimpleHash
 
 struct FarmHash64
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
         return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(x.data, x.size);
     }
@@ -328,7 +327,7 @@ struct FarmHash64
 template <void metrohash64(const uint8_t * key, uint64_t len, uint32_t seed, uint8_t * out)>
 struct SMetroHash64
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
         union
         {
@@ -347,7 +346,7 @@ struct SMetroHash64
 
 /*struct CRC32Hash
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
         const char * pos = x.data;
         size_t size = x.size;
@@ -381,7 +380,7 @@ struct SMetroHash64
 
 struct CRC32ILPHash
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
         const char * pos = x.data;
         size_t size = x.size;
@@ -429,7 +428,7 @@ using Value = uint64_t;
 
 
 template <typename Key, typename Hash>
-void NO_INLINE bench(const std::vector<StringRef> & data, const char * name)
+void NO_INLINE bench(const std::vector<std::string_view> & data, const char * name)
 {
     Stopwatch watch;
 
@@ -471,9 +470,9 @@ int main(int argc, char ** argv)
     size_t m = std::stol(argv[2]);
 
     DB::Arena pool;
-    std::vector<StringRef> data(n);
+    std::vector<std::string_view> data(n);
 
-    std::cerr << "sizeof(Key) = " << sizeof(StringRef) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
+    std::cerr << "sizeof(Key) = " << sizeof(std::string_view) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
 
     {
         Stopwatch watch;
@@ -484,7 +483,7 @@ int main(int argc, char ** argv)
         for (size_t i = 0; i < n && !in2.eof(); ++i)
         {
             DB::readStringBinary(tmp, in2);
-            data[i] = StringRef(pool.insert(tmp.data(), tmp.size()), tmp.size());
+            data[i] = std::string_view(pool.insert(tmp.data(), tmp.size()), tmp.size());
         }
 
         watch.stop();
@@ -495,21 +494,21 @@ int main(int argc, char ** argv)
             << std::endl;
     }
 
-    if (!m || m == 1) bench<StringRef, StringRefHash64>(data, "StringRef_CityHash64");
-    if (!m || m == 2) bench<StringRef, FastHash64>     (data, "StringRef_FastHash64");
-    if (!m || m == 3) bench<StringRef, SimpleHash>     (data, "StringRef_SimpleHash");
-    if (!m || m == 4) bench<StringRef, FNV1a>          (data, "StringRef_FNV1a");
+    if (!m || m == 1) bench<std::string_view, StringViewHash64>(data, "StringView_CityHash64");
+    if (!m || m == 2) bench<std::string_view, FastHash64>     (data, "StringView_FastHash64");
+    if (!m || m == 3) bench<std::string_view, SimpleHash>     (data, "StringView_SimpleHash");
+    if (!m || m == 4) bench<std::string_view, FNV1a>          (data, "StringView_FNV1a");
 
 #ifdef __SSE4_2__
-    if (!m || m == 5) bench<StringRef, CrapWow>        (data, "StringRef_CrapWow");
-    if (!m || m == 6) bench<StringRef, CRC32Hash>      (data, "StringRef_CRC32Hash");
-    if (!m || m == 7) bench<StringRef, CRC32ILPHash>   (data, "StringRef_CRC32ILPHash");
+    if (!m || m == 5) bench<std::string_view, CrapWow>        (data, "StringView_CrapWow");
+    if (!m || m == 6) bench<std::string_view, CRC32Hash>      (data, "StringView_CRC32Hash");
+    if (!m || m == 7) bench<std::string_view, CRC32ILPHash>   (data, "StringView_CRC32ILPHash");
 #endif
 
-    if (!m || m == 8) bench<StringRef, VerySimpleHash> (data, "StringRef_VerySimpleHash");
-    if (!m || m == 9) bench<StringRef, FarmHash64>     (data, "StringRef_FarmHash64");
-    if (!m || m == 10) bench<StringRef, SMetroHash64<metrohash64_1>>(data, "StringRef_MetroHash64_1");
-    if (!m || m == 11) bench<StringRef, SMetroHash64<metrohash64_2>>(data, "StringRef_MetroHash64_2");
+    if (!m || m == 8) bench<std::string_view, VerySimpleHash> (data, "StringView_VerySimpleHash");
+    if (!m || m == 9) bench<std::string_view, FarmHash64>     (data, "StringView_FarmHash64");
+    if (!m || m == 10) bench<std::string_view, SMetroHash64<metrohash64_1>>(data, "StringView_MetroHash64_1");
+    if (!m || m == 11) bench<std::string_view, SMetroHash64<metrohash64_2>>(data, "StringView_MetroHash64_2");
 
     return 0;
 }

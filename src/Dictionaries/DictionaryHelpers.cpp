@@ -5,7 +5,7 @@ namespace DB
 
 MutableColumns deserializeColumnsFromKeys(
     const DictionaryStructure & dictionary_structure,
-    const PaddedPODArray<StringRef> & keys,
+    const PaddedPODArray<std::string_view> & keys,
     size_t start,
     size_t end)
 {
@@ -29,7 +29,7 @@ MutableColumns deserializeColumnsFromKeys(
 
 ColumnsWithTypeAndName deserializeColumnsWithTypeAndNameFromKeys(
     const DictionaryStructure & dictionary_structure,
-    const PaddedPODArray<StringRef> & keys,
+    const PaddedPODArray<std::string_view> & keys,
     size_t start,
     size_t end)
 {

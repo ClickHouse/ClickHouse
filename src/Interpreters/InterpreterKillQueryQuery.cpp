@@ -112,12 +112,12 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 
     for (size_t i = 0; i < num_processes; ++i)
     {
-        if ((my_client.current_query_id == query_id_col.getDataAt(i).toString())
-            && (my_client.current_user == user_col.getDataAt(i).toString()))
+        if ((my_client.current_query_id == query_id_col.getDataAt(i))
+            && (my_client.current_user == user_col.getDataAt(i)))
             continue;
 
-        auto query_id = query_id_col.getDataAt(i).toString();
-        query_user = user_col.getDataAt(i).toString();
+        std::string query_id{query_id_col.getDataAt(i)};
+        query_user = user_col.getDataAt(i);
 
         if ((my_client.current_user != query_user) && !is_kill_query_granted())
             continue;

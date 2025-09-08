@@ -267,12 +267,12 @@ ColumnPtr IPAddressDictionary::getColumn(
                 getItemsShortCircuitImpl<ValueType>(
                     attribute, key_columns, [&](const size_t, const Array & value) { out->insert(value); }, default_mask);
             }
-            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 auto * out = column.get();
 
                 getItemsShortCircuitImpl<ValueType>(
-                    attribute, key_columns, [&](const size_t, StringRef value) { out->insertData(value.data, value.size); }, default_mask);
+                    attribute, key_columns, [&](const size_t, std::string_view value) { out->insertData(value.data, value.size); }, default_mask);
             }
             else
             {
@@ -299,14 +299,14 @@ ColumnPtr IPAddressDictionary::getColumn(
                     [&](const size_t, const Array & value) { out->insert(value); },
                     default_value_extractor);
             }
-            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 auto * out = column.get();
 
                 getItemsImpl<ValueType>(
                     attribute,
                     key_columns,
-                    [&](const size_t, StringRef value) { out->insertData(value.data, value.size); },
+                    [&](const size_t, std::string_view value) { out->insertData(value.data, value.size); },
                     default_value_extractor);
             }
             else
@@ -437,7 +437,7 @@ void IPAddressDictionary::loadData()
                 setAttributeValue(attribute, attribute_column[row]);
             }
 
-            const auto [addr, prefix] = parseIPFromString(key_column_ptr->getDataAt(row).toView());
+            const auto [addr, prefix] = parseIPFromString(key_column_ptr->getDataAt(row));
             has_ipv6 = has_ipv6 || (addr.family() == Poco::Net::IPAddress::IPv6);
 
             size_t row_number = ip_records.size();
@@ -586,7 +586,7 @@ void IPAddressDictionary::addAttributeSize(const Attribute & attribute)
 template <>
 void IPAddressDictionary::addAttributeSize<String>(const Attribute & attribute)
 {
-    addAttributeSize<StringRef>(attribute);
+    addAttributeSize<std::string_view>(attribute);
     bytes_allocated += sizeof(Arena) + attribute.string_arena->allocatedBytes();
 }
 
@@ -630,7 +630,7 @@ template <>
 void IPAddressDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
 {
     attribute.null_values = null_value.isNull() ? String() : null_value.safeGet<String>();
-    attribute.maps.emplace<ContainerType<StringRef>>();
+    attribute.maps.emplace<ContainerType<std::string_view>>();
     attribute.string_arena = std::make_unique<Arena>();
 }
 
@@ -987,7 +987,7 @@ void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field &
         {
             const auto & string = value.safeGet<String>();
             const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-            setAttributeValueImpl<StringRef>(attribute, StringRef{string_in_arena, string.size()});
+            setAttributeValueImpl<std::string_view>(attribute, std::string_view{string_in_arena, string.size()});
         }
         else
         {

@@ -1054,7 +1054,7 @@ private:
             if constexpr (Keyed)
                 if (!key_cols.is_const && i != 0)
                     key = Impl::getKey(key_cols, i);
-            StringRef bytes = column->getDataAt(i);
+            std::string_view bytes = column->getDataAt(i);
             const ToType hash = apply(key, bytes.data, bytes.size);
             if constexpr (first)
                 vec_to[i] = hash;

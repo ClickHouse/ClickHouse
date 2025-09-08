@@ -184,7 +184,7 @@ private:
             size_t sorted_paths_index = 0;
             for (size_t j = start; j != end; ++j)
             {
-                auto shared_data_path = shared_data_paths->getDataAt(j).toView();
+                auto shared_data_path = shared_data_paths->getDataAt(j);
                 while (sorted_paths_index != sorted_dynamic_and_typed_paths.size() && sorted_dynamic_and_typed_paths[sorted_paths_index] < shared_data_path)
                 {
                     const auto path = sorted_dynamic_and_typed_paths[sorted_paths_index];
@@ -294,7 +294,7 @@ private:
             size_t sorted_paths_index = 0;
             for (size_t j = start; j != end; ++j)
             {
-                auto shared_data_path = shared_data_paths->getDataAt(j).toView();
+                auto shared_data_path = shared_data_paths->getDataAt(j);
                 auto type_name = getDynamicValueTypeFromSharedData(shared_data_values->getDataAt(j));
                 /// Skip NULL values.
                 if (!type_name)
@@ -362,7 +362,7 @@ private:
         return variant_info.variant_names[global_discr];
     }
 
-    std::optional<String> getDynamicValueTypeFromSharedData(StringRef value) const
+    std::optional<String> getDynamicValueTypeFromSharedData(std::string_view value) const
     {
         ReadBufferFromMemory buf(value.data, value.size);
         auto type = decodeDataType(buf);

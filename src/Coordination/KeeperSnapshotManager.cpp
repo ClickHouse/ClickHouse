@@ -519,7 +519,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         " is different from actual children size {} for node {}",
                         itr.value.stats.numChildren(),
                         itr.value.getChildren().size(),
-                        itr.key.toView());
+                        itr.key);
 #endif
                 }
             }

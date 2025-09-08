@@ -35,7 +35,7 @@ void InternalTextLogs::writeLogs(const Block & block)
         {
             writeCString("[", wb);
             if (color)
-                writeString(setColor(StringRefHash()(host_name)), wb);
+                writeString(setColor(StringViewHash()(host_name)), wb);
             writeString(host_name, wb);
             if (color)
                 writeCString(resetColor(), wb);
@@ -68,7 +68,7 @@ void InternalTextLogs::writeLogs(const Block & block)
         {
             writeCString(" {", wb);
             if (color)
-                writeString(setColor(StringRefHash()(query_id)), wb);
+                writeString(setColor(StringViewHash()(query_id)), wb);
             writeString(query_id, wb);
             if (color)
                 writeCString(resetColor(), wb);
@@ -86,7 +86,7 @@ void InternalTextLogs::writeLogs(const Block & block)
 
         auto source = column_source.getDataAt(row_num);
         if (color)
-            writeString(setColor(StringRefHash()(source)), wb);
+            writeString(setColor(StringViewHash()(source)), wb);
         DB::writeString(source, wb);
         if (color)
             writeCString(resetColor(), wb);
@@ -116,7 +116,7 @@ void InternalTextLogs::writeProfileEvents(const Block & block)
         {
             writeCString("[", wb);
             if (color)
-                writeString(setColor(StringRefHash()(host_name)), wb);
+                writeString(setColor(StringViewHash()(host_name)), wb);
             writeString(host_name, wb);
             if (color)
                 writeCString(resetColor(), wb);
@@ -140,7 +140,7 @@ void InternalTextLogs::writeProfileEvents(const Block & block)
         /// name
         auto name = column_name.getDataAt(row_num);
         if (color)
-            writeString(setColor(StringRefHash()(name)), wb);
+            writeString(setColor(StringViewHash()(name)), wb);
         DB::writeString(name, wb);
         if (color)
             writeCString(resetColor(), wb);

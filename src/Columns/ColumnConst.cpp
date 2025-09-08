@@ -39,8 +39,8 @@ ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
 #if defined(MEMORY_SANITIZER)
     if (data->isFixedAndContiguous())
     {
-        StringRef value = data->getDataAt(0);
-        __msan_check_mem_is_initialized(value.data, value.size);
+        auto value = data->getDataAt(0);
+        __msan_check_mem_is_initialized(value.data(), value.size());
     }
 #endif
 }

@@ -69,7 +69,7 @@ private:
         if (!checkColumnConst<ColumnString>(column_char.get()))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be a constant string", getName());
 
-        StringRef trailing_char_str = column_char->getDataAt(0);
+        std::string_view trailing_char_str = column_char->getDataAt(0);
 
         if (trailing_char_str.size != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must be a one-character string", getName());

@@ -425,7 +425,7 @@ bool ColumnVariant::isNullAt(size_t n) const
     return localDiscriminatorAt(n) == NULL_DISCRIMINATOR;
 }
 
-StringRef ColumnVariant::getDataAt(size_t) const
+std::string_view ColumnVariant::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -786,13 +786,13 @@ void ColumnVariant::rollback(const ColumnCheckpoint & checkpoint)
         variants[i]->rollback(*checkpoints[i]);
 }
 
-StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     /// During any serialization/deserialization we should always use global discriminators.
     Discriminator global_discr = globalDiscriminatorAt(n);
     char * pos = arena.allocContinue(sizeof(global_discr), begin);
     memcpy(pos, &global_discr, sizeof(global_discr));
-    StringRef res(pos, sizeof(global_discr));
+    std::string_view res(pos, sizeof(global_discr));
 
     if (global_discr == NULL_DISCRIMINATOR)
         return res;

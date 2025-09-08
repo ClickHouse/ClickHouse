@@ -39,9 +39,9 @@ namespace ErrorCodes
 namespace OpenSSLDetails
 {
 [[noreturn]] void onError(std::string error_message);
-StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, StringRef key, std::array<char, EVP_MAX_KEY_LENGTH> & folded_key);
+std::string_view foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, std::string_view key, std::array<char, EVP_MAX_KEY_LENGTH> & folded_key);
 
-const EVP_CIPHER * getCipherByName(StringRef name);
+const EVP_CIPHER * getCipherByName(std::string_view name);
 
 enum class CompatibilityMode : uint8_t
 {
@@ -60,7 +60,7 @@ enum class CipherMode : uint8_t
 template <CipherMode mode>
 struct KeyHolder
 {
-    StringRef setKey(size_t cipher_key_size, StringRef key) const
+    std::string_view setKey(size_t cipher_key_size, std::string_view key) const
     {
         if (key.size != cipher_key_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size, cipher_key_size);
@@ -72,7 +72,7 @@ struct KeyHolder
 template <>
 struct KeyHolder<CipherMode::MySQLCompatibility>
 {
-    StringRef setKey(size_t cipher_key_size, StringRef key)
+    std::string_view setKey(size_t cipher_key_size, std::string_view key)
     {
         if (key.size < cipher_key_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size, cipher_key_size);
@@ -125,7 +125,7 @@ inline void validateCipherMode(const EVP_CIPHER * evp_cipher)
 }
 
 template <CipherMode mode>
-inline void validateIV(StringRef iv_value, const size_t cipher_iv_size)
+inline void validateIV(std::string_view iv_value, const size_t cipher_iv_size)
 {
     // In MySQL mode we don't care if IV is longer than expected, only if shorter.
     if ((mode == CipherMode::MySQLCompatibility && iv_value.size != 0 && iv_value.size < cipher_iv_size)
@@ -189,9 +189,9 @@ private:
     {
         using namespace OpenSSLDetails;
 
-        const StringRef mode = arguments[0].column->getDataAt(0);
+        const std::string_view mode = arguments[0].column->getDataAt(0);
 
-        if (mode.size == 0 || !mode.toView().starts_with("aes-"))
+        if (mode.size == 0 || !mode.starts_with("aes-"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode.toString());
 
         const auto * evp_cipher = getCipherByName(mode);
@@ -303,7 +303,7 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             const auto key_value = key_holder.setKey(key_size, key_column->getDataAt(row_idx));
-            auto iv_value = StringRef{};
+            auto iv_value = std::string_view{};
             if (iv_column)
             {
                 iv_value = iv_column->getDataAt(row_idx);
@@ -313,7 +313,7 @@ private:
                     iv_value.data = nullptr;
             }
 
-            const StringRef input_value = input_column->getDataAt(row_idx);
+            const std::string_view input_value = input_column->getDataAt(row_idx);
 
             if constexpr (mode != CipherMode::MySQLCompatibility)
             {
@@ -466,7 +466,7 @@ private:
         using namespace OpenSSLDetails;
 
         const auto mode = arguments[0].column->getDataAt(0);
-        if (mode.size == 0 || !mode.toView().starts_with("aes-"))
+        if (mode.size == 0 || !mode.starts_with("aes-"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode.toString());
 
         const auto * evp_cipher = getCipherByName(mode);
@@ -586,7 +586,7 @@ private:
         {
             // 0: prepare key if required
             auto key_value = key_holder.setKey(key_size, key_column->getDataAt(row_idx));
-            auto iv_value = StringRef{};
+            auto iv_value = std::string_view{};
             if (iv_column)
             {
                 iv_value = iv_column->getDataAt(row_idx);
@@ -650,7 +650,7 @@ private:
                     // 1.a.2: Set AAD if present
                     if (aad_column)
                     {
-                        StringRef aad_data = aad_column->getDataAt(row_idx);
+                        std::string_view aad_data = aad_column->getDataAt(row_idx);
                         int tmp_len = 0;
                         if (aad_data.size != 0 && EVP_DecryptUpdate(evp_ctx, nullptr, &tmp_len,
                                 reinterpret_cast<const unsigned char *>(aad_data.data), safe_cast<int>(aad_data.size)) != 1)

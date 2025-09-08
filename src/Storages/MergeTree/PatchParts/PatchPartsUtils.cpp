@@ -139,7 +139,7 @@ std::pair<UInt64, UInt64> getPartNameRange(const ColumnLowCardinality & part_nam
 
     const auto [begin, end] = std::ranges::equal_range(
         indices,
-        StringRef{part_name},
+        std::string_view{part_name},
         std::less{},
         [&](const auto idx) { return part_name_column.getDataAt(idx); });
 

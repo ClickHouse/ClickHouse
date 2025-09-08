@@ -87,11 +87,11 @@ namespace
     {
     private:
         Arena arena;
-        using Map = HashMap<uintptr_t, StringRef>;
+        using Map = HashMap<uintptr_t, std::string_view>;
         Map map;
         std::unordered_map<std::string, Dwarf> dwarfs;
 
-        void setResult(StringRef & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &)
+        void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &)
         {
             const char * arena_begin = nullptr;
             WriteBufferFromArena out(arena, arena_begin);
@@ -104,7 +104,7 @@ namespace
             result = out.complete();
         }
 
-        StringRef impl(uintptr_t addr)
+        std::string_view impl(uintptr_t addr)
         {
             const SymbolIndex & symbol_index = SymbolIndex::instance();
 
@@ -116,7 +116,7 @@ namespace
 
                 Dwarf::LocationInfo location;
                 std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
-                StringRef result;
+                std::string_view result;
                 if (dwarf_it->second.findAddress(addr, location, Dwarf::LocationInfoMode::FAST, frames))
                 {
                     setResult(result, location, frames);
@@ -127,7 +127,7 @@ namespace
             return {};
         }
 
-        StringRef implCached(uintptr_t addr)
+        std::string_view implCached(uintptr_t addr)
         {
             typename Map::LookupResult it;
             bool inserted;
@@ -138,7 +138,7 @@ namespace
         }
 
     public:
-        static StringRef get(uintptr_t addr)
+        static std::string_view get(uintptr_t addr)
         {
             static AddressToLineCache cache;
             return cache.implCached(addr);
@@ -195,7 +195,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
                 else
                     symbols.emplace_back(std::string_view(symbol->name));
 
-                lines.emplace_back(AddressToLineCache::get(trace[frame]).toView());
+                lines.emplace_back(AddressToLineCache::get(trace[frame]));
             }
             else
             {

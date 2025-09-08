@@ -725,7 +725,7 @@ void ColumnDynamic::serializeValueIntoSharedVariant(
     shared_variant.getOffsets().push_back(chars.size());
 }
 
-StringRef ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
+std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
 {
     /// We cannot use Variant serialization here as it serializes discriminator + value,
     /// but Dynamic doesn't have fixed mapping discriminator <-> variant type
@@ -733,19 +733,18 @@ StringRef ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, const 
     /// Instead, we serialize null bit + variant type and value in binary format (size + data).
     const auto & variant_col = assert_cast<const ColumnVariant &>(*variant_column);
     auto discr = variant_col.globalDiscriminatorAt(n);
-    StringRef res;
+    std::stirng_view res;
     UInt8 null_bit = discr == ColumnVariant::NULL_DISCRIMINATOR;
     if (null_bit)
     {
         char * pos = arena.allocContinue(sizeof(UInt8), begin);
         memcpy(pos, &null_bit, sizeof(UInt8));
-        res.data = pos;
-        res.size = sizeof(UInt8);
+        res = std::string_view{pos, sizeof(UInt8)};
         return res;
     }
 
     WriteBufferFromOwnString buf;
-    StringRef type_and_value;
+    std::string_view type_and_value;
     /// If we have value from shared variant, it's already stored in the desired format.
     if (discr == getSharedVariantDiscriminator())
     {

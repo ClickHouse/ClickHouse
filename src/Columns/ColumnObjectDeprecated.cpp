@@ -749,7 +749,7 @@ void ColumnObjectDeprecated::insert(const Field & field)
 {
     const auto & object = field.safeGet<Object>();
 
-    HashSet<StringRef, StringRefHash> inserted_paths;
+    HashSet<std::string_view, StringViewHash> inserted_paths;
     size_t old_size = size();
     for (const auto & [key_str, value] : object)
     {

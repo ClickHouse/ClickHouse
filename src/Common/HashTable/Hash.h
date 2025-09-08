@@ -1,9 +1,9 @@
 #pragma once
 
 #include <city.h>
+#include <base/StringViewHash.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <base/StringRef.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 
@@ -538,9 +538,6 @@ struct IntHash32
         UNREACHABLE();
     }
 };
-
-template <>
-struct DefaultHash<StringRef> : public StringRefHash {};
 
 template <>
 struct DefaultHash<std::string_view> : public StringViewHash {};

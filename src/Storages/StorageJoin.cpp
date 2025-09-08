@@ -536,12 +536,12 @@ static size_t rawSize(T &)
     return sizeof(T);
 }
 template <>
-const char * rawData(const StringRef & t)
+const char * rawData(const std::string_view & t)
 {
     return t.data;
 }
 template <>
-size_t rawSize(const StringRef & t)
+size_t rawSize(const std::string_view & t)
 {
     return t.size;
 }

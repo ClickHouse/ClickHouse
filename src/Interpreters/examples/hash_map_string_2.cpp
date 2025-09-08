@@ -11,7 +11,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
@@ -47,9 +46,9 @@ done
 */
 
 
-#define DefineStringRef(STRUCT) \
+#define DefineStringView(STRUCT) \
 \
-struct STRUCT : public StringRef {}; \
+struct STRUCT : public std::string_view {}; \
 \
 namespace ZeroTraits \
 { \
@@ -69,27 +68,27 @@ struct DefaultHash<STRUCT> \
     } \
 };
 
-DefineStringRef(StringRef_Compare1_Ptrs)
-DefineStringRef(StringRef_Compare1_Index)
-DefineStringRef(StringRef_CompareMemcmp)
-DefineStringRef(StringRef_Compare8_1_byUInt64)
-DefineStringRef(StringRef_Compare16_1_byMemcmp)
-DefineStringRef(StringRef_Compare16_1_byUInt64_logicAnd)
-DefineStringRef(StringRef_Compare16_1_byUInt64_bitAnd)
+DefineStringView(StringView_Compare1_Ptrs)
+DefineStringView(StringView_Compare1_Index)
+DefineStringView(StringView_CompareMemcmp)
+DefineStringView(StringView_Compare8_1_byUInt64)
+DefineStringView(StringView_Compare16_1_byMemcmp)
+DefineStringView(StringView_Compare16_1_byUInt64_logicAnd)
+DefineStringView(StringView_Compare16_1_byUInt64_bitAnd)
 
 #ifdef __SSE4_1__
-DefineStringRef(StringRef_Compare16_1_byIntSSE)
-DefineStringRef(StringRef_Compare16_1_byFloatSSE)
-DefineStringRef(StringRef_Compare16_1_bySSE4)
-DefineStringRef(StringRef_Compare16_1_bySSE4_wide)
-DefineStringRef(StringRef_Compare16_1_bySSE_wide)
+DefineStringView(StringView_Compare16_1_byIntSSE)
+DefineStringView(StringView_Compare16_1_byFloatSSE)
+DefineStringView(StringView_Compare16_1_bySSE4)
+DefineStringView(StringView_Compare16_1_bySSE4_wide)
+DefineStringView(StringView_Compare16_1_bySSE_wide)
 #endif
 
-DefineStringRef(StringRef_CompareAlwaysTrue)
-DefineStringRef(StringRef_CompareAlmostAlwaysTrue)
+DefineStringView(StringView_CompareAlwaysTrue)
+DefineStringView(StringView_CompareAlmostAlwaysTrue)
 
 
-inline bool operator==(StringRef_Compare1_Ptrs lhs, StringRef_Compare1_Ptrs rhs)
+inline bool operator==(StringView_Compare1_Ptrs lhs, StringView_Compare1_Ptrs rhs)
 {
     if (lhs.size != rhs.size)
         return false;
@@ -114,7 +113,7 @@ inline bool operator==(StringRef_Compare1_Ptrs lhs, StringRef_Compare1_Ptrs rhs)
     return true;
 }
 
-inline bool operator==(StringRef_Compare1_Index lhs, StringRef_Compare1_Index rhs)
+inline bool operator==(StringView_Compare1_Index lhs, StringView_Compare1_Index rhs)
 {
     if (lhs.size != rhs.size)
         return false;
@@ -129,7 +128,7 @@ inline bool operator==(StringRef_Compare1_Index lhs, StringRef_Compare1_Index rh
     return true;
 }
 
-inline bool operator==(StringRef_CompareMemcmp lhs, StringRef_CompareMemcmp rhs)
+inline bool operator==(StringView_CompareMemcmp lhs, StringView_CompareMemcmp rhs)
 {
     if (lhs.size != rhs.size)
         return false;
@@ -141,7 +140,7 @@ inline bool operator==(StringRef_CompareMemcmp lhs, StringRef_CompareMemcmp rhs)
 }
 
 
-inline bool operator==(StringRef_Compare8_1_byUInt64 lhs, StringRef_Compare8_1_byUInt64 rhs)
+inline bool operator==(StringView_Compare8_1_byUInt64 lhs, StringView_Compare8_1_byUInt64 rhs)
 {
     if (lhs.size != rhs.size)
         return false;
@@ -504,7 +503,7 @@ inline bool memequal_sse_wide(const char * p1, const char * p2, size_t size)
 
 
 #define Op(METHOD) \
-inline bool operator==(StringRef_Compare16_1_ ## METHOD lhs, StringRef_Compare16_1_ ## METHOD rhs) \
+inline bool operator==(StringView_Compare16_1_ ## METHOD lhs, StringView_Compare16_1_ ## METHOD rhs) \
 { \
     if (lhs.size != rhs.size) \
         return false; \
@@ -525,7 +524,7 @@ Op(byIntSSE)
 Op(byFloatSSE)
 
 
-inline bool operator==(StringRef_Compare16_1_bySSE4 lhs, StringRef_Compare16_1_bySSE4 rhs)
+inline bool operator==(StringView_Compare16_1_bySSE4 lhs, StringView_Compare16_1_bySSE4 rhs)
 {
     if (lhs.size != rhs.size)
         return false;
@@ -536,7 +535,7 @@ inline bool operator==(StringRef_Compare16_1_bySSE4 lhs, StringRef_Compare16_1_b
     return memequal_sse41(lhs.data, rhs.data, lhs.size);
 }
 
-inline bool operator==(StringRef_Compare16_1_bySSE4_wide lhs, StringRef_Compare16_1_bySSE4_wide rhs)
+inline bool operator==(StringView_Compare16_1_bySSE4_wide lhs, StringView_Compare16_1_bySSE4_wide rhs)
 {
     if (lhs.size != rhs.size)
         return false;
@@ -547,7 +546,7 @@ inline bool operator==(StringRef_Compare16_1_bySSE4_wide lhs, StringRef_Compare1
     return memequal_sse41_wide(lhs.data, rhs.data, lhs.size);
 }
 
-inline bool operator==(StringRef_Compare16_1_bySSE_wide lhs, StringRef_Compare16_1_bySSE_wide rhs)
+inline bool operator==(StringView_Compare16_1_bySSE_wide lhs, StringView_Compare16_1_bySSE_wide rhs)
 {
     if (lhs.size != rhs.size)
         return false;
@@ -561,12 +560,12 @@ inline bool operator==(StringRef_Compare16_1_bySSE_wide lhs, StringRef_Compare16
 #endif
 
 
-inline bool operator==(StringRef_CompareAlwaysTrue, StringRef_CompareAlwaysTrue)
+inline bool operator==(StringView_CompareAlwaysTrue, StringView_CompareAlwaysTrue)
 {
     return true;
 }
 
-inline bool operator==(StringRef_CompareAlmostAlwaysTrue lhs, StringRef_CompareAlmostAlwaysTrue rhs)
+inline bool operator==(StringView_CompareAlmostAlwaysTrue lhs, StringView_CompareAlmostAlwaysTrue rhs)
 {
     return lhs.size == rhs.size;
 }
@@ -576,7 +575,7 @@ using Value = UInt64;
 
 
 template <typename Key>
-void NO_INLINE bench(const std::vector<StringRef> & data, const char * name)
+void NO_INLINE bench(const std::vector<std::string_view> & data, const char * name)
 {
     Stopwatch watch;
 
@@ -618,9 +617,9 @@ int main(int argc, char ** argv)
     size_t m = std::stol(argv[2]);
 
     DB::Arena pool;
-    std::vector<StringRef> data(n);
+    std::vector<std::string_view> data(n);
 
-    std::cerr << "sizeof(Key) = " << sizeof(StringRef) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
+    std::cerr << "sizeof(Key) = " << sizeof(std::string_view) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
 
     {
         Stopwatch watch;
@@ -631,7 +630,7 @@ int main(int argc, char ** argv)
         for (size_t i = 0; i < n && !in2.eof(); ++i)
         {
             DB::readStringBinary(tmp, in2);
-            data[i] = StringRef(pool.insert(tmp.data(), tmp.size()), tmp.size());
+            data[i] = std::string_view(pool.insert(tmp.data(), tmp.size()), tmp.size());
         }
 
         watch.stop();
@@ -642,24 +641,24 @@ int main(int argc, char ** argv)
             << std::endl;
     }
 
-    if (!m || m == 1) bench<StringRef_Compare1_Ptrs>                (data, "StringRef_Compare1_Ptrs");
-    if (!m || m == 2) bench<StringRef_Compare1_Index>               (data, "StringRef_Compare1_Index");
-    if (!m || m == 3) bench<StringRef_CompareMemcmp>                (data, "StringRef_CompareMemcmp");
-    if (!m || m == 4) bench<StringRef_Compare8_1_byUInt64>          (data, "StringRef_Compare8_1_byUInt64");
-    if (!m || m == 5) bench<StringRef_Compare16_1_byMemcmp>         (data, "StringRef_Compare16_1_byMemcmp");
-    if (!m || m == 6) bench<StringRef_Compare16_1_byUInt64_logicAnd>(data, "StringRef_Compare16_1_byUInt64_logicAnd");
-    if (!m || m == 7) bench<StringRef_Compare16_1_byUInt64_bitAnd>  (data, "StringRef_Compare16_1_byUInt64_bitAnd");
+    if (!m || m == 1) bench<StringView_Compare1_Ptrs>                (data, "StringView_Compare1_Ptrs");
+    if (!m || m == 2) bench<StringView_Compare1_Index>               (data, "StringView_Compare1_Index");
+    if (!m || m == 3) bench<StringView_CompareMemcmp>                (data, "StringView_CompareMemcmp");
+    if (!m || m == 4) bench<StringView_Compare8_1_byUInt64>          (data, "StringView_Compare8_1_byUInt64");
+    if (!m || m == 5) bench<StringView_Compare16_1_byMemcmp>         (data, "StringView_Compare16_1_byMemcmp");
+    if (!m || m == 6) bench<StringView_Compare16_1_byUInt64_logicAnd>(data, "StringView_Compare16_1_byUInt64_logicAnd");
+    if (!m || m == 7) bench<StringView_Compare16_1_byUInt64_bitAnd>  (data, "StringView_Compare16_1_byUInt64_bitAnd");
 #ifdef __SSE4_1__
-    if (!m || m == 8) bench<StringRef_Compare16_1_byIntSSE>         (data, "StringRef_Compare16_1_byIntSSE");
-    if (!m || m == 9) bench<StringRef_Compare16_1_byFloatSSE>       (data, "StringRef_Compare16_1_byFloatSSE");
-    if (!m || m == 10) bench<StringRef_Compare16_1_bySSE4>          (data, "StringRef_Compare16_1_bySSE4");
-    if (!m || m == 11) bench<StringRef_Compare16_1_bySSE4_wide>     (data, "StringRef_Compare16_1_bySSE4_wide");
-    if (!m || m == 12) bench<StringRef_Compare16_1_bySSE_wide>      (data, "StringRef_Compare16_1_bySSE_wide");
+    if (!m || m == 8) bench<StringView_Compare16_1_byIntSSE>         (data, "StringView_Compare16_1_byIntSSE");
+    if (!m || m == 9) bench<StringView_Compare16_1_byFloatSSE>       (data, "StringView_Compare16_1_byFloatSSE");
+    if (!m || m == 10) bench<StringView_Compare16_1_bySSE4>          (data, "StringView_Compare16_1_bySSE4");
+    if (!m || m == 11) bench<StringView_Compare16_1_bySSE4_wide>     (data, "StringView_Compare16_1_bySSE4_wide");
+    if (!m || m == 12) bench<StringView_Compare16_1_bySSE_wide>      (data, "StringView_Compare16_1_bySSE_wide");
 #endif
-    if (!m || m == 100) bench<StringRef_CompareAlwaysTrue>          (data, "StringRef_CompareAlwaysTrue");
-    if (!m || m == 101) bench<StringRef_CompareAlmostAlwaysTrue>    (data, "StringRef_CompareAlmostAlwaysTrue");
+    if (!m || m == 100) bench<StringView_CompareAlwaysTrue>          (data, "StringView_CompareAlwaysTrue");
+    if (!m || m == 101) bench<StringView_CompareAlmostAlwaysTrue>    (data, "StringView_CompareAlmostAlwaysTrue");
 
-    if (!m || m == 111) bench<StringRef>                            (data, "StringRef");
+    if (!m || m == 111) bench<std::string_view>                            (data, "std::string_view");
 
     /// 10 > 8, 9
     /// 1, 2, 5 - bad

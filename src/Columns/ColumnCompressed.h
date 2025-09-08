@@ -85,7 +85,7 @@ public:
     Field operator[](size_t) const override { throwMustBeDecompressed(); }
     void get(size_t, Field &) const override { throwMustBeDecompressed(); }
     std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override { throwMustBeDecompressed(); }
-    StringRef getDataAt(size_t) const override { throwMustBeDecompressed(); }
+    std::string_view getDataAt(size_t) const override { throwMustBeDecompressed(); }
     bool isDefaultAt(size_t) const override { throwMustBeDecompressed(); }
     void insert(const Field &) override { throwMustBeDecompressed(); }
     bool tryInsert(const Field &) override { throwMustBeDecompressed(); }
@@ -97,7 +97,7 @@ public:
     void insertData(const char *, size_t) override { throwMustBeDecompressed(); }
     void insertDefault() override { throwMustBeDecompressed(); }
     void popBack(size_t) override { throwMustBeDecompressed(); }
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeDecompressed(); }
+    std::string_view serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeDecompressed(); }
     char * serializeValueIntoMemory(size_t, char *) const override { throwMustBeDecompressed(); }
     const char * deserializeAndInsertFromArena(const char *) override { throwMustBeDecompressed(); }
     const char * skipSerializedInArena(const char *) const override { throwMustBeDecompressed(); }

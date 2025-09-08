@@ -48,7 +48,7 @@ private:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "The second argument of function {} should be a constant string with the name of a subcolumn", name);
 
-        return column->getDataAt(0).toView();
+        return column->getDataAt(0);
     }
 };
 

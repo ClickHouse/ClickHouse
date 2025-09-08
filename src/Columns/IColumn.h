@@ -3,7 +3,6 @@
 #include <string_view>
 #include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
-#include <base/StringRef.h>
 #include <Common/COW.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/typeid_cast.h>
@@ -144,7 +143,7 @@ public:
 
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
-    [[nodiscard]] virtual StringRef getDataAt(size_t n) const = 0;
+    [[nodiscard]] virtual std::string_view getDataAt(size_t n) const = 0;
 
     /// If column stores integers, it returns n-th element transformed to UInt64 using static_cast.
     /// If column stores floating point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
@@ -270,7 +269,7 @@ public:
       *  For example, to obtain unambiguous representation of Array of strings, strings data should be interleaved with their sizes.
       * Parameter begin should be used with Arena::allocContinue.
       */
-    virtual StringRef serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const;
+    virtual std::string_view serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const;
 
     /// Same as above but serialize into already allocated continuous memory.
     /// Return pointer to the end of the serialization data.
@@ -284,7 +283,7 @@ public:
     virtual void batchSerializeValueIntoMemory(std::vector<char *> & /* memories */) const;
 
     /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
-    virtual StringRef
+    virtual std::string_view
     serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const;
 
     virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const;
@@ -886,8 +885,8 @@ private:
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     void batchSerializeValueIntoMemory(std::vector<char *> & memories) const override;
 
-    StringRef serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 };
 
 }

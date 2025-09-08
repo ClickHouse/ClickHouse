@@ -163,7 +163,7 @@ public:
 
             if constexpr (std::is_same_v<KeyType, String>)
             {
-                StringRef key_ref;
+                std::string_view key_ref;
                 if (key_type->getTypeId() == TypeIndex::FixedString)
                     key_ref = assert_cast<const ColumnFixedString &>(key_column).getDataAt(offset + i);
                 else if (key_type->getTypeId() == TypeIndex::IPv6)
@@ -171,7 +171,7 @@ public:
                 else
                     key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(offset + i);
 
-                key = key_ref.toView();
+                key = key_ref;
             }
             else
             {

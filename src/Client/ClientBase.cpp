@@ -264,8 +264,8 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
     struct Id
     {
-        StringRef name;
-        StringRef host_name;
+        std::string_view name;
+        std::string_view host_name;
 
         bool operator<(const Id & rhs) const
         {

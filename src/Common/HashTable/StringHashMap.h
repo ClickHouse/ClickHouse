@@ -12,7 +12,7 @@ struct StringHashMapCell : public HashMapCell<Key, TMapped, StringHashTableHash,
     using Base::Base;
     static constexpr bool need_zero_value_storage = false;
     // external
-    StringRef getKey() const { return toStringView(this->value.first); } /// NOLINT
+    std::string_view getKey() const { return toStringView(this->value.first); } /// NOLINT
     // internal
     static const Key & getKey(const value_type & value_) { return value_.first; }
 };
@@ -32,7 +32,7 @@ struct StringHashMapCell<StringKey16, TMapped> : public HashMapCell<StringKey16,
     void setZero() { this->value.first.items[1] = 0; }
 
     // external
-    StringRef getKey() const { return toStringView(this->value.first); } /// NOLINT
+    std::string_view getKey() const { return toStringView(this->value.first); } /// NOLINT
     // internal
     static const StringKey16 & getKey(const value_type & value_) { return value_.first; }
 };
@@ -53,39 +53,39 @@ struct StringHashMapCell<StringKey24, TMapped> : public HashMapCell<StringKey24,
     void setZero() { this->value.first.c = 0; }
 
     // external
-    StringRef getKey() const { return toStringView(this->value.first); } /// NOLINT
+    std::string_view getKey() const { return toStringView(this->value.first); } /// NOLINT
     // internal
     static const StringKey24 & getKey(const value_type & value_) { return value_.first; }
 };
 
 template <typename TMapped>
-struct StringHashMapCell<StringRef, TMapped> : public HashMapCellWithSavedHash<StringRef, TMapped, StringHashTableHash, HashTableNoState>
+struct StringHashMapCell<std::string_view, TMapped> : public HashMapCellWithSavedHash<std::string_view, TMapped, StringHashTableHash, HashTableNoState>
 {
-    using Base = HashMapCellWithSavedHash<StringRef, TMapped, StringHashTableHash, HashTableNoState>;
+    using Base = HashMapCellWithSavedHash<std::string_view, TMapped, StringHashTableHash, HashTableNoState>;
     using value_type = typename Base::value_type;
     using Base::Base;
     static constexpr bool need_zero_value_storage = false;
     // external
     using Base::getKey;
     // internal
-    static const StringRef & getKey(const value_type & value_) { return value_.first; }
+    static const std::string_view & getKey(const value_type & value_) { return value_.first; }
 };
 
 template <typename TMapped, typename Allocator>
 struct StringHashMapSubMaps
 {
-    using T0 = StringHashTableEmpty<StringHashMapCell<StringRef, TMapped>>;
+    using T0 = StringHashTableEmpty<StringHashMapCell<std::string_view, TMapped>>;
     using T1 = HashMapTable<StringKey8, StringHashMapCell<StringKey8, TMapped>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
     using T2 = HashMapTable<StringKey16, StringHashMapCell<StringKey16, TMapped>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
     using T3 = HashMapTable<StringKey24, StringHashMapCell<StringKey24, TMapped>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
-    using Ts = HashMapTable<StringRef, StringHashMapCell<StringRef, TMapped>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
+    using Ts = HashMapTable<std::string_view, StringHashMapCell<std::string_view, TMapped>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
 };
 
 template <typename TMapped, typename Allocator = HashTableAllocator>
 class StringHashMap : public StringHashTable<StringHashMapSubMaps<TMapped, Allocator>>
 {
 public:
-    using Key = StringRef;
+    using Key = std::string_view;
     using Base = StringHashTable<StringHashMapSubMaps<TMapped, Allocator>>;
     using Self = StringHashMap;
     using LookupResult = typename Base::LookupResult;
@@ -148,7 +148,7 @@ public:
     {
         if (this->m0.size())
         {
-            func(StringRef{}, this->m0.zeroValue()->getMapped());
+            func(std::string_view{}, this->m0.zeroValue()->getMapped());
         }
 
         for (auto & v : this->m1)

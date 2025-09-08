@@ -59,7 +59,7 @@ BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
     name_map = getNamesToIndexesMap(getPort().getHeader());
 }
 
-inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, size_t key_index)
+inline size_t BSONEachRowRowInputFormat::columnIndex(const std::string_view & name, size_t key_index)
 {
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
@@ -83,8 +83,8 @@ inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
     return UNKNOWN_FIELD;
 }
 
-/// Read the field name. Resulting StringRef is valid only before next read from buf.
-static StringRef readBSONKeyName(ReadBuffer & in, String & key_holder)
+/// Read the field name. Resulting std::string_view is valid only before next read from buf.
+static std::string_view readBSONKeyName(ReadBuffer & in, String & key_holder)
 {
     // This is just an optimization: try to avoid copying the name into key_holder
 
@@ -94,7 +94,7 @@ static StringRef readBSONKeyName(ReadBuffer & in, String & key_holder)
 
         if (next_pos != in.buffer().end())
         {
-            StringRef res(in.position(), next_pos - in.position());
+            std::string_view res(in.position(), next_pos - in.position());
             in.position() = next_pos + 1;
             return res;
         }
@@ -416,7 +416,7 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
                     "Cannot parse tuple column with type {} from BSON array/embedded document field: "
                     "tuple doesn't have element with name \"{}\"",
                     data_type->getName(),
-                    name.toView());
+                    name);
             index = *try_get_index;
         }
 
@@ -801,7 +801,7 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         else
         {
             if (seen_columns[index])
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name.toView());
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
 
             seen_columns[index] = true;
             read_columns[index] = readField(*columns[index], types[index], BSONType(type));

@@ -180,7 +180,7 @@ bool ColumnTuple::isDefaultAt(size_t n) const
     return true;
 }
 
-StringRef ColumnTuple::getDataAt(size_t) const
+std::string_view ColumnTuple::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -308,7 +308,7 @@ void ColumnTuple::rollback(const ColumnCheckpoint & checkpoint)
         columns[i]->rollback(*checkpoints[i]);
 }
 
-StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     if (columns.empty())
     {
@@ -318,12 +318,11 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
         return { res, 1 };
     }
 
-    StringRef res(begin, 0);
+    std::string_view res(begin, 0);
     for (const auto & column : columns)
     {
         auto value_ref = column->serializeValueIntoArena(n, arena, begin);
-        res.data = value_ref.data - res.size;
-        res.size += value_ref.size;
+        res = std::string_view{value_ref.data - res.size, res.size + value_ref.size};
     }
 
     return res;

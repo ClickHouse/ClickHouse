@@ -89,7 +89,7 @@ template <typename StringColumnType>
 static void writeBSONString(const IColumn & column, size_t row_num, const String & name, WriteBuffer & buf, bool as_bson_string)
 {
     const auto & string_column = assert_cast<const StringColumnType &>(column);
-    StringRef data = string_column.getDataAt(row_num);
+    std::string_view data = string_column.getDataAt(row_num);
     if (as_bson_string)
     {
         writeBSONTypeAndKeyName(BSONType::STRING, name, buf);

@@ -90,7 +90,7 @@ class ExtractKeyValuePairs : public IFunction
 
         for (auto i = 0u; i < input_rows_count; i++)
         {
-            auto row = data_column->getDataAt(i).toView();
+            auto row = data_column->getDataAt(i);
 
             auto pairs_count = extractor.extract(row, keys, values);
 

@@ -97,7 +97,7 @@ public:
         res_offsets.resize_exact(input_rows_count);
         if (col_input_const)
         {
-            StringRef input = col_input_const->getDataAt(0);
+            std::string_view input = col_input_const->getDataAt(0);
             res_data.reserve(input.size * input_rows_count);
         }
         else
@@ -219,8 +219,8 @@ private:
     template <bool has_four_args, bool offset_is_const, bool length_is_const>
     void constantConstant(
         size_t rows,
-        const StringRef & input,
-        const StringRef & replace,
+        const std::string_view & input,
+        const std::string_view & replace,
         const ColumnPtr & column_offset,
         const ColumnPtr & column_length,
         Int64 const_offset,
@@ -331,7 +331,7 @@ private:
         size_t rows,
         const ColumnString::Chars & input_data,
         const ColumnString::Offsets & input_offsets,
-        const StringRef & replace,
+        const std::string_view & replace,
         const ColumnPtr & column_offset,
         const ColumnPtr & column_length,
         Int64 const_offset,
@@ -444,7 +444,7 @@ private:
     template <bool has_four_args, bool offset_is_const, bool length_is_const>
     void constantVector(
         size_t rows,
-        const StringRef & input,
+        const std::string_view & input,
         const ColumnString::Chars & replace_data,
         const ColumnString::Offsets & replace_offsets,
         const ColumnPtr & column_offset,
