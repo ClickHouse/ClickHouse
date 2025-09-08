@@ -310,7 +310,7 @@ public:
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     std::string_view ref = col_from->getDataAt(i);
-                    col_res->insertData(ref.data, ref.size);
+                    col_res->insertData(ref.data(), ref.size());
                 }
 
                 result = std::move(col_res);
@@ -390,21 +390,21 @@ private:
 
             /// Cut trailing zero bytes.
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-            while (data.size && data.data[data.size - 1] == 0)
-                --data.size;
+            while (!data.empty() && data.back() == 0)
+                data.remove_suffix(1);
 #else
             size_t index = 0;
             while (index < data.size && data.data[index] == 0)
                 index++;
             data.size -= index;
 #endif
-            data_to.resize(offset + data.size);
+            data_to.resize(offset + data.size());
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-            memcpy(&data_to[offset], data.data, data.size);
+            memcpy(&data_to[offset], data.data(), data.size());
 #else
-            reverseMemcpy(&data_to[offset], data.data + index, data.size);
+            reverseMemcpy(&data_to[offset], data.data() + index, data.size());
 #endif
-            offset += data.size;
+            offset += data.size();
             offsets_to[i] = offset;
         }
     }

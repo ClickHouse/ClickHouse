@@ -448,7 +448,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                         [&](size_t row, std::string_view value)
                         {
                             (*vec_null_map_to)[row] = false;
-                            out->insertData(value.data, value.size);
+                            out->insertData(value.data(), value.size());
                         },
                         [&](size_t row)
                         {
@@ -461,7 +461,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                     getItemsShortCircuitImpl<ValueType, false>(
                         attribute,
                         extractor,
-                        [&](size_t, std::string_view value) { out->insertData(value.data, value.size); },
+                        [&](size_t, std::string_view value) { out->insertData(value.data(), value.size()); },
                         [&](size_t) { out->insertDefault(); },
                         default_mask);
             }
@@ -513,14 +513,14 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                         [&](size_t row, std::string_view value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insertData(value.data, value.size);
+                            out->insertData(value.data(), value.size());
                         },
                         default_value_extractor);
                 else
                     getItemsImpl<ValueType, false>(
                         attribute,
                         extractor,
-                        [&](size_t, std::string_view value, bool) { out->insertData(value.data, value.size); },
+                        [&](size_t, std::string_view value, bool) { out->insertData(value.data(), value.size()); },
                         default_value_extractor);
             }
             else

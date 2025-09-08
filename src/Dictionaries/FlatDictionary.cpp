@@ -112,12 +112,12 @@ ColumnPtr FlatDictionary::getColumn(
                         [&](size_t row, std::string_view value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insertData(value.data, value.size);
+                            out->insertData(value.data(), value.size());
                         },
                         default_mask);
                 else
                     getItemsShortCircuitImpl<ValueType, false>(
-                        attribute, ids, [&](size_t, std::string_view value, bool) { out->insertData(value.data, value.size); }, default_mask);
+                        attribute, ids, [&](size_t, std::string_view value, bool) { out->insertData(value.data(), value.size()); }, default_mask);
             }
             else
             {
@@ -166,14 +166,14 @@ ColumnPtr FlatDictionary::getColumn(
                         [&](size_t row, std::string_view value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insertData(value.data, value.size);
+                            out->insertData(value.data(), value.size());
                         },
                         default_value_extractor);
                 else
                     getItemsImpl<ValueType, false>(
                         attribute,
                         ids,
-                        [&](size_t, std::string_view value, bool) { out->insertData(value.data, value.size); },
+                        [&](size_t, std::string_view value, bool) { out->insertData(value.data(), value.size()); },
                         default_value_extractor);
             }
             else

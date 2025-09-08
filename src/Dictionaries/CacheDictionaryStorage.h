@@ -268,7 +268,7 @@ private:
                                 attribute,
                                 fetched_columns_index,
                                 fetched_keys,
-                                [&](std::string_view value) { fetched_column.insertData(value.data, value.size); },
+                                [&](std::string_view value) { fetched_column.insertData(value.data(), value.size()); },
                                 default_value_provider);
                         }
                         else
@@ -325,7 +325,7 @@ private:
                                 attribute,
                                 fetched_columns_index,
                                 fetched_keys,
-                                [&](std::string_view value) { fetched_column.insertData(value.data, value.size); },
+                                [&](std::string_view value) { fetched_column.insertData(value.data(), value.size()); },
                                 *default_mask);
                         }
                         else
@@ -412,8 +412,8 @@ private:
                 {
                     if constexpr (std::is_same_v<KeyType, std::string_view>)
                     {
-                        char * data = const_cast<char *>(cell.key.data);
-                        arena.free(data, cell.key.size);
+                        char * data = const_cast<char *>(cell.key.data());
+                        arena.free(data, cell.key.size());
                         cell.key = copyStringInArena(arena, key);
                     }
                     else
@@ -445,7 +445,7 @@ private:
                             if (!cell_was_default)
                             {
                                 std::string_view previous_value = container[index_to_use];
-                                arena.free(const_cast<char *>(previous_value.data), previous_value.size);
+                                arena.free(const_cast<char *>(previous_value.data()), previous_value.size());
                             }
 
                             container[index_to_use] = inserted_value;
@@ -511,7 +511,7 @@ private:
                             if (!cell_was_default)
                             {
                                 std::string_view previous_value = container[cell.element_index];
-                                arena.free(const_cast<char *>(previous_value.data), previous_value.size);
+                                arena.free(const_cast<char *>(previous_value.data()), previous_value.size());
                             }
                         }
                     });
@@ -521,8 +521,8 @@ private:
                 {
                     if constexpr (std::is_same_v<KeyType, std::string_view>)
                     {
-                        char * data = const_cast<char *>(cell.key.data);
-                        arena.free(data, cell.key.size);
+                        char * data = const_cast<char *>(cell.key.data());
+                        arena.free(data, cell.key.size());
                         cell.key = copyStringInArena(arena, key);
                     }
                     else

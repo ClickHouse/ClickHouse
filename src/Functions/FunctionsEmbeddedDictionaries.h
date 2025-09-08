@@ -634,7 +634,7 @@ public:
             for (unsigned int region_id : region_ids)
             {
                 const std::string_view & name_ref = dict.getRegionName(region_id, language);
-                col_to->insertData(name_ref.data, name_ref.size);
+                col_to->insertData(name_ref.data(), name_ref.size());
             }
 
             return col_to;

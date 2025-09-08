@@ -798,10 +798,7 @@ std::string_view ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena,
         return res;
 
     auto value_ref = variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoArena(offsetAt(n), arena, begin);
-    res.data = value_ref.data - res.size;
-    res.size += value_ref.size;
-
-    return res;
+    return {value_ref.data() - res.size(), res.size() + value_ref.size()};
 }
 
 const char * ColumnVariant::deserializeAndInsertFromArena(const char * pos)

@@ -18,7 +18,7 @@ MutableColumns deserializeColumnsFromKeys(
     for (size_t index = start; index < end; ++index)
     {
         const auto & key = keys[index];
-        const auto * ptr = key.data;
+        const auto * ptr = key.data();
 
         for (auto & result_column : result_columns)
             ptr = result_column->deserializeAndInsertFromArena(ptr);

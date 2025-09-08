@@ -459,7 +459,7 @@ struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
         auto value = column.serializeValueIntoArena(row_num, *arena, begin);
 
         Node * node = reinterpret_cast<Node *>(const_cast<char *>(begin));
-        node->size = value.size;
+        node->size = value.size();
 
         return node;
     }

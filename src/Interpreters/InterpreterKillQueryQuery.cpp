@@ -272,8 +272,8 @@ BlockIO InterpreterKillQueryQuery::execute()
 
         for (size_t i = 0; i < mutations_block.rows(); ++i)
         {
-            table_id = StorageID{database_col.getDataAt(i).toString(), table_col.getDataAt(i).toString()};
-            auto mutation_id = mutation_id_col.getDataAt(i).toString();
+            table_id = StorageID{std::string{database_col.getDataAt(i)}, std::string{table_col.getDataAt(i)}};
+            std::string mutation_id{mutation_id_col.getDataAt(i)};
 
             CancellationCode code = CancellationCode::Unknown;
             if (!query.test)
@@ -283,7 +283,7 @@ BlockIO InterpreterKillQueryQuery::execute()
                     code = CancellationCode::NotFound;
                 else
                 {
-                    const auto alter_command = command_col.getDataAt(i).toString();
+                    const std::string alter_command{command_col.getDataAt(i)};
                     const auto with_round_bracket = alter_command.front() == '(';
                     ParserAlterCommand parser{with_round_bracket};
                     auto command_ast = parseQuery(
@@ -341,7 +341,7 @@ BlockIO InterpreterKillQueryQuery::execute()
 
         for (size_t i = 0; i < moves_block.rows(); ++i)
         {
-            table_id = StorageID{database_col.getDataAt(i).toString(), table_col.getDataAt(i).toString()};
+            table_id = StorageID{std::string{database_col.getDataAt(i)}, std::string{table_col.getDataAt(i)}};
             auto task_uuid = task_uuid_col[i].safeGet<UUID>();
 
             CancellationCode code = CancellationCode::Unknown;

@@ -538,12 +538,12 @@ static size_t rawSize(T &)
 template <>
 const char * rawData(const std::string_view & t)
 {
-    return t.data;
+    return t.data();
 }
 template <>
 size_t rawSize(const std::string_view & t)
 {
-    return t.size;
+    return t.size();
 }
 
 class JoinSource : public ISource

@@ -182,8 +182,8 @@ private:
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
             {
                 std::string_view ref = concrete_columns[col_i]->getDataAt(row_i);
-                memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data, ref.size);
-                cur_out_offset += ref.size;
+                memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data(), ref.size());
+                cur_out_offset += ref.size();
                 out_offsets[base + col_i] = cur_out_offset;
             }
         }
@@ -215,7 +215,7 @@ private:
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
             {
                 std::string_view ref = concrete_columns[col_i]->getDataAt(row_i);
-                memcpySmallAllowReadWriteOverflow15(&out_chars[curr_out_offset], ref.data, n);
+                memcpySmallAllowReadWriteOverflow15(&out_chars[curr_out_offset], ref.data(), n);
                 curr_out_offset += n;
             }
         }

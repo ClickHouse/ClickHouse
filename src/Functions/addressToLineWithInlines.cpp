@@ -50,7 +50,7 @@ protected:
         {
             StringViews res = implCached(data[i]);
             for (auto & r : res)
-                result_strings.insertData(r.data, r.size);
+                result_strings.insertData(r.data(), r.size());
             current_offset += res.size();
             result_offsets.push_back(current_offset);
         }

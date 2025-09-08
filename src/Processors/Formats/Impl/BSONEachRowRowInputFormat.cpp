@@ -409,7 +409,7 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
         size_t index = read_nested_columns;
         if (use_key_names)
         {
-            auto try_get_index = data_type_tuple->tryGetPositionByName(name.toString());
+            auto try_get_index = data_type_tuple->tryGetPositionByName(name);
             if (!try_get_index)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
@@ -466,7 +466,7 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
     {
         auto nested_bson_type = getBSONType(readBSONType(*in));
         auto name = readBSONKeyName(*in, current_key_name);
-        ReadBufferFromMemory buf(name.data, name.size);
+        ReadBufferFromMemory buf(name.data(), name.size());
         key_data_type->getDefaultSerialization()->deserializeWholeText(key_column, buf, format_settings);
         readField(value_column, value_data_type, nested_bson_type);
     }
@@ -795,7 +795,7 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
         if (index == UNKNOWN_FIELD)
         {
-            current_key_name.assign(name.data, name.size);
+            current_key_name.assign(name.data(), name.size());
             skipUnknownField(BSONType(type), current_key_name);
         }
         else

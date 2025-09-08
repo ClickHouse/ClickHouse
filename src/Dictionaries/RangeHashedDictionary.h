@@ -401,7 +401,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
                     [&](size_t row, std::string_view value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
-                        out->insertData(value.data, value.size);
+                        out->insertData(value.data(), value.size());
                     });
             else
                 getItemsInternalImpl<ValueType, false>(
@@ -409,7 +409,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
                     key_to_index,
                     [&](size_t, std::string_view value, bool)
                     {
-                        out->insertData(value.data, value.size);
+                        out->insertData(value.data(), value.size());
                     });
         }
         else

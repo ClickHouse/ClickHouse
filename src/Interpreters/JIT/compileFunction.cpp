@@ -55,11 +55,11 @@ ColumnData getColumnData(const IColumn * column, size_t skip_rows)
 
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(column))
     {
-        result.null_data = nullable->getNullMapColumn().getDataAt(skip_rows).data;
+        result.null_data = nullable->getNullMapColumn().getDataAt(skip_rows).data();
         column = &nullable->getNestedColumn();
     }
     /// skip null key data for one nullable key optimization
-    result.data = column->getDataAt(skip_rows).data;
+    result.data = column->getDataAt(skip_rows).data();
 
     return result;
 }

@@ -59,7 +59,7 @@ void StatisticsCountMinSketch::build(const ColumnPtr & column)
         if (column->isNullAt(row))
             continue;
         auto data = column->getDataAt(row);
-        sketch.update(data.data, data.size, 1);
+        sketch.update(data.data(), data.size(), 1);
     }
 }
 

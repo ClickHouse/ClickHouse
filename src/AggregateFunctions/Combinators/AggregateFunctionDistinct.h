@@ -117,7 +117,7 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
         for (size_t i = 0; i < columns_num; ++i)
         {
             auto cur_ref = columns[i]->serializeValueIntoArena(row_num, *arena, begin);
-            value = std::string_view{cur_ref.data - value.size(), value.size() + cur_ref.size};
+            value = std::string_view{cur_ref.data() - value.size(), value.size() + cur_ref.size()};
         }
 
         Set::LookupResult it;
@@ -137,7 +137,7 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
                 Set::LookupResult it;
                 bool inserted;
                 history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
-                const char * pos = it->getValue().data;
+                const char * pos = it->getValue().data();
                 for (auto & column : argument_columns)
                     pos = column->deserializeAndInsertFromArena(pos);
             }

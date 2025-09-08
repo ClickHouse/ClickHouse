@@ -574,7 +574,7 @@ IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena 
         memory = arena.allocContinue(1, begin);
         *memory = 0;
         auto res = self.serializeValueIntoArena(n, arena, begin);
-        return std::string_view(res.data - 1, res.size + 1);
+        return std::string_view(res.data() - 1, res.size() + 1);
     }
 
     return self.serializeValueIntoArena(n, arena, begin);
@@ -638,8 +638,8 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(si
 
     const auto & self = static_cast<const Derived &>(*this);
     auto raw_data = self.getDataAt(n);
-    memcpy(memory, raw_data.data, raw_data.size);
-    return memory + raw_data.size;
+    memcpy(memory, raw_data.data(), raw_data.size());
+    return memory + raw_data.size();
 }
 
 template <typename Derived, typename Parent>

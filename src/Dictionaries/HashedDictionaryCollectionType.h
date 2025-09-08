@@ -32,7 +32,7 @@ constexpr bool isPodLayout()
         return false;
     if constexpr (std::is_same_v<V, Decimal32> || std::is_same_v<V, Decimal64> || std::is_same_v<V, Decimal128> || std::is_same_v<V, Decimal256>)
         return false;
-    if constexpr (std::is_same_v<V, >)
+    if constexpr (std::is_same_v<V, std::string_view>)
         return false;
     if constexpr (std::is_same_v<V, IPv6> || std::is_same_v<V, IPv4>)
         return false;

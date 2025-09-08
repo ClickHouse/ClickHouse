@@ -126,7 +126,7 @@ struct NodeString : public NodeBase<NodeString<MaxEventsSize>, MaxEventsSize>
 
         Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + string.size(), alignof(Node)));
         node->size = string.size();
-        memcpy(node->data(), string.data, string.size());
+        memcpy(node->data(), string.data(), string.size());
 
         return node;
     }

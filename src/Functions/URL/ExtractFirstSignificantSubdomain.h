@@ -12,7 +12,7 @@ struct FirstSignificantSubdomainDefaultLookup
 {
     bool operator()(std::string_view host) const
     {
-        return tldLookup::isValid(host.data, host.size);
+        return tldLookup::isValid(host.data(), host.size());
     }
 };
 

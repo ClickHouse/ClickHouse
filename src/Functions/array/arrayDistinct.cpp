@@ -227,7 +227,7 @@ bool FunctionArrayDistinct::executeString(
             if (!set.find(str_ref))
             {
                 set.insert(str_ref);
-                res_data_column_string.insertData(str_ref.data, str_ref.size);
+                res_data_column_string.insertData(str_ref.data(), str_ref.size());
             }
         }
 

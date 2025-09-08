@@ -256,7 +256,7 @@ public:
                 {
                     const char * begin = nullptr;
                     auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
-                    chassert(serialized.data != nullptr);
+                    chassert(serialized.data() != nullptr);
                     it = set.find(serialized);
 
                     if (it != nullptr)
@@ -342,9 +342,9 @@ public:
         for (auto & elem : set)
         {
             if constexpr (is_plain_column)
-                data_to.insertData(elem.getValue().data, elem.getValue().size);
+                data_to.insertData(elem.getValue().data(), elem.getValue().size());
             else
-                std::ignore = data_to.deserializeAndInsertFromArena(elem.getValue().data);
+                std::ignore = data_to.deserializeAndInsertFromArena(elem.getValue().data());
         }
     }
 };

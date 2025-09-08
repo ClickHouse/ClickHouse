@@ -47,7 +47,7 @@ struct SpaceSavingArena<std::string_view>
 {
     std::string_view emplace(std::string_view key)
     {
-        if (!key.data)
+        if (!key.data())
             return key;
 
         return copyStringInArena(arena, key);
@@ -55,8 +55,8 @@ struct SpaceSavingArena<std::string_view>
 
     void free(std::string_view key)
     {
-        if (key.data)
-            arena.free(const_cast<char *>(key.data), key.size);
+        if (key.data())
+            arena.free(const_cast<char *>(key.data()), key.size());
     }
 
 private:

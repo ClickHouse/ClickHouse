@@ -235,7 +235,7 @@ std::string_view ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, c
     for (size_t i = 0; i < array_size; ++i)
     {
         auto value_ref = getData().serializeValueIntoArena(offset + i, arena, begin);
-        res = std::string_view{value_ref.data - res.size, res.size + value_ref.size};
+        res = std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
     }
 
     return res;

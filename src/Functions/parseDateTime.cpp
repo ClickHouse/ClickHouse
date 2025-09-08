@@ -774,8 +774,8 @@ namespace
                     datetime.setScale(scale, parse_syntax);
 
                 std::string_view str_ref = col_str->getDataAt(i);
-                Pos cur = str_ref.data;
-                Pos end = str_ref.data + str_ref.size;
+                Pos cur = str_ref.data();
+                Pos end = str_ref.data() + str_ref.size();
                 bool error = false;
 
                 for (const auto & instruction : instructions)

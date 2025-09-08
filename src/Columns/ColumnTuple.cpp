@@ -322,7 +322,7 @@ std::string_view ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, c
     for (const auto & column : columns)
     {
         auto value_ref = column->serializeValueIntoArena(n, arena, begin);
-        res = std::string_view{value_ref.data - res.size, res.size + value_ref.size};
+        res = std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
     }
 
     return res;

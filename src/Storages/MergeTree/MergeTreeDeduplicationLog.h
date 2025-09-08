@@ -1,4 +1,5 @@
 #pragma once
+#include <base/StringViewHash.h>
 #include <Core/Types.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Disks/IDisk.h>

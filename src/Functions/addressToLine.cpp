@@ -39,7 +39,7 @@ protected:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             std::string_view res_str = implCached(data[i]);
-            result_column->insertData(res_str.data, res_str.size);
+            result_column->insertData(res_str.data(), res_str.size());
         }
         return result_column;
     }

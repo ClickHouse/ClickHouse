@@ -54,7 +54,7 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
             const auto split = Nested::splitName(column_name);
             if (!split.second.empty())
             {
-                const std::string_view table_name(column_name.data, split.first.size());
+                const std::string_view table_name(column_name.data(), split.first.size());
                 name_map[table_name] = NESTED_FIELD;
             }
         }
@@ -119,9 +119,9 @@ std::string_view JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
 void JSONEachRowRowInputFormat::skipUnknownField(std::string_view name_ref)
 {
     if (!format_settings.skip_unknown_fields)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref.toString());
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref);
 
-    skipJSONField(*in, std::string_view(name_ref.data, name_ref.size), format_settings.json);
+    skipJSONField(*in, std::string_view(name_ref.data(), name_ref.size()), format_settings.json);
 }
 
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
@@ -176,7 +176,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             /// and input buffer may be filled with new data on next read
             /// If we want to use name_ref after another reads from buffer, we must copy it to temporary string.
 
-            current_column_name.assign(name_ref.data, name_ref.size);
+            current_column_name.assign(name_ref.data(), name_ref.size());
             name_ref = std::string_view(current_column_name);
 
             JSONUtils::skipColon(*in);
@@ -184,7 +184,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             if (column_index == UNKNOWN_FIELD)
                 skipUnknownField(name_ref);
             else if (column_index == NESTED_FIELD)
-                readNestedData(name_ref.toString(), columns);
+                readNestedData(std::string{name_ref}, columns);
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal value of column_index");
         }

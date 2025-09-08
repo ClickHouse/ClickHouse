@@ -91,12 +91,12 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
     const auto compared_value_data = compared_column->getDataAt(compared_row);
     assert(compared_value_data.size == sizeof(ValueType));
     auto compared_value = unalignedLoad<ValueType>(
-        compared_value_data.data);
+        compared_value_data.data());
 
     const auto reference_value_data = reference_column->getDataAt(reference_row);
     assert(reference_value_data.size == sizeof(ValueType));
     auto reference_value = unalignedLoad<ValueType>(
-        reference_value_data.data);
+        reference_value_data.data());
 
     bool is_overflow;
     if (offset_is_preceding)
@@ -141,12 +141,12 @@ static int compareValuesWithOffsetFloat(const IColumn * _compared_column,
     const auto compared_value_data = compared_column->getDataAt(compared_row);
     assert(compared_value_data.size == sizeof(typename ColumnType::ValueType));
     auto compared_value = unalignedLoad<typename ColumnType::ValueType>(
-        compared_value_data.data);
+        compared_value_data.data());
 
     const auto reference_value_data = reference_column->getDataAt(reference_row);
     assert(reference_value_data.size == sizeof(typename ColumnType::ValueType));
     auto reference_value = unalignedLoad<typename ColumnType::ValueType>(
-        reference_value_data.data);
+        reference_value_data.data());
 
     /// Floats overflow to Inf and the comparison will work normally, so we don't have to do anything.
     if (offset_is_preceding)

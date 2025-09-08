@@ -272,7 +272,10 @@ ColumnPtr IPAddressDictionary::getColumn(
                 auto * out = column.get();
 
                 getItemsShortCircuitImpl<ValueType>(
-                    attribute, key_columns, [&](const size_t, std::string_view value) { out->insertData(value.data, value.size); }, default_mask);
+                    attribute,
+                    key_columns,
+                    [&](const size_t, std::string_view value) { out->insertData(value.data(), value.size()); },
+                    default_mask);
             }
             else
             {
@@ -306,7 +309,7 @@ ColumnPtr IPAddressDictionary::getColumn(
                 getItemsImpl<ValueType>(
                     attribute,
                     key_columns,
-                    [&](const size_t, std::string_view value) { out->insertData(value.data, value.size); },
+                    [&](const size_t, std::string_view value) { out->insertData(value.data(), value.size()); },
                     default_value_extractor);
             }
             else
@@ -348,7 +351,7 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
         uint8_t addrv6_buf[IPV6_BINARY_LENGTH];
         for (const auto i : collections::range(0, rows))
         {
-            auto addrv4 = *reinterpret_cast<const UInt32 *>(first_column->getDataAt(i).data);
+            auto addrv4 = *reinterpret_cast<const UInt32 *>(first_column->getDataAt(i).data());
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             out[i] = (found != ipNotFound());
             keys_found += out[i];
@@ -359,9 +362,9 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
         for (const auto i : collections::range(0, rows))
         {
             auto addr = first_column->getDataAt(i);
-            if (addr.size != IPV6_BINARY_LENGTH)
+            if (addr.size() != IPV6_BINARY_LENGTH)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected key FixedString(16)");
-            auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
+            auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data()));
             out[i] = (found != ipNotFound());
             keys_found += out[i];
         }
@@ -723,7 +726,7 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
         auto addr = key_ip_column_ptr->getDataAt(i);
         UInt8 mask = key_mask_column.getElement(i);
 
-        IPv6Subnet target{reinterpret_cast<const uint8_t *>(addr.data), mask};
+        IPv6Subnet target{reinterpret_cast<const uint8_t *>(addr.data()), mask};
 
         auto range = collections::range(0, row_idx.size());
         auto found_it = std::lower_bound(range.begin(), range.end(), target, comp_v6);
@@ -811,7 +814,7 @@ size_t IPAddressDictionary::getItemsByTwoKeyColumnsShortCircuitImpl(
         auto addr = key_ip_column_ptr->getDataAt(i);
         UInt8 mask = key_mask_column.getElement(i);
 
-        IPv6Subnet target{reinterpret_cast<const uint8_t *>(addr.data), mask};
+        IPv6Subnet target{reinterpret_cast<const uint8_t *>(addr.data()), mask};
 
         auto range = collections::range(0, row_idx.size());
         auto found_it = std::lower_bound(range.begin(), range.end(), target, comp_v6);
@@ -863,7 +866,7 @@ void IPAddressDictionary::getItemsImpl(
         for (const auto i : collections::range(0, rows))
         {
             // addrv4 has native endianness
-            auto addrv4 = *reinterpret_cast<const UInt32 *>(first_column->getDataAt(i).data);
+            auto addrv4 = *reinterpret_cast<const UInt32 *>(first_column->getDataAt(i).data());
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             if (found != ipNotFound())
             {
@@ -879,9 +882,9 @@ void IPAddressDictionary::getItemsImpl(
         for (const auto i : collections::range(0, rows))
         {
             auto addr = first_column->getDataAt(i);
-            if (addr.size != IPV6_BINARY_LENGTH)
+            if (addr.size() != IPV6_BINARY_LENGTH)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected key to be FixedString(16)");
-            auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
+            auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data()));
             if (found != ipNotFound())
             {
                 set_value(i, vec[*found]);
@@ -926,7 +929,7 @@ void IPAddressDictionary::getItemsShortCircuitImpl(
         for (const auto i : collections::range(0, rows))
         {
             // addrv4 has native endianness
-            auto addrv4 = *reinterpret_cast<const UInt32 *>(first_column->getDataAt(i).data);
+            auto addrv4 = *reinterpret_cast<const UInt32 *>(first_column->getDataAt(i).data());
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             if (found != ipNotFound())
             {
@@ -946,9 +949,9 @@ void IPAddressDictionary::getItemsShortCircuitImpl(
         for (const auto i : collections::range(0, rows))
         {
             auto addr = first_column->getDataAt(i);
-            if (addr.size != IPV6_BINARY_LENGTH)
+            if (addr.size() != IPV6_BINARY_LENGTH)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected key to be FixedString(16)");
-            auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
+            auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data()));
             if (found != ipNotFound())
             {
                 set_value(i, vec[*found]);
@@ -1053,7 +1056,8 @@ static auto keyViewGetter()
             if constexpr (IsIPv4)
                 str_len = formatIPWithPrefix(reinterpret_cast<const unsigned char *>(&key_ip_column.getElement(row)), mask, true, buffer);
             else
-                str_len = formatIPWithPrefix(reinterpret_cast<const unsigned char *>(key_ip_column.getDataAt(row).data), mask, false, buffer);
+                str_len
+                    = formatIPWithPrefix(reinterpret_cast<const unsigned char *>(key_ip_column.getDataAt(row).data()), mask, false, buffer);
             column->insertData(buffer, str_len);
         }
         return ColumnsWithTypeAndName{

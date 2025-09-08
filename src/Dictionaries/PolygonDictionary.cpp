@@ -161,7 +161,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                     getItemsShortCircuitImpl<ValueType>(
                         requested_key_points,
                         [&](size_t row) { return attribute_values_column->getDataAt(row); },
-                        [&](std::string_view value) { result_column_typed.insertData(value.data, value.size); },
+                        [&](std::string_view value) { result_column_typed.insertData(value.data(), value.size()); },
                         default_mask.value());
                 }
                 else
@@ -169,7 +169,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                     getItemsImpl<ValueType>(
                         requested_key_points,
                         [&](size_t row) { return attribute_values_column->getDataAt(row); },
-                        [&](std::string_view value) { result_column_typed.insertData(value.data, value.size); },
+                        [&](std::string_view value) { result_column_typed.insertData(value.data(), value.size()); },
                         default_value_provider.value());
                 }
             }

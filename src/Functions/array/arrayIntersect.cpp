@@ -749,11 +749,11 @@ void FunctionArrayIntersect<Mode>::insertElement(typename Map::LookupResult & pa
     }
     else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
     {
-        result_data.insertData(pair->getKey().data, pair->getKey().size);
+        result_data.insertData(pair->getKey().data(), pair->getKey().size());
     }
     else
     {
-        std::ignore = result_data.deserializeAndInsertFromArena(pair->getKey().data);
+        std::ignore = result_data.deserializeAndInsertFromArena(pair->getKey().data());
     }
     if (use_null_map)
         null_map.push_back(0);

@@ -119,7 +119,7 @@ struct ReverseIndexHashTableCell
         else
         {
             using ValueType = typename ColumnType::ValueType;
-            ValueType value = unalignedLoad<ValueType>(state.index_column->getDataAt(index).data);
+            ValueType value = unalignedLoad<ValueType>(state.index_column->getDataAt(index).data());
             return DefaultHash<ValueType>()(value);
         }
     }

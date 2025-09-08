@@ -354,7 +354,7 @@ private:
         if (global_discr == dynamic_column->getSharedVariantDiscriminator())
         {
             auto value = dynamic_column->getSharedVariant().getDataAt(variant_column.offsetAt(i));
-            ReadBufferFromMemory buf(value.data, value.size);
+            ReadBufferFromMemory buf(value.data(), value.size());
             auto type = decodeDataType(buf);
             return type->getName();
         }
@@ -364,7 +364,7 @@ private:
 
     std::optional<String> getDynamicValueTypeFromSharedData(std::string_view value) const
     {
-        ReadBufferFromMemory buf(value.data, value.size);
+        ReadBufferFromMemory buf(value.data(), value.size());
         auto type = decodeDataType(buf);
         if (isNothing(type))
             return std::nullopt;

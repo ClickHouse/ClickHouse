@@ -1123,14 +1123,14 @@ void SingleValueDataString::changeImpl(std::string_view value, Arena * arena)
         size = value_size + 1;
 
         if (value_size > 0)
-            memcpy(small_data, value.data, value.size());
+            memcpy(small_data, value.data(), value.size());
     }
     else
     {
         allocateLargeDataIfNeeded(value_size, arena);
 
         size = value_size + 1;
-        memcpy(large_data, value.data, value.size());
+        memcpy(large_data, value.data(), value.size());
     }
 }
 

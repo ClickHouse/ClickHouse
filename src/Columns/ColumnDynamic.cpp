@@ -302,7 +302,7 @@ void ColumnDynamic::get(size_t n, Field & res) const
     /// We should deserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
-    ReadBufferFromMemory buf(value_data.data, value_data.size);
+    ReadBufferFromMemory buf(value_data.data(), value_data.size());
     auto type = decodeDataType(buf);
     type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
 }
@@ -317,7 +317,7 @@ std::pair<String, DataTypePtr> ColumnDynamic::getValueNameAndType(size_t n) cons
     /// We should deserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
-    ReadBufferFromMemory buf(value_data.data, value_data.size);
+    ReadBufferFromMemory buf(value_data.data(), value_data.size());
     auto type = decodeDataType(buf);
     const auto col = type->createColumn();
     type->getDefaultSerialization()->deserializeBinary(*col, buf, getFormatSettings());
@@ -350,7 +350,7 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
         const auto & src_shared_variant = dynamic_src.getSharedVariant();
         auto value = src_shared_variant.getDataAt(src_offset);
         /// Decode data type of this value.
-        ReadBufferFromMemory buf(value.data, value.size);
+        ReadBufferFromMemory buf(value.data(), value.size());
         auto type = decodeDataType(buf);
         auto type_name = type->getName();
         /// Check if we have this variant and deserialize value into variant from shared variant data.
@@ -450,7 +450,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
             {
                 chassert(local_discriminators[prev_size + i] == shared_variant_local_discr);
                 auto value = src_shared_variant.getDataAt(src_offsets[start + i]);
-                ReadBufferFromMemory buf(value.data, value.size);
+                ReadBufferFromMemory buf(value.data(), value.size());
                 auto type = decodeDataType(buf);
                 auto type_name = type->getName();
                 /// Check if we have variant with this type. In this case we should extract
@@ -468,7 +468,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
                 /// Otherwise, insert this value into shared variant.
                 else
                 {
-                    shared_variant.insertData(value.data, value.size);
+                    shared_variant.insertData(value.data(), value.size());
                     /// Update variant offset.
                     offsets[prev_size + i] = shared_variant.size() - 1;
                 }
@@ -567,7 +567,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
             if (src_local_discr == src_shared_variant_local_discr)
             {
                 auto value = src_shared_variant.getDataAt(src_offset);
-                ReadBufferFromMemory buf(value.data, value.size);
+                ReadBufferFromMemory buf(value.data(), value.size());
                 auto type = decodeDataType(buf);
                 auto type_name = type->getName();
                 /// Check if we have variant with this type. In this case we should extract
@@ -582,7 +582,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
                 /// Otherwise, insert this value into shared variant.
                 else
                 {
-                    shared_variant.insertData(value.data, value.size);
+                    shared_variant.insertData(value.data(), value.size());
                     local_discriminators.push_back(shared_variant_local_discr);
                     offsets.push_back(shared_variant.size() - 1);
                 }
@@ -642,7 +642,7 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
         const auto & src_shared_variant = dynamic_src.getSharedVariant();
         auto value = src_shared_variant.getDataAt(src_offset);
         /// Decode data type of this value.
-        ReadBufferFromMemory buf(value.data, value.size);
+        ReadBufferFromMemory buf(value.data(), value.size());
         auto type = decodeDataType(buf);
         auto type_name = type->getName();
         /// Check if we have this variant and deserialize value into variant from shared variant data.
@@ -733,14 +733,12 @@ std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena,
     /// Instead, we serialize null bit + variant type and value in binary format (size + data).
     const auto & variant_col = assert_cast<const ColumnVariant &>(*variant_column);
     auto discr = variant_col.globalDiscriminatorAt(n);
-    std::stirng_view res;
     UInt8 null_bit = discr == ColumnVariant::NULL_DISCRIMINATOR;
     if (null_bit)
     {
         char * pos = arena.allocContinue(sizeof(UInt8), begin);
         memcpy(pos, &null_bit, sizeof(UInt8));
-        res = std::string_view{pos, sizeof(UInt8)};
-        return res;
+        return {pos, sizeof(UInt8)};
     }
 
     WriteBufferFromOwnString buf;
@@ -759,13 +757,12 @@ std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena,
         type_and_value = buf.str();
     }
 
-    char * pos = arena.allocContinue(sizeof(UInt8) + sizeof(size_t) + type_and_value.size, begin);
+    char * pos = arena.allocContinue(sizeof(UInt8) + sizeof(size_t) + type_and_value.size(), begin);
     memcpy(pos, &null_bit, sizeof(UInt8));
-    memcpy(pos + sizeof(UInt8), &type_and_value.size, sizeof(size_t));
-    memcpy(pos + sizeof(UInt8) + sizeof(size_t), type_and_value.data, type_and_value.size);
-    res.data = pos;
-    res.size = sizeof(UInt8) + sizeof(size_t) + type_and_value.size;
-    return res;
+    size_t type_and_value_size = type_and_value.size();
+    memcpy(pos + sizeof(UInt8), &type_and_value_size, sizeof(size_t));
+    memcpy(pos + sizeof(UInt8) + sizeof(size_t), type_and_value.data(), type_and_value.size());
+    return {pos, sizeof(UInt8) + sizeof(size_t) + type_and_value.size()};
 }
 
 const char * ColumnDynamic::deserializeAndInsertFromArena(const char * pos)
@@ -842,7 +839,7 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
     if (discr == getSharedVariantDiscriminator())
     {
         auto value = getSharedVariant().getDataAt(variant_col.offsetAt(n));
-        ReadBufferFromMemory buf(value.data, value.size);
+        ReadBufferFromMemory buf(value.data(), value.size());
         auto type = decodeDataType(buf);
         hash.update(type->getName());
         auto tmp_column = type->createColumn();
@@ -888,11 +885,11 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
             return 0;
 
         /// Extract type names from both values.
-        ReadBufferFromMemory buf_left(left_value.data, left_value.size);
+        ReadBufferFromMemory buf_left(left_value.data(), left_value.size());
         auto left_data_type = decodeDataType(buf_left);
         auto left_data_type_name = left_data_type->getName();
 
-        ReadBufferFromMemory buf_right(right_value.data, right_value.size);
+        ReadBufferFromMemory buf_right(right_value.data(), right_value.size());
         auto right_data_type = decodeDataType(buf_right);
         auto right_data_type_name = right_data_type->getName();
 
@@ -914,7 +911,7 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
     {
         /// Extract left type name from the value.
         auto left_value = getSharedVariant().getDataAt(left_variant.offsetAt(n));
-        ReadBufferFromMemory buf_left(left_value.data, left_value.size);
+        ReadBufferFromMemory buf_left(left_value.data(), left_value.size());
         auto left_data_type = decodeDataType(buf_left);
         auto left_data_type_name = left_data_type->getName();
 
@@ -935,7 +932,7 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
     {
         /// Extract right type name from the value.
         auto right_value = right_dynamic.getSharedVariant().getDataAt(right_variant.offsetAt(m));
-        ReadBufferFromMemory buf_right(right_value.data, right_value.size);
+        ReadBufferFromMemory buf_right(right_value.data(), right_value.size());
         auto right_data_type = decodeDataType(buf_right);
         auto right_data_type_name = right_data_type->getName();
 
@@ -1074,7 +1071,7 @@ String ColumnDynamic::getTypeNameAt(size_t row_num) const
     if (discr == getSharedVariantDiscriminator())
     {
         const auto value = getSharedVariant().getDataAt(variant_col.offsetAt(row_num));
-        ReadBufferFromMemory buf(value.data, value.size);
+        ReadBufferFromMemory buf(value.data(), value.size());
         return decodeDataType(buf)->getName();
     }
 
@@ -1091,7 +1088,7 @@ DataTypePtr ColumnDynamic::getTypeAt(size_t row_num) const
     if (discr == getSharedVariantDiscriminator())
     {
         const auto value = getSharedVariant().getDataAt(variant_col.offsetAt(row_num));
-        ReadBufferFromMemory buf(value.data, value.size);
+        ReadBufferFromMemory buf(value.data(), value.size());
         return decodeDataType(buf);
     }
 
@@ -1111,7 +1108,7 @@ void ColumnDynamic::getAllTypeNamesInto(std::unordered_set<String> & names) cons
     for (size_t i = 0; i != shared_variant.size(); ++i)
     {
         const auto value = shared_variant.getDataAt(i);
-        ReadBufferFromMemory buf(value.data, value.size);
+        ReadBufferFromMemory buf(value.data(), value.size());
         names.insert(decodeDataType(buf)->getName());
     }
 }

@@ -127,7 +127,7 @@ public:
     static bool canBeWrittenInEmptyBlock(SSDCacheComplexKey & complex_key, size_t block_size)
     {
         std::string_view & key = complex_key.key;
-        size_t complex_key_size = sizeof(key.size) + key.size;
+        size_t complex_key_size = sizeof(key.size()) + key.size();
 
         return (block_header_size + complex_key_size + sizeof(complex_key.size) + complex_key.size) <= block_size;
     }
@@ -151,7 +151,7 @@ public:
     bool enoughtPlaceToWriteKey(const SSDCacheComplexKey & cache_key) const
     {
         const std::string_view & key = cache_key.key;
-        size_t complex_key_size = sizeof(key.size) + key.size;
+        size_t complex_key_size = sizeof(key.size()) + key.size();
 
         return (current_block_offset + (complex_key_size + sizeof(cache_key.size) + cache_key.size)) <= block_size;
     }
@@ -200,13 +200,14 @@ public:
         const std::string_view & key = cache_key.key;
 
         /// Write complex key
-        memcpy(reinterpret_cast<void *>(current_block_offset_data), reinterpret_cast<const void *>(&key.size), sizeof(key.size));
-        current_block_offset_data += sizeof(key.size);
-        current_block_offset += sizeof(key.size);
+        auto key_size = key.size();
+        memcpy(reinterpret_cast<void *>(current_block_offset_data), reinterpret_cast<const void *>(&key_size), sizeof(key_size));
+        current_block_offset_data += sizeof(key.size());
+        current_block_offset += sizeof(key.size());
 
-        memcpy(reinterpret_cast<void *>(current_block_offset_data), reinterpret_cast<const void *>(key.data), key.size);
-        current_block_offset_data += key.size;
-        current_block_offset += key.size;
+        memcpy(reinterpret_cast<void *>(current_block_offset_data), reinterpret_cast<const void *>(key.data()), key.size());
+        current_block_offset_data += key.size();
+        current_block_offset += key.size();
 
         /// Write serialized columns size
         memcpy(reinterpret_cast<void *>(current_block_offset_data), reinterpret_cast<const void *>(&cache_key.size), sizeof(cache_key.size));
@@ -1152,7 +1153,7 @@ private:
             {
                 auto & column = columns[column_index];
                 temporary_column_data[column_index] = column->serializeValueIntoArena(key_index, temporary_values_pool, block_start);
-                allocated_size_for_columns += temporary_column_data[column_index].size;
+                allocated_size_for_columns += temporary_column_data[column_index].size();
             }
 
             SSDCacheKeyType ssd_cache_key { key, allocated_size_for_columns, block_start };
@@ -1198,9 +1199,9 @@ private:
             if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             {
                 /// Copy complex key into arena and put in cache
-                size_t key_size = key.size;
+                size_t key_size = key.size();
                 char * place_for_key = complex_key_arena.alloc(key_size);
-                memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(key.data), key_size);
+                memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(key.data()), key_size);
                 KeyType updated_key{place_for_key, key_size};
                 key = updated_key;
             }
@@ -1398,7 +1399,7 @@ private:
         index.erase(key);
 
         if constexpr (std::is_same_v<KeyType, std::string_view>)
-            complex_key_arena.free(const_cast<char *>(key_copy.data), key_copy.size);
+            complex_key_arena.free(const_cast<char *>(key_copy.data()), key_copy.size());
     }
 
     SSDCacheDictionaryStorageConfiguration configuration;

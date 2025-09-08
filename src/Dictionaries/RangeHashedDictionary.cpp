@@ -75,14 +75,14 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                         [&](size_t row, std::string_view value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insertData(value.data, value.size);
+                            out->insertData(value.data(), value.size());
                         },
                         default_mask);
                 else
                     getItemsShortCircuitImpl<ValueType, false>(
                         attribute,
                         modified_key_columns,
-                        [&](size_t, std::string_view value, bool) { out->insertData(value.data, value.size); },
+                        [&](size_t, std::string_view value, bool) { out->insertData(value.data(), value.size()); },
                         default_mask);
             }
             else
@@ -135,7 +135,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                         [&](size_t row, std::string_view value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insertData(value.data, value.size);
+                            out->insertData(value.data(), value.size());
                         },
                         default_value_extractor);
                 else
@@ -144,7 +144,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                         modified_key_columns,
                         [&](size_t, std::string_view value, bool)
                         {
-                            out->insertData(value.data, value.size);
+                            out->insertData(value.data(), value.size());
                         },
                         default_value_extractor);
             }

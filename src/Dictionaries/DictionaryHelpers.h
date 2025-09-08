@@ -479,7 +479,7 @@ public:
             for (const auto & column : key_columns)
             {
                 std::string_view serialized_data = column->serializeValueIntoArena(current_key_index, *complex_key_arena, block_start);
-                allocated_size_for_columns += serialized_data.size;
+                allocated_size_for_columns += serialized_data.size();
             }
 
             ++current_key_index;
@@ -491,7 +491,7 @@ public:
     void rollbackCurrentKey() const
     {
         if constexpr (key_type == DictionaryKeyType::Complex)
-            complex_key_arena->rollback(current_complex_key.size);
+            complex_key_arena->rollback(current_complex_key.size());
     }
 
     PaddedPODArray<KeyType> extractAllKeys()

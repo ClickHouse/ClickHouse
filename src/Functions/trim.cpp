@@ -51,12 +51,12 @@ public:
         {
             if (const ColumnString * col_trim_characters = checkAndGetColumn<ColumnString>(arguments[1].column.get()))
             {
-                const String & trim_characters_string = col_trim_characters->getDataAt(0).toString();
+                const String trim_characters_string{col_trim_characters->getDataAt(0)};
                 custom_trim_characters = std::make_optional<SearchSymbols>(trim_characters_string);
             }
             else if (const ColumnConst * col_trim_characters_const = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
             {
-                const String & trim_characters_string = col_trim_characters_const->getDataAt(0).toString();
+                const String trim_characters_string{col_trim_characters_const->getDataAt(0)};
                 custom_trim_characters = std::make_optional<SearchSymbols>(trim_characters_string);
             }
         }

@@ -93,8 +93,8 @@ public:
                 "Number of arguments for function {} doesn't match: passed {}, expected 1 or 2",
                 getName(), arguments.size());
 
-        String structure = arguments[0].column->getDataAt(0).toString();
-        String message_name = arguments.size() == 2 ? arguments[1].column->getDataAt(0).toString() : "Message";
+        String structure{arguments[0].column->getDataAt(0)};
+        String message_name = arguments.size() == 2 ? std::string{arguments[1].column->getDataAt(0)} : "Message";
         auto columns_list = parseColumnsListFromString(structure, context);
         auto col_res = ColumnString::create();
         auto & data = assert_cast<ColumnString &>(*col_res).getChars();

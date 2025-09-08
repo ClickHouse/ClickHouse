@@ -57,7 +57,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto str = column->getDataAt(i);
-            ReadBufferFromString in_buffer(std::string_view(str.data, str.size));
+            ReadBufferFromString in_buffer(std::string_view(str.data(), str.size()));
 
             auto object = parseWKBFormat(in_buffer);
             auto boost_object = std::get<Geometry>(object);

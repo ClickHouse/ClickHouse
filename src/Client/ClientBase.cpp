@@ -1535,7 +1535,7 @@ void ClientBase::onProfileEvents(Block & block)
         for (size_t i = 0; i < rows; ++i)
         {
             auto thread_id = array_thread_id[i];
-            auto host_name = host_names.getDataAt(i).toString();
+            std::string host_name{host_names.getDataAt(i)};
 
             /// In ProfileEvents packets thread id 0 specifies common profiling information
             /// for all threads executing current query on specific host. So instead of summing per thread
@@ -3095,7 +3095,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
                         {
                             if (!result.empty())
                                 result += "\n";
-                            result += column->getDataAt(i).toString();
+                            result.append(column->getDataAt(i));
                         }
                     }
                     break;

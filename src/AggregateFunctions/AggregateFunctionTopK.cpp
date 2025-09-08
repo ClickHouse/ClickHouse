@@ -288,7 +288,7 @@ public:
             readVarUInt(count, buf);
             readVarUInt(error, buf);
             set.insert(ref, count, error);
-            arena->rollback(ref.size);
+            arena->rollback(ref.size());
         }
 
         set.readAlphaMap(buf);
@@ -315,7 +315,7 @@ public:
                 set.insert(str_serialized, columns[1]->getUInt(row_num));
             else
                 set.insert(str_serialized);
-            arena->rollback(str_serialized.size);
+            arena->rollback(str_serialized.size());
         }
     }
 

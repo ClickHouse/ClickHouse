@@ -98,25 +98,25 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
         case TypeIndex::Int128:
         {
             packer.pack_bin(static_cast<unsigned>(sizeof(Int128)));
-            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(Int128));
+            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(Int128));
             return;
         }
         case TypeIndex::UInt128:
         {
             packer.pack_bin(static_cast<unsigned>(sizeof(UInt128)));
-            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(UInt128));
+            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(UInt128));
             return;
         }
         case TypeIndex::Int256:
         {
             packer.pack_bin(static_cast<unsigned>(sizeof(Int256)));
-            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(Int256));
+            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(Int256));
             return;
         }
         case TypeIndex::UInt256:
         {
             packer.pack_bin(static_cast<unsigned>(sizeof(UInt256)));
-            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(UInt256));
+            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(UInt256));
             return;
         }
         case TypeIndex::Float32:
@@ -147,13 +147,13 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
         case TypeIndex::Decimal128:
         {
             packer.pack_bin(static_cast<unsigned>(sizeof(Decimal128)));
-            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(Decimal128));
+            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(Decimal128));
             return;
         }
         case TypeIndex::Decimal256:
         {
             packer.pack_bin(static_cast<unsigned>(sizeof(Decimal256)));
-            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(Decimal256));
+            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(Decimal256));
             return;
         }
         case TypeIndex::String:

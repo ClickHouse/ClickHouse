@@ -78,7 +78,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            String source = column_concrete->getDataAt(i).toString();
+            String source{column_concrete->getDataAt(i)};
             auto demangled = tryDemangle(source.c_str());
             if (demangled)
             {
