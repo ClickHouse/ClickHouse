@@ -16,7 +16,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(ActionsDAG::Node * filter, ActionsDAG::Node * prewhere) const
