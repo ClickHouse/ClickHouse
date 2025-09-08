@@ -771,7 +771,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 if (supports_remove_recursive)
                 {
                     requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
-                    requests.push_back(zkutil::makeRemoveRecursiveRequest(zookeeper_path, std::numeric_limits<uint32_t>::max()));
+                    requests.push_back(zkutil::makeRemoveRecursiveRequest(*zk_client, zookeeper_path, std::numeric_limits<uint32_t>::max()));
                 }
                 else
                 {

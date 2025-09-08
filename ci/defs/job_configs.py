@@ -120,7 +120,7 @@ class JobConfigs:
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         # --network=host required for ec2 metadata http endpoint to work
         run_in_docker=BINARY_DOCKER_COMMAND,
-        timeout=3600 * 2,
+        timeout=3600 * 3,
         digest_config=build_digest_config,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
@@ -222,7 +222,7 @@ class JobConfigs:
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         # --network=host required for ec2 metadata http endpoint to work
         run_in_docker=BINARY_DOCKER_COMMAND,
-        timeout=3600 * 2,
+        timeout=3600 * 3,
         digest_config=build_digest_config,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
