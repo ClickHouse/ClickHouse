@@ -1180,14 +1180,13 @@ REGISTER_FUNCTION(Coding)
     factory.registerFunction<FunctionCutIPv6>();
     factory.registerFunction<FunctionIPv4ToIPv6>();
     FunctionDocumentation::Description description_MACNumToString = R"(
-Interprets a UInt64 number as a MAC address in big endian format.
-Returns the corresponding MAC address in format `AA:BB:CC:DD:EE:FF` (colon-separated numbers in hexadecimal form) as a string.
+Interprets a 64-bit unsigned integer as a MAC address in big endian format and returns the corresponding MAC address as a string with format `AA:BB:CC:DD:EE:FF` (colon-separated numbers in hexadecimal form)..
 )";
     FunctionDocumentation::Syntax syntax_MACNumToString = "MACNumToString(num)";
     FunctionDocumentation::Arguments arguments_MACNumToString = {
-        {"num", "A number representing a MAC address.", {"UInt64"}}
+        {"num", "A 64-bit unsigned integer representing a MAC address.", {"UInt64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_MACNumToString = {"Returns the MAC address in `AA:BB:CC:DD:EE:FF` format.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value_MACNumToString = {"Returns the MAC address in format `AA:BB:CC:DD:EE:FF`.", {"String"}};
     FunctionDocumentation::Examples examples_MACNumToString = {
     {
         "Usage example",
@@ -1208,11 +1207,11 @@ SELECT MACNumToString(123456789012345) AS mac_address;
     factory.registerFunction<FunctionMACNumToString>(documentation_MACNumToString);
     FunctionDocumentation::Description description_MACStringToNum = R"(
 The inverse function of [`MACNumToString`](#MACNumToString).
-Takes an address in the format `AA:BB:CC:DD:EE:FF` and returns a number from it.
+Takes an address in the format `AA:BB:CC:DD:EE:FF` and returns a 640bit unsigned integer from it.
 )";
     FunctionDocumentation::Syntax syntax_MACStringToNum = "MACStringToNum(s)";
     FunctionDocumentation::Arguments arguments_MACStringToNum = {
-        {"s", "String representation of a MAC address in AA:BB:CC:DD:EE:FF format.", {"String"}}
+        {"s", "String representation of a MAC address in format `AA:BB:CC:DD:EE:FF`.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_MACStringToNum = {"Returns a number representing the MAC address, or `0` if the format is invalid.", {"UInt64"}};
     FunctionDocumentation::Examples examples_MACStringToNum = {
@@ -1222,7 +1221,7 @@ Takes an address in the format `AA:BB:CC:DD:EE:FF` and returns a number from it.
 SELECT MACStringToNum('70:3A:51:A3:FE:39') AS mac_number;
         )",
         R"(
-┌─mac_number─────┐
+┌─mac_number──────┐
 │ 123456789012345 │
 └─────────────────┘
         )"
@@ -1234,7 +1233,7 @@ SELECT MACStringToNum('70:3A:51:A3:FE:39') AS mac_number;
 
     factory.registerFunction<FunctionMACStringTo<ParseMACImpl>>(documentation_MACStringToNum);
     FunctionDocumentation::Description description_MACStringToOUI = R"(
-Given a MAC address in format `AA:BB:CC:DD:EE:FF` (colon-separated numbers in hexadecimal form), returns the first three octets as a UInt64 number.
+Given a MAC address in format `AA:BB:CC:DD:EE:FF` (colon-separated numbers in hexadecimal form), returns the first three octets as a 64-bit unsigned integer.
 )";
     FunctionDocumentation::Syntax syntax_MACStringToOUI = "MACStringToOUI(s)";
     FunctionDocumentation::Arguments arguments_MACStringToOUI = {

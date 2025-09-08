@@ -60,17 +60,17 @@ public:
 REGISTER_FUNCTION(DefaultValueOfArgumentType)
 {
     FunctionDocumentation::Description description_defaultValueOfArgumentType = R"(
-Returns the default value for the given data type.
+Returns the default value for a given data type.
 Does not include default values for custom columns set by the user.
 )";
     FunctionDocumentation::Syntax syntax_defaultValueOfArgumentType = "defaultValueOfArgumentType(expression)";
     FunctionDocumentation::Arguments arguments_defaultValueOfArgumentType = {
         {"expression", "Arbitrary type of value or an expression that results in a value of an arbitrary type.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_defaultValueOfArgumentType = {"Returns `0` for numbers, empty string for strings, `NULL` for [Nullable](../../sql-reference/data-types/nullable.md).", {"(U)Int8", "String", "NULL"}};
+    FunctionDocumentation::ReturnedValue returned_value_defaultValueOfArgumentType = {"Returns `0` for numbers, an empty string for strings or `NULL` for Nullable types.", {"UInt8", "String", "NULL"}};
     FunctionDocumentation::Examples examples_defaultValueOfArgumentType = {
     {
-        "Int8 example",
+        "Usage example",
         R"(
 SELECT defaultValueOfArgumentType(CAST(1 AS Int8));
         )",
@@ -81,7 +81,7 @@ SELECT defaultValueOfArgumentType(CAST(1 AS Int8));
         )"
     },
     {
-        "Nullable Int8 example",
+        "Nullable example",
         R"(
 SELECT defaultValueOfArgumentType(CAST(1 AS Nullable(Int8)));
         )",

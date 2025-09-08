@@ -74,10 +74,10 @@ Does not include default values for custom columns set by the user.
     FunctionDocumentation::Arguments arguments_defaultValueOfTypeName = {
         {"type", "A string representing a type name.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_defaultValueOfTypeName = {"Returns the default value for the given type name: `0` for numbers, empty string for strings, `NULL` for [Nullable](../../sql-reference/data-types/nullable.md).", {"(U)Int*", "String", "NULL"}};
+    FunctionDocumentation::ReturnedValue returned_value_defaultValueOfTypeName = {"Returns the default value for the given type name: `0` for numbers, an empty string for strings, or `NULL` for Nullable", {"UInt8", "String", "NULL"}};
     FunctionDocumentation::Examples examples_defaultValueOfTypeName = {
     {
-        "Int8 example",
+        "Usage example",
         R"(
 SELECT defaultValueOfTypeName('Int8');
         )",
@@ -88,7 +88,7 @@ SELECT defaultValueOfTypeName('Int8');
         )"
     },
     {
-        "Nullable Int8 example",
+        "Nullable example",
         R"(
 SELECT defaultValueOfTypeName('Nullable(Int8)');
         )",

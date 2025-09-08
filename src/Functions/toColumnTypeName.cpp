@@ -68,17 +68,6 @@ Returns the internal name of the data type that represents the value.
     FunctionDocumentation::ReturnedValue returned_value_toColumnTypeName = {"Returns the internal data type name used to represent the value.", {"String"}};
     FunctionDocumentation::Examples examples_toColumnTypeName = {
     {
-        "Difference between toTypeName and toColumnTypeName",
-        R"(
-SELECT toTypeName(CAST('2018-01-01 01:02:03' AS DateTime));
-        )",
-        R"(
-┌─toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
-│ DateTime                                            │
-└─────────────────────────────────────────────────────┘
-        )"
-    },
-    {
         "Usage example",
         R"(
 SELECT toColumnTypeName(CAST('2018-01-01 01:02:03' AS DateTime));

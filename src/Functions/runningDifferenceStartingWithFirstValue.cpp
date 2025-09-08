@@ -12,7 +12,7 @@ Calculates the difference between consecutive row values in a data block, but un
 
 :::warning Deprecated
 Only returns differences inside the currently processed data block.
-Because of this error-prone behavior the function is deprecated.
+Because of this error-prone behavior, the function is deprecated.
 It is advised to use proper window functions instead.
 
 You can use setting `allow_deprecated_error_prone_window_functions` to allow usage of this function.

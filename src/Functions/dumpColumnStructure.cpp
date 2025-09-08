@@ -60,9 +60,9 @@ REGISTER_FUNCTION(DumpColumnStructure)
     FunctionDocumentation::Description description_dumpColumnStructure = R"(
 Outputs a detailed description of the internal structure of a column and its data type.
 )";
-    FunctionDocumentation::Syntax syntax_dumpColumnStructure = "dumpColumnStructure(value)";
+    FunctionDocumentation::Syntax syntax_dumpColumnStructure = "dumpColumnStructure(x)";
     FunctionDocumentation::Arguments arguments_dumpColumnStructure = {
-        {"value", "Value for which to get the description of.", {"Any"}}
+        {"x", "Value for which to get the description of.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_dumpColumnStructure = {"Returns a description of the column structure used for representing the value.", {"String"}};
     FunctionDocumentation::Examples examples_dumpColumnStructure = {

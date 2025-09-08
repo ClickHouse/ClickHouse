@@ -11,7 +11,7 @@ REGISTER_FUNCTION(IndexHint)
     FunctionDocumentation::Description description_indexHint = R"(
 The `indexHint` function is a debugging/optimization tool that helps you understand how ClickHouse's sparse indexing works
 by letting you seee what data blocks ClickHouse would read for your condition and getting "extra" rows from blocks that don't match your condition.
-It always returns 1 regardless of its input and never filters data.
+It always returns `1` regardless of its input and never filters data.
 
 When ClickHouse sees `indexHint(expression)`, it:
 - Uses the condition to determine which index ranges to read
