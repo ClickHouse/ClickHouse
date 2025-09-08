@@ -1,3 +1,11 @@
+---
+title: 'Overlay'
+slug: /engines/database-engines/overlay
+description: 'Creates a logical read-only database that exposes the union of tables from multiple underlying databases.'
+sidebar_label: 'Overlay'
+sidebar_position: 51
+---
+
 # `DatabaseOverlay` — design & behavior (current implementation)
 
 ## What is `DatabaseOverlay`? {#introduction}
