@@ -1,0 +1,19 @@
+<clickhouse>
+<enable_uuids_for_columns>true</enable_uuids_for_columns>
+<remote_servers>
+    <cluster>
+        <shard>
+            <replica>
+                <host>node_1</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+        <shard>
+            <replica>
+                <host>node_2</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </cluster>
+</remote_servers>
+</clickhouse>
