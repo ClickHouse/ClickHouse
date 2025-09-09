@@ -82,13 +82,13 @@ Iceberg::ManifestFilePtr getManifestFile(
     bool use_iceberg_metadata_cache
         = (persistent_table_components.metadata_cache && log_level < DB::IcebergMetadataLogLevel::ManifestFileMetadata);
 
-    auto create_fn = [&]()
+    auto create_fn = [&, use_iceberg_metadata_cache]()
     {
         RelativePathWithMetadata manifest_object_info(filename);
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
-        if (persistent_table_components.metadata_cache)
+        if (use_iceberg_metadata_cache)
             read_settings.enable_filesystem_cache = false;
 
         auto buffer = createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
@@ -130,17 +130,16 @@ ManifestFileCacheKeys getManifestList(
 
     IcebergMetadataLogLevel log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
-    bool use_manifest_file_cache
+    bool use_iceberg_metadata_cache
         = (persistent_table_components.metadata_cache && log_level < DB::IcebergMetadataLogLevel::ManifestListMetadata);
 
-
-    auto create_fn = [&]()
+    auto create_fn = [&, use_iceberg_metadata_cache]()
     {
         StorageObjectStorage::ObjectInfo object_info(filename);
 
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
-        if (persistent_table_components.metadata_cache)
+        if (use_iceberg_metadata_cache)
             read_settings.enable_filesystem_cache = false;
 
         auto manifest_list_buf = createReadBuffer(object_info, object_storage, local_context, log, read_settings);
@@ -197,7 +196,7 @@ ManifestFileCacheKeys getManifestList(
     };
 
     ManifestFileCacheKeys manifest_file_cache_keys;
-    if (use_manifest_file_cache)
+    if (use_iceberg_metadata_cache)
         manifest_file_cache_keys = persistent_table_components.metadata_cache->getOrSetManifestFileCacheKeys(
             IcebergMetadataFilesCache::getKey(configuration_ptr, filename), create_fn);
     else

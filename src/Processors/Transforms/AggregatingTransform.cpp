@@ -823,16 +823,18 @@ void AggregatingTransform::initGenerate()
         /// Merge external data from all aggregators used in query.
         for (auto & aggregator : *params->aggregator_list_ptr)
         {
-            tmp_files = aggregator.detachTemporaryData();
+            auto new_tmp_files = aggregator.detachTemporaryData();
             num_streams += tmp_files.size();
 
-            for (auto & tmp_stream : tmp_files)
+            for (auto & tmp_stream : new_tmp_files)
             {
                 auto stat = tmp_stream.finishWriting();
                 compressed_size += stat.compressed_size;
                 uncompressed_size += stat.uncompressed_size;
                 pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(std::make_shared<const Block>(tmp_stream.getHeader()), tmp_stream.getReadStream())));
             }
+
+            tmp_files.splice(tmp_files.end(), new_tmp_files);
         }
 
         LOG_DEBUG(
