@@ -24,6 +24,14 @@ struct ObjectStorageQueueTableMetadata
     const String columns;
     const String mode;
     const String last_processed_path;
+    const String after_processing_move_uri;  // is it changeable or not?
+    const String after_processing_move_prefix;  // is it changeable or not?
+    const String after_processing_move_access_key_id;  // is it changeable or not?
+    const String after_processing_move_secret_access_key;  // is it changeable or not?
+    const String after_processing_move_connection_string;  // is it changeable or not?
+    const String after_processing_move_container;  // is it changeable or not?
+    const String after_processing_tag_key;  // is it changeable or not?
+    const String after_processing_tag_value;  // is it changeable or not?
     /// Changeable settings.
     std::atomic<ObjectStorageQueueAction> after_processing;
     std::atomic<UInt64> loading_retries;
@@ -45,6 +53,14 @@ struct ObjectStorageQueueTableMetadata
         , columns(other.columns)
         , mode(other.mode)
         , last_processed_path(other.last_processed_path)
+        , after_processing_move_uri(other.after_processing_move_uri)
+        , after_processing_move_prefix(other.after_processing_move_prefix)
+        , after_processing_move_access_key_id(other.after_processing_move_access_key_id)
+        , after_processing_move_secret_access_key(other.after_processing_move_secret_access_key)
+        , after_processing_move_connection_string(other.after_processing_move_connection_string)
+        , after_processing_move_container(other.after_processing_move_container)
+        , after_processing_tag_key(other.after_processing_tag_key)
+        , after_processing_tag_value(other.after_processing_tag_value)
         , after_processing(other.after_processing.load())
         , loading_retries(other.loading_retries.load())
         , processing_threads_num(other.processing_threads_num.load())
@@ -88,6 +104,14 @@ struct ObjectStorageQueueTableMetadata
             "mode",
             "buckets",
             "last_processed_path",
+            "after_processing_move_uri",
+            "after_processing_move_prefix",
+            "after_processing_move_access_key_id",
+            "after_processing_move_secret_access_key",
+            "after_processing_move_connection_string",
+            "after_processing_move_container",
+            "after_processing_tag_key",
+            "after_processing_tag_value",
             "after_processing",
             "loading_retries",
             "processing_threads_num",
