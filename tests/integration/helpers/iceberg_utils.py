@@ -189,14 +189,12 @@ def get_creation_expression(
     compression_method=None,
     format="Parquet",
     table_function=False,
-    allow_dynamic_metadata_for_data_lakes=True,
     use_version_hint=False,
     run_on_cluster=False,
     explicit_metadata_path="",
     **kwargs,
 ):
     settings_array = []
-    settings_array.append(f"allow_dynamic_metadata_for_data_lakes = {1 if allow_dynamic_metadata_for_data_lakes else 0}")
 
     if explicit_metadata_path:
         settings_array.append(f"iceberg_metadata_file_path = '{explicit_metadata_path}'")
@@ -270,14 +268,14 @@ def get_creation_expression(
 
         if table_function:
             return f"""
-                icebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})
+                icebergLocal(local, path = '/iceberg_data/default/{table_name}', format={format})
             """
         else:
             return (
                 f"""
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
-                ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})
+                ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}', format={format})
                 {partition_by}
                 {settings_expression}
                 """

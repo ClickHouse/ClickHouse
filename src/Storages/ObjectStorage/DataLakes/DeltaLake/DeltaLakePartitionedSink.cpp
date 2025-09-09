@@ -6,6 +6,7 @@
 #include <Common/Arena.h>
 #include <Common/PODArray.h>
 #include <Core/UUID.h>
+#include <Core/Settings.h>
 
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -28,6 +29,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+}
+
+namespace Setting
+{
+    extern const SettingsNonZeroUInt64 delta_lake_insert_max_rows_in_data_file;
+    extern const SettingsNonZeroUInt64 delta_lake_insert_max_bytes_in_data_file;
 }
 
 namespace
@@ -74,6 +81,8 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     , object_storage(object_storage_)
     , format_settings(format_settings_)
     , configuration(configuration_)
+    , data_file_max_rows(context_->getSettingsRef()[Setting::delta_lake_insert_max_rows_in_data_file])
+    , data_file_max_bytes(context_->getSettingsRef()[Setting::delta_lake_insert_max_bytes_in_data_file])
     , partition_strategy(createPartitionStrategy(partition_columns, getHeader(), context_))
     , delta_transaction(delta_transaction_)
 {
@@ -131,7 +140,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
                 partition_index_to_chunk.emplace_back(Columns(), partition_column->size());
         }
 
-        for (size_t partition_index = 0; partition_index  < partitions_size; ++partition_index)
+        for (size_t partition_index = 0; partition_index < partitions_size; ++partition_index)
         {
             auto & partition_chunk = partition_index_to_chunk[partition_index];
             partition_chunk.addColumn(std::move(partition_index_to_column_split[partition_index]));
@@ -140,68 +149,86 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
 
     for (const auto & [partition_key, partition_index] : partition_id_to_chunk_index)
     {
-        auto partition_data = getPartitionDataForPartitionKey(partition_key);
+        auto & data_files = getPartitionDataForPartitionKey(partition_key)->data_files;
         auto & partition_chunk = partition_index_to_chunk[partition_index];
-        partition_data->sink->consume(partition_chunk);
-        partition_data->size += partition_chunk.bytes();
+
+        if (data_files.empty()
+            || data_files.back().written_rows >= data_file_max_rows
+            || data_files.back().written_bytes >= data_file_max_bytes)
+        {
+            data_files.emplace_back(createSinkForPartition(partition_key));
+            total_data_files_count += 1;
+        }
+        auto & data_file = data_files.back();
+        data_file.written_bytes += partition_chunk.bytes();
+        data_file.written_rows += partition_chunk.getNumRows();
+        data_file.sink->consume(partition_chunk);
     }
 }
 
-DeltaLakePartitionedSink::PartitionDataPtr
+DeltaLakePartitionedSink::PartitionInfoPtr
 DeltaLakePartitionedSink::getPartitionDataForPartitionKey(StringRef partition_key)
 {
-    auto it = partition_id_to_sink.find(partition_key);
-    if (it == partition_id_to_sink.end())
-    {
-        auto data = std::make_shared<PartitionData>();
-        auto data_prefix = std::filesystem::path(delta_transaction->getDataPath()) / partition_key.toString();
-        data->path = DeltaLake::generateWritePath(std::move(data_prefix), configuration->format);
-
-        data->sink = std::make_shared<StorageObjectStorageSink>(
-            data->path,
-            object_storage,
-            configuration,
-            format_settings,
-            std::make_shared<Block>(partition_strategy->getFormatHeader()),
-            getContext()
-        );
-        std::tie(it, std::ignore) = partition_id_to_sink.emplace(partition_key, std::move(data));
-    }
+    auto it = partitions_data.find(partition_key);
+    if (it == partitions_data.end())
+        std::tie(it, std::ignore) = partitions_data.emplace(partition_key, std::make_shared<PartitionInfo>(partition_key));
     return it->second;
+}
+
+DeltaLakePartitionedSink::StorageSinkPtr
+DeltaLakePartitionedSink::createSinkForPartition(StringRef partition_key)
+{
+    auto data_prefix = std::filesystem::path(delta_transaction->getDataPath()) / partition_key.toString();
+    return std::make_unique<StorageObjectStorageSink>(
+        DeltaLake::generateWritePath(std::move(data_prefix), configuration->format),
+        object_storage,
+        configuration,
+        format_settings,
+        std::make_shared<Block>(partition_strategy->getFormatHeader()),
+        getContext());
 }
 
 void DeltaLakePartitionedSink::onFinish()
 {
-    if (isCancelled() || partition_id_to_sink.empty())
+    if (isCancelled() || partitions_data.empty())
         return;
 
-    for (auto & [_, data] : partition_id_to_sink)
-        data->sink->onFinish();
+    std::vector<DeltaLake::WriteTransaction::CommitFile> files;
+    files.reserve(total_data_files_count);
+    const auto data_prefix = delta_transaction->getDataPath();
 
-    LOG_TEST(log, "Written to {} sinks", partition_id_to_sink.size());
+    for (auto & [_, partition_info] : partitions_data)
+    {
+        auto & [partition_key, data_files] = *partition_info;
+        auto partition_key_str = partition_key.toString();
+        auto keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(partition_key_str);
+        Map partition_values;
+        partition_values.reserve(keys_and_values.size());
+        for (const auto & [key, value] : keys_and_values)
+            partition_values.emplace_back(DB::Tuple({key, value}));
+
+        for (const auto & [sink, written_bytes, written_rows] : data_files)
+        {
+            sink->onFinish();
+            files.emplace_back(
+                sink->getPath().substr(data_prefix.size()),
+                sink->getFileSize(),
+                partition_values);
+        }
+    }
+
+    LOG_TEST(log, "Written {} data files", total_data_files_count);
 
     try
     {
-        std::vector<DeltaLake::WriteTransaction::CommitFile> files;
-        files.reserve(partition_id_to_sink.size());
-        const auto data_prefix = delta_transaction->getDataPath();
-        for (auto & [_, data] : partition_id_to_sink)
-        {
-            auto keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(data->path);
-            Map partition_values;
-            partition_values.reserve(keys_and_values.size());
-            for (const auto & [key, value] : keys_and_values)
-                partition_values.emplace_back(DB::Tuple({key, value}));
-
-            files.emplace_back(data->path.substr(data_prefix.size()), data->size, partition_values);
-        }
         delta_transaction->commit(files);
     }
     catch (...)
     {
-        for (auto & [_, data] : partition_id_to_sink)
+        for (auto & [_, partition_info] : partitions_data)
         {
-            object_storage->removeObjectIfExists(StoredObject(data->path));
+            for (const auto & [sink, written_bytes, written_rows] : partition_info->data_files)
+                object_storage->removeObjectIfExists(StoredObject(sink->getPath()));
         }
         throw;
     }

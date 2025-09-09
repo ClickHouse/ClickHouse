@@ -827,6 +827,8 @@ The location and format of log messages.
 | `syslog_level`         | Log level for logging to syslog.                                                                                                                                   |
 | `async`                | When `true` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG           |
 | `async_queue_max_size` | When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped                       |
+| `startupLevel`         | Startup level is used to set the root logger level at server startup. After startup log level is reverted to the `level` setting                                   |
+| `shutdownLevel`        | Shutdown level is used to set the root logger level at server Shutdown.                                                                                            |
 
 **Log format specifiers**
 
@@ -969,6 +971,8 @@ To enable JSON logging support, use the following snippet:
 <logger>
     <formatting>
         <type>json</type>
+        <!-- Can be configured on a per-channel basis (log, errorlog, console, syslog), or globally for all channels (then just omit it). -->
+        <!-- <channel></channel> -->
         <names>
             <date_time>date_time</date_time>
             <thread_name>thread_name</thread_name>
