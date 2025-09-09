@@ -361,22 +361,22 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
         inserted_data
     )
 
-    if use_delta_kernel == 1:
-        TABLE_NAME_COMMON = TABLE_NAME + "_common"
-        create_delta_table(
-            instance,
-            storage_type,
-            TABLE_NAME_COMMON,
-            started_cluster,
-            use_delta_kernel,
-            f"path = {TABLE_NAME}",
-            "_common"
-        )
+    TABLE_NAME_COMMON = TABLE_NAME + "_common"
+    create_delta_table(
+        instance,
+        storage_type,
+        TABLE_NAME_COMMON,
+        started_cluster,
+        use_delta_kernel,
+        f"path = {TABLE_NAME}",
+        "_common"
+    )
 
-        assert int(instance.query(f"SELECT count() FROM {TABLE_NAME_COMMON}")) == 100
-        assert instance.query(f"SELECT * FROM {TABLE_NAME_COMMON}") == instance.query(
-            inserted_data
-        )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME_COMMON}")) == 100
+    assert instance.query(f"SELECT * FROM {TABLE_NAME_COMMON}") == instance.query(
+        inserted_data
+    )
+    instance.query(f"DROP TABLE {TABLE_NAME_COMMON}")
 
     if storage_type == "s3":
         assert instance.query(f"SELECT * FROM deltaLakeCluster('cluster_simple') SETTINGS datalake_disk_name = 'disk_s3_{use_delta_kernel}'") == instance.query(
