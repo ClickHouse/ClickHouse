@@ -468,19 +468,22 @@ class Result(MetaClasses.Serializable):
         command_args=None,
         command_kwargs=None,
         retries=1,
+        retry_errors: Union[List[str], str] = "",
     ):
         """
         Executes shell commands or Python callables, optionally logging output, and handles errors.
 
-        :param name: Check name
-        :param command: Shell command (str) or Python callable, or list of them.
+        :param name: The name of the check.
+        :param command: A shell command (str) or Python callable, or list of them.
         :param workdir: Optional working directory.
-        :param with_log: Boolean flag to log output to a file.
-        :param with_info: Fill in Result.info from command output
-        :param with_info_on_failure: Fill in Result.info from command output on failure only
-        :param fail_fast: Boolean flag to stop execution if one command fails.
+        :param with_log: Whether to log output to a file.
+        :param with_info: Whether to fill in Result.info from command output.
+        :param with_info_on_failure: Whether to fill in Result.info from command output on failure only.
+        :param fail_fast: Whether to stop execution if one command fails.
         :param command_args: Positional arguments for the callable command.
         :param command_kwargs: Keyword arguments for the callable command.
+        :param retries: The number of times to retry the command if it fails.
+        :param retry_errors: The errors to retry on. Support for shell command(s) only.
         :return: Result object with status and optional log file.
         """
 
@@ -526,7 +529,11 @@ class Result(MetaClasses.Serializable):
                 else:
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(
-                        command_, verbose=True, log_file=log_file, retries=retries
+                        command_,
+                        verbose=True,
+                        log_file=log_file,
+                        retries=retries,
+                        retry_errors=retry_errors,
                     )
                     log_output = Shell.get_output(
                         f"tail -n {MAX_LINES_IN_INFO+1} {log_file}"  # +1 to get the truncation message
