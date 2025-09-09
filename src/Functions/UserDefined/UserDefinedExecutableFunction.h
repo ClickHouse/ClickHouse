@@ -1,10 +1,10 @@
 #pragma once
 
 #include <string>
+#include <memory>
 
 #include <DataTypes/IDataType.h>
 #include <Processors/Sources/ShellCommandSource.h>
-#include <Interpreters/IExternalLoadable.h>
 
 
 namespace DB
@@ -34,39 +34,12 @@ struct UserDefinedExecutableFunctionConfiguration
     bool is_deterministic;
 };
 
-class UserDefinedExecutableFunction final : public IExternalLoadable
+class UserDefinedExecutableFunction
 {
 public:
-
     UserDefinedExecutableFunction(
         const UserDefinedExecutableFunctionConfiguration & configuration_,
-        std::shared_ptr<ShellCommandSourceCoordinator> coordinator_,
-        const ExternalLoadableLifetime & lifetime_);
-
-    const ExternalLoadableLifetime & getLifetime() const override
-    {
-        return lifetime;
-    }
-
-    std::string getLoadableName() const override
-    {
-        return configuration.name;
-    }
-
-    bool supportUpdates() const override
-    {
-        return true;
-    }
-
-    bool isModified() const override
-    {
-        return true;
-    }
-
-    std::shared_ptr<IExternalLoadable> clone() const override
-    {
-        return std::make_shared<UserDefinedExecutableFunction>(configuration, coordinator, lifetime);
-    }
+        std::shared_ptr<ShellCommandSourceCoordinator> coordinator_);
 
     const UserDefinedExecutableFunctionConfiguration & getConfiguration() const
     {
@@ -78,20 +51,11 @@ public:
         return coordinator;
     }
 
-    std::shared_ptr<UserDefinedExecutableFunction> shared_from_this()
-    {
-        return std::static_pointer_cast<UserDefinedExecutableFunction>(IExternalLoadable::shared_from_this());
-    }
-
-    std::shared_ptr<const UserDefinedExecutableFunction> shared_from_this() const
-    {
-        return std::static_pointer_cast<const UserDefinedExecutableFunction>(IExternalLoadable::shared_from_this());
-    }
-
-private:
+protected:
     UserDefinedExecutableFunctionConfiguration configuration;
     std::shared_ptr<ShellCommandSourceCoordinator> coordinator;
-    ExternalLoadableLifetime lifetime;
 };
+
+using UserDefinedExecutableFunctionPtr = std::shared_ptr<const UserDefinedExecutableFunction>;
 
 }

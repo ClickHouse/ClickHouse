@@ -80,7 +80,9 @@ struct RolesOrUsersSet;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
+class ExternalUserDefinedDriversLoader;
 class IUserDefinedSQLObjectsStorage;
+class IUserDefinedDriversStorage;
 class IWorkloadEntityStorage;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
@@ -1033,10 +1035,15 @@ public:
 
     const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
+    const ExternalUserDefinedDriversLoader & getExternalUserDefinedDriversLoader() const;
+    ExternalUserDefinedDriversLoader & getExternalUserDefinedDriversLoader();
     const IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage() const;
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
     void setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+    void loadOrReloadUserDefinedDrivers(const Poco::Util::AbstractConfiguration & config);
+    const IUserDefinedDriversStorage & getUserDefinedDriversStorage() const;
+    void setUserDefinedDriversStorage(std::unique_ptr<IUserDefinedDriversStorage> storage);
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
 
@@ -1636,7 +1643,9 @@ private:
 
     ExternalDictionariesLoader & getExternalDictionariesLoaderWithLock(const std::lock_guard<std::mutex> & lock);
 
-    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderWithLock(const std::lock_guard<std::mutex> & lock);
+    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderWithLock(const std::lock_guard<std::mutex> & lock);\
+
+    ExternalUserDefinedDriversLoader & getExternalUserDefinedDriversLoaderWithLock(const std::lock_guard<std::mutex> & lock);
 
     void setUserID(const UUID & user_id_);
     void setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user);

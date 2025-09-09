@@ -17,9 +17,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
+#include <Functions/UserDefined/UserDefinedFunction.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -265,7 +263,7 @@ private:
 };
 
 }
-
+  
 UserDefinedExecutableFunctionFactory & UserDefinedExecutableFunctionFactory::instance()
 {
     static UserDefinedExecutableFunctionFactory result;
@@ -275,7 +273,7 @@ UserDefinedExecutableFunctionFactory & UserDefinedExecutableFunctionFactory::ins
 FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const String & function_name, ContextPtr context, Array parameters)
 {
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
-    auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(loader.load(function_name));
+    auto executable_function = std::static_pointer_cast<const UserDefinedLoadableFunction>(loader.load(function_name));
     auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context), std::move(parameters));
 
     if (CurrentThread::isInitialized())
@@ -295,7 +293,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
 
     if (load_result.object)
     {
-        auto executable_function = std::static_pointer_cast<const UserDefinedExecutableFunction>(load_result.object);
+        auto executable_function = std::static_pointer_cast<const UserDefinedLoadableFunction>(load_result.object);
         auto function = std::make_shared<UserDefinedFunction>(std::move(executable_function), std::move(context), std::move(parameters));
 
         if (CurrentThread::isInitialized())

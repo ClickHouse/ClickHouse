@@ -4,7 +4,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExternalLoader.h>
-#include <Functions/UserDefined/UserDefinedExecutableFunction.h>
+#include <Functions/UserDefined/UserDefinedLoadableFunction.h>
 
 namespace DB
 {
@@ -15,9 +15,6 @@ class IExternalLoaderConfigRepository;
 class ExternalUserDefinedExecutableFunctionsLoader : public ExternalLoader, WithContext
 {
 public:
-
-    using UserDefinedExecutableFunctionPtr = std::shared_ptr<const UserDefinedExecutableFunction>;
-
     /// External user-defined functions will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
     explicit ExternalUserDefinedExecutableFunctionsLoader(ContextPtr global_context_);
 

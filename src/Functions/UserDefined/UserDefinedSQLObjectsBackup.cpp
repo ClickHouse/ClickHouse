@@ -9,6 +9,7 @@
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ParserCreateDriverFunctionQuery.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/escapeForFileName.h>
@@ -124,9 +125,22 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
 
         switch (object_type)
         {
-            case UserDefinedSQLObjectType::Function:
+            case UserDefinedSQLObjectType::SQLFunction:
             {
                 ParserCreateFunctionQuery parser;
+                ast = parseQuery(
+                    parser,
+                    statement_def.data(),
+                    statement_def.data() + statement_def.size(),
+                    "in file " + filepath + " from backup " + backup->getNameForLogging(),
+                    0,
+                    context->getSettingsRef()[Setting::max_parser_depth],
+                    context->getSettingsRef()[Setting::max_parser_backtracks]);
+                break;
+            }
+            case UserDefinedSQLObjectType::DriverFunction:
+            {
+                ParserCreateDriverFunctionQuery parser;
                 ast = parseQuery(
                     parser,
                     statement_def.data(),

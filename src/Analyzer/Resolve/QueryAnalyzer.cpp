@@ -13,6 +13,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/UserDefined/UserDefinedDriverFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/exists.h>
@@ -3492,10 +3493,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         return result_projection_names;
     }
 
-    FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters); /// NOLINT(readability-static-accessed-through-instance)
+    FunctionOverloadResolverPtr function = UserDefinedDriverFunctionFactory::instance().tryGet(function_name);
     bool is_executable_udf = true;
 
     IdentifierResolveScope::ResolvedFunctionsCache * function_cache = nullptr;
+
+    if (!function)
+    {
+        function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters); /// NOLINT(readability-static-accessed-through-instance)
+    }
 
     if (!function)
     {
@@ -3523,6 +3529,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             std::vector<std::string> possible_function_names;
 
             auto function_names = UserDefinedExecutableFunctionFactory::instance().getRegisteredNames(scope.context); /// NOLINT(readability-static-accessed-through-instance)
+            possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
+
+            function_names = UserDefinedDriverFunctionFactory::instance().getAllRegisteredNames();
             possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
 
             function_names = UserDefinedSQLFunctionFactory::instance().getAllRegisteredNames();

@@ -1,8 +1,10 @@
 #include <Functions/UserDefined/UserDefinedSQLObjectsZooKeeperStorage.h>
 
+#include <Functions/UserDefined/UserDefinedDriverFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ParserCreateDriverFunctionQuery.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/sleep.h>
@@ -37,8 +39,10 @@ namespace
     {
         switch (object_type)
         {
-            case UserDefinedSQLObjectType::Function:
+            case UserDefinedSQLObjectType::SQLFunction:
                 return "function_";
+            case UserDefinedSQLObjectType::DriverFunction:
+                return "driver_function_";
         }
     }
 
@@ -309,8 +313,20 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & obj
 {
     switch (object_type)
     {
-        case UserDefinedSQLObjectType::Function: {
+        case UserDefinedSQLObjectType::SQLFunction: {
             ParserCreateFunctionQuery parser;
+            ASTPtr ast = parseQuery(
+                parser,
+                object_data.data(),
+                object_data.data() + object_data.size(),
+                "",
+                0,
+                global_context->getSettingsRef()[Setting::max_parser_depth],
+                global_context->getSettingsRef()[Setting::max_parser_backtracks]);
+            return ast;
+        }
+        case UserDefinedSQLObjectType::DriverFunction: {
+            ParserCreateDriverFunctionQuery parser;
             ASTPtr ast = parseQuery(
                 parser,
                 object_data.data(),
@@ -372,7 +388,7 @@ Strings UserDefinedSQLObjectsZooKeeperStorage::getObjectNamesAndSetWatch(
         {
             String object_name = unescapeForFileName(node_name.substr(prefix.length(), node_name.length() - prefix.length() - sql_extension.length()));
             if (!object_name.empty())
-                object_names.push_back(std::move(object_name));
+                object_names.push_back(object_name);
         }
     }
 
@@ -384,7 +400,8 @@ void UserDefinedSQLObjectsZooKeeperStorage::refreshAllObjects(const zkutil::ZooK
     /// It doesn't make sense to keep the old watch events because we will reread everything in this function.
     watch_queue->clear();
 
-    refreshObjects(zookeeper, UserDefinedSQLObjectType::Function);
+    refreshObjects(zookeeper, UserDefinedSQLObjectType::SQLFunction);
+    refreshObjects(zookeeper, UserDefinedSQLObjectType::DriverFunction);
     objects_loaded = true;
 }
 
@@ -394,11 +411,20 @@ void UserDefinedSQLObjectsZooKeeperStorage::refreshObjects(const zkutil::ZooKeep
     Strings object_names = getObjectNamesAndSetWatch(zookeeper, object_type);
 
     /// Read & parse all SQL objects from ZooKeeper
-    std::vector<std::pair<String, ASTPtr>> function_names_and_asts;
+    std::vector<std::pair<String, UserDefinedSQLTypedObject>> function_names_and_asts;
     for (const auto & function_name : object_names)
     {
-        if (auto ast = tryLoadObject(zookeeper, UserDefinedSQLObjectType::Function, function_name))
-            function_names_and_asts.emplace_back(function_name, ast);
+        if (auto ast = tryLoadObject(zookeeper, UserDefinedSQLObjectType::SQLFunction, function_name))
+        {
+            UserDefinedSQLTypedObject typed_object{ast, UserDefinedSQLObjectType::SQLFunction};
+            function_names_and_asts.emplace_back(function_name, std::move(typed_object));
+        }
+
+        if (auto ast = tryLoadObject(zookeeper, UserDefinedSQLObjectType::DriverFunction, function_name))
+        {
+            UserDefinedSQLTypedObject typed_object{ast, UserDefinedSQLObjectType::DriverFunction};
+            function_names_and_asts.emplace_back(function_name, std::move(typed_object));
+        }
     }
 
     setAllObjects(function_names_and_asts);
@@ -419,7 +445,9 @@ void UserDefinedSQLObjectsZooKeeperStorage::syncObjects(const zkutil::ZooKeeperP
     for (const auto & function_name : object_names)
     {
         if (!UserDefinedSQLFunctionFactory::instance().has(function_name))
-            refreshObject(zookeeper, UserDefinedSQLObjectType::Function, function_name);
+            refreshObject(zookeeper, UserDefinedSQLObjectType::SQLFunction, function_name);
+        if (!UserDefinedDriverFunctionFactory::instance().has(function_name))
+            refreshObject(zookeeper, UserDefinedSQLObjectType::DriverFunction, function_name);
     }
 
     LOG_DEBUG(log, "User-defined {} objects synced", object_type);
@@ -431,7 +459,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::refreshObject(
     auto ast = tryLoadObject(zookeeper, object_type, object_name);
 
     if (ast)
-        setObject(object_name, *ast);
+        setObject(object_name, *ast, object_type);
     else
         removeObject(object_name);
 }

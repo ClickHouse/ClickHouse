@@ -1,0 +1,9 @@
+<clickhouse>
+    <driver>
+        <type>executable</type>
+        <name>TestPython</name>
+        <format>TabSeparated</format>
+        <execute_direct>false</execute_direct>
+        <command>python3 -c</command>
+    </driver>
+</clickhouse>
