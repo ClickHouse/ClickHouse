@@ -1,104 +1,82 @@
-SELECT
-    __table1.id AS id,
-    __table1.name AS name,
-    __table1.category AS category,
-    __table1.code AS code
-FROM default.test_like_rewrite AS __table1
-WHERE (__table1.name >= \'app\') AND (__table1.name < \'apq\')
+Test LIKE with perfect prefix patterns - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE (__table1.col_string >= \'app\') AND (__table1.col_string < \'apq\')
 3
-SELECT
-    __table1.id AS id,
-    __table1.name AS name,
-    __table1.category AS category,
-    __table1.code AS code
-FROM default.test_like_rewrite AS __table1
-WHERE (__table1.name >= \'test\') AND (__table1.name < \'tesu\')
+3
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE (__table1.col_string >= \'Test\') AND (__table1.col_string < \'Tesu\')
 2
-SELECT
-    __table1.id AS id,
-    __table1.name AS name,
-    __table1.category AS category,
-    __table1.code AS code
-FROM default.test_like_rewrite AS __table1
-WHERE (__table1.category >= \'fruit\') AND (__table1.category < \'fruiu\')
 2
-SELECT
-    __table1.id AS id,
-    __table1.name AS name,
-    __table1.category AS category,
-    __table1.code AS code
-FROM default.test_like_rewrite AS __table1
-WHERE (__table1.name < \'app\') OR (__table1.name >= \'apq\')
+Test LIKE with FixedString column - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE (__table1.col_fixedstring >= \'fruit\') AND (__table1.col_fixedstring < \'fruiu\')
+2
+2
+Test NOT LIKE with perfect prefix - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE (__table1.col_string < \'app\') OR (__table1.col_string >= \'apq\')
 4
-SELECT
-    __table1.id AS id,
-    __table1.name AS name,
-    __table1.category AS category,
-    __table1.code AS code
-FROM default.test_like_rewrite AS __table1
-WHERE __table1.name LIKE \'app_ication%\'
-1
-SELECT
-    __table1.id AS id,
-    __table1.name AS name,
-    __table1.category AS category,
-    __table1.code AS code
-FROM default.test_like_rewrite AS __table1
-WHERE __table1.name LIKE \'%app%\'
+4
+Test ILIKE with perfect prefix - should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE (lower(__table1.col_string) >= \'app\') AND (lower(__table1.col_string) < \'apq\')
 3
-SELECT
-    __table1.id AS id,
-    __table1.name AS name,
-    __table1.category AS category,
-    __table1.code AS code
-FROM default.test_like_rewrite AS __table1
-WHERE __table1.name LIKE \'_est%\'
+3
+Test multiple LIKE conditions - all eligible ones should be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE ((__table1.col_string >= \'app\') AND (__table1.col_string < \'apq\')) AND ((__table1.col_fixedstring >= \'fruit\') AND (__table1.col_fixedstring < \'fruiu\'))
+1
+1
+Test without prefix patterns - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'app_ication%\'
+1
+1
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'%app%\'
+3
+3
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'_est%\'
 2
-SELECT
-    __table1.id AS id,
-    __table1.name AS name,
-    __table1.category AS category,
-    __table1.code AS code
-FROM default.test_like_rewrite AS __table1
-WHERE __table1.name LIKE \'test\'
+2
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'Test\'
 1
-SELECT
-    __table1.id AS id,
-    __table1.name AS name,
-    __table1.category AS category,
-    __table1.code AS code
-FROM default.test_like_rewrite AS __table1
-WHERE __table1.name LIKE \'%\'
+1
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string LIKE \'%\'
 7
-SELECT
-    __table1.id AS id,
-    __table1.name AS name,
-    __table1.category AS category,
-    __table1.code AS code
-FROM default.test_like_rewrite AS __table1
-WHERE (lower(__table1.name) >= \'app\') AND (lower(__table1.name) < \'apq\')
-3
-SELECT
-    __table1.id AS id,
-    __table1.name AS name,
-    __table1.category AS category,
-    __table1.code AS code
-FROM default.test_like_rewrite AS __table1
-WHERE ((__table1.name >= \'app\') AND (__table1.name < \'apq\')) AND ((__table1.category >= \'fruit\') AND (__table1.category < \'fruiu\'))
-1
-SELECT
-    __table1.id AS id,
-    __table1.name AS name,
-    __table1.category AS category,
-    __table1.code AS code
-FROM default.test_like_rewrite AS __table1
-WHERE __table1.name NOT LIKE \'app_ication%\'
+7
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string NOT LIKE \'app_ication%\'
 6
-SELECT
-    __table1.id AS id,
-    __table1.name AS name,
-    __table1.category AS category,
-    __table1.code AS code
-FROM default.test_like_rewrite AS __table1
-WHERE __table1.code LIKE \'a%\'
+6
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string NOT LIKE \'app_ication%\'
+1
+1
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_string NOT LIKE \'app_ication%\'
+6
+6
+Test low cardinality attribute - should NOT be rewritten
+SELECT count() AS `count()`
+FROM default.tab AS __table1
+WHERE __table1.col_lowcardinality_string LIKE \'a%\'
+3
 3

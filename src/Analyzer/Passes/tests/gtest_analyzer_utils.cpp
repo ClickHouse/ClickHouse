@@ -14,6 +14,7 @@
 
 using namespace DB;
 
+/// Resolve columns of a type within a query tree
 static QueryTreeNodePtr resolveColumn(DataTypePtr type, QueryTreeNodePtr node, std::map<String, QueryTreeNodePtr> & resolved_map, ContextPtr context)
 {
     auto * function_node = node->as<FunctionNode>();
@@ -45,6 +46,7 @@ static QueryTreeNodePtr resolveColumn(DataTypePtr type, QueryTreeNodePtr node, s
     return node;
 };
 
+/// Run an analyzer pass on a condition involving a column of a type, then compare against the expected expression.
 void testPassOnCondition(QueryTreePassPtr pass, DataTypePtr columnType, const String & cond, const String & expected)
 {
     ContextPtr context = getContext().context; ParserExpressionWithOptionalAlias exp_elem(false);

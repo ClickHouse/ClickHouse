@@ -1147,6 +1147,7 @@ class SettingsRandomizer:
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
+        "optimize_rewrite_like_to_range": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
 

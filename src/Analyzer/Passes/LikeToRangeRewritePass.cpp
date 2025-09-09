@@ -22,6 +22,17 @@ namespace Setting
 namespace
 {
 
+/** Rewrite LIKE expressions with perfect prefix to range expressions.
+  * For example, `col LIKE 'ClickHouse%'` is rewritten as `col >= ClickHouse AND col < ClickHousf`.
+  * The scope of the rewrite:
+  *     - `col LIKE      'Prefix%'`: as `col >= 'Prefix' AND col <  'Prefy'`
+  *     - `col NOT LIKE  'Prefix%'`: as `col <  'Prefix' OR  col >= 'Prefy'`
+  *     - `col ILIKE     'Prefix%'`: as `lower(col) >= 'prefix' AND lower(col) <  'prefy'`
+  *     - `col NOT ILIKE 'Prefix%'`: as `lower(col) <  'prefix' OR  lower(col) >= 'prefy'`
+  * Type requirement on the left operand, `col`:
+  *     - Only resolved column of type `String` or `FixedString`
+  *     - `LowCardinality(String)` is unsupported due to non-order-preserving encoding
+  */
 class LikeToRangeRewriteVisitor : public InDepthQueryTreeVisitorWithContext<LikeToRangeRewriteVisitor>
 {
 public:
