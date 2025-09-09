@@ -190,8 +190,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, ActionsDAG::Node * f
             if (prewhere_info)
                 prewhere_node = const_cast<ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name));
 
-            auto estimator_ = reading->getConditionSelectivityEstimator();
-            if (estimator_ != nullptr)
+            if (auto estimator_ = reading->getConditionSelectivityEstimator())
             {
                 auto relation_profile = estimator_->estimateRelationProfile(filter, prewhere_node);
                 RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
