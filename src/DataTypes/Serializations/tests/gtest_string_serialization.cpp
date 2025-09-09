@@ -69,7 +69,7 @@ TEST(StringSerialization, IncorrectStateAfterMemoryLimitExceeded)
         settings.position_independent_encoding = false;
         settings.getter = [&in](const auto &) { return &in; };
 
-        run_with_memory_failures([&]() { serialization->deserializeBinaryBulkWithMultipleStreams(result_column, 0, src_column->size(), settings, state, nullptr); });
+        run_with_memory_failures([&]() { serialization->deserializeBinaryBulkWithMultipleStreams(result_column, src_column->size(), settings, state, nullptr); });
 
         auto & result = assert_cast<ColumnString &>(*result_column->assumeMutable());
         if (!result.empty())

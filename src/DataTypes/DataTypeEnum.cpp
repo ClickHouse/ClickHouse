@@ -8,7 +8,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/SipHash.h>
 #include <Columns/ColumnSparse.h>
 #include <Poco/UTF8Encoding.h>
 #include <Interpreters/Context.h>
@@ -78,12 +77,6 @@ Field DataTypeEnum<Type>::getDefault() const
 }
 
 template <typename Type>
-Type DataTypeEnum<Type>::getDefaultValue() const
-{
-    return this->getValues().front().second;
-}
-
-template <typename Type>
 void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
 {
     const auto & default_value = this->getValues().front().second;
@@ -111,11 +104,6 @@ bool DataTypeEnum<Type>::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this) && type_name == static_cast<const DataTypeEnum<Type> &>(rhs).type_name;
 }
 
-template <typename Type>
-void DataTypeEnum<Type>::updateHashImpl(SipHash & hash) const
-{
-    hash.update(type_name);
-}
 
 template <typename Type>
 bool DataTypeEnum<Type>::textCanContainOnlyValidUTF8() const

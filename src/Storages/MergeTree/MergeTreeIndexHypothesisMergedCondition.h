@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/ComparisonGraph.h>
-#include <Interpreters/TreeCNFConverter.h>
 
 namespace DB
 {
