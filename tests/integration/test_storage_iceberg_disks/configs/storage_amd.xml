@@ -19,4 +19,5 @@
             </disk_s3_cluster>
         </disks>
     </storage_configuration>
+    <allowed_disks_for_table_engines>disk_local,disk_s3,disk_s3_cluster</allowed_disks_for_table_engines>
 </clickhouse>

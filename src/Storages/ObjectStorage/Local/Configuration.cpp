@@ -30,6 +30,11 @@ void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & coll
     paths = {path};
 }
 
+void StorageLocalConfiguration::fromDisk(const String & disk_name, ASTs & /*args*/, ContextPtr context, bool /*with_structure*/)
+{
+    auto disk = context->getDisk(disk_name);
+    setPathForRead(disk->getPath());
+}
 
 void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {

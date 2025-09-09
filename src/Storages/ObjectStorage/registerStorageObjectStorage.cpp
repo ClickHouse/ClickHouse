@@ -32,24 +32,6 @@ namespace Setting
     extern const SettingsString datalake_disk_name;
 }
 
-namespace S3AuthSetting
-{
-    extern const S3AuthSettingsString access_key_id;
-    extern const S3AuthSettingsUInt64 expiration_window_seconds;
-    extern const S3AuthSettingsBool no_sign_request;
-    extern const S3AuthSettingsString secret_access_key;
-    extern const S3AuthSettingsString session_token;
-    extern const S3AuthSettingsBool use_environment_credentials;
-
-    extern const S3AuthSettingsString role_arn;
-    extern const S3AuthSettingsString role_session_name;
-    extern const S3AuthSettingsString http_client;
-    extern const S3AuthSettingsString service_account;
-    extern const S3AuthSettingsString metadata_service;
-    extern const S3AuthSettingsString request_token_path;
-}
-
-
 namespace
 {
 

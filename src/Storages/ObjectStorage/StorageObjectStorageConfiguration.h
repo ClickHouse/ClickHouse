@@ -250,6 +250,7 @@ protected:
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
     virtual void fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)
     {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method fromDisk is not implemented");
     }
 
     void assertInitialized() const;

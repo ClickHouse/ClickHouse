@@ -16,6 +16,7 @@
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -306,6 +307,14 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & /*args*/,
     auto object_storage = disk->getObjectStorage();
     s3_settings = std::make_unique<S3Settings>();
     *s3_settings = std::static_pointer_cast<S3ObjectStorage>(object_storage)->getS3Settings();
+
+    if (auto s3_object_storage = std::static_pointer_cast<S3ObjectStorage>(object_storage); s3_object_storage)
+        setURL(s3_object_storage->getURI());
+    if (auto object_storage_disk = std::static_pointer_cast<DiskObjectStorage>(disk); object_storage_disk)
+    {
+        String path = object_storage_disk->getObjectsKeyPrefix();
+        setPathForRead(path);
+    }
 }
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)

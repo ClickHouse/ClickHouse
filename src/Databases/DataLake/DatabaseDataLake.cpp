@@ -427,15 +427,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// no table structure in table definition AST.
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
 
-    ObjectStoragePtr object_storage;
-    if (configuration->isDataLakeConfiguration() && context_->getSettingsRef()[Setting::datalake_disk_name].changed)
-        object_storage = context_->getDisk(context_->getSettingsRef()[Setting::datalake_disk_name].value)->getObjectStorage();
-    else
-        object_storage = configuration->createObjectStorage(context_copy, /* is_readonly */ false);
-
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        object_storage,
+        configuration->createObjectStorage(context_copy, /* is_readonly */ false),
         context_copy,
         StorageID(getDatabaseName(), name),
         /* columns */columns,

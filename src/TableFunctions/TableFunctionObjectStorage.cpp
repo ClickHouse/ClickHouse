@@ -1,3 +1,4 @@
+#include <string_view>
 #include "config.h"
 
 #include <Core/Settings.h>
@@ -61,24 +62,33 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
         {
             if (context->getSettingsRef()[Setting::datalake_disk_name].changed)
             {
-                if (Definition::name != "iceberg" && Definition::name != "icebergCluster")
+                if (Definition::name != "iceberg" && Definition::name != "icebergCluster" && Definition::name != "deltaLake" && Definition::name != "deltaLakeCluster")
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg with disk configuration is supported only for default iceberg or icebergCluster");
                 auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
                 switch (disk->getObjectStorage()->getType())
                 {
 #if USE_AWS_S3 && USE_AVRO
                 case ObjectStorageType::S3:
-                    configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
+                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                        configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
+                    else
+                        configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
                     break;
 #endif
 #if USE_AZURE_BLOB_STORAGE && USE_AVRO
                 case ObjectStorageType::Azure:
-                    configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
+                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                        configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
+                    else
+                        configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
                     break;
 #endif
 #if USE_AVRO
                 case ObjectStorageType::Local:
-                    configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
+                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                        configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
+                    else
+                        configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
                     break;
 #endif
                 default:

@@ -352,6 +352,9 @@ public:
 
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
     {
+        if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} is not allowed for usage in storage engines", disk_name);
+
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
         auto disk = context->getDisk(disk_name);
         ready_object_storage = disk->getObjectStorage();
@@ -360,17 +363,6 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Storage requires {} arguments maximum.",
                 2 + with_structure);
-
-        if (auto object_storage_disk = std::static_pointer_cast<DiskObjectStorage>(disk); object_storage_disk)
-        {
-            String path = object_storage_disk->getObjectsKeyPrefix();
-            BaseStorageConfiguration::setPathForRead(path);
-            if (auto s3_object_storage = std::static_pointer_cast<S3ObjectStorage>(ready_object_storage); s3_object_storage)
-                if constexpr (std::is_same_v<BaseStorageConfiguration, StorageS3Configuration>)
-                    BaseStorageConfiguration::setURL(s3_object_storage->getURI());
-        }
-        else
-            BaseStorageConfiguration::setPathForRead(disk->getPath());
 
         std::unordered_map<std::string_view, size_t> engine_args_to_idx;
 

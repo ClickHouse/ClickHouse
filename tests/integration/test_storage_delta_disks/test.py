@@ -80,6 +80,7 @@ def generate_cluster_def(local_path):
             </disk_s3_1>
         </disks>
     </storage_configuration>
+    <allowed_disks_for_table_engines>disk_local,disk_s3_0,disk_s3_1</allowed_disks_for_table_engines>
 </clickhouse>
 """
         )
@@ -234,13 +235,7 @@ def create_delta_table(
     format="Parquet",
     **kwargs,
 ):
-
     if storage_type == "s3":
-        if "bucket" in kwargs:
-            bucket = kwargs["bucket"]
-        else:
-            bucket = cluster.minio_bucket
-
         instance.query(
             f"""
             DROP TABLE IF EXISTS {table_name};
@@ -260,11 +255,6 @@ def create_delta_table(
             """
         )
     elif storage_type == "local":
-        # For local storage, we need to use the absolute path
-        user_files_path = os.path.join(
-            SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
-        )
-        table_path = os.path.join(user_files_path, table_name)
         instance.query(
             f"""
             DROP TABLE IF EXISTS {table_name};
@@ -340,5 +330,19 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
         inserted_data
     )
+
+    if storage_type == "s3":
+        disk_name = f"disk_s3_{use_delta_kernel}"
+    else:
+        disk_name = f"disk_local"
+
+    assert instance.query(f"SELECT * FROM deltaLake() SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
+        inserted_data
+    )
+
+    if storage_type == "s3":
+        assert instance.query(f"SELECT * FROM deltaLakeCluster('cluster_simple') SETTINGS datalake_disk_name = 'disk_s3_{use_delta_kernel}'") == instance.query(
+            inserted_data
+        )
 
     instance.query(f"DROP TABLE {TABLE_NAME}")
