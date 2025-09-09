@@ -15,6 +15,14 @@ namespace DB
 namespace ObjectStorageQueueSetting
 {
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
+    extern const ObjectStorageQueueSettingsString after_processing_move_uri;
+    extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
+    extern const ObjectStorageQueueSettingsString after_processing_move_access_key_id;
+    extern const ObjectStorageQueueSettingsString after_processing_move_secret_access_key;
+    extern const ObjectStorageQueueSettingsString after_processing_move_connection_string;
+    extern const ObjectStorageQueueSettingsString after_processing_move_container;
+    extern const ObjectStorageQueueSettingsString after_processing_tag_key;
+    extern const ObjectStorageQueueSettingsString after_processing_tag_value;
     extern const ObjectStorageQueueSettingsUInt64 buckets;
     extern const ObjectStorageQueueSettingsString last_processed_path;
     extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
@@ -58,6 +66,14 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , columns(columns_.toString())
     , mode(engine_settings[ObjectStorageQueueSetting::mode].toString())
     , last_processed_path(engine_settings[ObjectStorageQueueSetting::last_processed_path])
+    , after_processing_move_uri(engine_settings[ObjectStorageQueueSetting::after_processing_move_uri])
+    , after_processing_move_prefix(engine_settings[ObjectStorageQueueSetting::after_processing_move_prefix])
+    , after_processing_move_access_key_id(engine_settings[ObjectStorageQueueSetting::after_processing_move_access_key_id])
+    , after_processing_move_secret_access_key(engine_settings[ObjectStorageQueueSetting::after_processing_move_secret_access_key])
+    , after_processing_move_connection_string(engine_settings[ObjectStorageQueueSetting::after_processing_move_connection_string])
+    , after_processing_move_container(engine_settings[ObjectStorageQueueSetting::after_processing_move_container])
+    , after_processing_tag_key(engine_settings[ObjectStorageQueueSetting::after_processing_tag_key])
+    , after_processing_tag_value(engine_settings[ObjectStorageQueueSetting::after_processing_tag_value])
     , after_processing(engine_settings[ObjectStorageQueueSetting::after_processing])
     , loading_retries(engine_settings[ObjectStorageQueueSetting::loading_retries])
     , tracked_files_limit(engine_settings[ObjectStorageQueueSetting::tracked_files_limit])
@@ -75,6 +91,14 @@ String ObjectStorageQueueTableMetadata::toString() const
 {
     Poco::JSON::Object json;
     json.set("after_processing", actionToString(after_processing.load()));
+    json.set("after_processing_move_uri", after_processing_move_uri);
+    json.set("after_processing_move_prefix", after_processing_move_prefix);
+    json.set("after_processing_move_access_key_id", after_processing_move_access_key_id);
+    json.set("after_processing_move_secret_access_key", after_processing_move_secret_access_key);
+    json.set("after_processing_move_connection_string", after_processing_move_connection_string);
+    json.set("after_processing_move_container", after_processing_move_container);
+    json.set("after_processing_tag_key", after_processing_tag_key);
+    json.set("after_processing_tag_value", after_processing_tag_value);
     json.set("mode", mode);
     json.set("tracked_files_limit", tracked_files_limit.load());
     json.set("tracked_files_ttl_sec", tracked_files_ttl_sec.load());
@@ -97,6 +121,10 @@ ObjectStorageQueueAction ObjectStorageQueueTableMetadata::actionFromString(const
         return ObjectStorageQueueAction::KEEP;
     if (action == "delete")
         return ObjectStorageQueueAction::DELETE;
+    if (action == "move")
+        return ObjectStorageQueueAction::MOVE;
+    if (action == "tag")
+        return ObjectStorageQueueAction::TAG;
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue action: {}", action);
 }
 
@@ -108,6 +136,10 @@ std::string ObjectStorageQueueTableMetadata::actionToString(ObjectStorageQueueAc
             return "delete";
         case ObjectStorageQueueAction::KEEP:
             return "keep";
+        case ObjectStorageQueueAction::MOVE:
+            return "move";
+        case ObjectStorageQueueAction::TAG:
+            return "tag";
     }
 }
 
@@ -137,6 +169,14 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , columns(json->getValue<String>("columns"))
     , mode(json->getValue<String>("mode"))
     , last_processed_path(getOrDefault<String>(json, "last_processed_file", "s3queue_", ""))
+    , after_processing_move_uri(json->getValue<String>("after_processing_move_uri"))
+    , after_processing_move_prefix(json->getValue<String>("after_processing_move_prefix"))
+    , after_processing_move_access_key_id(json->getValue<String>("after_processing_move_access_key_id"))
+    , after_processing_move_secret_access_key(json->getValue<String>("after_processing_move_secret_access_key"))
+    , after_processing_move_connection_string(json->getValue<String>("after_processing_move_connection_string"))
+    , after_processing_move_container(json->getValue<String>("after_processing_move_container"))
+    , after_processing_tag_key(json->getValue<String>("after_processing_tag_key"))
+    , after_processing_tag_value(json->getValue<String>("after_processing_tag_value"))
     , after_processing(actionFromString(json->getValue<String>("after_processing")))
     , loading_retries(getOrDefault(json, "loading_retries", "", 10ULL))
     , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1ULL))

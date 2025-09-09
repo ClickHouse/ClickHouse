@@ -363,6 +363,8 @@ enum class ObjectStorageQueueAction : uint8_t
 {
     KEEP,
     DELETE,
+    MOVE,
+    TAG,
 };
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueAction)
