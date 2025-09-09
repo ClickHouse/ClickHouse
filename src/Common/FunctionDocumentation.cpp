@@ -198,6 +198,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Comparison, "Comparison"},
         {Category::Conditional, "Conditional"},
         {Category::DateAndTime, "Dates and Times"},
+        {Category::Decimal, "Decimal"},
         {Category::Dictionary, "Dictionary"},
         {Category::Distance, "Distance"},
         {Category::EmbeddedDictionary, "Embedded Dictionary"},

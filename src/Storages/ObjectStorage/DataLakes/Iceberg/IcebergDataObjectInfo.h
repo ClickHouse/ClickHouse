@@ -28,6 +28,8 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata, std::enable_shar
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context_);
 
+    std::optional<String> getFileFormat() const override { return file_format; }
+
     void addPositionDeleteObject(Iceberg::ManifestFileEntry position_delete_object)
     {
         position_deletes_objects.emplace_back(
@@ -44,6 +46,7 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata, std::enable_shar
     std::vector<Iceberg::PositionDeleteObject> position_deletes_objects;
     std::vector<Iceberg::ManifestFileEntry> equality_deletes_objects;
     Int64 sequence_number;
+    String file_format;
 };
 
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;

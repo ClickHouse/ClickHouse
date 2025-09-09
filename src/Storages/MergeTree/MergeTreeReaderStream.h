@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
-#include <Compression/CachedCompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
@@ -13,6 +12,9 @@
 
 namespace DB
 {
+
+class UncompressedCache;
+class CachedCompressedReadBuffer;
 
 /// Basic and the most low-level class
 /// for reading single columns or indexes.
@@ -32,7 +34,7 @@ public:
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
         clockid_t clock_type_);
 
-    virtual ~MergeTreeReaderStream() = default;
+    virtual ~MergeTreeReaderStream();
 
     /// Seeks to start of @row_index mark. Column position is implementation defined.
     virtual void seekToMark(size_t row_index) = 0;
