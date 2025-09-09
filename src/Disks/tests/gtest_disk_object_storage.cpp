@@ -3,10 +3,12 @@
 #include <Disks/DiskFactory.h>
 #include <Disks/registerDisks.h>
 #include <Disks/IDiskTransaction.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBuffer.h>
 
 #include "Common/Exception.h"
 #include <Common/tests/gtest_global_context.h>
@@ -14,8 +16,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/FailPoint.h>
-#include "Core/Defines.h"
-#include "IO/ReadBuffer.h"
+#include <Core/Defines.h>
 
 #include <string>
 
@@ -131,6 +132,20 @@ public:
          }
     }
 
+    std::set<std::string> listAllBlobs(DB::DiskPtr disk)
+    {
+        DB::ObjectStoragePtr object_storage = disk->getObjectStorage();
+
+        DB::RelativePathsWithMetadata children;
+        auto common_key_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
+        object_storage->listObjects(common_key_prefix, children, /* max_keys */ 0);
+
+        std::set<std::string> blobs;
+        for (const auto & child : children)
+            blobs.insert(child->relative_path);
+        return blobs;
+    }
+
     static void TearDownTestSuite()
     {
         removeAll();
@@ -138,6 +153,7 @@ public:
             disk->shutdown();
         initialized_disks.clear();
 
+        // other tests may also register disks, so we need to clear the registry
         DB::clearDiskRegistry();
     }
 
@@ -170,6 +186,11 @@ public:
         return disk;
     }
 
+    void TearDown() override
+    {
+        removeAll();
+    }
+
 private:
     static DB::DisksMap initialized_disks;
 };
@@ -183,6 +204,8 @@ TEST_F(DiskObjectStorageTest, CreateDisk)
     EXPECT_TRUE(disk->isDisk());
     EXPECT_EQ(disk->getName(), "local_object_storage_disk");
     EXPECT_EQ(disk->getPath(), "./disks/local_object_storage_disk/");
+
+    EXPECT_EQ(listAllBlobs(disk).size(), 0);
 }
 
 TEST_F(DiskObjectStorageTest, WriteListReadFile)
@@ -208,7 +231,10 @@ TEST_F(DiskObjectStorageTest, WriteListReadFile)
 
     EXPECT_EQ(disk->getFileSize(file_name), file_content.size());
 
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+
     disk->removeFile(file_name);
+    EXPECT_EQ(listAllBlobs(disk).size(), 0);
 }
 
 TEST_F(DiskObjectStorageTest, WriteFileTxCommit)
@@ -229,6 +255,8 @@ TEST_F(DiskObjectStorageTest, WriteFileTxCommit)
     tx->commit();
 
     EXPECT_TRUE(disk->existsFile(file_name));
+
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
 TEST_F(DiskObjectStorageTest, WriteFileTxUndo)
@@ -249,6 +277,7 @@ TEST_F(DiskObjectStorageTest, WriteFileTxUndo)
     tx->undo();
 
     EXPECT_FALSE(disk->existsFile(file_name));
+    EXPECT_EQ(listAllBlobs(disk).size(), 0);
 }
 
 std::string readAll(DB::ReadBuffer & rb)
@@ -258,7 +287,7 @@ std::string readAll(DB::ReadBuffer & rb)
     return str;
 }
 
-TEST_F(DiskObjectStorageTest, RewriteFileTxUndo)
+TEST_F(DiskObjectStorageTest, RewriteFile)
 {
     auto disk = getDiskObjectStorage();
 
@@ -273,6 +302,79 @@ TEST_F(DiskObjectStorageTest, RewriteFileTxUndo)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+
+    std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
+
+    {
+        auto tx = disk->createTransaction();
+
+        {
+            auto wb = tx->writeFile(file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
+            DB::writeText(rewrite_file_content, *wb);
+            wb->finalize();
+        }
+
+        tx->commit();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), rewrite_file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+}
+
+TEST_F(DiskObjectStorageTest, RewriteFileUndo)
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = getTestName() + "_file_context";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+
+    std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
+
+    {
+        auto tx = disk->createTransaction();
+
+        {
+            auto wb = tx->writeFile(file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
+            DB::writeText(rewrite_file_content, *wb);
+            wb->finalize();
+        }
+
+        tx->undo();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+}
+
+TEST_F(DiskObjectStorageTest, RewriteFileTxCommitFail)
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = getTestName() + "_file_context";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 
     std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
 
@@ -290,4 +392,247 @@ TEST_F(DiskObjectStorageTest, RewriteFileTxUndo)
 
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+}
+
+TEST_F(DiskObjectStorageTest, MoveAndRewriteFile)
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = getTestName() + "_file_context";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+
+    std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
+
+
+    std::string new_file_name = getTestName() + "_file_moved";
+    {
+        auto tx = disk->createTransaction();
+
+        tx->moveFile(file_name, new_file_name);
+
+        auto wb = tx->writeFile(new_file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
+        DB::writeText(rewrite_file_content, *wb);
+        wb->finalize();
+
+        tx->commit();
+    }
+
+    EXPECT_TRUE(disk->existsFile(new_file_name));
+    EXPECT_EQ(readAll(*disk->readFile(new_file_name, {})), rewrite_file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+}
+
+TEST_F(DiskObjectStorageTest, MoveAndRewriteFileTxUndo)
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = getTestName() + "_file_context";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+
+    std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
+
+
+    std::string new_file_name = getTestName() + "_file_moved";
+    {
+        auto tx = disk->createTransaction();
+
+        tx->moveFile(file_name, new_file_name);
+
+        auto wb = tx->writeFile(new_file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
+        DB::writeText(rewrite_file_content, *wb);
+        wb->finalize();
+
+        tx->undo();
+    }
+
+    EXPECT_FALSE(disk->existsFile(new_file_name));
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+}
+
+TEST_F(DiskObjectStorageTest, MoveAndRewriteFileTxCommitFail)
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = getTestName() + "_file_context";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+
+    std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
+
+
+    std::string new_file_name = getTestName() + "_file_moved";
+    {
+        auto tx = disk->createTransaction();
+
+        tx->moveFile(file_name, new_file_name);
+
+        auto wb = tx->writeFile(new_file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
+        DB::writeText(rewrite_file_content, *wb);
+        wb->finalize();
+
+        DB::FailPointInjection::enableFailPoint("disk_object_storage_fail_commit_metadata_transaction");
+        EXPECT_THROW(tx->commit(), DB::Exception);
+    }
+
+    EXPECT_FALSE(disk->existsFile(new_file_name));
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+}
+
+TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFile)
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = getTestName() + "_file_context";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+
+    std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
+
+
+    std::string new_file_name = getTestName() + "_file_linked";
+    {
+        auto tx = disk->createTransaction();
+
+        tx->createHardLink(file_name, new_file_name);
+
+        auto wb = tx->writeFile(new_file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
+        DB::writeText(rewrite_file_content, *wb);
+        wb->finalize();
+
+        tx->commit();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), rewrite_file_content);
+
+    EXPECT_TRUE(disk->existsFile(new_file_name));
+    EXPECT_EQ(readAll(*disk->readFile(new_file_name, {})), rewrite_file_content);
+
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+}
+
+TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFileTxUndo)
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = getTestName() + "_file_context";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+
+    std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
+
+
+    std::string new_file_name = getTestName() + "_file_linked";
+    {
+        auto tx = disk->createTransaction();
+
+        tx->createHardLink(file_name, new_file_name);
+
+        auto wb = tx->writeFile(new_file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
+        DB::writeText(rewrite_file_content, *wb);
+        wb->finalize();
+
+        tx->undo();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+
+    EXPECT_FALSE(disk->existsFile(new_file_name));
+
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+}
+
+TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFileTxCommitFail)
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = getTestName() + "_file_context";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+
+    std::string rewrite_file_content = getTestName() + "_rewritten_file_context";
+
+
+    std::string new_file_name = getTestName() + "_file_linked";
+    {
+        auto tx = disk->createTransaction();
+
+        tx->createHardLink(file_name, new_file_name);
+
+        auto wb = tx->writeFile(new_file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
+        DB::writeText(rewrite_file_content, *wb);
+        wb->finalize();
+
+        DB::FailPointInjection::enableFailPoint("disk_object_storage_fail_commit_metadata_transaction");
+        EXPECT_THROW(tx->commit(), DB::Exception);
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
+
+    EXPECT_FALSE(disk->existsFile(new_file_name));
+
+    EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
