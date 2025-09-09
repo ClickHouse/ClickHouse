@@ -53,7 +53,7 @@ public:
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
     const Block & getHeader() const { return header; }
 
-    TextSearchQueryPtr createSearchQuery(const ActionsDAG::Node & node) const;
+    TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
 

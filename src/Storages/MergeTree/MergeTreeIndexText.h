@@ -260,7 +260,6 @@ public:
 
     IndexSubstreams getSubstreams() const override;
     MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & path_prefix) const override;
-    bool hasHeavyGranules() const override { return true; }
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;

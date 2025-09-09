@@ -55,6 +55,7 @@ private:
     size_t current_row = 0;
     size_t current_mark = 0;
 
+    /// Counts marks remaining to read in index granule.
     struct RemainingMarks
     {
         size_t total = 0;

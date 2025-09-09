@@ -15,9 +15,9 @@
 namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
-    extern const Event TextIndexReadDictionarySparseIndexBlocks;
-    extern const Event TextIndexBloomFilterHits;
-    extern const Event TextIndexBloomFilterMisses;
+    extern const Event TextIndexReadSparseIndexBlocks;
+    extern const Event TextIndexBloomFilterTrueNegatives;
+    extern const Event TextIndexBloomFilterTruePositives;
     extern const Event TextIndexBloomFilterFalsePositives;
     extern const Event TextIndexReadGranulesMicroseconds;
 }
@@ -278,7 +278,7 @@ static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
 /// TODO: add cache for dictionary sparse index
 void MergeTreeIndexGranuleText::deserializeSparseIndex(ReadBuffer & istr)
 {
-    ProfileEvents::increment(ProfileEvents::TextIndexReadDictionarySparseIndexBlocks);
+    ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
 
     sparse_index.tokens = deserializeTokens(istr);
     size_t num_index_tokens = sparse_index.tokens->size();
@@ -322,7 +322,7 @@ void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexConditio
             }
             else
             {
-                ProfileEvents::increment(ProfileEvents::TextIndexBloomFilterHits);
+                ProfileEvents::increment(ProfileEvents::TextIndexBloomFilterTrueNegatives);
 
                 if (global_search_mode == TextSearchMode::All)
                 {
@@ -375,7 +375,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(IndexReaderStream & stream, In
 
             if (token_idx.has_value())
             {
-                ProfileEvents::increment(ProfileEvents::TextIndexBloomFilterMisses);
+                ProfileEvents::increment(ProfileEvents::TextIndexBloomFilterTruePositives);
                 it->second = dictionary_block.token_infos.at(token_idx.value());
             }
             else
@@ -497,7 +497,8 @@ DictionarySparseIndex serializeTokensAndPostings(
             {
                 postings_stream.compressed_hashing.next();
                 auto postings_mark = postings_stream.getCurrentMark();
-                UInt64 offset_in_file = postings_mark.offset_in_compressed_file + postings_mark.offset_in_decompressed_block;
+                chassert(postings_mark.offset_in_decompressed_block == 0);
+                UInt64 offset_in_file = postings_mark.offset_in_compressed_file;
 
                 writeVarUInt(offset_in_file, dictionary_stream.compressed_hashing);
                 compressed_postings.serialize(postings_stream.compressed_hashing);
@@ -580,9 +581,7 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
         tokens_map.emplace(key_holder, it, inserted);
 
         if (inserted)
-        {
             it->getMapped() = &posting_lists.emplace_back();
-        }
 
         it->getMapped()->add(current_row);
     }

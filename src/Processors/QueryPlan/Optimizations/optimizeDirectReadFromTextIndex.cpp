@@ -129,7 +129,7 @@ private:
             return std::nullopt;
 
         const auto & [index_name, condition] = *selected_condition_it;
-        auto search_query = condition->createSearchQuery(function_node);
+        auto search_query = condition->createTextSearchQuery(function_node);
 
         if (!search_query)
             return std::nullopt;
@@ -148,6 +148,17 @@ private:
         return std::make_pair(index_name, virtual_column_name.value());
     }
 };
+
+static bool hasIndexInAllParts(const std::unordered_set<DataPartPtr> & unique_parts, const IMergeTreeIndex & index)
+{
+    for (const auto & part : unique_parts)
+    {
+        auto format = index.getDeserializedFormat(part->getDataPartStorage(), index.getFileName());
+        if (!format)
+            return false;
+    }
+    return true;
+}
 
 /// Text index search queries have this form:
 ///     SELECT [...]
@@ -181,11 +192,22 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
     if (!indexes || indexes->skip_indexes.useful_indices.empty())
         return;
 
+    const auto & parts_with_ranges = read_from_merge_tree_step->getParts();
+    if (parts_with_ranges.empty())
+        return;
+
+    std::unordered_set<DataPartPtr> unique_parts;
+    for (const auto & part : parts_with_ranges)
+        unique_parts.insert(part.data_part);
+
     IndexToConditionMap index_conditions;
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
         if (auto * text_index_condition = typeid_cast<MergeTreeIndexConditionText *>(index.condition.get()))
-            index_conditions[index.index->index.name] = text_index_condition;
+        {
+            if (hasIndexInAllParts(unique_parts, *index.index))
+                index_conditions[index.index->index.name] = text_index_condition;
+        }
     }
 
     if (index_conditions.empty())
@@ -208,7 +230,7 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
 
     bool removes_filter_column = filter_step->removesFilterColumn();
     auto new_filter_column_name = filter_dag.getOutputs().front()->result_name;
-    filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_step->getExpression().clone(), new_filter_column_name, removes_filter_column);
+    filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
 }
 
 }

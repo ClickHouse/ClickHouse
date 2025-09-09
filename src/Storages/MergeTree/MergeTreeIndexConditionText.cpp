@@ -110,7 +110,7 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "match";
 }
 
-TextSearchQueryPtr MergeTreeIndexConditionText::createSearchQuery(const ActionsDAG::Node & node) const
+TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
 {
     RPNElement rpn_element;
     RPNBuilderTreeContext rpn_tree_context(getContext());
@@ -133,9 +133,8 @@ std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const 
     if (it == all_search_queries.end())
         return std::nullopt;
 
-    String function_name = it->second->function_name;
-    size_t index = function_name_to_index[query.function_name]++;
-    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, function_name, index);
+    size_t counter = function_name_to_index[query.function_name]++;
+    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.function_name, counter);
 
     virtual_column_to_search_query[virtual_column_name] = it->second;
     return virtual_column_name;

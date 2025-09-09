@@ -164,22 +164,20 @@ size_t MergeTreeReaderTextIndex::readRows(
     size_t read_rows = 0;
     createEmptyColumns(res_columns);
 
+    size_t granularity = index.index->index.granularity;
+    size_t index_last_mark = (current_task_last_mark + granularity - 1) / granularity;
+    index_reader->adjustRightMark(index_last_mark);
+
     while (read_rows < max_rows_to_read)
     {
-        size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
-
-        size_t granularity = index.index->index.granularity;
         size_t index_mark = from_mark / granularity;
-        size_t index_last_mark = (current_task_last_mark + granularity - 1) / granularity;
-
-        index_reader->adjustRightMark(index_last_mark);
+        size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
 
         auto it = granules.find(index_mark);
         if (it == granules.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule not found (mark: {}, index_mark: {})", from_mark, index_mark);
 
         auto & granule = it->second;
-        const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
 
         if (!granule.may_be_true)
         {
@@ -193,6 +191,7 @@ size_t MergeTreeReaderTextIndex::readRows(
         {
             readPostingsIfNeeded(granule);
 
+            const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
             size_t mark_at_index_granule = index_mark * granularity;
             size_t granule_offset = index_granularity.getRowsCountInRange(mark_at_index_granule, from_mark);
 
@@ -300,8 +299,6 @@ void applyPostingsAll(
     if (postings_map.size() > std::numeric_limits<UInt16>::max())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many tokens ({}) for All search mode", postings_map.size());
 
-    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
-    PaddedPODArray<UInt16> counters(num_rows, 0);
     std::vector<CompressedPostings::Iterator *> iterators;
 
     for (const auto & token : search_tokens)
@@ -312,6 +309,9 @@ void applyPostingsAll(
 
         iterators.push_back(&it->second);
     }
+
+    PaddedPODArray<UInt16> counters(num_rows, 0);
+    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
 
     for (auto & postings_it : iterators)
     {

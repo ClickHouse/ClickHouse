@@ -141,9 +141,11 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
         if (!res)
             res = index->createIndexGranule();
 
-        IndexDeserializationState state;
-        state.version = version;
-        state.condition = condition;
+        IndexDeserializationState state
+        {
+            .version = version,
+            .condition = condition
+        };
 
         res->deserializeBinaryWithMultipleStreams(streams, state);
         stream_mark = mark + 1;

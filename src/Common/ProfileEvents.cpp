@@ -94,11 +94,11 @@
     M(VectorSimilarityIndexCacheMisses, "Number of times an index granule has not been found in the vector index cache and had to be read from disk.", ValueType::Number) \
     M(VectorSimilarityIndexCacheWeightLost, "Approximate number of bytes evicted from the vector index cache.", ValueType::Number) \
     M(TextIndexReadDictionaryBlocks, "Number of times a dictionary block has been read from the text index.", ValueType::Number) \
-    M(TextIndexReadDictionarySparseIndexBlocks, "Number of times a dictionary sparse index block has been read from the text index.", ValueType::Number) \
+    M(TextIndexReadSparseIndexBlocks, "Number of times a dictionary sparse index block has been read from the text index.", ValueType::Number) \
     M(TextIndexReaderTotalMicroseconds, "Total time spent reading the text index.", ValueType::Microseconds) \
     M(TextIndexReadGranulesMicroseconds, "Total time spent reading granules and analyzing the text index.", ValueType::Microseconds) \
-    M(TextIndexBloomFilterHits, "Number of times a token has been filtered by bloom filter.", ValueType::Number) \
-    M(TextIndexBloomFilterMisses, "Number of times a token has passed the bloom filter and was found in the dictionary.", ValueType::Number) \
+    M(TextIndexBloomFilterTrueNegatives, "Number of times a token has been filtered by bloom filter.", ValueType::Number) \
+    M(TextIndexBloomFilterTruePositives, "Number of times a token has passed the bloom filter and was found in the dictionary.", ValueType::Number) \
     M(TextIndexBloomFilterFalsePositives, "Number of times a token has passed the bloom filter and was not found in the dictionary.", ValueType::Number) \
     M(TextIndexReadPostings, "Number of times a posting list has been read from the text index.", ValueType::Number) \
     M(TextIndexUsedEmbeddedPostings, "Number of times a posting list embedded in the dictionary has been used.", ValueType::Number) \

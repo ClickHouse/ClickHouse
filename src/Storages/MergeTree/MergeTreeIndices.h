@@ -279,8 +279,6 @@ struct IMergeTreeIndex
 
     virtual bool isMergeable() const { return false; }
 
-    virtual bool hasHeavyGranules() const { return false; }
-
     /// Returns extension for serialization.
     /// Reimplement if you want new index format.
     ///
