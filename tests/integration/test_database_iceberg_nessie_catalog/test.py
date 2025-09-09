@@ -73,11 +73,9 @@ def create_table(
 def create_clickhouse_iceberg_database(
     started_cluster, node, name, additional_settings={}
 ):
-    # minio_ip = started_cluster.get_instance_ip('minio')
     settings = {
         "catalog_type": "rest",
         "warehouse": "warehouse", 
-        # "storage_endpoint": f"http://{minio_ip}:9000/warehouse-rest",
         "storage_endpoint": "http://minio:9000/warehouse-rest",
     }
 
@@ -98,15 +96,8 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
 
 def load_catalog_impl(started_cluster):
     minio_ip = started_cluster.get_instance_ip('minio')
-    s3_endpoint = f"http://{minio_ip}:9000"
-
-    # Add minio hostname mapping so PyIceberg can resolve 'minio' hostnames in table metadata
-    import subprocess
-    try:
-        subprocess.run(['bash', '-c', f'echo "{minio_ip} minio" >> /etc/hosts'], check=True)
-        print(f"Added minio hostname mapping: {minio_ip} minio")
-    except Exception as e:
-        print(f"Failed to add hostname mapping: {e}")
+    s3_endpoint = f"http://{minio_ip}:9002"
+    print(f"S3 endpoint: {s3_endpoint}")
 
     return RestCatalog(
         name="my_catalog",
@@ -119,6 +110,7 @@ def load_catalog_impl(started_cluster):
             "s3.secret-access-key": minio_secret_key,
             "s3.region": "us-east-1",
             "s3.path-style-access": "true",
+            "s3.request-timeout": "5",
         },
     )
 

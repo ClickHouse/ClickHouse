@@ -11,6 +11,7 @@ services:
       - nessie.catalog.default-warehouse=warehouse
       - nessie.catalog.warehouses.warehouse.location=s3://warehouse-rest/
       - nessie.catalog.service.s3.default-options.endpoint=http://minio:9000/
+      - nessie.catalog.service.s3.default-options.external-endpoint=http://127.0.0.1:9002/
       - nessie.catalog.service.s3.default-options.access-key=urn:nessie-secret:quarkus:nessie.catalog.secrets.access-key
       - nessie.catalog.service.s3.default-options.path-style-access=true
       - nessie.catalog.service.s3.default-options.auth-type=STATIC
@@ -35,10 +36,10 @@ services:
     networks:
       default:
         aliases:
-          - warehouse.minio
+          - warehouse-rest.minio
     ports:
-      - 9001
-      - 9000
+      - "9001:9001"
+      - "9002:9000"
     command: ["server", "/data", "--console-address", ":9001"]
 
   # TODO: move this code to cluster.py
