@@ -92,7 +92,7 @@ protected:
 private:
     virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) = 0;
     virtual void logImpl(AsynchronousMetricValues &) { }
-    static auto tryGetMetricValue(const AsynchronousMetricValues & values, const String & metric, size_t default_value = 0);
+    static const AsynchronousMetricValue * getAsynchronousMetricValue(const AsynchronousMetricValues & values, std::string_view name);
     void processWarningForMutationStats(const AsynchronousMetricValues & new_values) const;
 
     void processWarningForMemoryOverload(const AsynchronousMetricValues & new_values) const;
