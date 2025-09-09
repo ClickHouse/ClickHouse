@@ -10,6 +10,11 @@ import time
 import threading
 import numpy as np
 from ci.praktika.result import Result
+from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.praktika.info import Info
+from ci.praktika.utils import Shell, Utils
+
+temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
 TABLE = "table"
 S3_URLS = "s3urls"
@@ -509,9 +514,69 @@ TESTS_TO_RUN = [
     ("Test using the laion dataset", laion_5b_mini_for_quick_test, test_run_laion_1m)
 ]
 
+def install_and_start_clickhouse():
+    res = True
+    results = []
+    ch = ClickHouseProc()
+    info = Info()
+
+    if Utils.is_arm():
+        latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
+    elif Utils.is_amd():
+        latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
+    else:
+        assert False, f"Unknown processor architecture"
+
+    if True:
+        step_name = "Download ClickHouse"
+        logger(step_name)
+        commands = [
+            f"wget -nv -P {temp_dir} {latest_ch_master_url}",
+            f"chmod +x {temp_dir}/clickhouse",
+            f"{temp_dir}/clickhouse --version",
+        ]
+        results.append(Result.from_commands_run(name=step_name, command=commands))
+        res = results[-1].is_ok()
+
+    if res:
+        step_name = "Install ClickHouse"
+        print(step_name)
+
+        def install():
+            # implement required ch configuration
+            return (
+                ch.install_clickbench_config()
+            )  # reuses config used for clickbench job, it's more or less default ch configuration
+
+        results.append(Result.from_commands_run(name=step_name, command=[install]))
+        res = results[-1].is_ok()
+
+    if res:
+        step_name = "Start ClickHouse"
+        print(step_name)
+
+        def start():
+            return ch.start_light()
+
+        results.append(
+            Result.from_commands_run(
+                name=step_name,
+                command=[
+                    start,  # command could be python callable or bash command as a string
+                ],
+            )
+        )
+        res = results[-1].is_ok()
+        return results
 
 def main():
     test_results = []
+
+    test_results = install_and_start_clickhouse()
+
+    if test_results is None or not test_results[-1].is_ok():
+        return
+
     for test in TESTS_TO_RUN:
         test_results.append(
             Result.from_commands_run(
