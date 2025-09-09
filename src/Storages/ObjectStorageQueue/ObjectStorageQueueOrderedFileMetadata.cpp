@@ -383,6 +383,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
                 node_metadata.toString(),
                 use_persistent_processing_nodes ? zkutil::CreateMode::Persistent : zkutil::CreateMode::Ephemeral));
 
+        const auto create_processing_id_path_idx = requests.size();
         if (create_if_not_exists_enabled)
         {
             requests.push_back(
@@ -395,7 +396,8 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             {
                 processing_node_exists = ObjectStorageQueueMetadata::getZooKeeper()->exists(processing_node_id_path);
             });
-            requests.push_back(zkutil::makeCreateRequest(processing_node_id_path, "", zkutil::CreateMode::Persistent));
+            if (!processing_node_exists)
+                requests.push_back(zkutil::makeCreateRequest(processing_node_id_path, "", zkutil::CreateMode::Persistent));
         }
 
         requests.push_back(zkutil::makeSetRequest(processing_node_id_path, processor_info, -1));
@@ -448,10 +450,30 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         if (has_request_failed(create_processing_path_idx))
             return {false, FileStatus::State::Processing};
 
+        if (has_request_failed(create_processing_id_path_idx))
+        {
+            /// This should not happen if create_processing_path_idx succeeded.
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Failed to create processing id node at path {}: {}",
+                requests[failed_idx]->getPath(), code);
+        }
+
         if (check_bucket_version_idx.has_value() && has_request_failed(*check_bucket_version_idx))
         {
-            LOG_TEST(log, "Version of bucket lock changed: {}. Will retry for file `{}`", code, path);
-            continue;
+            std::optional<size_t> bucket_lock_version;
+            zk_retries.retryLoop([&]
+            {
+                std::string data;
+                Coordination::Stat bucket_lock_stat;
+                if (ObjectStorageQueueMetadata::getZooKeeper()->tryGet(bucket_info->bucket_lock_id_path, data, &bucket_lock_stat))
+                    bucket_lock_version = bucket_lock_stat.version;
+            });
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Version of bucket lock changed. Expected version: {}, got: {}",
+                bucket_info->bucket_version,
+                bucket_lock_version.has_value() ? toString(*bucket_lock_version) : "None");
         }
 
         if (has_request_failed(check_max_processed_path))

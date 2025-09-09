@@ -514,11 +514,10 @@ def test_streaming_to_many_views(started_cluster, mode):
     for i in range(20, 40):
         log_message = f"File {files_path}/b_{i}.csv failed at try 2/2, retries node exists: true"
 
-        node.wait_for_log_line(
-            log_message,
-            timeout=120,
-            look_behind_lines=100000,
-        )
+        for _ in range(10):
+            if node.contains_in_log(log_message):
+                break
+            time.sleep(1)
 
         assert node.contains_in_log(
             log_message
