@@ -2,24 +2,30 @@
 
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/GinFilter.h>
 #include <Interpreters/ITokenExtractor.h>
+#include <absl/container/flat_hash_map.h>
 
 namespace DB
 {
+
+enum class SearchAnyAllMode : uint8_t
+{
+    Any,
+    All
+};
 
 namespace traits
 {
 struct SearchAnyTraits
 {
     static constexpr String name = "searchAny";
-    static constexpr GinSearchMode search_mode = GinSearchMode::Any;
+    static constexpr SearchAnyAllMode mode = SearchAnyAllMode::Any;
 };
 
 struct SearchAllTraits
 {
     static constexpr String name = "searchAll";
-    static constexpr GinSearchMode search_mode = GinSearchMode::All;
+    static constexpr SearchAnyAllMode mode = SearchAnyAllMode::All;
 };
 }
 

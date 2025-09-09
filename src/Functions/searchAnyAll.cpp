@@ -158,12 +158,12 @@ void execute(
     const FunctionSearchNeedles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
-    switch (SearchTraits::search_mode)
+    switch (SearchTraits::mode)
     {
-        case GinSearchMode::Any:
+        case SearchAnyAllMode::Any:
             executeSearchAny(token_extractor, col_input, input_rows_count, needles, col_result);
             break;
-        case GinSearchMode::All:
+        case SearchAnyAllMode::All:
             executeSearchAll(token_extractor, col_input, input_rows_count, needles, col_result);
             break;
     }

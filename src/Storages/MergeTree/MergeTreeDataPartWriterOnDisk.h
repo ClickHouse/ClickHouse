@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <IO/WriteBufferFromFile.h>
