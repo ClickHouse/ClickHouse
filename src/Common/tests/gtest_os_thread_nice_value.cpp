@@ -8,7 +8,7 @@
 
 using namespace DB;
 
-namespace ErrorCodes
+namespace DB::ErrorCodes
 {
     extern const int CANNOT_SET_THREAD_PRIORITY;
     extern const int CANNOT_GET_THREAD_PRIORITY;
