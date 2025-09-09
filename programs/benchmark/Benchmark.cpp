@@ -144,7 +144,7 @@ public:
                 secure,
                 /* bind_host_= */ ""));
 
-            if (!round_robin)
+            if (!round_robin || total_stats.empty())
                 total_stats.emplace_back(std::make_shared<Stats>());
         }
 
