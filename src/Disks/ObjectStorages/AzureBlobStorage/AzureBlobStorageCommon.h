@@ -80,7 +80,7 @@ struct Endpoint
         if (url.ends_with('/'))
           url.pop_back();
 
-        if (!account_name.empty() && (!add_account_name_to_url.has_value() || (add_account_name_to_url == true) ))
+        if (!account_name.empty() && (!add_account_name_to_url.has_value() || (add_account_name_to_url.value())))
             url += "/" + account_name;
 
         if (!container_name.empty())
