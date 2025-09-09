@@ -520,7 +520,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         /// Check if COUNT() or COUNT(non-nullable column) which can be verified by simply casting to `AggregateFunctionCount *`.
         if (typeid_cast<const AggregateFunctionCount *>(params.aggregates[0].function.get()))
             is_simple_count = true;
-        else if (params.aggregates[0].function->getName() == "sum" && result_type->getTypeId() == DB::TypeIndex::UInt64)
+        else if (params.aggregates[0].function->getName() == "sum" && result_type->getTypeId() == DB::TypeIndex::UInt64 && params.aggregates[0].argument_names.size() == 1)
             is_simple_sum = true;
     }
 
