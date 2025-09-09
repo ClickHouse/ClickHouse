@@ -1,3 +1,4 @@
+-- Tags: no-fasttest
 
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;

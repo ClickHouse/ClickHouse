@@ -266,12 +266,12 @@ UInt64 ColumnStatistics::rowCount() const
     return rows;
 }
 
-String ColumnStatistics::debugString() const
+String ColumnStatistics::getNameForLogs() const
 {
     String ret;
     for (const auto & [type, single_stats] : stats)
     {
-        ret += single_stats->debugString();
+        ret += single_stats->getNameForLogs();
         ret += " | ";
     }
     ret += "rows: " + std::to_string(rows);

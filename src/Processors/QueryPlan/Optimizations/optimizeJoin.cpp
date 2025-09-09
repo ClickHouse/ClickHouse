@@ -176,7 +176,7 @@ struct RuntimeHashStatisticsContext
     }
 };
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, ActionsDAG::Node * filter = nullptr)
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -185,12 +185,12 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, ActionsDAG::Node * f
 
         if (reading->getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
         {
-            ActionsDAG::Node * prewhere_node = nullptr;
-            if (auto prewhere_info = reading->getPrewhereInfo())
-                prewhere_node = const_cast<ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name));
-
             if (auto estimator_ = reading->getConditionSelectivityEstimator())
             {
+                auto prewhere_info = reading->getPrewhereInfo();
+                const ActionsDAG::Node * prewhere_node = prewhere_info
+                    ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
+                    : nullptr;
                 auto relation_profile = estimator_->estimateRelationProfile(filter, prewhere_node);
                 RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
@@ -266,7 +266,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, ActionsDAG::Node * f
     if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
     {
         const auto & dag = filter_step->getExpression();
-        auto * predicate = const_cast<ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
+        const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
         auto stats = estimateReadRowsCount(*node.children.front(), predicate);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;

@@ -34,8 +34,8 @@ class ConditionSelectivityEstimator : public WithContext
 public:
     explicit ConditionSelectivityEstimator(ContextPtr context_) : WithContext(context_) {}
 
-    RelationProfile estimateRelationProfile(ActionsDAG::Node * filter, ActionsDAG::Node * prewhere) const;
-    RelationProfile estimateRelationProfile(ActionsDAG::Node * node) const;
+    RelationProfile estimateRelationProfile(const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
+    RelationProfile estimateRelationProfile(const ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const RPNBuilderTreeNode & node) const;
     RelationProfile estimateRelationProfile() const;
 
@@ -100,7 +100,7 @@ using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEst
 class ConditionSelectivityEstimatorBuilder
 {
 public:
-    ConditionSelectivityEstimatorBuilder(ContextPtr context_);
+    explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
     void addStatistics(ColumnStatisticsPtr column_stats);
     void incrementRowCount(UInt64 rows);
     ConditionSelectivityEstimatorPtr getEstimator() const;

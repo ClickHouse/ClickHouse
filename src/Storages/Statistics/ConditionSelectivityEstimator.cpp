@@ -14,7 +14,7 @@
 namespace DB
 {
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(ActionsDAG::Node * filter, ActionsDAG::Node * prewhere) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
 {
     if (filter == nullptr && prewhere == nullptr)
     {
@@ -142,7 +142,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     return result;
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(ActionsDAG::Node * node) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const ActionsDAG::Node * node) const
 {
     RPNBuilderTreeContext tree_context(getContext());
     return estimateRelationProfile(RPNBuilderTreeNode(node, tree_context));
