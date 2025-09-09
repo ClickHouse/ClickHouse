@@ -31,7 +31,7 @@ def get_spark():
     return builder.master("local").getOrCreate()
 
 @pytest.fixture(scope="session")
-def started_cluster():
+def started_cluster_iceberg_schema_evolution():
     try:
         cluster = ClickHouseCluster(__file__, with_spark=True)
         cluster.add_instance(
