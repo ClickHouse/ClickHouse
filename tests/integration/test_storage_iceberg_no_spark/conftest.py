@@ -13,7 +13,7 @@ from helpers.s3_tools import (
 )
 
 @pytest.fixture(scope="session")
-def started_cluster_no_spark():
+def started_cluster_iceberg_no_spark():
     try:
         cluster = ClickHouseCluster(__file__, with_spark=True)
         cluster.add_instance(
