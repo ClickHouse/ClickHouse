@@ -32,11 +32,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using Arenas = std::vector<ArenaPtr>;
@@ -196,17 +191,6 @@ public:
         ColumnRawPtrs & key_columns,
         AggregateColumns & aggregate_columns, /// Passed to not create them anew for each block
         bool & no_more_keys) const;
-
-#define FOR_INLINABLE_UINT_TYPES_FOO(M) \
-    M(UInt8) \
-    M(UInt16) \
-    M(UInt32) \
-    M(UInt64) \
-    M(Int8) \
-    M(Int16) \
-    M(Int32) \
-    M(Int64)
-
         class IInlinedSumHelper
         {
         public:
@@ -254,6 +238,16 @@ public:
 
         static std::unique_ptr<IInlinedSumHelper> createSumExtractorForType(DB::DataTypePtr type)
         {
+#define FOR_INLINABLE_UINT_TYPES(M) \
+    M(UInt8) \
+    M(UInt16) \
+    M(UInt32) \
+    M(UInt64) \
+    M(Int8) \
+    M(Int16) \
+    M(Int32) \
+    M(Int64)
+
             WhichDataType which(type);
             if (false) {} // NOLINT
 #define M(TYPE) \
@@ -261,9 +255,10 @@ public:
                 return std::make_unique<InlineAggregationSumHelper<TYPE> >(); \
             }
 
-            FOR_INLINABLE_UINT_TYPES_FOO(M)
+            FOR_INLINABLE_UINT_TYPES(M)
 #undef M
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type index for sum extractor");
+#undef FOR_INLINABLE_UINT_TYPES
+            return nullptr;
         }
 
     /** This array serves two purposes.

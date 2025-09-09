@@ -571,9 +571,13 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     {
         const auto & arg_name = params.aggregates[0].argument_names[0];
         const auto * column_type = header.findByName(arg_name);
-        // When an observer node receives the query, it does not have table column information locally.
+        // When an observer node receives the query, it does not have table column information locally
         if (column_type != nullptr)
+        {
             inline_sum_helper = createSumExtractorForType(column_type->type);
+            if (inline_sum_helper == nullptr)
+                is_simple_sum = false;
+        }
         else
             is_simple_sum = false;
     }
@@ -3431,7 +3435,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
         res = place;
     }
 
-    if (is_simple_count)
+    if (is_simple_count || is_simple_sum)
     {
         chassert(aggregate_columns_data.size() == 1);
         const auto & other_aggregated_counts = *aggregate_columns_data[0];
