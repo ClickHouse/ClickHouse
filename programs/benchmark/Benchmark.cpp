@@ -438,7 +438,7 @@ private:
         }
         else
         {
-            // Report previous interval (of any)
+            // Report previous interval (if any)
             if (interval)
             {
                 interval->close(now_ns, threads);
@@ -643,8 +643,8 @@ private:
                     continue;
                 if (cur_interval->start_ns >= watch.getEnd())
                     break;
-                double overlap_ns = std::min(cur_interval->end_ns, watch.getEnd()) - std::max(cur_interval->start_ns, watch.getStart());
-                double weight = double(overlap_ns) / duration_ns;
+                const double overlap_ns = std::min(cur_interval->end_ns, watch.getEnd()) - std::max(cur_interval->start_ns, watch.getStart());
+                const double weight = overlap_ns / duration_ns;
                 if (overlap_ns > 0 && duration_ns > 0)
                     cur_interval->stats[info_index]->addWeighted(progress.read_rows, progress.read_bytes, info.rows, info.bytes, weight);
             }
