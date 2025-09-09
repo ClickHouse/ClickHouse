@@ -794,7 +794,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
 
     ASTPtr expression_ast;
 
-    ConditionSelectivityEstimatorPtr estimator = std::make_shared<ConditionSelectivityEstimator>(local_context);
+    ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
 
     auto build_estimator_all_partitions = [&]()
     {
@@ -804,9 +804,9 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         {
             auto stats = part.data_part->loadStatistics();
             /// TODO: We only have one stats file for every part.
-            estimator->incrementRowCount(part.data_part->rows_count);
+            estimator_builder.incrementRowCount(part.data_part->rows_count);
             for (const auto & stat : stats)
-                estimator->addStatistics(stat);
+                estimator_builder.addStatistics(stat);
         }
         catch (...)
         {
@@ -816,7 +816,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (filter_dag == nullptr)
     {
         build_estimator_all_partitions();
-        return estimator;
+        return estimator_builder.getEstimator();
     }
 
     ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), local_context);
@@ -834,9 +834,9 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
             if (!partition_pruner.canBePruned(*part.data_part))
             {
                 auto stats = part.data_part->loadStatistics();
-                estimator->incrementRowCount(part.data_part->rows_count);
+                estimator_builder.incrementRowCount(part.data_part->rows_count);
                 for (const auto & stat : stats)
-                    estimator->addStatistics(stat);
+                    estimator_builder.addStatistics(stat);
             }
         }
         catch (...)
@@ -845,7 +845,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         }
     }
 
-    return estimator;
+    return estimator_builder.getEstimator();
 }
 
 bool MergeTreeData::supportsFinal() const

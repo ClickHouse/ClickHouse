@@ -241,25 +241,34 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode
     return false;
 }
 
-void ConditionSelectivityEstimator::incrementRowCount(UInt64 rows)
+ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(ContextPtr context_)
+    : estimator(std::make_shared<ConditionSelectivityEstimator>(context_))
 {
-    total_rows += rows;
 }
 
-void ConditionSelectivityEstimator::addStatistics(ColumnStatisticsPtr column_stat)
+void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
 {
-    if (column_stat != nullptr)
-        column_estimators[column_stat->columnName()].addStatistics(column_stat);
+    estimator->total_rows += rows;
 }
 
-void ConditionSelectivityEstimator::ColumnEstimator::addStatistics(ColumnStatisticsPtr other_stats)
+void ConditionSelectivityEstimatorBuilder::addStatistics(ColumnStatisticsPtr column_stats)
 {
-    if (stats == nullptr)
+    if (column_stats != nullptr)
     {
-        stats = other_stats;
-        return;
+        has_data = true;
+        auto & column_estimator = estimator->column_estimators[column_stats->columnName()];
+        if (column_estimator.stats == nullptr)
+            column_estimator.stats = column_stats;
+        else
+            column_estimator.stats->merge(column_stats);
     }
-    stats->merge(other_stats);
+}
+
+ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
+{
+    if (!has_data)
+        return nullptr;
+    return estimator;
 }
 
 Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const PlainRanges & ranges) const

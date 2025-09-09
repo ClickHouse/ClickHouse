@@ -29,6 +29,8 @@ class ConditionSelectivityEstimator : public WithContext
 {
     struct ColumnEstimator;
     using ColumnEstimators = std::unordered_map<String, ColumnEstimator>;
+
+    friend class ConditionSelectivityEstimatorBuilder;
 public:
     explicit ConditionSelectivityEstimator(ContextPtr context_) : WithContext(context_) {}
 
@@ -36,9 +38,6 @@ public:
     RelationProfile estimateRelationProfile(ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const RPNBuilderTreeNode & node) const;
     RelationProfile estimateRelationProfile() const;
-
-    void addStatistics(ColumnStatisticsPtr column_stat);
-    void incrementRowCount(UInt64 rows);
 
     struct RPNElement
     {
@@ -78,8 +77,6 @@ private:
     {
         ColumnStatisticsPtr stats;
 
-        void addStatistics(ColumnStatisticsPtr other_stats);
-
         Float64 estimateRanges(const PlainRanges & ranges) const;
         UInt64 estimateCardinality() const;
     };
@@ -99,5 +96,18 @@ private:
 };
 
 using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
+
+class ConditionSelectivityEstimatorBuilder
+{
+public:
+    ConditionSelectivityEstimatorBuilder(ContextPtr context_);
+    void addStatistics(ColumnStatisticsPtr column_stats);
+    void incrementRowCount(UInt64 rows);
+    ConditionSelectivityEstimatorPtr getEstimator() const;
+
+private:
+    bool has_data = false;
+    ConditionSelectivityEstimatorPtr estimator;
+};
 
 }

@@ -95,11 +95,13 @@ TEST(Statistics, Estimator)
     ColumnStatisticsPtr stats_c = mock_statistics("c");
     stats_c->build(std::move(c));
 
-    ConditionSelectivityEstimator estimator(getContext().context);
-    estimator.addStatistics(stats_a);
-    estimator.addStatistics(stats_b);
-    estimator.addStatistics(stats_c);
-    estimator.incrementRowCount(10000);
+    ConditionSelectivityEstimatorBuilder estimator_builder(getContext().context);
+    estimator_builder.addStatistics(stats_a);
+    estimator_builder.addStatistics(stats_b);
+    estimator_builder.addStatistics(stats_c);
+    estimator_builder.incrementRowCount(10000);
+
+    auto estimator = estimator_builder.getEstimator();
 
     auto test_impl = [&](const String & expression, Int64 real_result, Float64 eps)
     {
@@ -108,7 +110,7 @@ TEST(Statistics, Estimator)
         RPNBuilderTreeContext tree_context(context, Block{{ DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }}, {});
         ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
         RPNBuilderTreeNode node(ast.get(), tree_context);
-        auto estimate_result = estimator.estimateRelationProfile(node);
+        auto estimate_result = estimator->estimateRelationProfile(node);
         std::cout << expression << " " << real_result << " "<< estimate_result.rows << std::endl;
         EXPECT_LT(std::abs(real_result - static_cast<Int64>(estimate_result.rows)), 10000 * eps);
     };
