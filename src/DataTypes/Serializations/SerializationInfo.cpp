@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <Columns/ColumnSparse.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -30,6 +31,8 @@ constexpr auto KEY_COLUMNS = "columns";
 constexpr auto KEY_NUM_DEFAULTS = "num_defaults";
 constexpr auto KEY_KIND = "kind";
 constexpr auto KEY_NAME = "name";
+
+constexpr auto KEY_STRING_WITH_SIZE_STREAM = "string_with_size_stream";
 
 }
 
@@ -144,7 +147,9 @@ std::shared_ptr<SerializationInfo> SerializationInfo::createWithType(
             new_kind = ISerialization::Kind::DEFAULT;
     }
 
-    return std::make_shared<SerializationInfo>(new_kind, new_settings);
+    auto new_info = new_type.createSerializationInfo(new_settings);
+    new_info->kind = new_kind;
+    return new_info;
 }
 
 void SerializationInfo::serialializeKindBinary(WriteBuffer & out) const
@@ -188,16 +193,22 @@ ISerialization::Kind SerializationInfo::chooseKind(const Data & data, const Sett
     return ratio > settings.ratio_of_defaults_for_sparse ? ISerialization::Kind::SPARSE : ISerialization::Kind::DEFAULT;
 }
 
-SerializationInfoByName::SerializationInfoByName(
-    const NamesAndTypesList & columns,
-    const SerializationInfo::Settings & settings)
+SerializationInfoByName::SerializationInfoByName(const SerializationInfo::Settings & settings_)
+    : settings(settings_)
+{
+}
+
+SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & columns, const SerializationInfo::Settings & settings_)
+    : settings(settings_)
 {
     if (settings.isAlwaysDefault())
         return;
 
     for (const auto & column : columns)
+    {
         if (column.type->supportsSparseSerialization())
             emplace(column.name, column.type->createSerializationInfo(settings));
+    }
 }
 
 void SerializationInfoByName::add(const Block & block)
@@ -267,12 +278,25 @@ ISerialization::Kind SerializationInfoByName::getKind(const String & column_name
     return it != end() ? it->second->getKind() : ISerialization::Kind::DEFAULT;
 }
 
+size_t SerializationInfoByName::getVersion() const
+{
+    if (settings.string_with_size_stream)
+        return SERIALIZATION_STRING_WITH_SIZE_STREAM;
+
+    return DEFAULT_SERIALIZATION_INFO_VERSION;
+}
+
+void SerializationInfoByName::fallbackSettingsToVersion(size_t version)
+{
+    if (version < SERIALIZATION_STRING_WITH_SIZE_STREAM)
+        settings.string_with_size_stream = false;
+}
+
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
 {
     Poco::JSON::Object object;
-    object.set(KEY_VERSION, SERIALIZATION_INFO_VERSION);
-
     Poco::JSON::Array column_infos;
+
     for (const auto & [name, info] : *this)
     {
         Poco::JSON::Object info_json;
@@ -281,13 +305,26 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
         column_infos.add(std::move(info_json)); /// NOLINT
     }
 
+    size_t max_version = getVersion();
+    object.set(KEY_VERSION, max_version);
     object.set(KEY_COLUMNS, std::move(column_infos)); /// NOLINT
+
+    if (max_version >= SERIALIZATION_STRING_WITH_SIZE_STREAM)
+        object.set(KEY_STRING_WITH_SIZE_STREAM, settings.string_with_size_stream);
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(object, oss);
 
     writeString(oss.str(), out);
+}
+
+SerializationInfoByName SerializationInfoByName::clone() const
+{
+    SerializationInfoByName res(settings);
+    for (const auto & [name, info] : *this)
+        res.emplace(name, info->clone());
+    return res;
 }
 
 SerializationInfoByName SerializationInfoByName::readJSONFromString(
@@ -299,12 +336,30 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(
     if (!object->has(KEY_VERSION))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed version of serialization infos");
 
-    if (object->getValue<size_t>(KEY_VERSION) > SERIALIZATION_INFO_VERSION)
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
+    size_t version = object->getValue<size_t>(KEY_VERSION);
+    if (version > MAX_SERIALIZATION_INFO_VERSION)
+    {
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
             "Unknown version of serialization infos ({}). Should be less or equal than {}",
-            object->getValue<size_t>(KEY_VERSION), SERIALIZATION_INFO_VERSION);
+            version,
+            MAX_SERIALIZATION_INFO_VERSION);
+    }
 
-    SerializationInfoByName infos;
+    SerializationInfoByName infos(settings);
+    if (version >= SERIALIZATION_STRING_WITH_SIZE_STREAM)
+    {
+        if (!object->has(KEY_STRING_WITH_SIZE_STREAM))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed field '{}' in serialization infos", KEY_STRING_WITH_SIZE_STREAM);
+
+        infos.settings.string_with_size_stream = object->getValue<bool>(KEY_STRING_WITH_SIZE_STREAM);
+    }
+    else
+    {
+        /// Compatibility with old parts: reset to false.
+        infos.settings.string_with_size_stream = false;
+    }
+
     if (object->has(KEY_COLUMNS))
     {
         std::unordered_map<std::string_view, const IDataType *> column_type_by_name;
@@ -327,7 +382,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Found unexpected column '{}' in serialization infos", name);
 
-            auto info = it->second->createSerializationInfo(settings);
+            auto info = it->second->createSerializationInfo(infos.settings);
             info->fromJSON(*elem_object);
             infos.emplace(name, std::move(info));
         }

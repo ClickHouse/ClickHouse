@@ -35,6 +35,7 @@ namespace Setting
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsBool query_plan_convert_join_to_in;
+    extern const SettingsBool query_plan_push_down_order_by_limit;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool collect_hash_table_stats_during_joins;
@@ -49,6 +50,7 @@ namespace Setting
     extern const SettingsString force_optimize_projection_name;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
+    extern const SettingsUInt64 max_limit_to_push_down_topn_predicate;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
     extern const SettingsUInt64 query_plan_max_limit_for_lazy_materialization;
@@ -116,6 +118,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
             "The value of the setting `query_plan_optimize_join_order_limit` is too large: {}, "
             "maximum allowed value is 64", query_plan_optimize_join_order_limit);
 
+    push_down_order_by_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_order_by_limit];
     join_swap_table = from[Setting::query_plan_join_swap_table].is_auto
         ? std::nullopt
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);
@@ -155,6 +158,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_limit_for_vector_search_queries = from[Setting::max_limit_for_vector_search_queries].value;
     vector_search_with_rescoring = from[Setting::vector_search_with_rescoring];
     vector_search_filter_strategy = from[Setting::vector_search_filter_strategy].value;
+    max_limit_to_push_down_topn_predicate = from[Setting::max_limit_to_push_down_topn_predicate].value;
 
     query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
 

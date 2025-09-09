@@ -37,6 +37,7 @@ struct Optimization
         VectorSearchFilterStrategy vector_search_filter_strategy;
 
         /// Other settings
+        size_t max_limit_to_push_down_topn_predicate;
         size_t use_index_for_in_with_subqueries_max_values;
         SizeLimits network_transfer_limits;
     };
@@ -94,6 +95,9 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 /// Convert join to subquery with IN if output columns tied to only one table
 size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
+/// Push down order by limit clause as predicate
+size_t tryPushDownOrderByLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+
 /// Put some steps under union, so that plan optimization could be applied to union parts separately.
 /// For example, the plan can be rewritten like:
 ///                      - Something -                    - Expression - Something -
@@ -105,7 +109,7 @@ size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::No
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 15> optimizations = {{
+    static const std::array<Optimization, 16> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
@@ -121,6 +125,7 @@ inline const auto & getOptimizations()
         {tryUseVectorSearch, "useVectorSearch", &QueryPlanOptimizationSettings::try_use_vector_search},
         {tryConvertJoinToIn, "convertJoinToIn", &QueryPlanOptimizationSettings::convert_join_to_in},
         {tryMergeFilterIntoJoinCondition, "mergeFilterIntoJoinCondition", &QueryPlanOptimizationSettings::merge_filter_into_join_condition},
+        {tryPushDownOrderByLimit, "pushDownOrderByLimit", &QueryPlanOptimizationSettings::push_down_order_by_limit},
     }};
 
     return optimizations;

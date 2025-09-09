@@ -12,12 +12,14 @@
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool count_distinct_optimization;
+    extern const SettingsBool optimize_distributed_group_by_sharding_key;
 }
 
 namespace
@@ -47,6 +49,13 @@ public:
         if (join_tree_node_type == QueryTreeNodeType::JOIN || join_tree_node_type == QueryTreeNodeType::CROSS_JOIN || join_tree_node_type == QueryTreeNodeType::ARRAY_JOIN)
             return;
 
+        /// Check only local table
+        if (auto * table_node = query_node->getJoinTree()->as<TableNode>())
+        {
+            if (table_node->getStorage()->isRemote())
+                return;
+        }
+
         /// Check that query has only single node in projection
         auto & projection_nodes = query_node->getProjection().getNodes();
         if (projection_nodes.size() != 1)
@@ -64,7 +73,7 @@ public:
 
         /// Check that `countDistinct` function has single COLUMN argument
         auto & count_distinct_arguments_nodes = function_node->getArguments().getNodes();
-        if (count_distinct_arguments_nodes.size() != 1 && count_distinct_arguments_nodes[0]->getNodeType() != QueryTreeNodeType::COLUMN)
+        if (count_distinct_arguments_nodes.size() != 1 || count_distinct_arguments_nodes[0]->getNodeType() != QueryTreeNodeType::COLUMN)
             return;
 
         auto & count_distinct_argument_column = count_distinct_arguments_nodes[0];

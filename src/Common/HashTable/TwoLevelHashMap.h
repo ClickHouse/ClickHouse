@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/HashTable/ABHashMap.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -66,3 +67,49 @@ template
     template <typename ...> typename ImplTable = HashMapTable
 >
 using TwoLevelHashMapWithSavedHash = TwoLevelHashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable>;
+
+
+template <typename Mapped>
+class TwoLevelABHashMap : public TwoLevelHashTable<
+                              StringRef,
+                              ABHashMapCell<Mapped>,
+                              ABHashTableHash,
+                              TwoLevelHashTableGrower<>,
+                              HashTableAllocator,
+                              ABHashMap<Mapped>>
+{
+public:
+    using Key = StringRef;
+    using Cell = ABHashMapCell<Mapped>;
+    using Impl = ABHashMap<Mapped>;
+    using Base = TwoLevelHashTable<
+        StringRef,
+        ABHashMapCell<Mapped>,
+        ABHashTableHash,
+        TwoLevelHashTableGrower<>,
+        HashTableAllocator,
+        ABHashMap<Mapped>>;
+    using LookupResult = typename Impl::LookupResult;
+
+    using Base::Base;
+    using Base::prefetch;
+
+    template <typename Func>
+    void ALWAYS_INLINE forEachMapped(Func && func)
+    {
+        for (auto i = 0u; i < this->NUM_BUCKETS; ++i)
+            this->impls[i].forEachMapped(func);
+    }
+
+    typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)
+    {
+        LookupResult it;
+        bool inserted;
+        this->emplace(x, it, inserted);
+
+        if (inserted)
+            new (&it->getMapped()) typename Cell::Mapped();
+
+        return it->getMapped();
+    }
+};

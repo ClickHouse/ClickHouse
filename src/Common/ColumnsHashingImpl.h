@@ -5,6 +5,8 @@
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/KeysNullMap.h>
+#include <Common/HashTable/Prefetching.h>
+#include <Interpreters/AggregationCommon.h>
 
 namespace DB
 {
@@ -210,8 +212,21 @@ public:
             }
         }
 
-        auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-        return emplaceImpl(key_holder, data);
+        auto & derived = static_cast<Derived &>(*this);
+        auto key_holder = derived.getKeyHolder(row, pool);
+        if constexpr (Derived::has_pre_computed_hashes)
+        {
+            if (row == PrefetchingHelper::iterationsToMeasure())
+                derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
+            const auto & hashes = derived.hashes.getData();
+            if (row + derived.prefetch_look_ahead < hashes.size())
+                data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
+            return emplaceImpl<false>(key_holder, data, hashes[row]);
+        }
+        else
+        {
+            return emplaceImpl<true>(key_holder, data, 0);
+        }
     }
 
     template <typename Data>
@@ -236,6 +251,24 @@ public:
                     return FindResult(&data.getNullKeyData(), has_null_key, 0);
                 else
                     return FindResult(has_null_key, 0);
+            }
+        }
+
+        auto & derived = static_cast<Derived &>(*this);
+        if constexpr (Derived::has_pre_computed_hashes)
+        {
+            if (row == PrefetchingHelper::iterationsToMeasure())
+                derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
+            const auto & hashes = derived.hashes.getData();
+            if (row + derived.prefetch_look_ahead < hashes.size())
+                data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
+
+            if (data.isEmptyCell(hashes[row]))
+            {
+                if constexpr (has_mapped)
+                    return FindResult(nullptr, false, 0);
+                else
+                    return FindResult(false, 0);
             }
         }
 
@@ -310,8 +343,8 @@ protected:
             null_map = &checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
     }
 
-    template <typename Data, typename KeyHolder>
-    ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data)
+    template <bool compute_hash, typename Data, typename KeyHolder>
+    ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data, [[maybe_unused]] size_t hash_value)
     {
         if constexpr (consecutive_keys_optimization)
         {
@@ -326,7 +359,11 @@ protected:
 
         typename Data::LookupResult it;
         bool inserted = false;
-        data.emplace(key_holder, it, inserted);
+
+        if constexpr (compute_hash)
+            data.emplace(key_holder, it, inserted);
+        else
+            data.emplace(key_holder, it, inserted, hash_value);
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)

@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Core/Settings.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -29,6 +30,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <Processors/Transforms/VirtualRowTransform.h>
@@ -48,6 +50,7 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Poco/Logger.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
@@ -57,7 +60,7 @@
 #include <iterator>
 #include <memory>
 #include <unordered_map>
-
+#include <boost/functional/hash.hpp>
 #include <fmt/ranges.h>
 
 #include "config.h"
@@ -1713,6 +1716,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     analyzed_result_ptr = selectRangesToRead(
         getParts(),
         mutations_snapshot,
+        top_n_filter_params,
         vector_search_parameters,
         storage_snapshot->metadata,
         query_info,
@@ -1938,6 +1942,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     RangesInDataParts parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
+    std::optional<TopNFilterParameters> & top_n_filter_params,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info_,
@@ -2041,9 +2046,25 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
         parts_before_pk = parts.size();
 
+        if (top_n_filter_params)
+        {
+            SipHash hash;
+            for (const auto & part : parts)
+            {
+                hash.update(part.data_part->name.size());
+                hash.update(part.data_part->name);
+            }
+
+            boost::hash_combine(top_n_filter_params->condition_hash, hash.get64());
+        }
+
+        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
+            parts, top_n_filter_params, query_info_, vector_search_parameters, context_, log);
+
         auto reader_settings = MergeTreeReaderSettings::create(context_, *data.getSettings(), query_info_);
+
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-            std::move(parts),
+            parts,
             metadata_snapshot,
             mutations_snapshot,
             context_,
@@ -2060,14 +2081,117 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             query_info_.isFinal(),
             is_parallel_reading_from_replicas_);
 
-        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, vector_search_parameters, context_, log);
-
         if (indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
             && settings[Setting::use_skip_indexes_if_final_exact_mode])
         {
             result.parts_with_ranges
                 = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
             add_index_stat_row_for_pk_expand = true;
+        }
+
+        std::optional<size_t> condition_hash;
+
+        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag)
+        {
+            const auto & outputs = query_info_.filter_actions_dag->getOutputs();
+            if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
+            {
+                condition_hash = outputs.front()->getHash();
+                if (top_n_filter_params)
+                    boost::hash_combine(*condition_hash, top_n_filter_params->condition_hash);
+            }
+        }
+
+        /// Fill query condition cache with ranges excluded by index analysis.
+        if (condition_hash)
+        {
+            RangesInDataParts remaining;
+
+            auto it_parts = parts.begin();
+            auto it_result = result.parts_with_ranges.begin();
+
+            while (it_parts != parts.end())
+            {
+                if (it_result != result.parts_with_ranges.end() && it_parts->part_index_in_query == it_result->part_index_in_query)
+                {
+                    auto & full_ranges = it_parts->ranges;
+                    const auto & kept_ranges = it_result->ranges;
+
+                    MarkRanges diff_ranges;
+
+                    auto it_full = full_ranges.begin();
+                    auto it_kept = kept_ranges.begin();
+
+                    while (it_full != full_ranges.end())
+                    {
+                        if (it_kept == kept_ranges.end() || it_full->end <= it_kept->begin)
+                        {
+                            /// full range is completely before kept range, keep it
+                            diff_ranges.push_back(*it_full);
+                            ++it_full;
+                        }
+                        else if (it_full->begin >= it_kept->end)
+                        {
+                            /// full range is completely after kept range, move to next kept
+                            ++it_kept;
+                        }
+                        else
+                        {
+                            /// overlap, need to slice
+                            if (it_full->begin < it_kept->begin)
+                                diff_ranges.push_back({it_full->begin, it_kept->begin});
+
+                            if (it_full->end > it_kept->end)
+                            {
+                                /// adjust full range and check next kept range
+                                *it_full = {it_kept->end, it_full->end};
+                                ++it_kept;
+                            }
+                            else
+                            {
+                                /// fully covered or trimmed
+                                ++it_full;
+                            }
+                        }
+                    }
+
+                    if (!diff_ranges.empty())
+                    {
+                        remaining.emplace_back(
+                            it_parts->data_part,
+                            it_parts->parent_part,
+                            it_parts->part_index_in_query,
+                            it_parts->part_starting_offset_in_query,
+                            std::move(diff_ranges));
+                    }
+
+                    ++it_parts;
+                    ++it_result;
+                }
+                else
+                {
+                    /// part was erased entirely, keep it whole
+                    remaining.push_back(*it_parts);
+                    ++it_parts;
+                }
+            }
+
+            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+            const auto * output = query_info_.filter_actions_dag->getOutputs().front();
+            for (const auto & remaining_ranges : remaining)
+            {
+                auto data_part = remaining_ranges.data_part;
+                String part_name = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
+                                                                 : data_part->name;
+                query_condition_cache->write(
+                    data_part->storage.getStorageID().uuid,
+                    part_name,
+                    *condition_hash,
+                    reader_settings.query_condition_cache_store_conditions_as_plaintext ? output->result_name : "",
+                    remaining_ranges.ranges,
+                    data_part->index_granularity->getMarksCount(),
+                    data_part->index_granularity->hasFinalMark());
+            }
         }
     }
 
@@ -2453,6 +2577,8 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     return std::make_unique<ReadFromMergeTree>(*this);
 }
 
+FunctionOverloadResolverPtr createInternalFunctionTopN(GlobalThresholdColumnsPtr global_threshold_columns_ptr);
+
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto & result = getAnalysisResult();
@@ -2531,6 +2657,93 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// of some extra expressions, and to allow execute the same expressions later.
     /// NOTE: It may lead to double computation of expressions.
     std::optional<ActionsDAG> result_projection;
+
+    if (prewhere_info)
+    {
+        for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+        {
+            if (output->result_name == prewhere_info->prewhere_column_name)
+            {
+                if (!VirtualColumnUtils::isDeterministic(output))
+                    continue;
+
+                prewhere_info->condition_hash = output->getHash();
+                break;
+            }
+        }
+    }
+
+    if (top_n_filter_params)
+    {
+        auto global_threshold_columns_ptr = std::make_shared<GlobalThresholdColumns>();
+        FunctionOverloadResolverPtr func_builder_top_n = createInternalFunctionTopN(global_threshold_columns_ptr);
+        if (prewhere_info)
+        {
+            const auto & node = prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name);
+
+            const auto * col = [&]()
+            {
+                for (const auto & input : prewhere_info->prewhere_actions.getInputs())
+                {
+                    if (input->result_name == top_n_filter_params->column)
+                        return input;
+                }
+
+                const auto & in = prewhere_info->prewhere_actions.addInput(top_n_filter_params->column, top_n_filter_params->type);
+                prewhere_info->prewhere_actions.addOrReplaceInOutputs(in);
+                return &in;
+            }();
+
+            auto func_builder_and = FunctionFactory::instance().get("and", context);
+
+            /// TODO(amos): Currently, the topN filter is always applied as the
+            /// first step, which might not be optimal. Need some heuristic or
+            /// cost-based optimization approaches to reorder prewhere steps
+            /// based on factors such as column size, filter selectivity, and
+            /// execution cost.
+            const auto & prewhere_node = prewhere_info->prewhere_actions.addFunction(
+                func_builder_and, {&prewhere_info->prewhere_actions.addFunction(func_builder_top_n, {col}, {}), &node}, {});
+
+            prewhere_info->prewhere_column_name = prewhere_node.result_name;
+            if (prewhere_info->remove_prewhere_column)
+            {
+                for (auto & output_node : prewhere_info->prewhere_actions.getOutputs())
+                {
+                    if (output_node->result_name == node.result_name)
+                    {
+                        output_node = &prewhere_node;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                prewhere_info->remove_prewhere_column = true;
+                prewhere_info->prewhere_actions.addOrReplaceInOutputs(prewhere_node);
+            }
+
+            prewhere_info->need_filter = true;
+        }
+        else
+        {
+            prewhere_info = std::make_shared<PrewhereInfo>();
+            prewhere_info->prewhere_actions = ActionsDAG({{top_n_filter_params->column, top_n_filter_params->type}});
+            const auto & prewhere_node = prewhere_info->prewhere_actions.addFunction(
+                func_builder_top_n, {prewhere_info->prewhere_actions.getInputs().front()}, {});
+            prewhere_info->prewhere_actions.getOutputs().push_back(&prewhere_node);
+            prewhere_info->prewhere_column_name = prewhere_node.result_name;
+            prewhere_info->remove_prewhere_column = true;
+            prewhere_info->need_filter = true;
+        }
+
+        prewhere_info->top_n_condition_hash = top_n_filter_params->condition_hash;
+        if (prewhere_info->condition_hash)
+            boost::hash_combine(*prewhere_info->condition_hash, *prewhere_info->top_n_condition_hash);
+        else
+            prewhere_info->condition_hash = prewhere_info->top_n_condition_hash;
+
+        prewhere_info->global_threshold_columns_ptr = std::move(global_threshold_columns_ptr);
+    }
 
     if (lazily_read_info)
     {

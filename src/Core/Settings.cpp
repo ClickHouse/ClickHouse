@@ -4039,6 +4039,14 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 )", 0) \
+    DECLARE(Bool, optimize_trivial_group_by_limit_query, true, R"(
+Enables or disables the optimization to trivial query `SELECT agg() FROM table GROUP BY key LIMIT n` using max_rows_to_group_by setting with group_by_overflow_mode = OverflowMode::ANY.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+)", 0) \
     DECLARE(Bool, use_cache_for_count_from_files, true, R"(
 Enables caching of rows number during count from files in table functions `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
 
@@ -5085,6 +5093,10 @@ Possible values:
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0) \
+    DECLARE(Bool, optimize_empty_string_comparisons, true, R"(
+Convert expressions like col = '' or '' = col into empty(col), and col != '' or '' != col into notEmpty(col),
+only when col is of String or FixedString type.
+)", 0) \
     DECLARE(Bool, optimize_rewrite_aggregate_function_with_if, true, R"(
 Rewrite aggregate functions with if expression as argument when logically equivalent.
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
@@ -5555,6 +5567,21 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_push_down_order_by_limit, true, R"(
+Toggles a query-plan-level optimization which tries to push down order by limit clause as predicate.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(UInt64, max_limit_to_push_down_topn_predicate, 100, R"(
+Maximum LIMIT threshold for pushing down TopN predicates.
+
+When executing a query with `ORDER BY … LIMIT N`, ClickHouse will attempt to push down the TopN predicate to the storage engine to reduce network traffic and aggregation overhead. This parameter defines the maximum `LIMIT` value for which the pushdown will be applied.
+Setting this threshold too high may cause the storage engine to scan or maintain excessive intermediate state, leading to increased memory usage or degraded performance. Keeping the threshold lower ensures that pushdown remains within a safe and efficient range.
+)", 0) \
     DECLARE(Bool, query_plan_enable_multithreading_after_window_functions, true, R"(
 Enable multithreading after evaluating window functions to allow parallel stream processing
 )", 0) \
@@ -5562,6 +5589,13 @@ Enable multithreading after evaluating window functions to allow parallel stream
 Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
+)", 0) \
+    DECLARE(Bool, query_plan_rewrite_order_by_limit, true, R"(
+Use query plan rewrite for optimize order by limit.
+)", 0) \
+    DECLARE(UInt64, query_plan_max_limit_for_rewrite_order_by_limit, 1000000, R"(Control maximum limit value that allows to rewrite query plan for optimize order by limit. If zero, there is no limit.
+)", 0) \
+    DECLARE(UInt64, query_plan_min_columns_to_use_rewrite_order_by_limit, 50, R"(Control minimum columns that allows to rewrite query plan for optimize order by limit.
 )", 0) \
     DECLARE(Bool, query_plan_use_new_logical_join_step, true, "Use new logical join step in query plan.", 0) \
     DECLARE(Bool, serialize_query_plan, false, R"(
@@ -6141,7 +6175,7 @@ SELECT * FROM test_table
 └───┘
 ```
 )", 0) \
-    DECLARE(Bool, count_distinct_optimization, false, R"(
+    DECLARE(Bool, count_distinct_optimization, true, R"(
 Rewrite count distinct to subquery of group by
 )", 0) \
     DECLARE(Bool, throw_if_no_data_to_insert, true, R"(
@@ -7180,7 +7214,7 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     COMMON_SETTINGS(M, ALIAS)          \
     OBSOLETE_SETTINGS(M, ALIAS)        \
     FORMAT_FACTORY_SETTINGS(M, ALIAS)  \
-    OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
+    OBSOLETE_FORMAT_SETTINGS(M, ALIAS)
 
 // clang-format on
 
@@ -7236,7 +7270,7 @@ void SettingsImpl::setProfile(const String & profile_name, const Poco::Util::Abs
     {
         if (key == "constraints")
             continue;
-        if (key == "profile" || key.starts_with("profile["))   /// Inheritance of profiles from the current one.
+        if (key == "profile" || key.starts_with("profile[")) /// Inheritance of profiles from the current one.
             setProfile(config.getString(elem + "." + key), config);
         else
             set(key, config.getString(elem + "." + key));

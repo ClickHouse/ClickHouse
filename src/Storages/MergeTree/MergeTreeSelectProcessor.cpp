@@ -198,32 +198,25 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 /// Update the query condition cache for filters in PREWHERE stage
                 if (reader_settings.use_query_condition_cache && task && prewhere_info)
                 {
-                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+                    if (prewhere_info->condition_hash)
                     {
-                        if (output->result_name == prewhere_info->prewhere_column_name)
-                        {
-                            if (!VirtualColumnUtils::isDeterministic(output))
-                                continue;
+                        auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+                        auto data_part = task->getInfo().data_part;
 
-                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            auto data_part = task->getInfo().data_part;
+                        String part_name = data_part->isProjectionPart()
+                            ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
+                            : data_part->name;
 
-                            String part_name = data_part->isProjectionPart()
-                                ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
-                                : data_part->name;
-                            query_condition_cache->write(
-                                data_part->storage.getStorageID().uuid,
-                                part_name,
-                                output->getHash(),
-                                reader_settings.query_condition_cache_store_conditions_as_plaintext
-                                    ? prewhere_info->prewhere_actions.getNames()[0]
-                                    : "",
-                                task->getPrewhereUnmatchedMarks(),
-                                data_part->index_granularity->getMarksCount(),
-                                data_part->index_granularity->hasFinalMark());
-
-                            break;
-                        }
+                        query_condition_cache->write(
+                            data_part->storage.getStorageID().uuid,
+                            part_name,
+                            *prewhere_info->condition_hash,
+                            reader_settings.query_condition_cache_store_conditions_as_plaintext
+                                ? prewhere_info->prewhere_actions.getNames()[0]
+                                : "",
+                            task->getPrewhereUnmatchedMarks(),
+                            data_part->index_granularity->getMarksCount(),
+                            data_part->index_granularity->hasFinalMark());
                     }
                 }
 

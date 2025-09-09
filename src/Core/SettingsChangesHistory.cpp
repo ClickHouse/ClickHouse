@@ -56,6 +56,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
             {"promql_evaluation_time", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."},
             {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
+            {"optimize_empty_string_comparisons", true, true, "A new setting."},
+            {"count_distinct_optimization", false, true, "Changed setting value."},
+            {"optimize_trivial_group_by_limit_query", true, true, "A new setting."},
+            {"query_plan_push_down_order_by_limit",true, true, "A new setting."},
+            {"query_plan_rewrite_order_by_limit",true, true, "Added new setting to use rewrite for optimize order by limit"},
+            {"query_plan_max_limit_for_rewrite_order_by_limit", 1000000, 1000000, "Added new setting to control maximum limit value that allows to use rewrite sql for optimize order by limit. If zero, there is no limit"},
+            {"query_plan_min_columns_to_use_rewrite_order_by_limit", 50, 50, "Added new setting"},
+            {"max_limit_to_push_down_topn_predicate", 100, 100, "Added new setting"},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
@@ -873,6 +881,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_empty_partition_lifetime", 86400, 86400, "New setting"},
             {"shared_merge_tree_outdated_parts_group_size", 2, 2, "New setting"},
             {"shared_merge_tree_use_outdated_parts_compact_format", false, true, "Enable outdated parts v3 by default"},
+            {"serialize_string_with_size_stream", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
