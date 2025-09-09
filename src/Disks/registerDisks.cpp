@@ -1,6 +1,7 @@
 #include <Disks/registerDisks.h>
 
 #include <Disks/DiskFactory.h>
+#include <Disks/ObjectStorages/ObjectStorageFactory.h>
 
 #include "config.h"
 
@@ -30,6 +31,12 @@ void registerDisks(bool global_skip_access_check)
     registerDiskCache(factory, global_skip_access_check);
 
     registerDiskObjectStorage(factory, global_skip_access_check);
+}
+
+void clearDiskRegistry()
+{
+    DiskFactory::instance().clearRegistry();
+    ObjectStorageFactory::instance().clearRegistry();
 }
 
 }

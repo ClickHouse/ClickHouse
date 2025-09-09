@@ -101,6 +101,7 @@ namespace FailPoints
 {
     extern const char disk_object_storage_fail_commit_metadata_transaction[];
 }
+
 }
 
 class DiskObjectStorageTest : public testing::Test
@@ -136,6 +137,8 @@ public:
         for (const auto & [_, disk] : initialized_disks)
             disk->shutdown();
         initialized_disks.clear();
+
+        DB::clearDiskRegistry();
     }
 
     std::string getTestName()
