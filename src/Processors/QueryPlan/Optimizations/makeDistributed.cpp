@@ -117,19 +117,19 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         auto join_keys_a = std::ranges::to<Names>(key_dags->first.keys | std::views::transform(get_node_name));
         auto join_keys_b = std::ranges::to<Names>(key_dags->second.keys | std::views::transform(get_node_name));
         if (!isPassthroughActions(key_dags->first.actions_dag))
-            makeExpressionNodeOnTopOf(*source_a, std::move(key_dags->first.actions_dag), nodes, "Calculate left join keys");
+            makeExpressionNodeOnTopOf(*source_a, std::move(key_dags->first.actions_dag), nodes, makeDescription("Calculate left join keys"));
         if (!isPassthroughActions(key_dags->second.actions_dag))
-            makeExpressionNodeOnTopOf(*source_b, std::move(key_dags->second.actions_dag), nodes, "Calculate right join keys");
+            makeExpressionNodeOnTopOf(*source_b, std::move(key_dags->second.actions_dag), nodes, makeDescription("Calculate right join keys"));
 
         /// Add scatter exchange step above read from left source
         exchange_scatter_a_node = &nodes.emplace_back();
         exchange_scatter_a_node->step = std::make_unique<ScatterExchangeStep>(source_a->step->getOutputHeader(), join_keys_a, bucket_count);
-        exchange_scatter_a_node->step->setStepDescription(fmt::format("by hash([{}])", fmt::join(join_keys_a, ", ")));
+        exchange_scatter_a_node->step->setStepDescription(fmt::format("by hash([{}])", fmt::join(join_keys_a, ", ")), optimization_settings.max_step_description_length);
 
         /// Add scatter exchange step above read from right source
         exchange_scatter_b_node = &nodes.emplace_back();
         exchange_scatter_b_node->step = std::make_unique<ScatterExchangeStep>(source_b->step->getOutputHeader(), join_keys_b, bucket_count);
-        exchange_scatter_b_node->step->setStepDescription(fmt::format("by hash([{}])", fmt::join(join_keys_b, ", ")));
+        exchange_scatter_b_node->step->setStepDescription(fmt::format("by hash([{}])", fmt::join(join_keys_b, ", ")), optimization_settings.max_step_description_length);
     }
 
     exchange_scatter_a_node->children = {source_a};
@@ -256,7 +256,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         /// Add scatter exchange step above source
         auto & exchange_scatter_node = nodes.emplace_back();
         exchange_scatter_node.step = std::make_unique<ScatterExchangeStep>(source->step->getOutputHeader(), aggregation_keys, bucket_count);
-        exchange_scatter_node.step->setStepDescription(fmt::format("by hash([{}])", fmt::join(aggregation_keys, ", ")));
+        exchange_scatter_node.step->setStepDescription(fmt::format("by hash([{}])", fmt::join(aggregation_keys, ", ")), optimization_settings.max_step_description_length);
         exchange_scatter_node.children = {source};
 
         /// Move aggregation step to a new node
@@ -305,7 +305,7 @@ void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
     /// Add merge sorted gather exchange step above sorting
     QueryPlan::Node gather_node;
     QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_sorting_node.step->getOutputHeader(), sort_description);
-    exchange_gather_step->setStepDescription(fmt::format("sorted by ({})", dumpSortDescription(sort_description)));
+    exchange_gather_step->setStepDescription(fmt::format("sorted by ({})", dumpSortDescription(sort_description)), optimization_settings.max_step_description_length);
     gather_node.step = std::move(exchange_gather_step);
     gather_node.children = {&new_sorting_node};
 
@@ -366,7 +366,7 @@ void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node)
         return;
 
     auto shuffle_step = std::make_unique<ShuffleExchangeStep>(node->children[0]->step->getOutputHeader(), scatter_step->getKeys(), scatter_step->getResultBucketCount());
-    shuffle_step->setStepDescription(scatter_step->getStepDescription());
+    shuffle_step->setStepDescription(*scatter_step);
     node->step = std::move(shuffle_step);
     node->children = std::move(node->children[0]->children);
 }
@@ -576,8 +576,8 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                         source_shards.push_back(source_shard);
 
                     auto send_and_receive_steps = exchange_step->createSinkAndSourcePair(exchange_description.name, source_shards);
-                    send_and_receive_steps.first->setStepDescription(exchange_description.name);
-                    send_and_receive_steps.second->setStepDescription(exchange_description.name);
+                    send_and_receive_steps.first->setStepDescription(exchange_description.name, optimization_settings.max_step_description_length);
+                    send_and_receive_steps.second->setStepDescription(exchange_description.name, optimization_settings.max_step_description_length);
 
                     Strings list_of_exchange_shards;
                     list_of_exchange_shards.reserve(exchange_description.destination_bucket_count);
