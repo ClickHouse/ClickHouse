@@ -93,7 +93,7 @@ def test_system_tables(start_cluster):
             {
                 "name": "disk_db_remote",
                 "path": f"{db_disk_path}",
-                "keep_free_space": "0",
+                "keep_free_space": 0,
             }
         )
 

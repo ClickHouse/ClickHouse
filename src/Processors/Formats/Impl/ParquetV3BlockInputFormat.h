@@ -44,6 +44,7 @@ private:
     FormatFilterInfoPtr format_filter_info;
 
     std::optional<Parquet::ReadManager> reader;
+    bool reported_count = false; // if need_only_count
 
     BlockMissingValues previous_block_missing_values;
 

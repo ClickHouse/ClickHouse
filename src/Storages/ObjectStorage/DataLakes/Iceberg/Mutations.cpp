@@ -206,13 +206,8 @@ std::optional<WriteDataFilesResult> writeDataFiles(
                     if (cur_value.safeGet<String>().starts_with(configuration->getNamespace()))
                         path_without_namespace = cur_value.safeGet<String>().substr(configuration->getNamespace().size());
 
-                    if (!path_without_namespace.starts_with(configuration->getPathForRead().path))
-                    {
-                        if (path_without_namespace.starts_with('/'))
-                            path_without_namespace = path_without_namespace.substr(1);
-                        else
-                            path_without_namespace = "/" + path_without_namespace;
-                    }
+                    if (!path_without_namespace.starts_with('/'))
+                        path_without_namespace = "/" + path_without_namespace;
                     col_data_filename_without_namespaces->insert(path_without_namespace);
                 }
                 col_data_filename.column = std::move(col_data_filename_without_namespaces);
@@ -524,7 +519,10 @@ void mutate(
     const std::optional<FormatSettings> & format_settings,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
-    FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None);
+    auto common_path = configuration->getRawPath().path;
+    if (!common_path.starts_with('/'))
+        common_path = "/" + common_path;
+    FileNamesGenerator filename_generator(common_path, common_path, false, CompressionMethod::None);
 
     auto log = getLogger("IcebergMutations");
     auto [last_version, metadata_path, compression_method]

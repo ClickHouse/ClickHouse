@@ -38,7 +38,7 @@
 ///
 /// During the searching in the segment, the segment's meta data can be found in .gin_seg file. From the meta data,
 /// the starting position of its dictionary is used to locate its FST. Then FST is read into memory.
-/// By using the term and FST, the offset("output" in FST) of the postings list for the term
+/// By using the token and FST, the offset("output" in FST) of the postings list for the token
 /// in FST is found. The offset plus the postings_start_offset is the file location in .gin_post file
 /// for its postings list.
 
@@ -59,7 +59,7 @@ public:
 #if USE_FASTPFOR
 /// This class serializes a posting list into on-disk format by applying DELTA encoding first, then PFOR compression.
 /// Internally, the FastPFOR library is used for the PFOR compression.
-class GinIndexPostingListDeltaPforSerialization
+class GinPostingListDeltaPforSerialization
 {
 public:
     static UInt64 serialize(WriteBuffer & buffer, const GinPostingsList & rowids);
@@ -76,7 +76,7 @@ private:
 #endif
 
 /// This class serialize a posting list into on-disk format by applying ZSTD compression on top of Roaring Bitmap.
-class GinIndexPostingListRoaringZstdSerialization
+class GinPostingListRoaringZstdSerialization
 {
 public:
     static UInt64 serialize(WriteBuffer & buffer, const GinPostingsList & rowids);
@@ -91,7 +91,7 @@ private:
     static constexpr UInt64 ROARING_UNCOMPRESSED_MASK = 0x0;
 };
 
-/// Build a postings list for a term
+/// Build a postings list for a token
 class GinPostingsListBuilder
 {
 public:
@@ -182,8 +182,8 @@ struct GinDictionary
     /// .gin_dict file offset of this segment's dictionaries
     UInt64 dict_start_offset;
 
-    /// (Minimized) Finite State Transducer, which can be viewed as a map of <term, offset>, where offset is the
-    /// offset to the term's posting list in postings list file
+    /// (Minimized) Finite State Transducer, which can be viewed as a map of <token, offset>, where offset is the
+    /// offset to the token's posting list in postings list file
     std::unique_ptr<FST::FiniteStateTransducer> fst;
     std::mutex fst_mutex;
 
@@ -225,7 +225,7 @@ public:
         }
 
     private:
-        size_t num_terms;
+        size_t num_tokens;
         size_t current_size_bytes;
         size_t segment_descriptor_file_size;
         size_t bloom_filter_file_size;
@@ -233,8 +233,8 @@ public:
         size_t posting_lists_file_size;
     };
 
-    /// Container for all term's postings list builder
-    using GinPostingsListBuilderContainer = absl::flat_hash_map<String, GinPostingsListBuilderPtr>;
+    /// All token's postings list builder
+    using GinTokenPostingsLists = absl::flat_hash_map<String, GinPostingsListBuilderPtr>;
 
     GinIndexStore(const String & name_, DataPartStoragePtr storage_);
     GinIndexStore(
@@ -260,10 +260,10 @@ public:
     Format getVersion();
 
     /// Get current postings list builder
-    const GinPostingsListBuilderContainer & getPostingsListBuilder() const { return current_postings_list_builder_container; }
+    const GinTokenPostingsLists & getTokenPostingsLists() const { return token_postings_lists; }
 
-    /// Set postings list builder for given term
-    void setPostingsListBuilder(const String & term, GinPostingsListBuilderPtr builder) { current_postings_list_builder_container[term] = builder; }
+    /// Set postings list builder for given token
+    void setPostingsListBuilder(const String & token, GinPostingsListBuilderPtr builder) { token_postings_lists[token] = builder; }
 
     /// Check if we need to write segment to Gin index files
     bool needToWriteCurrentSegment() const;
@@ -315,11 +315,11 @@ private:
     /// Dictionaries indexed by segment ID
     using GinSegmentDictionaries = std::unordered_map<UInt32, GinDictionaryPtr>;
 
-    /// Term's dictionaries which are loaded from .gin_dict files
+    /// Token's dictionaries which are loaded from .gin_dict files
     GinSegmentDictionaries segment_dictionaries;
 
     /// Container for building postings lists during index construction
-    GinPostingsListBuilderContainer current_postings_list_builder_container;
+    GinTokenPostingsLists token_postings_lists;
 
     /// For the segmentation of Gin indexes
     GinSegmentDescriptor current_segment;
@@ -342,7 +342,7 @@ using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
 /// Map of <segment_id, postings_list>
 using GinSegmentPostingsLists = std::unordered_map<UInt32, GinPostingsListPtr>;
 
-/// Postings lists and terms built from query string
+/// Postings lists and tokens built from query string
 using GinPostingsListsCache = std::unordered_map<String, GinSegmentPostingsLists>;
 using GinPostingsListsCachePtr = std::shared_ptr<GinPostingsListsCache>;
 
@@ -364,11 +364,11 @@ public:
     /// Read FST for given segment dictionary from .gin_dict files
     void readSegmentFST(UInt32 segment_id, GinDictionary & dictionary);
 
-    /// Read postings lists for the term
-    GinSegmentPostingsLists readSegmentPostingsLists(const String & term);
+    /// Read postings lists for the token
+    GinSegmentPostingsLists readSegmentPostingsLists(const String & token);
 
-    /// Read postings lists for terms (which are created by tokenzing query string)
-    GinPostingsListsCachePtr createPostingsListsCacheFromTerms(const std::vector<String> & terms);
+    /// Read postings lists for tokens (which are created by tokenzing query string)
+    GinPostingsListsCachePtr createPostingsListsCacheFromTokens(const std::vector<String> & tokens);
 
 private:
     /// Initialize gin index files
@@ -386,7 +386,7 @@ private:
     LoggerPtr logger = getLogger("TextIndex");
 };
 
-/// GinPostingsListsCacheForStore contains postings lists from 'store' which are retrieved from Gin index files for the terms in query strings
+/// GinPostingsListsCacheForStore contains postings lists from 'store' which are retrieved from Gin index files for the tokens in query strings
 /// GinPostingsListsCache is per query string (one query can have multiple query strings): when skipping index (row ID ranges) is used for the part during the
 /// query, the postings cache is created and associated with the store where postings lists are read
 /// for the tokenized query string. The postings caches are released automatically when the query is done.
