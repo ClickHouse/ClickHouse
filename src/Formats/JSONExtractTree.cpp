@@ -875,7 +875,7 @@ template <typename JSONParser, typename Type>
 class EnumNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
-    explicit EnumNode(const std::vector<std::pair<String, Type>> & name_value_pairs_) : name_value_pairs(name_value_pairs_)
+    explicit EnumNode(const std::vector<std::pair<String, Type>> & name_value_pairs_, Type default_value_) : name_value_pairs(name_value_pairs_), default_value(default_value_)
     {
         for (const auto & name_value_pair : name_value_pairs)
         {
@@ -891,19 +891,19 @@ public:
         const FormatSettings & format_settings,
         String & error) const override
     {
+        auto & col_vec = assert_cast<ColumnVector<Type> &>(column);
+
         if (element.isNull())
         {
             if (format_settings.null_as_default)
             {
-                column.insertDefault();
+                col_vec.insertValue(default_value);
                 return true;
             }
 
             error = "cannot convert null to Enum value";
             return false;
         }
-
-        auto & col_vec = assert_cast<ColumnVector<Type> &>(column);
 
         if (element.isInt64())
         {
@@ -949,6 +949,7 @@ private:
     std::vector<std::pair<String, Type>> name_value_pairs;
     std::unordered_map<std::string_view, Type> name_to_value_map;
     std::unordered_set<Type> only_values;
+    Type default_value;
 };
 
 template <typename JSONParser>
@@ -1605,11 +1606,13 @@ class ObjectJSONNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
     ObjectJSONNode(
+        const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
         std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & type_of_nested_objects)
-        : typed_path_nodes(std::move(typed_path_nodes_))
+        : typed_paths_types(typed_paths_types_)
+        , typed_path_nodes(std::move(typed_path_nodes_))
         , paths_to_skip(paths_to_skip_)
         , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(type_of_nested_objects))
         , dynamic_serialization(std::make_shared<SerializationDynamic>())
@@ -1673,10 +1676,10 @@ public:
         column_object.getSharedDataOffsets().push_back(shared_data_paths->size());
 
         /// Fill remaining typed and dynamic paths.
-        for (auto & [_, typed_column] : column_object.getTypedPaths())
+        for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
         {
             if (typed_column->size() == prev_size)
-                typed_column->insertDefault();
+                typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
         }
 
         for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
@@ -1828,6 +1831,7 @@ private:
         return settings;
     }
 
+    std::unordered_map<String, DataTypePtr> typed_paths_types;
     std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
     std::unordered_set<String> paths_to_skip;
     std::vector<String> sorted_paths_to_skip;
@@ -1898,9 +1902,15 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
         case TypeIndex::Decimal256:
             return std::make_unique<DecimalNode<JSONParser, Decimal256>>(type);
         case TypeIndex::Enum8:
-            return std::make_unique<EnumNode<JSONParser, Int8>>(assert_cast<const DataTypeEnum8 &>(*type).getValues());
+        {
+            const auto & enum_type = assert_cast<const DataTypeEnum8 &>(*type);
+            return std::make_unique<EnumNode<JSONParser, Int8>>(enum_type.getValues(), enum_type.getDefaultValue());
+        }
         case TypeIndex::Enum16:
-            return std::make_unique<EnumNode<JSONParser, Int16>>(assert_cast<const DataTypeEnum16 &>(*type).getValues());
+        {
+            const auto & enum_type = assert_cast<const DataTypeEnum16 &>(*type);
+            return std::make_unique<EnumNode<JSONParser, Int16>>(enum_type.getValues(), enum_type.getDefaultValue());
+        }
         case TypeIndex::LowCardinality:
         {
             /// To optimize inserting into LowCardinality we have special nodes for LowCardinality of numeric and string types.
@@ -1993,6 +2003,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             {
                 case DataTypeObject::SchemaFormat::JSON:
                     return std::make_unique<ObjectJSONNode<JSONParser>>(
+                        typed_paths,
                         std::move(typed_path_nodes),
                         object_type.getPathsToSkip(),
                         object_type.getPathRegexpsToSkip(),
