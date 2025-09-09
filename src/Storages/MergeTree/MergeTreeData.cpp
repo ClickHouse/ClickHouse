@@ -813,6 +813,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
             tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part.data_part->info.getPartNameV1()));
         }
     };
+
     if (filter_dag == nullptr)
     {
         build_estimator_all_partitions();
