@@ -9,6 +9,7 @@ ORDER BY tuple();
 INSERT INTO lhs VALUES (1), (2), (3);
 INSERT INTO rhs SELECT * FROM numbers_mt(1e6);
 
+SET enable_parallel_replicas = 0; -- join swap/reordering disabled with parallel replicas
 SET enable_analyzer = 1, query_plan_join_swap_table = 'auto';
 
 SELECT *
