@@ -1,4 +1,3 @@
-import dataclasses
 import glob
 import json
 import os
@@ -23,6 +22,7 @@ from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
 
+
 _GH_authenticated = False
 
 
@@ -34,10 +34,9 @@ def _GH_Auth(workflow):
         return
     from .gh_auth import GHAuth
 
-    if not Shell.check(f"gh auth status", verbose=True):
-        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        GHAuth.auth(app_id=app_id, app_key=pem)
+    pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+    app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+    GHAuth.auth(app_id=app_id, app_key=pem)
     _GH_authenticated = True
 
 
@@ -52,23 +51,6 @@ class Runner:
         pr = pr or -1
         if branch:
             pr = 0
-        digest_dockers = {}
-        for docker in workflow.dockers:
-            digest_dockers[docker.name] = Digest().calc_docker_digest(
-                docker, workflow.dockers
-            )
-        workflow_config = RunConfig(
-            name=workflow.name,
-            digest_jobs={},
-            digest_dockers=digest_dockers,
-            sha="",
-            cache_success=[],
-            cache_success_base64=[],
-            cache_artifacts={},
-            cache_jobs={},
-            filtered_jobs={},
-            custom_data={},
-        )
         _Environment(
             WORKFLOW_NAME=workflow.name,
             JOB_NAME=job.name,
@@ -93,17 +75,25 @@ class Runner:
             USER_LOGIN="",
             FORK_NAME="",
             PR_LABELS=[],
-            EVENT_TIME="",
-            WORKFLOW_DATA={
-                Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
-                    "outputs": {
-                        "data": json.dumps(
-                            {"workflow_config": dataclasses.asdict(workflow_config)}
-                        )
-                    }
-                }
-            },
         ).dump()
+        workflow_config = RunConfig(
+            name=workflow.name,
+            digest_jobs={},
+            digest_dockers={},
+            sha="",
+            cache_success=[],
+            cache_success_base64=[],
+            cache_artifacts={},
+            cache_jobs={},
+            filtered_jobs={},
+            custom_data={},
+        )
+        for docker in workflow.dockers:
+            workflow_config.digest_dockers[docker.name] = Digest().calc_docker_digest(
+                docker, workflow.dockers
+            )
+
+        workflow_config.dump()
 
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
@@ -234,7 +224,7 @@ class Runner:
         if job.name != Settings.CI_CONFIG_JOB_NAME:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
-                    RunConfig.from_workflow_data().digest_dockers
+                    RunConfig.from_fs(workflow.name).digest_dockers
                 )
             except Exception as e:
                 traceback.print_exc()
@@ -252,7 +242,7 @@ class Runner:
                 job.run_in_docker.split("+")[1:],
             )
             from_root = "root" in docker_settings
-            settings = [s for s in docker_settings if s.startswith("-")]
+            settings = [s for s in docker_settings if s.startswith("--")]
             if ":" in job.run_in_docker:
                 docker_name, docker_tag = job.run_in_docker.split(":")
                 print(
@@ -261,7 +251,7 @@ class Runner:
             else:
                 docker_name, docker_tag = (
                     job.run_in_docker,
-                    RunConfig.from_workflow_data().digest_dockers[job.run_in_docker],
+                    RunConfig.from_fs(workflow.name).digest_dockers[job.run_in_docker],
                 )
                 if Utils.is_arm():
                     docker_tag += "_arm"
@@ -405,14 +395,6 @@ class Runner:
         # if result.is_error():
         result.set_files([Settings.RUN_LOG])
 
-        job_outputs = env.JOB_KV_DATA
-        print(f"Job's output: [{list(job_outputs.keys())}]")
-        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-            print(
-                f"data={json.dumps(job_outputs)}",
-                file=f,
-            )
-
         if job.post_hooks:
             sw_ = Utils.Stopwatch()
             results_ = []
@@ -514,49 +496,31 @@ class Runner:
             if result.is_ok():
                 CacheRunnerHooks.post_run(workflow, job)
 
-        workflow_result = None
         if workflow.enable_report:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
-            workflow_result = Result.from_fs(workflow.name)
 
-            if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
-                # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
-                workflow_storage_usage = StorageUsage.from_dict(
-                    workflow_result.ext.get("storage_usage", {})
+        if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
+            # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
+            workflow_result = Result.from_fs(workflow.name)
+            workflow_storage_usage = StorageUsage.from_dict(
+                workflow_result.ext.get("storage_usage", {})
+            )
+            workflow_compute_usage = ComputeUsage.from_dict(
+                workflow_result.ext.get("compute_usage", {})
+            )
+            if workflow_storage_usage:
+                print(
+                    "NOTE: storage_usage is found in workflow Result - insert into CIDB"
                 )
-                workflow_compute_usage = ComputeUsage.from_dict(
-                    workflow_result.ext.get("compute_usage", {})
+                ci_db.insert_storage_usage(workflow_storage_usage)
+            if workflow_compute_usage:
+                print(
+                    "NOTE: compute_usage is found in workflow Result - insert into CIDB"
                 )
-                if workflow_storage_usage:
-                    print(
-                        "NOTE: storage_usage is found in workflow Result - insert into CIDB"
-                    )
-                    ci_db.insert_storage_usage(workflow_storage_usage)
-                if workflow_compute_usage:
-                    print(
-                        "NOTE: compute_usage is found in workflow Result - insert into CIDB"
-                    )
-                    ci_db.insert_compute_usage(workflow_compute_usage)
+                ci_db.insert_compute_usage(workflow_compute_usage)
 
         report_url = Info().get_job_report_url(latest=False)
-
-        if workflow.enable_gh_summary_comment and (
-            job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
-        ):
-            _GH_Auth(workflow)
-            try:
-                summary_body = GH.ResultSummaryForGH.from_result(
-                    workflow_result
-                ).to_markdown()
-                if not GH.post_updateable_comment(
-                    comment_tags_and_bodies={"summary": summary_body},
-                    only_update=True,
-                ):
-                    print(f"ERROR: failed to post CI summary")
-            except Exception as e:
-                print(f"ERROR: failed to post CI summary, ex: {e}")
-                traceback.print_exc()
 
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
@@ -593,20 +557,6 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Failed to merge the PR: [{e}]")
                 traceback.print_exc()
-
-        # finally, set the status flag for GH Actions
-        pipeline_status = Result.Status.SUCCESS
-        if not result.is_ok():
-            if result.is_failure() and result.do_not_block_pipeline_on_failure():
-                # job explicitly says to not block ci even though result is failure
-                pass
-            else:
-                pipeline_status = Result.Status.FAILED
-        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-            print(
-                f"pipeline_status={pipeline_status}",
-                file=f,
-            )
 
         return is_ok
 

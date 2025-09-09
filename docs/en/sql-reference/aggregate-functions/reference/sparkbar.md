@@ -64,3 +64,4 @@ Result:
 ```
 
 The alias for this function is sparkBar.
+

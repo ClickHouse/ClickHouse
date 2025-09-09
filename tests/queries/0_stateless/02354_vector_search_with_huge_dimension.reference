@@ -1,8 +1,0 @@
--- Plan must contain vector index usage
-Skip
-Name: idx
-Description: vector_similarity GRANULARITY 100000000
--- Run vector search
-9
-8
-7

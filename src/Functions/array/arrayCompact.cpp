@@ -164,9 +164,9 @@ REGISTER_FUNCTION(ArrayCompact)
     FunctionDocumentation::Description description = "Removes consecutive duplicate elements from an array, including `null` values. The order of values in the resulting array is determined by the order in the source array.";
     FunctionDocumentation::Syntax syntax = "arrayCompact(arr)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "An array to remove duplicates from.", {"Array(T)"}}
+        {"arr", "An array to remove duplicates from. [`Array(T)`](/sql-reference/data-types/array)"}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array without duplicate values", {"Array(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value = "Returns an array without duplicate values. [`Array(T)`](/sql-reference/data-types/array).";
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3]);", "[1,nan,2,3]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

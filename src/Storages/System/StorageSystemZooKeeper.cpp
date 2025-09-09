@@ -130,7 +130,7 @@ class ZooKeeperSink : public SinkToStorage
     ZkNodeCache cache;
 
 public:
-    ZooKeeperSink(SharedHeader header, ContextPtr context)
+    ZooKeeperSink(const Block & header, ContextPtr context)
         : SinkToStorage(header), zookeeper(context->getZooKeeper())
     {}
 
@@ -229,7 +229,7 @@ public:
     SystemZooKeeperSource(
         String && zookeeper_name_,
         Paths && paths_,
-        SharedHeader header_,
+        Block header_,
         UInt64 max_block_size_,
         ContextPtr context_)
         : ISource(header_)
@@ -290,7 +290,7 @@ SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMeta
     if (!context->getConfigRef().getBool("allow_zookeeper_write", false))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prohibit writing to system.zookeeper, unless config `allow_zookeeper_write` as true");
 
-    return std::make_shared<ZooKeeperSink>(std::make_shared<const Block>(metadata->getSampleBlock()), context);
+    return std::make_shared<ZooKeeperSink>(metadata->getSampleBlock(), context);
 }
 
 ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
@@ -794,7 +794,7 @@ ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(
     const Block & header,
     UInt64 max_block_size_)
     : SourceStepWithFilter(
-        std::make_shared<const Block>(header),
+        header,
         column_names_,
         query_info_,
         storage_snapshot_,

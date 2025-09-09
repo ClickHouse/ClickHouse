@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Parser.h>
-#include <Commands.h>
+#include "Parser.h"
+#include "Commands.h"
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/Names.h>
 #include <Client/LineReader.h>
@@ -52,9 +52,7 @@ protected:
     void runInteractiveReplxx();
     void runInteractiveInputStream();
 
-    void connectToKeeper();
-
-    bool processQueryText(const String & text, bool is_interactive);
+    bool processQueryText(const String & text);
 
     void loadCommands(std::vector<Command> && new_commands);
 

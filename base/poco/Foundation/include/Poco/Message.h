@@ -18,6 +18,7 @@
 #define Foundation_Message_INCLUDED
 
 
+#include <map>
 #include <vector>
 #include "Poco/Foundation.h"
 #include "Poco/Timestamp.h"
@@ -66,21 +67,11 @@ public:
     /// The thread and process ids are set.
 
     Message(
-        const std::string & source,
-        const std::string & text,
-        Priority prio,
-        std::string && file,
-        int line,
-        std::string_view fmt_str = {},
-        const std::vector<std::string> & fmt_str_args = {});
+        const std::string & source, const std::string & text, Priority prio, const char * file, int line,
+        std::string_view fmt_str = {}, const std::vector<std::string> & fmt_str_args = {});
     Message(
-        std::string && source,
-        std::string && text,
-        Priority prio,
-        std::string && file,
-        int line,
-        std::string_view fmt_str,
-        std::vector<std::string> && fmt_str_args);
+        std::string && source, std::string && text, Priority prio, const char * file, int line,
+        std::string_view fmt_str, std::vector<std::string> && fmt_str_args);
     /// Creates a Message with the given source, text, priority,
     /// source file path and line.
     ///
@@ -94,9 +85,6 @@ public:
 
     Message(const Message & msg);
     /// Creates a Message by copying another one.
-
-    Message(Message && msg) = default;
-    /// Creates a Message by moving another one.
 
     Message(const Message & msg, const std::string & text);
     /// Creates a Message by copying all but the text from another message.
@@ -162,9 +150,9 @@ public:
     /// the __FILE__ macro. The string is not copied
     /// internally for performance reasons.
 
-    const std::string & getSourceFile() const;
+    const char * getSourceFile() const;
     /// Returns the source file path of the code creating
-    /// the message. May be "" if not set.
+    /// the message. May be 0 if not set.
 
     void setSourceLine(int line);
     /// Sets the source file line of the statement
@@ -184,8 +172,37 @@ public:
     /// generating the log message. May be 0
     /// if not set.
 
+    bool has(const std::string & param) const;
+    /// Returns true if a parameter with the given name exists.
+
+    const std::string & get(const std::string & param) const;
+    /// Returns a const reference to the value of the parameter
+    /// with the given name. Throws a NotFoundException if the
+    /// parameter does not exist.
+
+    const std::string & get(const std::string & param, const std::string & defaultValue) const;
+    /// Returns a const reference to the value of the parameter
+    /// with the given name. If the parameter with the given name
+    /// does not exist, then defaultValue is returned.
+
+    void set(const std::string & param, const std::string & value);
+    /// Sets the value for a parameter. If the parameter does
+    /// not exist, then it is created.
+
+    const std::string & operator[](const std::string & param) const;
+    /// Returns a const reference to the value of the parameter
+    /// with the given name. Throws a NotFoundException if the
+    /// parameter does not exist.
+
+    std::string & operator[](const std::string & param);
+    /// Returns a reference to the value of the parameter with the
+    /// given name. This can be used to set the parameter's value.
+    /// If the parameter does not exist, it is created with an
+    /// empty string value.
+
 protected:
     void init();
+    typedef std::map<std::string, std::string> StringMap;
 
 private:
     std::string _source;
@@ -195,8 +212,9 @@ private:
     long _tid;
     std::string _thread;
     mutable long _pid = -1;
-    std::string _file;
+    const char * _file;
     int _line;
+    StringMap * _pMap;
     std::string_view _fmt_str;
     std::vector<std::string> _fmt_str_args;
 };
@@ -241,7 +259,7 @@ inline long Message::getTid() const
 }
 
 
-inline const std::string & Message::getSourceFile() const
+inline const char * Message::getSourceFile() const
 {
     return _file;
 }
