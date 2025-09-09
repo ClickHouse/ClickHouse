@@ -38,12 +38,11 @@ function select_func {
     done
 }
 
-export -f select
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
 
 $CLICKHOUSE_CLIENT -m --query "
 SET send_logs_level='error';
@@ -54,12 +53,11 @@ wait
 
 sed -i "s|<max_size>$new_max_size<\/max_size>|<max_size>$prev_max_size<\/max_size>|"  $config_path
 
-export -f select
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
 
 $CLICKHOUSE_CLIENT -m --query "
 SET send_logs_level='error';
