@@ -118,7 +118,7 @@ The returned value is always smaller than the total free space ([`filesystemUnre
     )";
     FunctionDocumentation::Syntax syntax_filesystemAvailable = "filesystemAvailable([disk_name])";
     FunctionDocumentation::Arguments arguments_filesystemAvailable = {
-        {"disk_name", "Optional. The disk name to find the amount of free sapce for. If omitted, uses the default disk.", {"String", "FixedString"}}
+        {"disk_name", "Optional. The disk name to find the amount of free space for. If omitted, uses the default disk.", {"String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_filesystemAvailable = {"Returns the amount of remaining space available in bytes.", {"UInt64"}};
     FunctionDocumentation::Examples examples_filesystemAvailable = {

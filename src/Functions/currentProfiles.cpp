@@ -108,11 +108,11 @@ namespace
 REGISTER_FUNCTION(Profiles)
 {
     FunctionDocumentation::Description description_currentProfiles = R"(
-Returns an array of the setting profile names for the current user.
+Returns an array of the setting profiles for the current user.
 )";
     FunctionDocumentation::Syntax syntax_currentProfiles = "currentProfiles()";
     FunctionDocumentation::Arguments arguments_currentProfiles = {};
-    FunctionDocumentation::ReturnedValue returned_value_currentProfiles = {"Returns an array of setting profile names for the current user.", {"Array(String)"}};
+    FunctionDocumentation::ReturnedValue returned_value_currentProfiles = {"Returns an array of setting profiles for the current user.", {"Array(String)"}};
     FunctionDocumentation::Examples examples_currentProfiles = {
     {
         "Usage example",

@@ -129,7 +129,7 @@ public:
 REGISTER_FUNCTION(GetServerPort)
 {
     FunctionDocumentation::Description description_getServerPort = R"(
-Returns the server port number.
+Returns the server's port number for a given protocol.
     )";
     FunctionDocumentation::Syntax syntax_getServerPort = "getServerPort(port_name)";
     FunctionDocumentation::Arguments arguments_getServerPort = {

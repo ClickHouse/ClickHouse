@@ -94,11 +94,11 @@ namespace
 REGISTER_FUNCTION(CurrentRoles)
 {
     FunctionDocumentation::Description description_currentRoles = R"(
-Returns an array of role names which are enabled for the current user.
+Returns an array of the roles which are assigned to the current user.
     )";
     FunctionDocumentation::Syntax syntax_currentRoles = "currentRoles()";
     FunctionDocumentation::Arguments arguments_currentRoles = {};
-    FunctionDocumentation::ReturnedValue returned_value_currentRoles = {"Returns an array of role names which are enabled for current user.", {"Array(String)"}};
+    FunctionDocumentation::ReturnedValue returned_value_currentRoles = {"Returns an array of the roles which are assigned to the current user.", {"Array(String)"}};
     FunctionDocumentation::Examples examples_currentRoles = {
     {
         "Usage example",
@@ -117,7 +117,7 @@ SELECT currentRoles();
     FunctionDocumentation documentation_currentRoles = {description_currentRoles, syntax_currentRoles, arguments_currentRoles, returned_value_currentRoles, examples_currentRoles, introduced_in_currentRoles, category_currentRoles};
 
     FunctionDocumentation::Description description_enabledRoles = R"(
-Returns an array of role names which are enabled for the current user.
+Returns an array of the roles which are enabled for the current user.
     )";
     FunctionDocumentation::Syntax syntax_enabledRoles = "enabledRoles()";
     FunctionDocumentation::Arguments arguments_enabledRoles = {};
@@ -140,11 +140,11 @@ SELECT enabledRoles();
     FunctionDocumentation documentation_enabledRoles = {description_enabledRoles, syntax_enabledRoles, arguments_enabledRoles, returned_value_enabledRoles, examples_enabledRoles, introduced_in_enabledRoles, category_enabledRoles};
 
     FunctionDocumentation::Description description_defaultRoles = R"(
-Returns an array of default role names for the current user.
+Returns an array of default roles for the current user.
     )";
     FunctionDocumentation::Syntax syntax_defaultRoles = "defaultRoles()";
     FunctionDocumentation::Arguments arguments_defaultRoles = {};
-    FunctionDocumentation::ReturnedValue returned_value_defaultRoles = {"Returns an array of names of default roles for current user.", {"Array(String)"}};
+    FunctionDocumentation::ReturnedValue returned_value_defaultRoles = {"Returns an array of default roles for the current user.", {"Array(String)"}};
     FunctionDocumentation::Examples examples_defaultRoles = {
     {
         "Usage example",
