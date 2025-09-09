@@ -122,6 +122,7 @@ namespace
         String multipart_upload_id;
         std::deque<String> multipart_tags;
         std::atomic<size_t> num_finished_parts = 0;
+        std::atomic<bool> has_failed = false;
 
         void fillCreateMultipartRequest(S3::CreateMultipartUploadRequest & request)
         {
@@ -262,6 +263,9 @@ namespace
             {
                 for (size_t part_number = 1; position < end_position; ++part_number)
                 {
+                    if (has_failed)
+                        break;
+
                     size_t next_position = std::min(position + normal_part_size, end_position);
                     size_t part_size = next_position - position; /// `part_size` is either `normal_part_size` or smaller if it's the final part.
 
@@ -359,6 +363,9 @@ namespace
 
         void processUploadTask(UploadPartTask & task)
         {
+            if (has_failed)
+                return;
+
             try
             {
                 Stopwatch watch;
@@ -379,6 +386,8 @@ namespace
             catch (Exception & e)
             {
                 e.addMessage(fmt::format("while uploading part #{}", task.part_number, dest_key, dest_bucket));
+                /// stop other tasks
+                has_failed = true;
                 throw;
             }
 
