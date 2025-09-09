@@ -292,7 +292,6 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setImplicitNoPasswordAllowed(config_.getBool("allow_implicit_no_password", true));
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
-    setEscapeDotInUserName(config_.getBool("escape_dot_in_user_name", true));
     setDefaultPasswordTypeFromConfig(config_.getString("default_password_type", "sha256_password"));
     setPasswordComplexityRulesFromConfig(config_);
 
@@ -718,16 +717,6 @@ void AccessControl::setPlaintextPasswordAllowed(bool allow_plaintext_password_)
 bool AccessControl::isPlaintextPasswordAllowed() const
 {
     return allow_plaintext_password;
-}
-
-void AccessControl::setEscapeDotInUserName(bool escape_dot_in_user_name_)
-{
-    escape_dot_in_user_name = escape_dot_in_user_name_;
-}
-
-bool AccessControl::shouldEscapeDotInUserName() const
-{
-    return escape_dot_in_user_name;
 }
 
 void AccessControl::setDefaultPasswordTypeFromConfig(const String & type_)

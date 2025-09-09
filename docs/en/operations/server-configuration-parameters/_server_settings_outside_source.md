@@ -2203,14 +2203,6 @@ Accepted values are:
 <default_password_type>sha256_password</default_password_type>
 ```
 
-## escape_dot_in_user_name {#escape_dot_in_user_name}
-
-Sets whether the dot in the username from config file should be escaped.
-
-```xml
-<escape_dot_in_user_name>1</escape_dot_in_user_name>
-```
-
 ## user_directories {#user_directories}
 
 Section of the configuration file that contains settings:

@@ -159,10 +159,6 @@ public:
     void setPlaintextPasswordAllowed(bool allow_plaintext_password_);
     bool isPlaintextPasswordAllowed() const;
 
-    /// Turns on/off the escaping of dot in user name.
-    void setEscapeDotInUserName(bool escape_dot_in_user_name_);
-    bool shouldEscapeDotInUserName() const;
-
     /// Default password type when the user does not specify it.
     void setDefaultPasswordTypeFromConfig(const String & type_);
     AuthenticationType getDefaultPasswordType() const;
@@ -284,7 +280,6 @@ private:
     std::atomic_bool allow_plaintext_password = true;
     std::atomic_bool allow_no_password = true;
     std::atomic_bool allow_implicit_no_password = true;
-    std::atomic_bool escape_dot_in_user_name = true;
     std::atomic_bool users_without_row_policies_can_read_rows = false;
     std::atomic_bool on_cluster_queries_require_cluster_grant = false;
     std::atomic_bool select_from_system_db_requires_grant = false;

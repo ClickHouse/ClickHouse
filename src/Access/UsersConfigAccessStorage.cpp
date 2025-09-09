@@ -118,14 +118,12 @@ namespace
         const std::unordered_set<UUID> & allowed_profile_ids,
         const std::unordered_set<UUID> & allowed_role_ids,
         bool allow_no_password,
-        bool allow_plaintext_password,
-        bool escape_dot_in_user_name)
+        bool allow_plaintext_password)
     {
         const bool validate = true;
         auto user = std::make_shared<User>();
         String unescaped_user_name = user_name;
-        if (!escape_dot_in_user_name)
-            Poco::replaceInPlace(unescaped_user_name, "\\.", ".");
+        Poco::replaceInPlace(unescaped_user_name, "\\.", ".");
         user->setName(unescaped_user_name);
         String user_config = "users." + user_name;
         bool has_no_password = config.has(user_config + ".no_password");
@@ -442,8 +440,7 @@ namespace
         const std::unordered_set<UUID> & allowed_profile_ids,
         const std::unordered_set<UUID> & allowed_role_ids,
         bool allow_no_password,
-        bool allow_plaintext_password,
-        bool escape_dot_in_user_name)
+        bool allow_plaintext_password)
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
@@ -454,7 +451,7 @@ namespace
         {
             try
             {
-                users.push_back(parseUser(config, user_name, allowed_profile_ids, allowed_role_ids, allow_no_password, allow_plaintext_password, escape_dot_in_user_name));
+                users.push_back(parseUser(config, user_name, allowed_profile_ids, allowed_role_ids, allow_no_password, allow_plaintext_password));
             }
             catch (Exception & e)
             {
@@ -881,10 +878,9 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
         auto allowed_role_ids = getAllowedIDs(config, "roles", AccessEntityType::ROLE);
         bool no_password_allowed = access_control.isNoPasswordAllowed();
         bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
-        bool escape_dot_in_user_name = access_control.shouldEscapeDotInUserName();
 
         std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
-        for (const auto & entity : parseUsers(config, allowed_profile_ids, allowed_role_ids, no_password_allowed, plaintext_password_allowed, escape_dot_in_user_name))
+        for (const auto & entity : parseUsers(config, allowed_profile_ids, allowed_role_ids, no_password_allowed, plaintext_password_allowed))
             all_entities.emplace_back(generateID(*entity), entity);
         for (const auto & entity : parseQuotas(config))
             all_entities.emplace_back(generateID(*entity), entity);
