@@ -3,7 +3,6 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/StoredObject.h>
-#include "Common/StackTrace.h"
 #if ENABLE_DISTRIBUTED_CACHE
 #include <Disks/IO/WriteBufferFromDistributedCache.h>
 #include <Interpreters/Context.h>
