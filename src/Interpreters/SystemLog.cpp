@@ -70,7 +70,6 @@ namespace DB
 namespace ServerSetting
 {
     extern const ServerSettingsBool prepare_system_log_tables_on_startup;
-    extern const ServerSettingsBool enable_uuids_for_columns;
 }
 
 namespace ErrorCodes
