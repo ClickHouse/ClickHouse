@@ -716,7 +716,7 @@ protected:
             /// S3('url', 'access_key_id', 'secret_access_key')
             findS3DatabaseSecretArguments();
         }
-        else if (engine_name == "DataLakeCatalog")
+        else if (engine_name == "DataLakeCatalog" || engine_name == "Iceberg")
         {
             findDataLakeCatalogSecretArguments();
         }
