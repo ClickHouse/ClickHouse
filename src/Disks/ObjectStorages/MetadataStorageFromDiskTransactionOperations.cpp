@@ -406,8 +406,6 @@ void TruncateMetadataFileOperation::execute(std::unique_lock<SharedMutex> & meta
         write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
         write_operation->execute(metadata_lock);
     }
-
-    LOG_TEST(getLogger("TruncateMetadataFileOperation"), "Going to remove {} blobs.", outcome->objects_to_remove.size());
 }
 
 void TruncateMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)

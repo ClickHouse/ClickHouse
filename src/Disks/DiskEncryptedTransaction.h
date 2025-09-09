@@ -256,7 +256,7 @@ public:
         const WriteSettings & settings) const
     {
         auto wrapped_path = wrappedPath(path);
-        return delegate_transaction->writeFile(wrapped_path, buf_size, mode, settings);
+        return delegate_transaction->writeFileWithAutoCommit(wrapped_path, buf_size, mode, settings);
     }
 
     /// Truncate file to the target size.

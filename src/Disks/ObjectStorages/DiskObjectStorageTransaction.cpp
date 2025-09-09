@@ -3,6 +3,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/StoredObject.h>
+#include "Common/StackTrace.h"
 #if ENABLE_DISTRIBUTED_CACHE
 #include <Disks/IO/WriteBufferFromDistributedCache.h>
 #include <Interpreters/Context.h>
@@ -543,12 +544,12 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
         {
             if (object->bytes_size > 0 || create_blob_if_empty)
             {
-                LOG_TRACE(getLogger("DiskObjectStorageTransaction"), "Writing blob for path {}, key {}, size {}", object->local_path, object->remote_path, object->bytes_size);
+                LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Writing blob for path {}, key {}, size {}", object->local_path, object->remote_path, object->bytes_size);
                 tx->createMetadataFile(object->local_path, remote_key, object->bytes_size);
             }
             else
             {
-                LOG_TRACE(getLogger("DiskObjectStorageTransaction"), "Skipping writing empty blob for path {}, key {}", object->local_path, object->remote_path);
+                LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Skipping writing empty blob for path {}, key {}", object->local_path, object->remote_path);
                 tx->createEmptyMetadataFile(object->local_path);
             }
         }
@@ -683,8 +684,6 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
     {
         LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Truncating file: {} type {} to size {}", path, typeid(tx.get()).name(), size);
         truncate_outcome = tx->truncateFile(path, size);
-
-        LOG_TEST(getLogger("DiskObjectStorageTransaction"), "truncate outcome: {}", getDebugInfo());
     }
 
     std::string getDebugInfo()const
@@ -698,19 +697,21 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
 
         auto files_range = truncate_outcome->objects_to_remove | std::views::transform([](const StoredObject & obj) { return fmt::format("{} -> {} ({})", obj.local_path, obj.remote_path, obj.bytes_size); });
 
-        return fmt::format("file {} had size {} with files <{}>", path, total_size, fmt::join(files_range, ", "));
+        return fmt::format("file {} truncated size {} with files <{}>", path, total_size, fmt::join(files_range, ", "));
     }
 
 
     void undo() override
     {
-
+        // no op
     }
 
     void finalize(StoredObjects & to_remove) override
     {
         if (!truncate_outcome)
             return;
+
+        LOG_TEST(getLogger("DiskObjectStorageTransaction"), "truncate outcome: {}", getDebugInfo());
 
         if (!truncate_outcome->objects_to_remove.empty())
             to_remove.append_range(std::move(truncate_outcome->objects_to_remove));
@@ -891,7 +892,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     WriteMode mode,
     const WriteSettings & settings)
 {
-    LOG_TEST(getLogger("DiskObjectStorageTransaction"), "write file {} mode {}", path, mode);
+    LOG_TEST(getLogger("DiskObjectStorageTransaction"), "write file {} mode {} autocommit {}", path, mode, autocommit);
 
     if (mode == WriteMode::Append && !metadata_transaction->supportAddingBlobToMetadata())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support WriteMode::Append");
@@ -906,10 +907,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
     /// Previous remote blobs have to be deleted IFF metadata transaction is committed.
     if (mode == WriteMode::Rewrite && !object_storage.isPlain())
-    {
-        LOG_TEST(getLogger("DiskObjectStorageTransaction"), "truncate file before rerwiting {} mode {}", path, mode);
         truncateFile(object->local_path, /*size*/ 0);
-    }
 
     operations_to_execute.emplace_back(std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object, object_key, mode, create_blob_if_empty));
 
