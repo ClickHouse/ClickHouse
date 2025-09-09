@@ -1128,7 +1128,7 @@ class ClickhouseIntegrationTestsRunner:
             if timeout_expired:
                 print("Timeout expired - break tests execution")
                 break
-            logging.info("Running test group %s containing %s tests", group, len(tests))
+            logging.info("Running test group %s containing %s tests", group, tests)
             group_counters, group_test_times, log_paths = self.try_run_test_group(
                 "2h", group, tests, MAX_RETRY, NUM_WORKERS, 0
             )

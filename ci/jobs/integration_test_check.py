@@ -296,6 +296,9 @@ def main():
         )
     else:
         state, description, test_results, additional_logs = process_results(result_path)
+    
+    if Path("./tests/integration/test_names.txt").exists():
+        additional_logs.append(Path("./tests/integration/test_names.txt"))
 
     res = Result(
         name=info.job_name,
