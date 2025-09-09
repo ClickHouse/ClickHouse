@@ -22,7 +22,7 @@ MergingSortedTransform::MergingSortedTransform(
     UInt64 limit_,
     bool always_read_till_end_,
     WriteBuffer * out_row_sources_buf_,
-    std::optional<String> filter_column_name_,
+    const std::optional<String> & filter_column_name_,
     bool use_average_block_sizes,
     bool apply_virtual_row_conversions,
     bool have_all_inputs_)

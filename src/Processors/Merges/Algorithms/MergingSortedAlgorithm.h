@@ -23,7 +23,7 @@ public:
         SortingQueueStrategy sorting_queue_strategy_,
         UInt64 limit_ = 0,
         WriteBuffer * out_row_sources_buf_ = nullptr,
-        std::optional<String> filter_column_name_ = std::nullopt,
+        const std::optional<String> & filter_column_name_ = std::nullopt,
         bool use_average_block_sizes = false,
         bool apply_virtual_row_conversions_ = true);
 

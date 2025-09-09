@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+}
+
 MergingSortedAlgorithm::MergingSortedAlgorithm(
     SharedHeader header_,
     size_t num_inputs,
@@ -17,7 +22,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     SortingQueueStrategy sorting_queue_strategy_,
     UInt64 limit_,
     WriteBuffer * out_row_sources_buf_,
-    std::optional<String> filter_column_name_,
+    const std::optional<String> & filter_column_name_,
     bool use_average_block_sizes,
     bool apply_virtual_row_conversions_)
     : header(std::move(header_))
@@ -31,6 +36,13 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , sorting_queue_strategy(sorting_queue_strategy_)
     , cursors(num_inputs)
 {
+    if (filter_column_position != -1)
+    {
+        const auto & filter_type = header->getByPosition(filter_column_position).type;
+        if (!WhichDataType(filter_type).isUInt8())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Illegal type {} of column for filter. Must be UInt8", filter_type->getName());
+    }
+
     DataTypes sort_description_types;
     sort_description_types.reserve(description.size());
 
