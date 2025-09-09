@@ -315,6 +315,8 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     auto holder = with_retries.createRetriesControlHolderForOperations("DDLWorker::scheduleTasks");
     holder.retries_ctl.retryLoop([&, &zookeeper = holder.faulty_zookeeper]()
     {
+        if (stop_flag)
+            return;
         with_retries.renewZooKeeper(holder);
 
         /// Main thread of DDLWorker was restarted, probably due to lost connection with ZooKeeper.

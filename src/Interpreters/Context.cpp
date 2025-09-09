@@ -4273,7 +4273,11 @@ DDLWorker & Context::getDDLWorker() const
 zkutil::ZooKeeperPtr Context::getZooKeeper(UInt64 max_lock_milliseconds) const
 {
     Stopwatch get_keeper_watch;
-    max_lock_milliseconds = std::max(UInt64(100), max_lock_milliseconds);
+    /// We used to lock here indifinitely, but this potentially leads to unkillable queries and processes stuck for long
+    /// Once keeper retries are added in more places it doesn't make sense to wait much as we want the retries to keep counting
+    /// while there is no keeper session available (to throw errors or cancel processes)
+    static const UInt64 DEFAULT_KEEPER_LOCK_TIMEOUT = 10000;
+    max_lock_milliseconds = !max_lock_milliseconds ? DEFAULT_KEEPER_LOCK_TIMEOUT : std::max(UInt64{100}, max_lock_milliseconds);
 
     if (!shared->zookeeper_mutex.try_lock_for(std::chrono::milliseconds(max_lock_milliseconds)))
         throw zkutil::KeeperException(
@@ -4283,21 +4287,21 @@ zkutil::ZooKeeperPtr Context::getZooKeeper(UInt64 max_lock_milliseconds) const
 
     if (!shared->zookeeper)
     {
-        LOG_DEBUG(shared->log, "getZooKeeper No keeper");
-
+        Stopwatch creation_watch;
         const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
         shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
             zookeeper_connection_log->addConnected(
                 ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
-        LOG_DEBUG(shared->log, "Established a new keeper connection. Session id: {}", shared->zookeeper->getClientID());
+        LOG_DEBUG(shared->log, "Establishing a new connection (session id {}) with Keeper took {} ms ({}ms in total)",
+            shared->zookeeper->getClientID(), creation_watch.elapsedMilliseconds(), get_keeper_watch.elapsedMilliseconds());
     }
 
     if (shared->zookeeper->expired())
     {
-        LOG_DEBUG(shared->log, "getZooKeeper expired");
         Stopwatch creation_watch;
-        LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper (Old session id: {})", shared->zookeeper->getClientID());
+        LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper after the previous one expired (Old session id: {})",
+            shared->zookeeper->getClientID());
 
         auto old_zookeeper = shared->zookeeper;
 
