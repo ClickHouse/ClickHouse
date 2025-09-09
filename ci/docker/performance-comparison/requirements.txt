@@ -30,3 +30,4 @@ wadllib==1.3.6
 wheel==0.46.1
 zipp==3.19.1
 requests==2.32.4
+clickhouse-connect==0.8.18

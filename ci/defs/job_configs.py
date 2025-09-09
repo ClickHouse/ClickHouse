@@ -1057,7 +1057,7 @@ class JobConfigs:
     )
     vector_search_stress_job = Job.Config(
         name="Vector Search Stress",
-        runs_on=RunnerLabels.ARM_SMALL,
-        run_in_docker="clickhouse/fuzzer",
+        runs_on=RunnerLabels.AMD_MEDIUM,
+        run_in_docker="clickhouse/performance-comparison",
         command="python3 ./ci/jobs/vector_search_stress_tests.py",
     )
