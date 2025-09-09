@@ -45,11 +45,11 @@ private:
     using ComparatorCollationEqual = ComparatorEqualImpl<ComparatorCollationBase>;
 
 public:
-    using Base = COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
-
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
+    using Base = COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
+
     static Ptr create(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
     {
         return ColumnArray::create(nested_column->assumeMutable(), offsets_column->assumeMutable());
@@ -121,7 +121,7 @@ public:
                                     size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const Columns & source_columns) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;

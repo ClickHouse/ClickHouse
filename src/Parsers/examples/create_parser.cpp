@@ -1,5 +1,6 @@
 #include <iostream>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <IO/WriteBufferFromOStream.h>

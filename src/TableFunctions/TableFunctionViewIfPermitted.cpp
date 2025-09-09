@@ -13,8 +13,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB
@@ -47,7 +46,7 @@ public:
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override { return "ViewIfPermitted"; }
+    const char * getStorageTypeName() const override { return "ViewIfPermitted"; }
 
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
@@ -115,7 +114,7 @@ StoragePtr TableFunctionViewIfPermitted::executeImpl(
 
 bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const ColumnsDescription & else_columns) const
 {
-    SharedHeader sample_block;
+    Block sample_block;
 
     try
     {
@@ -137,7 +136,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
     }
 
     /// We check that columns match only if permitted (otherwise we could reveal the structure to an user who must not know it).
-    ColumnsDescription columns{sample_block->getNamesAndTypesList()};
+    ColumnsDescription columns{sample_block.getNamesAndTypesList()};
     if (columns != else_columns)
     {
         throw Exception(
