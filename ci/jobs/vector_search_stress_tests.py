@@ -106,7 +106,7 @@ test_run_params_1 = {
     # Pass a filename to reuse a pre-generated truth set, else test will generate truth set (default)
     # Running 10000 brute force KNN queries over a 100 million dataset could take time.
     LIMIT_N: None,
-    TRUTH_SET_FILES: ["https://clickhouse-datasets.s3.amazonaws.com/laion-5b/truth_set_10k.tar"]
+    TRUTH_SET_FILES: ["https://clickhouse-datasets.s3.amazonaws.com/laion-5b/truth_set_10k.tar"],
     QUANTIZATION: "bf16",  # 'b1' for binary quantization
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 512,
@@ -120,16 +120,33 @@ test_run_params_1 = {
 
 test_run_quick_test = {
     LIMIT_N: 100000,  # Adds a LIMIT clause to load exact number of rows
-    TRUTH_SET_FILES: None,
+    TRUTH_SET_FILES: ["https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion_100k_1k.tar"],
     QUANTIZATION: "bf16",
     HNSW_M: 16,
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
-    GENERATE_TRUTH_SET: True,
-    TRUTH_SET_COUNT: 100,  # Quick test! 10000 or 1000 is a good value
+    GENERATE_TRUTH_SET: False,
+    TRUTH_SET_COUNT: 1000,  # Quick test! 10000 or 1000 is a good value
     RECALL_K: 100,
-    NEW_TRUTH_SET_FILE: "laion_100k_100",
+    NEW_TRUTH_SET_FILE: "laion_100k_1k",
+    MERGE_TREE_SETTINGS: None,
+    OTHER_SETTINGS: None,
+    CONCURRENCY_TEST: True,
+}
+
+test_run_laion_1m = {
+    LIMIT_N: 1000000,  # Adds a LIMIT clause to load exact number of rows
+    TRUTH_SET_FILES: None,
+    QUANTIZATION: "bf16",
+    HNSW_M: 64,
+    HNSW_EF_CONSTRUCTION: 256,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    GENERATE_TRUTH_SET: True,
+    TRUTH_SET_COUNT: 10000,  # Quick test! 10000 or 1000 is a good value
+    RECALL_K: 100,
+    NEW_TRUTH_SET_FILE: "laion_1m_10k",
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
@@ -137,7 +154,6 @@ test_run_quick_test = {
 
 
 def get_new_connection():
-    # time.sleep(600)
     chclient = clickhouse_connect.get_client(send_receive_timeout=1800)
     return chclient
 
@@ -283,6 +299,8 @@ class RunTest:
 
         while i < self._query_count:
             query_vector_id = random.randint(1, max_id)
+            if query_vector_id in truth_set: # already used
+                continue
             subquery = f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = {query_vector_id})"
 
             q_start = current_time_ms()
@@ -311,8 +329,24 @@ class RunTest:
 
     # Load the truth set from a file (instead of generating at runtime)
     def load_truth_set(self, path):
-        logger(f"Loading truth set from file {name} ...")
-        if "https" in path: # Pretty basic test for truth set in S3
+        logger(f"Loading truth set from file {path} ...")
+        tarfile = path
+        if "https" in path: # Files are in S3 or local(for quick test)
+            results = []
+            commands = [f"wget -nv {path}"]
+            results.append(
+                Result.from_commands_run(name=f"Download truthset {path}", command=commands
+                )
+            )
+            tarfile = os.path.basename(path)
+
+        results = []
+        commands = [f"tar xvf {tarfile}"]
+        results.append(
+            Result.from_commands_run(name=f"Extract truthset {tarfile}", command=commands
+            )
+        )
+        name, _ = os.path.splitext(tarfile)
         query_vectors = np.load(name + "_vectors.npy")
         neighbours = np.load(name + "_neighbours.npy")
         distances = np.load(name + "_distances.npy")
@@ -321,10 +355,12 @@ class RunTest:
         for i in range(len(query_vectors)):
             truth_set[query_vectors[i]] = (neighbours[i], distances[i], 0)
 
+        logger(f"Loaded truth set containing {len(query_vectors)} vectors")
         return truth_set
 
     # Save the current truth set into files in npy format
     def save_truth_set(self, name):
+        logger(f"Saving truth set locally {name} ...")
         if self._truth_set is None:
             return
 
@@ -355,6 +391,20 @@ class RunTest:
             chclient = self._chclient
 
         chclient.query("SET use_skip_indexes = 1, max_parallel_replicas = 1")
+
+        # First execute a query to load the vector index, could take few minutes
+        # We loop because API could timeout and raise exception.(even with higher receive_timeout)
+        while True:
+            try:
+                subquery = f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = 100)"
+                ann_search_query =  f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {subquery} ) AS distance LIMIT {self._k}"
+                result = chclient.query(ann_search_query)
+                logger(f"Vector indexes have loaded!")
+                break
+            except Exception as e:
+                logger(f"Waiting for indexes to load...")
+                time.sleep(30)
+
         for vector_id, result in self._truth_set.items():
             subquery = f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = {vector_id})"
             q_start = current_time_ms()
@@ -456,7 +506,7 @@ def run_single_test(test_name, dataset, test_params):
 
 # Array of (dataset, test_params)
 TESTS_TO_RUN = [
-    ("Test using the laion dataset", laion_5b_mini_for_quick_test, test_run_quick_test)
+    ("Test using the laion dataset", laion_5b_mini_for_quick_test, test_run_laion_1m)
 ]
 
 
