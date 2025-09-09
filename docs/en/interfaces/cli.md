@@ -665,7 +665,7 @@ openSSL:
 ## Environment variable options {#environment-variable-options}
 
 The user name, password and host can be set via environment variables `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` and `CLICKHOUSE_HOST`.
-Command line arguments `--user`, `--password` or `--host`, or a [connection string](##connection_string) (if specified) take precedence over environment variables.
+Command line arguments `--user`, `--password` or `--host`, or a [connection string](#connection_string) (if specified) take precedence over environment variables.
 
 ## Command-line options {#command-line-options}
 
