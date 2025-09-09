@@ -1255,18 +1255,17 @@ def test_persistent_processing_nodes_cleanup(started_cluster):
 
     zk = started_cluster.get_kazoo_client("zoo1")
     zk.create(f"{keeper_path}/processing/test", b"somedata")
-    zk.create(f"{keeper_path}/persistent_processing/test", b"somedata")
-    assert b"somedata" == zk.get(f"{keeper_path}/persistent_processing/test")[0]
+    assert b"somedata" == zk.get(f"{keeper_path}/processing/test")[0]
 
     bucket_lock_path = f"{keeper_path}/buckets/0/lock"
     zk.create(bucket_lock_path, b"somedata")
 
     time.sleep(5)
-    assert b"somedata" == zk.get(f"{keeper_path}/persistent_processing/test")[0]
+    assert b"somedata" == zk.get(f"{keeper_path}/processing/test")[0]
     assert b"somedata" == zk.get(bucket_lock_path)[0]
     time.sleep(10)
     try:
-        zk.get(f"{keeper_path}/persistent_processing/test")[0]
+        zk.get(f"{keeper_path}/processing/test")[0]
         assert False
     except NoNodeError:
         pass
@@ -1275,7 +1274,6 @@ def test_persistent_processing_nodes_cleanup(started_cluster):
         assert False
     except NoNodeError:
         pass
-    assert b"somedata" == zk.get(f"{keeper_path}/processing/test")[0]
 
 
 def test_persistent_processing(started_cluster):
@@ -1313,7 +1311,7 @@ def test_persistent_processing(started_cluster):
     )
 
     zk = started_cluster.get_kazoo_client("zoo1")
-    nodes = zk.get_children(f"{keeper_path}/persistent_processing")
+    nodes = zk.get_children(f"{keeper_path}/processing")
     assert len(nodes) == 0
 
     node.query(
@@ -1331,7 +1329,7 @@ def test_persistent_processing(started_cluster):
 
     found = False
     for _ in range(10):
-        nodes = zk.get_children(f"{keeper_path}/persistent_processing")
+        nodes = zk.get_children(f"{keeper_path}/processing")
         if len(nodes) > 0:
             found = True
             break
@@ -1340,7 +1338,7 @@ def test_persistent_processing(started_cluster):
 
     time.sleep(10)
 
-    nodes = zk.get_children(f"{keeper_path}/persistent_processing")
+    nodes = zk.get_children(f"{keeper_path}/processing")
     assert len(nodes) == 0
 
 
@@ -1390,7 +1388,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     insert()
 
     zk = started_cluster.get_kazoo_client("zoo1")
-    nodes = zk.get_children(f"{keeper_path}/persistent_processing")
+    nodes = zk.get_children(f"{keeper_path}/processing")
     assert len(nodes) == 0
     is_ordered = mode == "ordered"
     if is_ordered:
@@ -1420,7 +1418,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
 
     found = False
     for _ in range(100):
-        nodes = zk.get_children(f"{keeper_path}/persistent_processing")
+        nodes = zk.get_children(f"{keeper_path}/processing")
         if len(nodes) > 0:
             found = True
             break
@@ -1453,7 +1451,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
         f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 5/6"
     )
 
-    nodes = zk.get_children(f"{keeper_path}/persistent_processing")
+    nodes = zk.get_children(f"{keeper_path}/processing")
     assert len(nodes) == 0
     if is_ordered:
         for id in range(processing_threads):
@@ -1484,7 +1482,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
 
     found = False
     for _ in range(30):
-        nodes = zk.get_children(f"{keeper_path}/persistent_processing")
+        nodes = zk.get_children(f"{keeper_path}/processing")
         if len(nodes) == 0:
             found = True
             break
