@@ -47,12 +47,6 @@ azure_secret = Secret.Config(
     type=Secret.Type.AWS_SSM_VAR,
 )
 
-chcache_secret = Secret.Config(
-    name="chcache_password",
-    type=Secret.Type.AWS_SSM_VAR,
-    region="us-east-1",
-)
-
 SECRETS = [
     Secret.Config(
         name="dockerhub_robot_password",
@@ -71,7 +65,6 @@ SECRETS = [
         type=Secret.Type.AWS_SSM_VAR,
     ),
     azure_secret,
-    chcache_secret,
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
@@ -353,9 +346,6 @@ class JobNames:
 class ToolSet:
     COMPILER_C = "clang-19"
     COMPILER_CPP = "clang++-19"
-
-    COMPILER_CACHE = "chcache"
-    COMPILER_CACHE_LEGACY = "sccache"
 
 
 class ArtifactNames:

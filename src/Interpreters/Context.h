@@ -531,12 +531,6 @@ protected:
     /// if we already use a different mode of parallel replicas we want to disable this mode
     bool offset_parallel_replicas_enabled = true;
 
-    /// indicates how the query operates storage alias:
-    /// 0: operate on original storage
-    /// 1: operate on alias storage, for example, drop table ...
-    /// 2: throw exception on DDL, for example, alter table ... add column ...
-    uint8_t storage_alias_behaviour = 0;
-
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -1581,9 +1575,6 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
-
-    void setStorageAliasBehaviour(uint8_t storage_alias_behaviour_);
-    uint8_t getStorageAliasBehaviour() const;
 
     void setPartitionIdToMaxBlock(PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock() const;

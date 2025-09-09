@@ -93,14 +93,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsBool jemalloc_enable_global_profiler;
-    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
-    extern const ServerSettingsBool jemalloc_enable_background_threads;
-    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
-}
-
 Poco::Net::SocketAddress Keeper::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
 {
     auto address = makeSocketAddress(host, port, &logger());
@@ -312,13 +304,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 try
 {
 #if USE_JEMALLOC
-    ServerSettings server_settings;
-    server_settings.loadSettingsFromConfig(config());
-    Jemalloc::setup(
-        server_settings[ServerSetting::jemalloc_enable_global_profiler],
-        server_settings[ServerSetting::jemalloc_enable_background_threads],
-        server_settings[ServerSetting::jemalloc_max_background_threads_num],
-        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
+    setJemallocBackgroundThreads(true);
 #endif
     Poco::Logger * log = &logger();
 

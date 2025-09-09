@@ -96,7 +96,7 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
 
 
 ManifestFilesPruner::ManifestFilesPruner(
-    const IcebergSchemaProcessor & schema_processor_,
+    const DB::IcebergSchemaProcessor & schema_processor_,
     Int32 current_schema_id_,
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
@@ -186,7 +186,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & e
 
 
         auto hyperrectangle = it->second.hyperrectangle;
-        if (hyperrectangle.has_value() && it->second.nulls_count.has_value() && *it->second.nulls_count == 0 && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
+        if (hyperrectangle.has_value() && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
         {
             return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
         }

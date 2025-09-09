@@ -221,10 +221,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
-
-    virtual ColumnMapperPtr getColumnMapperForCurrentSchema() const { return nullptr; }
-
+    virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }
 
@@ -232,8 +229,6 @@ public:
     {
         return false;
     }
-
-    virtual void drop(ContextPtr) {}
 
     String format = "auto";
     String compression_method = "auto";
