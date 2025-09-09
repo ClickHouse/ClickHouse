@@ -1269,7 +1269,7 @@ namespace ErrorCodes
     to avoid redundant conflicts in merges assignment). 0 means disabled. Only
     available in ClickHouse Cloud
     )", 0) \
-    DECLARE(Bool, shared_merge_tree_use_outdated_parts_compact_format, false, R"(
+    DECLARE(Bool, shared_merge_tree_use_outdated_parts_compact_format, true, R"(
     Use compact format for outdated parts: reduces load to Keeper, improves
     outdated parts processing. Only available in ClickHouse Cloud
     )", 0) \
