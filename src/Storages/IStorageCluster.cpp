@@ -65,15 +65,19 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    createExtension(predicate);
+    auto max_replicas_to_use = static_cast<UInt64>(cluster->getShardsInfo().size());
+    if (context->getSettingsRef()[Setting::max_parallel_replicas] > 1)
+        max_replicas_to_use = std::min(max_replicas_to_use, context->getSettingsRef()[Setting::max_parallel_replicas].value);
+
+    createExtension(predicate, max_replicas_to_use);
 }
 
-void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
+void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate, size_t number_of_replicas)
 {
     if (extension)
         return;
 
-    extension = storage->getTaskIteratorExtension(predicate, context, cluster);
+    extension = storage->getTaskIteratorExtension(predicate, context, number_of_replicas);
 }
 
 /// The code executes on initiator
@@ -174,7 +178,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
     if (current_settings[Setting::max_parallel_replicas] > 1)
         max_replicas_to_use = std::min(max_replicas_to_use, current_settings[Setting::max_parallel_replicas].value);
 
-    createExtension(nullptr);
+    createExtension(nullptr, max_replicas_to_use);
 
     for (const auto & shard_info : cluster->getShardsInfo())
     {
