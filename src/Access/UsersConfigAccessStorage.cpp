@@ -114,7 +114,7 @@ namespace
 
     UserPtr parseUser(
         const Poco::Util::AbstractConfiguration & config,
-        const String & user_name,
+        String user_name,
         const std::unordered_set<UUID> & allowed_profile_ids,
         const std::unordered_set<UUID> & allowed_role_ids,
         bool allow_no_password,
@@ -122,10 +122,12 @@ namespace
     {
         const bool validate = true;
         auto user = std::make_shared<User>();
-        String unescaped_user_name = user_name;
-        Poco::replaceInPlace(unescaped_user_name, "\\.", ".");
-        user->setName(unescaped_user_name);
         String user_config = "users." + user_name;
+
+        /// If the user name contains a dot, it is escaped with a backslash when parsed from the config file.
+        /// We need to remove the backslash to get the correct user name.
+        Poco::replaceInPlace(user_name, "\\.", ".");
+        user->setName(user_name);
         bool has_no_password = config.has(user_config + ".no_password");
         bool has_password_plaintext = config.has(user_config + ".password");
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
@@ -150,12 +152,12 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
                             "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys', "
                             "'http_authentication' are used to specify authentication info for user {}. "
-                            "Must be only one of them.", unescaped_user_name);
+                            "Must be only one of them.", user_name);
 
         if (num_password_fields < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'password' or 'password_sha256_hex' "
                             "or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos "
-                            "or 'ssl_certificates' or 'ssh_keys' or 'http_authentication' must be specified for user {}.", unescaped_user_name);
+                            "or 'ssl_certificates' or 'ssh_keys' or 'http_authentication' must be specified for user {}.", user_name);
 
         if (has_password_plaintext)
         {
@@ -181,11 +183,11 @@ namespace
         {
             bool has_ldap_server = config.has(user_config + ".ldap.server");
             if (!has_ldap_server)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing mandatory 'server' in 'ldap', with LDAP server name, for user {}.", unescaped_user_name);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing mandatory 'server' in 'ldap', with LDAP server name, for user {}.", user_name);
 
             const auto ldap_server_name = config.getString(user_config + ".ldap.server");
             if (ldap_server_name.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server name cannot be empty for user {}.", unescaped_user_name);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server name cannot be empty for user {}.", user_name);
 
             user->authentication_methods.emplace_back(AuthenticationType::LDAP);
             user->authentication_methods.back().setLDAPServerName(ldap_server_name);
