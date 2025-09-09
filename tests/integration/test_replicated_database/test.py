@@ -848,7 +848,7 @@ def test_recover_staled_replica(started_cluster):
 
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(no_retries_node)
-        no_retries_node.query_and_get_error("RENAME TABLE recover.t1 TO recover.m1")
+        no_retries_node.query_and_get_error("RENAME TABLE recover.t1 TO recover.m1", settings={'max_execution_time' : 10})
 
         main_node.query_with_retry(
             "RENAME TABLE recover.t1 TO recover.m1", settings=settings
@@ -1036,7 +1036,7 @@ def test_recover_staled_replica_many_mvs(started_cluster):
 
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(dummy_node)
-        dummy_node.query_and_get_error("RENAME TABLE recover_mvs.t1 TO recover_mvs.m1")
+        dummy_node.query_and_get_error("RENAME TABLE recover_mvs.t1 TO recover_mvs.m1", settings={'max_execution_time' : 10})
 
         for identifier in ["1", "2", "3", "4"]:
             main_node.query(
@@ -1169,7 +1169,8 @@ def test_startup_without_zk(started_cluster):
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(main_node)
         err = main_node.query_and_get_error(
-            "CREATE DATABASE startup ENGINE = Replicated('/clickhouse/databases/startup', 'shard1', 'replica1');"
+            "CREATE DATABASE startup ENGINE = Replicated('/clickhouse/databases/startup', 'shard1', 'replica1');",
+            settings={'max_execution_time' : 10}
         )
         assert "ZooKeeper" in err or "Coordination::Exception" in err
     main_node.query(
