@@ -585,7 +585,7 @@ KeeperStorageBase::KeeperStorageBase(int64_t tick_time_ms, const KeeperContextPt
 template <typename Container>
 KeeperStorage<Container>::KeeperStorage(
     int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, const bool initialize_system_nodes)
-    try : KeeperStorageBase(tick_time_ms, keeper_context_, superdigest_)
+    : KeeperStorageBase(tick_time_ms, keeper_context_, superdigest_)
 {
     if constexpr (use_rocksdb)
         container.initialize(keeper_context);
@@ -596,10 +596,6 @@ KeeperStorage<Container>::KeeperStorage(
 
     if (initialize_system_nodes)
         initializeSystemNodes();
-}
-catch (...)
-{
-    tryLogCurrentException(getLogger("HLEP"));
 }
 
 template<typename Container>

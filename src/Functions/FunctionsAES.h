@@ -128,8 +128,8 @@ template <CipherMode mode>
 inline void validateIV(std::string_view iv_value, const size_t cipher_iv_size)
 {
     // In MySQL mode we don't care if IV is longer than expected, only if shorter.
-    if ((mode == CipherMode::MySQLCompatibility && iv_value.size() != 0 && iv_value.size() < cipher_iv_size)
-            || (mode == CipherMode::OpenSSLCompatibility && iv_value.size() != 0 && iv_value.size() != cipher_iv_size))
+    if ((mode == CipherMode::MySQLCompatibility && !iv_value.empty() && iv_value.size() < cipher_iv_size)
+            || (mode == CipherMode::OpenSSLCompatibility && !iv_value.empty() && iv_value.size() != cipher_iv_size))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid IV size: {} expected {}", iv_value.size(), cipher_iv_size);
 }
 
@@ -191,7 +191,7 @@ private:
 
         const std::string_view mode = arguments[0].column->getDataAt(0);
 
-        if (mode.size() == 0 || !mode.starts_with("aes-"))
+        if (mode.empty() || !mode.starts_with("aes-"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode);
 
         const auto * evp_cipher = getCipherByName(mode);
@@ -309,7 +309,7 @@ private:
                 iv_value = iv_column->getDataAt(row_idx);
 
                 /// If the length is zero (empty string is passed) it should be treat as no IV.
-                if (iv_value.size() == 0)
+                if (iv_value.empty())
                     iv_value = std::string_view{};
             }
 
@@ -318,7 +318,7 @@ private:
             if constexpr (mode != CipherMode::MySQLCompatibility)
             {
                 // in GCM mode IV can be of arbitrary size (>0), IV is optional for other modes.
-                if (mode == CipherMode::RFC5116_AEAD_AES_GCM && iv_value.size() == 0)
+                if (mode == CipherMode::RFC5116_AEAD_AES_GCM && iv_value.empty())
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid IV size {} != expected size {}", iv_value.size(), iv_size);
                 }
@@ -330,7 +330,7 @@ private:
             }
 
             // Avoid extra work on empty ciphertext/plaintext for some ciphers
-            if (!(input_value.size() == 0 && block_size == 1 && mode != CipherMode::RFC5116_AEAD_AES_GCM))
+            if (!(input_value.empty() && block_size == 1 && mode != CipherMode::RFC5116_AEAD_AES_GCM))
             {
                 // 1: Init CTX
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
@@ -352,7 +352,7 @@ private:
                     {
                         const auto aad_data = aad_column->getDataAt(row_idx);
                         int tmp_len = 0;
-                        if (aad_data.size() != 0 && EVP_EncryptUpdate(evp_ctx, nullptr, &tmp_len,
+                        if (!aad_data.empty() && EVP_EncryptUpdate(evp_ctx, nullptr, &tmp_len,
                                 reinterpret_cast<const unsigned char *>(aad_data.data()), safe_cast<int>(aad_data.size())) != 1)
                             onError("EVP_EncryptUpdate");
                     }
@@ -466,7 +466,7 @@ private:
         using namespace OpenSSLDetails;
 
         const auto mode = arguments[0].column->getDataAt(0);
-        if (mode.size() == 0 || !mode.starts_with("aes-"))
+        if (mode.empty() || !mode.starts_with("aes-"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode);
 
         const auto * evp_cipher = getCipherByName(mode);
@@ -592,7 +592,7 @@ private:
                 iv_value = iv_column->getDataAt(row_idx);
 
                 /// If the length is zero (empty string is passed) it should be treat as no IV.
-                if (iv_value.size() == 0)
+                if (iv_value.empty())
                     iv_value = std::string_view{};
             }
 
@@ -600,7 +600,7 @@ private:
 
             if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
             {
-                if (input_value.size() > 0)
+                if (!input_value.empty())
                 {
                     // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
                     if (input_value.size() < tag_size)
@@ -614,7 +614,7 @@ private:
             if constexpr (mode != CipherMode::MySQLCompatibility)
             {
                 // in GCM mode IV can be of arbitrary size (>0), for other modes IV is optional.
-                if (mode == CipherMode::RFC5116_AEAD_AES_GCM && iv_value.size() == 0)
+                if (mode == CipherMode::RFC5116_AEAD_AES_GCM && iv_value.empty())
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid IV size {} != expected size {}", iv_value.size(), iv_size);
                 }
@@ -628,7 +628,7 @@ private:
             bool decrypt_fail = false;
             /// Avoid extra work on empty ciphertext/plaintext. Always decrypt empty to empty.
             /// This makes sense for default implementation for NULLs.
-            if (input_value.size() > 0)
+            if (!input_value.empty())
             {
                 // 1: Init CTX
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
@@ -651,7 +651,7 @@ private:
                     {
                         std::string_view aad_data = aad_column->getDataAt(row_idx);
                         int tmp_len = 0;
-                        if (aad_data.size() != 0 && EVP_DecryptUpdate(evp_ctx, nullptr, &tmp_len,
+                        if (!aad_data.empty() && EVP_DecryptUpdate(evp_ctx, nullptr, &tmp_len,
                                 reinterpret_cast<const unsigned char *>(aad_data.data()), safe_cast<int>(aad_data.size())) != 1)
                         onError("EVP_DecryptUpdate");
                     }

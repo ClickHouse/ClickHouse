@@ -1,3 +1,4 @@
+#include <base/StringViewHash.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/Operators.h>

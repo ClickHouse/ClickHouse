@@ -1,6 +1,5 @@
 #include <iostream>
 #include <iomanip>
-#include <vector>
 
 #include <Common/Stopwatch.h>
 
@@ -56,10 +55,10 @@ struct STRUCT : public std::string_view {}; \
 namespace ZeroTraits \
 { \
     template <> \
-    inline bool check<STRUCT>(STRUCT x) { return nullptr == x.data; } /* NOLINT */ \
+    inline bool check<STRUCT>(STRUCT x) { return x.empty(); } /* NOLINT */ \
  \
     template <> \
-    inline void set<STRUCT>(STRUCT & x) { x.data = nullptr; } /* NOLINT */ \
+    inline void set<STRUCT>(STRUCT & x) { x = STRUCT{}; } /* NOLINT */ \
 } \
  \
 template <> \
@@ -67,7 +66,7 @@ struct DefaultHash<STRUCT> \
 { \
     size_t operator() (STRUCT x) const \
     { \
-        return CityHash_v1_0_2::CityHash64(x.data, x.size); \
+        return CityHash_v1_0_2::CityHash64(x.data(), x.size()); \
     } \
 };
 
@@ -78,13 +77,13 @@ DefineStringView(StringView_CompareAlwaysTrue)
 
 inline bool operator==(StringView_CompareMemcmp lhs, StringView_CompareMemcmp rhs)
 {
-    if (lhs.size != rhs.size)
+    if (lhs.size() != rhs.size())
         return false;
 
-    if (lhs.size == 0)
+    if (lhs.empty())
         return true;
 
-    return 0 == memcmp(lhs.data, rhs.data, lhs.size);
+    return 0 == memcmp(lhs.data(), rhs.data(), lhs.size()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
 }
 
 inline bool operator==(StringView_CompareAlwaysTrue, StringView_CompareAlwaysTrue)
@@ -105,8 +104,8 @@ struct FastHash64
 
     size_t operator() (std::string_view x) const
     {
-        const char * buf = x.data;
-        size_t len = x.size;
+        const char * buf = x.data();
+        size_t len = x.size();
 
         const uint64_t    m = 0x880355f21e6d1965ULL;
         const uint64_t *pos = reinterpret_cast<const uint64_t *>(buf);
@@ -149,8 +148,8 @@ struct FNV1a
     {
         size_t res = 0xcbf29ce484222325ULL;
 
-        const char * pos = x.data;
-        const char * end = x.data + x.size;
+        const char * pos = x.data();
+        const char * end = x.data() + x.size();
 
         for (; pos < end; ++pos)
         {
@@ -169,8 +168,8 @@ struct CrapWow
 {
     size_t operator() (std::string_view x) const
     {
-        const char * key = x.data;
-        size_t len = x.size;
+        const char * key = x.data();
+        size_t len = x.size();
         size_t seed = 0;
 
         const UInt64 m = 0x95b47aa3355ba1a1;
@@ -242,8 +241,8 @@ struct SimpleHash
 {
     size_t operator() (std::string_view x) const
     {
-        const char * pos = x.data;
-        size_t size = x.size;
+        const char * pos = x.data();
+        size_t size = x.size();
 
         const char * end = pos + size;
 
@@ -255,7 +254,7 @@ struct SimpleHash
         if (size < 8)
         {
 #ifdef __SSE4_2__
-            return hashLessThan8(x.data, x.size);
+            return hashLessThan8(x.data(), x.size());
 #endif
         }
 
@@ -279,8 +278,8 @@ struct VerySimpleHash
 {
     size_t operator() (std::string_view x) const
     {
-        const char * pos = x.data;
-        size_t size = x.size;
+        const char * pos = x.data();
+        size_t size = x.size();
 
         const char * end = pos + size;
 
@@ -292,7 +291,7 @@ struct VerySimpleHash
         if (size < 8)
         {
 #ifdef __SSE4_2__
-            return hashLessThan8(x.data, x.size);
+            return hashLessThan8(x.data(), x.size());
 #endif
         }
 
@@ -319,7 +318,7 @@ struct FarmHash64
 {
     size_t operator() (std::string_view x) const
     {
-        return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(x.data, x.size);
+        return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(x.data(), x.size());
     }
 };
 
@@ -335,7 +334,7 @@ struct SMetroHash64
             std::uint8_t u8[sizeof(u64)];
         };
 
-        metrohash64(reinterpret_cast<const std::uint8_t *>(x.data), x.size, 0, u8);
+        metrohash64(reinterpret_cast<const std::uint8_t *>(x.data()), x.size(), 0, u8);
 
         return u64;
     }
@@ -382,15 +381,15 @@ struct CRC32ILPHash
 {
     size_t operator() (std::string_view x) const
     {
-        const char * pos = x.data;
-        size_t size = x.size;
+        const char * pos = x.data();
+        size_t size = x.size();
 
         if (size == 0)
             return 0;
 
         if (size < 16)
         {
-            return hashLessThan16(x.data, x.size);
+            return hashLessThan16(x.data(), x.size());
         }
 
         const char * end = pos + size;

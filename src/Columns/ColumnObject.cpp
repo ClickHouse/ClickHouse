@@ -887,7 +887,7 @@ void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
 
 std::string_view ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
 {
-    std::string_view res(begin, 0);
+    std::string_view res;
     /// First serialize values from typed paths in sorted order. They are the same for all instances of this column.
     for (auto path : sorted_typed_paths)
     {

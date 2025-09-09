@@ -53,10 +53,10 @@ struct STRUCT : public std::string_view {}; \
 namespace ZeroTraits \
 { \
     template <> \
-    inline bool check<STRUCT>(STRUCT x) { return 0 == x.size; } /* NOLINT */ \
+    inline bool check<STRUCT>(STRUCT x) { return 0 == x.size(); } /* NOLINT */ \
  \
     template <> \
-    inline void set<STRUCT>(STRUCT & x) { x.size = 0; } /* NOLINT */ \
+    inline void set<STRUCT>(STRUCT & x) { x = STRUCT{}; } /* NOLINT */ \
 } \
  \
 template <> \
@@ -64,7 +64,7 @@ struct DefaultHash<STRUCT> \
 { \
     size_t operator() (STRUCT x) const /* NOLINT */ \
     { \
-        return CityHash_v1_0_2::CityHash64(x.data, x.size);  \
+        return CityHash_v1_0_2::CityHash64(x.data(), x.size());  \
     } \
 };
 
@@ -90,16 +90,16 @@ DefineStringView(StringView_CompareAlmostAlwaysTrue)
 
 inline bool operator==(StringView_Compare1_Ptrs lhs, StringView_Compare1_Ptrs rhs)
 {
-    if (lhs.size != rhs.size)
+    if (lhs.size() != rhs.size())
         return false;
 
-    if (lhs.size == 0)
+    if (lhs.empty())
         return true;
 
-    const char * pos1 = lhs.data;
-    const char * pos2 = rhs.data;
+    const char * pos1 = lhs.data();
+    const char * pos2 = rhs.data();
 
-    const char * end1 = pos1 + lhs.size;
+    const char * end1 = pos1 + lhs.size();
 
     while (pos1 < end1)
     {
@@ -115,14 +115,14 @@ inline bool operator==(StringView_Compare1_Ptrs lhs, StringView_Compare1_Ptrs rh
 
 inline bool operator==(StringView_Compare1_Index lhs, StringView_Compare1_Index rhs)
 {
-    if (lhs.size != rhs.size)
+    if (lhs.size() != rhs.size())
         return false;
 
-    if (lhs.size == 0)
+    if (lhs.empty())
         return true;
 
-    for (size_t i = 0; i < lhs.size; ++i)
-        if (lhs.data[i] != rhs.data[i])
+    for (size_t i = 0; i < lhs.size(); ++i)
+        if (lhs[i] != rhs[i])
             return false;
 
     return true;
@@ -130,27 +130,27 @@ inline bool operator==(StringView_Compare1_Index lhs, StringView_Compare1_Index 
 
 inline bool operator==(StringView_CompareMemcmp lhs, StringView_CompareMemcmp rhs)
 {
-    if (lhs.size != rhs.size)
+    if (lhs.size() != rhs.size())
         return false;
 
-    if (lhs.size == 0)
+    if (lhs.empty())
         return true;
 
-    return 0 == memcmp(lhs.data, rhs.data, lhs.size);
+    return 0 == memcmp(lhs.data(), rhs.data(), lhs.size());
 }
 
 
 inline bool operator==(StringView_Compare8_1_byUInt64 lhs, StringView_Compare8_1_byUInt64 rhs)
 {
-    if (lhs.size != rhs.size)
+    if (lhs.size() != rhs.size())
         return false;
 
-    if (lhs.size == 0)
+    if (lhs.empty())
         return true;
 
-    const char * p1 = lhs.data;
-    const char * p2 = rhs.data;
-    size_t size = lhs.size;
+    const char * p1 = lhs.data();
+    const char * p2 = rhs.data();
+    size_t size = lhs.size();
 
     const char * p1_end = p1 + size;
     const char * p1_end_8 = p1 + size / 8 * 8;
@@ -505,13 +505,13 @@ inline bool memequal_sse_wide(const char * p1, const char * p2, size_t size)
 #define Op(METHOD) \
 inline bool operator==(StringView_Compare16_1_ ## METHOD lhs, StringView_Compare16_1_ ## METHOD rhs) \
 { \
-    if (lhs.size != rhs.size) \
+    if (lhs.size() != rhs.size()) \
         return false; \
 \
-    if (lhs.size == 0) \
+    if (lhs.empty()) \
         return true; \
 \
-    return memequal<compare_  ## METHOD>(lhs.data, rhs.data, lhs.size); \
+    return memequal<compare_  ## METHOD>(lhs.data(), rhs.data(), lhs.size()); \
 }
 
 Op(byMemcmp)
@@ -526,35 +526,35 @@ Op(byFloatSSE)
 
 inline bool operator==(StringView_Compare16_1_bySSE4 lhs, StringView_Compare16_1_bySSE4 rhs)
 {
-    if (lhs.size != rhs.size)
+    if (lhs.size() != rhs.size())
         return false;
 
-    if (lhs.size == 0)
+    if (lhs.empty())
         return true;
 
-    return memequal_sse41(lhs.data, rhs.data, lhs.size);
+    return memequal_sse41(lhs.data(), rhs.data(), lhs.size()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
 }
 
 inline bool operator==(StringView_Compare16_1_bySSE4_wide lhs, StringView_Compare16_1_bySSE4_wide rhs)
 {
-    if (lhs.size != rhs.size)
+    if (lhs.size() != rhs.size())
         return false;
 
-    if (lhs.size == 0)
+    if (lhs.empty())
         return true;
 
-    return memequal_sse41_wide(lhs.data, rhs.data, lhs.size);
+    return memequal_sse41_wide(lhs.data(), rhs.data(), lhs.size()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
 }
 
 inline bool operator==(StringView_Compare16_1_bySSE_wide lhs, StringView_Compare16_1_bySSE_wide rhs)
 {
-    if (lhs.size != rhs.size)
+    if (lhs.size() != rhs.size())
         return false;
 
-    if (lhs.size == 0)
+    if (lhs.empty())
         return true;
 
-    return memequal_sse_wide(lhs.data, rhs.data, lhs.size);
+    return memequal_sse_wide(lhs.data(), rhs.data(), lhs.size()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
 }
 
 #endif
@@ -567,7 +567,7 @@ inline bool operator==(StringView_CompareAlwaysTrue, StringView_CompareAlwaysTru
 
 inline bool operator==(StringView_CompareAlmostAlwaysTrue lhs, StringView_CompareAlmostAlwaysTrue rhs)
 {
-    return lhs.size == rhs.size;
+    return lhs.size() == rhs.size();
 }
 
 

@@ -54,7 +54,7 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
             const auto split = Nested::splitName(column_name);
             if (!split.second.empty())
             {
-                const std::string_view table_name(column_name.data(), split.first.size());
+                const std::string_view table_name = column_name.substr(0, split.first.size());
                 name_map[table_name] = NESTED_FIELD;
             }
         }

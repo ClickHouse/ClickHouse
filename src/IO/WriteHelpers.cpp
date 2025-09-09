@@ -97,11 +97,14 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
 template <typename F>
 static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer & buf, F && write_quoted_string)
 {
+    static constexpr std::string_view distinct_str = "distinct";
+    static constexpr std::string_view all_str = "all";
+    static constexpr std::string_view table_str = "table";
     if (isValidIdentifier(s)
         /// This are valid identifiers but are problematic if present unquoted in SQL query.
-        && !(s.size() == strlen("distinct") && 0 == strncasecmp(s.data(), "distinct", strlen("distinct")))
-        && !(s.size() == strlen("all") && 0 == strncasecmp(s.data(), "all", strlen("all")))
-        && !(s.size() == strlen("table") && 0 == strncasecmp(s.data(), "table", strlen("table"))))
+        && !(s.size() == distinct_str.size() && 0 == strncasecmp(s.data(), "distinct", s.size()))
+        && !(s.size() == all_str.size() && 0 == strncasecmp(s.data(), "all", s.size()))
+        && !(s.size() == table_str.size() && 0 == strncasecmp(s.data(), "table", s.size())))
     {
         writeString(s, buf);
     }

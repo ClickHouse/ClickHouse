@@ -178,7 +178,7 @@ DeltaLakePartitionedSink::getPartitionDataForPartitionKey(std::string_view parti
 DeltaLakePartitionedSink::StorageSinkPtr
 DeltaLakePartitionedSink::createSinkForPartition(std::string_view partition_key)
 {
-    auto data_prefix = std::filesystem::path(delta_transaction->getDataPath()) / partition_key.toString();
+    auto data_prefix = std::filesystem::path(delta_transaction->getDataPath()) / partition_key;
     return std::make_unique<StorageObjectStorageSink>(
         DeltaLake::generateWritePath(std::move(data_prefix), configuration->format),
         object_storage,
@@ -200,7 +200,7 @@ void DeltaLakePartitionedSink::onFinish()
     for (auto & [_, partition_info] : partitions_data)
     {
         auto & [partition_key, data_files] = *partition_info;
-        auto partition_key_str = partition_key.toString();
+        std::string partition_key_str{partition_key};
         auto keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(partition_key_str);
         Map partition_values;
         partition_values.reserve(keys_and_values.size());

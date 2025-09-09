@@ -31,7 +31,7 @@ void InternalTextLogs::writeLogs(const Block & block)
     for (size_t row_num = 0; row_num < block.rows(); ++row_num)
     {
         auto host_name = column_host_name.getDataAt(row_num);
-        if (host_name.size())
+        if (!host_name.empty())
         {
             writeCString("[", wb);
             if (color)
@@ -64,7 +64,7 @@ void InternalTextLogs::writeLogs(const Block & block)
         writeCString(" ]", wb);
 
         auto query_id = column_query_id.getDataAt(row_num);
-        if (query_id.size())
+        if (!query_id.empty())
         {
             writeCString(" {", wb);
             if (color)
@@ -112,7 +112,7 @@ void InternalTextLogs::writeProfileEvents(const Block & block)
     {
         /// host_name
         auto host_name = column_host_name.getDataAt(row_num);
-        if (host_name.size())
+        if (!host_name.empty())
         {
             writeCString("[", wb);
             if (color)

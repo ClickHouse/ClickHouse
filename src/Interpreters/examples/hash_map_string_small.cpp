@@ -85,7 +85,7 @@ struct DefaultHash<SmallStringView>
 {
     size_t operator() (SmallStringView x) const
     {
-        return DefaultHash<std::string_view>()(std::string_view(x.data(), x.size()));
+        return DefaultHash<std::string_view>()(std::string_view(x.data(), x.size));
     }
 };
 
@@ -170,7 +170,7 @@ int main(int argc, char ** argv)
 
         for (size_t i = 0; i < n; ++i)
         {
-            map.emplace(SmallStringView(data[i].data, data[i].size), it, inserted);
+            map.emplace(SmallStringView(data[i].data(), data[i].size()), it, inserted);
             if (inserted)
                 it->getMapped() = 0;
             ++it->getMapped();

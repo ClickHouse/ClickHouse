@@ -87,12 +87,12 @@ public:
         size_t language_id = static_cast<size_t>(language);
 
         if (region_id >= names_refs[language_id].size())
-            return std::string_view("", 0);
+            return std::string_view{};
 
         std::string_view ref = names_refs[language_id][region_id];
 
         static constexpr size_t root_language = static_cast<size_t>(Language::ru);
-        while (ref.size() == 0 && language_id != root_language)
+        while (ref.empty() && language_id != root_language)
         {
             language_id = static_cast<size_t>(fallbacks[language_id]);
             ref = names_refs[language_id][region_id];

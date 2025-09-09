@@ -344,7 +344,7 @@ public:
             if constexpr (is_plain_column)
                 data_to.insertData(elem.getValue().data(), elem.getValue().size());
             else
-                std::ignore = data_to.deserializeAndInsertFromArena(elem.getValue().data());
+                std::ignore = data_to.deserializeAndInsertFromArena(elem.getValue().data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
         }
     }
 };

@@ -175,11 +175,11 @@ inline bool operator== (std::string_view lhs, std::string_view rhs)
     if (lhs.size() != rhs.size())
         return false;
 
-    if (lhs.size() == 0)
+    if (lhs.empty())
         return true;
 
 #if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
-    return memequalWide(lhs.data(), rhs.data(), lhs.size());
+    return memequalWide(lhs.data(), rhs.data(), lhs.size()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
 #else
     return 0 == memcmp(lhs.data(), rhs.data(), lhs.size());
 #endif

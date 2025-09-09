@@ -265,7 +265,7 @@ std::string_view ColumnString::serializeValueIntoArena(size_t n, Arena & arena, 
     char * pos = arena.allocContinue(result_size, begin);
     memcpy(pos, &string_size, sizeof(string_size));
     memcpy(pos + sizeof(string_size), &chars[offset], string_size);
-    return res{pos, result_size};
+    return {pos, result_size};
 }
 
 ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * memory) const

@@ -89,7 +89,7 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
     assert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
-    assert(compared_value_data.size == sizeof(ValueType));
+    assert(compared_value_data.size() == sizeof(ValueType));
     auto compared_value = unalignedLoad<ValueType>(
         compared_value_data.data());
 

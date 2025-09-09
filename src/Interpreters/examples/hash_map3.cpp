@@ -4,14 +4,11 @@
 #include <iostream>
 #include <cstring>
 #include <cstdlib>
-#include <utility>
 
 #include <base/types.h>
 #include <Common/Exception.h>
 
 #include <IO/ReadHelpers.h>
-
-#include <base/std::string_view.h>
 
 #include <Common/HashTable/HashMap.h>
 
@@ -34,7 +31,7 @@ public:
             if (this->buf[i].isZero(*this))
                 std::cerr << "[    ]";
             else
-                std::cerr << '[' << this->buf[i].getValue().first.data << ", " << this->buf[i].getValue().second << ']';
+                std::cerr << '[' << this->buf[i].getValue().first.data() << ", " << this->buf[i].getValue().second << ']';
         }
         std::cerr << std::endl;
     }
@@ -44,7 +41,7 @@ public:
 struct SimpleHash
 {
     size_t operator() (UInt64 x) const { return x; }
-    size_t operator() (std::string_view x) const { return DB::parse<UInt64>(x.data); }
+    size_t operator() (std::string_view x) const { return DB::parse<UInt64>(x.data()); } /// NOLINT(bugprone-suspicious-stringview-data-usage)
 };
 
 struct Grower : public HashTableGrower<2>
@@ -82,7 +79,7 @@ int main(int, char **)
     std::cerr << "Collisions: " << map.getCollisions() << std::endl;
 
     for (auto x : map)
-        std::cerr << x.getKey().toString() << " -> " << x.getMapped() << std::endl;
+        std::cerr << x.getKey() << " -> " << x.getMapped() << std::endl;
 
     return 0;
 }

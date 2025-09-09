@@ -318,7 +318,7 @@ std::string_view ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, c
         return { res, 1 };
     }
 
-    std::string_view res(begin, 0);
+    std::string_view res;
     for (const auto & column : columns)
     {
         auto value_ref = column->serializeValueIntoArena(n, arena, begin);

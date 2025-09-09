@@ -113,7 +113,7 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
     bool add(const IColumn ** columns, size_t columns_num, size_t row_num, Arena * arena)
     {
         const char * begin = nullptr;
-        std::string_view value(begin, 0);
+        std::string_view value;
         for (size_t i = 0; i < columns_num; ++i)
         {
             auto cur_ref = columns[i]->serializeValueIntoArena(row_num, *arena, begin);

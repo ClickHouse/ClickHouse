@@ -753,7 +753,7 @@ void FunctionArrayIntersect<Mode>::insertElement(typename Map::LookupResult & pa
     }
     else
     {
-        std::ignore = result_data.deserializeAndInsertFromArena(pair->getKey().data());
+        std::ignore = result_data.deserializeAndInsertFromArena(pair->getKey().data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     }
     if (use_null_map)
         null_map.push_back(0);

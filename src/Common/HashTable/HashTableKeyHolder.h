@@ -126,7 +126,7 @@ inline void ALWAYS_INLINE keyHolderPersistKey(DB::SerializedKeyHolder &)
 inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
 {
     [[maybe_unused]] void * new_head = holder.pool.rollback(holder.key.size());
-    assert(new_head == holder.key.data);
+    chassert(new_head == holder.key.data());
     holder.key = std::string_view();
 }
 
