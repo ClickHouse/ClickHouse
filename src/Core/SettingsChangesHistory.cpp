@@ -76,6 +76,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"lock_object_storage_task_distribution_ms", 0, 0, "New setting."},
             {"object_storage_cluster", "", "", "New setting"},
             {"object_storage_max_nodes", 0, 0, "New setting"},
+            {"object_storage_remote_initiator", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
@@ -166,8 +167,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_os_cpu_wait_time_ratio_to_throw", 0, 0, "New setting"},
             {"query_plan_merge_filter_into_join_condition", false, true, "Added new setting to merge filter into join condition"},
             {"use_local_cache_for_remote_storage", true, false, "Obsolete setting."},
-            {"object_storage_remote_initiator", false, false, "New setting."},
-            {"use_iceberg_metadata_files_cache", true, true, "New setting"},
             {"iceberg_timestamp_ms", 0, 0, "New setting."},
             {"iceberg_snapshot_id", 0, 0, "New setting."},
             {"use_iceberg_metadata_files_cache", true, true, "New setting"},
