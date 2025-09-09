@@ -27,7 +27,7 @@
 namespace DB
 {
 
-class IcebergMetadata : public IDataLakeMetadata
+class IcebergMetadata : public IDataLakeMetadata, private WithContext
 {
 public:
     using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
@@ -44,6 +44,11 @@ public:
         Int32 format_version_,
         const Poco::JSON::Object::Ptr & metadata_object,
         IcebergMetadataFilesCachePtr cache_ptr);
+
+    /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
+    /// All subsequent calls when the same data snapshot is relevant will return saved list of files (because it cannot be changed
+    /// without changing metadata file). Drops on every snapshot update.
+    Strings getDataFiles() const override { return getDataFilesImpl(nullptr, getContext()); }
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override;
@@ -111,7 +116,7 @@ private:
     mutable std::mutex cached_unprunned_files_for_last_processed_snapshot_mutex;
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed) TSA_REQUIRES(mutex);
-    Strings getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
+    Strings getDataFilesImpl(const ActionsDAG * filter_dag, ContextPtr local_context) const;
 
     void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
     ManifestFileCacheKeys getManifestList(ContextPtr local_context, const String & filename) const;

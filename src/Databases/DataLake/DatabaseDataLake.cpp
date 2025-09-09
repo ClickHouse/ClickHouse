@@ -646,6 +646,11 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
         }
 
+        if (database_engine_name == "Iceberg" && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_REST)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `Iceberg` must have `rest` catalog type only");
+        }
+
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
 
@@ -724,6 +729,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             std::move(engine_for_tables));
     };
     factory.registerDatabase("DataLakeCatalog", create_fn, { .supports_arguments = true, .supports_settings = true });
+    factory.registerDatabase("Iceberg", create_fn, { .supports_arguments = true, .supports_settings = true });
 }
 
 }

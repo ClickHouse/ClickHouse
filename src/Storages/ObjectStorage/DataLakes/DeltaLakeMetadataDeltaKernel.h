@@ -33,6 +33,8 @@ public:
 
     bool update(const ContextPtr & context) override;
 
+    Strings getDataFiles() const override;
+
     NamesAndTypesList getTableSchema() const override;
 
     DB::ReadFromFormatInfo prepareReadingFromFormat(

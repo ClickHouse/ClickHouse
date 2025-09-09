@@ -144,7 +144,8 @@ IcebergMetadata::IcebergMetadata(
     Int32 format_version_,
     const Poco::JSON::Object::Ptr & metadata_object_,
     IcebergMetadataFilesCachePtr cache_ptr)
-    : object_storage(std::move(object_storage_))
+    : WithContext(context_)
+    , object_storage(std::move(object_storage_))
     , configuration(std::move(configuration_))
     , schema_processor(IcebergSchemaProcessor())
     , log(getLogger("IcebergMetadata"))
@@ -859,7 +860,7 @@ ManifestFilePtr IcebergMetadata::getManifestFile(ContextPtr local_context, const
     return create_fn();
 }
 
-Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const
+Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag, ContextPtr local_context) const
 {
     bool use_partition_pruning = filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning];
 
@@ -981,7 +982,7 @@ ObjectIterator IcebergMetadata::iterate(
     ContextPtr local_context) const
 {
     SharedLockGuard lock(mutex);
-    return createKeysIterator(getDataFiles(filter_dag, local_context), object_storage, callback);
+    return createKeysIterator(getDataFilesImpl(filter_dag, local_context), object_storage, callback);
 }
 
 NamesAndTypesList IcebergMetadata::getTableSchema() const

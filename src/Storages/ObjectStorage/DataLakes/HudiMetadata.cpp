@@ -91,7 +91,7 @@ HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, ConfigurationObserv
 {
 }
 
-Strings HudiMetadata::getDataFiles(const ActionsDAG *) const
+Strings HudiMetadata::getDataFiles() const
 {
     if (data_files.empty())
         data_files = getDataFilesImpl();
@@ -99,12 +99,12 @@ Strings HudiMetadata::getDataFiles(const ActionsDAG *) const
 }
 
 ObjectIterator HudiMetadata::iterate(
-    const ActionsDAG * filter_dag,
+    const ActionsDAG * /* filter_dag */,
     FileProgressCallback callback,
     size_t /* list_batch_size */,
     ContextPtr /* context  */) const
 {
-    return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);
+    return createKeysIterator(getDataFiles(), object_storage, callback);
 }
 
 }

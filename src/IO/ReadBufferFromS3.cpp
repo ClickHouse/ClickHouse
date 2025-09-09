@@ -444,6 +444,12 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
             log, "Read S3 object. Bucket: {}, Key: {}, Version: {}, Offset: {}",
             bucket, key, version_id.empty() ? "Latest" : version_id, range_begin);
     }
+    else
+    {
+        LOG_TEST(
+            log, "Read S3 object. Bucket: {}, Key: {}, Version: {}",
+            bucket, key, version_id.empty() ? "Latest" : version_id);
+    }
 
     ProfileEvents::increment(ProfileEvents::S3GetObject);
     if (client_ptr->isClientForDisk())

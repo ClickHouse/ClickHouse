@@ -96,6 +96,7 @@ void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const Sto
 
 RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate,
+    const std::optional<ActionsDAG> & /* filter_actions_dag */,
     const ContextPtr & context,
     ClusterPtr) const
 {

@@ -21,6 +21,9 @@ public:
 
     virtual bool operator==(const IDataLakeMetadata & other) const = 0;
 
+    /// List all data files.
+    /// For better parallelization, iterate() method should be used.
+    virtual Strings getDataFiles() const = 0;
     /// Return iterator to `data files`.
     using FileProgressCallback = std::function<void(FileProgress)>;
     virtual ObjectIterator iterate(

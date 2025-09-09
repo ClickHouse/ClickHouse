@@ -9,7 +9,7 @@
 namespace DB
 {
 
-ASTFunction * extractTableFunctionFromSelectQuery(ASTPtr & query)
+ASTTableExpression * extractTableExpressionASTPtrFromSelectQuery(ASTPtr & query)
 {
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query || !select_query->tables())
@@ -17,10 +17,22 @@ ASTFunction * extractTableFunctionFromSelectQuery(ASTPtr & query)
 
     auto * tables = select_query->tables()->as<ASTTablesInSelectQuery>();
     auto * table_expression = tables->children[0]->as<ASTTablesInSelectQueryElement>()->table_expression->as<ASTTableExpression>();
-    if (!table_expression->table_function)
+    return table_expression;
+}
+
+ASTPtr extractTableFunctionASTPtrFromSelectQuery(ASTPtr & query)
+{
+    auto table_expression = extractTableExpressionASTPtrFromSelectQuery(query);
+    return table_expression ? table_expression->table_function : nullptr;
+}
+
+ASTFunction * extractTableFunctionFromSelectQuery(ASTPtr & query)
+{
+    auto table_function_ast = extractTableFunctionASTPtrFromSelectQuery(query);
+    if (!table_function_ast)
         return nullptr;
 
-    auto * table_function = table_expression->table_function->as<ASTFunction>();
+    auto * table_function = table_function_ast->as<ASTFunction>();
     return table_function;
 }
 

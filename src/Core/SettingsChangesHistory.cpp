@@ -76,6 +76,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"lock_object_storage_task_distribution_ms", 0, 0, "New setting."},
             {"object_storage_cluster", "", "", "New setting"},
             {"object_storage_max_nodes", 0, 0, "New setting"},
+            {"object_storage_remote_initiator", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {

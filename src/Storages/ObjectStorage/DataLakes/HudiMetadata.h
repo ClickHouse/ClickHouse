@@ -19,6 +19,8 @@ public:
 
     HudiMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
 
+    Strings getDataFiles() const override;
+
     NamesAndTypesList getTableSchema() const override { return {}; }
 
     bool operator ==(const IDataLakeMetadata & other) const override
@@ -50,7 +52,6 @@ private:
     mutable Strings data_files;
 
     Strings getDataFilesImpl() const;
-    Strings getDataFiles(const ActionsDAG * filter_dag) const;
 };
 
 }
