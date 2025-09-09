@@ -2914,3 +2914,19 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
     )
     # Nothing is pruned, because `a` is not a partition column.
     check_read_files(10, query_id)
+
+
+def test_partition_by_without_wildcard(started_cluster):
+    node = started_cluster.instances["dummy"]
+    table_name = f"test_partition_by_without_wildcard_{generate_random_string()}"
+    bucket = started_cluster.minio_bucket
+
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}"
+    # An exception "Partition strategy wildcard can not be used without a '_partition_id' wildcard"
+    # should not be thrown.
+    node.query(
+        f"""
+CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
+PARTITION BY (b, c)
+"""
+    )

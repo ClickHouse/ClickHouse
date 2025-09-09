@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.9",
         {
+            {"input_format_protobuf_oneof_presence", false, false, "New setting"},
             {"iceberg_delete_data_on_drop", false, false, "New setting"},
             {"use_skip_indexes_on_data_read", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
@@ -870,6 +871,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {
+            {"replicated_deduplication_window", 1000, 10000, "increase default value"},
             {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, false, "New setting"},
             {"shared_merge_tree_empty_partition_lifetime", 86400, 86400, "New setting"},
             {"shared_merge_tree_outdated_parts_group_size", 2, 2, "New setting"},
