@@ -271,10 +271,10 @@ public:
         return res;
     }
 
-private:
+protected:
     using Cache = std::unordered_map<Key, MappedPtr, HashFunction>;
     Cache cache;
-
+private:
     /// TODO To speed up removal of stale entries, we could also add another container sorted on expiry times which maps keys to iterators
     /// into the cache. To insert an entry, add it to the cache + add the iterator to the sorted container. To remove stale entries, do a
     /// binary search on the sorted container and erase all left of the found key.

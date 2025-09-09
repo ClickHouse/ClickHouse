@@ -75,7 +75,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
         const auto & object_info = (*it);
         auto get_last_mod_time = [&] -> std::optional<time_t>
         {
-            object_info->loadMetadata(object_storage);
+            object_info->loadMetadata(object_storage, query_settings.ignore_non_existent_file);
             return object_info->metadata
                 ? std::optional<time_t>(object_info->metadata->last_modified.epochTime())
                 : std::nullopt;
@@ -245,7 +245,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             prev_read_keys_size = read_keys.size();
         }
 
-        current_object_info->loadMetadata(object_storage);
+        current_object_info->loadMetadata(object_storage, query_settings.ignore_non_existent_file);
 
         if (query_settings.skip_empty_files
             && current_object_info->metadata && current_object_info->metadata->size_bytes == 0)
