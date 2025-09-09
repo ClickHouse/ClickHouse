@@ -122,7 +122,7 @@ def create_table(
     }
     if version is None:
         settings["enable_hash_ring_filtering"] = 1
-        settings["use_persistent_processing_nodes"] = random.choice([True, False])
+        #settings["use_persistent_processing_nodes"] = random.choice([True, False])
 
     settings.update(additional_settings)
 
