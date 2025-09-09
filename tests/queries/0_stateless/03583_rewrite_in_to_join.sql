@@ -5,7 +5,7 @@ SET allow_experimental_correlated_subqueries=1;
 -- {echoOn}
 -- Check that with these settings the plan contains a join
 SELECT explain FROM (
-    EXPLAIN keep_logical_steps=1 SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3)
+    EXPLAIN keep_logical_steps=1, description=0 SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3)
 ) WHERE explain ILIKE '%join%';
 
 SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3);
@@ -36,13 +36,13 @@ SELECT number NOT IN (SELECT number NOT IN (SELECT * FROM numbers(1)) FROM numbe
 SELECT number IN (SELECT number FROM numbers(2) WHERE number NOT IN (SELECT * FROM numbers(1))) FROM numbers(3);
 
 
-EXPLAIN
+EXPLAIN keep_logical_steps=1, description=0
 SELECT *
 FROM numbers(8)
 WHERE number IN (select number from numbers(5));
 
 -- Same subquery as CTE
-EXPLAIN
+EXPLAIN keep_logical_steps=1, description=0
 WITH
     t as (select number from numbers(5))
 SELECT *

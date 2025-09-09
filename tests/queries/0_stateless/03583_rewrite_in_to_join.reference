@@ -1,7 +1,7 @@
 -- {echoOn}
 -- Check that with these settings the plan contains a join
 SELECT explain FROM (
-    EXPLAIN keep_logical_steps=1 SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3)
+    EXPLAIN keep_logical_steps=1, description=0 SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3)
 ) WHERE explain ILIKE '%join%';
   JoinLogical
 SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3);
@@ -48,39 +48,33 @@ SELECT number IN (SELECT number FROM numbers(2) WHERE number NOT IN (SELECT * FR
 0
 1
 0
-EXPLAIN
+EXPLAIN keep_logical_steps=1, description=0
 SELECT *
 FROM numbers(8)
 WHERE number IN (select number from numbers(5));
-Expression ((Project names + Projection))
-  Filter (WHERE)
-    Expression (Post Join Actions)
-      Join
-        Expression (Left Pre Join Actions)
-          Expression (Change column names to column identifiers)
-            ReadFromSystemNumbers
-        Expression (Right Pre Join Actions)
-          Expression (Create result for always true EXISTS expression)
-            Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))))
-              ReadFromSystemNumbers
+Expression
+  Filter
+    JoinLogical
+      Expression
+        ReadFromSystemNumbers
+      Expression
+        Filter
+          ReadFromSystemNumbers
 -- Same subquery as CTE
-EXPLAIN
+EXPLAIN keep_logical_steps=1, description=0
 WITH
     t as (select number from numbers(5))
 SELECT *
 FROM numbers(8)
 WHERE number IN t;
-Expression ((Project names + Projection))
-  Filter (WHERE)
-    Expression (Post Join Actions)
-      Join
-        Expression (Left Pre Join Actions)
-          Expression (Change column names to column identifiers)
-            ReadFromSystemNumbers
-        Expression (Right Pre Join Actions)
-          Expression (Create result for always true EXISTS expression)
-            Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))))
-              ReadFromSystemNumbers
+Expression
+  Filter
+    JoinLogical
+      Expression
+        ReadFromSystemNumbers
+      Expression
+        Filter
+          ReadFromSystemNumbers
 WITH
     t as (select number from numbers(5))
 SELECT *
