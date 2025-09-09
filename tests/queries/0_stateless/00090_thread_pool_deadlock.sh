@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: stateful, deadlock, no-parallel
-# no-parallel: Heavy
+# Tags: stateful, deadlock
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

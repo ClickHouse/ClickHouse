@@ -73,15 +73,10 @@ public:
     bool has_final_mark;
     MarkRanges mark_ranges;
 };
-
 using MarkRangesInfoPtr = std::shared_ptr<MarkRangesInfo>;
 
-struct MarkRangeHash
-{
-    size_t operator()(const MarkRange & range) const;
-};
-
 }
+
 
 template <>
 struct fmt::formatter<DB::MarkRange>

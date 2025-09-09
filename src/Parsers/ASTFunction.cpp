@@ -227,7 +227,7 @@ static bool formatNamedArgWithHiddenValue(IAST * arg, WriteBuffer & ostr, const 
         return false;
 
     equal_args[0]->format(ostr, settings, state, frame);
-    ostr << " = ";
+    ostr << (settings.hilite ? IAST::hilite_operator : "") << " = " << (settings.hilite ? IAST::hilite_none : "");
     ostr << "'[HIDDEN]'";
 
     return true;
@@ -268,16 +268,15 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     {
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
         std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
-        if (!name.empty())
-            ostr << backQuoteIfNeed(name);
-        ostr << "(";
+        ostr << (settings.hilite ? hilite_function : "") << name << (settings.hilite ? hilite_none : "");
+        ostr << (settings.hilite ? hilite_function : "") << "(" << (settings.hilite ? hilite_none : "");
         ostr << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
         frame_nested.need_parens = false;
         ++frame_nested.indent;
         query->format(ostr, settings, state, frame_nested);
         ostr << nl_or_nothing << indent_str;
-        ostr << ")";
+        ostr << (settings.hilite ? hilite_function : "") << ")" << (settings.hilite ? hilite_none : "");
         return;
     }
 
@@ -332,7 +331,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (outside_parens)
                     ostr << '(';
 
-                ostr << func[1];
+                ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
 
                 if (inside_parens)
                     ostr << '(';
@@ -370,7 +369,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (frame.need_parens)
                     ostr << '(';
                 arguments->format(ostr, settings, state, nested_need_parens);
-                ostr << func[1];
+                ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
                 if (frame.need_parens)
                     ostr << ')';
 
@@ -418,7 +417,11 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     if (frame.need_parens)
                         ostr << '(';
                     arguments->children[0]->format(ostr, settings, state, nested_need_parens);
-                    ostr << func[1];
+                    ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
+
+                    bool special_hilite = settings.hilite
+                        && (name == "like" || name == "notLike" || name == "ilike" || name == "notILike")
+                        && highlightStringLiteralWithMetacharacters(arguments->children[1], ostr, "%_");
 
                     /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
                     const auto * second_arg_func = arguments->children[1]->as<ASTFunction>();
@@ -437,7 +440,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         ostr << ')';
                     }
 
-                    if (!extra_parents_around_in_rhs)
+                    if (!special_hilite && !extra_parents_around_in_rhs)
                         arguments->children[1]->format(ostr, settings, state, nested_need_parens);
 
                     if (frame.need_parens)
@@ -452,9 +455,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     ostr << '(';
 
                 arguments->children[0]->format(ostr, settings, state, nested_need_parens);
-                ostr << '[';
+                ostr << (settings.hilite ? hilite_operator : "") << '[' << (settings.hilite ? hilite_none : "");
                 arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
-                ostr << ']';
+                ostr << (settings.hilite ? hilite_operator : "") << ']' << (settings.hilite ? hilite_none : "");
                 written = true;
 
                 if (frame.need_parens)
@@ -505,7 +508,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                             ostr << '(';
 
                         arguments->children[0]->format(ostr, settings, state, nested_need_parens);
-                        ostr << ".";
+                        ostr << (settings.hilite ? hilite_operator : "") << "." << (settings.hilite ? hilite_none : "");
                         arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
                         written = true;
 
@@ -542,7 +545,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 else
                     first_argument->format(ostr, settings, state, nested_need_parens);
 
-                ostr << " -> ";
+                ostr << (settings.hilite ? hilite_operator : "") << " -> " << (settings.hilite ? hilite_none : "");
                 arguments->children[1]->format(ostr, settings, state, nested_need_parens);
                 if (frame.need_parens || frame.list_element_index > 0)
                     ostr << ')';
@@ -556,13 +559,13 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 auto indent0 = settings.one_line ? "" : String(4u * frame.indent, ' ');
                 auto indent1 = settings.one_line ? "" : String(4u * (frame.indent + 1), ' ');
                 auto indent2 = settings.one_line ? "" : String(4u * (frame.indent + 2), ' ');
-                ostr << name << "(" << nl_or_nothing;
+                ostr << (settings.hilite ? hilite_function : "") << name << "(" << (settings.hilite ? hilite_none : "") << nl_or_nothing;
                 FormatStateStacked frame_nested = frame;
                 frame_nested.need_parens = false;
                 frame_nested.indent += 2;
                 arguments->children[0]->format(ostr, settings, state, frame_nested);
-                ostr << nl_or_nothing << indent1 << (settings.one_line ? " " : "")
-                              << "ELSE " << nl_or_nothing << indent2;
+                ostr << nl_or_nothing << indent1 << (settings.hilite ? hilite_keyword : "") << (settings.one_line ? " " : "")
+                              << "ELSE " << (settings.hilite ? hilite_none : "") << nl_or_nothing << indent2;
                 arguments->children[1]->format(ostr, settings, state, frame_nested);
                 ostr << nl_or_nothing << indent0 << ")";
                 return;
@@ -587,7 +590,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     for (size_t i = 0; i < arguments->children.size(); ++i)
                     {
                         if (i != 0)
-                            ostr << func[1];
+                            ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
                         if (arguments->children[i]->as<ASTSetQuery>())
                             ostr << "SETTINGS ";
                         arguments->children[i]->format(ostr, settings, state, nested_need_parens);
@@ -601,7 +604,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
         if (!written && name == "array"sv)
         {
-            ostr << '[';
+            ostr << (settings.hilite ? hilite_operator : "") << '[' << (settings.hilite ? hilite_none : "");
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
                 if (i != 0)
@@ -611,14 +614,14 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 nested_dont_need_parens.list_element_index = i;
                 arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
             }
-            ostr << ']';
+            ostr << (settings.hilite ? hilite_operator : "") << ']' << (settings.hilite ? hilite_none : "");
             written = true;
         }
 
         if (!written && arguments->children.size() >= 2 && name == "tuple"sv)
         {
-            ostr << ((frame.need_parens && !alias.empty()) ? "tuple" : "") << '('
-                         ;
+            ostr << (settings.hilite ? hilite_operator : "") << ((frame.need_parens && !alias.empty()) ? "tuple" : "") << '('
+                          << (settings.hilite ? hilite_none : "");
 
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
@@ -629,13 +632,13 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 nested_dont_need_parens.list_element_index = i;
                 arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
             }
-            ostr << ')';
+            ostr << (settings.hilite ? hilite_operator : "") << ')' << (settings.hilite ? hilite_none : "");
             written = true;
         }
 
         if (!written && name == "map"sv)
         {
-            ostr << "map(";
+            ostr << (settings.hilite ? hilite_operator : "") << "map(" << (settings.hilite ? hilite_none : "");
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
                 if (i != 0)
@@ -645,7 +648,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 nested_dont_need_parens.list_element_index = i;
                 arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
             }
-            ostr << ')';
+            ostr << (settings.hilite ? hilite_operator : "") << ')' << (settings.hilite ? hilite_none : "");
             written = true;
         }
     }
@@ -656,22 +659,24 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         return;
     }
 
-    /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
-    if (!name.empty())
-        ostr << backQuoteIfNeed(name);
+    ostr << (settings.hilite ? hilite_function : "") << name;
 
     if (parameters)
     {
-        ostr << '(';
+        ostr << '(' << (settings.hilite ? hilite_none : "");
         parameters->format(ostr, settings, state, nested_dont_need_parens);
-        ostr << ')';
+        ostr << (settings.hilite ? hilite_function : "") << ')';
     }
 
     if ((arguments && !arguments->children.empty()) || !no_empty_args)
-        ostr << '(';
+        ostr << '(' << (settings.hilite ? hilite_none : "");
 
     if (arguments)
     {
+        bool special_hilite_regexp = settings.hilite
+            && (name == "match" || name == "extract" || name == "extractAll" || name == "replaceRegexpOne"
+                || name == "replaceRegexpAll");
+
         FunctionSecretArgumentsFinder::Result secret_arguments;
         if (!settings.show_secrets)
             secret_arguments = FunctionSecretArgumentsFinderAST(*this).getResult();
@@ -695,7 +700,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                             func_ast->arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
                         else
                             argument->format(ostr, settings, state, nested_dont_need_parens);
-                        ostr << " = ";
+                        ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");
                     }
                     if (!secret_arguments.replacement.empty())
                     {
@@ -714,7 +719,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (function && function->arguments && std::count(secret_arguments.nested_maps.begin(), secret_arguments.nested_maps.end(), function->name) != 0)
                 {
                     /// headers('foo' = '[HIDDEN]', 'bar' = '[HIDDEN]')
-                    ostr << function->name << "(";
+                    ostr << (settings.hilite ? hilite_function : "") << function->name << (settings.hilite ? hilite_none : "") << "(";
                     for (size_t j = 0; j < function->arguments->children.size(); ++j)
                     {
                         if (j != 0)
@@ -728,14 +733,21 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 }
             }
 
+            if ((i == 1) && special_hilite_regexp
+                && highlightStringLiteralWithMetacharacters(argument, ostr, "|()^$.[]?*+{:-"))
+            {
+                continue;
+            }
+
             nested_dont_need_parens.list_element_index = i;
             argument->format(ostr, settings, state, nested_dont_need_parens);
         }
     }
 
     if ((arguments && !arguments->children.empty()) || !no_empty_args)
-        ostr << ')';
+        ostr << (settings.hilite ? hilite_function : "") << ')';
 
+    ostr << (settings.hilite ? hilite_none : "");
     finishFormatWithWindow(ostr, settings, state, frame);
 }
 

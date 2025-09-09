@@ -2,14 +2,20 @@
 
 #if USE_HDFS
 
-#include <Storages/ObjectStorage/HDFS/WriteBufferFromHDFS.h>
-#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
-#include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
+#include "WriteBufferFromHDFS.h"
+#include "HDFSCommon.h"
+#include "HDFSErrorWrapper.h"
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <hdfs/hdfs.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event RemoteWriteThrottlerBytes;
+    extern const Event RemoteWriteThrottlerSleepMicroseconds;
+}
 
 namespace DB
 {
@@ -68,7 +74,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
             throw Exception(ErrorCodes::NETWORK_ERROR, "Fail to write HDFS file: {}, hdfs_uri: {}, {}", hdfs_file_path, hdfs_uri, std::string(hdfsGetLastError()));
 
         if (write_settings.remote_throttler)
-            write_settings.remote_throttler->throttle(bytes_written);
+            write_settings.remote_throttler->add(bytes_written, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
 
         return bytes_written;
     }

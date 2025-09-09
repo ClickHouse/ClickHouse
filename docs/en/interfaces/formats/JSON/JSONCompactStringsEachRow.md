@@ -16,9 +16,9 @@ title: 'JSONCompactStringsEachRow'
 
 Differs from [`JSONCompactEachRow`](./JSONCompactEachRow.md) only in that data fields are output as strings, not as typed JSON values.
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-### Inserting data {#inserting-data}
+### Inserting Data {#inserting-data}
 
 Using a JSON file with the following data, named as `football.json`:
 
@@ -48,7 +48,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.json' FORMAT JSONCompactStringsEachRow;
 ```
 
-### Reading data {#reading-data}
+### Reading Data {#reading-data}
 
 Read data using the `JSONCompactStringsEachRow` format:
 
@@ -80,4 +80,6 @@ The output will be in JSON format:
 ["2022-05-07", "2021", "Walsall", "Swindon Town", "0", "3"]
 ```
 
-## Format settings {#format-settings}
+
+## Format Settings {#format-settings}
+

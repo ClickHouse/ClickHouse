@@ -47,7 +47,7 @@ MergeTreeSink::MergeTreeSink(
     StorageMetadataPtr metadata_snapshot_,
     size_t max_parts_per_block_,
     ContextPtr context_)
-    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
+    : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , max_parts_per_block(max_parts_per_block_)
@@ -229,7 +229,7 @@ bool MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const String 
     MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
     {
         auto lock = storage.lockParts();
-        auto block_holder = storage.fillNewPartName(part, lock);
+        storage.fillNewPartName(part, lock);
 
         auto * deduplication_log = storage.getDeduplicationLog();
 

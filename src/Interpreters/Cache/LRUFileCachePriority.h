@@ -4,7 +4,7 @@
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Common/logger_useful.h>
-#include <Interpreters/Cache/Guards.h>
+#include "Interpreters/Cache/Guards.h"
 
 
 namespace DB

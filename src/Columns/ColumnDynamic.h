@@ -409,7 +409,7 @@ public:
         return name;
     }
 
-    static const DataTypePtr & getSharedVariantDataType();
+    static DataTypePtr getSharedVariantDataType();
 
     ColumnVariant::Discriminator getSharedVariantDiscriminator() const
     {
