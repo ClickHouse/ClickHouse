@@ -44,8 +44,46 @@ SETTINGS mode = 'unordered'
 
 ## Settings {#settings}
 
-The set of supported settings is the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings settings](../../../engines/table-engines/integrations/s3queue.md#settings).
+The set of supported settings is mostly the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings settings](../../../engines/table-engines/integrations/s3queue.md#settings).
 To get a list of settings, configured for the table, use `system.azure_queue_settings` table. Available from `24.10`.
+
+Below are the settings only compatible with AzureQueue and not applicable for S3Queue.
+
+### `after_processing_move_connection_string` {#after_processing_move_connection_string}
+
+Connection string for Azure Blob Storage to move successfully processed files to, if the destination is another Azure container.
+
+Possible values:
+
+- String.
+
+Default value: empty string.
+
+### `after_processing_move_container` {#after_processing_move_container}
+
+Container name to move successfully processed files to, if the destination is another Azure container.
+
+Possible values:
+
+- String.
+
+Default value: empty string.
+
+Example:
+
+```sql
+CREATE TABLE azure_queue_engine_table
+(
+    `key` UInt64,
+    `data` String
+)
+ENGINE = AzureQueue('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'testcontainer', '*', 'CSV')
+SETTINGS
+    mode = 'unordered',
+    after_processing = 'move',
+    after_processing_move_connection_string = 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
+    after_processing_move_container = 'dst-container';
+```
 
 ## Description {#description}
 
