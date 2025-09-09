@@ -1231,9 +1231,9 @@ def test_create_or_replace_table(started_cluster):
 
 def test_persistent_processing_nodes_cleanup(started_cluster):
     node = started_cluster.instances["instance_with_keeper_fault_injection"]
-    table_name = "max_persistent_processing_nodes_cleanup"
+    table_name = f"max_persistent_processing_nodes_cleanup_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
 
     create_table(
@@ -1278,10 +1278,10 @@ def test_persistent_processing_nodes_cleanup(started_cluster):
 
 def test_persistent_processing(started_cluster):
     node = started_cluster.instances["instance_with_keeper_fault_injection"]
-    table_name = "max_persistent_processing"
+    table_name = f"max_persistent_processing_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     mv_name = f"{table_name}_mv"
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     format = "a Int32, b String"
 
@@ -1350,7 +1350,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster, mode):
     )
     dst_table_name = f"{table_name}_dst"
     mv_name = f"{table_name}_mv"
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     format = "a Int32, b String"
 
