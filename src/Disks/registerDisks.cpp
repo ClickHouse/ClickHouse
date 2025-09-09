@@ -2,6 +2,7 @@
 
 #include <Disks/DiskFactory.h>
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
+#include <Disks/ObjectStorages/MetadataStorageFactory.h>
 
 #include "config.h"
 
@@ -37,6 +38,7 @@ void clearDiskRegistry()
 {
     DiskFactory::instance().clearRegistry();
     ObjectStorageFactory::instance().clearRegistry();
+    MetadataStorageFactory::instance().clearRegistry();
 }
 
 }

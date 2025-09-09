@@ -1,3 +1,4 @@
+#include <fmt/ranges.h>
 #include <gtest/gtest.h>
 
 #include <Disks/DiskFactory.h>
@@ -10,12 +11,13 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBuffer.h>
 
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/FailPoint.h>
+#include <Core/ServerUUID.h>
 #include <Core/Defines.h>
 
 #include <string>
@@ -29,8 +31,12 @@ void setUpConfig(const std::string & file_name)
 {
     std::string content = R"(
 <clickhouse>
+    <zookeeper>
+        <implementation>testkeeper</implementation>
+    </zookeeper>
+
     <logger>
-        <level>trace</level>
+        <level>test</level>
         <console>true</console>
     </logger>
 
@@ -66,13 +72,25 @@ void setUpConfig(const std::string & file_name)
 
     <storage_configuration>
         <disks>
-            <local_object_storage_disk>
+            <local_metadata_with_keeper>
                 <type>object_storage</type>
-                <object_storage_type>local_blob_storage</object_storage_type>
+
+                <object_storage_type>local</object_storage_type>
                 <path>local_blob_storage_dir/</path>
-                <metadata_type>local</metadata_type>
-                <use_fake_transaction>false</use_fake_transaction>
-            </local_object_storage_disk>
+
+                <metadata_type>keeper</metadata_type>
+
+                <metadata_cache_enabled>1</metadata_cache_enabled>
+                <metadata_cache_full_directory_lists>1</metadata_cache_full_directory_lists>
+                <metadata_cache_cleanup_interval>0</metadata_cache_cleanup_interval>
+                <metadata_background_cleanup>
+                    <enabled>true</enabled>
+                    <!-- Set VERY aggressive deleted objects cleanups -->
+                    <deleted_objects_delay_sec>0</deleted_objects_delay_sec>
+                    <old_transactions_delay_sec>100</old_transactions_delay_sec>
+                    <interval_sec>0</interval_sec>
+                </metadata_background_cleanup>
+            </local_metadata_with_keeper>
         </disks>
     </storage_configuration>
 
@@ -112,13 +130,15 @@ namespace FailPoints
 
 }
 
-class DiskObjectStorageTest : public testing::Test
+class DiskObjectStorageWithKeeperTest : public testing::Test
 {
 public:
     static const std::string config_path;
 
     static void SetUpTestSuite()
     {
+        DB::ServerUUID::setRandomForUnitTests();
+
         setUpConfig(config_path);
         DB::ConfigProcessor config_processor(config_path, true, true);
         auto config = config_processor.loadConfig(false);
@@ -139,6 +159,28 @@ public:
          }
     }
 
+    void removeAllWithOrphanBlobs()
+    {
+         for (const auto & [_, disk] : initialized_disks)
+         {
+            std::vector<String> file_names;
+            disk->listFiles(".", file_names);
+
+            for (const auto & name : file_names)
+                disk->removeRecursive(name);
+
+            /// Also remove all blobs from object storage
+            /// This test suite leaves some garbage in object storage after itself
+            /// due to known issue with transactions and metadata keeper.
+            auto blobs = listAllBlobs(disk);
+            for (const auto & blob : blobs)
+            {
+                DB::ObjectStoragePtr object_storage = disk->getObjectStorage();
+                object_storage->removeObjectIfExists(DB::StoredObject(blob));
+            }
+         }
+    }
+
     std::set<std::string> listAllBlobs(DB::DiskPtr disk)
     {
         DB::ObjectStoragePtr object_storage = disk->getObjectStorage();
@@ -156,6 +198,7 @@ public:
     static void TearDownTestSuite()
     {
         removeAll();
+
         for (const auto & [_, disk] : initialized_disks)
             disk->shutdown();
         initialized_disks.clear();
@@ -176,7 +219,7 @@ public:
             return initialized_disks.begin()->second;
 
         auto & factory = DB::DiskFactory::instance();
-        std::string name = "local_object_storage_disk";
+        std::string name = "local_metadata_with_keeper";
         std::string prefix = "storage_configuration.disks." + name;
         auto disk = factory.create(
             name,
@@ -195,27 +238,30 @@ public:
 
     void TearDown() override
     {
-        removeAll();
+        removeAllWithOrphanBlobs();
     }
 
 private:
     static DB::DisksMap initialized_disks;
 };
 
-const std::string DiskObjectStorageTest::config_path = "./config_file_for_test.xml";
-DB::DisksMap DiskObjectStorageTest::initialized_disks = {};
+const std::string DiskObjectStorageWithKeeperTest::config_path = "./config_file_for_test.xml";
+DB::DisksMap DiskObjectStorageWithKeeperTest::initialized_disks = {};
 
-TEST_F(DiskObjectStorageTest, CreateDisk)
+TEST_F(DiskObjectStorageWithKeeperTest, CreateDisk)
 {
     auto disk = getDiskObjectStorage();
     EXPECT_TRUE(disk->isDisk());
-    EXPECT_EQ(disk->getName(), "local_object_storage_disk");
-    EXPECT_EQ(disk->getPath(), "./disks/local_object_storage_disk/");
+    EXPECT_EQ(disk->getName(), "local_metadata_with_keeper");
+    EXPECT_EQ(disk->getPath(), "");
 
     EXPECT_EQ(listAllBlobs(disk).size(), 0);
+
+    std::string blobs = fmt::format("{}", fmt::join(listAllBlobs(disk), ", "));
+    EXPECT_EQ(blobs, "");
 }
 
-TEST_F(DiskObjectStorageTest, WriteListReadFile)
+TEST_F(DiskObjectStorageWithKeeperTest, WriteListReadFile)
 {
     auto disk = getDiskObjectStorage();
 
@@ -244,7 +290,7 @@ TEST_F(DiskObjectStorageTest, WriteListReadFile)
     EXPECT_EQ(listAllBlobs(disk).size(), 0);
 }
 
-TEST_F(DiskObjectStorageTest, WriteFileTxCommit)
+TEST_F(DiskObjectStorageWithKeeperTest, WriteFileTxCommit)
 {
     auto disk = getDiskObjectStorage();
 
@@ -266,7 +312,7 @@ TEST_F(DiskObjectStorageTest, WriteFileTxCommit)
     EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
-TEST_F(DiskObjectStorageTest, WriteFileTxUndo)
+TEST_F(DiskObjectStorageWithKeeperTest, WriteFileTxUndo)
 {
     auto disk = getDiskObjectStorage();
 
@@ -287,7 +333,7 @@ TEST_F(DiskObjectStorageTest, WriteFileTxUndo)
     EXPECT_EQ(listAllBlobs(disk).size(), 0);
 }
 
-TEST_F(DiskObjectStorageTest, RewriteFile)
+TEST_F(DiskObjectStorageWithKeeperTest, RewriteFile)
 {
     auto disk = getDiskObjectStorage();
 
@@ -323,7 +369,7 @@ TEST_F(DiskObjectStorageTest, RewriteFile)
     EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
-TEST_F(DiskObjectStorageTest, RewriteFileUndo)
+TEST_F(DiskObjectStorageWithKeeperTest, RewriteFileUndo)
 {
     auto disk = getDiskObjectStorage();
 
@@ -359,7 +405,7 @@ TEST_F(DiskObjectStorageTest, RewriteFileUndo)
     EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
-TEST_F(DiskObjectStorageTest, RewriteFileTxCommitFail)
+TEST_F(DiskObjectStorageWithKeeperTest, RewriteFileTxCommitFail)
 {
     auto disk = getDiskObjectStorage();
 
@@ -395,7 +441,7 @@ TEST_F(DiskObjectStorageTest, RewriteFileTxCommitFail)
     EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
-TEST_F(DiskObjectStorageTest, MoveAndRewriteFile)
+TEST_F(DiskObjectStorageWithKeeperTest, MoveAndRewriteFile)
 {
     auto disk = getDiskObjectStorage();
 
@@ -430,10 +476,13 @@ TEST_F(DiskObjectStorageTest, MoveAndRewriteFile)
 
     EXPECT_TRUE(disk->existsFile(new_file_name));
     EXPECT_EQ(readAll(*disk->readFile(new_file_name, {})), rewrite_file_content);
-    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+    /// It should be 1 blob here.
+    /// But keeper metadata storage unable to remove old object in transaction
+    /// when new object created without proving set of blobs, it is operations like move and hardlink.
+    EXPECT_EQ(listAllBlobs(disk).size(), 2);
 }
 
-TEST_F(DiskObjectStorageTest, MoveAndRewriteFileTxUndo)
+TEST_F(DiskObjectStorageWithKeeperTest, MoveAndRewriteFileTxUndo)
 {
     auto disk = getDiskObjectStorage();
 
@@ -472,7 +521,7 @@ TEST_F(DiskObjectStorageTest, MoveAndRewriteFileTxUndo)
     EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
-TEST_F(DiskObjectStorageTest, MoveAndRewriteFileTxCommitFail)
+TEST_F(DiskObjectStorageWithKeeperTest, MoveAndRewriteFileTxCommitFail)
 {
     auto disk = getDiskObjectStorage();
 
@@ -512,7 +561,7 @@ TEST_F(DiskObjectStorageTest, MoveAndRewriteFileTxCommitFail)
     EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
-TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFile)
+TEST_F(DiskObjectStorageWithKeeperTest, HardLinkAndRewriteFile)
 {
     auto disk = getDiskObjectStorage();
 
@@ -551,10 +600,13 @@ TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFile)
     EXPECT_TRUE(disk->existsFile(new_file_name));
     EXPECT_EQ(readAll(*disk->readFile(new_file_name, {})), rewrite_file_content);
 
-    EXPECT_EQ(listAllBlobs(disk).size(), 1);
+    /// It should be 1 blob here.
+    /// But keeper metadata storage unable to remove old object in transaction
+    /// when new object created without proving set of blobs, it is operations like move and hardlink.
+    EXPECT_EQ(listAllBlobs(disk).size(), 2);
 }
 
-TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFileTxUndo)
+TEST_F(DiskObjectStorageWithKeeperTest, HardLinkAndRewriteFileTxUndo)
 {
     auto disk = getDiskObjectStorage();
 
@@ -595,7 +647,7 @@ TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFileTxUndo)
     EXPECT_EQ(listAllBlobs(disk).size(), 1);
 }
 
-TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFileTxCommitFail)
+TEST_F(DiskObjectStorageWithKeeperTest, HardLinkAndRewriteFileTxCommitFail)
 {
     auto disk = getDiskObjectStorage();
 

@@ -23,7 +23,7 @@ struct StoredObject
     explicit StoredObject(
         const String & remote_path_ = "",
         const String & local_path_ = "",
-        uint64_t bytes_size_ = 0)
+        uint64_t bytes_size_ = std::numeric_limits<uint64_t>::max())
         : remote_path(remote_path_)
         , local_path(local_path_)
         , bytes_size(bytes_size_)
