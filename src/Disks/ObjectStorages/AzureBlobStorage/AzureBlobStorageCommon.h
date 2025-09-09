@@ -190,5 +190,6 @@ private:
     std::map<const String, const AzureBlobStorage::RequestSettings> azure_settings;
 };
 
+bool compareAzureAuthMethod(AzureBlobStorage::AuthMethod auth_method_a, AzureBlobStorage::AuthMethod auth_method_b);
 
 }

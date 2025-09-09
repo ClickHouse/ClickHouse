@@ -12,11 +12,13 @@
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/s3/model/ListObjectsRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
+#include <aws/s3/model/GetObjectTaggingRequest.h>
 #include <aws/s3/model/AbortMultipartUploadRequest.h>
 #include <aws/s3/model/CreateMultipartUploadRequest.h>
 #include <aws/s3/model/CompleteMultipartUploadRequest.h>
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/PutObjectRequest.h>
+#include <aws/s3/model/PutObjectTaggingRequest.h>
 #include <aws/s3/model/UploadPartRequest.h>
 #include <aws/s3/model/UploadPartCopyRequest.h>
 #include <aws/s3/model/DeleteObjectRequest.h>
@@ -144,6 +146,7 @@ using HeadObjectRequest = ExtendedRequest<Model::HeadObjectRequest>;
 using ListObjectsV2Request = ExtendedRequest<Model::ListObjectsV2Request>;
 using ListObjectsRequest = ExtendedRequest<Model::ListObjectsRequest>;
 using GetObjectRequest = ExtendedRequest<Model::GetObjectRequest>;
+using GetObjectTaggingRequest = ExtendedRequest<Model::GetObjectTaggingRequest>;
 
 class UploadPartRequest : public ExtendedRequest<Model::UploadPartRequest>
 {
@@ -162,6 +165,7 @@ using AbortMultipartUploadRequest = ExtendedRequest<Model::AbortMultipartUploadR
 using UploadPartCopyRequest = ExtendedRequest<Model::UploadPartCopyRequest>;
 
 using PutObjectRequest = ExtendedRequest<Model::PutObjectRequest>;
+using PutObjectTaggingRequest = ExtendedRequest<Model::PutObjectTaggingRequest>;
 using DeleteObjectRequest = ExtendedRequest<Model::DeleteObjectRequest>;
 using DeleteObjectsRequest = ExtendedRequest<Model::DeleteObjectsRequest>;
 

@@ -190,6 +190,7 @@ public:
     Model::ListObjectsV2Outcome ListObjectsV2(ListObjectsV2Request & request) const;
     Model::ListObjectsOutcome ListObjects(ListObjectsRequest & request) const;
     Model::GetObjectOutcome GetObject(GetObjectRequest & request) const;
+    Model::GetObjectTaggingOutcome GetObjectTagging(GetObjectTaggingRequest & request) const;
 
     Model::AbortMultipartUploadOutcome AbortMultipartUpload(AbortMultipartUploadRequest & request) const;
     Model::CreateMultipartUploadOutcome CreateMultipartUpload(CreateMultipartUploadRequest & request) const;
@@ -199,6 +200,7 @@ public:
 
     Model::CopyObjectOutcome CopyObject(CopyObjectRequest & request) const;
     Model::PutObjectOutcome PutObject(PutObjectRequest & request) const;
+    Model::PutObjectTaggingOutcome PutObjectTagging(PutObjectTaggingRequest & request) const;
     Model::DeleteObjectOutcome DeleteObject(DeleteObjectRequest & request) const;
     Model::DeleteObjectsOutcome DeleteObjects(DeleteObjectsRequest & request) const;
 
@@ -255,6 +257,7 @@ private:
     using Aws::S3::S3Client::ListObjectsV2;
     using Aws::S3::S3Client::ListObjects;
     using Aws::S3::S3Client::GetObject;
+    using Aws::S3::S3Client::GetObjectTagging;
 
     using Aws::S3::S3Client::AbortMultipartUpload;
     using Aws::S3::S3Client::CreateMultipartUpload;
@@ -264,6 +267,7 @@ private:
 
     using Aws::S3::S3Client::CopyObject;
     using Aws::S3::S3Client::PutObject;
+    using Aws::S3::S3Client::PutObjectTagging;
     using Aws::S3::S3Client::DeleteObject;
     using Aws::S3::S3Client::DeleteObjects;
 

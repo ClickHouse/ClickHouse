@@ -654,4 +654,52 @@ std::optional<AzureBlobStorage::RequestSettings> AzureSettingsByEndpoint::getSet
     return {};
 }
 
+bool compareAzureAuthMethod(AzureBlobStorage::AuthMethod auth_method_a, AzureBlobStorage::AuthMethod auth_method_b)
+{
+    const auto * conn_string_a = std::get_if<AzureBlobStorage::ConnectionString>(&auth_method_a);
+    const auto * conn_string_b = std::get_if<AzureBlobStorage::ConnectionString>(&auth_method_b);
+
+    if (conn_string_a && conn_string_b)
+    {
+        return *conn_string_a == *conn_string_b;
+    }
+
+    const auto * shared_key_a = std::get_if<std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>>(&auth_method_a);
+    const auto * shared_key_b = std::get_if<std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>>(&auth_method_b);
+
+    if (shared_key_a && shared_key_b)
+    {
+        return (shared_key_a->get()->AccountName == shared_key_b->get()->AccountName);
+    }
+
+    const auto * workload_identity_a = std::get_if<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(&auth_method_a);
+    const auto * workload_identity_b = std::get_if<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(&auth_method_b);
+
+    if (workload_identity_a && workload_identity_b)
+    {
+        Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
+        return workload_identity_a->get()->GetToken(tokenRequestContext, {}).Token == workload_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
+    }
+
+    const auto * managed_identity_a = std::get_if<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(&auth_method_a);
+    const auto * managed_identity_b = std::get_if<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(&auth_method_b);
+
+    if (managed_identity_a && managed_identity_b)
+    {
+        Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
+        return managed_identity_a->get()->GetToken(tokenRequestContext, {}).Token == managed_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
+    }
+
+    const auto * static_credential_a = std::get_if<std::shared_ptr<AzureBlobStorage::StaticCredential>>(&auth_method_a);
+    const auto * static_credential_b = std::get_if<std::shared_ptr<AzureBlobStorage::StaticCredential>>(&auth_method_b);
+
+    if (static_credential_a && static_credential_b)
+    {
+        Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
+        auto az_context = Azure::Core::Context();
+        return static_credential_a->get()->GetToken(tokenRequestContext, az_context).Token == static_credential_b->get()->GetToken(tokenRequestContext, az_context).Token;
+    }
+    return false;
+}
+
 }

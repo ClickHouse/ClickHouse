@@ -26,6 +26,7 @@
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageSnapshot.h>
@@ -46,7 +47,6 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueCommitRequests;
     extern const Event ObjectStorageQueueSuccessfulCommits;
     extern const Event ObjectStorageQueueUnsuccessfulCommits;
-    extern const Event ObjectStorageQueueRemovedObjects;
     extern const Event ObjectStorageQueueInsertIterations;
     extern const Event ObjectStorageQueueProcessedRows;
 }
@@ -106,6 +106,14 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const ObjectStorageQueueSettingsBool use_persistent_processing_nodes;
     extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
+    extern const ObjectStorageQueueSettingsString after_processing_move_uri;
+    extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
+    extern const ObjectStorageQueueSettingsString after_processing_move_access_key_id;
+    extern const ObjectStorageQueueSettingsString after_processing_move_secret_access_key;
+    extern const ObjectStorageQueueSettingsString after_processing_move_connection_string;
+    extern const ObjectStorageQueueSettingsString after_processing_move_container;
+    extern const ObjectStorageQueueSettingsString after_processing_tag_key;
+    extern const ObjectStorageQueueSettingsString after_processing_tag_value;
 }
 
 namespace ErrorCodes
@@ -143,6 +151,53 @@ namespace
                             "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
                             queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value,
                             queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
+        }
+        if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::MOVE)
+        {
+            bool move_uri = !queue_settings[ObjectStorageQueueSetting::after_processing_move_uri].toString().empty();
+            bool move_access_key_id = !queue_settings[ObjectStorageQueueSetting::after_processing_move_access_key_id].toString().empty();
+            bool move_secret_access_key = !queue_settings[ObjectStorageQueueSetting::after_processing_move_secret_access_key].toString().empty();
+            bool move_connection_string = !queue_settings[ObjectStorageQueueSetting::after_processing_move_connection_string].toString().empty();
+            bool move_container = !queue_settings[ObjectStorageQueueSetting::after_processing_move_container].toString().empty();
+            bool move_prefix = !queue_settings[ObjectStorageQueueSetting::after_processing_move_prefix].toString().empty();
+
+            if (move_uri || move_access_key_id || move_secret_access_key)
+            {
+                if (!move_uri || !move_access_key_id || !move_secret_access_key)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "move to S3 bucket requires all of settings: move_uri, move_access_key_id, move_secret_access_key");
+                }
+                if (move_connection_string || move_container)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "unexpected Azure settings when S3 settings are provided:{}{}",
+                        move_connection_string ? " move_connection_string" : "",
+                        move_container ? " move_container" : "");
+                }
+            }
+            else if (move_connection_string || move_container)
+            {
+                if (!move_connection_string || !move_container)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "move to Azure container requires all of settings: move_connection_string, move_container");
+                }
+            }
+            else if (!move_prefix)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "move of processed objects requires specifying target bucket/container or prefix");
+            }
+        }
+        if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::TAG)
+        {
+            if (queue_settings[ObjectStorageQueueSetting::after_processing_tag_key].toString().empty()) {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "after_processing action 'tag' requires non-empty after_processing_tag_key");
+            }
+            if (queue_settings[ObjectStorageQueueSetting::after_processing_tag_value].toString().empty()) {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "after_processing action 'tag' requires non-empty after_processing_tag_value");
+            }
         }
     }
 
@@ -826,12 +881,15 @@ void StorageObjectStorageQueue::commit(
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
 
     if (!successful_objects.empty()
-        && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
+        && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
-        /// We do need to apply after-processing action before committing requests to keeper.
-        /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
-        object_storage->removeObjectsIfExist(successful_objects);
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, successful_objects.size());
+        auto postProcessor = ObjectStorageQueuePostProcessor(
+            getContext(),
+            type,
+            object_storage,
+            getName(),
+            files_metadata->getTableMetadata());
+        postProcessor.process(successful_objects);
     }
 
     auto context = getContext();
@@ -930,6 +988,14 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "cleanup_interval_min_ms",
     "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
+    "after_processing_move_uri",
+    "after_processing_move_prefix",
+    "after_processing_move_access_key_id",
+    "after_processing_move_secret_access_key",
+    "after_processing_move_connection_string",
+    "after_processing_move_container",
+    "after_processing_tag_key",
+    "after_processing_tag_value",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
@@ -951,6 +1017,14 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "cleanup_interval_min_ms",
     "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
+    "after_processing_move_uri",
+    "after_processing_move_prefix",
+    "after_processing_move_access_key_id",
+    "after_processing_move_secret_access_key",
+    "after_processing_move_connection_string",
+    "after_processing_move_container",
+    "after_processing_tag_key",
+    "after_processing_tag_value",
 };
 
 static std::string normalizeSetting(const std::string & name)
