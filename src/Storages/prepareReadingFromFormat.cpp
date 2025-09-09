@@ -317,6 +317,8 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
     requested_virtual_columns.writeTextWithNamesInStorage(ctx.out);
     serialization_hints.writeJSON(ctx.out);
 
+    ctx.out << "\n";
+
     hive_partition_columns_to_read_from_file_path.writeTextWithNamesInStorage(ctx.out);
     writeBinary(prewhere_info != nullptr, ctx.out);
     if (prewhere_info != nullptr)
@@ -353,6 +355,8 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     std::string json;
     readString(json, ctx.in);
     result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), SerializationInfoSettings{}, json);
+
+    ctx.in >> "\n";
 
     result.hive_partition_columns_to_read_from_file_path.readTextWithNamesInStorage(ctx.in);
     bool has_prewhere_info;

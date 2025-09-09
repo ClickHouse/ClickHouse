@@ -348,6 +348,8 @@ FileNamesGenerator::Result FileNamesGenerator::generatePositionDeleteFile()
 
 String FileNamesGenerator::convertMetadataPathToStoragePath(const String & metadata_path) const
 {
+    if (!metadata_path.starts_with(table_dir))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Paths in Iceberg must use a consistent format — either /your/path or s3://your/path. Use the write_full_path_in_iceberg_metadata setting to control this behavior {} {}", metadata_path, table_dir);
     return storage_dir + metadata_path.substr(table_dir.size());
 }
 
@@ -500,6 +502,9 @@ void generateManifestFile(
             auto statistics = data_file_statistics->getColumnSizes();
             set_fields(statistics, Iceberg::f_column_sizes, [](size_t, size_t value) { return static_cast<Int32>(value); });
 
+            statistics = data_file_statistics->getNullCounts();
+            set_fields(statistics, Iceberg::f_null_value_counts, [](size_t, size_t value) { return static_cast<Int32>(value); });
+
             std::unordered_map<size_t, size_t> field_id_to_column_index;
             auto field_ids = data_file_statistics->getFieldIds();
             for (size_t i = 0; i < field_ids.size(); ++i)
@@ -561,6 +566,9 @@ void generateManifestFile(
                 case Field::Types::Decimal64:
                     partition_record.field(partition_columns[i]) =
                         avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
+                    break;
+
+                case Field::Types::Null:
                     break;
 
                 default:
@@ -1132,6 +1140,7 @@ void DataFileStatistics::update(const Chunk & chunk)
     if (column_sizes.empty())
     {
         column_sizes.resize(num_columns, 0);
+        null_counts.resize(num_columns, 0);
         for (size_t i = 0; i < num_columns; ++i)
         {
             ranges.push_back(getExtremeRangeFromColumn(chunk.getColumns()[i]));
@@ -1142,6 +1151,9 @@ void DataFileStatistics::update(const Chunk & chunk)
 
     for (size_t i = 0; i < num_columns; ++i)
     {
+        column_sizes[i] += chunk.getColumns()[i]->byteSize();
+        for (size_t j = 0; j < chunk.getNumRows(); ++j)
+            null_counts[i] += (chunk.getColumns()[i]->isNullAt(j));
         ranges[i] = uniteRanges(ranges[i], getExtremeRangeFromColumn(chunk.getColumns()[i]));
     }
 }
@@ -1164,6 +1176,17 @@ std::vector<std::pair<size_t, size_t>> DataFileStatistics::getColumnSizes() cons
     }
     return result;
 }
+
+std::vector<std::pair<size_t, size_t>> DataFileStatistics::getNullCounts() const
+{
+    std::vector<std::pair<size_t, size_t>> result;
+    for (size_t i = 0; i < null_counts.size(); ++i)
+    {
+        result.push_back({field_ids[i], null_counts[i]});
+    }
+    return result;
+}
+
 
 std::vector<std::pair<size_t, Field>> DataFileStatistics::getLowerBounds() const
 {
@@ -1211,25 +1234,28 @@ void MultipleFileWriter::consume(const Chunk & chunk)
 {
     if (!current_file_num_rows || *current_file_num_rows >= max_data_file_num_rows || *current_file_num_bytes >= max_data_file_num_bytes)
     {
+        if (buffer)
+            finalize();
+
         current_file_num_rows = 0;
         current_file_num_bytes = 0;
         auto filename = filename_generator.generateDataFileName();
 
         data_file_names.push_back(filename.path_in_storage);
-        auto buffer = object_storage->writeObject(
+        buffer = object_storage->writeObject(
             StoredObject(filename.path_in_storage), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
-        buffers.push_back(std::move(buffer));
         if (format_settings)
         {
             format_settings->parquet.write_page_index = true;
             format_settings->parquet.bloom_filter_push_down = true;
             format_settings->parquet.filter_push_down = true;
         }
-        output_formats.push_back(FormatFactory::instance().getOutputFormatParallelIfPossible(
-            configuration->format, *buffers.back(), *sample_block, context, format_settings));
+        output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
+            configuration->format, *buffer, *sample_block, context, format_settings);
     }
-    output_formats.back()->write(sample_block->cloneWithColumns(chunk.getColumns()));
+    output_format->write(sample_block->cloneWithColumns(chunk.getColumns()));
+    output_format->flush();
     *current_file_num_rows += chunk.getNumRows();
     *current_file_num_bytes += chunk.bytes();
     stats.update(chunk);
@@ -1237,40 +1263,22 @@ void MultipleFileWriter::consume(const Chunk & chunk)
 
 void MultipleFileWriter::finalize()
 {
-    for (const auto & output_format : output_formats)
-    {
-        output_format->flush();
-        output_format->finalize();
-    }
-    for (const auto & buffer : buffers)
-    {
-        buffer->finalize();
-        total_bytes += buffer->count();
-    }
+    output_format->flush();
+    output_format->finalize();
+    buffer->finalize();
+    total_bytes += buffer->count();
 }
 
 void MultipleFileWriter::release()
 {
-    for (auto & output_format : output_formats)
-    {
-        output_format.reset();
-    }
-    for (auto & buffer : buffers)
-    {
-        buffer.reset();
-    }
+    output_format.reset();
+    buffer.reset();
 }
 
 void MultipleFileWriter::cancel()
 {
-    for (const auto & output_format : output_formats)
-    {
-        output_format->cancel();
-    }
-    for (const auto & buffer : buffers)
-    {
-        buffer->cancel();
-    }
+    output_format->cancel();
+    buffer->cancel();
 }
 
 void MultipleFileWriter::clearAllDataFiles() const
@@ -1311,6 +1319,9 @@ IcebergStorageSink::IcebergStorageSink(
     auto config_path = configuration_->getPathForWrite().path;
     if (config_path.empty() || config_path.back() != '/')
         config_path += "/";
+    if (!config_path.starts_with('/'))
+        config_path = '/' + config_path;
+
     if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
     {
         filename_generator = FileNamesGenerator(config_path, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method);
