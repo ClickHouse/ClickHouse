@@ -91,7 +91,7 @@ Returns a tuple consisting of `start_csn`, `local_tid` and `host_id`. [Tuple](..
 - `start_csn`: Global sequential number, the newest commit timestamp that was seen when this transaction began. [UInt64](../data-types/int-uint.md).
 - `local_tid`: Local sequential number that is unique for each transaction started by this host within a specific start_csn. [UInt64](../data-types/int-uint.md).
 - `host_id`: UUID of the host that has started this transaction. [UUID](../data-types/uuid.md).
-    )", 
+    )",
     {"Tuple(UInt64, UInt64, UUID)"}
     };
     FunctionDocumentation::Examples examples_transactionID = {
