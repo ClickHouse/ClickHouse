@@ -313,6 +313,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result.create_from(name="Pre Hooks", results=res_, stopwatch=sw_)
         )
+        # reread env object in case some new dada (JOB_KV_DATA) has been added in .pre_hooks
+        env = _Environment.get()
 
     # checks:
     if not results or results[-1].is_ok():

@@ -30,6 +30,8 @@
 #include <Generic.hh>
 #include <Stream.hh>
 #include <ValidSchema.hh>
+#include <new>
+
 
 namespace DB
 {
@@ -91,6 +93,7 @@ public:
     void update(const Chunk & chunk);
 
     std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
+    std::vector<std::pair<size_t, size_t>> getNullCounts() const;
     std::vector<std::pair<size_t, Field>> getLowerBounds() const;
     std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
@@ -100,6 +103,7 @@ private:
 
     std::vector<Int64> field_ids;
     std::vector<Int64> column_sizes;
+    std::vector<Int64> null_counts;
     std::vector<Range> ranges;
 };
 
@@ -142,8 +146,8 @@ private:
     std::optional<size_t> current_file_num_rows = std::nullopt;
     std::optional<size_t> current_file_num_bytes = std::nullopt;
     std::vector<String> data_file_names;
-    std::vector<std::unique_ptr<WriteBufferFromFileBase>> buffers;
-    std::vector<OutputFormatPtr> output_formats;
+    std::unique_ptr<WriteBufferFromFileBase> buffer;
+    OutputFormatPtr output_format;
     FileNamesGenerator & filename_generator;
     ObjectStoragePtr object_storage;
     ContextPtr context;
