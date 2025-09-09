@@ -17,10 +17,8 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <memory>
 #include <string>
-#include <type_traits>
 
 #include <Common/ErrorCodes.h>
-#include "Disks/ObjectStorages/S3/S3ObjectStorage.h"
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
@@ -39,6 +37,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int FORMAT_VERSION_TOO_OLD;
     extern const int LOGICAL_ERROR;
