@@ -34,9 +34,6 @@ JSONSharedDataPathsWithTypes
 JSON_EXISTS
 JSON_QUERY
 JSON_VALUE
-MACNumToString
-MACStringToNum
-MACStringToOUI
 URLHierarchy
 URLPathHierarchy
 UUIDNumToString
@@ -55,10 +52,8 @@ accurateCast
 accurateCastOrDefault
 accurateCastOrNull
 asin
-blockSerializedSize
 caseWithExpression
 catboostEvaluate
-countDigits
 countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
@@ -86,8 +81,6 @@ decodeURLComponent
 decodeURLFormComponent
 defaultProfiles
 defaultRoles
-defaultValueOfArgumentType
-defaultValueOfTypeName
 dictGet
 dictGetAll
 dictGetChildren
@@ -134,7 +127,6 @@ domainRFC
 domainWithoutWWW
 domainWithoutWWWRFC
 dotProduct
-dumpColumnStructure
 dynamicElement
 dynamicType
 enabledProfiles
@@ -172,7 +164,6 @@ generateSerialID
 generateUUIDv4
 getMaxTableNameLengthForDatabase
 getServerPort
-getSizeOfEnumType
 getSubcolumn
 getTypeSerializationStreams
 globalIn
@@ -192,9 +183,7 @@ hasTokenCaseInsensitiveOrNull
 ilike
 in
 inIgnoreSet
-indexHint
 initializeAggregation
-isDecimalOverflow
 isDynamicElementInSharedData
 isIPAddressInRange
 isIPv4String
@@ -327,11 +316,7 @@ reinterpretAsUInt32
 reinterpretAsUInt64
 reinterpretAsUInt8
 reinterpretAsUUID
-replicate
 runningAccumulate
-runningConcurrency
-runningDifference
-runningDifferenceStartingWithFirstValue
 serverUUID
 sigmoid
 sin
@@ -344,7 +329,6 @@ toBFloat16
 toBFloat16OrNull
 toBFloat16OrZero
 toBool
-toColumnTypeName
 toDate
 toDate32
 toDate32OrDefault
