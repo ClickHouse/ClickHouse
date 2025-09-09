@@ -350,8 +350,6 @@ struct CRC32Hash
 
 struct StringRefHash : CRC32Hash {};
 
-using StringViewHash = StringRefHash;
-
 #else
 
 struct CRC32Hash
@@ -366,6 +364,7 @@ struct StringRefHash : StringRefHash64 {};
 
 #endif
 
+using StringViewHash = StringRefHash;
 
 namespace std
 {
