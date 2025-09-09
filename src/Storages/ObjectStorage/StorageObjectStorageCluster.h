@@ -96,7 +96,6 @@ private:
     const String engine_name;
     StorageObjectStorage::ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
-    NamesAndTypesList virtual_columns;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     bool cluster_name_in_settings;
 

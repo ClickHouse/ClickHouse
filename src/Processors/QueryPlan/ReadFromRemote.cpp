@@ -510,7 +510,8 @@ void ReadFromRemote::addLazyPipe(
             my_stage = stage, my_storage = storage,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
             query_tree = shard.query_tree, planner_context = shard.planner_context,
-            pushed_down_filters, parallel_marshalling_threads]() mutable
+            pushed_down_filters, parallel_marshalling_threads,
+            my_is_remote_function = is_remote_function]() mutable
         -> QueryPipelineBuilder
     {
         auto current_settings = my_context->getSettingsRef();
@@ -597,6 +598,8 @@ void ReadFromRemote::addLazyPipe(
             {DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use, my_shard.query_plan);
+        remote_query_executor->setRemoteFunction(my_is_remote_function);
+        remote_query_executor->setShardCount(my_shard_count);
 
         auto pipe = createRemoteSourcePipe(
             remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
@@ -687,6 +690,8 @@ void ReadFromRemote::addPipe(
                 priority_func);
             remote_query_executor->setLogger(log);
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
+            remote_query_executor->setRemoteFunction(is_remote_function);
+            remote_query_executor->setShardCount(shard_count);
 
             if (!table_func_ptr)
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
@@ -707,6 +712,8 @@ void ReadFromRemote::addPipe(
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             shard.shard_info.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage_to_use, shard.query_plan);
         remote_query_executor->setLogger(log);
+        remote_query_executor->setRemoteFunction(is_remote_function);
+        remote_query_executor->setShardCount(shard_count);
 
         if (context->canUseTaskBasedParallelReplicas() || parallel_replicas_disabled)
         {
