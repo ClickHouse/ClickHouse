@@ -39,4 +39,4 @@ WHERE
             AND log_comment = 'THIS IS A COMMENT TO MARK THE INITIAL QUERY'
         LIMIT 1)
     AND type = 'QueryFinish'
-    AND NOT is_initial_query;
+    AND query_id != initial_query_id;
