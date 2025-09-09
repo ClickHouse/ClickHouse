@@ -6086,8 +6086,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
 
-    auto number_of_replicas = static_cast<UInt64>(src_cluster->getShardsAddresses().size());
-    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, local_context, number_of_replicas);
+    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, local_context, src_cluster);
 
     size_t replica_index = 0;
     for (const auto & replicas : src_cluster->getShardsAddresses())
