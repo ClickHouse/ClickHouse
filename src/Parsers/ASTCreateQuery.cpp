@@ -598,7 +598,7 @@ void ASTCreateQuery::resetUUIDs()
     CreateQueryUUIDs{}.copyToQuery(*this);
 }
 
-void ASTCreateQuery::resetColumnUUIDs()
+void ASTCreateQuery::resetColumnUUIDs() const
 {
     for (auto & ast : columns_list->columns->children)
     {
@@ -607,7 +607,7 @@ void ASTCreateQuery::resetColumnUUIDs()
     }
 }
 
-void ASTCreateQuery::generateColumnRandomUUIDs()
+void ASTCreateQuery::generateColumnRandomUUIDs() const
 {
     for (auto & ast : columns_list->columns->children)
     {
