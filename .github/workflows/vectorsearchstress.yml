@@ -127,7 +127,7 @@ jobs:
           fi
 
   vector_search_stress:
-    runs-on: [self-hosted, arm-small]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     name: "Vector Search Stress"
     outputs:
