@@ -71,7 +71,7 @@ Returns the ID of a transaction.
 
 :::note
 This function is part of an experimental feature set.
-Enable experimental transaction support by adding this setting to your configuration:
+Enable experimental transaction support by adding this setting to your [configuration](/operations/configuration-files):
 
 ```xml
 <clickhouse>
@@ -86,11 +86,10 @@ For more information see the page [Transactional (ACID) support](/guides/develop
     FunctionDocumentation::Arguments arguments_transactionID = {};
     FunctionDocumentation::ReturnedValue returned_value_transactionID = {
     R"(
-Returns a tuple consisting of `start_csn`, `local_tid` and `host_id`. [Tuple](../data-types/tuple.md).
-
-- `start_csn`: Global sequential number, the newest commit timestamp that was seen when this transaction began. [UInt64](../data-types/int-uint.md).
-- `local_tid`: Local sequential number that is unique for each transaction started by this host within a specific start_csn. [UInt64](../data-types/int-uint.md).
-- `host_id`: UUID of the host that has started this transaction. [UUID](../data-types/uuid.md).
+Returns a tuple consisting of `start_csn`, `local_tid` and `host_id`.
+- `start_csn`: Global sequential number, the newest commit timestamp that was seen when this transaction began.
+- `local_tid`: Local sequential number that is unique for each transaction started by this host within a specific start_csn.
+- `host_id`: UUID of the host that has started this transaction.
     )",
     {"Tuple(UInt64, UInt64, UUID)"}
     };

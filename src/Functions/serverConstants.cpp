@@ -212,8 +212,8 @@ SELECT hostName()
 REGISTER_FUNCTION(ServerUUID)
 {
     FunctionDocumentation::Description description_serverUUID = R"(
-Returns the random and unique UUID, which is generated when the server is first started and stored forever.
-The result writes to the file `uuid` and reads if it exists, or generates and writes if it does not exist.
+Returns a random and unique UUID, which is generated when the server is first started and stored forever.
+The result is written to a file `uuid` and read to check if it exists. If it does not exist, then it is generated and written to the file.
 )";
     FunctionDocumentation::Syntax syntax_serverUUID = "serverUUID()";
     FunctionDocumentation::Arguments arguments_serverUUID = {};

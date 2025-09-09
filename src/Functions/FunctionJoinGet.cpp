@@ -205,16 +205,16 @@ FunctionBasePtr JoinGetOverloadResolver<or_null>::buildImpl(const ColumnsWithTyp
 REGISTER_FUNCTION(JoinGet)
 {
     FunctionDocumentation::Description description_joinGet = R"(
-Allows you to extract data from the table the same way as from a dictionary.
+Allows you to extract data from a table the same way as from a dictionary.
 Gets data from Join tables using the specified join key.
 
 :::note
-Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
+Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [statement](/engines/table-engines/special/join).
 :::
 )";
     FunctionDocumentation::Syntax syntax_joinGet = "joinGet(join_storage_table_name, value_column, join_keys)";
     FunctionDocumentation::Arguments arguments_joinGet = {
-        {"join_storage_table_name", "An identifier. Indicates where the search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE database_name` query or specify the database and the table through a dot, like `database_name.table_name`.", {"String"}},
+        {"join_storage_table_name", "An identifier which indicates where to perform the search. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE database_name` query or specify the database and the table through a dot, like `database_name.table_name`.", {"String"}},
         {"value_column", "The name of the column of the table that contains required data.", {"const String"}},
         {"join_keys", "A list of join keys.", {"Any"}}
     };
@@ -266,17 +266,17 @@ SELECT joinGet(some_table, 'name', 1, 11);
     FunctionDocumentation documentation_joinGet = {description_joinGet, syntax_joinGet, arguments_joinGet, returned_value_joinGet, examples_joinGet, introduced_in_joinGet, category_joinGet};
 
     FunctionDocumentation::Description description_joinGetOrNull = R"(
-Allows you to extract data from the table the same way as from a dictionary.
+Allows you to extract data from a table the same way as from a dictionary.
 Gets data from Join tables using the specified join key.
 Unlike [`joinGet`](#joinGet) it returns `NULL` when the key is missing.
 
 :::note
-Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
+Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [statement](/engines/table-engines/special/join).
 :::
 )";
     FunctionDocumentation::Syntax syntax_joinGetOrNull = "joinGetOrNull(join_storage_table_name, value_column, join_keys)";
     FunctionDocumentation::Arguments arguments_joinGetOrNull = {
-        {"join_storage_table_name", "An identifier. Indicates where the search is performed. The identifier is searched in the default database (see parameter default_database in the config file). To override the default database, use the `USE database_name` query or specify the database and the table through a dot, like `database_name.table_name`.", {"String"}},
+        {"join_storage_table_name", "An identifier which indicates where to perform the search. The identifier is searched in the default database (see parameter default_database in the config file). To override the default database, use the `USE database_name` query or specify the database and the table through a dot, like `database_name.table_name`.", {"String"}},
         {"value_column", "The name of the column of the table that contains required data.", {"const String"}},
         {"join_keys", "A list of join keys.", {"Any"}}
     };
