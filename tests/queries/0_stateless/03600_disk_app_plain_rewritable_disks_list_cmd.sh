@@ -15,7 +15,9 @@ function test_copy()
     # Disk before adding directories
     clickhouse-disks -C "$config" --disk "$disk_name" --query "ls --recursive"
     # Disk after adding directories
-    clickhouse-disks -C "$config" --disk "$disk_name" --query "mkdir hello; cd hello; mkdir world; cd world; mkdir Clickhouse"
+    clickhouse-disks -C "$config" --disk "$disk_name" --query "mkdir hello;"
+    clickhouse-disks -C "$config" --disk "$disk_name" --query "cd hello; mkdir world;"
+    clickhouse-disks -C "$config" --disk "$disk_name" --query "cd hello/world; mkdir Clickhouse"
     clickhouse-disks -C "$config" --disk "$disk_name" --query "ls --recursive"
     clickhouse-disks -C "$config" --disk "$disk_name" --query "cd hello; current_disk_with_path; cd world; current_disk_with_path; ls; ls --recursive"
 
