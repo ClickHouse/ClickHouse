@@ -71,6 +71,7 @@ CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
 LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "tests/integration/compose/")
 DEFAULT_ENV_NAME = ".env"
 
+
 def find_default_config_path():
     path = os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", None)
     if path is not None:
@@ -129,6 +130,7 @@ try:
     os.remove(NET_LOCK_PATH)
 except Exception:
     pass
+
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
@@ -315,6 +317,7 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p.communicate()
     return p.returncode == 0
 
+
 def check_mysql_dotnet_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
         docker_exec(postgresql_java_client_id, "dotnet", "--version"),
@@ -477,6 +480,7 @@ def find_binary(name):
         return bin_path
 
     raise RuntimeError(f"{name} was not found in PATH")
+
 
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
@@ -1836,7 +1840,6 @@ class ClickHouseCluster:
         with_iceberg_catalog=False,
         with_glue_catalog=False,
         with_hms_catalog=False,
-
         with_ytsaurus=False,
         handle_prometheus_remote_write=None,
         handle_prometheus_remote_read=None,
@@ -3913,9 +3916,16 @@ services:
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
+            {lakehouses_path}
         entrypoint: /integration-tests-entrypoint.sh {entrypoint_cmd}
-        # increase it to allow jeprof to dump the profile report
-        stop_grace_period: 5m
+        # Increase it to allow jeprof to dump the profile report and gdb collect stacktraces
+        #
+        # NOTE: it has been proven that 5m is not enough slightly, but anyway
+        # this should not be a problem, since in
+        # integration-tests-entrypoint.sh we have "timeout" of 1 minute, and
+        # later we will attach with gdb to collect stacktraces, and once it
+        # will be done it will exit.
+        stop_grace_period: 10m
         tmpfs: {tmpfs}
         {mem_limit}
         cap_add:
@@ -4117,7 +4127,11 @@ class ClickHouseInstance:
         self.clickhouse_start_command_in_daemon = "{} --daemon -- {}".format(
             clickhouse_start_command_with_conf, clickhouse_start_extra_args
         )
-        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
+        # NOTE: as a child command we have only clickhouse, so it is OK to assume so
+        # and there is no other way to kill clickhouse properly (easily), since
+        # clickhosue is spawned with --daemon, and it is not a child neither in
+        # the same session.
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail; pkill clickhouse' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
             self.clickhouse_start_command_in_daemon
         )
 
@@ -4144,6 +4158,9 @@ class ClickHouseInstance:
         else:
             self.keytab_path = ""
             self.krb5_conf = ""
+
+        # Use a common path for data lakes on the filesystem
+        self.lakehouses_path = "- /lakehouses:/lakehouses" if with_dolor else ""
 
         self.docker_client = None
         self.ip_address = None
@@ -4489,11 +4506,12 @@ class ClickHouseInstance:
         return (None, str(code) + " " + http.client.responses[code] + ": " + r.text)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
-    def http_request(self, url, method="GET", params=None, data=None, headers=None):
-        logging.debug(f"Sending HTTP request {url} to {self.name}")
-        url = "http://" + self.ip_address + ":8123/" + url
+    # @param url - URI without leading slash
+    def http_request(self, url, method="GET", params=None, data=None, headers=None, *args, **kwargs):
+        logging.debug(f"Sending HTTP request '{url}' to {self.name}")
+        url = f"http://{self.ip_address}:8123/{url}"
         return requests.request(
-            method=method, url=url, params=params, data=data, headers=headers
+            method=method, url=url, params=params, data=data, headers=headers, *args, **kwargs
         )
 
     def stop_clickhouse(self, stop_wait_sec=30, kill=False):
@@ -5282,7 +5300,7 @@ class ClickHouseInstance:
         # async replication is only supported in version 23.9+
         # for tags that don't specify a version we assume it has a version of ClickHouse
         # that supports async replication if a test for it is present
-        if (
+        if not self.with_dolor and (
             version == None
             or version["major"] > 23
             or (version["major"] == 23 and version["minor"] >= 9)
@@ -5507,6 +5525,7 @@ class ClickHouseInstance:
                     odbc_ini_path=odbc_ini_path,
                     keytab_path=self.keytab_path,
                     krb5_conf=self.krb5_conf,
+                    lakehouses_path=self.lakehouses_path,
                     entrypoint_cmd=entrypoint_cmd,
                     networks=networks,
                     app_net=app_net,

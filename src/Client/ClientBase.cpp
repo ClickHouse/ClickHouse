@@ -126,7 +126,7 @@ namespace Setting
     extern const SettingsBool apply_settings_from_server;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
-    extern const SettingsFloatAuto evaluation_time;
+    extern const SettingsFloatAuto promql_evaluation_time;
 }
 
 namespace ErrorCodes
@@ -388,7 +388,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     else if (dialect == Dialect::prql)
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     else if (dialect == Dialect::promql)
-        parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::evaluation_time]});
+        parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
     else
         parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
