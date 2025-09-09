@@ -839,6 +839,31 @@ const char * ColumnVariant::skipSerializedInArena(const char * pos) const
     return variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(pos);
 }
 
+char * ColumnVariant::serializeValueIntoMemory(size_t n, char * memory) const
+{
+    Discriminator global_discr = globalDiscriminatorAt(n);
+    memcpy(memory, &global_discr, sizeof(global_discr));
+    memory += sizeof(global_discr);
+    if (global_discr == NULL_DISCRIMINATOR)
+        return memory;
+
+    return variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoMemory(offsetAt(n), memory);
+}
+
+std::optional<size_t> ColumnVariant::getSerializedValueSize(size_t n) const
+{
+    size_t res = sizeof(Discriminator);
+    Discriminator global_discr = globalDiscriminatorAt(n);
+    if (global_discr == NULL_DISCRIMINATOR)
+        return res;
+
+    auto variant_size = variants[localDiscriminatorByGlobal(global_discr)]->getSerializedValueSize(offsetAt(n));
+    if (!variant_size)
+        return std::nullopt;
+
+    return res + *variant_size;
+}
+
 void ColumnVariant::updateHashWithValue(size_t n, SipHash & hash) const
 {
     Discriminator global_discr = globalDiscriminatorAt(n);
