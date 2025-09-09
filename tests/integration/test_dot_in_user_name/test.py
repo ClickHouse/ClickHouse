@@ -24,7 +24,7 @@ def test_user_with_dot_in_name():
     assert node.query("SELECT count()>0 FROM system.users where name = 'user.name'") == "1\n"
     assert node.query("SELECT count()>0 FROM system.users where name = 'user\\.name'") == "0\n"
 
-    # Creating user via query works as previously
+    node.query("DROP USER IF EXISTS 'foo.bar'")
     node.query("CREATE USER 'foo.bar'")
     assert node.query("SELECT count()>0 FROM system.users where name = 'foo.bar'") == "1\n"
     assert node.query("SELECT count()>0 FROM system.users where name = 'foo\\.bar'") == "0\n"
@@ -32,3 +32,4 @@ def test_user_with_dot_in_name():
     node.query("ALTER USER 'foo.bar' RENAME TO 'foo\\.bar'")
     assert node.query("SELECT count()>0 FROM system.users where name = 'foo.bar'") == "0\n"
     assert node.query("SELECT count()>0 FROM system.users where name = 'foo\\.bar'") == "1\n"
+    node.query("DROP USER 'foo\\.bar'")
