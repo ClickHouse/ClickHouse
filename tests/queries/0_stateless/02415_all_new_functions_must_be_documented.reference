@@ -58,6 +58,7 @@ dateTime64ToSnowflake
 dateTimeToSnowflake
 decodeURLComponent
 decodeURLFormComponent
+dotProduct
 encodeURLComponent
 encodeURLFormComponent
 evalMLMethod

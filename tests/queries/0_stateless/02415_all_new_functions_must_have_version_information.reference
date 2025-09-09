@@ -57,6 +57,7 @@ catboostEvaluate
 countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
+currentQueryID
 cutFragment
 cutIPv6
 cutQueryString
