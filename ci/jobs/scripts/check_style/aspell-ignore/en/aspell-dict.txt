@@ -1175,6 +1175,7 @@ GTID
 gunzip
 gzip
 gzipped
+hackernews
 hadoop
 halfday
 halfMD
@@ -2025,6 +2026,7 @@ OKLCH
 OLAP
 OLTP
 omclickhouse
+oneof
 onstraints
 ontime
 OnTime
@@ -2995,6 +2997,7 @@ TimescaleDB's
 timeseries
 timeSeries
 TimeSeries
+timeSeriesChangesToGrid
 timeSeriesData
 timeSeriesDeltaToGrid
 timeSeriesDerivToGrid
@@ -3009,6 +3012,7 @@ timeSeriesPredictLinearToGrid
 timeSeriesRange
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
+timeSeriesResetsToGrid
 timeSeriesSelector
 timeSeriesTags
 timeSlot

@@ -71,7 +71,7 @@ UnlinkFileOperation::UnlinkFileOperation(const std::string & path_, IDisk & disk
 
 void UnlinkFileOperation::execute(std::unique_lock<SharedMutex> &)
 {
-    auto buf = disk.readFile(path, ReadSettings{}, std::nullopt, disk.getFileSize(path));
+    auto buf = disk.readFile(path, ReadSettings{}, std::nullopt);
     readStringUntilEOF(prev_data, *buf);
     disk.removeFile(path);
 }

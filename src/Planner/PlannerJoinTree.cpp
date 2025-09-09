@@ -1575,9 +1575,11 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     trySetStorageInTableJoin(right_table_expression, table_join);
     auto prepared_join_storage = tryGetStorageInTableJoin(right_table_expression, planner_context);
     auto hash_table_stat_cache_key = preCalculateCacheKey(right_table_expression, select_query_info);
-    const auto cache_key_for_parallel_hash = calculateCacheKey(table_join, hash_table_stat_cache_key);
+    JoinAlgorithmParams params(*planner_context->getQueryContext());
+    params.hash_table_key_hash = calculateCacheKey(table_join, hash_table_stat_cache_key);
+
     auto join_algorithm = chooseJoinAlgorithm(
-        table_join, prepared_join_storage, left_header, right_header, JoinAlgorithmSettings(*planner_context->getQueryContext()), cache_key_for_parallel_hash, /*rhs_size_estimation=*/{});
+        table_join, prepared_join_storage, left_header, right_header, params);
     auto result_plan = QueryPlan();
 
     bool is_filled_join = join_algorithm->isFilled();
@@ -2166,13 +2168,7 @@ JoinTreeQueryPlan joinPlansWithStep(
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_join_tree_query_plan.query_plan)));
 
     QueryPlan result_plan;
-    auto inputs_count = join_step->getInputHeaders().size();
-    if (inputs_count == 2)
-        result_plan.unitePlans(std::move(join_step), {std::move(plans)});
-    else if (inputs_count == 1)
-        result_plan = std::move(*plans[0]);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "JOIN step expected to have 1 or 2 inputs. Actual {}", inputs_count);
+    result_plan.unitePlans(std::move(join_step), {std::move(plans)});
 
     /// Collect all required row_policies and actions sets from left and right join tree query plans
 
@@ -2225,13 +2221,21 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         join_node,
         planner_context);
 
-    join_step_logical->setPreparedJoinStorage(
-        tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context));
+    PreparedJoinStorage prepared_join;
+    bool allow_storage_join = right_join_tree_query_plan.used_row_policies.empty()
+        && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
+        && right_join_tree_query_plan.useful_sets.empty();
+    if (allow_storage_join)
+        prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context);
+    if (prepared_join)
+    {
+        bool use_nulls = settings[Setting::join_use_nulls] && isLeftOrFull(join_node.getKind());
+        auto join_lookup_step = std::make_unique<JoinStepLogicalLookup>(std::move(right_join_tree_query_plan.query_plan), std::move(prepared_join), use_nulls);
+        right_join_tree_query_plan.query_plan = {};
+        right_join_tree_query_plan.query_plan.addStep(std::move(join_lookup_step));
+    }
 
-    const auto & join_expression_actions = join_step_logical->getExpressionActions();
-    appendSetsFromActionsDAG(*join_expression_actions.left_pre_join_actions, left_join_tree_query_plan.useful_sets);
-    appendSetsFromActionsDAG(*join_expression_actions.post_join_actions, left_join_tree_query_plan.useful_sets);
-    appendSetsFromActionsDAG(*join_expression_actions.right_pre_join_actions, right_join_tree_query_plan.useful_sets);
+    appendSetsFromActionsDAG(join_step_logical->getActionsDAG(), left_join_tree_query_plan.useful_sets);
     return joinPlansWithStep(
         std::move(join_step_logical),
         std::move(left_join_tree_query_plan),
