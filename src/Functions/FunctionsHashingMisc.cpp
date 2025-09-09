@@ -75,7 +75,7 @@ Like [`sipHash64`](#sipHash64) but additionally takes an explicit key argument i
     factory.registerFunction<FunctionSipHash64Keyed>(sipHash64Keyed_documentation);
 
     FunctionDocumentation::Description sipHash128_description = R"(
-Like [`sipHash64`](#siphash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
+Like [`sipHash64`](#sipHash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
 
 :::tip use sipHash128Reference for new projects
 This 128-bit variant differs from the reference implementation and is weaker.
