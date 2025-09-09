@@ -186,7 +186,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & e
 
 
         auto hyperrectangle = it->second.hyperrectangle;
-        if (hyperrectangle.has_value() && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
+        if (hyperrectangle.has_value() && it->second.nulls_count.has_value() && *it->second.nulls_count == 0 && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
         {
             return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
         }

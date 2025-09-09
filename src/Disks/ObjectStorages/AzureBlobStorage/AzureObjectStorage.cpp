@@ -212,7 +212,6 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>,
     std::optional<size_t>) const
 {
     auto settings_ptr = settings.get();

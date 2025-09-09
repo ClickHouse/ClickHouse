@@ -128,6 +128,29 @@ void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & 
             }
             break;
         }
+        case StorageType::Azure:
+        {
+            auto callback = [table_id] (std::ostream & os)
+            {
+                Poco::JSON::Object obj;
+                obj.set("table_id", table_id);
+                obj.set("operation", "READ");
+                obj.stringify(os);
+            };
+
+            auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
+            const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+            if (hasValueAndItsNotNone("azure_user_delegation_sas", object))
+            {
+                const Poco::JSON::Object::Ptr & creds_object = object->getObject("azure_user_delegation_sas");
+                std::string sas_token = creds_object->get("sas_token").extract<String>();
+
+                auto creds = std::make_shared<AzureCredentials>(sas_token);
+                metadata.setStorageCredentials(creds);
+            }
+            break;
+        }
         default:
             break;
     }
