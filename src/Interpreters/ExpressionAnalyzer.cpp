@@ -2339,7 +2339,7 @@ void ExpressionAnalysisResult::checkActions() const
                     throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "PREWHERE cannot contain ARRAY JOIN action");
         };
 
-        check_actions(prewhere_info->prewhere_actions.value());
+        check_actions(prewhere_info->prewhere_actions);
     }
 }
 

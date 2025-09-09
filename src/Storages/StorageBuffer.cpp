@@ -364,13 +364,12 @@ void StorageBuffer::read(
                         src_table_query_info.prewhere_info->row_level_filter->removeUnusedActions();
                     }
 
-                    if (src_table_query_info.prewhere_info->prewhere_actions)
                     {
                         src_table_query_info.prewhere_info->prewhere_actions = ActionsDAG::merge(
                             actions_dag.clone(),
-                            std::move(*src_table_query_info.prewhere_info->prewhere_actions));
+                            std::move(src_table_query_info.prewhere_info->prewhere_actions));
 
-                        src_table_query_info.prewhere_info->prewhere_actions->removeUnusedActions();
+                        src_table_query_info.prewhere_info->prewhere_actions.removeUnusedActions();
                     }
                 }
 
@@ -489,18 +488,15 @@ void StorageBuffer::read(
                 });
             }
 
-            if (query_info.prewhere_info->prewhere_actions)
+            auto actions = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone(), actions_settings);
+            pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
             {
-                auto actions = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions->clone(), actions_settings);
-                pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
-                {
-                    return std::make_shared<FilterTransform>(
-                            header,
-                            actions,
-                            query_info.prewhere_info->prewhere_column_name,
-                            query_info.prewhere_info->remove_prewhere_column);
-                });
-            }
+                return std::make_shared<FilterTransform>(
+                        header,
+                        actions,
+                        query_info.prewhere_info->prewhere_column_name,
+                        query_info.prewhere_info->remove_prewhere_column);
+            });
         }
 
         for (const auto & processor : pipe_from_buffers.getProcessors())

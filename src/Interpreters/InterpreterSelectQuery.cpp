@@ -1074,10 +1074,9 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     ActionDAGNodes added_filter_nodes = MergeTreeData::getFiltersForPrimaryKeyAnalysis(*this);
     if (query_info_copy.prewhere_info)
     {
-        if (query_info_copy.prewhere_info->prewhere_actions)
         {
             const auto & node
-                = query_info_copy.prewhere_info->prewhere_actions->findInOutputs(query_info_copy.prewhere_info->prewhere_column_name);
+                = query_info_copy.prewhere_info->prewhere_actions.findInOutputs(query_info_copy.prewhere_info->prewhere_column_name);
             added_filter_nodes.nodes.push_back(&node);
         }
 
@@ -1195,9 +1194,9 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     {
         auto header = *source_header;
 
-        if (analysis_result.prewhere_info && analysis_result.prewhere_info->prewhere_actions)
+        if (analysis_result.prewhere_info)
         {
-            header = analysis_result.prewhere_info->prewhere_actions->updateHeader(header);
+            header = analysis_result.prewhere_info->prewhere_actions.updateHeader(header);
             if (analysis_result.prewhere_info->remove_prewhere_column)
                 header.erase(analysis_result.prewhere_info->prewhere_column_name);
         }
@@ -1658,17 +1657,14 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 query_plan.addStep(std::move(row_level_filter_step));
             }
 
-            if (expressions.prewhere_info->prewhere_actions)
-            {
-                auto prewhere_step = std::make_unique<FilterStep>(
-                    query_plan.getCurrentHeader(),
-                    expressions.prewhere_info->prewhere_actions->clone(),
-                    expressions.prewhere_info->prewhere_column_name,
-                    expressions.prewhere_info->remove_prewhere_column);
+            auto prewhere_step = std::make_unique<FilterStep>(
+                query_plan.getCurrentHeader(),
+                expressions.prewhere_info->prewhere_actions.clone(),
+                expressions.prewhere_info->prewhere_column_name,
+                expressions.prewhere_info->remove_prewhere_column);
 
-                prewhere_step->setStepDescription("PREWHERE");
-                query_plan.addStep(std::move(prewhere_step));
-            }
+            prewhere_step->setStepDescription("PREWHERE");
+            query_plan.addStep(std::move(prewhere_step));
         }
     }
     else
@@ -2223,16 +2219,13 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
             });
         }
 
-        if (prewhere_info.prewhere_actions)
+        auto filter_actions = std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions.clone());
+        pipe.addSimpleTransform([&](const SharedHeader & header)
         {
-            auto filter_actions = std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions->clone());
-            pipe.addSimpleTransform([&](const SharedHeader & header)
-            {
-                return std::make_shared<FilterTransform>(
-                    header, filter_actions,
-                    prewhere_info.prewhere_column_name, prewhere_info.remove_prewhere_column);
-            });
-        }
+            return std::make_shared<FilterTransform>(
+                header, filter_actions,
+                prewhere_info.prewhere_column_name, prewhere_info.remove_prewhere_column);
+        });
     }
 
     auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
@@ -2317,10 +2310,10 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     {
         NameSet columns;
 
-        if (prewhere_info && prewhere_info->prewhere_actions)
+        if (prewhere_info)
         {
             /// Get some columns directly from PREWHERE expression actions
-            auto prewhere_required_columns = prewhere_info->prewhere_actions->getRequiredColumns().getNames();
+            auto prewhere_required_columns = prewhere_info->prewhere_actions.getRequiredColumns().getNames();
             columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
 
             if (prewhere_info->row_level_filter)
@@ -2389,10 +2382,10 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         NameSet required_columns_after_prewhere_set;
 
         /// Collect required columns from prewhere expression actions.
-        if (prewhere_info && prewhere_info->prewhere_actions)
+        if (prewhere_info)
         {
             NameSet columns_to_remove(columns_to_remove_after_prewhere.begin(), columns_to_remove_after_prewhere.end());
-            Block prewhere_actions_result = prewhere_info->prewhere_actions->getResultColumns();
+            Block prewhere_actions_result = prewhere_info->prewhere_actions.getResultColumns();
 
             /// Populate required columns with the columns, added by PREWHERE actions and not removed afterwards.
             /// XXX: looks hacky that we already know which columns after PREWHERE we won't need for sure.
@@ -2427,11 +2420,11 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         /// Remove columns which will be added by prewhere.
         std::erase_if(required_columns, [&](const String & name) { return required_columns_after_prewhere_set.contains(name); });
 
-        if (prewhere_info && prewhere_info->prewhere_actions)
+        if (prewhere_info)
         {
             /// Don't remove columns which are needed to be aliased.
             for (const auto & name : required_columns)
-                prewhere_info->prewhere_actions->tryRestoreColumn(name);
+                prewhere_info->prewhere_actions.tryRestoreColumn(name);
 
             /// Add physical columns required by prewhere actions.
             for (const auto & column : required_columns_from_prewhere)
@@ -2488,9 +2481,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
     if (analysis_result.hasPrewhere())
     {
         auto & prewhere_info = analysis_result.prewhere_info;
-
-        if (prewhere_info->prewhere_actions)
-            filter_nodes.push_back(&prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name));
+        filter_nodes.push_back(&prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name));
 
         if (prewhere_info->row_level_filter)
             filter_nodes.push_back(&prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name));

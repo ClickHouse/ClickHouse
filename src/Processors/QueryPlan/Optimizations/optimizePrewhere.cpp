@@ -48,8 +48,9 @@ ActionsDAG splitAndFillPrewhereInfo(
     const std::list<const ActionsDAG::Node *> & prewhere_nodes_list)
 {
     prewhere_info->need_filter = true;
+    prewhere_info->remove_prewhere_column = remove_prewhere_column;
 
-    if (remove_prewhere_column)
+    if (prewhere_info->remove_prewhere_column)
     {
         removeFromOutput(filter_expression, filter_column_name);
         auto & outputs = filter_expression.getOutputs();
@@ -93,55 +94,22 @@ ActionsDAG splitAndFillPrewhereInfo(
     for (const auto * condition : prewhere_nodes_list)
         conditions.push_back(split_result.split_nodes_mapping.at(condition));
 
-    /// Is it possible that prewhere_info->prewhere_actions was not empty?
-    /// Not sure, but just in case let's merge it
-    if (prewhere_info->prewhere_actions)
-    {
-        split_result.first.mergeInplace(std::move(*prewhere_info->prewhere_actions));
-
-        const auto * existing_prewhere_node = &split_result.first.findInOutputs(prewhere_info->prewhere_column_name);
-        conditions.push_back(existing_prewhere_node);
-
-        /// Should this be done after or before the mergeInPlace?
-        if (prewhere_info->remove_prewhere_column)
-        {
-            removeFromOutput(split_result.first, prewhere_info->prewhere_column_name);
-            // split_result.first.removeUnusedActions();
-        }
-    }
-
-        {
-        std::unordered_set<const ActionsDAG::Node *> first_outputs(
-            split_result.first.getOutputs().begin(), split_result.first.getOutputs().end());
-        for (const auto * input : split_result.first.getInputs())
-        {
-            if (!first_outputs.contains(input))
-            {
-                split_result.first.getOutputs().push_back(input);
-                /// Add column to second actions as input.
-                /// Do not add it to result, so it would be removed.
-                split_result.second.addInput(input->result_name, input->result_type);
-            }
-        }
-    }
-
     prewhere_info->prewhere_actions = std::move(split_result.first);
 
     if (conditions.size() == 1)
     {
-        prewhere_info->remove_prewhere_column = remove_prewhere_column;
         prewhere_info->prewhere_column_name = conditions.front()->result_name;
         if (prewhere_info->remove_prewhere_column)
-            prewhere_info->prewhere_actions->getOutputs().push_back(conditions.front());
+            prewhere_info->prewhere_actions.getOutputs().push_back(conditions.front());
     }
     else
     {
         prewhere_info->remove_prewhere_column = true;
 
         FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-        const auto * node = &prewhere_info->prewhere_actions->addFunction(func_builder_and, std::move(conditions), {});
+        const auto * node = &prewhere_info->prewhere_actions.addFunction(func_builder_and, std::move(conditions), {});
         prewhere_info->prewhere_column_name = node->result_name;
-        prewhere_info->prewhere_actions->getOutputs().push_back(node);
+        prewhere_info->prewhere_actions.getOutputs().push_back(node);
     }
 
     return std::move(split_result.second);
@@ -170,6 +138,10 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     const auto & storage_snapshot = source_step_with_filter->getStorageSnapshot();
     const auto & storage = storage_snapshot->storage;
     if (!storage.canMoveConditionsToPrewhere())
+        return;
+
+    const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
+    if (storage_prewhere_info)
         return;
 
     /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.
@@ -207,10 +179,8 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 
     Names queried_columns = source_step_with_filter->requiredSourceColumns();
 
-    const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
-
     const auto & source_filter_actions_dag = source_step_with_filter->getFilterActionsDAG();
-    MergeTreeWhereOptimizer where_optimizer{ 
+    MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
         storage_metadata,
         storage.getConditionSelectivityEstimatorByPredicate(storage_snapshot, source_filter_actions_dag ? &*source_filter_actions_dag : nullptr, context),

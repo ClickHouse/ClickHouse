@@ -39,8 +39,7 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
 ActionsDAG makeSourceDAG(ReadFromMergeTree & source)
 {
     if (const auto & prewhere_info = source.getPrewhereInfo())
-        if (prewhere_info->prewhere_actions)
-            return prewhere_info->prewhere_actions->clone();
+        return prewhere_info->prewhere_actions.clone();
 
     return ActionsDAG(source.getOutputHeader()->getColumnsWithTypeAndName());
 }

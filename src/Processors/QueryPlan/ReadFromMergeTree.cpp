@@ -113,8 +113,7 @@ bool restorePrewhereInputs(PrewhereInfo & info, const NameSet & inputs)
     if (info.row_level_filter)
         added = added || restoreDAGInputs(*info.row_level_filter, inputs);
 
-    if (info.prewhere_actions)
-        added = added || restoreDAGInputs(*info.prewhere_actions, inputs);
+    added = added || restoreDAGInputs(info.prewhere_actions, inputs);
 
     return added;
 }
@@ -225,9 +224,8 @@ static SortDescription getSortDescriptionForOutputHeader(
     Block original_header = output_header->cloneEmpty();
     if (prewhere_info)
     {
-        if (prewhere_info->prewhere_actions)
         {
-            FindOriginalNodeForOutputName original_column_finder(*prewhere_info->prewhere_actions);
+            FindOriginalNodeForOutputName original_column_finder(prewhere_info->prewhere_actions);
             for (auto & column : original_header)
             {
                 const auto * original_node = original_column_finder.find(column.name);
@@ -2730,7 +2728,6 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
         prefix.push_back(format_settings.indent_char);
         prefix.push_back(format_settings.indent_char);
 
-        if (prewhere_info->prewhere_actions)
         {
             format_settings.out << prefix << "Prewhere filter" << '\n';
             format_settings.out << prefix << "Prewhere filter column: " << prewhere_info->prewhere_column_name;
@@ -2738,7 +2735,7 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
                format_settings.out << " (removed)";
             format_settings.out << '\n';
 
-            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions->clone());
+            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions.clone());
             expression->describeActions(format_settings.out, prefix);
         }
 
@@ -2774,12 +2771,11 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
         std::unique_ptr<JSONBuilder::JSONMap> prewhere_info_map = std::make_unique<JSONBuilder::JSONMap>();
         prewhere_info_map->add("Need filter", prewhere_info->need_filter);
 
-        if (prewhere_info->prewhere_actions)
         {
             std::unique_ptr<JSONBuilder::JSONMap> prewhere_filter_map = std::make_unique<JSONBuilder::JSONMap>();
             prewhere_filter_map->add("Prewhere filter column", prewhere_info->prewhere_column_name);
             prewhere_filter_map->add("Prewhere filter remove filter column", prewhere_info->remove_prewhere_column);
-            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions->clone());
+            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions.clone());
             prewhere_filter_map->add("Prewhere filter expression", expression->toTree());
 
             prewhere_info_map->add("Prewhere filter", std::move(prewhere_filter_map));

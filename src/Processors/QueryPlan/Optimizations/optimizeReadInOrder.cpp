@@ -179,13 +179,13 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
-        if (const auto prewhere_info = reading->getPrewhereInfo(); prewhere_info && prewhere_info->prewhere_actions)
+        if (const auto prewhere_info = reading->getPrewhereInfo())
         {
             /// Should ignore limit if there is filtering.
             limit = 0;
 
             //std::cerr << "====== Adding prewhere " << std::endl;
-            appendExpression(dag, prewhere_info->prewhere_actions.value());
+            appendExpression(dag, prewhere_info->prewhere_actions);
             if (const auto * filter_expression = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
                 appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
 

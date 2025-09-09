@@ -46,7 +46,7 @@ struct PrewhereInfo
     /// This actions are separate because prewhere condition should not be executed over filtered rows.
     std::optional<ActionsDAG> row_level_filter;
     /// Actions which are executed on block in order to get filter column for prewhere step.
-    std::optional<ActionsDAG> prewhere_actions;
+    ActionsDAG prewhere_actions;
     String row_level_column_name;
     String prewhere_column_name;
     bool remove_prewhere_column = false;

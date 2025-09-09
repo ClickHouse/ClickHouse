@@ -415,9 +415,8 @@ std::string PrewhereInfo::dump() const
         ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
     }
 
-    if (prewhere_actions)
     {
-        ss << "prewhere_actions " << prewhere_actions->dumpDAG() << "\n";
+        ss << "prewhere_actions " << prewhere_actions.dumpDAG() << "\n";
     }
 
     ss << "remove_prewhere_column " << remove_prewhere_column

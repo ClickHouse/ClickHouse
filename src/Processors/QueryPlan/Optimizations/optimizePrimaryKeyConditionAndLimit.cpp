@@ -18,8 +18,7 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
     const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
     if (storage_prewhere_info)
     {
-        if (storage_prewhere_info->prewhere_actions)
-            source_step_with_filter->addFilter(storage_prewhere_info->prewhere_actions->clone(), storage_prewhere_info->prewhere_column_name);
+        source_step_with_filter->addFilter(storage_prewhere_info->prewhere_actions.clone(), storage_prewhere_info->prewhere_column_name);
         if (storage_prewhere_info->row_level_filter)
             source_step_with_filter->addFilter(storage_prewhere_info->row_level_filter->clone(), storage_prewhere_info->row_level_column_name);
     }

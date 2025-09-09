@@ -136,7 +136,7 @@ static void collectLazilyReadColumnNames(
         if (prewhere_info->row_level_filter)
             removeUsedColumnNames(*prewhere_info->row_level_filter, lazily_read_column_name_set, alias_index, prewhere_info->row_level_column_name);
 
-        removeUsedColumnNames(prewhere_info->prewhere_actions.value(), lazily_read_column_name_set, alias_index, prewhere_info->prewhere_column_name);
+        removeUsedColumnNames(prewhere_info->prewhere_actions, lazily_read_column_name_set, alias_index, prewhere_info->prewhere_column_name);
     }
 
     for (auto step_it = steps.rbegin(); step_it != steps.rend(); ++step_it)

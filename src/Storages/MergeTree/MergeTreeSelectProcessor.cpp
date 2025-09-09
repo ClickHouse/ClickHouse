@@ -126,7 +126,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     if (prewhere_info || has_prewhere_actions_steps)
         LOG_TEST(log, "PREWHERE conditions: {}, Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
             has_prewhere_actions_steps ? prewhere_actions.dumpConditions() : std::string("<nullptr>"),
-            prewhere_info && prewhere_info->prewhere_actions ? prewhere_info->prewhere_actions->dumpDAG() : std::string("<nullptr>"),
+            prewhere_info ? prewhere_info->prewhere_actions.dumpDAG() : std::string("<nullptr>"),
             has_prewhere_actions_steps ? prewhere_actions.dump() : std::string("<nullptr>"));
 }
 
@@ -166,13 +166,13 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
             prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(row_level_filter_step)));
         }
 
-        if (prewhere_info->prewhere_actions && (!enable_multiple_prewhere_read_steps ||
-            !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution)))
+        if (!enable_multiple_prewhere_read_steps ||
+            !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution))
         {
             PrewhereExprStep prewhere_step
             {
                 .type = PrewhereExprStep::Filter,
-                .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions->clone(), actions_settings),
+                .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions.clone(), actions_settings),
                 .filter_column_name = prewhere_info->prewhere_column_name,
                 .remove_filter_column = prewhere_info->remove_prewhere_column,
                 .need_filter = prewhere_info->need_filter,
@@ -196,9 +196,9 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             if (!task || algorithm->needNewTask(*task))
             {
                 /// Update the query condition cache for filters in PREWHERE stage
-                if (reader_settings.use_query_condition_cache && task && prewhere_info && prewhere_info->prewhere_actions)
+                if (reader_settings.use_query_condition_cache && task && prewhere_info)
                 {
-                    for (const auto * output : prewhere_info->prewhere_actions->getOutputs())
+                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
                     {
                         if (output->result_name == prewhere_info->prewhere_column_name)
                         {
@@ -216,7 +216,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                                 part_name,
                                 output->getHash(),
                                 reader_settings.query_condition_cache_store_conditions_as_plaintext
-                                    ? prewhere_info->prewhere_actions->getNames()[0]
+                                    ? prewhere_info->prewhere_actions.getNames()[0]
                                     : "",
                                 task->getPrewhereUnmatchedMarks(),
                                 data_part->index_granularity->getMarksCount(),
