@@ -279,7 +279,7 @@ private:
 
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;
-    std::optional<Aws::S3::S3Error> updateURIForBucketForHead(const std::string & bucket) const;
+    std::optional<Aws::S3::S3Error> updateURIForBucketForHead(const std::string & bucket, const std::string & key) const;
 
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 

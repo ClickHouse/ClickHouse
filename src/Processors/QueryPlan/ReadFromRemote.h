@@ -46,6 +46,7 @@ public:
 
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder(const SortDescription & sort_description);
+    void setIsRemoteFunction(bool is_remote_function_ = true) { is_remote_function = is_remote_function_; }
 
     bool hasSerializedPlan() const;
 
@@ -63,6 +64,7 @@ private:
     UInt32 shard_count;
     const String cluster_name;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
+    bool is_remote_function = false;
 
     Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const Header & out_header);
 

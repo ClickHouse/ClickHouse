@@ -384,7 +384,7 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
     auto bucket_uri = getURIForBucket(bucket);
     if (!bucket_uri)
     {
-        if (auto maybe_error = updateURIForBucketForHead(bucket); maybe_error.has_value())
+        if (auto maybe_error = updateURIForBucketForHead(bucket, request.GetKey()); maybe_error.has_value())
             return *maybe_error;
 
         if (auto region = getRegionForBucket(bucket); !region.empty())
@@ -588,7 +588,6 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
 
     if (auto uri = getURIForBucket(bucket); uri.has_value())
         request.overrideURI(std::move(*uri));
-
 
     bool found_new_endpoint = false;
     // if we found correct endpoint after 301 responses, update the cache for future requests
@@ -869,12 +868,15 @@ std::optional<S3::URI> Client::getURIFromError(const Aws::S3::S3Error & error) c
 }
 
 // Do a list request because head requests don't have body in response
-std::optional<Aws::S3::S3Error> Client::updateURIForBucketForHead(const std::string & bucket) const
+// S3 Tables don't support ListObjects, so made dirty workaroung - changed on GetObject
+std::optional<Aws::S3::S3Error> Client::updateURIForBucketForHead(const std::string & bucket, const std::string & key) const
 {
-    ListObjectsV2Request req;
+    GetObjectRequest req;
     req.SetBucket(bucket);
-    req.SetMaxKeys(1);
-    auto result = ListObjectsV2(req);
+    req.SetKey(key);
+    req.SetRange("bytes=0-1");
+    auto result = GetObject(req);
+
     if (result.IsSuccess())
         return std::nullopt;
     return result.GetError();

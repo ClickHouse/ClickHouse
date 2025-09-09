@@ -158,10 +158,72 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     validateKey(key, uri);
 }
 
+bool URI::isAWSRegion(std::string_view region)
+{
+    /// List from https://docs.aws.amazon.com/general/latest/gr/s3.html
+    static const std::unordered_set<std::string_view> regions = {
+        "us-east-2",
+        "us-east-1",
+        "us-west-1",
+        "us-west-2",
+        "af-south-1",
+        "ap-east-1",
+        "ap-south-2",
+        "ap-southeast-3",
+        "ap-southeast-5",
+        "ap-southeast-4",
+        "ap-south-1",
+        "ap-northeast-3",
+        "ap-northeast-2",
+        "ap-southeast-1",
+        "ap-southeast-2",
+        "ap-east-2",
+        "ap-southeast-7",
+        "ap-northeast-1",
+        "ca-central-1",
+        "ca-west-1",
+        "eu-central-1",
+        "eu-west-1",
+        "eu-west-2",
+        "eu-south-1",
+        "eu-west-3",
+        "eu-south-2",
+        "eu-north-1",
+        "eu-central-2",
+        "il-central-1",
+        "mx-central-1",
+        "me-south-1",
+        "me-central-1",
+        "sa-east-1",
+        "us-gov-east-1",
+        "us-gov-west-1"
+    };
+
+    /// 's3-us-west-2' is a legacy region format for S3 storage, equals to 'us-west-2'
+    /// See https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#VirtualHostingBackwardsCompatibility
+    if (region.substr(0, 3) == "s3-")
+        region = region.substr(3);
+
+    return regions.contains(region);
+}
+
 void URI::addRegionToURI(const std::string &region)
 {
     if (auto pos = endpoint.find(".amazonaws.com"); pos != std::string::npos)
+    {
+        if (pos > 0)
+        { /// Check if region is already in endpoint to avoid add it second time
+            auto prev_pos = endpoint.find_last_of("/.", pos - 1);
+            if (prev_pos == std::string::npos)
+                prev_pos = 0;
+            else
+                ++prev_pos;
+            std::string_view endpoint_region = std::string_view(endpoint).substr(prev_pos, pos - prev_pos);
+            if (isAWSRegion(endpoint_region))
+                return;
+        }
         endpoint = endpoint.substr(0, pos) + "." + region + endpoint.substr(pos);
+    }
 }
 
 void URI::validateBucket(const String & bucket, const Poco::URI & uri)

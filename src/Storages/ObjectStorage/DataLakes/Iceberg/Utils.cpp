@@ -28,7 +28,11 @@ using namespace DB;
 // This function is used to get the file path inside the directory which corresponds to iceberg table from the full blob path which is written in manifest and metadata files.
 // For example, if the full blob path is s3://bucket/table_name/data/00000-1-1234567890.avro, the function will return table_name/data/00000-1-1234567890.avro
 // Common path should end with "<table_name>" or "<table_name>/".
-std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location)
+std::string getProperFilePathFromMetadataInfo(
+    std::string_view data_path,
+    std::string_view common_path,
+    std::string_view table_location,
+    std::string_view common_namespace)
 {
     auto trim_backward_slash = [](std::string_view str) -> std::string_view
     {
@@ -84,7 +88,20 @@ std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::s
     }
     else
     {
-        throw ::DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Expected to find '{}' in data path: '{}'", common_path, data_path);
+        /// Data files can have different path
+        pos = data_path.find("://");
+        if (pos == std::string::npos)
+            throw ::DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unexpected data path: '{}'", data_path);
+        pos = data_path.find('/', pos + 3);
+        if (pos == std::string::npos)
+            throw ::DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unexpected data path: '{}'", data_path);
+        if (data_path.substr(pos + 1).starts_with(common_namespace))
+        {
+            auto new_pos = data_path.find('/', pos + 1);
+            if (new_pos - pos == common_namespace.length() + 1) /// bucket in the path
+                pos = new_pos;
+        }
+        return std::string(data_path.substr(pos));
     }
 }
 
