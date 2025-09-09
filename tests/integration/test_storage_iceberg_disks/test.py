@@ -126,18 +126,23 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type):
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
-    instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type}_2 ENGINE=Iceberg('Parquet') SETTINGS datalake_disk_name = 'disk_{storage_type}'")
+    instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type}_2 ENGINE=Iceberg('', 'Parquet') SETTINGS datalake_disk_name = 'disk_{storage_type}'")
     assert instance.query(f"SELECT * FROM {TABLE_NAME}_{storage_type}_2") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
-    instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type}_3 ENGINE=Iceberg(format = Parquet) SETTINGS datalake_disk_name = 'disk_{storage_type}'")
+    instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type}_3 ENGINE=Iceberg(path = '', format = Parquet) SETTINGS datalake_disk_name = 'disk_{storage_type}'")
     assert instance.query(f"SELECT * FROM {TABLE_NAME}_{storage_type}_3") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
-    instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type}_4 ENGINE=Iceberg(format = Parquet, compression_method = 'auto') SETTINGS datalake_disk_name = 'disk_{storage_type}'")
+    instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type}_4 ENGINE=Iceberg(path = '', format = Parquet, compression_method = 'auto') SETTINGS datalake_disk_name = 'disk_{storage_type}'")
     assert instance.query(f"SELECT * FROM {TABLE_NAME}_{storage_type}_4") == instance.query(
+        "SELECT number, toString(number + 1) FROM numbers(100)"
+    )
+
+    instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type}_5 ENGINE=Iceberg(path = '{TABLE_NAME}', format = Parquet, compression_method = 'auto') SETTINGS datalake_disk_name = 'disk_{storage_type}_common'")
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}_{storage_type}_5") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 

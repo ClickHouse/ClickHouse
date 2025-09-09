@@ -309,12 +309,14 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
     s3_settings = std::make_unique<S3Settings>();
     *s3_settings = s3_object_storage.getS3Settings();
     setURL(s3_object_storage.getURI());
+    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context);
     if (auto object_storage_disk = std::static_pointer_cast<DiskObjectStorage>(disk); object_storage_disk)
     {
         String path = object_storage_disk->getObjectsKeyPrefix();
-        setPathForRead(path);
+        fs::path root = path;
+        fs::path suffix = parsing_result.path_suffix.value_or("");
+        setPathForRead(String(root / suffix));
     }
-    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context);
     if (parsing_result.format.has_value())
         format = *parsing_result.format;
     if (parsing_result.compression_method.has_value())

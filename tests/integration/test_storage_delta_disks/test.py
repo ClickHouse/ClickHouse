@@ -48,7 +48,7 @@ def get_spark():
 
     return builder.master("local").getOrCreate()
 
-def generate_cluster_def(local_path):
+def generate_cluster_def(local_path, common_path):
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
         "./_gen/named_collections.xml",
@@ -64,6 +64,10 @@ def generate_cluster_def(local_path):
                 <type>local</type>
                 <path>{local_path}</path>
             </disk_local>
+            <disk_local_common>
+                <type>local</type>
+                <path>{common_path}</path>
+            </disk_local_common>
             <disk_s3_0>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/test_single_log_file_0/</endpoint>
@@ -71,6 +75,13 @@ def generate_cluster_def(local_path):
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <no_sign_request>0</no_sign_request>
             </disk_s3_0>
+            <disk_s3_0_common>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <no_sign_request>0</no_sign_request>
+            </disk_s3_0_common>
             <disk_s3_1>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/test_single_log_file_1/</endpoint>
@@ -78,9 +89,16 @@ def generate_cluster_def(local_path):
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <no_sign_request>0</no_sign_request>
             </disk_s3_1>
+            <disk_s3_1_common>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <no_sign_request>0</no_sign_request>
+            </disk_s3_1_common>
         </disks>
     </storage_configuration>
-    <allowed_disks_for_table_engines>disk_local,disk_s3_0,disk_s3_1</allowed_disks_for_table_engines>
+    <allowed_disks_for_table_engines>disk_local,disk_s3_0,disk_s3_1,disk_s3_1_common,disk_s3_0_common,disk_local_common</allowed_disks_for_table_engines>
 </clickhouse>
 """
         )
@@ -95,7 +113,7 @@ def started_cluster():
             SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
         )
         table_path = os.path.join(user_files_path, "test_single_log_file")
-        conf_path = generate_cluster_def(table_path + "/")
+        conf_path = generate_cluster_def(table_path + "/", user_files_path + "/")
         cluster.add_instance(
             "node1",
             main_configs=[conf_path, "configs/cluster.xml"],
@@ -232,7 +250,8 @@ def create_delta_table(
     table_name,
     cluster,
     use_delta_kernel,
-    format="Parquet",
+    path_suffix,
+    disk_suffix,
     **kwargs,
 ):
     if storage_type == "s3":
@@ -240,8 +259,8 @@ def create_delta_table(
             f"""
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
-            ENGINE=DeltaLake()
-            SETTINGS datalake_disk_name = 'disk_s3_{use_delta_kernel}'
+            ENGINE=DeltaLake({path_suffix})
+            SETTINGS datalake_disk_name = 'disk_s3_{use_delta_kernel}{disk_suffix}'
             """
         )
 
@@ -250,8 +269,8 @@ def create_delta_table(
             f"""
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
-            ENGINE=DeltaLake()
-            SETTINGS datalake_disk_name = 'disk_azure'
+            ENGINE=DeltaLake({path_suffix})
+            SETTINGS datalake_disk_name = 'disk_azure{disk_suffix}'
             """
         )
     elif storage_type == "local":
@@ -259,8 +278,8 @@ def create_delta_table(
             f"""
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
-            ENGINE=DeltaLake()
-            SETTINGS datalake_disk_name = 'disk_local'
+            ENGINE=DeltaLake({path_suffix})
+            SETTINGS datalake_disk_name = 'disk_local{disk_suffix}'
             """
         )
     else:
@@ -323,7 +342,9 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
         storage_type,
         TABLE_NAME,
         started_cluster,
-        use_delta_kernel
+        use_delta_kernel,
+        "",
+        ""
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
@@ -339,6 +360,23 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     assert instance.query(f"SELECT * FROM deltaLake() SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
         inserted_data
     )
+
+    if use_delta_kernel == 1:
+        TABLE_NAME_COMMON = TABLE_NAME + "_common"
+        create_delta_table(
+            instance,
+            storage_type,
+            TABLE_NAME_COMMON,
+            started_cluster,
+            use_delta_kernel,
+            f"path = {TABLE_NAME}",
+            "_common"
+        )
+
+        assert int(instance.query(f"SELECT count() FROM {TABLE_NAME_COMMON}")) == 100
+        assert instance.query(f"SELECT * FROM {TABLE_NAME_COMMON}") == instance.query(
+            inserted_data
+        )
 
     if storage_type == "s3":
         assert instance.query(f"SELECT * FROM deltaLakeCluster('cluster_simple') SETTINGS datalake_disk_name = 'disk_s3_{use_delta_kernel}'") == instance.query(

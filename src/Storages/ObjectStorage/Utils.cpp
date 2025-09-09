@@ -179,7 +179,7 @@ std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & funct
 
 ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context)
 {
-    if (args.size() > 2 + with_structure)
+    if (args.size() > 3 + with_structure)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Storage requires {} arguments maximum.",
             2 + with_structure);
@@ -188,17 +188,21 @@ ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr con
 
     if (with_structure)
     {
-        if (args.size() > 2)
-            engine_args_to_idx = {{"format", 0}, {"structure", 1}, {"compression_method", 2}};
+        if (args.size() > 3)
+            engine_args_to_idx = {{"path", 0}, {"format", 1}, {"structure", 2}, {"compression_method", 3}};
+        else if (args.size() > 2)
+            engine_args_to_idx = {{"path", 0}, {"format", 1}, {"structure", 2}};
         else if (args.size() > 1)
-            engine_args_to_idx = {{"format", 0}, {"structure", 1}};
+            engine_args_to_idx = {{"path", 0}, {"structure", 1}};
         else if (!args.empty())
-            engine_args_to_idx = {{"format", 0}};
+            engine_args_to_idx = {{"path", 0}};
     }
+    else if (args.size() > 2)
+        engine_args_to_idx = {{"path", 0}, {"format", 1}, {"compression_method", 2}};
     else if (args.size() > 1)
-        engine_args_to_idx = {{"format", 0}, {"compression_method", 1}};
+        engine_args_to_idx = {{"path", 0}, {"format", 1}};
     else if (!args.empty())
-        engine_args_to_idx = {{"format", 0}};
+        engine_args_to_idx = {{"path", 0}};
 
     ASTs key_value_asts;
     if (auto * first_key_value_arg_it = getFirstKeyValueArgument(args);
@@ -210,6 +214,12 @@ ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr con
     auto key_value_args = parseKeyValueArguments(key_value_asts, context);
 
     ParseFromDiskResult result;
+    if (auto path_value = getFromPositionOrKeyValue<String>("path", args, engine_args_to_idx, key_value_args);
+        path_value.has_value())
+    {
+        result.path_suffix = path_value.value();
+    }
+
     if (auto format_value = getFromPositionOrKeyValue<String>("format", args, engine_args_to_idx, key_value_args);
         format_value.has_value())
     {

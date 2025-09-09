@@ -33,8 +33,11 @@ void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & coll
 void StorageLocalConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
 {
     auto disk = context->getDisk(disk_name);
-    setPathForRead(disk->getPath());
     ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context);
+
+    fs::path root = disk->getPath();
+    fs::path suffix = parsing_result.path_suffix.value_or("");
+    setPathForRead(String(root / suffix));
     if (parsing_result.format.has_value())
         format = *parsing_result.format;
     if (parsing_result.compression_method.has_value())
