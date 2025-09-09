@@ -51,10 +51,9 @@ public:
     bool supportsReadAt() override { return true; }
 
 private:
-    void initialize(size_t attempt);
+    void initialize();
 
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
-    Azure::Core::Context azure_context;
     ContainerClientPtr blob_container_client;
     BlobClientPtr blob_client;
 

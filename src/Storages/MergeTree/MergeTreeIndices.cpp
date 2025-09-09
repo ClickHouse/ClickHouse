@@ -136,6 +136,7 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
     registerCreator("hypothesis", hypothesisIndexCreator);
+
     registerValidator("hypothesis", hypothesisIndexValidator);
 
 #if USE_USEARCH
@@ -145,6 +146,22 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 
     registerCreator("text", ginIndexCreator);
     registerValidator("text", ginIndexValidator);
+
+    /// ------
+    /// Index type 'inverted' was renamed to 'full_text' in May 2024.
+    /// Index type 'full_text' was renamed to 'gin' in April 2025.
+    /// Index type 'gin' was renamed to 'text' in May 2025.
+    ///
+    /// To support loading tables with old indexes during a transition period, register these legacy indexes.
+    ///
+    /// TODO: remove this block one year after text indexes became GA.
+    registerCreator("full_text", ginIndexCreator);
+    registerValidator("full_text", ginIndexValidator);
+    registerCreator("inverted", ginIndexCreator);
+    registerValidator("inverted", ginIndexValidator);
+    registerCreator("gin", ginIndexCreator);
+    registerValidator("gin", ginIndexValidator);
+    /// ------
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

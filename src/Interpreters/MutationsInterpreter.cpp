@@ -47,13 +47,6 @@
 #include <Common/quoteString.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageDistributed.h>
-#include <Storages/StorageMerge.h>
-
-namespace ProfileEvents
-{
-    extern const Event MutationAffectedRowsUpperBound;
-}
 
 namespace DB
 {
@@ -191,19 +184,12 @@ IsStorageTouched isStorageTouchedByMutations(
         if (command.type == MutationCommand::APPLY_DELETED_MASK)
         {
             if (storage_from_part->hasLightweightDeletedMask())
-            {
-                /// The precise number of rows is unknown.
-                ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, source_part->rows_count);
                 return some_rows;
-            }
         }
         else
         {
             if (!command.predicate) /// The command touches all rows.
-            {
-                ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, source_part->rows_count);
                 return all_rows;
-            }
 
             if (command.partition)
             {
@@ -257,7 +243,6 @@ IsStorageTouched isStorageTouchedByMutations(
     while (executor.pull(tmp_block));
 
     auto count = (*block.getByName("count()").column)[0].safeGet<UInt64>();
-    ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, count);
 
     IsStorageTouched result;
     result.any_rows_affected = (count != 0);
@@ -509,7 +494,6 @@ static void validateUpdateColumns(
 
     const auto & storage_columns = storage_snapshot->metadata->getColumns();
     const auto & virtual_columns = *storage_snapshot->virtual_columns;
-    const auto & common_virtual_columns = IStorage::getCommonVirtuals();
 
     for (const auto & column_name : updated_columns)
     {
@@ -533,8 +517,7 @@ static void validateUpdateColumns(
             }
         }
 
-        auto ordinary_storage_column = storage_columns.tryGetColumn(GetColumnsOptions::Ordinary, column_name);
-        if (!ordinary_storage_column)
+        if (!storage_columns.tryGetColumn(GetColumnsOptions::Ordinary, column_name))
         {
             /// Allow to override value of lightweight delete filter virtual column
             if (column_name == RowExistsColumn::name)
@@ -542,23 +525,13 @@ static void validateUpdateColumns(
                 if (!source.supportsLightweightDelete())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
             }
-            else if (virtual_columns.tryGet(column_name) || common_virtual_columns.tryGet(column_name))
+            else if (virtual_columns.tryGet(column_name))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
             }
             else
             {
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", backQuote(column_name));
-            }
-        }
-        else
-        {
-            /// Check if we have a subcolumn of this column as a key column.
-            for (const auto & key_column : key_columns)
-            {
-                auto [key_column_name, key_subcolumn_name] = Nested::splitName(key_column);
-                if (key_column_name == column_name && ordinary_storage_column->type->hasSubcolumn(key_subcolumn_name))
-                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Cannot UPDATE column {} because its subcolumn {} is a key column", backQuote(column_name), backQuote(key_column));
             }
         }
     }
@@ -597,30 +570,6 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     }
 
     return res;
-}
-
-static bool extractRequiredNonTableColumnsFromStorage(
-    const Names & columns_names,
-    const StoragePtr & storage,
-    const StorageSnapshotPtr & storage_snapshot,
-    Names & extracted_column_names)
-{
-    if (std::dynamic_pointer_cast<StorageMerge>(storage))
-        return false;
-
-    if (std::dynamic_pointer_cast<StorageDistributed>(storage))
-        return false;
-
-    bool has_table_virtual_column = false;
-    for (const auto & column_name : columns_names)
-    {
-        if (column_name == "_table" && storage->isVirtualColumn(column_name, storage_snapshot->metadata))
-            has_table_virtual_column = true;
-        else
-            extracted_column_names.push_back(column_name);
-    }
-
-    return has_table_virtual_column;
 }
 
 void MutationsInterpreter::prepare(bool dry_run)
@@ -1422,25 +1371,7 @@ void MutationsInterpreter::Source::read(
         query_info.query = std::move(select);
 
         size_t max_block_size = context_->getSettingsRef()[Setting::max_block_size];
-        Names extracted_column_names;
-        const auto has_table_virtual_column
-            = extractRequiredNonTableColumnsFromStorage(required_columns, storage, storage_snapshot, extracted_column_names);
-
-        storage->read(plan, has_table_virtual_column ? extracted_column_names : required_columns, storage_snapshot,
-            query_info, context_, QueryProcessingStage::FetchColumns, max_block_size, mutation_settings.max_threads);
-
-        if (has_table_virtual_column && plan.isInitialized())
-        {
-            const auto & table_name = storage->getStorageID().getTableName();
-            ColumnWithTypeAndName column;
-            column.name = "_table";
-            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-            column.column = column.type->createColumnConst(0, Field(table_name));
-
-            auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
-            auto expression_step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(adding_column_dag));
-            plan.addStep(std::move(expression_step));
-        }
+        storage->read(plan, required_columns, storage_snapshot, query_info, context_, QueryProcessingStage::FetchColumns, max_block_size, mutation_settings.max_threads);
 
         if (!plan.isInitialized())
         {

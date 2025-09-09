@@ -63,7 +63,7 @@ uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
     return parse<uint64_t>(name_parts[1]);
 }
 
-void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool with_node_stats, size_t subtrees_limit)
+void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool with_node_stats)
 {
     try
     {
@@ -184,7 +184,7 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                         for (const auto & [node_path, count] : subtree_sizes)
                         {
                             pq.emplace(count, node_path);
-                            if (pq.size() > subtrees_limit)
+                            if (pq.size() > 10)
                                 pq.pop();
                         }
 
@@ -196,7 +196,7 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                         }
                         std::reverse(top_nodes.begin(), top_nodes.end());
 
-                        std::cout << fmt::format("  Top {} biggest subtrees:\n", subtrees_limit);
+                        std::cout << "  Top 10 biggest subtrees:\n";
                         for (const auto & node : top_nodes)
                         {
                             std::cout << fmt::format("    {}: {} descendants\n", node.second, node.first);
@@ -1096,9 +1096,7 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
                 ("help,h", "Show help message")
                 ("snapshot-path", po::value<std::string>()->required(), "Path to snapshots directory")
                 ("full-storage", po::bool_switch()->default_value(false), "Load full storage from snapshot")
-                ("with-node-stats", po::bool_switch()->default_value(false), "Calculate and show subtree statistics")
-                ("subtrees-limit", po::value<std::size_t>()->default_value(10), "Show top N subtrees")
-            ;
+                ("with-node-stats", po::bool_switch()->default_value(false), "Calculate and show subtree statistics");
 
             try
             {
@@ -1130,8 +1128,7 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
                 analyzeSnapshot(
                     analyzer_vm["snapshot-path"].as<std::string>(),
                     analyzer_vm["full-storage"].as<bool>(),
-                    analyzer_vm["with-node-stats"].as<bool>(),
-                    analyzer_vm["subtrees-limit"].as<size_t>());
+                    analyzer_vm["with-node-stats"].as<bool>());
                 return 0;
             }
             catch (const std::exception & e)

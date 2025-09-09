@@ -30,8 +30,7 @@ std::vector<DB::Field> getConstValuesFromExpression(
 /// Visit exception for scanCallback.
 std::shared_ptr<DB::ActionsDAG> visitScanCallbackExpression(
     const ffi::Expression * expression,
-    const DB::NamesAndTypesList & expression_schema,
-    bool enable_logging);
+    const DB::NamesAndTypesList & expression_schema);
 
 /// A method used in unit test.
 std::shared_ptr<DB::ActionsDAG> visitExpression(

@@ -15,8 +15,6 @@ namespace DB::ErrorCodes
 namespace DeltaLake
 {
 
-std::string generateWritePath(const std::string & prefix, const std::string & format);
-
 /**
  * Helper methods for use with delta-kernel-rs.
  */

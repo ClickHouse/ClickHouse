@@ -484,37 +484,29 @@ Token Lexer::nextTokenImpl()
         default:
             if (*pos == '$')
             {
-                /// Try to capture a dollar sign as a start of heredoc
+                /// Try to capture dollar sign as start of here doc
 
-                const char * tag_end = find_first_symbols<'$'>(pos + 1, end);
-                if (tag_end != end)
+                std::string_view token_stream(pos, end - pos);
+                auto heredoc_name_end_position = token_stream.find('$', 1);
+                if (heredoc_name_end_position != std::string::npos)
                 {
-                    size_t heredoc_size = tag_end + 1 - pos;
+                    size_t heredoc_size = heredoc_name_end_position + 1;
+                    std::string_view heredoc = {token_stream.data(), heredoc_size}; // NOLINT
 
-                    bool is_valid_name = true;
-                    for (const char * name_pos = pos + 1; name_pos < tag_end; ++name_pos)
+                    size_t heredoc_end_position = token_stream.find(heredoc, heredoc_size);
+                    if (heredoc_end_position != std::string::npos)
                     {
-                        if (!isWordCharASCII(*name_pos))
-                        {
-                            is_valid_name = false;
-                            break;
-                        }
-                    }
 
-                    if (is_valid_name)
-                    {
-                        size_t heredoc_end_position = std::string_view{tag_end + 1, end}.find(std::string_view{pos, heredoc_size});
-                        if (heredoc_end_position != std::string::npos)
-                        {
-                            pos = tag_end + 1 + heredoc_end_position + heredoc_size;
-                            return Token(TokenType::HereDoc, token_begin, pos);
-                        }
+                        pos += heredoc_end_position;
+                        pos += heredoc_size;
+
+                        return Token(TokenType::HereDoc, token_begin, pos);
                     }
                 }
 
                 if (((pos + 1 < end && !isWordCharASCII(pos[1])) || pos + 1 == end))
                 {
-                    /// Capture a standalone dollar sign
+                    /// Capture standalone dollar sign
                     return Token(TokenType::DollarSign, token_begin, ++pos);
                 }
             }

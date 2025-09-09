@@ -733,17 +733,7 @@ void AggregatingTransform::initGenerate()
         return;
     }
 
-    /// In the case of two different aggregators existing simultaneously due to a mixed pipeline of aggregate projections,
-    /// it is necessary to check whether any of the aggregators contains temporary data.
-    auto aggregator_has_temporary_data = [&]()
-    {
-        return params->aggregator.hasTemporaryData()
-            || std::any_of(
-                params->aggregator_list_ptr->begin(),
-                params->aggregator_list_ptr->end(),
-                [](const Aggregator & aggregator) { return aggregator.hasTemporaryData(); });
-    };
-    if (!aggregator_has_temporary_data())
+    if (!params->aggregator.hasTemporaryData())
     {
         if (!skip_merging)
         {

@@ -669,6 +669,7 @@ namespace
                 }
                 try
                 {
+                    data.push_back(0 /* terminating zero */);
                     column_string.getOffsets().push_back(data.size());
                 }
                 catch (...)
@@ -704,6 +705,7 @@ namespace
             {
                 try
                 {
+                    data.push_back(0 /* terminating zero */);
                     column_string.getOffsets().push_back(data.size());
                 }
                 catch (...)

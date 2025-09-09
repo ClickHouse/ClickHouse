@@ -30,6 +30,7 @@ SearchPhrase=curtain designs        count()=1064
 SearchPhrase=baku       count()=1000
 ```
 
+
 ```sql title="Query"
 SELECT * FROM t_null FORMAT TSKV
 ```
