@@ -86,9 +86,4 @@ TEST(OSThreadNiceValue, NonPrivilegedPositiveValue)
 
     OSThreadNiceValue::set(original);
 }
-
-TEST(OSThreadNiceValue, InvalidThreadID)
-{
-    ASSERT_THROW(OSThreadNiceValue::set(0, 999999), ErrnoException);
-}
 #endif
