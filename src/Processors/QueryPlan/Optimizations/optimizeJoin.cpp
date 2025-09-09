@@ -186,8 +186,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, ActionsDAG::Node * f
         if (reading->getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
         {
             ActionsDAG::Node * prewhere_node = nullptr;
-            auto prewhere_info = reading->getPrewhereInfo();
-            if (prewhere_info)
+            if (auto prewhere_info = reading->getPrewhereInfo())
                 prewhere_node = const_cast<ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name));
 
             if (auto estimator_ = reading->getConditionSelectivityEstimator())
