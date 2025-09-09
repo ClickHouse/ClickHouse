@@ -24,8 +24,6 @@ namespace S3RequestSetting
 class S3ObjectStorage : public IObjectStorage
 {
 private:
-    friend class S3PlainObjectStorage;
-
     S3ObjectStorage(
         const char * logger_name,
         std::unique_ptr<S3::Client> && client_,
@@ -89,8 +87,6 @@ public:
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
-
-    ObjectStorageConnectionInfoPtr getConnectionInfo() const override;
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
 

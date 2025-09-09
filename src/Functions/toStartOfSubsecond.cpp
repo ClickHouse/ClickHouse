@@ -43,7 +43,7 @@ SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToStartOfMillisecond>(documentation);
+    factory.registerFunction<FunctionToStartOfMillisecond>();
 }
 
 using FunctionToStartOfMicrosecond = FunctionDateOrDateTimeToSomething<DataTypeDateTime64, ToStartOfMicrosecondImpl>;

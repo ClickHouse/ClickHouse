@@ -50,9 +50,5 @@
 - test_user_ip_restrictions/
 - test_zookeeper_config_load_balancing/
 - test_zookeeper_fallback_session/
-- test_ytsaurus/
 # Creates too much servers
 - test_backup_restore_on_cluster/test_concurrency.py
-# TODO (alesapin) Try to verify that it's concurrency issue
-- test_database_delta/test.py
-- test_keeper_ipv4_fallback/test.py

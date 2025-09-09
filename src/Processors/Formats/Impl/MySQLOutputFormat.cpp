@@ -144,8 +144,7 @@ void registerOutputFormatMySQLWire(FormatFactory & factory)
         "MySQLWire",
         [](WriteBuffer & buf,
            const Block & sample,
-           const FormatSettings & settings,
-           FormatFilterInfoPtr /*format_filter_info*/) { return std::make_shared<MySQLOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
+           const FormatSettings & settings) { return std::make_shared<MySQLOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
     factory.markOutputFormatNotTTYFriendly("MySQLWire");
     factory.setContentType("MySQLWire", "application/octet-stream");
 }

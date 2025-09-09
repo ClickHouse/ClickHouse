@@ -60,7 +60,7 @@ void matchDataPartToRowOffsets(
     }
 }
 
-static void addDummyColumnWithRowCount(Block & block, Columns & res_columns, size_t num_rows)
+void addDummyColumnWithRowCount(Block & block, Columns & res_columns, size_t num_rows)
 {
     bool has_columns = false;
     for (const auto & column : res_columns)

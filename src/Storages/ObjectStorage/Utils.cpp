@@ -1,14 +1,6 @@
-#include <Core/Settings.h>
-#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
-#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Disks/IO/getThreadPoolReader.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCacheKey.h>
-#include <Interpreters/Context.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {
@@ -116,11 +108,4 @@ void validateSupportedColumns(
     }
 }
 
-namespace Setting
-{
-extern const SettingsUInt64 max_download_buffer_size;
-extern const SettingsBool use_cache_for_count_from_files;
-extern const SettingsString filesystem_cache_name;
-extern const SettingsUInt64 filesystem_cache_boundary_alignment;
-}
 }

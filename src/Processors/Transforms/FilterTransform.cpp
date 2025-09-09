@@ -10,7 +10,6 @@
 #include <Processors/Chunk.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
-#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/IFunction.h>
 
@@ -169,7 +168,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     ColumnPtr filter_column = columns[filter_column_position];
     ConstantFilterDescription constant_filter_description(*filter_column);
 
-    if (constant_filter_description.always_true || on_totals || isVirtualRow(chunk))
+    if (constant_filter_description.always_true || on_totals)
     {
         incrementProfileEvents(num_rows_before_filtration, columns);
         removeFilterIfNeed(columns);

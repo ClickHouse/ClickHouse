@@ -39,9 +39,7 @@ enum class Source : uint8_t
     M(AZURE, "AzureBlobStorage") \
     M(KAFKA, "Kafka") \
     M(NATS, "") \
-    M(RABBITMQ, "RabbitMQ") \
-    M(YTSAURUS, "YTsaurus") \
-    M(ARROW_FLIGHT, "ArrowFlight") \
+    M(RABBITMQ, "RabbitMQ")
 
 #define DECLARE_ACCESS_TYPE_OBJECTS_ENUM_CONST(name, aliases) name,
 
@@ -237,8 +235,6 @@ enum class AccessType : uint8_t
                                                      implicitly enabled by the grant CREATE_TABLE on any table */ \
     M(CREATE_ARBITRARY_TEMPORARY_TABLE, "", GLOBAL, CREATE)  /* allows to create  and manipulate temporary tables
                                                                 with arbitrary table engine */\
-    M(CREATE_TEMPORARY_VIEW, "", GLOBAL, CREATE) /* allows to create and manipulate temporary tables;
-                                                     implicitly enabled by the grant CREATE_VIEW on any table */ \
     M(CREATE_FUNCTION, "", GLOBAL, CREATE) /* allows to execute CREATE FUNCTION */ \
     M(CREATE_WORKLOAD, "", GLOBAL, CREATE) /* allows to execute CREATE WORKLOAD */ \
     M(CREATE_RESOURCE, "", GLOBAL, CREATE) /* allows to execute CREATE RESOURCE */ \
@@ -350,7 +346,6 @@ enum class AccessType : uint8_t
     M(SYSTEM_REPLICA_READINESS, "SYSTEM REPLICA READY, SYSTEM REPLICA UNREADY", GLOBAL, SYSTEM) \
     M(SYSTEM_RESTART_REPLICA, "RESTART REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_RESTORE_REPLICA, "RESTORE REPLICA", TABLE, SYSTEM) \
-    M(SYSTEM_RESTORE_DATABASE_REPLICA, "RESTORE DATABASE REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_WAIT_LOADING_PARTS, "WAIT LOADING PARTS", TABLE, SYSTEM) \
     M(SYSTEM_SYNC_DATABASE_REPLICA, "SYNC DATABASE REPLICA", DATABASE, SYSTEM) \
     M(SYSTEM_SYNC_TRANSACTION_LOG, "SYNC TRANSACTION LOG", GLOBAL, SYSTEM) \

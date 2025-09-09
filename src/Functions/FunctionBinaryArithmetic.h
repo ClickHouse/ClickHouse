@@ -367,7 +367,7 @@ struct StringIntegerOperationImpl
         {
             if constexpr (op_case == OpCase::LeftConstant)
             {
-                Op::apply(&in_vec[0], &in_vec[in_offsets[0]], b[i], out_vec, out_offsets);
+                Op::apply(&in_vec[0], &in_vec[in_offsets[0] - 1], b[i], out_vec, out_offsets);
             }
             else
             {
@@ -375,11 +375,11 @@ struct StringIntegerOperationImpl
 
                 if constexpr (op_case == OpCase::Vector)
                 {
-                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[i], out_vec, out_offsets);
+                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset - 1], b[i], out_vec, out_offsets);
                 }
                 else
                 {
-                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[0], out_vec, out_offsets);
+                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset - 1], b[0], out_vec, out_offsets);
                 }
 
                 prev_offset = new_offset;
@@ -516,9 +516,9 @@ struct StringReduceOperationImpl
         {
             res[i] = process(
                 a.data() + offsets_a[i - 1],
-                a.data() + offsets_a[i],
+                a.data() + offsets_a[i] - 1,
                 b.data() + offsets_b[i - 1],
-                b.data() + offsets_b[i]);
+                b.data() + offsets_b[i] - 1);
         }
     }
 
@@ -530,7 +530,7 @@ struct StringReduceOperationImpl
         {
             res[i] = process(
                 a.data() + offsets_a[i - 1],
-                a.data() + offsets_a[i],
+                a.data() + offsets_a[i] - 1,
                 reinterpret_cast<const UInt8 *>(b.data()),
                 reinterpret_cast<const UInt8 *>(b.data()) + b.size());
         }
@@ -1775,9 +1775,8 @@ public:
             return arguments[0];
         }
 
-        /// Special case - one argument is IPv4 and the other is Ipv4 or an integer
-        if ((isIPv4(arguments[0]) && (isIPv4(arguments[1]) || isInteger(arguments[1])))
-            || (isIPv4(arguments[1]) && isInteger(arguments[0])))
+        /// Special case - one or both arguments are IPv4
+        if (isIPv4(arguments[0]) || isIPv4(arguments[1]))
         {
             DataTypes new_arguments {
                     isIPv4(arguments[0]) ? std::make_shared<DataTypeUInt32>() : arguments[0],
@@ -1787,9 +1786,8 @@ public:
             return getReturnTypeImplStatic2(new_arguments, context);
         }
 
-        /// Special case -one argument is IPv6 and the other is Ipv4 or an integer
-        if ((isIPv6(arguments[0]) && (isIPv6(arguments[1]) || isInteger(arguments[1])))
-            || (isIPv6(arguments[1]) && isInteger(arguments[0])))
+        /// Special case - one or both arguments are IPv6
+        if (isIPv6(arguments[0]) || isIPv6(arguments[1]))
         {
             DataTypes new_arguments {
                     isIPv6(arguments[0]) ? std::make_shared<DataTypeUInt128>() : arguments[0],
@@ -2070,7 +2068,16 @@ public:
                     }
                     else if constexpr (std::is_same_v<ResultDataType, DataTypeTime>)
                     {
-                        type_res = std::make_shared<DataTypeTime>();
+                        // Special case for Time: binary OPS should reuse timezone
+                        // of Time argument as timezeone of result type.
+                        // NOTE: binary plus/minus are not allowed on Time64, and we are not handling it here.
+
+                        const TimezoneMixin * tz = nullptr;
+                        if constexpr (std::is_same_v<RightDataType, DataTypeTime>)
+                            tz = &right;
+                        if constexpr (std::is_same_v<LeftDataType, DataTypeTime>)
+                            tz = &left;
+                        type_res = std::make_shared<DataTypeTime>(*tz);
                     }
                     else
                         type_res = std::make_shared<ResultDataType>();
