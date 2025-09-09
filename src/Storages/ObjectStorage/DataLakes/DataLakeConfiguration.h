@@ -18,6 +18,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Disks/DiskType.h>
 
 #include <memory>
@@ -40,6 +41,7 @@ namespace ErrorCodes
 namespace DataLakeStorageSetting
 {
     extern DataLakeStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
+    extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
 }
 
 
@@ -171,6 +173,42 @@ public:
     {
         assertInitializedDL();
         current_metadata->modifyFormatSettings(settings_);
+    }
+
+    ASTPtr createArgsWithAccessData() const override
+    {
+        auto res = BaseStorageConfiguration::createArgsWithAccessData();
+
+        auto iceberg_metadata_file_path = (*settings)[DataLakeStorageSetting::iceberg_metadata_file_path];
+
+        if (iceberg_metadata_file_path.changed)
+        {
+            auto * arguments = res->template as<ASTExpressionList>();
+            if (!arguments)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments are not an expression list");
+
+            bool has_settings = false;
+
+            for (auto & arg : arguments->children)
+            {
+                if (auto * settings_ast = arg->template as<ASTSetQuery>())
+                {
+                    has_settings = true;
+                    settings_ast->changes.setSetting("iceberg_metadata_file_path", iceberg_metadata_file_path.value);
+                    break;
+                }
+            }
+
+            if (!has_settings)
+            {
+                std::shared_ptr<ASTSetQuery> settings_ast = std::make_shared<ASTSetQuery>();
+                settings_ast->is_standalone = false;
+                settings_ast->changes.setSetting("iceberg_metadata_file_path", iceberg_metadata_file_path.value);
+                arguments->children.push_back(settings_ast);
+            }
+        }
+
+        return res;
     }
 
 private:
