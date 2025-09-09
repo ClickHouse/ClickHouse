@@ -96,6 +96,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"per_part_index_stats", false, false, "New setting."},
             {"allow_experimental_iceberg_compaction", 0, 0, "New setting "},
             {"delta_lake_snapshot_version", -1, -1, "New setting"},
+            {"delta_lake_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New setting."},
+            {"delta_lake_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},

@@ -71,6 +71,8 @@ def get_spark():
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
+        .config("spark.driver.memory", "8g")
+        .config("spark.executor.memory", "8g")
         .master("local")
     )
 
@@ -3325,4 +3327,106 @@ def test_writes_spark_compatibility(started_cluster):
     assert (
         "[Row(id=10, name='10'), Row(id=11, name='11'), Row(id=12, name='12'), Row(id=13, name='13'), Row(id=14, name='14'), Row(id=15, name='15'), Row(id=16, name='16'), Row(id=17, name='17'), Row(id=18, name='18'), Row(id=19, name='19'), Row(id=0, name='0'), Row(id=1, name='1'), Row(id=2, name='2'), Row(id=3, name='3'), Row(id=4, name='4'), Row(id=5, name='5'), Row(id=6, name='6'), Row(id=7, name='7'), Row(id=8, name='8'), Row(id=9, name='9')]"
         == str(df)
+    )
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+@pytest.mark.parametrize("limit_enabled", [False, True])
+def test_write_limits(started_cluster, partitioned, limit_enabled):
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_write_limits")
+    result_file = f"{table_name}_data"
+
+    schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["id"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+    files = (
+        instance.exec_in_container(["bash", "-c", f"ls /{result_file}"])
+        .strip()
+        .split("\n")
+    )
+    assert len(files) == 1
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, name String) ENGINE = DeltaLakeLocal('/{result_file}') SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+
+    num_rows = 1000000
+    partitions_num = 5
+    limit_rows = 10 if limit_enabled else (num_rows + 1)
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number % {partitions_num}, randomString(10) FROM numbers({num_rows}) SETTINGS delta_lake_insert_max_rows_in_data_file = {limit_rows}, max_insert_block_size = 1000, min_chunk_bytes_for_parallel_parsing = 1000"
+    )
+
+    files = LocalDownloader(instance).download_directory(f"/{result_file}/", f"/{result_file}/")
+    data_files = [file for file in files if file.endswith(".parquet")]
+    assert len(data_files) > 0, f"No data files: {files}"
+
+    if partitioned:
+        if limit_enabled:
+            assert len(data_files) > partitions_num, f"Data files: {data_files}"
+        else:
+            assert len(data_files) == partitions_num, f"Data files: {data_files}"
+    else:
+        if limit_enabled:
+            assert len(data_files) > 1, f"Data files: {data_files}"
+        else:
+            assert len(data_files) == 1, f"Data files: {data_files}"
+
+    assert num_rows == int(instance.query(f"SELECT count() FROM {table_name}"))
+
+    spark = started_cluster.spark_session
+    df = spark.read.format("delta").load(f"/{result_file}")
+    assert df.count() == num_rows
+
+
+def test_column_mapping_id(started_cluster):
+    node = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_column_mapping_id")
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    path = f"/{table_name}"
+
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), True),
+            StructField(
+                "person",
+                StructType(
+                    [
+                        StructField("first_name", StringType(), True),
+                        StructField("last_name", StringType(), True),
+                    ]
+                ),
+                True,
+            ),
+        ]
+    )
+    data = [(1, ("Alice", "Smith")), (2, ("Bob", "Johnson"))]
+    df = spark.createDataFrame(data, schema=schema)
+    df.write.format("delta").option("delta.minReaderVersion", "2").option(
+        "delta.minWriterVersion", "5"
+    ).option("delta.columnMapping.mode", "id").save(path)
+    upload_directory(minio_client, bucket, path, "")
+
+    delta_function = f"""
+deltaLake(
+        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+        '{minio_access_key}',
+        '{minio_secret_key}')
+    """
+    assert (
+        "Column mapping ID mode not supported"
+        in node.query_and_get_error(
+            f"SELECT * FROM {delta_function} ORDER BY all"
+        ).strip()
     )
