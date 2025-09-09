@@ -3,16 +3,13 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/Common.h>
-#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <time.h>
+#include <ctime>
 #include <string>
-#include <thread>
 #include <mutex>
-#include <condition_variable>
-#include <list>
 
 
 namespace Poco { class Logger; }
+namespace zkutil { class ZooKeeperNodeCache; }
 
 namespace DB
 {
@@ -33,7 +30,7 @@ public:
         std::string_view path_,
         const std::vector<std::string>& extra_paths_,
         const std::string & preprocessed_dir,
-        zkutil::ZooKeeperNodeCache && zk_node_cache,
+        std::unique_ptr<zkutil::ZooKeeperNodeCache> && zk_node_cache_,
         const Coordination::EventPtr & zk_changed_event,
         Updater && updater);
 
@@ -73,7 +70,7 @@ private:
 
     std::string preprocessed_dir;
     FilesChangesTracker files;
-    zkutil::ZooKeeperNodeCache zk_node_cache;
+    std::unique_ptr<zkutil::ZooKeeperNodeCache> zk_node_cache;
     bool need_reload_from_zk = false;
     Coordination::EventPtr zk_changed_event = std::make_shared<Poco::Event>();
 

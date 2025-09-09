@@ -156,19 +156,6 @@ public:
     zkutil::ZooKeeper::MultiTryGetChildrenResponse tryGetChildren(
         const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
-    Coordination::Error tryGetChildrenWatch(
-        const std::string & path,
-        Strings & res,
-        Coordination::Stat * stat,
-        Coordination::WatchCallback watch_callback,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
-
-    Strings getChildrenWatch(
-        const std::string & path,
-        Coordination::Stat * stat,
-        Coordination::WatchCallback watch_callback,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
-
     Strings getChildrenWatch(
         const std::string & path,
         Coordination::Stat * stat,
@@ -180,13 +167,6 @@ public:
         std::string & res,
         Coordination::Stat * stat = nullptr,
         const Coordination::EventPtr & watch = nullptr,
-        Coordination::Error * code = nullptr);
-
-    bool tryGetWatch(
-        const std::string & path,
-        std::string & res,
-        Coordination::Stat * stat,
-        Coordination::WatchCallback watch_callback,
         Coordination::Error * code = nullptr);
 
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const Coordination::EventPtr & watch = nullptr);
@@ -250,8 +230,6 @@ public:
     /// Note that there is not guarantees that the parameters will live until the internal callback is called
     /// so we might need to copy them
     ///
-
-    zkutil::ZooKeeper::FutureExists asyncExists(std::string path, Coordination::WatchCallback watch_callback = {});
 
     zkutil::ZooKeeper::FutureGet asyncTryGet(std::string path);
 

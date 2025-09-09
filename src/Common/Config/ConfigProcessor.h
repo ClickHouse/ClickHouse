@@ -114,7 +114,7 @@ public:
     /// If fallback_to_preprocessed is true, then if KeeperException is thrown during config
     /// processing, load the configuration from the preprocessed file.
     LoadedConfig loadConfigWithZooKeeperIncludes(
-        zkutil::ZooKeeperNodeCache & zk_node_cache,
+        zkutil::ZooKeeperNodeCache * zk_node_cache,
         const Coordination::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed = false,
         bool is_config_changed = true);

@@ -4,8 +4,7 @@
 #include <unordered_set>
 #include <mutex>
 #include <memory>
-#include <optional>
-#include <Poco/Event.h>
+#include <base/defines.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/Common.h>
 
@@ -34,7 +33,7 @@ public:
     explicit ZooKeeperNodeCache(GetZooKeeper get_zookeeper);
 
     ZooKeeperNodeCache(const ZooKeeperNodeCache &) = delete;
-    ZooKeeperNodeCache(ZooKeeperNodeCache &&) = default;
+    ZooKeeperNodeCache(ZooKeeperNodeCache &&) = delete;
 
     struct ZNode
     {
@@ -43,7 +42,7 @@ public:
         Coordination::Stat stat{};
     };
 
-    ZNode get(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
+    ZNode get(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr caller_watch_callback);
 
     void sync();
 
@@ -60,6 +59,11 @@ private:
     std::shared_ptr<Context> context;
 
     std::unordered_map<std::string, ZNode> path_to_cached_znode;
+
+    /// <name, <user callback, internal callback>>
+    std::unordered_map<String, std::unordered_map<Coordination::WatchCallbackPtrOrEventPtr, Coordination::WatchCallbackPtrOrEventPtr>> names_watch_map TSA_GUARDED_BY(watches_mutex);
+    std::mutex watches_mutex;
+
 };
 
 }

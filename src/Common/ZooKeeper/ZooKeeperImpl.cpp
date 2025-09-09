@@ -794,9 +794,7 @@ void ZooKeeper::sendThread()
                     }
 
                     if (info.watch)
-                    {
                         info.request->has_watch = true;
-                    }
 
                     if (requests_queue.isFinished())
                     {

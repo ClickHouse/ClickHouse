@@ -1,3 +1,4 @@
+#include <mutex>
 #include <Access/ZooKeeperReplicator.h>
 
 #include <Access/AccessEntityIO.h>
@@ -44,6 +45,10 @@ ZooKeeperReplicator::ZooKeeperReplicator(
     , zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
     , watched_queue(std::make_shared<ConcurrentBoundedQueue<UUID>>(std::numeric_limits<size_t>::max()))
+    , watch_entities_list(std::make_shared<Coordination::WatchCallback>([my_watched_queue = watched_queue](const Coordination::WatchResponse &)
+      {
+          [[maybe_unused]] bool push_result = my_watched_queue->push(UUIDHelpers::Nil);
+      }))
     , memory_storage(memory_storage_)
     , changes_notifier(changes_notifier_)
 {
@@ -278,6 +283,11 @@ bool ZooKeeperReplicator::removeEntity(const UUID & id, bool throw_if_not_exists
     auto zookeeper = getZooKeeper();
     bool ok = false;
     retryOnZooKeeperUserError(10, [&] { ok = removeZooKeeper(zookeeper, id, throw_if_not_exists); });
+
+    {
+        std::lock_guard lock(zookeeper_watches_mutex);
+        zookeeper_watches.erase(id);
+    }
 
     if (!ok)
         return false;
@@ -545,10 +555,6 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
     }
 
     const String zookeeper_uuids_path = zookeeper_path + "/uuid";
-    auto watch_entities_list = [my_watched_queue = watched_queue](const Coordination::WatchResponse &)
-    {
-        [[maybe_unused]] bool push_result = my_watched_queue->push(UUIDHelpers::Nil);
-    };
     Coordination::Stat stat;
     const auto entity_uuid_strs = zookeeper->getChildrenWatch(zookeeper_uuids_path, &stat, watch_entities_list);
 
@@ -609,18 +615,29 @@ void ZooKeeperReplicator::refreshEntityNoLock(const zkutil::ZooKeeperPtr & zooke
         removeEntityNoLock(id);
 }
 
-AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const
+AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id)
 {
-    const auto watch_entity = [my_watched_queue = watched_queue, id](const Coordination::WatchResponse & response)
+    Coordination::WatchCallbackPtr zookeeper_watch;
     {
-        if (response.type == Coordination::Event::CHANGED)
-            [[maybe_unused]] bool push_result = my_watched_queue->push(id);
-    };
+        std::lock_guard lock(zookeeper_watches_mutex);
+        auto it = zookeeper_watches.find(id);
+        if (it != zookeeper_watches.end())
+            zookeeper_watch = it->second;
+        else
+        {
+            zookeeper_watch = std::make_shared<Coordination::WatchCallback>([my_watched_queue = watched_queue, id](const Coordination::WatchResponse & response)
+            {
+                if (response.type == Coordination::Event::CHANGED)
+                    [[maybe_unused]] bool push_result = my_watched_queue->push(id);
+            });
+            zookeeper_watches.emplace(id, zookeeper_watch);
+        }
+    }
 
     Coordination::Stat entity_stat;
     const String entity_path = zookeeper_path + "/uuid/" + toString(id);
     String entity_definition;
-    bool exists = zookeeper->tryGetWatch(entity_path, entity_definition, &entity_stat, watch_entity);
+    bool exists = zookeeper->tryGetWatch(entity_path, entity_definition, &entity_stat, zookeeper_watch);
     if (!exists)
         return nullptr;
 

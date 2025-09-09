@@ -899,7 +899,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
 }
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
-    zkutil::ZooKeeperNodeCache & zk_node_cache,
+    zkutil::ZooKeeperNodeCache * zk_node_cache,
     const Coordination::EventPtr & zk_changed_event,
     bool fallback_to_preprocessed,
     bool is_config_changed)
@@ -909,8 +909,9 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     bool processed_successfully = false;
     try
     {
-        zk_node_cache.sync();
-        config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event, is_config_changed);
+        if (zk_node_cache)
+            zk_node_cache->sync();
+        config_xml = processConfig(&has_zk_includes, zk_node_cache, zk_changed_event, is_config_changed);
         processed_successfully = true;
     }
     catch (const Poco::Exception & ex)

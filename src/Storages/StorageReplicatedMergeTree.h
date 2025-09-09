@@ -551,7 +551,8 @@ private:
         std::shared_ptr<std::atomic<bool>> exists;
     };
 
-    std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks;
+    std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks TSA_GUARDED_BY(existing_zero_copy_locks_mutex);
+    std::unordered_map<String, Coordination::WatchCallbackPtr> existing_zero_copy_locks_watches TSA_GUARDED_BY(existing_zero_copy_locks_mutex);
 
     void readLocalImpl(
         QueryPlan & query_plan,

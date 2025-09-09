@@ -281,7 +281,6 @@ public:
     Coordination::Error tryRemove(const std::string & path, int32_t version = -1);
 
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const Coordination::EventPtr & watch = nullptr);
-    bool existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
     bool existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
 
     using MultiExistsResponse = MultiReadResponses<Coordination::ExistsResponse, true>;
@@ -300,7 +299,6 @@ public:
     bool anyExists(const std::vector<std::string> & paths);
 
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const Coordination::EventPtr & watch = nullptr);
-    std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
     std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
 
     using MultiGetResponse = MultiReadResponses<Coordination::GetResponse, false>;
@@ -325,13 +323,6 @@ public:
         std::string & res,
         Coordination::Stat * stat = nullptr,
         const Coordination::EventPtr & watch = nullptr,
-        Coordination::Error * code = nullptr);
-
-    bool tryGetWatch(
-        const std::string & path,
-        std::string & res,
-        Coordination::Stat * stat,
-        Coordination::WatchCallback watch_callback,
         Coordination::Error * code = nullptr);
 
     bool tryGetWatch(
@@ -372,11 +363,6 @@ public:
 
     Strings getChildrenWatch(const std::string & path,
                              Coordination::Stat * stat,
-                             Coordination::WatchCallback watch_callback,
-                             Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
-
-    Strings getChildrenWatch(const std::string & path,
-                             Coordination::Stat * stat,
                              Coordination::WatchCallbackPtrOrEventPtr watch_callback,
                              Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
@@ -391,7 +377,7 @@ public:
             start,
             end,
             [list_request_type](const auto & path) { return zkutil::makeListRequest(path, list_request_type); },
-            [&](const auto & path) { return asyncGetChildren(path, {}, list_request_type); });
+            [&](const auto & path) { return asyncGetChildren(path, list_request_type); });
     }
 
     MultiGetChildrenResponse
@@ -407,13 +393,6 @@ public:
         Strings & res,
         Coordination::Stat * stat = nullptr,
         const Coordination::EventPtr & watch = nullptr,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
-
-    Coordination::Error tryGetChildrenWatch(
-        const std::string & path,
-        Strings & res,
-        Coordination::Stat * stat,
-        Coordination::WatchCallback watch_callback,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     Coordination::Error tryGetChildrenWatch(
@@ -531,22 +510,18 @@ public:
     FutureCreate asyncTryCreateNoThrow(const std::string & path, const std::string & data, int32_t mode);
 
     using FutureGet = std::future<Coordination::GetResponse>;
-    FutureGet asyncGet(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    FutureGet asyncGet(const std::string & path);
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
-
     FutureGet asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch_callback = {});
 
     using FutureExists = std::future<Coordination::ExistsResponse>;
-    FutureExists asyncExists(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    FutureExists asyncExists(const std::string & path);
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureExists asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
     FutureExists asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch_callback = {});
 
     using FutureGetChildren = std::future<Coordination::ListResponse>;
     FutureGetChildren asyncGetChildren(
         const std::string & path,
-        Coordination::WatchCallback watch_callback = {},
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureGetChildren asyncTryGetChildrenNoThrow(
@@ -648,8 +623,6 @@ private:
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
     Coordination::Error removeImpl(const std::string & path, int32_t version);
     Coordination::Error getImpl(
-        const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
-    Coordination::Error getImpl(
         const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
     Coordination::Error setImpl(const std::string & path, const std::string & data, int32_t version, Coordination::Stat * stat);
     Coordination::Error getChildrenImpl(
@@ -664,7 +637,6 @@ private:
     std::pair<Coordination::Error, std::string>
     multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid);
 
-    Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
     Coordination::Error syncImpl(const std::string & path, std::string & returned_path);
 
