@@ -1,0 +1,25 @@
+Disk: test_plain_rewritable_metadata_object_storage
+Path: /
+.:
+
+.:
+hello
+
+./hello:
+world
+
+./hello/world:
+Clickhouse
+
+./hello/world/Clickhouse:
+
+Disk: test_plain_rewritable_metadata_object_storage
+Path: /hello
+Disk: test_plain_rewritable_metadata_object_storage
+Path: /hello/world
+Clickhouse
+.:
+Clickhouse
+
+./Clickhouse:
+
