@@ -394,6 +394,7 @@ private:
         MINUS,
         MULTIPLY,
         DIVIDE,
+        TO_JSON,
     };
     static ffi::EngineExpressionVisitor createVisitor(ExpressionVisitorData & data)
     {
@@ -421,6 +422,7 @@ private:
             .visit_or = &visitFunction<DB::FunctionOr>,
             .visit_not = &visitFunction<DB::FunctionNot>,
             .visit_is_null = &visitFunction<DB::FunctionIsNull>,
+            .visit_to_json = &throwNotImplemented<TO_JSON>,
             .visit_lt = &throwNotImplemented<LT>,
             .visit_gt = &throwNotImplemented<GT>,
             .visit_eq = &throwNotImplemented<EQ>,
@@ -432,6 +434,8 @@ private:
             .visit_divide = &throwNotImplemented<DIVIDE>,
             .visit_column = &visitColumnExpression,
             .visit_struct_expr = &visitStructExpression,
+            .visit_transform_expr = &throwNotImplementedTransformExpression,
+            .visit_field_transform = &throwNotImplementedFieldTransform,
             .visit_opaque_expr = &throwNotImplementedOpaqueExpression,
             .visit_opaque_pred = &throwNotImplementedOpaquePredicate,
             .visit_unknown = &throwNotImplementedUnknown
@@ -513,6 +517,46 @@ private:
             throw DB::Exception(
                 DB::ErrorCodes::NOT_IMPLEMENTED,
                 "Method OpaquePred not implemented");
+        });
+    }
+
+    static void throwNotImplementedTransformExpression(
+        void * data,
+        uintptr_t sibling_list_id,
+        uintptr_t input_path_list_id,
+        uintptr_t field_transform_list_id)
+    {
+        UNUSED(sibling_list_id);
+        UNUSED(input_path_list_id);
+        UNUSED(field_transform_list_id);
+
+        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
+        visitorImpl(*state, [&]()
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Method visitTransformExpression not implemented");
+        });
+    }
+
+    static void throwNotImplementedFieldTransform(
+        void * data,
+        uintptr_t sibling_list_id,
+        const ffi::KernelStringSlice * field_name,
+        uintptr_t expr_list_id,
+        bool is_replace)
+    {
+        UNUSED(sibling_list_id);
+        UNUSED(field_name);
+        UNUSED(expr_list_id);
+        UNUSED(is_replace);
+
+        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
+        visitorImpl(*state, [&]()
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Method visitFieldTransform not implemented");
         });
     }
 
