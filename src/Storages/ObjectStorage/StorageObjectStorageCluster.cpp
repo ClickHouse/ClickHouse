@@ -30,12 +30,14 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsUInt64 lock_object_storage_task_distribution_ms;
     extern const SettingsString object_storage_cluster;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 String StorageObjectStorageCluster::getPathSample(ContextPtr context)
@@ -437,13 +439,43 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate, const ContextPtr & local_context, const size_t number_of_replicas) const
+    const ActionsDAG::Node * predicate,
+    const ContextPtr & local_context,
+    ClusterPtr cluster) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
         local_context, predicate, {}, getVirtualsList(), hive_partition_columns_to_read_from_file_path, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true, /*skip_object_metadata=*/true);
 
-    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, number_of_replicas);
+    std::vector<std::string> ids_of_hosts;
+    for (const auto & shard : cluster->getShardsInfo())
+    {
+        if (shard.per_replica_pools.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster {} with empty shard {}", cluster->getName(), shard.shard_num);
+        for (const auto & replica : shard.per_replica_pools)
+        {
+            if (!replica)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster {}, shard {} with empty node", cluster->getName(), shard.shard_num);
+            ids_of_hosts.push_back(replica->getAddress());
+        }
+    }
+
+    uint64_t lock_object_storage_task_distribution_ms = local_context->getSettingsRef()[Setting::lock_object_storage_task_distribution_ms];
+
+    /// Check value to avoid negative result after conversion in microseconds.
+    /// Poco::Timestamp::TimeDiff is signed int 64.
+    static const uint64_t lock_object_storage_task_distribution_ms_max = 0x0020000000000000ULL;
+    if (lock_object_storage_task_distribution_ms > lock_object_storage_task_distribution_ms_max)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Value lock_object_storage_task_distribution_ms is too big: {}, allowed maximum is {}",
+            lock_object_storage_task_distribution_ms,
+            lock_object_storage_task_distribution_ms_max
+        );
+
+    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
+        iterator,
+        ids_of_hosts,
+        lock_object_storage_task_distribution_ms);
 
     auto callback = std::make_shared<TaskIterator>(
         [task_distributor](size_t number_of_current_replica) mutable -> String

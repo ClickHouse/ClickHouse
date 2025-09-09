@@ -73,6 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_database_unity_catalog", false, true, "Turned ON by default for Antalya"},
             {"allow_experimental_database_glue_catalog", false, true, "Turned ON by default for Antalya"},
             {"output_format_parquet_enum_as_byte_array", true, true, "Enable writing Enum as byte array in Parquet by default"},
+            {"lock_object_storage_task_distribution_ms", 0, 0, "New setting."},
             {"object_storage_cluster", "", "", "New setting"},
             {"object_storage_max_nodes", 0, 0, "New setting"},
         });
