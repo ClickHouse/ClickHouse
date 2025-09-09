@@ -12,6 +12,7 @@
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -35,10 +36,6 @@ public:
         if (!getSettings()[Setting::count_distinct_optimization])
             return;
 
-        /// TODO(amos): find a better way to resolve this setting confliction
-        // if (getSettings()[Setting::optimize_distributed_group_by_sharding_key])
-        //     return;
-
         auto * query_node = node->as<QueryNode>();
 
         /// Check that query has only SELECT clause
@@ -51,6 +48,13 @@ public:
         auto join_tree_node_type = query_node->getJoinTree()->getNodeType();
         if (join_tree_node_type == QueryTreeNodeType::JOIN || join_tree_node_type == QueryTreeNodeType::CROSS_JOIN || join_tree_node_type == QueryTreeNodeType::ARRAY_JOIN)
             return;
+
+        /// Check only local table
+        if (auto * table_node = query_node->getJoinTree()->as<TableNode>())
+        {
+            if (table_node->getStorage()->isRemote())
+                return;
+        }
 
         /// Check that query has only single node in projection
         auto & projection_nodes = query_node->getProjection().getNodes();

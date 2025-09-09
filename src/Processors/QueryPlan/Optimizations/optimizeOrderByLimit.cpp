@@ -59,7 +59,7 @@ size_t tryPushDownOrderByLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &
         return 0;
 
     const auto & sort_column = sorting_step->getInputHeaders().front()->getByName(sort_description.front().column_name);
-    if (!sort_column.type->isValueRepresentedByNumber() && read_from_mergetree_step->getPrewhereInfo())
+    if (!sort_column.type->isValueRepresentedByNumber() || read_from_mergetree_step->getPrewhereInfo())
         return 0;
 
     const auto * sort_column_from_read
