@@ -77,6 +77,12 @@ Field DataTypeEnum<Type>::getDefault() const
 }
 
 template <typename Type>
+Type DataTypeEnum<Type>::getDefaultValue() const
+{
+    return this->getValues().front().second;
+}
+
+template <typename Type>
 void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
 {
     const auto & default_value = this->getValues().front().second;

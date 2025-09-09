@@ -67,6 +67,7 @@ public:
     MutableColumnPtr createColumn() const override { return ColumnType::create(); }
 
     Field getDefault() const override;
+    Type getDefaultValue() const;
     void insertDefaultInto(IColumn & column) const override;
 
     bool equals(const IDataType & rhs) const override;
