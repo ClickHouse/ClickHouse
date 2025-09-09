@@ -164,8 +164,8 @@ Accumulates the states of an aggregate function for each row of a data block.
 
 :::warning Deprecated
 The state is reset for each new block of data.
-Due to this error-prone behavior the function has been deprecated, and you are advised to use proper window functions instead.
-You can use setting `allow_deprecated_error_prone_window_functions` to allow usage of this function.
+Due to this error-prone behavior the function has been deprecated, and you are advised to use [window functions](/sql-reference/window-functions) instead.
+You can use setting [`allow_deprecated_error_prone_window_functions`](/operations/settings/settings#allow_deprecated_error_prone_window_functions) to allow usage of this function.
 :::
 )";
     FunctionDocumentation::Syntax syntax_runningAccumulate = "runningAccumulate(agg_state[, grouping])";
