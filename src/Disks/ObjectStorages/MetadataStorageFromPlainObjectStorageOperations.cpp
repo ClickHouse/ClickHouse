@@ -241,7 +241,6 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std::unique_lock<SharedMutex> & /* metadata_lock */)
 {
-
     /// parent_path() removes the trailing '/'
     const auto base_path = path.parent_path();
     auto optional_info = path_map.getRemotePathInfoIfExists(base_path);
