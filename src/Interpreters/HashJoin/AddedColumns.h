@@ -170,18 +170,7 @@ public:
     void appendFromBlock(const RowRefList * row_ref_list, bool has_default);
     void appendFromBlock(const RowRef * row_ref, bool has_default);
 
-    void appendDefaultRow()
-    {
-        if constexpr (!lazy)
-        {
-            ++lazy_defaults_count;
-        }
-        else
-        {
-            if (has_columns_to_add)
-                lazy_output.addDefault();
-        }
-    }
+    void appendDefaultRow();
 
     void applyLazyDefaults();
 

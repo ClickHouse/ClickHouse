@@ -30,7 +30,7 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
 class ManifestFilesPruner
 {
 private:
-    const IcebergSchemaProcessor & schema_processor;
+    const DB::IcebergSchemaProcessor & schema_processor;
     Int32 current_schema_id;
     Int32 initial_schema_id;
     const DB::KeyDescription * partition_key;
@@ -44,7 +44,7 @@ private:
 
 public:
     ManifestFilesPruner(
-        const IcebergSchemaProcessor & schema_processor_,
+        const DB::IcebergSchemaProcessor & schema_processor_,
         Int32 current_schema_id_,
         Int32 initial_schema_id_,
         const DB::ActionsDAG * filter_dag,

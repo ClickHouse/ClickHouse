@@ -62,10 +62,6 @@ from helpers.test_tools import TSV
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__, with_spark=True)
 
-S3_DATA = [
-    "field_ids_struct_test/data/00000-1-7cad83a6-af90-42a9-8a10-114cbc862a42-0-00001.parquet",
-]
-
 
 def get_spark():
     builder = (
@@ -199,14 +195,6 @@ def started_cluster():
 
         cluster.spark_session = get_spark()
 
-        for file in S3_DATA:
-            print(f"Copying object {file}")
-            cluster.minio_client.fput_object(
-                bucket_name=cluster.minio_bucket,
-                object_name=file,
-                file_path=os.path.join(SCRIPT_DIR, file),
-            )
-
         yield cluster
 
     finally:
@@ -219,16 +207,14 @@ def write_delta_from_file(spark, path, result_path, mode="overwrite"):
     ).option("delta.columnMapping.mode", "name").save(result_path)
 
 
-def write_delta_from_df(
-    spark, df, result_path, mode="overwrite", partition_by=None, column_mapping="name"
-):
+def write_delta_from_df(spark, df, result_path, mode="overwrite", partition_by=None):
     if partition_by is None:
-        df.write.mode(mode).option("compression", "none").option(
-            "delta.columnMapping.mode", column_mapping
-        ).format("delta").save(result_path)
+        df.write.mode(mode).option("compression", "none").format("delta").option(
+            "delta.columnMapping.mode", "name"
+        ).save(result_path)
     else:
         df.write.mode(mode).option("compression", "none").format("delta").option(
-            "delta.columnMapping.mode", column_mapping
+            "delta.columnMapping.mode", "name"
         ).partitionBy("a").save(result_path)
 
 
@@ -281,8 +267,14 @@ def create_delta_table(
     table_name,
     cluster,
     format="Parquet",
+    allow_dynamic_metadata_for_data_lakes=False,
     **kwargs,
 ):
+    allow_dynamic_metadata_for_datalakes_suffix = (
+        " SETTINGS allow_dynamic_metadata_for_data_lakes = 1"
+        if allow_dynamic_metadata_for_data_lakes
+        else ""
+    )
 
     if storage_type == "s3":
         if "bucket" in kwargs:
@@ -296,6 +288,7 @@ def create_delta_table(
             CREATE TABLE {table_name}
             ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
             """
+            + allow_dynamic_metadata_for_datalakes_suffix
         )
 
     elif storage_type == "azure":
@@ -305,6 +298,7 @@ def create_delta_table(
             CREATE TABLE {table_name}
             ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
             """
+            + allow_dynamic_metadata_for_datalakes_suffix
         )
     elif storage_type == "local":
         # For local storage, we need to use the absolute path
@@ -3435,93 +3429,4 @@ deltaLake(
         in node.query_and_get_error(
             f"SELECT * FROM {delta_function} ORDER BY all"
         ).strip()
-    )
-
-
-@pytest.mark.parametrize("column_mapping", ["", "name"])
-def test_subcolumns(started_cluster, column_mapping):
-    node = started_cluster.instances["node1"]
-    table_name = randomize_table_name("test_struct")
-    spark = started_cluster.spark_session
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
-    path = f"/{table_name}"
-
-    data_file = "field_ids_struct_test/data/00000-1-7cad83a6-af90-42a9-8a10-114cbc862a42-0-00001.parquet"
-
-    def s3_function(path):
-        return f""" s3(
-            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{path}' ,
-            '{minio_access_key}',
-            '{minio_secret_key}')
-        """
-
-    func = s3_function(data_file)
-    assert (
-        "2025-06-04\t('100022','2025-06-04 18:40:56.000000','2025-06-09 21:19:00.364000')\t100022"
-        == node.query(f"select * from {func}").strip()
-    )
-    assert (
-        "col_x2D1\tNullable(Date32)\t\t\t\t\t\n"
-        "col_x2D2\tTuple(\\n    col_x2D3 Nullable(String),\\n    col_x2D4 Nullable(DateTime64(6, \\'UTC\\')),\\n    col_x2D5 Nullable(DateTime64(6, \\'UTC\\')))\t\t\t\t\t\n"
-        "col_x2D6\tNullable(Int64)" == node.query(f"describe table {func}").strip()
-    )
-
-    df = spark.read.parquet(os.path.join(SCRIPT_DIR, data_file))
-    write_delta_from_df(spark, df, path, mode="overwrite")
-    default_upload_directory(started_cluster, "s3", path, "")
-
-    s3_objects = list(minio_client.list_objects(bucket, table_name, recursive=True))
-    file_names = []
-    object_name = None
-    for obj in s3_objects:
-        print(f"File: {obj.object_name}")
-        if obj.object_name.endswith(".parquet"):
-            object_name = obj.object_name
-
-    func = s3_function(object_name)
-    assert (
-        "2025-06-04\t('100022','2025-06-04 18:40:56.000000000','2025-06-09 21:19:00.364000000')\t100022"
-        == node.query(f"select * from {func}").strip()
-    )
-    data_file_desc = node.query(f"describe table {func}").strip()
-    assert "col-" in data_file_desc
-    assert "col_" not in data_file_desc
-
-    data_file_schema = node.query(f"describe table {func}")
-    print(f"Data file schema: {data_file_schema}")
-
-    delta_function = f"""
-deltaLake(
-        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
-        '{minio_access_key}',
-        '{minio_secret_key}')
-    """
-
-    assert (
-        "2025-06-04\t('100022','2025-06-04 18:40:56.000000','2025-06-09 21:19:00.364000')\t100022"
-        == node.query(f"SELECT * FROM {delta_function} ORDER BY all").strip()
-    )
-
-    assert (
-        "col_x2D1\tNullable(Date32)\t\t\t\t\t\n"
-        "col_x2D2\tTuple(\\n    col_x2D3 Nullable(String),\\n    col_x2D4 Nullable(DateTime64(6)),\\n    col_x2D5 Nullable(DateTime64(6)))\t\t\t\t\t\n"
-        "col_x2D6\tNullable(Int64)"
-        == node.query(f"describe table {delta_function}").strip()
-    )
-
-    node.query(
-        f"""
-    CREATE TABLE {table_name} (
-    col_x2D1 Nullable(Date32),
-    col_x2D2 Tuple(col_x2D3 Nullable(String), col_x2D4 Nullable(DateTime64(6)), col_x2D5 Nullable(DateTime64(6))),
-    col_x2D6 Nullable(Int64)) ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
-        '{minio_access_key}',
-        '{minio_secret_key}')
-    """
-    )
-
-    assert (
-        "2025-06-04\t('100022','2025-06-04 18:40:56.000000','2025-06-09 21:19:00.364000')\t100022"
-        == node.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
     )

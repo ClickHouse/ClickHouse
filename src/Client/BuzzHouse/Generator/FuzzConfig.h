@@ -36,7 +36,7 @@ namespace BuzzHouse
 {
 
 const constexpr uint64_t allow_bool = (UINT64_C(1) << 0), allow_unsigned_int = (UINT64_C(1) << 1), allow_int8 = (UINT64_C(1) << 2),
-                         allow_int64 = (UINT64_C(1) << 3), allow_int128 = (UINT64_C(1) << 4), allow_float32 = (UINT64_C(1) << 5),
+                         allow_int64 = (UINT64_C(1) << 3), allow_int128 = (UINT64_C(1) << 4), allow_floating_points = (UINT64_C(1) << 5),
                          allow_dates = (UINT64_C(1) << 6), allow_date32 = (UINT64_C(1) << 7), allow_datetimes = (UINT64_C(1) << 8),
                          allow_datetime64 = (UINT64_C(1) << 9), allow_strings = (UINT64_C(1) << 10), allow_decimals = (UINT64_C(1) << 11),
                          allow_uuid = (UINT64_C(1) << 12), allow_enum = (UINT64_C(1) << 13), allow_dynamic = (UINT64_C(1) << 14),
@@ -46,7 +46,7 @@ const constexpr uint64_t allow_bool = (UINT64_C(1) << 0), allow_unsigned_int = (
                          allow_ipv4 = (UINT64_C(1) << 23), allow_ipv6 = (UINT64_C(1) << 24), allow_geo = (UINT64_C(1) << 25),
                          set_any_datetime_precision = (UINT64_C(1) << 26), set_no_decimal_limit = (UINT64_C(1) << 27),
                          allow_fixed_strings = (UINT64_C(1) << 28), allow_time = (UINT64_C(1) << 29), allow_time64 = (UINT64_C(1) << 30),
-                         allow_int16 = (UINT64_C(1) << 31), allow_float64 = (UINT64_C(1) << 32), allow_bfloat16 = (UINT64_C(1) << 33);
+                         allow_int16 = (UINT64_C(1) << 31);
 
 const constexpr uint64_t allow_replacing_mergetree = (UINT64_C(1) << 0), allow_coalescing_mergetree = (UINT64_C(1) << 1),
                          allow_summing_mergetree = (UINT64_C(1) << 2), allow_aggregating_mergetree = (UINT64_C(1) << 3),
@@ -74,13 +74,13 @@ using JSONObjectType = JSONParserImpl::Element;
 class Catalog
 {
 public:
-    String client_hostname, server_hostname, path, region;
+    String client_hostname, server_hostname, endpoint, region;
     uint32_t port;
 
     Catalog()
         : client_hostname("localhost")
         , server_hostname("localhost")
-        , path()
+        , endpoint("test")
         , region()
         , port(0)
     {
@@ -89,12 +89,12 @@ public:
     Catalog(
         const String & client_hostname_,
         const String & server_hostname_,
-        const String & path_,
+        const String & endpoint_,
         const String & region_,
         const uint32_t port_)
         : client_hostname(client_hostname_)
         , server_hostname(server_hostname_)
-        , path(path_)
+        , endpoint(endpoint_)
         , region(region_)
         , port(port_)
     {
@@ -113,7 +113,7 @@ public:
     uint32_t port, mysql_port;
     String unix_socket, user, password, database, named_collection;
     std::filesystem::path user_files_dir, query_log_file;
-    std::optional<Catalog> glue_catalog, hive_catalog, rest_catalog, unity_catalog;
+    std::optional<Catalog> glue_catalog, hive_catalog, rest_catalog;
 
     ServerCredentials()
         : client_hostname("localhost")
@@ -139,8 +139,7 @@ public:
         const std::filesystem::path & query_log_file_,
         const std::optional<Catalog> glue_catalog_,
         const std::optional<Catalog> hive_catalog_,
-        const std::optional<Catalog> rest_catalog_,
-        const std::optional<Catalog> unity_catalog_)
+        const std::optional<Catalog> rest_catalog_)
         : client_hostname(client_hostname_)
         , server_hostname(server_hostname_)
         , container(container_)
@@ -156,7 +155,6 @@ public:
         , glue_catalog(glue_catalog_)
         , hive_catalog(hive_catalog_)
         , rest_catalog(rest_catalog_)
-        , unity_catalog(unity_catalog_)
     {
     }
 
@@ -203,32 +201,6 @@ public:
     PerformanceResult & operator=(PerformanceResult && pr) noexcept = default;
 };
 
-class SystemTable
-{
-public:
-    String schema_name, table_name;
-    DB::Strings columns;
-
-    SystemTable()
-        : schema_name("system")
-        , table_name("tables")
-        , columns()
-    {
-    }
-
-    SystemTable(const String & schema_name_, const String & table_name_, const DB::Strings & columns_)
-        : schema_name(schema_name_)
-        , table_name(table_name_)
-        , columns(columns_)
-    {
-    }
-
-    SystemTable(const SystemTable & c) = default;
-    SystemTable(SystemTable && c) = default;
-    SystemTable & operator=(const SystemTable & c) = default;
-    SystemTable & operator=(SystemTable && c) noexcept = default;
-};
-
 class FuzzConfig
 {
 private:
@@ -240,7 +212,7 @@ public:
     DB::Strings collations, storage_policies, timezones, disks, keeper_disks, clusters, caches, remote_servers, remote_secure_servers,
         http_servers, https_servers, arrow_flight_servers, hot_settings, disallowed_settings;
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
-        minio_server, http_server, azurite_server, dolor_server;
+        minio_server, http_server, azurite_server;
     std::unordered_map<String, PerformanceMetric> metrics;
     std::unordered_set<uint32_t> disallowed_error_codes, oracle_ignore_error_codes;
     String host = "localhost", keeper_map_path_prefix;
@@ -279,7 +251,7 @@ public:
 
     String getHTTPURL(bool secure) const;
 
-    void loadSystemTables(std::vector<SystemTable> & tables);
+    void loadSystemTables(std::unordered_map<String, DB::Strings> & tables);
 
     bool hasMutations();
 

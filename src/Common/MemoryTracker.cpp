@@ -452,18 +452,6 @@ void MemoryTracker::adjustWithUntrackedMemory(Int64 untracked_memory)
         std::ignore = free(-untracked_memory);
 }
 
-void MemoryTracker::adjustOnBackgroundTaskEnd(const MemoryTracker * child)
-{
-    auto background_memory_consumption = child->amount.load(std::memory_order_relaxed);
-    amount.fetch_sub(background_memory_consumption, std::memory_order_relaxed);
-
-    // Also fix CurrentMetrics::MergesMutationsMemoryTracking
-    auto metric_loaded = metric.load(std::memory_order_relaxed);
-    if (metric_loaded != CurrentMetrics::end())
-        CurrentMetrics::sub(metric_loaded, background_memory_consumption);
-}
-
-
 bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
 {
     auto peak_old = peak.load(std::memory_order_relaxed);
