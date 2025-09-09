@@ -88,14 +88,25 @@ void StorageObjectStorageConfiguration::initialize(
     }
     else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
     {
-        switch (local_context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
+        if (configuration_to_initialize.getRawPath().hasPartitionWildcard())
         {
-            case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
-                configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
-                break;
-            case FileLikeEngineDefaultPartitionStrategy::HIVE:
-                configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
-                break;
+            configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+        }
+        else
+        {
+            switch (local_context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
+            {
+                case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
+                {
+                    configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+                    break;
+                }
+                case FileLikeEngineDefaultPartitionStrategy::HIVE:
+                {
+                    configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
+                    break;
+                }
+            }
         }
     }
 
