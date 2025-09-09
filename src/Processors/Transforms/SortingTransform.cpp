@@ -60,10 +60,6 @@ MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & 
 
 MergeSorter::~MergeSorter()
 {
-    queue_variants.callOnBatchVariant([&](auto & queue)
-    {
-        LOG_ERROR(getLogger("MergeSorter"), "xxx compare count : {} / {}", queue.getUpdateHeapCompareCount(), queue.getUpdateBatchSizeCompareCount());
-    });
 }
 
 
@@ -204,7 +200,7 @@ SortingTransform::SortingTransform(
 
     description.swap(description_without_constants);
 
-    if (SortQueueVariants(sort_description_types, description).variantSupportJITCompilation())
+    if (SortQueueVariants<true>(sort_description_types, description).variantSupportJITCompilation())
         compileSortDescriptionIfNeeded(description, sort_description_types, increase_sort_description_compile_attempts /*increase_compile_attempts*/);
 }
 
