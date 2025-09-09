@@ -7,6 +7,8 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
+#include <Core/Settings.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -22,6 +24,11 @@ namespace ErrorCodes
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_RMDIR;
     extern const int READONLY;
+    extern const int PATH_ACCESS_DENIED;
+}
+namespace Setting
+{
+    extern const SettingsBool check_rights_local_storage;
 }
 
 LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
@@ -56,6 +63,14 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint) const
 {
+
+    auto current_context = CurrentThread::getQueryContext();
+    if (current_context->getSettingsRef()[Setting::check_rights_local_storage].value)
+    {
+        auto user_files_path = current_context->getUserFilesPath();
+        if (!fileOrSymlinkPathStartsWith(object.remote_path, user_files_path))
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", object.remote_path, user_files_path);
+    }
     LOG_TEST(log, "Read object: {}", object.remote_path);
     return createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
 }
@@ -73,6 +88,14 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LocalObjectStorage doesn't support append to files");
 
     LOG_TEST(log, "Write object: {}", object.remote_path);
+
+    auto current_context = CurrentThread::getQueryContext();
+    if (current_context->getSettingsRef()[Setting::check_rights_local_storage].value)
+    {
+        auto user_files_path = current_context->getUserFilesPath();
+        if (!fileOrSymlinkPathStartsWith(object.remote_path, user_files_path))
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", object.remote_path, user_files_path);
+    }
 
     /// Unlike real blob storage, in local fs we cannot create a file with non-existing prefix.
     /// So let's create it.

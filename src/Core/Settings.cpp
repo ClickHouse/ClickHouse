@@ -6486,6 +6486,9 @@ Query Iceberg table using the specific snapshot id.
     DECLARE(String, datalake_disk_name, "", R"(
 Which disk to use for data lake table engines.
 )", 0) \
+    DECLARE(Bool, check_rights_local_storage, true, R"(
+Enables checking that all files from local object storage belongs to /var/lib/clickhouse/user_files/.
+)", 0) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, true, R"(
 Enables showing data lake catalogs in system tables.
 )", 0) \
