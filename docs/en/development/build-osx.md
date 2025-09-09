@@ -27,7 +27,7 @@ Then run:
 
 ```bash
 brew update
-brew install ccache cmake ninja libtool gettext llvm binutils grep findutils nasm bash
+brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils nasm bash
 ```
 
 :::note

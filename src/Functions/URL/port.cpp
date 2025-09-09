@@ -77,7 +77,7 @@ private:
         ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            res[i] = extractPort(default_port, data, prev_offset, offsets[i] - prev_offset - 1);
+            res[i] = extractPort(default_port, data, prev_offset, offsets[i] - prev_offset);
             prev_offset = offsets[i];
         }
 }

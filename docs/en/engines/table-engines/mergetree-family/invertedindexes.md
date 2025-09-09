@@ -41,7 +41,7 @@ CREATE TABLE tab
 (
     `key` UInt64,
     `str` String,
-    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|split|no_op' [, ngram_size = N] [, separators = []] [, segment_digestion_threshold_bytes = B]) [GRANULARITY 64]
+    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|split|no_op' [, ngram_size = N] [, separators = []] [, segment_digestion_threshold_bytes = B] [, bloom_filter_false_positive_rate = R]) [GRANULARITY 64]
 )
 ENGINE = MergeTree
 ORDER BY key
@@ -49,7 +49,7 @@ ORDER BY key
 
 `tokenizer` specifies the tokenizer:
 
-- `default` set the tokenizer to "tokens('default')", i.e. split strings along non-alphanumeric characters.
+- `default` set the tokenizer to "tokens('default')", i.e. split strings along non-alphanumeric ASCII characters.
 - `ngram` set the tokenizer to "tokens('ngram')". i.e. split strings into equally large n-grams.
 - `split` set the tokenizer to "tokens('split')", i.e. split strings along certain user-defined separator strings.
 - `no_op` set the tokenizer to "tokens('no_op')", i.e. no tokenization takes place (every row value is a token).
@@ -76,9 +76,9 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
 
 <details markdown="1">
 
-<summary>Advanced settings</summary>
+<summary>Advanced parameters</summary>
 
-Optional parameter `segment_digestion_threshold_bytes` parameter determines the byte size of index segments.
+Optional parameter `segment_digestion_threshold_bytes` determines the byte size of index segments.
 
 - `segment_digestion_threshold_bytes = 0`: Unlimited size, a single segment is created for each index granule.
 - `segment_digestion_threshold_bytes = B`: A new segment is created every `B` bytes of text input.
@@ -89,6 +89,12 @@ We do not recommend changing `segment_digestion_threshold_bytes`.
 The default value will work well in virtually all situations.
 The presence of more than one segment causes redundant data storage and slower full-text search queries.
 The only reason to provide a non-zero value (e.g. `256MB`) for `segment_digestion_threshold_bytes` is if you get out-of-memory exceptions during index creation.
+
+Optional parameter `bloom_filter_false_positive_rate` determines the false-positive rate of the bloom filter.
+
+- `bloom_filter_false_positive_rate = R`: A double between 0.0 and 1.0.
+
+Default value: `0.001` (0.1%).
 
 </details>
 
@@ -110,7 +116,6 @@ INSERT INTO tab(key, str) VALUES (1, 'Hello World');
 SELECT * from tab WHERE str == 'Hello World';
 SELECT * from tab WHERE str IN ('Hello', 'World');
 SELECT * from tab WHERE str LIKE '%Hello%';
-SELECT * from tab WHERE multiSearchAny(str, ['Hello', 'World']);
 SELECT * from tab WHERE hasToken(str, 'Hello');
 ```
 
@@ -171,18 +176,6 @@ Similarly, if you like to search a column value ending with `olap engine`, use s
 :::note
 Index lookups for functions `startsWith` and `endWidth` are generally less efficient than for functions `like`/`notLike`/`match`.
 :::
-
-#### `multiSearchAny` {#functions-example-multisearchany}
-
-Function [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany) searches the provided search term as a substring in the column value.
-As a result, search term should be a complete token to use with the `text` index.
-This can be achieved by putting a space before and after the input needle.
-
-Example:
-
-```sql
-SELECT count() FROM hackernews WHERE multiSearchAny(lower(comment), [' clickhouse ', ' chdb ']);
-```
 
 #### `hasToken` and `hasTokenOrNull` {#functions-example-hastoken-hastokenornull}
 
@@ -316,7 +309,7 @@ We can also search for one or all of multiple terms, i.e., disjunctions or conju
 -- multiple OR'ed terms
 SELECT count(*)
 FROM hackernews
-WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
+WHERE hasToken(lower(comment), 'avx') OR hasToken(lower(comment), 'sve');
 
 -- multiple AND'ed terms
 SELECT count(*)
@@ -334,4 +327,5 @@ For example, filter predicate `WHERE s LIKE '%little%' OR s LIKE '%big%'` can be
 ## Related content {#related-content}
 
 - Blog: [Introducing Inverted Indices in ClickHouse](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)
+- Blog: [Inside ClickHouse full-text search: fast, native, and columnar](https://clickhouse.com/blog/clickhouse-full-text-search)
 - Video: [Full-Text Indices: Design and Experiments](https://www.youtube.com/watch?v=O_MnyUkrIq8)

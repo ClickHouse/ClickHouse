@@ -26,7 +26,7 @@ public:
         const ActionsDAG::Node * predicate,
         const ActionsDAG * filter,
         const ContextPtr & context,
-        size_t number_of_replicas) const override;
+        ClusterPtr cluster) const override;
 
     String getPathSample(ContextPtr context);
 

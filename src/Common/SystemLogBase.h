@@ -32,7 +32,9 @@
     M(BackupLogElement) \
     M(BlobStorageLogElement) \
     M(QueryMetricLogElement) \
-    M(DeadLetterQueueElement)
+    M(DeadLetterQueueElement) \
+    M(ZooKeeperConnectionLogElement) \
+    M(IcebergMetadataLogElement) \
 
 #define SYSTEM_LOG_ELEMENTS_CLOUD(M) \
     M(DistributedCacheLogElement) \

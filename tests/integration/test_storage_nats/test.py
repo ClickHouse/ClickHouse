@@ -1344,24 +1344,22 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
 
 
 def test_nats_no_connection_at_startup_1(nats_cluster):
-    with nats_cluster.pause_container("nats1"):
-        wait_nats_paused(nats_cluster.nats_port, nats_cluster.nats_ssl_context)
-        instance.query_and_get_error(
-            """
-            CREATE TABLE test.cs (key UInt64, value UInt64)
-                ENGINE = NATS
-                SETTINGS nats_url = 'nats1:4444',
-                        nats_subjects = 'cs',
-                        nats_format = 'JSONEachRow',
-                        nats_num_consumers = '5',
-                        nats_row_delimiter = '\\n';
+    instance.query_and_get_error(
         """
-        )
-        instance.query_and_get_error(
-            """
-            SHOW TABLE test.cs;
+        CREATE TABLE test.cs (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'invalid_nats_url:4444',
+                    nats_subjects = 'cs',
+                    nats_format = 'JSONEachRow',
+                    nats_num_consumers = '5',
+                    nats_row_delimiter = '\\n';
         """
-        )
+    )
+    instance.query_and_get_error(
+        """
+        SHOW TABLE test.cs;
+        """
+    )
 
 
 def test_nats_no_connection_at_startup_2(nats_cluster):

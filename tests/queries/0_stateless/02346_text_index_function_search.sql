@@ -2,6 +2,8 @@
 
 SET enable_analyzer = 1;
 SET allow_experimental_full_text_index = 1;
+-- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
+SET use_skip_indexes_on_data_read = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -45,7 +47,24 @@ SELECT id FROM tab WHERE searchAny(message, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 
 
 DROP TABLE tab;
 
-SELECT 'Default tokenizer';
+SELECT 'FixedString input columns';
+
+CREATE TABLE tab (
+    id Int,
+    text FixedString(16),
+    INDEX idx_text(text) TYPE text(tokenizer = 'default')
+)
+ENGINE=MergeTree()
+ORDER BY (id);
+
+INSERT INTO tab VALUES(1, toFixedString('bar', 3)), (2, toFixedString('foo', 3));
+
+SELECT groupArray(id) FROM tab WHERE searchAny(text, ['bar']);
+SELECT groupArray(id) FROM tab WHERE searchAll(text, ['bar']);
+
+DROP TABLE tab;
+
+SELECT '-- Default tokenizer';
 
 CREATE TABLE tab
 (
@@ -84,9 +103,14 @@ SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc', 'bar']);
 SELECT groupArray(id) FROM tab WHERE searchAll(message, ['foo', 'bar']);
 SELECT groupArray(id) FROM tab WHERE searchAll(message, ['abc', 'fo']);
 
+--- Test for FixedString needles
+--- Not a systematic test, just to see that FixedString needles work in principle
+SELECT groupArray(id) FROM tab WHERE searchAny(message, [toFixedString('abc', 3)]);
+SELECT groupArray(id) FROM tab WHERE searchAll(message, [toFixedString('abc', 3)]);
+
 DROP TABLE tab;
 
-SELECT 'Ngram tokenizer';
+SELECT '-- Ngram tokenizer';
 
 CREATE TABLE tab
 (
@@ -121,7 +145,7 @@ SELECT groupArray(id) FROM tab WHERE searchAll(message, ['efgh', 'cdef', 'defg']
 
 DROP TABLE tab;
 
-SELECT 'Split tokenizer';
+SELECT '-- Split tokenizer';
 
 CREATE TABLE tab
 (
@@ -156,7 +180,7 @@ SELECT groupArray(id) FROM tab WHERE searchAll(message, ['bc', 'd']);
 
 DROP TABLE tab;
 
-SELECT 'NoOp tokenizer';
+SELECT '-- NoOp tokenizer';
 
 CREATE TABLE tab
 (
@@ -206,6 +230,148 @@ SELECT count() FROM tab WHERE searchAny(message, ['hello', 'hello']);
 
 SELECT count() FROM tab WHERE searchAll(message, ['hello']);
 SELECT count() FROM tab WHERE searchAll(message, ['hello', 'hello']);
+
+DROP TABLE tab;
+
+SELECT 'Combination with the tokens function';
+
+SELECT '-- Default tokenizer';
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = 'default'),
+)
+ENGINE = MergeTree
+ORDER BY (id);
+
+INSERT INTO tab(id, message)
+VALUES
+    (1, 'abc+ def- foo!'),
+    (2, 'abc+ def- bar?'),
+    (3, 'abc+ baz- foo!'),
+    (4, 'abc+ baz- bar?'),
+    (5, 'abc+ zzz- foo!'),
+    (6, 'abc+ zzz- bar?');
+
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('abc', 'default'));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('ab', 'default'));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('foo', 'default'));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('bar', 'default'));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('abc foo', 'default'));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('abc bar', 'default'));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('foo bar', 'default'));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('foo ba', 'default'));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('fo ba', 'default'));
+
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('abc', 'default'));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('ab', 'default'));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('foo', 'default'));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('bar', 'default'));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('abc foo', 'default'));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('abc bar', 'default'));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('foo bar', 'default'));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('abc fo', 'default'));
+
+DROP TABLE tab;
+
+SELECT '-- Ngram tokenizer';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(`message`) TYPE text(tokenizer = 'ngram', ngram_size = 4),
+)
+ENGINE = MergeTree
+ORDER BY (id);
+
+INSERT INTO tab
+VALUES
+(1, 'abcdef'),
+(2, 'bcdefg'),
+(3, 'cdefgh'),
+(4, 'defghi'),
+(5, 'efghij');
+
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('efgh', 'ngram', 4));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('efg', 'ngram', 4));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('cdef', 'ngram', 4));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('defg', 'ngram', 4));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('cdefg', 'ngram', 4)); -- search cdefg
+SELECT groupArray(id) FROM tab WHERE searchAny(message, arrayConcat(tokens('cdefg', 'ngram', 4), tokens('defgh', 'ngram', 4))); --search for either cdefg or defgh
+
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('efgh', 'ngram', 4));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('efg', 'ngram', 4));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('cdef', 'ngram', 4));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('defg', 'ngram', 4));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('cdefg', 'ngram', 4));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, arrayConcat(tokens('cdefg', 'ngram', 4), tokens('defgh', 'ngram', 4)));
+
+DROP TABLE tab;
+
+SELECT '-- Split tokenizer';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(`message`) TYPE text(tokenizer = 'split', separators = ['()', '\\']),
+)
+ENGINE = MergeTree
+ORDER BY (id);
+
+INSERT INTO tab
+VALUES
+(1, '  a  bc d'),
+(2, '()()a()bc()d'),
+(3, ',()a(),bc,(),d,'),
+(4, '\\a\n\\bc\\d\n'),
+(5, '\na\n\\bc\\d\\');
+
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('a', 'split', ['()', '\\']));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('bc', 'split', ['()', '\\']));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('d', 'split', ['()', '\\']));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('a()bc', 'split', ['()', '\\']));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('a\\d', 'split', ['()', '\\']));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('bc\\d', 'split', ['()', '\\']));
+
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('a', 'split', ['()', '\\']));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('bc', 'split', ['()', '\\']));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('d', 'split', ['()', '\\']));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('a()bc', 'split', ['()', '\\']));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('a\\d', 'split', ['()', '\\']));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('bc\\d', 'split', ['()', '\\']));
+
+DROP TABLE tab;
+
+SELECT '-- NoOp tokenizer';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(`message`) TYPE text(tokenizer = 'no_op'),
+)
+ENGINE = MergeTree
+ORDER BY (id);
+
+INSERT INTO tab
+VALUES
+(1, 'abc def'),
+(2, 'abc fgh'),
+(3, 'def efg'),
+(4, 'abcdef');
+
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('abc', 'no_op'));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('def', 'no_op'));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, arrayConcat(tokens('def', 'no_op'), tokens('def', 'no_op')));
+SELECT groupArray(id) FROM tab WHERE searchAny(message, tokens('abcdef', 'no_op'));
+
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('abc', 'no_op'));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('def', 'no_op'));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, arrayConcat(tokens('def', 'no_op'), tokens('def', 'no_op')));
+SELECT groupArray(id) FROM tab WHERE searchAll(message, tokens('abcdef', 'no_op'));
 
 DROP TABLE tab;
 

@@ -23,6 +23,9 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
+namespace Iceberg
+{
+
 class IcebergDeletingOperation : public IcebergChangeSchemaOperation
 {
 public:
@@ -864,4 +867,5 @@ void ExecutableEvolutionFunction::lazyInitialize() const
             transforms.push_back(transform);
 }
 
+}
 }
