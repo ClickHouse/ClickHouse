@@ -271,6 +271,11 @@ public:
     /// Return pointer to the end of the serialization data.
     virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */) const;
 
+    /// Returns size in bytes required to serialize value into memory using the previous method.
+    /// If size cannot be calculated in advance, return nullopt. In this case serializeValueIntoMemory
+    /// cannot be used and serializeValueIntoArena should be used instead,
+    virtual std::optional<size_t> getSerializedValueSize(size_t n) const { return byteSizeAt(n); }
+
     /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
     virtual StringRef
     serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const;
