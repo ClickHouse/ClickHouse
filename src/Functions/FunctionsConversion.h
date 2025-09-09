@@ -4905,8 +4905,11 @@ private:
     {
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
-            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+            return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
+                if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
+                    return ConvertImplGenericFromString<false>::execute(arguments, makeNullable(result_type), nullable_source, input_rows_count, context);
+
                 return ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context);
             };
         }
@@ -6099,7 +6102,7 @@ private:
             case TypeIndex::Map:
                 return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
             case TypeIndex::Object:
-                return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()));
+                return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()), requested_result_is_nullable);
             case TypeIndex::AggregateFunction:
                 return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
             case TypeIndex::Interval:

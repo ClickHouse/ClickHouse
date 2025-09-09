@@ -270,6 +270,7 @@ namespace DB
     </clickhouse>
     ```
     )", 0) \
+    DECLARE(Bool, temporary_data_in_distributed_cache, 0, R"(Store temporary data in the distributed cache.)", 0) \
     DECLARE(UInt64, aggregate_function_group_array_max_element_size, 0xFFFFFF, R"(Max array element size in bytes for groupArray function. This limit is checked at serialization and help to avoid large state size.)", 0) \
     DECLARE(GroupArrayActionWhenLimitReached, aggregate_function_group_array_action_when_limit_is_reached, GroupArrayActionWhenLimitReached::THROW, R"(Action to execute when max array element size is exceeded in groupArray: `throw` exception, or `discard` extra values)", 0) \
     DECLARE(UInt64, max_server_memory_usage, 0, R"(
