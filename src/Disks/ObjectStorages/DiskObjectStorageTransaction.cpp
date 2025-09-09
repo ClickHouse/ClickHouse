@@ -505,13 +505,13 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
 
 struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperation
 {
-    /// this object is shared with the object file writer
-    /// The StoredObject::bytes_size is not determined at the beginning
+    /// This object is shared with the file writer object
+    /// The StoredObject::bytes_size is not initialized at the beginning
     /// it is set only after the writer is finalized
     std::shared_ptr<StoredObject> object;
     ObjectStorageKey remote_key;
     WriteMode mode;
-    bool do_not_write_empty_blob;
+    bool create_blob_if_empty;
 
     WriteFileObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -519,12 +519,12 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
         std::shared_ptr<StoredObject> object_,
         ObjectStorageKey remote_key_,
         WriteMode mode_,
-        bool do_not_write_empty_blob_)
+        bool create_blob_if_empty_)
         : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
         , object(std::move(object_))
         , remote_key(remote_key_)
         , mode(mode_)
-        , do_not_write_empty_blob(do_not_write_empty_blob_)
+        , create_blob_if_empty(create_blob_if_empty_)
     {
         chassert(remote_key.serialize() == object->remote_path);
     }
@@ -541,18 +541,20 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
 
         if (mode == WriteMode::Rewrite)
         {
-            if (do_not_write_empty_blob && object->bytes_size == 0)
+            if (object->bytes_size > 0 || create_blob_if_empty)
+            {
+                LOG_TRACE(getLogger("DiskObjectStorageTransaction"), "Writing blob for path {}, key {}, size {}", object->local_path, object->remote_path, object->bytes_size);
+                tx->createMetadataFile(object->local_path, remote_key, object->bytes_size);
+            }
+            else
             {
                 LOG_TRACE(getLogger("DiskObjectStorageTransaction"), "Skipping writing empty blob for path {}, key {}", object->local_path, object->remote_path);
                 tx->createEmptyMetadataFile(object->local_path);
             }
-            else
-                LOG_TRACE(getLogger("DiskObjectStorageTransaction"), "Writing blob for path {}, key {}, size {}", object->local_path, object->remote_path, object->bytes_size);
-                tx->createMetadataFile(object->local_path, remote_key, object->bytes_size);
         }
         else
         {
-            /// Even if do_not_write_empty_blob and size is 0, we still need to add metadata just to make sure that a file gets created if this is the 1st append
+            /// Even if not create_blob_if_empty and size is 0, we still need to add metadata just to make sure that a file gets created if this is the 1st append
             tx->addBlobToMetadata(object->local_path, remote_key, object->bytes_size);
         }
     }
@@ -898,7 +900,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     std::optional<ObjectAttributes> object_attributes;
 
     /// Does metadata_storage support empty files without actual blobs in the object_storage?
-    const bool do_not_write_empty_blob = metadata_storage.supportsEmptyFilesWithoutBlobs();
+    const bool create_blob_if_empty = !metadata_storage.supportsEmptyFilesWithoutBlobs();
 
     auto object = std::make_shared<StoredObject>(object_key.serialize(), path);
 
@@ -909,7 +911,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         truncateFile(object->local_path, /*size*/ 0);
     }
 
-    operations_to_execute.emplace_back(std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object, object_key, mode, do_not_write_empty_blob));
+    operations_to_execute.emplace_back(std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object, object_key, mode, create_blob_if_empty));
 
     auto create_metadata_callback = [object_storage_tx = shared_from_this(), object, autocommit](size_t count)
     {
@@ -921,7 +923,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         /// buf1 = tx->writeFile(xxx/yyy.bin)
         /// buf2 = tx->writeFile(xxx/zzz.bin)
         /// ...
-        /// buf1->finalize() // shouldn't do anything with metadata operations, just memoize what to do
+        /// buf1->finalize() // shouldn't do anything with metadata operations, just memorize what to do
         /// tx->commit()
         object->bytes_size = count;
 
@@ -970,7 +972,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 #endif
 
     return std::make_unique<WriteBufferWithFinalizeCallback>(
-        std::move(impl), std::move(create_metadata_callback), object->remote_path, do_not_write_empty_blob);
+        std::move(impl), std::move(create_metadata_callback), object->remote_path, create_blob_if_empty);
 }
 
 
@@ -1084,7 +1086,7 @@ void DiskObjectStorageTransaction::commit(const TransactionCommitOptionsVariant 
             }
             catch (...) /// NOLINT(bugprone-empty-catch)
             {
-                // no matter what happened
+                // undo call logs all exceptions already, do not log again
             }
 
             throw;
@@ -1109,7 +1111,7 @@ void DiskObjectStorageTransaction::commit(const TransactionCommitOptionsVariant 
         }
         catch (...) /// NOLINT(bugprone-empty-catch)
         {
-            // no matter what happened
+            // undo call logs all exceptions already, do not log again
         }
 
         throw;
