@@ -2364,6 +2364,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
     size_t joins_count = 0;
     bool is_full_join = false;
+    bool is_global_join = false;
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
@@ -2385,14 +2386,17 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             if (join_node.getKind() == JoinKind::Full)
                 is_full_join = true;
 
+            if (join_node.getLocality() == JoinLocality::Global)
+                is_global_join = true;
+
             continue;
         }
 
         prepareBuildQueryPlanForTableExpression(table_expression, planner_context);
     }
 
-    /// disable parallel replicas for n-way join with FULL JOIN involved
-    if (joins_count > 1 && is_full_join)
+    /// disable parallel replicas for n-way join with FULL JOIN or GLOBAL JOINS
+    if (joins_count > 1 && (is_full_join || is_global_join))
         planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
 
     // in case of n-way JOINs the table expression stack contains several join nodes
