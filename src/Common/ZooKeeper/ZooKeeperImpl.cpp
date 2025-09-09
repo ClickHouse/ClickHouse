@@ -403,7 +403,7 @@ ZooKeeper::ZooKeeper(
     const zkutil::ShuffleHosts & nodes,
     const zkutil::ZooKeeperArgs & args_,
     std::shared_ptr<ZooKeeperLog> zk_log_)
-    : send_receive_os_threads_nice_value(DB::Context::getGlobalContextInstance()->getServerSettings()[DB::ServerSetting::os_threads_nice_value_zookeeper_client_send_receive])
+    : send_receive_os_threads_nice_value(args_.send_receive_os_threads_nice_value)
     , path_acls(args_.path_acls)
     , args(args_)
 {
