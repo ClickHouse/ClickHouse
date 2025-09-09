@@ -1,5 +1,6 @@
 #pragma once
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include "Parsers/IAST_fwd.h"
 
 namespace DB
 {
@@ -51,6 +52,15 @@ std::optional<T> getFromPositionOrKeyValue(
 
     return std::nullopt;
 };
+
+struct ParseFromDiskResult
+{
+    std::optional<String> format;
+    std::optional<String> structure;
+    std::optional<String> compression_method;
+};
+
+ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context);
 
 
 }

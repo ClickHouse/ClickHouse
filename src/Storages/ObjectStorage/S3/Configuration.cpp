@@ -301,20 +301,26 @@ bool StorageS3Configuration::collectCredentials(ASTPtr maybe_credentials, S3::S3
     return true;
 }
 
-void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & /*args*/, ContextPtr context, bool /*with_structure*/)
+void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
 {
     auto disk = context->getDisk(disk_name);
     auto object_storage = disk->getObjectStorage();
+    const auto & s3_object_storage = assert_cast<const S3ObjectStorage &>(*object_storage);
     s3_settings = std::make_unique<S3Settings>();
-    *s3_settings = std::static_pointer_cast<S3ObjectStorage>(object_storage)->getS3Settings();
-
-    if (auto s3_object_storage = std::static_pointer_cast<S3ObjectStorage>(object_storage); s3_object_storage)
-        setURL(s3_object_storage->getURI());
+    *s3_settings = s3_object_storage.getS3Settings();
+    setURL(s3_object_storage.getURI());
     if (auto object_storage_disk = std::static_pointer_cast<DiskObjectStorage>(disk); object_storage_disk)
     {
         String path = object_storage_disk->getObjectsKeyPrefix();
         setPathForRead(path);
     }
+    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context);
+    if (parsing_result.format.has_value())
+        format = *parsing_result.format;
+    if (parsing_result.compression_method.has_value())
+        compression_method = *parsing_result.compression_method;
+    if (parsing_result.structure.has_value())
+        structure = *parsing_result.structure;
 }
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)

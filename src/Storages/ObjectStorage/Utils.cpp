@@ -11,6 +11,7 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 namespace DB
 {
@@ -19,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
@@ -175,6 +177,58 @@ std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & funct
     return key_value_args;
 }
 
+ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context)
+{
+    if (args.size() > 2 + with_structure)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Storage requires {} arguments maximum.",
+            2 + with_structure);
+
+    std::unordered_map<std::string_view, size_t> engine_args_to_idx;
+
+    if (with_structure)
+    {
+        if (args.size() > 2)
+            engine_args_to_idx = {{"format", 0}, {"structure", 1}, {"compression_method", 2}};
+        else if (args.size() > 1)
+            engine_args_to_idx = {{"format", 0}, {"structure", 1}};
+        else if (!args.empty())
+            engine_args_to_idx = {{"format", 0}};
+    }
+    else if (args.size() > 1)
+        engine_args_to_idx = {{"format", 0}, {"compression_method", 1}};
+    else if (!args.empty())
+        engine_args_to_idx = {{"format", 0}};
+
+    ASTs key_value_asts;
+    if (auto * first_key_value_arg_it = getFirstKeyValueArgument(args);
+        first_key_value_arg_it != args.end())
+    {
+        key_value_asts = ASTs(first_key_value_arg_it, args.end());
+    }
+
+    auto key_value_args = parseKeyValueArguments(key_value_asts, context);
+
+    ParseFromDiskResult result;
+    if (auto format_value = getFromPositionOrKeyValue<String>("format", args, engine_args_to_idx, key_value_args);
+        format_value.has_value())
+    {
+        result.format = format_value.value();
+    }
+
+    if (auto structure_value = getFromPositionOrKeyValue<String>("structure", args, engine_args_to_idx, key_value_args);
+        structure_value.has_value())
+    {
+        result.structure = structure_value.value();
+    }
+
+    if (auto compression_method_value = getFromPositionOrKeyValue<String>("compression_method", args, engine_args_to_idx, key_value_args);
+        compression_method_value.has_value())
+    {
+        result.compression_method = compression_method_value.value();
+    }
+    return result;
+}
 
 namespace Setting
 {

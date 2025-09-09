@@ -23,7 +23,6 @@
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Interpreters/Context.h>
@@ -352,59 +351,11 @@ public:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
     {
         if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} is not allowed for usage in storage engines", disk_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} is not allowed for usage in storage engines. The list of allowed disks is defined by `allowed_disks_for_table_engines", disk_name);
 
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
         auto disk = context->getDisk(disk_name);
         ready_object_storage = disk->getObjectStorage();
-
-        if (args.size() > 2 + with_structure)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Storage requires {} arguments maximum.",
-                2 + with_structure);
-
-        std::unordered_map<std::string_view, size_t> engine_args_to_idx;
-
-        if (with_structure)
-        {
-            if (args.size() > 2)
-                engine_args_to_idx = {{"format", 0}, {"structure", 1}, {"compression_method", 2}};
-            else if (args.size() > 1)
-                engine_args_to_idx = {{"format", 0}, {"structure", 1}};
-            else if (!args.empty())
-                engine_args_to_idx = {{"format", 0}};
-        }
-        else if (args.size() > 1)
-            engine_args_to_idx = {{"format", 0}, {"compression_method", 1}};
-        else if (!args.empty())
-            engine_args_to_idx = {{"format", 0}};
-
-        ASTs key_value_asts;
-        if (auto * first_key_value_arg_it = getFirstKeyValueArgument(args);
-            first_key_value_arg_it != args.end())
-        {
-            key_value_asts = ASTs(first_key_value_arg_it, args.end());
-        }
-
-        auto key_value_args = parseKeyValueArguments(key_value_asts, context);
-
-        if (auto format_value = getFromPositionOrKeyValue<String>("format", args, engine_args_to_idx, key_value_args);
-            format_value.has_value())
-        {
-            StorageObjectStorageConfiguration::format = format_value.value();
-        }
-
-        if (auto structure_value = getFromPositionOrKeyValue<String>("structure", args, engine_args_to_idx, key_value_args);
-            structure_value.has_value())
-        {
-            StorageObjectStorageConfiguration::structure = structure_value.value();
-        }
-
-        if (auto compression_method_value = getFromPositionOrKeyValue<String>("compression_method", args, engine_args_to_idx, key_value_args);
-            compression_method_value.has_value())
-        {
-            StorageObjectStorageConfiguration::compression_method = compression_method_value.value();
-        }
     }
 
 private:

@@ -884,14 +884,9 @@ void LocalServer::processConfig()
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
 #endif
 
-    std::unordered_set<String> allowed_disks_table_engines;
-    std::stringstream ss(server_settings[ServerSetting::allowed_disks_for_table_engines]); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    std::string item;
-
-    while (std::getline(ss, item, ','))
-        allowed_disks_table_engines.insert(item);
-
-    global_context->setAllowedDisksForTableEngines(std::move(allowed_disks_table_engines));
+    Names allowed_disks_table_engines;
+    splitInto<','>(allowed_disks_table_engines, server_settings[ServerSetting::allowed_disks_for_table_engines].value);
+    global_context->setAllowedDisksForTableEngines(std::unordered_set<String>(allowed_disks_table_engines.begin(), allowed_disks_table_engines.end()));
 
     /// Initialize a dummy query condition cache.
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);
