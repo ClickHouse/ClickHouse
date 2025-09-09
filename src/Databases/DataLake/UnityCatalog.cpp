@@ -240,6 +240,7 @@ bool UnityCatalog::tryGetTableMetadata(
                         }
                         schema.push_back({name, data_type});
                     }
+                    LOG_TEST(log, "Parsed schema: {}", schema.toString());
                 }
                 catch (...)
                 {
