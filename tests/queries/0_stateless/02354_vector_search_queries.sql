@@ -5,9 +5,6 @@
 -- Test runs with analyzer enabled
 SET enable_analyzer = 1;
 
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
-
 SELECT '10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule, 1 indexed block';
 
 CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;

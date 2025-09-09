@@ -10,9 +10,6 @@ allow_asynchronous_read_from_io_pool_for_merge_tree	0
 allow_changing_replica_until_first_data_packet	0
 allow_create_index_without_type	0
 allow_custom_error_code_in_throwif	0
-allow_database_glue_catalog	0
-allow_database_iceberg	0
-allow_database_unity_catalog	0
 allow_ddl	1
 allow_deprecated_database_ordinary	0
 allow_deprecated_error_prone_window_functions	0
@@ -27,7 +24,7 @@ allow_experimental_annoy_index	0
 allow_experimental_bfloat16_type	1
 allow_experimental_bigint_types	1
 allow_experimental_codecs	0
-allow_experimental_correlated_subqueries	1
+allow_experimental_correlated_subqueries	0
 allow_experimental_database_atomic	1
 allow_experimental_database_glue_catalog	0
 allow_experimental_database_hms_catalog	0
@@ -42,7 +39,6 @@ allow_experimental_full_text_index	0
 allow_experimental_funnel_functions	0
 allow_experimental_geo_types	1
 allow_experimental_hash_functions	0
-allow_experimental_iceberg_compaction	0
 allow_experimental_insert_into_iceberg	0
 allow_experimental_inverted_index	0
 allow_experimental_join_condition	0
@@ -51,7 +47,7 @@ allow_experimental_json_type	1
 allow_experimental_kafka_offsets_storage_in_keeper	0
 allow_experimental_kusto_dialect	0
 allow_experimental_lightweight_delete	1
-allow_experimental_lightweight_update	1
+allow_experimental_lightweight_update	0
 allow_experimental_live_view	0
 allow_experimental_map_type	1
 allow_experimental_materialized_postgresql_table	0
@@ -75,12 +71,9 @@ allow_experimental_ts_to_grid_aggregate_function	0
 allow_experimental_undrop_table_query	1
 allow_experimental_usearch_index	0
 allow_experimental_variant_type	1
-allow_experimental_vector_similarity_index	1
+allow_experimental_vector_similarity_index	0
 allow_experimental_window_functions	1
 allow_experimental_window_view	0
-allow_experimental_ytsaurus_dictionary_source	0
-allow_experimental_ytsaurus_table_engine	0
-allow_experimental_ytsaurus_table_function	0
 allow_general_join_planning	1
 allow_get_client_http_header	0
 allow_hyperscan	1
@@ -118,14 +111,12 @@ alter_partition_verbose_result	0
 alter_sync	1
 alter_update_mode	heavy
 analyze_index_with_space_filling_curves	1
-analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested	1
 analyzer_compatibility_join_using_top_level_identifier	0
 annoy_index_search_k_nodes	-1
 any_join_distinct_right_table_keys	0
 apply_deleted_mask	1
 apply_mutations_on_fly	0
 apply_patch_parts	1
-apply_patch_parts_join_cache_buckets	8
 apply_settings_from_server	1
 asterisk_include_alias_columns	0
 asterisk_include_materialized_columns	0
@@ -147,35 +138,26 @@ async_query_sending_for_remote	1
 async_socket_for_remote	1
 azure_allow_parallel_part_upload	1
 azure_check_objects_after_upload	0
-azure_connect_timeout_ms	1000
 azure_create_new_file_on_insert	0
 azure_ignore_file_doesnt_exist	0
 azure_list_object_keys_size	1000
 azure_max_blocks_in_multipart_upload	50000
-azure_max_get_burst	0
-azure_max_get_rps	0
 azure_max_inflight_parts_for_one_file	20
-azure_max_put_burst	0
-azure_max_put_rps	0
-azure_max_redirects	10
 azure_max_single_part_copy_size	268435456
-azure_max_single_part_upload_size	33554432
+azure_max_single_part_upload_size	104857600
 azure_max_single_read_retries	4
 azure_max_unexpected_write_error_retries	4
 azure_max_upload_part_size	5368709120
 azure_min_upload_part_size	16777216
-azure_request_timeout_ms	30000
 azure_sdk_max_retries	10
 azure_sdk_retry_initial_backoff_ms	10
 azure_sdk_retry_max_backoff_ms	1000
-azure_sdk_use_native_client	1
 azure_skip_empty_files	0
 azure_strict_upload_part_size	0
 azure_throw_on_zero_files_match	0
 azure_truncate_on_insert	0
 azure_upload_part_size_multiply_factor	2
 azure_upload_part_size_multiply_parts_count_threshold	500
-azure_use_adaptive_timeouts	1
 background_buffer_flush_schedule_pool_size	16
 background_common_pool_size	8
 background_distributed_schedule_pool_size	16
@@ -198,10 +180,6 @@ backup_restore_keeper_retry_initial_backoff_ms	100
 backup_restore_keeper_retry_max_backoff_ms	5000
 backup_restore_keeper_value_max_size	1048576
 backup_restore_s3_retry_attempts	1000
-backup_restore_s3_retry_initial_backoff_ms	25
-backup_restore_s3_retry_jitter_factor	0.1
-backup_restore_s3_retry_max_backoff_ms	5000
-backup_slow_all_threads_after_retryable_s3_error	1
 backup_threads	16
 bool_false_representation	false
 bool_true_representation	true
@@ -271,10 +249,6 @@ default_normal_view_sql_security	INVOKER
 default_table_engine	MergeTree
 default_temporary_table_engine	Memory
 default_view_definer	CURRENT_USER
-delta_lake_enable_engine_predicate	1
-delta_lake_enable_expression_visitor_logging	0
-delta_lake_snapshot_version	-1
-delta_lake_throw_on_engine_predicate_error	0
 describe_compact_output	0
 describe_extend_object_types	0
 describe_include_subcolumns	0
@@ -291,9 +265,7 @@ distributed_background_insert_split_batch_on_failure	0
 distributed_background_insert_timeout	0
 distributed_cache_alignment	0
 distributed_cache_bypass_connection_pool	0
-distributed_cache_connect_backoff_max_ms	50
-distributed_cache_connect_backoff_min_ms	0
-distributed_cache_connect_max_tries	5
+distributed_cache_connect_max_tries	20
 distributed_cache_credentials_refresh_period_seconds	5
 distributed_cache_data_packet_ack_window	5
 distributed_cache_discard_connection_if_unread_data	1
@@ -304,7 +276,7 @@ distributed_cache_min_bytes_for_seek	0
 distributed_cache_pool_behaviour_on_limit	wait
 distributed_cache_read_alignment	0
 distributed_cache_read_only_from_current_az	1
-distributed_cache_read_request_max_tries	10
+distributed_cache_read_request_max_tries	20
 distributed_cache_receive_response_wait_milliseconds	60000
 distributed_cache_receive_timeout_milliseconds	10000
 distributed_cache_throw_on_error	0
@@ -337,7 +309,6 @@ drain_timeout	3
 empty_result_for_aggregation_by_constant_keys_on_empty_set	1
 empty_result_for_aggregation_by_empty_set	0
 enable_adaptive_memory_spill_scheduler	0
-enable_add_distinct_to_in_subqueries	0
 enable_analyzer	1
 enable_blob_storage_log	1
 enable_debug_queries	0
@@ -355,7 +326,6 @@ enable_http_compression	0
 enable_job_stack_trace	0
 enable_json_type	1
 enable_lightweight_delete	1
-enable_lightweight_update	1
 enable_memory_bound_merging_of_aggregation_results	1
 enable_multiple_prewhere_read_steps	1
 enable_named_columns_in_function_tuple	0
@@ -377,7 +347,7 @@ enable_time_time64_type	0
 enable_unaligned_array_join	0
 enable_url_encoding	0
 enable_variant_type	1
-enable_vector_similarity_index	1
+enable_vector_similarity_index	0
 enable_vertical_final	1
 enable_writes_to_query_cache	1
 enable_zstd_qat_codec	0
@@ -388,10 +358,8 @@ engine_file_skip_empty_files	0
 engine_file_truncate_on_insert	0
 engine_url_skip_empty_files	0
 errors_output_format	CSV
-evaluation_time	auto
 exact_rows_before_limit	0
 except_default_mode	ALL
-execute_exists_as_scalar_subquery	1
 external_storage_connect_timeout_sec	10
 external_storage_max_read_bytes	0
 external_storage_max_read_rows	0
@@ -518,7 +486,6 @@ http_wait_end_of_query	0
 http_write_exception_in_output_format	1
 http_zlib_compression_level	3
 iceberg_engine_ignore_schema_evolution	0
-iceberg_metadata_compression_method	
 iceberg_snapshot_id	0
 iceberg_timestamp_ms	0
 idle_connection_timeout	3600
@@ -577,7 +544,6 @@ input_format_json_defaults_for_missing_elements_in_named_tuple	1
 input_format_json_empty_as_default	0
 input_format_json_ignore_unknown_keys_in_named_tuple	1
 input_format_json_ignore_unnecessary_fields	1
-input_format_json_infer_array_of_dynamic_from_array_of_different_types	1
 input_format_json_infer_incomplete_types_as_strings	1
 input_format_json_map_as_array_of_tuples	0
 input_format_json_max_depth	1000
@@ -621,15 +587,10 @@ input_format_parquet_filter_push_down	1
 input_format_parquet_import_nested	0
 input_format_parquet_local_file_min_bytes_for_seek	8192
 input_format_parquet_max_block_size	65409
-input_format_parquet_memory_high_watermark	4294967296
-input_format_parquet_memory_low_watermark	2097152
-input_format_parquet_page_filter_push_down	1
 input_format_parquet_prefer_block_bytes	16744704
 input_format_parquet_preserve_order	0
 input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference	0
 input_format_parquet_use_native_reader	0
-input_format_parquet_use_native_reader_v3	0
-input_format_parquet_use_offset_index	1
 input_format_protobuf_flatten_google_wrappers	0
 input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference	0
 input_format_record_errors_file_path	
@@ -682,7 +643,6 @@ join_to_sort_maximum_table_rows	10000
 join_to_sort_minimum_perkey_rows	40
 join_use_nulls	0
 joined_subquery_requires_alias	1
-json_type_escape_dots_in_keys	0
 kafka_disable_num_consumers_limit	0
 kafka_max_wait_ms	5000
 keeper_map_strict_mode	0
@@ -765,7 +725,6 @@ max_hyperscan_regexp_total_length	0
 max_insert_block_size	1048449
 max_insert_delayed_streams_for_parallel_write	0
 max_insert_threads	0
-max_joined_block_size_bytes	4194304
 max_joined_block_size_rows	65409
 max_limit_for_ann_queries	-1
 max_limit_for_vector_search_queries	1000
@@ -908,7 +867,6 @@ odbc_bridge_use_connection_pooling	1
 odbc_max_field_size	0
 offset	0
 opentelemetry_start_trace_probability	0
-opentelemetry_trace_cpu_scheduling	0
 opentelemetry_trace_processors	0
 optimize_aggregation_in_order	0
 optimize_aggregators_of_group_by_keys	1
@@ -944,7 +902,6 @@ optimize_redundant_functions_in_order_by	1
 optimize_respect_aliases	1
 optimize_rewrite_aggregate_function_with_if	1
 optimize_rewrite_array_exists_to_has	0
-optimize_rewrite_regexp_functions	1
 optimize_rewrite_sum_if_to_count_if	1
 optimize_skip_merged_partitions	0
 optimize_skip_unused_shards	0
@@ -990,7 +947,7 @@ output_format_json_map_as_array_of_tuples	0
 output_format_json_named_tuples_as_objects	1
 output_format_json_pretty_print	1
 output_format_json_quote_64bit_floats	0
-output_format_json_quote_64bit_integers	0
+output_format_json_quote_64bit_integers	1
 output_format_json_quote_decimals	0
 output_format_json_quote_denormals	0
 output_format_json_skip_null_value_in_named_tuples	0
@@ -1000,7 +957,6 @@ output_format_msgpack_uuid_representation	ext
 output_format_native_encode_types_in_binary_format	0
 output_format_native_use_flattened_dynamic_and_json_serialization	0
 output_format_native_write_json_as_string	0
-output_format_orc_compression_block_size	262144
 output_format_orc_compression_method	zstd
 output_format_orc_dictionary_key_size_threshold	0
 output_format_orc_row_index_stride	10000
@@ -1013,12 +969,10 @@ output_format_parquet_bloom_filter_flush_threshold_bytes	134217728
 output_format_parquet_compliant_nested_types	1
 output_format_parquet_compression_method	zstd
 output_format_parquet_data_page_size	1048576
-output_format_parquet_date_as_uint16	0
 output_format_parquet_datetime_as_uint32	0
-output_format_parquet_enum_as_byte_array	1
+output_format_parquet_enum_as_byte_array	0
 output_format_parquet_fixed_string_as_fixed_byte_array	1
 output_format_parquet_geometadata	1
-output_format_parquet_max_dictionary_size	1048576
 output_format_parquet_parallel_encoding	1
 output_format_parquet_row_group_size	1000000
 output_format_parquet_row_group_size_bytes	536870912
@@ -1084,7 +1038,6 @@ parallel_replicas_mode	read_tasks
 parallel_replicas_only_with_analyzer	1
 parallel_replicas_prefer_local_join	1
 parallel_replicas_single_task_marks_count_multiplier	2
-parallel_replicas_support_projection	1
 parallel_view_processing	0
 parallelize_output_from_storages	1
 parsedatetime_e_requires_space_padding	0
@@ -1095,7 +1048,6 @@ partial_merge_join_rows_in_right_blocks	65536
 partial_result_on_first_cancel	0
 parts_to_delay_insert	0
 parts_to_throw_insert	0
-per_part_index_stats	0
 periodic_live_view_refresh	60
 poll_interval	10
 postgresql_connection_attempt_timeout	2
@@ -1116,8 +1068,6 @@ preferred_optimize_projection_name
 prefetch_buffer_size	1048576
 print_pretty_type_names	1
 priority	0
-promql_database	
-promql_table	
 push_external_roles_in_interserver_queries	1
 query_cache_compress_entries	1
 query_cache_max_entries	0
@@ -1269,7 +1219,6 @@ short_circuit_function_evaluation_for_nulls	1
 short_circuit_function_evaluation_for_nulls_threshold	1
 show_create_query_identifier_quoting_rule	when_necessary
 show_create_query_identifier_quoting_style	Backticks
-show_data_lake_catalogs_in_system_tables	1
 show_table_uuid_in_table_create_query_if_not_nil	0
 single_join_prefer_left_table	1
 skip_download_if_exceeds_query_cache	1
@@ -1335,7 +1284,6 @@ use_page_cache_for_disks_without_file_cache	0
 use_page_cache_with_distributed_cache	0
 use_query_cache	0
 use_query_condition_cache	1
-use_roaring_bitmap_iceberg_positional_deletes	0
 use_skip_indexes	1
 use_skip_indexes_if_final	1
 use_skip_indexes_if_final_exact_mode	1
@@ -1348,9 +1296,7 @@ validate_experimental_and_suspicious_types_inside_nested_types	1
 validate_mutation_query	1
 validate_polygons	1
 vector_search_filter_strategy	auto
-vector_search_index_fetch_multiplier	1
 vector_search_postfilter_multiplier	1
-vector_search_with_rescoring	0
 wait_changes_become_visible_after_commit_mode	wait_unknown
 wait_for_async_insert	1
 wait_for_async_insert_timeout	120
@@ -1358,7 +1304,6 @@ wait_for_window_view_fire_signal_timeout	10
 window_view_clean_interval	60
 window_view_heartbeat_interval	15
 workload	default
-write_full_path_in_iceberg_metadata	0
 write_through_distributed_cache	0
 write_through_distributed_cache_buffer_size	0
 zstd_window_log_max	0

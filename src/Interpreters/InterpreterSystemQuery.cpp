@@ -917,7 +917,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            flushJemallocProfile("/tmp/jemalloc_clickhouse", /* log= */ true);
+            flushJemallocProfile("/tmp/jemalloc_clickhouse");
             break;
         }
 #else

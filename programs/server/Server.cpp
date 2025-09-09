@@ -1019,22 +1019,6 @@ try
 
     Poco::Logger * log = &logger();
 
-    // If the startupLevel is set in the config, we override the root logger level.
-    // Specific loggers can still override it.
-    std::string default_logger_level_config = config().getString("logger.level", "");
-    bool should_restore_default_logger_level = false;
-    if (config().has("logger.startupLevel") && !config().getString("logger.startupLevel").empty())
-    {
-        /// Set the root logger level to the startup level.
-        /// This is useful for debugging startup issues.
-        /// The root logger level will be reset to the default level after the server is fully initialized.
-        config().setString("logger.level", config().getString("logger.startupLevel"));
-        Loggers::updateLevels(config(), logger());
-        should_restore_default_logger_level = true;
-
-        LOG_INFO(log, "Starting root logger in level {}", config().getString("logger.startupLevel"));
-    }
-
     MainThreadStatus::getInstance();
 
     ServerSettings server_settings;
@@ -2755,14 +2739,6 @@ try
                 LOG_INFO(log, "Listening for {}", server.getDescription());
             }
 
-            // Restore the root logger level to the default level after the server is fully initialized.
-            if (should_restore_default_logger_level)
-            {
-                config().setString("logger.level", default_logger_level_config);
-                Loggers::updateLevels(config(), logger());
-                LOG_INFO(log, "Restored default logger level to {}", default_logger_level_config);
-            }
-
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
@@ -2789,15 +2765,6 @@ try
 #endif
 
         SCOPE_EXIT_SAFE({
-            if (config().has("logger.shutdownLevel") && !config().getString("logger.shutdownLevel").empty())
-            {
-                /// Set the root logger level to the shutdown level.
-                /// This is useful for debugging shutdown issues.
-                config().setString("logger.level", config().getString("logger.shutdownLevel"));
-                Loggers::updateLevels(config(), logger());
-
-                LOG_INFO(log, "Set root logger in level {} before shutdown", config().getString("logger.shutdownLevel"));
-            }
             LOG_DEBUG(log, "Received termination signal.");
 
             CurrentMetrics::set(CurrentMetrics::IsServerShuttingDown, 1);

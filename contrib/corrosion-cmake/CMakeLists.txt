@@ -134,16 +134,6 @@ if (SANITIZE STREQUAL "memory")
 elseif (SANITIZE STREQUAL "thread")
     set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=thread")
-elseif (SANITIZE STREQUAL "address")
-    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
-    list(APPEND RUSTFLAGS "-Zsanitizer=address")
-endif()
-
-# Set metadata flag to force different hashes for different sanitizers
-if (SANITIZE STREQUAL "")
-    list(APPEND RUSTFLAGS "-C" "metadata=no-sanitizer")
-else()
-    list(APPEND RUSTFLAGS "-C" "metadata=with-sanitizer-${SANITIZE}")
 endif()
 
 list(APPEND RUSTFLAGS

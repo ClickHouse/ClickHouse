@@ -319,6 +319,26 @@ namespace DB
     Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups.
 
     To disable the cgroup observer, set this value to `0`.
+
+    see settings:
+    - [`cgroup_memory_watcher_hard_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_hard_limit_ratio)
+    - [`cgroup_memory_watcher_soft_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_soft_limit_ratio).
+    )", 0) \
+    DECLARE(Double, cgroup_memory_watcher_hard_limit_ratio, 0.95, R"(
+    Specifies the "hard" threshold of the memory consumption of the server process according to cgroups after which the server's
+    maximum memory consumption is adjusted to the threshold value.
+
+    See settings:
+    - [`cgroups_memory_usage_observer_wait_time`](/operations/server-configuration-parameters/settings#cgroups_memory_usage_observer_wait_time)
+    - [`cgroup_memory_watcher_soft_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_soft_limit_ratio)
+    )", 0) \
+    DECLARE(Double, cgroup_memory_watcher_soft_limit_ratio, 0.9, R"(
+    Specifies the "soft" threshold of the memory consumption of the server process according to cgroups after which arenas in
+    jemalloc are purged.
+
+    See settings:
+    - [`cgroups_memory_usage_observer_wait_time`](/operations/server-configuration-parameters/settings#cgroups_memory_usage_observer_wait_time)
+    - [`cgroup_memory_watcher_hard_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_hard_limit_ratio)
     )", 0) \
     DECLARE(UInt64, async_insert_threads, 16, R"(Maximum number of threads to actually parse and insert data in background. Zero means asynchronous mode is disabled)", 0) \
     DECLARE(Bool, async_insert_queue_flush_on_shutdown, true, R"(If true queue of asynchronous inserts is flushed on graceful shutdown)", 0) \
@@ -795,7 +815,6 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/engines/table-engines/mergetree-family) tables in the background.)", 0) \
     DECLARE(UInt64, background_buffer_flush_schedule_pool_size, 16, R"(The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/engines/table-engines/special/buffer) in the background.)", 0) \
     DECLARE(UInt64, background_schedule_pool_size, 512, R"(The maximum number of threads that will be used for constantly executing some lightweight periodic operations for replicated tables, Kafka streaming, and DNS cache updates.)", 0) \
-    DECLARE(Float, background_schedule_pool_max_parallel_tasks_per_type_ratio, 0.8f, R"(The maximum ratio of threads in the pool that can execute tasks of the same type simultaneously.)", 0) \
     DECLARE(UInt64, background_message_broker_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing background operations for message streaming.)", 0) \
     DECLARE(UInt64, background_distributed_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing distributed sends.)", 0) \
     DECLARE(UInt64, tables_loader_foreground_pool_size, 0, R"(
