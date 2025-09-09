@@ -134,7 +134,7 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionIcebergCluster>(
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored on store from disk in parallel for many nodes in a specified cluster.)",
-            .examples{{IcebergClusterDefinition::name, "SELECT * FROM icebergCluster(cluster) SETTINGS iceberg_disk_name = 'disk'", ""}},
+            .examples{{IcebergClusterDefinition::name, "SELECT * FROM icebergCluster(cluster) SETTINGS datalake_disk_name = 'disk'", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
 

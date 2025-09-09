@@ -101,10 +101,6 @@ public:
         read_path = path;
     }
 
-    virtual void setURL(const String & /*url*/)
-    {
-    }
-
     /*
      * When using `s3_create_new_file_on_insert`, each new file path generated will be appended to the path list.
      * This list is used to determine the next file name and the set of files that shall be read from remote storage.
@@ -254,7 +250,6 @@ protected:
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
     virtual void fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Initialization from disk is not implemented for your storage");
     }
 
     void assertInitialized() const;

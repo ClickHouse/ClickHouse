@@ -154,33 +154,33 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type):
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type} ENGINE=Iceberg() SETTINGS iceberg_disk_name = 'disk_{storage_type}'")
+    instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type} ENGINE=Iceberg() SETTINGS datalake_disk_name = 'disk_{storage_type}'")
     assert instance.query(f"SELECT * FROM {TABLE_NAME}_{storage_type}") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
-    instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type}_2 ENGINE=Iceberg('Parquet') SETTINGS iceberg_disk_name = 'disk_{storage_type}'")
+    instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type}_2 ENGINE=Iceberg('Parquet') SETTINGS datalake_disk_name = 'disk_{storage_type}'")
     assert instance.query(f"SELECT * FROM {TABLE_NAME}_{storage_type}_2") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
-    instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type}_3 ENGINE=Iceberg(format = Parquet) SETTINGS iceberg_disk_name = 'disk_{storage_type}'")
+    instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type}_3 ENGINE=Iceberg(format = Parquet) SETTINGS datalake_disk_name = 'disk_{storage_type}'")
     assert instance.query(f"SELECT * FROM {TABLE_NAME}_{storage_type}_3") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
-    instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type}_4 ENGINE=Iceberg(format = Parquet, compression_method = 'auto') SETTINGS iceberg_disk_name = 'disk_{storage_type}'")
+    instance.query(f"CREATE TABLE {TABLE_NAME}_{storage_type}_4 ENGINE=Iceberg(format = Parquet, compression_method = 'auto') SETTINGS datalake_disk_name = 'disk_{storage_type}'")
     assert instance.query(f"SELECT * FROM {TABLE_NAME}_{storage_type}_4") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
-    assert instance.query(f"SELECT * FROM iceberg() SETTINGS iceberg_disk_name = 'disk_{storage_type}'") == instance.query(
+    assert instance.query(f"SELECT * FROM iceberg() SETTINGS datalake_disk_name = 'disk_{storage_type}'") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
     if storage_type != "local":
         with pytest.raises(Exception):
-            instance.query(f"SELECT * FROM icebergLocal() SETTINGS iceberg_disk_name = 'disk_{storage_type}'")
+            instance.query(f"SELECT * FROM icebergLocal() SETTINGS datalake_disk_name = 'disk_{storage_type}'")
 
     instance.query(f"DROP TABLE {TABLE_NAME}_{storage_type}_4")
     instance.query(f"DROP TABLE {TABLE_NAME}_{storage_type}_3")
@@ -230,13 +230,13 @@ def test_cluster_table_function(started_cluster, storage_type):
     # Regular Query only node1
     table_function_expr = f"iceberg()"
     select_regular = (
-        instance.query(f"SELECT * FROM {table_function_expr} SETTINGS iceberg_disk_name = 'disk_s3_cluster'").strip().split()
+        instance.query(f"SELECT * FROM {table_function_expr} SETTINGS datalake_disk_name = 'disk_s3_cluster'").strip().split()
     )
 
     # Cluster Query with node1 as coordinator
     table_function_expr_cluster = "icebergCluster('cluster_simple')"
     select_cluster = (
-        instance.query(f"SELECT * FROM {table_function_expr_cluster} SETTINGS iceberg_disk_name = 'disk_s3_cluster'").strip().split()
+        instance.query(f"SELECT * FROM {table_function_expr_cluster} SETTINGS datalake_disk_name = 'disk_s3_cluster'").strip().split()
     )
 
     # Simple size check
@@ -273,4 +273,4 @@ def test_cluster_table_function(started_cluster, storage_type):
         assert len(cluster_secondary_queries) == 1
 
     # write 3 times
-    assert int(instance.query(f"SELECT count() FROM {table_function_expr_cluster} SETTINGS iceberg_disk_name = 'disk_s3_cluster'")) == 100 * 3
+    assert int(instance.query(f"SELECT count() FROM {table_function_expr_cluster} SETTINGS datalake_disk_name = 'disk_s3_cluster'")) == 100 * 3

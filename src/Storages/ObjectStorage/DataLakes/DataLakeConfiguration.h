@@ -17,8 +17,10 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <memory>
 #include <string>
+#include <type_traits>
 
 #include <Common/ErrorCodes.h>
+#include "Disks/ObjectStorages/S3/S3ObjectStorage.h"
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
@@ -61,7 +63,7 @@ namespace DataLakeStorageSetting
 
 namespace Setting
 {
-    extern const SettingsString iceberg_disk_name;
+    extern const SettingsString datalake_disk_name;
 }
 
 template <typename T>
@@ -350,6 +352,7 @@ public:
 
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
     {
+        BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
         auto disk = context->getDisk(disk_name);
         ready_object_storage = disk->getObjectStorage();
 
@@ -362,7 +365,9 @@ public:
         {
             String path = object_storage_disk->getObjectsKeyPrefix();
             BaseStorageConfiguration::setPathForRead(path);
-            BaseStorageConfiguration::setURL(disk->getObjectStorage()->getDescription());
+            if (auto s3_object_storage = std::static_pointer_cast<S3ObjectStorage>(ready_object_storage); s3_object_storage)
+                if constexpr (std::is_same_v<BaseStorageConfiguration, StorageS3Configuration>)
+                    BaseStorageConfiguration::setURL(s3_object_storage->getURI());
         }
         else
             BaseStorageConfiguration::setPathForRead(disk->getPath());

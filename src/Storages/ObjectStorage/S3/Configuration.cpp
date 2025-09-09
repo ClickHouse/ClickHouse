@@ -1,3 +1,4 @@
+#include <memory>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 
 #if USE_AWS_S3
@@ -69,7 +70,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsString iceberg_disk_name;
+    extern const SettingsString datalake_disk_name;
 }
 
 static const std::unordered_set<std::string_view> required_configuration_keys =
@@ -297,6 +298,14 @@ bool StorageS3Configuration::collectCredentials(ASTPtr maybe_credentials, S3::S3
     }
 
     return true;
+}
+
+void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & /*args*/, ContextPtr context, bool /*with_structure*/)
+{
+    auto disk = context->getDisk(disk_name);
+    auto object_storage = disk->getObjectStorage();
+    s3_settings = std::make_unique<S3Settings>();
+    *s3_settings = std::static_pointer_cast<S3ObjectStorage>(object_storage)->getS3Settings();
 }
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)

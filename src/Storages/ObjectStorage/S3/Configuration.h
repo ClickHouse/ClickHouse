@@ -72,10 +72,13 @@ public:
     std::string getSignatures(bool with_structure = true) const { return with_structure ? signatures_with_structure : signatures_without_structure; }
     size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
-    S3::URI getURL() const { return url; }
-    void setURL(const String & url_to_set) override
+    S3::URI getURL() const
     {
-        url = S3::URI(url_to_set);
+        return url;
+    }
+    void setURL(const S3::URI & url_to_set)
+    {
+        url = url_to_set;
     }
 
     const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
@@ -111,6 +114,9 @@ public:
 
     static ASTPtr extractExtraCredentials(ASTs & args);
     static bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context);
+
+protected:
+    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 
 private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;

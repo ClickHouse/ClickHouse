@@ -59,11 +59,11 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
     {
         if constexpr (is_data_lake)
         {
-            if (context->getSettingsRef()[Setting::iceberg_disk_name].changed)
+            if (context->getSettingsRef()[Setting::datalake_disk_name].changed)
             {
                 if (Definition::name != "iceberg" && Definition::name != "icebergCluster")
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg with disk configuration is supported only for default iceberg or icebergCluster");
-                auto disk = context->getDisk(context->getSettingsRef()[Setting::iceberg_disk_name].value);
+                auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
                 switch (disk->getObjectStorage()->getType())
                 {
 #if USE_AWS_S3 && USE_AVRO
@@ -242,8 +242,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         context->hasClusterFunctionReadTaskCallback();
 
     ObjectStoragePtr object_storage_;
-    if (configuration->isDataLakeConfiguration() && context->getSettingsRef()[Setting::iceberg_disk_name].changed)
-        object_storage_ = context->getDisk(context->getSettingsRef()[Setting::iceberg_disk_name].value)->getObjectStorage();
+    if (configuration->isDataLakeConfiguration() && context->getSettingsRef()[Setting::datalake_disk_name].changed)
+        object_storage_ = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value)->getObjectStorage();
     else
         object_storage_ = getObjectStorage(context, !is_insert_query);
 

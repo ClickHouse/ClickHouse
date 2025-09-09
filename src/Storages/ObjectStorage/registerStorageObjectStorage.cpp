@@ -29,7 +29,24 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool write_full_path_in_iceberg_metadata;
-    extern const SettingsString iceberg_disk_name;
+    extern const SettingsString datalake_disk_name;
+}
+
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsString access_key_id;
+    extern const S3AuthSettingsUInt64 expiration_window_seconds;
+    extern const S3AuthSettingsBool no_sign_request;
+    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsBool use_environment_credentials;
+
+    extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString http_client;
+    extern const S3AuthSettingsString service_account;
+    extern const S3AuthSettingsString metadata_service;
+    extern const S3AuthSettingsString request_token_path;
 }
 
 
@@ -204,9 +221,9 @@ void registerStorageIceberg(StorageFactory & factory)
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
             StorageObjectStorageConfigurationPtr configuration;
             const auto context = args.getLocalContext();
-            if (context->getSettingsRef()[Setting::iceberg_disk_name].changed)
+            if (context->getSettingsRef()[Setting::datalake_disk_name].changed)
             {
-                auto disk = context->getDisk(context->getSettingsRef()[Setting::iceberg_disk_name].value);
+                auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
                 switch (disk->getObjectStorage()->getType())
                 {
                 case ObjectStorageType::S3:
@@ -313,7 +330,31 @@ void registerStorageDeltaLake(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
+            StorageObjectStorageConfigurationPtr configuration;
+            const auto context = args.getLocalContext();
+            if (context->getSettingsRef()[Setting::datalake_disk_name].changed)
+            {
+                auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
+                switch (disk->getObjectStorage()->getType())
+                {
+                case ObjectStorageType::S3:
+                {
+                    configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
+                    break;
+                }
+                case ObjectStorageType::Azure:
+                    configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
+                    break;
+                case ObjectStorageType::Local:
+                    configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
+                    break;
+                default:
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for iceberg {}", disk->getObjectStorage()->getType());
+                }
+            }
+            else
+                configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
+
             return createStorageObjectStorage(args, configuration);
         },
         {

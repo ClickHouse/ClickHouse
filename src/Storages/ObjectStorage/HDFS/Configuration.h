@@ -70,11 +70,11 @@ public:
         bool with_structure) override;
 
 protected:
-    void setURL(const std::string & url_) override;
+    void setURL(const std::string & url_);
+    void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;
 
 private:
     void fromNamedCollection(const NamedCollection &, ContextPtr context) override;
-    void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;
 
     String url;
     Path path;

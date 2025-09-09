@@ -64,9 +64,11 @@ public:
 
     void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr, bool) override { }
 
+protected:
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
+
 private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
     Path path;
     Paths paths;
 };

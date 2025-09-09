@@ -60,7 +60,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsString iceberg_disk_name;
+    extern const SettingsString datalake_disk_name;
 }
 namespace DataLakeStorageSetting
 {
@@ -428,8 +428,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
 
     ObjectStoragePtr object_storage;
-    if (configuration->isDataLakeConfiguration() && context_->getSettingsRef()[Setting::iceberg_disk_name].changed)
-        object_storage = context_->getDisk(context_->getSettingsRef()[Setting::iceberg_disk_name].value)->getObjectStorage();
+    if (configuration->isDataLakeConfiguration() && context_->getSettingsRef()[Setting::datalake_disk_name].changed)
+        object_storage = context_->getDisk(context_->getSettingsRef()[Setting::datalake_disk_name].value)->getObjectStorage();
     else
         object_storage = configuration->createObjectStorage(context_copy, /* is_readonly */ false);
 
