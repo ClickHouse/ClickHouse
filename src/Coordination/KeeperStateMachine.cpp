@@ -1116,6 +1116,14 @@ void KeeperStateMachine<Storage>::recalculateStorageStats()
     LOG_INFO(log, "Done recalculating storage stats");
 }
 
+template<typename Storage>
+void KeeperStateMachine<Storage>::optimizeStorage()
+{
+    LockGuardWithStats<false> lock(storage_mutex);
+    LOG_INFO(log, "Optimizing storage");
+    storage->optimize();
+}
+
 template class KeeperStateMachine<KeeperMemoryStorage>;
 #if USE_ROCKSDB
 template class KeeperStateMachine<KeeperRocksStorage>;

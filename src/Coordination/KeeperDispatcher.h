@@ -249,7 +249,7 @@ public:
         server->recalculateStorageStats();
     }
 
-    static void cleanResources();
+    void cleanResources();
 
     std::optional<AuthenticationData> getAuthenticationData() const { return server->getAuthenticationData(); }
 };

@@ -4,6 +4,7 @@
 #include <Disks/DiskLocal.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 
 #include <rocksdb/convenience.h>
 #include <rocksdb/options.h>

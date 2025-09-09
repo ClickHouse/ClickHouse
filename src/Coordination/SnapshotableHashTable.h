@@ -1,16 +1,35 @@
 #pragma once
 #include <base/StringRef.h>
-#include <Common/HashTable/HashMap.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/ArenaUtils.h>
+#include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
+#include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperContext.h>
+
+#include <absl/container/flat_hash_map.h>
 
 #include <list>
+
+
+namespace ProfileEvents
+{
+    extern const Event KeeperStorageRehashMicroseconds;
+}
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
+}
+
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 min_node_count_for_auto_optimize;
+    extern const CoordinationSettingsFloat hash_map_min_load_factor;
 }
 
 template<typename V>
@@ -87,7 +106,7 @@ private:
     using ListElem = ListNode<V>;
     using List = std::list<ListElem>;
     using Mapped = typename List::iterator;
-    using IndexMap = HashMap<StringRef, Mapped>;
+    using IndexMap = absl::flat_hash_map<StringRef, Mapped, DefaultHash<StringRef>>;
 
     List list;
     IndexMap map;
@@ -105,6 +124,9 @@ private:
     std::vector<Mapped> snapshot_invalid_iters;
 
     uint64_t approximate_data_size{0};
+
+    float min_load_factor{0.0f};
+    uint64_t min_node_count_for_auto_optimize{0};
 
     enum OperationType
     {
@@ -157,10 +179,9 @@ private:
 
     void insertOrReplace(StringRef key, V value, bool owns_key)
     {
-        size_t hash_value = map.hash(key);
         auto new_value_size = value.sizeInBytes();
-        auto it = map.find(key, hash_value);
-        uint64_t old_value_size = it == map.end() ? 0 : it->getMapped()->value.sizeInBytes();
+        auto it = map.find(key);
+        uint64_t old_value_size = it == map.end() ? 0 : it->second->value.sizeInBytes();
 
         if (it == map.end())
         {
@@ -168,25 +189,23 @@ private:
             ListElem elem{list_key, std::move(value)};
             elem.setVersion(current_version);
             auto itr = list.insert(list.end(), std::move(elem));
-            bool inserted;
-            map.emplace(itr->key, it, inserted, hash_value);
+            auto [map_it, inserted] = map.emplace(itr->key, itr);
             itr->setActiveInMap();
             chassert(inserted);
-            it->getMapped() = itr;
         }
         else
         {
             if (owns_key)
                 arena.free(key.data, key.size);
 
-            auto list_itr = it->getMapped();
+            auto list_itr = it->second;
             if (snapshot_mode)
             {
                 ListElem elem{list_itr->key, std::move(value)};
                 elem.setVersion(current_version);
                 list_itr->setInactiveInMap();
                 auto new_list_itr = list.insert(list.end(), std::move(elem));
-                it->getMapped() = new_list_itr;
+                it->second = new_list_itr;
                 snapshot_invalid_iters.push_back(list_itr);
             }
             else
@@ -198,7 +217,6 @@ private:
     }
 
 public:
-
     using Node = V;
     using iterator = typename List::iterator;
     using const_iterator = typename List::const_iterator;
@@ -209,28 +227,25 @@ public:
         clear();
     }
 
-    std::pair<typename IndexMap::LookupResult, bool> insert(const std::string & key, V value)
+    void initialize(const KeeperContextPtr & context)
     {
-        size_t hash_value = map.hash(key);
-        auto it = map.find(key, hash_value);
+        min_load_factor = context->getCoordinationSettings()[CoordinationSetting::hash_map_min_load_factor];
+        min_node_count_for_auto_optimize = context->getCoordinationSettings()[CoordinationSetting::min_node_count_for_auto_optimize];
+    }
 
-        if (!it)
-        {
-            auto value_size = value.sizeInBytes();
-            ListElem elem{copyStringInArena(arena, key), std::move(value)};
-            elem.setVersion(current_version);
-            auto itr = list.insert(list.end(), std::move(elem));
-            bool inserted;
-            map.emplace(itr->key, it, inserted, hash_value);
-            itr->setActiveInMap();
-            chassert(inserted);
+    std::pair<typename IndexMap::const_iterator, bool> insert(const std::string & key, const V & value)
+    {
+        if (auto it = map.find(key); it != map.end())
+            return std::make_pair(it, false);
 
-            it->getMapped() = itr;
-            updateDataSize(INSERT_OR_REPLACE, key.size(), value_size, 0);
-            return std::make_pair(it, true);
-        }
-
-        return std::make_pair(it, false);
+        ListElem elem{copyStringInArena(arena, key), std::move(value)};
+        elem.setVersion(current_version);
+        auto itr = list.insert(list.end(), std::move(elem));
+        auto [it, inserted] = map.emplace(itr->key, itr);
+        chassert(inserted);
+        itr->setActiveInMap();
+        updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), 0);
+        return std::make_pair(it, true);
     }
 
     void reserve(size_t node_num) { map.reserve(node_num); }
@@ -271,22 +286,23 @@ public:
         if (it == map.end())
             return false;
 
-        auto list_itr = it->getMapped();
+        auto list_itr = it->second;
         uint64_t old_data_size = list_itr->value.sizeInBytes();
         if (snapshot_mode)
         {
             list_itr->setInactiveInMap();
             snapshot_invalid_iters.push_back(list_itr);
             list_itr->setFreeKey();
-            map.erase(it->getKey());
+            map.erase(it);
         }
         else
         {
-            map.erase(it->getKey());
+            map.erase(it);
             arena.free(const_cast<char *>(list_itr->key.data), list_itr->key.size);
             list.erase(list_itr);
         }
 
+        optimizeIfNeeded();
         updateDataSize(ERASE, key.size(), 0, old_data_size, !snapshot_mode);
         return true;
     }
@@ -298,12 +314,11 @@ public:
 
     const_iterator updateValue(StringRef key, ValueUpdater updater)
     {
-        size_t hash_value = map.hash(key);
-        auto it = map.find(key, hash_value);
+        auto it = map.find(key);
         if (it == map.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key.toView());
 
-        auto list_itr = it->getMapped();
+        auto list_itr = it->second;
         uint64_t old_value_size = list_itr->value.sizeInBytes();
 
         const_iterator ret;
@@ -324,7 +339,7 @@ public:
 
                 elem_copy.setVersion(current_version);
                 auto itr = list.insert(list.end(), std::move(elem_copy));
-                it->getMapped() = itr;
+                it->second = itr;
                 ret = itr;
 
                 remove_old_size = false;
@@ -350,7 +365,7 @@ public:
         auto map_it = map.find(key);
         if (map_it != map.end())
             /// return std::make_shared<KVPair>(KVPair{map_it->getMapped()->key, map_it->getMapped()->value});
-            return map_it->getMapped();
+            return map_it->second;
         return list.end();
     }
 
@@ -360,7 +375,7 @@ public:
         auto it = map.find(key);
         if (it == map.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key.toView());
-        return it->getMapped()->value;
+        return it->second->value;
     }
 
     void clearOutdatedNodes()
@@ -375,6 +390,13 @@ public:
             list.erase(itr);
         }
         snapshot_invalid_iters.clear();
+        optimizeIfNeeded();
+    }
+
+    void optimizeIfNeeded()
+    {
+        if (min_load_factor > 0 && map.load_factor() < min_load_factor && map.size() > min_node_count_for_auto_optimize)
+            optimize();
     }
 
     void clear()
@@ -422,6 +444,13 @@ public:
             approximate_data_size += node.key.size;
             approximate_data_size += node.value.sizeInBytes();
         }
+    }
+
+    void optimize()
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::KeeperStorageRehashMicroseconds);
+        map.rehash(0);
+        LOG_TRACE(getLogger("SnapshotableHashTable"), "Rehash took {}ms", watch.watch.elapsedMilliseconds());
     }
 
     uint64_t keyArenaSize() const { return 0; }

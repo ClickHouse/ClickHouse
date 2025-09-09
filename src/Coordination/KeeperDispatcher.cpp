@@ -1025,6 +1025,7 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 
 void KeeperDispatcher::cleanResources()
 {
+    server->optimizeStorage();
 #if USE_JEMALLOC
     Jemalloc::purgeArenas();
 #endif
