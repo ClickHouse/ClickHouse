@@ -483,10 +483,24 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 
             if (worker_pool)
             {
-                worker_pool->scheduleOrThrowOnError([this, &saved_task, &with_retries]()
+                worker_pool->scheduleOrThrowOnError([this, &saved_task]()
                 {
                     setThreadName("DDLWorkerExec");
-                    processTask(saved_task, with_retries, /*internal_query=*/ false);
+                    /// We create a new WithRetries object because we need it to outlive this function when running in a different thread
+                    const auto & csettings = context->getSettingsRef();
+                    auto task_retries = WithRetries(
+                        log,
+                        [&](UInt64 max_lock_milliseconds) { return context->getZooKeeper(max_lock_milliseconds); },
+                        {
+                            csettings[Setting::keeper_max_retries],
+                            csettings[Setting::keeper_retry_initial_backoff_ms],
+                            csettings[Setting::keeper_retry_max_backoff_ms],
+                            context->getProcessListElement()
+                        },
+                        csettings[Setting::keeper_fault_injection_probability],
+                        csettings[Setting::keeper_fault_injection_seed]
+                        );
+                    processTask(saved_task, task_retries, /*internal_query=*/ false);
                 });
             }
             else
