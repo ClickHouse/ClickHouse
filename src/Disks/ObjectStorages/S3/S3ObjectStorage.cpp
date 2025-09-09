@@ -31,6 +31,8 @@
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
 
+#include <aws/s3/model/Tag.h>
+#include <aws/s3/model/Tagging.h>
 
 namespace ProfileEvents
 {
@@ -307,10 +309,7 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
     if (objects.empty())
         return;
 
-    Strings keys;
-    keys.reserve(objects.size());
-    for (const auto & object : objects)
-        keys.push_back(object.remote_path);
+    Strings keys = collectRemotePaths(objects);
 
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
     Strings local_paths_for_blob_storage_log;
@@ -342,6 +341,69 @@ void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
 void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     removeObjectsImpl(objects, true);
+}
+
+void putObjectsTagOnS3(
+    const std::shared_ptr<const S3::Client> & s3_client,
+    const String & bucket,
+    const Strings & object_keys,
+    const String & tag_key,
+    const String & tag_value
+) {
+    auto log = getLogger("putObjectsTagOnS3");
+
+    for (const String & object_key : object_keys) {
+        S3::GetObjectTaggingRequest get_request;
+        get_request.SetBucket(bucket);
+        get_request.SetKey(object_key);
+
+        auto get_outcome = s3_client->GetObjectTagging(get_request);
+        if (!get_outcome.IsSuccess()) {
+            const auto & err = get_outcome.GetError();
+            throw S3Exception(err.GetErrorType(), "{} (Code: {}) while getting tagging of S3 object path {}",
+                              err.GetMessage(), static_cast<size_t>(err.GetErrorType()), object_key);
+        }
+        const auto & get_result = get_outcome.GetResult();
+        const Aws::Vector<Aws::S3::Model::Tag> & existing_tag_set = get_result.GetTagSet();
+        const bool present = (
+            std::find_if(
+                existing_tag_set.begin(),
+                existing_tag_set.end(),
+                [&] (const Aws::S3::Model::Tag& tag) {
+                    return tag.GetKey() == tag_key && tag.GetValue() == tag_value;
+                })
+            != existing_tag_set.end());
+        if (present) {
+            LOG_TRACE(log, "S3 object path {} skipped as it already had the tag {}={}", object_key, tag_key, tag_value);
+            continue;
+        }
+        Aws::Vector<Aws::S3::Model::Tag> tag_set = existing_tag_set;
+        tag_set.push_back(Aws::S3::Model::Tag()
+            .WithKey(tag_key)
+            .WithValue(tag_value));
+
+        S3::PutObjectTaggingRequest put_request;
+        put_request.SetBucket(bucket);
+        put_request.SetKey(object_key);
+        put_request.SetTagging(Aws::S3::Model::Tagging().WithTagSet(tag_set));
+
+        auto put_outcome = s3_client->PutObjectTagging(put_request);
+
+        if (put_outcome.IsSuccess()) {
+            LOG_TRACE(log, "Tags of S3 object {} updated", object_key);
+        } else {
+            const auto & err = put_outcome.GetError();
+            throw S3Exception(err.GetErrorType(), "{} (Code: {}) while putting tagging on S3 object {}",
+                              err.GetMessage(), static_cast<size_t>(err.GetErrorType()), object_key);
+        }
+    }
+
+}
+
+void S3ObjectStorage::tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value)
+{
+    Strings keys = collectRemotePaths(objects);
+    putObjectsTagOnS3(client.get(), uri.bucket, keys, tag_key, tag_value);
 }
 
 std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path) const

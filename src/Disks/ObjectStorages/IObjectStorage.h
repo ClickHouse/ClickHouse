@@ -327,6 +327,14 @@ public:
     }
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
 #endif
+
+#if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
+    /// Assign tag on objects
+    virtual void tagObjects(const StoredObjects &, const std::string &, const std::string &)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The method 'tagObjects' is only implemented for S3 and Azure storages");
+    }
+#endif
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

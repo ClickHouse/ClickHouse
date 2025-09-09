@@ -87,6 +87,8 @@ public:
     /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
+    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
+
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
     ObjectStorageConnectionInfoPtr getConnectionInfo() const override;
