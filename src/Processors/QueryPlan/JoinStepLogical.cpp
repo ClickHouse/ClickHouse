@@ -77,6 +77,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int INCORRECT_DATA;
+    extern const int ILLEGAL_COLUMN;
 }
 
 std::optional<ASOFJoinInequality> operatorToAsofInequality(JoinConditionOperator op)
