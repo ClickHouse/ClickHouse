@@ -174,7 +174,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_uncompressed_cache;
-    extern const SettingsUInt64 merge_tree_min_read_task_size;
+    extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
@@ -330,7 +330,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         storage_snapshot_->getSampleBlockForColumns(all_column_names_),
         {},
         query_info_.prewhere_info)), all_column_names_, query_info_, storage_snapshot_, context_)
-    , reader_settings(MergeTreeReaderSettings::create(context_, query_info_))
+    , reader_settings(MergeTreeReaderSettings::create(context_, *data_.getSettings(), query_info_))
     , prepared_parts(std::move(parts_))
     , mutations_snapshot(std::move(mutations_))
     , all_column_names(std::move(all_column_names_))
@@ -2041,7 +2041,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
         parts_before_pk = parts.size();
 
-        auto reader_settings = MergeTreeReaderSettings::create(context_, query_info_);
+        auto reader_settings = MergeTreeReaderSettings::create(context_, *data.getSettings(), query_info_);
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
             std::move(parts),
             metadata_snapshot,

@@ -1,5 +1,7 @@
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Poco/JSON/Object.h>
+#include <Core/ServerSettings.h>
+#include <IO/SeekableReadBuffer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 
 #if USE_AWS_S3 && USE_AVRO
@@ -67,6 +69,12 @@ namespace DB::Setting
     extern const SettingsUInt64 s3_request_timeout_ms;
 }
 
+namespace DB::ServerSetting
+{
+    extern const ServerSettingsUInt64 s3_max_redirects;
+    extern const ServerSettingsUInt64 s3_retry_attempts;
+}
+
 namespace DB::StorageObjectStorageSetting
 {
     extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
@@ -106,10 +114,19 @@ GlueCatalog::GlueCatalog(
     DB::S3::CredentialsConfiguration creds_config;
     creds_config.use_environment_credentials = true;
 
+    const auto & server_settings = getContext()->getGlobalContext()->getServerSettings();
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
 
-    int s3_max_redirects = static_cast<int>(global_settings[DB::Setting::s3_max_redirects]);
-    int s3_retry_attempts = static_cast<int>(global_settings[DB::Setting::s3_retry_attempts]);
+    int s3_max_redirects = static_cast<int>(server_settings[DB::ServerSetting::s3_max_redirects]);
+    // just for compatibility with old setting
+    if (global_settings.isChanged("s3_max_redirects"))
+        s3_max_redirects = static_cast<int>(global_settings[DB::Setting::s3_max_redirects]);
+
+    int s3_retry_attempts = static_cast<int>(server_settings[DB::ServerSetting::s3_retry_attempts]);
+    // just for compatibility with old setting
+    if (global_settings.isChanged("s3_retry_attempts"))
+        s3_retry_attempts = static_cast<int>(global_settings[DB::Setting::s3_retry_attempts]);
+
     bool s3_slow_all_threads_after_network_error = global_settings[DB::Setting::s3_slow_all_threads_after_network_error];
     bool s3_slow_all_threads_after_retryable_error = global_settings[DB::Setting::s3_slow_all_threads_after_retryable_error];
     bool enable_s3_requests_logging = global_settings[DB::Setting::enable_s3_requests_logging];

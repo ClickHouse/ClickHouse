@@ -107,6 +107,11 @@ public:
         progress_write_frequency_us = value;
     }
 
+    /// Derived classes can use some wrappers around out WriteBuffer
+    /// and can override this method to return wrapper
+    /// that should be used in its derived classes.
+    virtual WriteBuffer * getWriteBufferPtr() { return &out; }
+
 protected:
     friend class ParallelFormattingOutputFormat;
 
@@ -181,11 +186,6 @@ protected:
     /// Return true if format saves totals and extremes in consumeTotals/consumeExtremes and
     /// outputs them in finalize() method.
     virtual bool areTotalsAndExtremesUsedInFinalize() const { return false; }
-
-    /// Derived classes can use some wrappers around out WriteBuffer
-    /// and can override this method to return wrapper
-    /// that should be used in its derived classes.
-    virtual WriteBuffer * getWriteBufferPtr() { return &out; }
 
     WriteBuffer & out;
 
