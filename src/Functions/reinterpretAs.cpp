@@ -639,7 +639,7 @@ Unlike [`CAST`](#cast), the function does not attempt to preserve the original v
     FunctionDocumentation::Arguments arguments_reinterpretAsUInt64 = {
         {"x", "Value to byte reinterpret as UInt64.", {"Int*", "UInt*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_reinterpretAsUInt64 = "Reinterpreted value `x` as UInt64.";
+    FunctionDocumentation::ReturnedValue returned_value_reinterpretAsUInt64 = {"Returns the reinterpreted value of `x`.", {"UInt64"}};
     FunctionDocumentation::Examples examples_reinterpretAsUInt64 = {
     {
         "Usage example",

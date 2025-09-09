@@ -818,8 +818,9 @@ type_c: Decimal(9, 3)
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in = {18, 12};
     FunctionDocumentation::Category category_toDecimal32 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal32 = {description_toDecimal32, syntax_toDecimal32, arguments_toDecimal32, returned_value_toDecimal32, examples_toDecimal32, category_toDecimal32};
+    FunctionDocumentation documentation_toDecimal32 = {description_toDecimal32, syntax_toDecimal32, arguments_toDecimal32, returned_value_toDecimal32, examples_toDecimal32, introduced_in, category_toDecimal32};
 
     /// toDecimal128 documentation
     FunctionDocumentation::Description description_toDecimal128 = R"(
@@ -875,8 +876,9 @@ type_c: Decimal(38, 3)
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDecimal128 = {18, 12};
     FunctionDocumentation::Category category_toDecimal128 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal128 = {description_toDecimal128, syntax_toDecimal128, arguments_toDecimal128, returned_value_toDecimal128, examples_toDecimal128, category_toDecimal128};
+    FunctionDocumentation documentation_toDecimal128 = {description_toDecimal128, syntax_toDecimal128, arguments_toDecimal128, returned_value_toDecimal128, examples_toDecimal128, introduced_in_toDecimal128, category_toDecimal128};
 
     /// toDecimal256 documentation
     FunctionDocumentation::Description description_toDecimal256 = R"(
@@ -930,8 +932,9 @@ type_c: Decimal(76, 3)
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDecimal256 = {20, 8};
     FunctionDocumentation::Category category_toDecimal256 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal256 = {description_toDecimal256, syntax_toDecimal256, arguments_toDecimal256, returned_value_toDecimal256, examples_toDecimal256, category_toDecimal256};
+    FunctionDocumentation documentation_toDecimal256 = {description_toDecimal256, syntax_toDecimal256, arguments_toDecimal256, returned_value_toDecimal256, examples_toDecimal256, introduced_in_toDecimal256, category_toDecimal256};
 
     factory.registerFunction<detail::FunctionToDecimal32>(documentation_toDecimal32);
     factory.registerFunction<detail::FunctionToDecimal64>(documentation_toDecimal64);
@@ -979,7 +982,7 @@ SELECT toDate(19489)
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDate = {1, 1};
     FunctionDocumentation::Category category_toDate = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDate = {description_toDate, syntax_toDate, arguments_toDate, returned_value_toDate, examples_toDate, category_toDate};
+    FunctionDocumentation documentation_toDate = {description_toDate, syntax_toDate, arguments_toDate, returned_value_toDate, examples_toDate, introduced_in_toDate, category_toDate};
 
     factory.registerFunction<detail::FunctionToDate>(documentation_toDate);
 
@@ -996,7 +999,7 @@ Converts the argument to the [Date32](../data-types/date32.md) data type. If the
     FunctionDocumentation::Arguments arguments_toDate32 = {
         {"expr", "The value.", {"String", "UInt32", "Date"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toDate32 = "A calendar date. Type [Date32](../data-types/date32.md).";
+    FunctionDocumentation::ReturnedValue returned_value_toDate32 = {"Returns a calendar date.", {"Date32"}};
     FunctionDocumentation::Examples examples_toDate32 = {
         {
             "Within range",
@@ -1025,8 +1028,9 @@ toTypeName(value): Date32
             )"
         }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDate32 = {21, 9};
     FunctionDocumentation::Category category_toDate32 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDate32 = {description_toDate32, syntax_toDate32, arguments_toDate32, returned_value_toDate32, examples_toDate32, category_toDate32};
+    FunctionDocumentation documentation_toDate32 = {description_toDate32, syntax_toDate32, arguments_toDate32, returned_value_toDate32, examples_toDate32, introduced_in_toDate32, category_toDate32};
 
     factory.registerFunction<detail::FunctionToDate32>(documentation_toDate32);
 
@@ -1069,9 +1073,9 @@ SELECT toTime(52225)
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toTime = {1, 1}
+    FunctionDocumentation::IntroducedIn introduced_in_toTime = {1, 1};
     FunctionDocumentation::Category category_toTime = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toTime = {description_toTime, syntax_toTime, arguments_toTime, returned_value_toTime, examples_toTime, category_toTime};
+    FunctionDocumentation documentation_toTime = {description_toTime, syntax_toTime, arguments_toTime, returned_value_toTime, examples_toTime, introduced_in_toTime, category_toTime};
 
     factory.registerFunction<detail::FunctionToTime>(documentation_toTime);
 
@@ -1115,9 +1119,9 @@ SELECT toTime64(52225123456)
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toTime64 = {25, 6}
+    FunctionDocumentation::IntroducedIn introduced_in_toTime64 = {25, 6};
     FunctionDocumentation::Category category_toTime64 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toTime64 = {description_toTime64, syntax_toTime64, arguments_toTime64, returned_value_toTime64, examples_toTime64, category_toTime64};
+    FunctionDocumentation documentation_toTime64 = {description_toTime64, syntax_toTime64, arguments_toTime64, returned_value_toTime64, examples_toTime64, introduced_in_toTime64, category_toTime64};
 
     factory.registerFunction<detail::FunctionToTime64>(documentation_toTime64);
 
@@ -1159,17 +1163,17 @@ toDateTime(1685457500, 'UTC'):     2023-05-30 14:38:20
     factory.registerFunction<detail::FunctionToDateTime>(documentation_toDateTime);
 
     FunctionDocumentation::Description description_toDateTime32 = R"(
-Converts an input value to type [DateTime32](/en/sql-reference/data-types/datetime32).
+Converts an input value to type `DateTime`.
 Supports conversion from String, FixedString, Date, Date32, DateTime, or numeric types.
 DateTime32 provides extended range compared to DateTime, supporting dates from 1900-01-01 to 2299-12-31.
 If the input value cannot be converted, an exception is thrown.
     )";
     FunctionDocumentation::Syntax syntax_toDateTime32 = "toDateTime32(x[, timezone])";
     FunctionDocumentation::Arguments arguments_toDateTime32 = {
-        {"x", "Input value to convert. Type: [String](/en/sql-reference/data-types/string), [FixedString](/en/sql-reference/data-types/fixedstring), [Date](/en/sql-reference/data-types/date), [Date32](/en/sql-reference/data-types/date32), [DateTime](/en/sql-reference/data-types/datetime), [Int](/en/sql-reference/data-types/int-uint), [UInt](/en/sql-reference/data-types/int-uint), [Float](/en/sql-reference/data-types/float)"},
-        {"timezone", "Optional. Timezone for the returned DateTime32 value. Type: [String](/en/sql-reference/data-types/string)"}
+        {"x", "Input value to convert.", {"String", "FixedString", "Date", "DateTime", "DateTime64", "UInt*", "Float*"}},
+        {"timezone", "Optional. Timezone for the returned DateTime value.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toDateTime32 = {"Input value converted to [DateTime32](/en/sql-reference/data-types/datetime32) data type. Throws exception if conversion fails.", {"DateTime32"}};
+    FunctionDocumentation::ReturnedValue returned_value_toDateTime32 = {"Input value converted to [DateTime32](/en/sql-reference/data-types/datetime32) data type. Throws exception if conversion fails.", {"DateTime"}};
     FunctionDocumentation::Examples examples_toDateTime32 = {
     {
         "The value is within the range",
@@ -1264,8 +1268,9 @@ SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDateTime64 = {20, 1};
     FunctionDocumentation::Category category_toDateTime64 = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateTime64 = {description_toDateTime64, syntax_toDateTime64, arguments_toDateTime64, returned_value_toDateTime64, examples_toDateTime64, category_toDateTime64};
+    FunctionDocumentation documentation_toDateTime64 = {description_toDateTime64, syntax_toDateTime64, arguments_toDateTime64, returned_value_toDateTime64, examples_toDateTime64, introduced_in_toDateTime64, category_toDateTime64};
 
     factory.registerFunction<detail::FunctionToDateTime64>(documentation_toDateTime64);
 
@@ -1291,8 +1296,9 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toUUID = {1, 1};
     FunctionDocumentation::Category category_toUUID = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUUID = {description_toUUID, syntax_toUUID, arguments_toUUID, returned_value_toUUID, examples_toUUID, category_toUUID};
+    FunctionDocumentation documentation_toUUID = {description_toUUID, syntax_toUUID, arguments_toUUID, returned_value_toUUID, examples_toUUID, introduced_in_toUUID, category_toUUID};
 
     /// toIPv4 documentation
     FunctionDocumentation::Description description_toIPv4 = R"(
@@ -1512,8 +1518,9 @@ toUInt8OrZero('abc'): 0
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toUInt8OrZero = {1, 1};
     FunctionDocumentation::Category category_toUInt8OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt8OrZero = {description_toUInt8OrZero, syntax_toUInt8OrZero, arguments_toUInt8OrZero, returned_value_toUInt8OrZero, examples_toUInt8OrZero, category_toUInt8OrZero};
+    FunctionDocumentation documentation_toUInt8OrZero = {description_toUInt8OrZero, syntax_toUInt8OrZero, arguments_toUInt8OrZero, returned_value_toUInt8OrZero, examples_toUInt8OrZero, introduced_in_toUInt8OrZero, category_toUInt8OrZero};
 
     factory.registerFunction<detail::FunctionToUInt8OrZero>(documentation_toUInt8OrZero);
 
@@ -1552,8 +1559,9 @@ toUInt16OrZero('abc'): 0
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toUInt16OrZero = {1, 1};
     FunctionDocumentation::Category category_toUInt16OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt16OrZero = {description_toUInt16OrZero, syntax_toUInt16OrZero, arguments_toUInt16OrZero, returned_value_toUInt16OrZero, examples_toUInt16OrZero, category_toUInt16OrZero};
+    FunctionDocumentation documentation_toUInt16OrZero = {description_toUInt16OrZero, syntax_toUInt16OrZero, arguments_toUInt16OrZero, returned_value_toUInt16OrZero, examples_toUInt16OrZero, introduced_in_toUInt16OrZero, category_toUInt16OrZero};
 
     factory.registerFunction<detail::FunctionToUInt16OrZero>(documentation_toUInt16OrZero);
 
@@ -1592,8 +1600,9 @@ toUInt32OrZero('abc'): 0
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toUInt32OrZero = {1, 1};
     FunctionDocumentation::Category category_toUInt32OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt32OrZero = {description_toUInt32OrZero, syntax_toUInt32OrZero, arguments_toUInt32OrZero, returned_value_toUInt32OrZero, examples_toUInt32OrZero, category_toUInt32OrZero};
+    FunctionDocumentation documentation_toUInt32OrZero = {description_toUInt32OrZero, syntax_toUInt32OrZero, arguments_toUInt32OrZero, returned_value_toUInt32OrZero, examples_toUInt32OrZero, introduced_in_toUInt32OrZero, category_toUInt32OrZero};
 
     factory.registerFunction<detail::FunctionToUInt32OrZero>(documentation_toUInt32OrZero);
     /// toUInt64OrZero documentation
@@ -1631,8 +1640,9 @@ toUInt64OrZero('abc'): 0
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toUInt64OrZero = {1, 1};
     FunctionDocumentation::Category category_toUInt64OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt64OrZero = {description_toUInt64OrZero, syntax_toUInt64OrZero, arguments_toUInt64OrZero, returned_value_toUInt64OrZero, examples_toUInt64OrZero, category_toUInt64OrZero};
+    FunctionDocumentation documentation_toUInt64OrZero = {description_toUInt64OrZero, syntax_toUInt64OrZero, arguments_toUInt64OrZero, returned_value_toUInt64OrZero, examples_toUInt64OrZero, introduced_in_toUInt64OrZero, category_toUInt64OrZero};
 
     factory.registerFunction<detail::FunctionToUInt64OrZero>(documentation_toUInt64OrZero);
 
@@ -1672,8 +1682,9 @@ toUInt128OrZero('abc'): 0
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toUInt128OrZero = {1, 1};
     FunctionDocumentation::Category category_toUInt128OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt128OrZero = {description_toUInt128OrZero, syntax_toUInt128OrZero, arguments_toUInt128OrZero, returned_value_toUInt128OrZero, examples_toUInt128OrZero, category_toUInt128OrZero};
+    FunctionDocumentation documentation_toUInt128OrZero = {description_toUInt128OrZero, syntax_toUInt128OrZero, arguments_toUInt128OrZero, returned_value_toUInt128OrZero, examples_toUInt128OrZero, introduced_in_toUInt128OrZero, category_toUInt128OrZero};
 
     factory.registerFunction<detail::FunctionToUInt128OrZero>(documentation_toUInt128OrZero);
     /// toUInt256OrZero documentation
@@ -1711,8 +1722,9 @@ toUInt256OrZero('abc'): 0
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toUInt256OrZero = {20, 8};
     FunctionDocumentation::Category category_toUInt256OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt256OrZero = {description_toUInt256OrZero, syntax_toUInt256OrZero, arguments_toUInt256OrZero, returned_value_toUInt256OrZero, examples_toUInt256OrZero, category_toUInt256OrZero};
+    FunctionDocumentation documentation_toUInt256OrZero = {description_toUInt256OrZero, syntax_toUInt256OrZero, arguments_toUInt256OrZero, returned_value_toUInt256OrZero, examples_toUInt256OrZero, introduced_in_toUInt256OrZero, category_toUInt256OrZero};
 
     factory.registerFunction<detail::FunctionToUInt256OrZero>(documentation_toUInt256OrZero);
 
@@ -1751,8 +1763,9 @@ toInt8OrZero('abc'): 0
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toInt8OrZero = {1, 1};
     FunctionDocumentation::Category category_toInt8OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt8OrZero = {description_toInt8OrZero, syntax_toInt8OrZero, arguments_toInt8OrZero, returned_value_toInt8OrZero, examples_toInt8OrZero, category_toInt8OrZero};
+    FunctionDocumentation documentation_toInt8OrZero = {description_toInt8OrZero, syntax_toInt8OrZero, arguments_toInt8OrZero, returned_value_toInt8OrZero, examples_toInt8OrZero, introduced_in_toInt8OrZero, category_toInt8OrZero};
 
     factory.registerFunction<detail::FunctionToInt8OrZero>(documentation_toInt8OrZero);
 
@@ -1791,8 +1804,9 @@ toInt16OrZero('abc'): 0
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toInt16OrZero = {1, 1};
     FunctionDocumentation::Category category_toInt16OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt16OrZero = {description_toInt16OrZero, syntax_toInt16OrZero, arguments_toInt16OrZero, returned_value_toInt16OrZero, examples_toInt16OrZero, category_toInt16OrZero};
+    FunctionDocumentation documentation_toInt16OrZero = {description_toInt16OrZero, syntax_toInt16OrZero, arguments_toInt16OrZero, returned_value_toInt16OrZero, examples_toInt16OrZero, introduced_in_toInt16OrZero, category_toInt16OrZero};
 
     factory.registerFunction<detail::FunctionToInt16OrZero>(documentation_toInt16OrZero);
 
@@ -1831,8 +1845,9 @@ toInt32OrZero('abc'): 0
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toInt32OrZero = {1, 1};
     FunctionDocumentation::Category category_toInt32OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt32OrZero = {description_toInt32OrZero, syntax_toInt32OrZero, arguments_toInt32OrZero, returned_value_toInt32OrZero, examples_toInt32OrZero, category_toInt32OrZero};
+    FunctionDocumentation documentation_toInt32OrZero = {description_toInt32OrZero, syntax_toInt32OrZero, arguments_toInt32OrZero, returned_value_toInt32OrZero, examples_toInt32OrZero, introduced_in_toInt32OrZero, category_toInt32OrZero};
 
     factory.registerFunction<detail::FunctionToInt32OrZero>(documentation_toInt32OrZero);
 
@@ -1867,7 +1882,7 @@ SELECT toInt64OrZero('abc')
     };
     FunctionDocumentation::IntroducedIn introduced_in_toInt64OrZero = {1, 1};
     FunctionDocumentation::Category category_toInt64OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt64OrZero = {description_toInt64OrZero, syntax_toInt64OrZero, arguments_toInt64OrZero, returned_value_toInt64OrZero, examples_toInt64OrZero, category_toInt64OrZero};
+    FunctionDocumentation documentation_toInt64OrZero = {description_toInt64OrZero, syntax_toInt64OrZero, arguments_toInt64OrZero, returned_value_toInt64OrZero, examples_toInt64OrZero, introduced_in_toInt64OrZero, category_toInt64OrZero};
 
     factory.registerFunction<detail::FunctionToInt64OrZero>(documentation_toInt64OrZero);
 
@@ -2009,8 +2024,9 @@ toFloat32OrZero('abc'):  0
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toFloat32OrZero = {1, 1};
     FunctionDocumentation::Category category_toFloat32OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toFloat32OrZero = {description_toFloat32OrZero, syntax_toFloat32OrZero, arguments_toFloat32OrZero, returned_value_toFloat32OrZero, examples_toFloat32OrZero, category_toFloat32OrZero};
+    FunctionDocumentation documentation_toFloat32OrZero = {description_toFloat32OrZero, syntax_toFloat32OrZero, arguments_toFloat32OrZero, returned_value_toFloat32OrZero, examples_toFloat32OrZero, introduced_in_toFloat32OrZero, category_toFloat32OrZero};
 
     factory.registerFunction<detail::FunctionToFloat32OrZero>(documentation_toFloat32OrZero);
 
@@ -2041,8 +2057,9 @@ toFloat64OrZero('abc'):  0
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toFloat64OrZero = {1, 1};
     FunctionDocumentation::Category category_toFloat64OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toFloat64OrZero = {description_toFloat64OrZero, syntax_toFloat64OrZero, arguments_toFloat64OrZero, returned_value_toFloat64OrZero, examples_toFloat64OrZero, category_toFloat64OrZero};
+    FunctionDocumentation documentation_toFloat64OrZero = {description_toFloat64OrZero, syntax_toFloat64OrZero, arguments_toFloat64OrZero, returned_value_toFloat64OrZero, examples_toFloat64OrZero, introduced_in_toFloat64OrZero, category_toFloat64OrZero};
 
     factory.registerFunction<detail::FunctionToFloat64OrZero>(documentation_toFloat64OrZero);
 
@@ -2070,8 +2087,9 @@ SELECT toDateOrZero('2022-12-30'), toDateOrZero('')
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDateOrZero = {1, 1};
     FunctionDocumentation::Category category_toDateOrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateOrZero = {description_toDateOrZero, syntax_toDateOrZero, arguments_toDateOrZero, returned_value_toDateOrZero, examples_toDateOrZero, category_toDateOrZero};
+    FunctionDocumentation documentation_toDateOrZero = {description_toDateOrZero, syntax_toDateOrZero, arguments_toDateOrZero, returned_value_toDateOrZero, examples_toDateOrZero, introduced_in_toDateOrZero, category_toDateOrZero};
 
     factory.registerFunction<detail::FunctionToDateOrZero>(documentation_toDateOrZero);
 
@@ -2099,8 +2117,9 @@ SELECT toDate32OrZero('1955-01-01'), toDate32OrZero('')
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDate32OrZero = {21, 9};
     FunctionDocumentation::Category category_toDate32OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDate32OrZero = {description_toDate32OrZero, syntax_toDate32OrZero, arguments_toDate32OrZero, returned_value_toDate32OrZero, examples_toDate32OrZero, category_toDate32OrZero};
+    FunctionDocumentation documentation_toDate32OrZero = {description_toDate32OrZero, syntax_toDate32OrZero, arguments_toDate32OrZero, returned_value_toDate32OrZero, examples_toDate32OrZero, introduced_in_toDate32OrZero, category_toDate32OrZero};
 
     factory.registerFunction<detail::FunctionToDate32OrZero>(documentation_toDate32OrZero);
 
@@ -2123,19 +2142,20 @@ SELECT toTimeOrZero('12:30:45'), toTimeOrZero('invalid')
         R"(
 ┌─toTimeOrZero('12:30:45')─┬─toTimeOrZero('invalid')─┐
 │                 12:30:45 │                00:00:00 │
-└──────────────────────────┴────────────────────────┘
+└──────────────────────────┴─────────────────────────┘
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrZero = {1, 1};
     FunctionDocumentation::Category category_toTimeOrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toTimeOrZero = {description_toTimeOrZero, syntax_toTimeOrZero, arguments_toTimeOrZero, returned_value_toTimeOrZero, examples_toTimeOrZero, category_toTimeOrZero};
+    FunctionDocumentation documentation_toTimeOrZero = {description_toTimeOrZero, syntax_toTimeOrZero, arguments_toTimeOrZero, returned_value_toTimeOrZero, examples_toTimeOrZero, introduced_in_toTimeOrZero, category_toTimeOrZero};
 
     factory.registerFunction<detail::FunctionToTimeOrZero>(documentation_toTimeOrZero);
 
     /// toTime64OrZero documentation
     FunctionDocumentation::Description description_toTime64OrZero = R"(
 Converts an input value to a value of type Time64 but returns `00:00:00.000` in case of an error.
-Like toTime64 but returns `00:00:00.000` instead of throwing an exception on conversion errors.
+Like [`toTime64`](#toTime54) but returns `00:00:00.000` instead of throwing an exception on conversion errors.
 )";
     FunctionDocumentation::Syntax syntax_toTime64OrZero = "toTime64OrZero(x)";
     FunctionDocumentation::Arguments arguments_toTime64OrZero = {
@@ -2155,8 +2175,9 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
 )"
         }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toTime64OrZero = {25, 6};
     FunctionDocumentation::Category category_toTime64OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toTime64OrZero = {description_toTime64OrZero, syntax_toTime64OrZero, arguments_toTime64OrZero, returned_value_toTime64OrZero, examples_toTime64OrZero, category_toTime64OrZero};
+    FunctionDocumentation documentation_toTime64OrZero = {description_toTime64OrZero, syntax_toTime64OrZero, arguments_toTime64OrZero, returned_value_toTime64OrZero, examples_toTime64OrZero, introduced_in_toTime64OrZero, category_toTime64OrZero};
 
     factory.registerFunction<detail::FunctionToTime64OrZero>(documentation_toTime64OrZero);
 
@@ -2184,8 +2205,9 @@ SELECT toDateTimeOrZero('2022-12-30 13:44:17'), toDateTimeOrZero('invalid')
 )"
         }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDateTimeOrZero = {1, 1};
     FunctionDocumentation::Category category_toDateTimeOrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateTimeOrZero = {description_toDateTimeOrZero, syntax_toDateTimeOrZero, arguments_toDateTimeOrZero, returned_value_toDateTimeOrZero, examples_toDateTimeOrZero, category_toDateTimeOrZero};
+    FunctionDocumentation documentation_toDateTimeOrZero = {description_toDateTimeOrZero, syntax_toDateTimeOrZero, arguments_toDateTimeOrZero, returned_value_toDateTimeOrZero, examples_toDateTimeOrZero, introduced_in_toDateTimeOrZero, category_toDateTimeOrZero};
 
     factory.registerFunction<detail::FunctionToDateTimeOrZero>(documentation_toDateTimeOrZero);
 
@@ -2213,8 +2235,9 @@ SELECT toDateTime64OrZero('2022-12-30 13:44:17.123'), toDateTime64OrZero('invali
 )"
         }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDateTime64OrZero = {20, 1};
     FunctionDocumentation::Category category_toDateTime64OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateTime64OrZero = {description_toDateTime64OrZero, syntax_toDateTime64OrZero, arguments_toDateTime64OrZero, returned_value_toDateTime64OrZero, examples_toDateTime64OrZero, category_toDateTime64OrZero};
+    FunctionDocumentation documentation_toDateTime64OrZero = {description_toDateTime64OrZero, syntax_toDateTime64OrZero, arguments_toDateTime64OrZero, returned_value_toDateTime64OrZero, examples_toDateTime64OrZero, introduced_in_toDateTime64OrZero, category_toDateTime64OrZero};
 
     factory.registerFunction<detail::FunctionToDateTime64OrZero>(documentation_toDateTime64OrZero);
 
@@ -2254,8 +2277,9 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDecimal32OrZero = {20, 1};
     FunctionDocumentation::Category category_toDecimal32OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal32OrZero = {description_toDecimal32OrZero, syntax_toDecimal32OrZero, arguments_toDecimal32OrZero, returned_value_toDecimal32OrZero, examples_toDecimal32OrZero, category_toDecimal32OrZero};
+    FunctionDocumentation documentation_toDecimal32OrZero = {description_toDecimal32OrZero, syntax_toDecimal32OrZero, arguments_toDecimal32OrZero, returned_value_toDecimal32OrZero, examples_toDecimal32OrZero, introduced_in_toDecimal32OrZero, category_toDecimal32OrZero};
 
     factory.registerFunction<detail::FunctionToDecimal32OrZero>(documentation_toDecimal32OrZero);
 
@@ -2295,8 +2319,9 @@ SELECT toDecimal64OrZero('42.7', 2), toDecimal64OrZero('invalid', 2)
 )"
         }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDecimal64OrZero = {20, 1};
     FunctionDocumentation::Category category_toDecimal64OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal64OrZero = {description_toDecimal64OrZero, syntax_toDecimal64OrZero, arguments_toDecimal64OrZero, returned_value_toDecimal64OrZero, examples_toDecimal64OrZero, category_toDecimal64OrZero};
+    FunctionDocumentation documentation_toDecimal64OrZero = {description_toDecimal64OrZero, syntax_toDecimal64OrZero, arguments_toDecimal64OrZero, returned_value_toDecimal64OrZero, examples_toDecimal64OrZero, introduced_in_toDecimal64OrZero, category_toDecimal64OrZero};
 
     factory.registerFunction<detail::FunctionToDecimal64OrZero>(documentation_toDecimal64OrZero);
 
@@ -2336,8 +2361,9 @@ SELECT toDecimal128OrZero('42.7', 2), toDecimal128OrZero('invalid', 2)
 )"
         }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDecimal128OrZero = {20, 1};
     FunctionDocumentation::Category category_toDecimal128OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal128OrZero = {description_toDecimal128OrZero, syntax_toDecimal128OrZero, arguments_toDecimal128OrZero, returned_value_toDecimal128OrZero, examples_toDecimal128OrZero, category_toDecimal128OrZero};
+    FunctionDocumentation documentation_toDecimal128OrZero = {description_toDecimal128OrZero, syntax_toDecimal128OrZero, arguments_toDecimal128OrZero, returned_value_toDecimal128OrZero, examples_toDecimal128OrZero, introduced_in_toDecimal128OrZero, category_toDecimal128OrZero};
 
     factory.registerFunction<detail::FunctionToDecimal128OrZero>(documentation_toDecimal128OrZero);
 
@@ -2377,8 +2403,9 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
 )"
         }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDecimal256OrZero = {20, 8};
     FunctionDocumentation::Category category_toDecimal256OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal256OrZero = {description_toDecimal256OrZero, syntax_toDecimal256OrZero, arguments_toDecimal256OrZero, returned_value_toDecimal256OrZero, examples_toDecimal256OrZero, category_toDecimal256OrZero};
+    FunctionDocumentation documentation_toDecimal256OrZero = {description_toDecimal256OrZero, syntax_toDecimal256OrZero, arguments_toDecimal256OrZero, returned_value_toDecimal256OrZero, examples_toDecimal256OrZero, introduced_in_toDecimal256OrZero, category_toDecimal256OrZero};
 
     factory.registerFunction<detail::FunctionToDecimal256OrZero>(documentation_toDecimal256OrZero);
 
@@ -2417,8 +2444,9 @@ SELECT
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toUUIDOrZero = {20, 12};
     FunctionDocumentation::Category category_toUUIDOrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUUIDOrZero = {description_toUUIDOrZero, syntax_toUUIDOrZero, arguments_toUUIDOrZero, returned_value_toUUIDOrZero, examples_toUUIDOrZero, category_toUUIDOrZero};
+    FunctionDocumentation documentation_toUUIDOrZero = {description_toUUIDOrZero, syntax_toUUIDOrZero, arguments_toUUIDOrZero, returned_value_toUUIDOrZero, examples_toUUIDOrZero, introduced_in_toUUIDOrZero, category_toUUIDOrZero};
 
     factory.registerFunction<detail::FunctionToUUIDOrZero>(documentation_toUUIDOrZero);
 
@@ -2458,8 +2486,9 @@ SELECT
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toIPv4OrZero = {23, 1};
     FunctionDocumentation::Category category_toIPv4OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toIPv4OrZero = {description_toIPv4OrZero, syntax_toIPv4OrZero, arguments_toIPv4OrZero, returned_value_toIPv4OrZero, examples_toIPv4OrZero, category_toIPv4OrZero};
+    FunctionDocumentation documentation_toIPv4OrZero = {description_toIPv4OrZero, syntax_toIPv4OrZero, arguments_toIPv4OrZero, returned_value_toIPv4OrZero, examples_toIPv4OrZero,introduced_in_toIPv4OrZero, category_toIPv4OrZero};
 
     factory.registerFunction<detail::FunctionToIPv4OrZero>(documentation_toIPv4OrZero);
 
@@ -2500,8 +2529,9 @@ SELECT
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toIPv6OrZero = {23, 1};
     FunctionDocumentation::Category category_toIPv6OrZero = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toIPv6OrZero = {description_toIPv6OrZero, syntax_toIPv6OrZero, arguments_toIPv6OrZero, returned_value_toIPv6OrZero, examples_toIPv6OrZero, category_toIPv6OrZero};
+    FunctionDocumentation documentation_toIPv6OrZero = {description_toIPv6OrZero, syntax_toIPv6OrZero, arguments_toIPv6OrZero, returned_value_toIPv6OrZero, examples_toIPv6OrZero, introduced_in_toIPv6OrZero, category_toIPv6OrZero};
 
     factory.registerFunction<detail::FunctionToIPv6OrZero>(documentation_toIPv6OrZero);
 
@@ -2543,7 +2573,8 @@ toUInt8OrNull('abc'): \N
     }
     };
     FunctionDocumentation::Category category_toUInt8OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt8OrNull = {description_toUInt8OrNull, syntax_toUInt8OrNull, arguments_toUInt8OrNull, returned_value_toUInt8OrNull, examples_toUInt8OrNull, category_toUInt8OrNull};
+    FunctionDocumentation::IntroducedIn introduced_in_toUInt8OrNull = {1, 1};
+    FunctionDocumentation documentation_toUInt8OrNull = {description_toUInt8OrNull, syntax_toUInt8OrNull, arguments_toUInt8OrNull, returned_value_toUInt8OrNull, examples_toUInt8OrNull, introduced_in_toUInt8OrNull, category_toUInt8OrNull};
 
     factory.registerFunction<detail::FunctionToUInt8OrNull>(documentation_toUInt8OrNull);
 
@@ -2584,8 +2615,9 @@ toUInt16OrNull('abc'): \N
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toUInt16OrNull = {1, 1};
     FunctionDocumentation::Category category_toUInt16OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt16OrNull = {description_toUInt16OrNull, syntax_toUInt16OrNull, arguments_toUInt16OrNull, returned_value_toUInt16OrNull, examples_toUInt16OrNull, category_toUInt16OrNull};
+    FunctionDocumentation documentation_toUInt16OrNull = {description_toUInt16OrNull, syntax_toUInt16OrNull, arguments_toUInt16OrNull, returned_value_toUInt16OrNull, examples_toUInt16OrNull, introduced_in_toUInt16OrNull, category_toUInt16OrNull};
 
     factory.registerFunction<detail::FunctionToUInt16OrNull>(documentation_toUInt16OrNull);
 
@@ -2626,8 +2658,9 @@ toUInt32OrNull('abc'): \N
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toUInt32OrNull = {1, 1};
     FunctionDocumentation::Category category_toUInt32OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt32OrNull = {description_toUInt32OrNull, syntax_toUInt32OrNull, arguments_toUInt32OrNull, returned_value_toUInt32OrNull, examples_toUInt32OrNull, category_toUInt32OrNull};
+    FunctionDocumentation documentation_toUInt32OrNull = {description_toUInt32OrNull, syntax_toUInt32OrNull, arguments_toUInt32OrNull, returned_value_toUInt32OrNull, examples_toUInt32OrNull, introduced_in_toUInt32OrNull, category_toUInt32OrNull};
 
     factory.registerFunction<detail::FunctionToUInt32OrNull>(documentation_toUInt32OrNull);
 
@@ -2668,8 +2701,9 @@ toUInt64OrNull('abc'): \N
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toUint64OrNull = {1, 1};
     FunctionDocumentation::Category category_toUInt64OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt64OrNull = {description_toUInt64OrNull, syntax_toUInt64OrNull, arguments_toUInt64OrNull, returned_value_toUInt64OrNull, examples_toUInt64OrNull, category_toUInt64OrNull};
+    FunctionDocumentation documentation_toUInt64OrNull = {description_toUInt64OrNull, syntax_toUInt64OrNull, arguments_toUInt64OrNull, returned_value_toUInt64OrNull, examples_toUInt64OrNull, introduced_in_toUint64OrNull, category_toUInt64OrNull};
 
     factory.registerFunction<detail::FunctionToUInt64OrNull>(documentation_toUInt64OrNull);
 
@@ -2710,8 +2744,9 @@ toUInt128OrNull('abc'): \N
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toUInt128OrNull = {21, 6};
     FunctionDocumentation::Category category_toUInt128OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt128OrNull = {description_toUInt128OrNull, syntax_toUInt128OrNull, arguments_toUInt128OrNull, returned_value_toUInt128OrNull, examples_toUInt128OrNull, category_toUInt128OrNull};
+    FunctionDocumentation documentation_toUInt128OrNull = {description_toUInt128OrNull, syntax_toUInt128OrNull, arguments_toUInt128OrNull, returned_value_toUInt128OrNull, examples_toUInt128OrNull, introduced_in_toUInt128OrNull, category_toUInt128OrNull};
 
     factory.registerFunction<detail::FunctionToUInt128OrNull>(documentation_toUInt128OrNull);
 
@@ -2752,8 +2787,9 @@ toUInt256OrNull('abc'): \N
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toUInt256OrNull = {20, 8};
     FunctionDocumentation::Category category_toUInt256OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUInt256OrNull = {description_toUInt256OrNull, syntax_toUInt256OrNull, arguments_toUInt256OrNull, returned_value_toUInt256OrNull, examples_toUInt256OrNull, category_toUInt256OrNull};
+    FunctionDocumentation documentation_toUInt256OrNull = {description_toUInt256OrNull, syntax_toUInt256OrNull, arguments_toUInt256OrNull, returned_value_toUInt256OrNull, examples_toUInt256OrNull, introduced_in_toUInt256OrNull, category_toUInt256OrNull};
 
     factory.registerFunction<detail::FunctionToUInt256OrNull>(documentation_toUInt256OrNull);
 
@@ -2794,8 +2830,9 @@ toInt8OrNull('abc'): \N
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toInt8OrNull = {1, 1};
     FunctionDocumentation::Category category_toInt8OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt8OrNull = {description_toInt8OrNull, syntax_toInt8OrNull, arguments_toInt8OrNull, returned_value_toInt8OrNull, examples_toInt8OrNull, category_toInt8OrNull};
+    FunctionDocumentation documentation_toInt8OrNull = {description_toInt8OrNull, syntax_toInt8OrNull, arguments_toInt8OrNull, returned_value_toInt8OrNull, examples_toInt8OrNull, introduced_in_toInt8OrNull, category_toInt8OrNull};
 
     factory.registerFunction<detail::FunctionToInt8OrNull>(documentation_toInt8OrNull);
 
@@ -2836,8 +2873,9 @@ toInt16OrNull('abc'): \N
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toInt16OrNull = {1, 1};
     FunctionDocumentation::Category category_toInt16OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt16OrNull = {description_toInt16OrNull, syntax_toInt16OrNull, arguments_toInt16OrNull, returned_value_toInt16OrNull, examples_toInt16OrNull, category_toInt16OrNull};
+    FunctionDocumentation documentation_toInt16OrNull = {description_toInt16OrNull, syntax_toInt16OrNull, arguments_toInt16OrNull, returned_value_toInt16OrNull, examples_toInt16OrNull, introduced_in_toInt16OrNull, category_toInt16OrNull};
 
     factory.registerFunction<detail::FunctionToInt16OrNull>(documentation_toInt16OrNull);
 
@@ -2878,8 +2916,9 @@ toInt32OrNull('abc'): \N
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toInt32OrNull = {1, 1};
     FunctionDocumentation::Category category_toInt32OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt32OrNull = {description_toInt32OrNull, syntax_toInt32OrNull, arguments_toInt32OrNull, returned_value_toInt32OrNull, examples_toInt32OrNull, category_toInt32OrNull};
+    FunctionDocumentation documentation_toInt32OrNull = {description_toInt32OrNull, syntax_toInt32OrNull, arguments_toInt32OrNull, returned_value_toInt32OrNull, examples_toInt32OrNull, introduced_in_toInt32OrNull, category_toInt32OrNull};
 
     factory.registerFunction<detail::FunctionToInt32OrNull>(documentation_toInt32OrNull);
 
@@ -2920,8 +2959,9 @@ toInt64OrNull('abc'): \N
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toInt64OrNull = {1, 1};
     FunctionDocumentation::Category category_toInt64OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt64OrNull = {description_toInt64OrNull, syntax_toInt64OrNull, arguments_toInt64OrNull, returned_value_toInt64OrNull, examples_toInt64OrNull, category_toInt64OrNull};
+    FunctionDocumentation documentation_toInt64OrNull = {description_toInt64OrNull, syntax_toInt64OrNull, arguments_toInt64OrNull, returned_value_toInt64OrNull, examples_toInt64OrNull, introduced_in_toInt64OrNull, category_toInt64OrNull};
 
     factory.registerFunction<detail::FunctionToInt64OrNull>(documentation_toInt64OrNull);
 
@@ -2962,8 +3002,9 @@ toInt128OrNull('abc'):  \N
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toInt128OrNull = {20, 8};
     FunctionDocumentation::Category category_toInt128OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt128OrNull = {description_toInt128OrNull, syntax_toInt128OrNull, arguments_toInt128OrNull, returned_value_toInt128OrNull, examples_toInt128OrNull, category_toInt128OrNull};
+    FunctionDocumentation documentation_toInt128OrNull = {description_toInt128OrNull, syntax_toInt128OrNull, arguments_toInt128OrNull, returned_value_toInt128OrNull, examples_toInt128OrNull, introduced_in_toInt128OrNull, category_toInt128OrNull};
 
     factory.registerFunction<detail::FunctionToInt128OrNull>(documentation_toInt128OrNull);
 
@@ -3004,8 +3045,9 @@ toInt256OrNull('abc'):  \N
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toInt256OrNull = {20, 8};
     FunctionDocumentation::Category category_toInt256OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInt256OrNull = {description_toInt256OrNull, syntax_toInt256OrNull, arguments_toInt256OrNull, returned_value_toInt256OrNull, examples_toInt256OrNull, category_toInt256OrNull};
+    FunctionDocumentation documentation_toInt256OrNull = {description_toInt256OrNull, syntax_toInt256OrNull, arguments_toInt256OrNull, returned_value_toInt256OrNull, examples_toInt256OrNull, introduced_in_toInt256OrNull, category_toInt256OrNull};
 
     factory.registerFunction<detail::FunctionToInt256OrNull>(documentation_toInt256OrNull);
 
@@ -3093,8 +3135,9 @@ toFloat32OrNull('abc'):  \N
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toFloat32OrNull = {1, 1};
     FunctionDocumentation::Category category_toFloat32OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toFloat32OrNull = {description_toFloat32OrNull, syntax_toFloat32OrNull, arguments_toFloat32OrNull, returned_value_toFloat32OrNull, examples_toFloat32OrNull, category_toFloat32OrNull};
+    FunctionDocumentation documentation_toFloat32OrNull = {description_toFloat32OrNull, syntax_toFloat32OrNull, arguments_toFloat32OrNull, returned_value_toFloat32OrNull, examples_toFloat32OrNull, introduced_in_toFloat32OrNull, category_toFloat32OrNull};
 
     factory.registerFunction<detail::FunctionToFloat32OrNull>(documentation_toFloat32OrNull);
 
@@ -3139,8 +3182,9 @@ toFloat64OrNull('abc'):  \N
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toFloat64OrNull = {1, 1};
     FunctionDocumentation::Category category_toFloat64OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toFloat64OrNull = {description_toFloat64OrNull, syntax_toFloat64OrNull, arguments_toFloat64OrNull, returned_value_toFloat64OrNull, examples_toFloat64OrNull, category_toFloat64OrNull};
+    FunctionDocumentation documentation_toFloat64OrNull = {description_toFloat64OrNull, syntax_toFloat64OrNull, arguments_toFloat64OrNull, returned_value_toFloat64OrNull, examples_toFloat64OrNull, introduced_in_toFloat64OrNull, category_toFloat64OrNull};
 
     factory.registerFunction<detail::FunctionToFloat64OrNull>(documentation_toFloat64OrNull);
 
@@ -3170,8 +3214,9 @@ SELECT toDateOrNull('2022-12-30'), toDateOrNull('invalid')
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDateOrNull = {1, 1};
     FunctionDocumentation::Category category_toDateOrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateOrNull = {description_toDateOrNull, syntax_toDateOrNull, arguments_toDateOrNull, returned_value_toDateOrNull, examples_toDateOrNull, category_toDateOrNull};
+    FunctionDocumentation documentation_toDateOrNull = {description_toDateOrNull, syntax_toDateOrNull, arguments_toDateOrNull, returned_value_toDateOrNull, examples_toDateOrNull, introduced_in_toDateOrNull, category_toDateOrNull};
 
     factory.registerFunction<detail::FunctionToDateOrNull>(documentation_toDateOrNull);
 
@@ -3201,8 +3246,9 @@ SELECT toDate32OrNull('1955-01-01'), toDate32OrNull('invalid')
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDate32OrNull = {21, 9};
     FunctionDocumentation::Category category_toDate32OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDate32OrNull = {description_toDate32OrNull, syntax_toDate32OrNull, arguments_toDate32OrNull, returned_value_toDate32OrNull, examples_toDate32OrNull, category_toDate32OrNull};
+    FunctionDocumentation documentation_toDate32OrNull = {description_toDate32OrNull, syntax_toDate32OrNull, arguments_toDate32OrNull, returned_value_toDate32OrNull, examples_toDate32OrNull, introduced_in_toDate32OrNull, category_toDate32OrNull};
 
     factory.registerFunction<detail::FunctionToDate32OrNull>(documentation_toDate32OrNull);
 
@@ -3231,8 +3277,9 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toTimeOrNull = {1, 1};
     FunctionDocumentation::Category category_toTimeOrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toTimeOrNull = {description_toTimeOrNull, syntax_toTimeOrNull, arguments_toTimeOrNull, returned_value_toTimeOrNull, examples_toTimeOrNull, category_toTimeOrNull};
+    FunctionDocumentation documentation_toTimeOrNull = {description_toTimeOrNull, syntax_toTimeOrNull, arguments_toTimeOrNull, returned_value_toTimeOrNull, examples_toTimeOrNull, introduced_in_toTimeOrNull, category_toTimeOrNull};
 
     factory.registerFunction<detail::FunctionToTimeOrNull>(documentation_toTimeOrNull);
 
@@ -3261,8 +3308,9 @@ SELECT toTime64OrNull('12:30:45.123'), toTime64OrNull('invalid')
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toTime64OrNull = {25, 6};
     FunctionDocumentation::Category category_toTime64OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toTime64OrNull = {description_toTime64OrNull, syntax_toTime64OrNull, arguments_toTime64OrNull, returned_value_toTime64OrNull, examples_toTime64OrNull, category_toTime64OrNull};
+    FunctionDocumentation documentation_toTime64OrNull = {description_toTime64OrNull, syntax_toTime64OrNull, arguments_toTime64OrNull, returned_value_toTime64OrNull, examples_toTime64OrNull, introduced_in_toTime64OrNull, category_toTime64OrNull};
 
     factory.registerFunction<detail::FunctionToTime64OrNull>(documentation_toTime64OrNull);
 
@@ -3292,8 +3340,9 @@ SELECT toDateTimeOrNull('2022-12-30 13:44:17'), toDateTimeOrNull('invalid')
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDateTimeOrNull = {1, 1};
     FunctionDocumentation::Category category_toDateTimeOrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateTimeOrNull = {description_toDateTimeOrNull, syntax_toDateTimeOrNull, arguments_toDateTimeOrNull, returned_value_toDateTimeOrNull, examples_toDateTimeOrNull, category_toDateTimeOrNull};
+    FunctionDocumentation documentation_toDateTimeOrNull = {description_toDateTimeOrNull, syntax_toDateTimeOrNull, arguments_toDateTimeOrNull, returned_value_toDateTimeOrNull, examples_toDateTimeOrNull, introduced_in_toDateTimeOrNull, category_toDateTimeOrNull};
 
     factory.registerFunction<detail::FunctionToDateTimeOrNull>(documentation_toDateTimeOrNull);
 
@@ -3323,8 +3372,9 @@ SELECT toDateTime64OrNull('2022-12-30 13:44:17.123'), toDateTime64OrNull('invali
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDateTime64OrNull = {20, 1};
     FunctionDocumentation::Category category_toDateTime64OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDateTime64OrNull = {description_toDateTime64OrNull, syntax_toDateTime64OrNull, arguments_toDateTime64OrNull, returned_value_toDateTime64OrNull, examples_toDateTime64OrNull, category_toDateTime64OrNull};
+    FunctionDocumentation documentation_toDateTime64OrNull = {description_toDateTime64OrNull, syntax_toDateTime64OrNull, arguments_toDateTime64OrNull, returned_value_toDateTime64OrNull, examples_toDateTime64OrNull, introduced_in_toDateTime64OrNull, category_toDateTime64OrNull};
 
     factory.registerFunction<detail::FunctionToDateTime64OrNull>(documentation_toDateTime64OrNull);
 
@@ -3363,8 +3413,9 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDecimal32OrNull = {20, 1};
     FunctionDocumentation::Category category_toDecimal32OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal32OrNull = {description_toDecimal32OrNull, syntax_toDecimal32OrNull, arguments_toDecimal32OrNull, returned_value_toDecimal32OrNull, examples_toDecimal32OrNull, category_toDecimal32OrNull};
+    FunctionDocumentation documentation_toDecimal32OrNull = {description_toDecimal32OrNull, syntax_toDecimal32OrNull, arguments_toDecimal32OrNull, returned_value_toDecimal32OrNull, examples_toDecimal32OrNull, introduced_in_toDecimal32OrNull, category_toDecimal32OrNull};
 
     factory.registerFunction<detail::FunctionToDecimal32OrNull>(documentation_toDecimal32OrNull);
 
@@ -3403,8 +3454,9 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDecimal64OrNull = {20, 1};
     FunctionDocumentation::Category category_toDecimal64OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal64OrNull = {description_toDecimal64OrNull, syntax_toDecimal64OrNull, arguments_toDecimal64OrNull, returned_value_toDecimal64OrNull, examples_toDecimal64OrNull, category_toDecimal64OrNull};
+    FunctionDocumentation documentation_toDecimal64OrNull = {description_toDecimal64OrNull, syntax_toDecimal64OrNull, arguments_toDecimal64OrNull, returned_value_toDecimal64OrNull, examples_toDecimal64OrNull, introduced_in_toDecimal64OrNull, category_toDecimal64OrNull};
 
     factory.registerFunction<detail::FunctionToDecimal64OrNull>(documentation_toDecimal64OrNull);
 
@@ -3442,8 +3494,9 @@ SELECT toDecimal128OrNull('42.7', 2), toDecimal128OrNull('invalid', 2)
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDecimal128OrNull = {20, 1};
     FunctionDocumentation::Category category_toDecimal128OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal128OrNull = {description_toDecimal128OrNull, syntax_toDecimal128OrNull, arguments_toDecimal128OrNull, returned_value_toDecimal128OrNull, examples_toDecimal128OrNull, category_toDecimal128OrNull};
+    FunctionDocumentation documentation_toDecimal128OrNull = {description_toDecimal128OrNull, syntax_toDecimal128OrNull, arguments_toDecimal128OrNull, returned_value_toDecimal128OrNull, examples_toDecimal128OrNull, introduced_in_toDecimal128OrNull, category_toDecimal128OrNull};
 
     factory.registerFunction<detail::FunctionToDecimal128OrNull>(documentation_toDecimal128OrNull);
 
@@ -3482,8 +3535,9 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
         )"
     }
     };
+    FunctionDocumentation::IntroducedIn introduced_in_toDecimal256OrNull = {20, 8};
     FunctionDocumentation::Category category_toDecimal256OrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimal256OrNull = {description_toDecimal256OrNull, syntax_toDecimal256OrNull, arguments_toDecimal256OrNull, returned_value_toDecimal256OrNull, examples_toDecimal256OrNull, category_toDecimal256OrNull};
+    FunctionDocumentation documentation_toDecimal256OrNull = {description_toDecimal256OrNull, syntax_toDecimal256OrNull, arguments_toDecimal256OrNull, returned_value_toDecimal256OrNull, examples_toDecimal256OrNull, introduced_in_toDecimal256OrNull, category_toDecimal256OrNull};
 
     factory.registerFunction<detail::FunctionToDecimal256OrNull>(documentation_toDecimal256OrNull);
 
@@ -3523,9 +3577,9 @@ SELECT
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toUUIDOrNull = {20, 12}
+    FunctionDocumentation::IntroducedIn introduced_in_toUUIDOrNull = {20, 12};
     FunctionDocumentation::Category category_toUUIDOrNull = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUUIDOrNull = {description_toUUIDOrNull, syntax_toUUIDOrNull, arguments_toUUIDOrNull, returned_value_toUUIDOrNull, examples_toUUIDOrNull, category_toUUIDOrNull};
+    FunctionDocumentation documentation_toUUIDOrNull = {description_toUUIDOrNull, syntax_toUUIDOrNull, arguments_toUUIDOrNull, returned_value_toUUIDOrNull, examples_toUUIDOrNull, introduced_in_toUUIDOrNull, category_toUUIDOrNull};
 
     factory.registerFunction<detail::FunctionToUUIDOrNull>(documentation_toUUIDOrNull);
 
@@ -3860,19 +3914,19 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2021') AS valid_us,
 
     factory.registerFunction<detail::FunctionParseDateTimeBestEffortUSOrNull>(parseDateTimeBestEffortUSOrNull_documentation);
 
-    FunctionDocumentation::Description parseDateTime32BestEffort_description = R"(
+    FunctionDocumentation::Description description_parseDateTime32BestEffort = R"(
 Converts a string representation of a date and time to the [`DateTime`](/sql-reference/data-types/datetime) data type.
 
 The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse's and some other date and time formats.
 )";
-    FunctionDocumentation::Syntax parseDateTime32BestEffort_syntax = "parseDateTime32BestEffort(time_string[, time_zone]);
-    FunctionDocumentation::Arguments parseDateTime32BestEffort_arguments =
+    FunctionDocumentation::Syntax syntax_parseDateTime32BestEffort = "parseDateTime32BestEffort(time_string[, time_zone])";
+    FunctionDocumentation::Arguments arguments_parseDateTime32BestEffort =
     {
         {"time_string", "String containing a date and time to convert.", {"String"}},
         {"time_zone", "Optional. Time zone. The function parses time_string according to the time zone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue parseDateTime32BestEffort_returned_value = {"Returns `time_string` as a `DateTime`.", {"DateTime"}};
-    FunctionDocumentation::Examples parseDateTime32BestEffort_examples =
+    FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffort = {"Returns `time_string` as a `DateTime`.", {"DateTime"}};
+    FunctionDocumentation::Examples examples_parseDateTime32BestEffort =
     {
     {
         "Usage example",
@@ -3911,9 +3965,9 @@ AS parseDateTime32BestEffort
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn parseDateTime32BestEffort_introduced_in = {20, 9};
-    FunctionDocumentation::Category parseDateTime32BestEffort_category = FunctionDocumentation::Category::DateTimeConversion;
-    FunctionDocumentation parseDateTime32BestEffort_documentation = {parseDateTime32BestEffort_description, parseDateTime32BestEffort_syntax, parseDateTime32BestEffort_arguments, parseDateTime32BestEffort_returned_value, parseDateTime32BestEffort_examples, parseDateTime32BestEffort_introduced_in, parseDateTime32BestEffort_category};
+    FunctionDocumentation::IntroducedIn introduced_in_parseDateTime32BestEffort = {20, 9};
+    FunctionDocumentation::Category category_parseDateTime32BestEffort = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation_parseDateTime32BestEffort = {description_parseDateTime32BestEffort, syntax_parseDateTime32BestEffort, arguments_parseDateTime32BestEffort, returned_value_parseDateTime32BestEffort, examples_parseDateTime32BestEffort, introduced_in_parseDateTime32BestEffort, category_parseDateTime32BestEffort};
 
     FunctionDocumentation::Description description_parseDateTime32BestEffortOrZero = R"(
 Same as [`parseDateTime32BestEffort`](#parseDateTime32BestEffort) except that it returns a zero date or a zero date time when it encounters a date format that cannot be processed.
@@ -3924,7 +3978,7 @@ Same as [`parseDateTime32BestEffort`](#parseDateTime32BestEffort) except that it
         {"time_string", "String containing a date and time to convert.", {"String"}},
         {"time_zone", "Optional. Time zone. The function parses time_string according to the time zone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffortOrZero = "Returns a [`DateTime`](/sql-reference/data-types/datetime) object parsed from the string, or zero date (`1970-01-01 00:00:00`) if the parsing fails.";
+    FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffortOrZero = {"Returns a [`DateTime`](/sql-reference/data-types/datetime) object parsed from the string, or zero date (`1970-01-01 00:00:00`) if the parsing fails.", {"DateTime"}};
     FunctionDocumentation::Examples examples_parseDateTime32BestEffortOrZero =
     {
     {
@@ -3942,9 +3996,9 @@ SELECT
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime32BestEffortOrZero = {20, 9};
-    FunctionDocumentation::Category category_parseDateTime32BestEffortOrZero = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_parseDateTime32BestEffortOrZero = FunctionDocumentation::Category::TypeConversion;
 
-    FunctionDocumentation parseDateTime32BestEffortOrZero_documentation = {description_parseDateTime32BestEffortOrZero, syntax_parseDateTime32BestEffortOrZero, arguments_parseDateTime32BestEffortOrZero, returned_value_parseDateTime32BestEffortOrZero, examples_parseDateTime32BestEffortOrZero, introduced_in_parseDateTime32BestEffortOrZero, category_parseDateTime32BestEffortOrZero};
+    FunctionDocumentation documentation_parseDateTime32BestEffortOrZero = {description_parseDateTime32BestEffortOrZero, syntax_parseDateTime32BestEffortOrZero, arguments_parseDateTime32BestEffortOrZero, returned_value_parseDateTime32BestEffortOrZero, examples_parseDateTime32BestEffortOrZero, introduced_in_parseDateTime32BestEffortOrZero, category_parseDateTime32BestEffortOrZero};
 
     FunctionDocumentation::Description description_parseDateTime32BestEffortOrNull = R"(
 Same as [`parseDateTime32BestEffort`](#parseDateTime32BestEffort) except that it returns `NULL` when it encounters a date format that cannot be processed.
@@ -3955,7 +4009,7 @@ Same as [`parseDateTime32BestEffort`](#parseDateTime32BestEffort) except that it
         {"time_string", "String containing a date and time to convert.", {"String"}},
         {"time_zone", "Optional. Time zone. The function parses `time_string` according to the time zone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffortOrNull = "A [DateTime](/sql-reference/data-types/datetime) object parsed from the string, or `NULL` if the parsing fails.";
+    FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffortOrNull = {"Returns a DateTime object parsed from the string, or `NULL` if the parsing fails.", {"DateTime"}};
     FunctionDocumentation::Examples examples_parseDateTime32BestEffortOrNull =
     {
     {
@@ -3973,13 +4027,13 @@ SELECT
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime32BestEffortOrNull = {20, 9};
-    FunctionDocumentation::Category category_parseDateTime32BestEffortOrNull = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_parseDateTime32BestEffortOrNull = FunctionDocumentation::Category::TypeConversion;
 
-    FunctionDocumentation parseDateTime32BestEffortOrNull_documentation = {description_parseDateTime32BestEffortOrNull, syntax_parseDateTime32BestEffortOrNull, arguments_parseDateTime32BestEffortOrNull, returned_value_parseDateTime32BestEffortOrNull, examples_parseDateTime32BestEffortOrNull, introduced_in_parseDateTime32BestEffortOrNull, category_parseDateTime32BestEffortOrNull};
+    FunctionDocumentation documentation_parseDateTime32BestEffortOrNull = {description_parseDateTime32BestEffortOrNull, syntax_parseDateTime32BestEffortOrNull, arguments_parseDateTime32BestEffortOrNull, returned_value_parseDateTime32BestEffortOrNull, examples_parseDateTime32BestEffortOrNull, introduced_in_parseDateTime32BestEffortOrNull, category_parseDateTime32BestEffortOrNull};
 
-    factory.registerFunction<detail::FunctionParseDateTime32BestEffort>(parseDateTime32BestEffort_documentation);
-    factory.registerFunction<detail::FunctionParseDateTime32BestEffortOrZero>(parseDateTime32BestEffortOrZero_documentation);
-    factory.registerFunction<detail::FunctionParseDateTime32BestEffortOrNull>(parseDateTime32BestEffortOrNull_documentation);
+    factory.registerFunction<detail::FunctionParseDateTime32BestEffort>(documentation_parseDateTime32BestEffort);
+    factory.registerFunction<detail::FunctionParseDateTime32BestEffortOrZero>(documentation_parseDateTime32BestEffortOrZero);
+    factory.registerFunction<detail::FunctionParseDateTime32BestEffortOrNull>(documentation_parseDateTime32BestEffortOrNull);
 
     /// parseDateTime64BestEffort documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffort = R"(
@@ -4018,7 +4072,7 @@ FORMAT PrettyCompactMonoBlock
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime64BestEffort = {20, 1};
-    FunctionDocumentation::Category category_parseDateTime64BestEffort = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_parseDateTime64BestEffort = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffort_documentation = {description_parseDateTime64BestEffort, syntax_parseDateTime64BestEffort, arguments_parseDateTime64BestEffort, returned_value_parseDateTime64BestEffort, examples_parseDateTime64BestEffort, introduced_in_parseDateTime64BestEffort, category_parseDateTime64BestEffort};
 
     /// parseDateTime64BestEffortOrZero documentation
@@ -4049,7 +4103,7 @@ SELECT parseDateTime64BestEffortOrZero('2021-01-01 01:01:00.123') AS valid,
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime64BestEffortOrZero = {20, 1};
-    FunctionDocumentation::Category category_parseDateTime64BestEffortOrZero = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_parseDateTime64BestEffortOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortOrZero_documentation = {description_parseDateTime64BestEffortOrZero, syntax_parseDateTime64BestEffortOrZero, arguments_parseDateTime64BestEffortOrZero, returned_value_parseDateTime64BestEffortOrZero, examples_parseDateTime64BestEffortOrZero, introduced_in_parseDateTime64BestEffortOrZero, category_parseDateTime64BestEffortOrZero};
 
     /// parseDateTime64BestEffortOrNull documentation
@@ -4080,7 +4134,7 @@ SELECT parseDateTime64BestEffortOrNull('2021-01-01 01:01:00.123') AS valid,
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime64BestEffortOrNull = {20, 1};
-    FunctionDocumentation::Category category_parseDateTime64BestEffortOrNull = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_parseDateTime64BestEffortOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortOrNull_documentation = {description_parseDateTime64BestEffortOrNull, syntax_parseDateTime64BestEffortOrNull, arguments_parseDateTime64BestEffortOrNull, returned_value_parseDateTime64BestEffortOrNull, examples_parseDateTime64BestEffortOrNull, introduced_in_parseDateTime64BestEffortOrNull, category_parseDateTime64BestEffortOrNull};
 
     /// parseDateTime64BestEffortUS documentation
@@ -4111,7 +4165,7 @@ SELECT parseDateTime64BestEffortUS('02/10/2021 12:30:45.123') AS us_format,
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime64BestEffortUS = {22, 8};
-    FunctionDocumentation::Category category_parseDateTime64BestEffortUS = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_parseDateTime64BestEffortUS = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortUS_documentation = {description_parseDateTime64BestEffortUS, syntax_parseDateTime64BestEffortUS, arguments_parseDateTime64BestEffortUS, returned_value_parseDateTime64BestEffortUS, examples_parseDateTime64BestEffortUS, introduced_in_parseDateTime64BestEffortUS, category_parseDateTime64BestEffortUS};
 
     /// parseDateTime64BestEffortUSOrZero documentation
@@ -4142,7 +4196,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2021 12:30:45.123') AS valid_us,
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime64BestEffortUSOrZero = {22, 8};
-    FunctionDocumentation::Category category_parseDateTime64BestEffortUSOrZero = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_parseDateTime64BestEffortUSOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortUSOrZero_documentation = {description_parseDateTime64BestEffortUSOrZero, syntax_parseDateTime64BestEffortUSOrZero, arguments_parseDateTime64BestEffortUSOrZero, returned_value_parseDateTime64BestEffortUSOrZero, examples_parseDateTime64BestEffortUSOrZero, introduced_in_parseDateTime64BestEffortUSOrZero, category_parseDateTime64BestEffortUSOrZero};
 
     /// parseDateTime64BestEffortUSOrNull documentation
@@ -4173,7 +4227,7 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2021 12:30:45.123') AS valid_us,
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime64BestEffortUSOrNull = {22, 8};
-    FunctionDocumentation::Category category_parseDateTime64BestEffortUSOrNull = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_parseDateTime64BestEffortUSOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortUSOrNull_documentation = {description_parseDateTime64BestEffortUSOrNull, syntax_parseDateTime64BestEffortUSOrNull, arguments_parseDateTime64BestEffortUSOrNull, returned_value_parseDateTime64BestEffortUSOrNull, examples_parseDateTime64BestEffortUSOrNull, introduced_in_parseDateTime64BestEffortUSOrNull, category_parseDateTime64BestEffortUSOrNull};
 
     factory.registerFunction<detail::FunctionParseDateTime64BestEffort>(parseDateTime64BestEffort_documentation);
@@ -4208,7 +4262,7 @@ SELECT date + interval_to_seconds AS result
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalSecond = {1, 1};
-    FunctionDocumentation::Category category_toIntervalSecond = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_toIntervalSecond = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalSecond = {description_toIntervalSecond, syntax_toIntervalSecond, arguments_toIntervalSecond, returned_value_toIntervalSecond, examples_toIntervalSecond, introduced_in_toIntervalSecond, category_toIntervalSecond};
 
     FunctionDocumentation::Description description_toIntervalMinute = R"(
@@ -4236,7 +4290,7 @@ SELECT date + interval_to_minutes AS result
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalMinute = {1, 1};
-    FunctionDocumentation::Category category_toIntervalMinute = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_toIntervalMinute = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalMinute = {description_toIntervalMinute, syntax_toIntervalMinute, arguments_toIntervalMinute, returned_value_toIntervalMinute, examples_toIntervalMinute, introduced_in_toIntervalMinute, category_toIntervalMinute};
 
     FunctionDocumentation::Description description_toIntervalHour = R"(
@@ -4264,7 +4318,7 @@ SELECT date + interval_to_hours AS result
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalHour = {1, 1};
-    FunctionDocumentation::Category category_toIntervalHour = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_toIntervalHour = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalHour = {description_toIntervalHour, syntax_toIntervalHour, arguments_toIntervalHour, returned_value_toIntervalHour, examples_toIntervalHour, introduced_in_toIntervalHour, category_toIntervalHour};
 
     FunctionDocumentation::Description description_toIntervalDay = R"(
@@ -4292,7 +4346,7 @@ SELECT date + interval_to_days AS result
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalDay = {1, 1};
-    FunctionDocumentation::Category category_toIntervalDay = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_toIntervalDay = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalDay = {description_toIntervalDay, syntax_toIntervalDay, arguments_toIntervalDay, returned_value_toIntervalDay, examples_toIntervalDay, introduced_in_toIntervalDay, category_toIntervalDay};
 
     // toIntervalNanosecond documentation
@@ -4321,7 +4375,7 @@ SELECT date + interval_to_nanoseconds AS result
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalNanosecond = {22, 6};
-    FunctionDocumentation::Category category_toIntervalNanosecond = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_toIntervalNanosecond = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalNanosecond = {description_toIntervalNanosecond, syntax_toIntervalNanosecond, arguments_toIntervalNanosecond, returned_value_toIntervalNanosecond, examples_toIntervalNanosecond, introduced_in_toIntervalNanosecond, category_toIntervalNanosecond};
 
     // toIntervalMicrosecond documentation
@@ -4350,7 +4404,7 @@ SELECT date + interval_to_microseconds AS result
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalMicrosecond = {22, 6};
-    FunctionDocumentation::Category category_toIntervalMicrosecond = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_toIntervalMicrosecond = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalMicrosecond = {description_toIntervalMicrosecond, syntax_toIntervalMicrosecond, arguments_toIntervalMicrosecond, returned_value_toIntervalMicrosecond, examples_toIntervalMicrosecond, introduced_in_toIntervalMicrosecond, category_toIntervalMicrosecond};
 
     // toIntervalMillisecond documentation
@@ -4379,7 +4433,7 @@ SELECT date + interval_to_milliseconds AS result
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalMillisecond = {22, 6};
-    FunctionDocumentation::Category category_toIntervalMillisecond = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_toIntervalMillisecond = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalMillisecond = {description_toIntervalMillisecond, syntax_toIntervalMillisecond, arguments_toIntervalMillisecond, returned_value_toIntervalMillisecond, examples_toIntervalMillisecond, introduced_in_toIntervalMillisecond, category_toIntervalMillisecond};
 
     // toIntervalWeek documentation
@@ -4408,7 +4462,7 @@ SELECT date + interval_to_week AS result
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalWeek = {1, 1};
-    FunctionDocumentation::Category category_toIntervalWeek = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_toIntervalWeek = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalWeek = {description_toIntervalWeek, syntax_toIntervalWeek, arguments_toIntervalWeek, returned_value_toIntervalWeek, examples_toIntervalWeek, introduced_in_toIntervalWeek, category_toIntervalWeek};
 
     // toIntervalMonth documentation
@@ -4437,7 +4491,7 @@ SELECT date + interval_to_month AS result
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalMonth = {1, 1};
-    FunctionDocumentation::Category category_toIntervalMonth = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_toIntervalMonth = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalMonth = {description_toIntervalMonth, syntax_toIntervalMonth, arguments_toIntervalMonth, returned_value_toIntervalMonth, examples_toIntervalMonth, introduced_in_toIntervalMonth, category_toIntervalMonth};
 
     // toIntervalQuarter documentation
@@ -4466,7 +4520,7 @@ SELECT date + interval_to_quarter AS result
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalQuarter = {1, 1};
-    FunctionDocumentation::Category category_toIntervalQuarter = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_toIntervalQuarter = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalQuarter = {description_toIntervalQuarter, syntax_toIntervalQuarter, arguments_toIntervalQuarter, returned_value_toIntervalQuarter, examples_toIntervalQuarter, introduced_in_toIntervalQuarter, category_toIntervalQuarter};
 
     // toIntervalYear documentation
@@ -4495,7 +4549,7 @@ SELECT date + interval_to_year AS result
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIntervalYear = {1, 1};
-    FunctionDocumentation::Category category_toIntervalYear = FunctionDocumentation::Category::DateTimeConversion;
+    FunctionDocumentation::Category category_toIntervalYear = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalYear = {description_toIntervalYear, syntax_toIntervalYear, arguments_toIntervalYear, returned_value_toIntervalYear, examples_toIntervalYear, introduced_in_toIntervalYear, category_toIntervalYear};
 
     factory.registerFunction<detail::FunctionConvert<DataTypeInterval, detail::NameToIntervalNanosecond, detail::PositiveMonotonicity>>(documentation_toIntervalNanosecond);
