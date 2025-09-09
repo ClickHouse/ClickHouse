@@ -283,9 +283,9 @@ bool DatabaseOverlay::isReadOnly() const
 
 UUID DatabaseOverlay::getUUID() const
 {
+    UUID result = UUIDHelpers::Nil;
     if (mode == Mode::OwnedMembers)
     {
-        UUID result = UUIDHelpers::Nil;
         for (const auto & db : databases)
         {
             result = db->getUUID();
@@ -301,11 +301,14 @@ UUID DatabaseOverlay::getUUID() const
 UUID DatabaseOverlay::tryGetTableUUID(const String & table_name) const
 {
     UUID result = UUIDHelpers::Nil;
-    for (const auto & db : databases)
+    if (mode == Mode::OwnedMembers)
     {
-        result = db->tryGetTableUUID(table_name);
-        if (result != UUIDHelpers::Nil)
-            break;
+        for (const auto & db : databases)
+        {
+            result = db->tryGetTableUUID(table_name);
+            if (result != UUIDHelpers::Nil)
+                break;
+        }
     }
     return result;
 }
