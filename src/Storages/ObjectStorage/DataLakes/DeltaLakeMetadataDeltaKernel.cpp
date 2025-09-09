@@ -8,6 +8,8 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 
@@ -17,6 +19,16 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_delta_lake_writes;
+}
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 [[maybe_unused]] static void tracingCallback(struct ffi::Event event)
@@ -228,6 +240,13 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> /* catalog */)
 {
+    if (!context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "To enable delta lake writes, use allow_experimental_delta_lake_writes = 1");
+    }
+
     Names partition_columns;
     {
         std::lock_guard lock(table_snapshot_mutex);

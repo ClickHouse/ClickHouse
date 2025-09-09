@@ -4868,6 +4868,18 @@ The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELE
     DECLARE(Float, create_replicated_merge_tree_fault_injection_probability, 0.0f, R"(
 The probability of a fault injection during table creation after creating metadata in ZooKeeper
 )", 0) \
+    DECLARE(IcebergMetadataLogLevel, iceberg_metadata_log_level, IcebergMetadataLogLevel::None, R"(
+Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log.
+Usually this setting can be modified for debugging purposes.
+
+Possible values:
+- none - No metadata log.
+- metadata - Root metadata.json file.
+- manifest_list_metadata - Everything above + metadata from avro manifest list which corresponds to a snapshot.
+- manifest_list_entry - Everything above + avro manifest list entries.
+- manifest_file_metadata - Everything above + metadata from traversed avro manifest files.
+- manifest_file_entry - Everything above + traversed avro manifest files entries.
+)", 0) \
     \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
@@ -6475,6 +6487,9 @@ Enables throwing an exception if there was an error when analyzing scan predicat
     DECLARE(Bool, delta_lake_enable_engine_predicate, true, R"(
 Enables delta-kernel internal data pruning.
 )", 0) \
+    DECLARE(Bool, allow_experimental_delta_lake_writes, false, R"(
+Enables delta-kernel writes feature.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \

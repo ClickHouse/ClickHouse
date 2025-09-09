@@ -1856,6 +1856,7 @@ class ClickHouseCluster:
         keeper_required_feature_flags=[],
         main_config_name="config.xml",
         users_config_name="users.xml",
+        metrika_xml=None,
         copy_common_configs=True,
         config_root_name="clickhouse",
         extra_configs=[],
@@ -1976,6 +1977,7 @@ class ClickHouseCluster:
             clickhouse_start_extra_args=extra_args,
             main_config_name=main_config_name,
             users_config_name=users_config_name,
+            metrika_xml=metrika_xml,
             copy_common_configs=copy_common_configs,
             hostname=hostname,
             env_variables=env_variables,
@@ -3897,6 +3899,7 @@ services:
             - /etc/passwd:/etc/passwd:ro
             - {HELPERS_DIR}/../integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
             - /debug:/debug:ro
+            {metrika_xml}
             {binary_volume}
             {external_dirs_volumes}
             {odbc_ini_path}
@@ -3988,6 +3991,7 @@ class ClickHouseInstance:
         clickhouse_start_extra_args="",
         main_config_name="config.xml",
         users_config_name="users.xml",
+        metrika_xml=None,
         copy_common_configs=True,
         hostname=None,
         env_variables=None,
@@ -4089,6 +4093,10 @@ class ClickHouseInstance:
 
         self.main_config_name = main_config_name
         self.users_config_name = users_config_name
+        if metrika_xml:
+            self.metrika_xml = p.abspath(p.join(base_path, metrika_xml))
+        else:
+            self.metrika_xml = None
         self.copy_common_configs = copy_common_configs
 
         clickhouse_start_command_with_conf = clickhouse_start_command.replace(
@@ -5310,6 +5318,12 @@ class ClickHouseInstance:
                 self.coredns_config_dir, p.abspath(p.join(self.path, "coredns_config"))
             )
 
+        metrika_xml = ""
+        if self.metrika_xml:
+            metrika_xml_path = p.join(instance_config_dir, "metrika.xml")
+            shutil.copy(self.metrika_xml, metrika_xml_path)
+            metrika_xml = f"- {metrika_xml_path}:/etc/metrika.xml:ro"
+
         # Copy config.d configs
         logging.debug(
             f"Copy custom test config files {self.custom_main_config_paths} to {self.config_d_dir}"
@@ -5475,6 +5489,7 @@ class ClickHouseInstance:
                     config_d_dir=self.config_d_dir,
                     db_dir=db_dir,
                     external_dirs_volumes=external_dirs_volumes,
+                    metrika_xml=metrika_xml,
                     tmpfs=str(self.tmpfs),
                     mem_limit=self.mem_limit,
                     logs_dir=logs_dir,

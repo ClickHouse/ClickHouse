@@ -172,6 +172,8 @@ std::unique_ptr<Session> ArrowFlightHandler::createSession(const arrow::flight::
 
 void ArrowFlightHandler::start()
 {
+    chassert(!initialized && !stopped);
+
     bool use_tls = server.config().getBool("arrowflight.enable_ssl", false);
 
     arrow::Result<arrow::flight::Location> parse_location_status;
@@ -215,11 +217,15 @@ void ArrowFlightHandler::start()
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed init Arrow Flight Server: {}", init_status.ToString());
     }
 
+    initialized = true;
+
     server_thread.emplace([this]
     {
         try
         {
             setThreadName("ArrowFlightSrv");
+            if (stopped)
+                return;
             auto serve_status = Serve();
             if (!serve_status.ok())
                 LOG_ERROR(log, "Failed to serve Arrow Flight: {}", serve_status.ToString());
@@ -235,13 +241,27 @@ ArrowFlightHandler::~ArrowFlightHandler() = default;
 
 void ArrowFlightHandler::stop()
 {
-    auto status = Shutdown();
-    if (!status.ok())
+    if (!initialized)
+        return;
+
+    if (!stopped.exchange(true))
     {
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed shutdown Arrow Flight: {}", status.ToString());
+        try
+        {
+            auto status = Shutdown();
+            if (!status.ok())
+                LOG_ERROR(log, "Failed to shutdown Arrow Flight: {}", status.ToString());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to shutdown Arrow Flight");
+        }
+        if (server_thread)
+        {
+            server_thread->join();
+            server_thread.reset();
+        }
     }
-    server_thread->join();
-    server_thread.reset();
 }
 
 UInt16 ArrowFlightHandler::portNumber() const

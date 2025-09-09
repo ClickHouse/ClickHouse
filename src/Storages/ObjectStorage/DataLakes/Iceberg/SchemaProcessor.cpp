@@ -139,6 +139,9 @@ std::pair<size_t, size_t> parseDecimal(const String & type_name)
 
 }
 
+namespace Iceberg
+{
+
 std::string IcebergSchemaProcessor::default_link{};
 
 void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr)
@@ -301,10 +304,11 @@ IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr &
                 (current_full_name += ".").append(element_names.back());
                 scope_guard guard([&] { current_full_name.resize(current_full_name.size() - element_names.back().size() - 1); });
                 element_types.push_back(getFieldType(field, f_type, required, current_full_name, true));
-                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_types_by_source_ids)[{schema_id, field->getValue<Int32>(f_id)}]
-                    = NameAndTypePair{current_full_name, element_types.back()};
+                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_types_by_source_ids)
+                [{schema_id, field->getValue<Int32>(f_id)}] = NameAndTypePair{current_full_name, element_types.back()};
 
-                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_ids_by_source_names)[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
+                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_ids_by_source_names)
+                [{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
             }
             else
             {
@@ -549,4 +553,22 @@ std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::J
     return result;
 }
 
+ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
+{
+    auto schema = getIcebergTableSchemaById(id);
+    if (!schema)
+        return nullptr;
+    return createColumnMapper(schema);
+}
+
+ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object)
+{
+    auto column_mapper = std::make_shared<ColumnMapper>();
+    std::unordered_map<String, Int64> column_name_to_parquet_field_id
+        = IcebergSchemaProcessor::traverseSchema(schema_object->getArray(Iceberg::f_fields));
+    column_mapper->setStorageColumnEncoding(std::move(column_name_to_parquet_field_id));
+    return column_mapper;
+}
+
+}
 }
