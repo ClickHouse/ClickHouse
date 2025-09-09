@@ -245,6 +245,12 @@ ColumnsDescription::ColumnsDescription(std::initializer_list<ColumnDescription> 
         add(elem);
 }
 
+ColumnsDescription::ColumnsDescription(const std::vector<ColumnDescription> & ordinary)
+{
+    for (auto && elem : ordinary)
+        add(elem);
+}
+
 ColumnsDescription ColumnsDescription::fromNamesAndTypes(NamesAndTypes ordinary)
 {
     ColumnsDescription result;

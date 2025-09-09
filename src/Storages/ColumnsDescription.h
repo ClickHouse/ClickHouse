@@ -123,6 +123,8 @@ public:
 
     ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
 
+    ColumnsDescription(const std::vector<ColumnDescription> & ordinary);
+
     explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);
 
     void setAliases(NamesAndAliases aliases);

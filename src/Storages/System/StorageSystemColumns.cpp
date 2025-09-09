@@ -41,18 +41,20 @@ namespace ServerSetting
     extern const ServerSettingsBool enable_uuids_for_columns;
 }
 
-StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
+StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_, ContextPtr context)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
 
     /// NOTE: when changing the list of columns, take care of the ColumnsSource::generate method,
     /// when they are referenced by their numeric positions.
-    auto description = ColumnsDescription({
+    std::vector<ColumnDescription> columns = {
         { "database",           std::make_shared<DataTypeString>(), "Database name."},
         { "table",              std::make_shared<DataTypeString>(), "Table name."},
-        { "name",               std::make_shared<DataTypeString>(), "Column name."},
-        { "uuid",               std::make_shared<DataTypeString>(), "Column uuid."},
+        { "name",               std::make_shared<DataTypeString>(), "Column name."}};
+    if (context->getGlobalContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
+        columns.emplace_back("uuid",               std::make_shared<DataTypeString>(), "Column uuid.");
+    columns.insert(columns.end(), {
         { "type",               std::make_shared<DataTypeString>(), "Column type."},
         { "position",           std::make_shared<DataTypeUInt64>(), "Ordinal position of a column in a table starting with 1."},
         { "default_kind",       std::make_shared<DataTypeString>(), "Expression type (DEFAULT, MATERIALIZED, ALIAS) for the default value, or an empty string if it is not defined."},
@@ -76,8 +78,10 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
             "The scale of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse makes sense only for Decimal types. Otherwise, the NULL value is returned."},
         { "datetime_precision",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Decimal precision of DateTime64 data type. For other data types, the NULL value is returned."},
-        { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."},
+        { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."}
     });
+
+    auto description = ColumnsDescription(columns);
 
     description.setAliases({
         {"column", std::make_shared<DataTypeString>(), "name"}
@@ -208,13 +212,8 @@ protected:
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.name);
 
-                if (columns_mask[src_index++])
-                {
-                    if (context->getGlobalContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
-                        res_columns[res_index++]->insert(UUIDHelpers::uuidToStr(column.uuid));
-                    else
-                        res_columns[res_index++]->insert(UUIDHelpers::uuidToStr(UUIDHelpers::Nil));
-                }
+                if (context->getGlobalContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns] && columns_mask[src_index++])
+                    res_columns[res_index++]->insert(UUIDHelpers::uuidToStr(column.uuid));
 
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.type->getName());
