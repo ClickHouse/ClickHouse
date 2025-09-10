@@ -272,7 +272,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 {
     const auto & context = getContext();
 
-    Poco::URI url(base_url / endpoint);
+    Poco::URI url(base_url / endpoint, false);
     if (!params.empty())
         url.setQueryParameters(params);
 
@@ -511,7 +511,9 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
         for (size_t i = 0; i < identifiers_object->size(); ++i)
         {
             const auto current_table_json = identifiers_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
-            const auto table_name = current_table_json->get("name").extract<String>();
+            const auto table_name_raw = current_table_json->get("name").extract<String>();
+            std::string table_name;
+            Poco::URI::encode(table_name_raw, "/", table_name);
 
             tables.push_back(base_namespace + "." + table_name);
             if (limit && tables.size() >= limit)
