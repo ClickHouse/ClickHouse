@@ -236,7 +236,7 @@ public:
             }
         };
 
-        static std::unique_ptr<IInlinedSumHelper> createSumExtractorForType(DB::DataTypePtr type)
+        static std::unique_ptr<IInlinedSumHelper> createSumExtractorForType(DB::TypeIndex type)
         {
 #define FOR_INLINABLE_UINT_TYPES(M) \
     M(UInt8) \
@@ -248,10 +248,9 @@ public:
     M(Int32) \
     M(Int64)
 
-            WhichDataType which(type);
             if (false) {} // NOLINT
 #define M(TYPE) \
-            else if (which.idx == TypeIndex::TYPE) { \
+            else if (type == TypeIndex::TYPE) { \
                 return std::make_unique<InlineAggregationSumHelper<TYPE> >(); \
             }
 

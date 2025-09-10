@@ -1666,10 +1666,6 @@ void Aggregator::prepareAggregateInstructions(
                 has_sparse_arguments = true;
         }
 
-        if (is_simple_sum)
-            aggregate_functions_instructions[i].inline_sum_helper = createSumExtractorForType(
-                header.getByName(params.aggregates[i].argument_names[0]).type);
-
         aggregate_functions_instructions[i].has_sparse_arguments = has_sparse_arguments;
         aggregate_functions_instructions[i].can_optimize_equal_keys_ranges = aggregate_functions[i]->canOptimizeEqualKeysRanges();
         aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
@@ -1696,6 +1692,13 @@ void Aggregator::prepareAggregateInstructions(
             aggregate_functions_instructions[i].batch_arguments = aggregate_columns[i].data();
 
         aggregate_functions_instructions[i].batch_that = that;
+
+        if (is_simple_sum)
+        {
+            aggregate_functions_instructions[i].inline_sum_helper = createSumExtractorForType(
+                aggregate_functions_instructions[i].batch_arguments[0]->getDataType());
+            assert(aggregate_functions_instructions[i].inline_sum_helper != nullptr);
+        }
     }
 }
 
