@@ -65,7 +65,7 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
 {
 
     auto current_context = CurrentThread::getQueryContext();
-    if (current_context->getSettingsRef()[Setting::check_rights_local_storage].value)
+    if (current_context && current_context->getSettingsRef()[Setting::check_rights_local_storage].value)
     {
         auto user_files_path = current_context->getUserFilesPath();
         if (!fileOrSymlinkPathStartsWith(object.remote_path, user_files_path))
@@ -90,7 +90,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     LOG_TEST(log, "Write object: {}", object.remote_path);
 
     auto current_context = CurrentThread::getQueryContext();
-    if (current_context->getSettingsRef()[Setting::check_rights_local_storage].value)
+    if (current_context && current_context->getSettingsRef()[Setting::check_rights_local_storage].value)
     {
         auto user_files_path = current_context->getUserFilesPath();
         if (!fileOrSymlinkPathStartsWith(object.remote_path, user_files_path))
