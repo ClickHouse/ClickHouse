@@ -22,6 +22,7 @@
 #include <IO/NullWriteBuffer.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageAlias.h>
 #include <Poco/Timestamp.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
@@ -142,8 +143,8 @@ DDLWorker::DDLWorker(
 
 void DDLWorker::startup()
 {
-    [[maybe_unused]] bool prev_stop_flag = stop_flag.exchange(false);
-    chassert(prev_stop_flag);
+    chassert(!initialized && !main_thread && !cleanup_thread);
+    stop_flag = false;
     main_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runMainThread, this);
     cleanup_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runCleanupThread, this);
 }
@@ -663,7 +664,10 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, 
                 {
                     /// It's not CREATE DATABASE
                     auto table_id = context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
-                    storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+                    /// The settings may affect the behavior of `DatabaseCatalog::tryGetTable`.
+                    auto query_context = Context::createCopy(context);
+                    StorageAlias::modifyContextByQueryAST(task.query, query_context);
+                    storage = DatabaseCatalog::instance().tryGetTable(table_id, query_context);
                 }
 
                 task.execute_on_leader = storage && taskShouldBeExecutedOnLeader(task.query, storage) && !task.is_circular_replicated;
@@ -817,7 +821,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     /// but DDL worker can continue processing other queries.
     while (stopwatch.elapsedSeconds() <= MAX_EXECUTION_TIMEOUT_SEC)
     {
-        ReplicatedTableStatus status;
+        StorageReplicatedMergeTree::ReplicatedStatus status;
         // Has to get with zk fields to get active replicas field
         replicated_storage->getStatus(status, true);
 
@@ -1064,6 +1068,12 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
 
 String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo & retries_info)
 {
+    if (stop_flag)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't enqueue a query after shutdown");
+
+    if (entry.hosts.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty host list in a distributed DDL task");
+
     String node_path;
     if (retries_info.max_retries > 0)
     {
@@ -1082,9 +1092,6 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &
 
 String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
 {
-    if (entry.hosts.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty host list in a distributed DDL task");
-
     auto zookeeper = context->getZooKeeper();
 
     String query_path_prefix = fs::path(queue_dir) / "query-";

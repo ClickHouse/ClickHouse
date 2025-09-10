@@ -37,7 +37,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
     grep -vP $EXCLUDE_DOCS |
     xargs grep $@ -P '((class|struct|namespace|enum|if|for|while|else|throw|switch).*|\)(\s*const)?(\s*override)?\s*)\{$|\s$|^ {1,3}[^\* ]\S|\t|^\s*(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\(|\( [^\s\\]|\S \)' |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | trailing whitespace | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
-    grep -v -P '(//|:\s+\*|\$\(\()| \)"' && echo "{ should be a new line"
+    grep -v -P '//|\s+\*|\$\(\(| \)"' && echo "^ style error on this line"
 # single-line comment | continuation of a multiline comment | a typical piece of embedded shell code | something like ending of raw string literal
 
 # Tabs
@@ -55,9 +55,6 @@ if [ -n "$result" ]; then
     echo "^ Found unnecessary namespace comments"
 fi
 
-# Broken symlinks
-find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
-
 # Duplicated or incorrect setting declarations
 bash $ROOT_PATH/ci/jobs/scripts/check_style/check-settings-style
 
@@ -66,7 +63,6 @@ declare -A EXTERN_TYPES
 EXTERN_TYPES[ErrorCodes]=int
 EXTERN_TYPES[ProfileEvents]=Event
 EXTERN_TYPES[CurrentMetrics]=Metric
-EXTERN_TYPES[LatencyBuckets]=LatencyEvent
 
 EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::global_counters
@@ -75,6 +71,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::Counters
     ProfileEvents::end
     ProfileEvents::increment
+    ProfileEvents::incrementNoTrace
     ProfileEvents::incrementForLogMessage
     ProfileEvents::incrementLoggerElapsedNanoseconds
     ProfileEvents::getName
@@ -114,15 +111,6 @@ EXTERN_TYPES_EXCLUDES=(
     ErrorCodes::values[i]
     ErrorCodes::getErrorCodeByName
     ErrorCodes::Value
-
-    LatencyBuckets::getName
-    LatencyBuckets::increment
-    LatencyBuckets::Count
-    LatencyBuckets::LatencyEvent
-    LatencyBuckets::end
-    LatencyBuckets::global_bucket_lists
-    LatencyBuckets::getColumnsDescription
-    LatencyBuckets::fillData
 )
 for extern_type in ${!EXTERN_TYPES[@]}; do
     type_of_extern=${EXTERN_TYPES[$extern_type]}
@@ -333,7 +321,7 @@ ls -1d $ROOT_PATH/contrib/*-cmake | xargs -I@ find @ -name 'CMakeLists.txt' -or 
 # Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE |
-    xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites' &&
+    xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight' &&
     echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
 
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |

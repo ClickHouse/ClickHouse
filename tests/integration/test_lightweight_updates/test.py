@@ -41,7 +41,7 @@ def started_cluster():
 def test_lwu_replicated_database(started_cluster, db_engine, table_engine):
     db_name = "lwu_db" + str(random.randint(0, 10000000))
     settings = {
-        "allow_experimental_lightweight_update": 1,
+        "enable_lightweight_update": 1,
         "lightweight_delete_mode": "lightweight_update_force",
     }
 
@@ -141,7 +141,7 @@ def test_lwu_upgrade(started_cluster, table_engine):
         node3.query(
             "UPDATE lwu_table_upgrade SET y = 'updated' WHERE x >= 50000 AND x < 150000",
             settings={
-                "allow_experimental_lightweight_update": 1,
+                "enable_lightweight_update": 1,
                 "update_parallel_mode": "auto",
             },
         )
@@ -153,7 +153,7 @@ def test_lwu_upgrade(started_cluster, table_engine):
     node3.query(
         "UPDATE lwu_table_upgrade SET y = 'updated' WHERE x >= 50000 AND x < 150000",
         settings={
-            "allow_experimental_lightweight_update": 1,
+            "enable_lightweight_update": 1,
             "update_parallel_mode": "auto",
         },
     )

@@ -251,8 +251,11 @@ struct KeeperMemNode
 
     void removeChild(StringRef child_path);
 
-    const auto & getChildren() const noexcept { return children; }
-    auto & getChildren() { return children; }
+    template <typename Self>
+    auto & getChildren(this Self & self)
+    {
+        return self.children;
+    }
 
     // Invalidate the calculated digest so it's recalculated again on the next
     // getDigest call
@@ -264,6 +267,11 @@ struct KeeperMemNode
     // copy only necessary information for preprocessing and digest calculation
     // (e.g. we don't need to copy list of children)
     void shallowCopy(const KeeperMemNode & other);
+
+    // copy data from node that is left only for snapshot write
+    // e.g. we don't need list of children when writing snapshots so we can
+    // move it to the new copy of node
+    KeeperMemNode copyFromSnapshotNode();
 private:
     ChildrenSet children{};
 };

@@ -146,6 +146,7 @@ class PRInfo:
         self.head_ref = ""  # type: str
         self.head_name = ""  # type: str
         self.number = 0  # type: int
+        self.updated_at = github_event.get('repository', {}).get('updated_at', None)
 
         # workflow completed event, used for PRs only
         if "action" in github_event and github_event["action"] == "completed":
@@ -194,6 +195,7 @@ class PRInfo:
             self.labels = {
                 label["name"] for label in github_event["pull_request"]["labels"]
             }
+            self.updated_at = github_event["pull_request"]["updated_at"]
 
             self.user_login = github_event["pull_request"]["user"]["login"]  # type: str
             self.user_orgs = set()  # type: Set[str]

@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <create_query>CREATE TABLE IF NOT EXISTS test_ascii_data (
+        id UInt32,
+        ascii_string String,
+        mixed_string String,
+        long_string String,
+        empty_string String
+    ) ENGINE = Memory</create_query>
+    
+    <fill_query>INSERT INTO test_ascii_data SELECT 
+        number as id,
+        repeat('A', 100) as ascii_string,
+        repeat('Hello World!', 50) as mixed_string,
+        repeat('Pure ASCII 123 !@#', 30) as long_string,
+        '' as empty_string
+    FROM numbers(1000000)</fill_query>
+    
+    <query>SELECT isValidASCII(ascii_string) FROM test_ascii_data FORMAT Null</query>
+    <query>SELECT isValidASCII(mixed_string) FROM test_ascii_data FORMAT Null</query>
+    <query>SELECT isValidASCII(long_string) FROM test_ascii_data FORMAT Null</query>
+    <query>SELECT isValidASCII(empty_string) FROM test_ascii_data FORMAT Null</query>
+    
+    <query>SELECT isValidASCII('Mixed\x80Content') FROM test_ascii_data LIMIT 1000000 FORMAT Null</query>
+    
+    <query>DROP TABLE IF EXISTS test_ascii_data</query>
+</clickhouse>

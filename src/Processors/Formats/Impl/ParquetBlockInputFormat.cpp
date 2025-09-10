@@ -3,7 +3,6 @@
 
 #if USE_PARQUET
 
-#include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Formats/FormatFactory.h>
@@ -33,6 +32,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -61,7 +61,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int LOGICAL_ERROR;
@@ -91,7 +91,7 @@ void traverseAllFields(const parquet::schema::NodePtr & node, std::unordered_map
         if (::arrow::Status _s = (status); !_s.ok())                   \
         {                                                              \
             throw Exception::createDeprecated(_s.ToString(),           \
-                _s.IsOutOfMemory() ? ErrorCodes::CANNOT_ALLOCATE_MEMORY : ErrorCodes::INCORRECT_DATA); \
+                _s.IsOutOfMemory() ? ErrorCodes::MEMORY_LIMIT_EXCEEDED : ErrorCodes::INCORRECT_DATA); \
         }                                                              \
     } while (false)
 
@@ -491,7 +491,7 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
 
         if (always_null)
         {
-            /// Single-point range containing either the default value of one of the infinities.
+            /// Single-point range containing either the default value or one of the infinities.
             if (null_as_default)
                 hyperrectangle[idx].right = hyperrectangle[idx].left = default_value;
             else
@@ -659,7 +659,6 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
     if (format_filter_info && format_filter_info->column_mapper)
     {
-        auto header = getPort().getHeader();
         const auto & group_node = metadata->schema()->group_node();
 
         std::unordered_map<Int64, String> parquet_field_ids;
@@ -745,14 +744,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
                     return std::nullopt;
                 }
 
-                auto nested_column = column;
-
-                if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
-                {
-                    nested_column = nullable_column->getNestedColumnPtr();
-                }
-
-                return parquetTryHashColumn(nested_column.get(), parquet_column_descriptor);
+                return parquetTryHashColumn(column.get(), parquet_column_descriptor);
             };
 
             key_condition_with_bloom_filter_data->prepareBloomFilterData(hash_one, hash_many);
@@ -770,13 +762,11 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
         KeyCondition::ColumnIndexToBloomFilter column_index_to_bloom_filter;
 
-        const auto & header = getPort().getHeader();
-
-        std::vector<Range> hyperrectangle(header.columns(), Range::createWholeUniverse());
+        std::vector<Range> hyperrectangle(getPort().getHeader().columns(), Range::createWholeUniverse());
 
         if (format_settings.parquet.filter_push_down)
         {
-            hyperrectangle = getHyperrectangleForRowGroup(*metadata, row_group, header, format_settings);
+            hyperrectangle = getHyperrectangleForRowGroup(*metadata, row_group, getPort().getHeader(), format_settings);
         }
 
         if (format_settings.parquet.bloom_filter_push_down)
@@ -789,20 +779,29 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         return !maybe_exists;
     };
 
+    // The first one stores the skipped rows for all the skipped row groups before the first row group batch.
+    row_group_batches_skipped_rows.push_back(0);
     for (int row_group = 0; row_group < num_row_groups; ++row_group)
     {
         if (skip_row_groups.contains(row_group))
+        {
+            row_group_batches_skipped_rows.back() += metadata->RowGroup(row_group)->num_rows();
             continue;
+        }
 
         if (key_condition_with_bloom_filter_data && skip_row_group_based_on_filters(row_group))
         {
             ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups);
+            row_group_batches_skipped_rows.back() += metadata->RowGroup(row_group)->num_rows();
             continue;
         }
 
         // When single-threaded parsing, can prefetch row groups, so need to put all row groups in the same row_group_batch
         if (row_group_batches.empty() || (!prefetch_group && row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek))
+        {
             row_group_batches.emplace_back();
+            row_group_batches_skipped_rows.push_back(0);
+        }
 
         ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups);
         row_group_batches.back().row_groups_idxs.push_back(row_group);
@@ -972,6 +971,8 @@ void ParquetBlockInputFormat::threadFunction(size_t row_group_batch_idx)
 
         if (row_group_batch.status == RowGroupBatchState::Status::Done)
             return;
+
+        CurrentThread::updatePerformanceCountersIfNeeded();
     }
 }
 std::shared_ptr<arrow::RecordBatchReader> ParquetBlockInputFormat::RowGroupPrefetchIterator::nextRowGroupReader()
@@ -1094,6 +1095,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
 
     lock.lock();
 
+    row_group_batch.chunk_sizes.push_back(res.chunk.getNumRows());
     ++row_group_batch.next_chunk_idx;
     ++row_group_batch.num_pending_chunks;
     pending_chunks.push(std::move(res));
@@ -1135,7 +1137,21 @@ Chunk ParquetBlockInputFormat::read()
         return {};
 
     if (need_only_count)
-        return getChunkForCount(row_group_batches[row_group_batches_completed++].total_rows);
+    {
+        auto chunk = getChunkForCount(row_group_batches[row_group_batches_completed].total_rows);
+        size_t total_rows_before = std::accumulate(
+                                       row_group_batches_skipped_rows.begin(),
+                                       row_group_batches_skipped_rows.begin() + row_group_batches_completed + 1,
+                                       0ull)
+            + std::accumulate(row_group_batches.begin(),
+                              row_group_batches.begin() + row_group_batches_completed,
+                              0ull,
+                              [](size_t sum, const RowGroupBatchState & batch) { return sum + batch.total_rows; });
+
+        row_group_batches_completed++;
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumOffset>(total_rows_before));
+        return chunk;
+    }
 
     std::unique_lock lock(mutex);
 
@@ -1167,6 +1183,22 @@ Chunk ParquetBlockInputFormat::read()
 
             previous_block_missing_values = std::move(chunk.block_missing_values);
             previous_approx_bytes_read_for_chunk = chunk.approx_original_chunk_size;
+
+
+            size_t total_rows_before = std::accumulate(
+                                           row_group_batches_skipped_rows.begin(),
+                                           row_group_batches_skipped_rows.begin() + chunk.row_group_batch_idx + 1,
+                                           0ull)
+                + std::accumulate(row_group_batches.begin(),
+                                  row_group_batches.begin() + chunk.row_group_batch_idx,
+                                  0ull,
+                                  [](size_t sum, const RowGroupBatchState & batch) { return sum + batch.total_rows; })
+
+                + std::accumulate(row_group.chunk_sizes.begin(), row_group.chunk_sizes.begin() + chunk.chunk_idx, 0ull);
+
+
+            chunk.chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumOffset>(total_rows_before));
+
             return std::move(chunk.chunk);
         }
 
@@ -1190,6 +1222,7 @@ void ParquetBlockInputFormat::resetParser()
     metadata.reset();
     column_indices.clear();
     row_group_batches.clear();
+    row_group_batches_skipped_rows.clear();
     while (!pending_chunks.empty())
         pending_chunks.pop();
     row_group_batches_completed = 0;
@@ -1208,12 +1241,12 @@ const BlockMissingValues * ParquetBlockInputFormat::getMissingValues() const
     return &previous_block_missing_values;
 }
 
-ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+ArrowParquetSchemaReader::ArrowParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : ISchemaReader(in_), format_settings(format_settings_)
 {
 }
 
-void ParquetSchemaReader::initializeIfNeeded()
+void ArrowParquetSchemaReader::initializeIfNeeded()
 {
     if (arrow_file)
         return;
@@ -1223,7 +1256,7 @@ void ParquetSchemaReader::initializeIfNeeded()
     metadata = parquet::ReadMetaData(arrow_file);
 }
 
-NamesAndTypesList ParquetSchemaReader::readSchema()
+NamesAndTypesList ArrowParquetSchemaReader::readSchema()
 {
     initializeIfNeeded();
 
@@ -1269,7 +1302,7 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
     return header.getNamesAndTypesList();
 }
 
-std::optional<size_t> ParquetSchemaReader::readNumberOrRows()
+std::optional<size_t> ArrowParquetSchemaReader::readNumberOrRows()
 {
     initializeIfNeeded();
     return metadata->num_rows();
@@ -1289,25 +1322,44 @@ void registerInputFormatParquet(FormatFactory & factory)
         {
             size_t min_bytes_for_seek
                 = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
-            auto ptr = std::make_shared<ParquetBlockInputFormat>(
-                buf,
-                std::make_shared<const Block>(sample),
-                settings,
-                std::move(parser_shared_resources),
-                std::move(format_filter_info),
-                min_bytes_for_seek);
-            return ptr;
+            if (settings.parquet.use_native_reader_v3)
+            {
+                return std::make_shared<ParquetV3BlockInputFormat>(
+                    buf,
+                    std::make_shared<const Block>(sample),
+                    settings,
+                    std::move(parser_shared_resources),
+                    std::move(format_filter_info),
+                    min_bytes_for_seek);
+            }
+            else
+            {
+                return std::make_shared<ParquetBlockInputFormat>(
+                    buf,
+                    std::make_shared<const Block>(sample),
+                    settings,
+                    std::move(parser_shared_resources),
+                    std::move(format_filter_info),
+                    min_bytes_for_seek);
+            }
         });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
+    factory.registerPrewhereSupportChecker("Parquet", [](const FormatSettings & settings)
+    {
+        return settings.parquet.use_native_reader_v3;
+    });
 }
 
 void registerParquetSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
         "Parquet",
-        [](ReadBuffer & buf, const FormatSettings & settings)
+        [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
         {
-            return std::make_shared<ParquetSchemaReader>(buf, settings);
+            if (settings.parquet.use_native_reader_v3)
+                return std::make_shared<NativeParquetSchemaReader>(buf, settings);
+            else
+                return std::make_shared<ArrowParquetSchemaReader>(buf, settings);
         }
         );
 
@@ -1316,9 +1368,10 @@ void registerParquetSchemaReader(FormatFactory & factory)
         [](const FormatSettings & settings)
         {
             return fmt::format(
-                "schema_inference_make_columns_nullable={};enable_json_parsing={}",
+                "schema_inference_make_columns_nullable={};enable_json_parsing={};use_native_reader_v3={}",
                 settings.schema_inference_make_columns_nullable,
-                settings.parquet.enable_json_parsing);
+                settings.parquet.enable_json_parsing,
+                settings.parquet.use_native_reader_v3);
         });
 }
 

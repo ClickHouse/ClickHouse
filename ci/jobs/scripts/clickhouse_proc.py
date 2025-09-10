@@ -4,6 +4,7 @@ import subprocess
 import sys
 import time
 import traceback
+from collections import defaultdict
 from pathlib import Path
 
 from ci.praktika import Secret
@@ -39,7 +40,7 @@ class ClickHouseProc:
 """
     MINIO_LOG = f"{temp_dir}/minio.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
-    LOGS_SAVER_CLIENT_OPTIONS = "--max_block_size 8192 --max_memory_usage 10G --max_threads 1 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0"
+    LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
     DMESG_LOG = f"{temp_dir}/dmesg.log"
     GDB_LOG = f"{temp_dir}/gdb.log"
     # TODO: run servers in  dedicated wds to keep trash localised
@@ -309,17 +310,21 @@ profiles:
         config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"
         config_file.parent.mkdir(parents=True, exist_ok=True)
 
-        self.log_export_host = Secret.Config(
-            name="clickhouse_ci_logs_host",
-            type=Secret.Type.AWS_SSM_VAR,
-            region="us-east-1",
-        ).get_value()
-
-        self.log_export_password = Secret.Config(
-            name="clickhouse_ci_logs_password",
-            type=Secret.Type.AWS_SSM_VAR,
-            region="us-east-1",
-        ).get_value()
+        self.log_export_host, self.log_export_password = (
+            Secret.Config(
+                name="clickhouse_ci_logs_host",
+                type=Secret.Type.AWS_SSM_PARAMETER,
+                region="us-east-1",
+            )
+            .join_with(
+                Secret.Config(
+                    name="clickhouse_ci_logs_password",
+                    type=Secret.Type.AWS_SSM_PARAMETER,
+                    region="us-east-1",
+                )
+            )
+            .get_value()
+        )
 
         config_content = LOG_EXPORT_CONFIG_TEMPLATE.format(
             CLICKHOUSE_CI_LOGS_CLUSTER=CLICKHOUSE_CI_LOGS_CLUSTER,
@@ -377,8 +382,36 @@ profiles:
             strict=True,
         )
 
+        Shell.check(
+            f"rm -rf {temp_dir}/jemalloc_profiles && mkdir -p {temp_dir}/jemalloc_profiles",
+            verbose=True,
+            strict=True,
+        )
+
+        replicas = 3 if self.is_db_replicated else 1
+        tsan_memory_limit_mb = (
+            Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
+        )
+
+        env = os.environ.copy()
+        env["TSAN_OPTIONS"] = " ".join(
+            filter(
+                lambda x: x is not None,
+                [
+                    env.get("TSAN_OPTIONS", None),
+                    f"memory_limit_mb={tsan_memory_limit_mb}",
+                ],
+            )
+        )
+        tsan_options = env["TSAN_OPTIONS"]
+        print(f"TSAN_OPTIONS = {tsan_options}")
+
         proc = subprocess.Popen(
-            command, stderr=subprocess.STDOUT, shell=True, cwd=run_path
+            command,
+            stderr=subprocess.STDOUT,
+            shell=True,
+            cwd=run_path,
+            env=env,
         )
         if replica_num == 1:
             self.proc_1 = proc
@@ -390,7 +423,7 @@ profiles:
             assert False
         started = False
         try:
-            for _ in range(5):
+            for _ in range(15):
                 pid = Shell.get_output(f"cat {pid_file}").strip()
                 if not pid:
                     Utils.sleep(1)
@@ -633,6 +666,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
     def prepare_logs(self, all=False):
         res = self._get_logs_archives_server()
+        res += self._get_jemalloc_profiles()
         if Path(self.GDB_LOG).exists():
             res.append(self.GDB_LOG)
         if all:
@@ -675,6 +709,57 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         else:
             print("WARNING: Coordination logs not found")
             return []
+
+    @classmethod
+    def _get_jemalloc_profiles(cls):
+        profiles = Shell.get_output(f"ls {temp_dir}/jemalloc_profiles")
+        if not profiles:
+            return []
+
+        profiles = profiles.split("\n")
+
+        res = []
+
+        # We will generate flamegraphs for last jemalloc profile of each PID
+        # format of jemalloc profile: clickhouse.jemalloc.$PID.$COUNT.m$COUNT.heap
+        # test runs can generate jemalloc profiles for multiple PIDs because clickhouse local and multiple servers
+        # can be started
+
+        # group profiles by pid
+        grouped_profiles = defaultdict(list)
+        for profile in profiles:
+            parts = profile.split(".")
+            pid = int(parts[2])
+            count = int(parts[3])
+            grouped_profiles[pid].append((count, profile))
+
+        # for each group, get the file with the highest count number
+        latest_profiles = {}
+        for pid, files_in_group in grouped_profiles.items():
+            file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
+            latest_profiles[pid] = file_with_max_third_number
+
+        chbinary = Shell.get_output("readlink -f $(which clickhouse)")
+        for pid, profile in latest_profiles.items():
+            Shell.check(
+                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
+                verbose=True,
+            )
+            Shell.check(
+                f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
+                verbose=True,
+            )
+
+        Shell.check(
+            f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",
+            verbose=True,
+        )
+        if Path(f"{temp_dir}/jemalloc.tar.zst").exists():
+            res.append(f"{temp_dir}/jemalloc.tar.zst")
+        else:
+            print("WARNING: Jemalloc profiles not found")
+            return []
+        return res
 
     def _get_logs_archives_server(self):
         assert Path(
@@ -864,14 +949,9 @@ quit
             "error_log",
             "query_metric_log",
             "part_log",
-            "latency_log",
             "minio_audit_logs",
             "minio_server_logs",
         ]
-
-        if "_tsan" in Info().job_name:
-            print("minio_audit_logs scrapping is too slow with tsan - skip")
-            TABLES.remove("minio_audit_logs")
 
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"

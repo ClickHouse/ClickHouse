@@ -8,10 +8,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -26,11 +24,9 @@
 #include <IO/WriteHelpers.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/formatIPv6.h>
-#include <base/hex.h>
 #include <Common/typeid_cast.h>
 
 #include <arpa/inet.h>
-#include <type_traits>
 #include <array>
 
 
@@ -101,7 +97,7 @@ public:
         auto col_res = ColumnString::create();
         ColumnString::Chars & vec_res = col_res->getChars();
         ColumnString::Offsets & offsets_res = col_res->getOffsets();
-        vec_res.resize(input_rows_count * (IPV6_MAX_TEXT_LENGTH + 1));
+        vec_res.resize(input_rows_count * IPV6_MAX_TEXT_LENGTH);
         offsets_res.resize(input_rows_count);
 
         auto * begin = reinterpret_cast<char *>(vec_res.data());
@@ -222,7 +218,7 @@ public:
         auto col_res = ColumnString::create();
         ColumnString::Chars & vec_res = col_res->getChars();
         ColumnString::Offsets & offsets_res = col_res->getOffsets();
-        vec_res.resize(input_rows_count * (IPV6_MAX_TEXT_LENGTH + 1));
+        vec_res.resize(input_rows_count * IPV6_MAX_TEXT_LENGTH);
         offsets_res.resize(input_rows_count);
 
         auto * begin = reinterpret_cast<char *>(vec_res.data());
@@ -371,14 +367,14 @@ private:
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(input_rows_count * (IPV4_MAX_TEXT_LENGTH + 1)); /// the longest value is: 255.255.255.255\0
+            vec_res.resize(input_rows_count * IPV4_MAX_TEXT_LENGTH); /// the longest value is: 255.255.255.255
             offsets_res.resize(input_rows_count);
             char * begin = reinterpret_cast<char *>(vec_res.data());
             char * pos = begin;
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                DB::formatIPv4(reinterpret_cast<const unsigned char*>(&vec_in[i]), sizeof(ArgType), pos, mask_tail_octets, "xxx");
+                formatIPv4(reinterpret_cast<const unsigned char*>(&vec_in[i]), sizeof(ArgType), pos, mask_tail_octets, "xxx");
                 offsets_res[i] = pos - begin;
             }
 
@@ -649,7 +645,6 @@ public:
         writeHexByteUppercase(mac >> 8, &out[12]);
         out[14] = ':';
         writeHexByteUppercase(mac, &out[15]);
-        out[17] = '\0';
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -667,14 +662,14 @@ public:
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(vec_in.size() * 18); /// the value is: xx:xx:xx:xx:xx:xx\0
+            vec_res.resize(vec_in.size() * 17); /// the value is: xx:xx:xx:xx:xx:xx
             offsets_res.resize(vec_in.size());
 
             size_t current_offset = 0;
             for (size_t i = 0; i < vec_in.size(); ++i)
             {
                 formatMAC(vec_in[i], &vec_res[current_offset]);
-                current_offset += 18;
+                current_offset += 17;
                 offsets_res[i] = current_offset;
             }
 
@@ -787,7 +782,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t current_offset = offsets_src[i];
-                size_t string_size = current_offset - prev_offset - 1; /// mind the terminating zero byte
+                size_t string_size = current_offset - prev_offset;
 
                 if (string_size >= Impl::min_string_size && string_size <= Impl::max_string_size)
                     vec_res[i] = Impl::parse(reinterpret_cast<const char *>(&vec_src[prev_offset]));
@@ -1105,7 +1100,7 @@ public:
             ColumnString::Offset new_offset = offsets_src[i];
             vec_res[i] = parseIPv4whole(
                 reinterpret_cast<const char *>(&vec_src[prev_offset]),
-                reinterpret_cast<const char *>(&vec_src[new_offset - 1]),
+                reinterpret_cast<const char *>(&vec_src[new_offset]),
                 reinterpret_cast<unsigned char *>(&result));
             prev_offset = new_offset;
         }
@@ -1167,9 +1162,9 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnString::Offset new_offset = offsets_src[i];
-            vec_res[i] = DB::parseIPv6whole(reinterpret_cast<const char *>(&vec_src[prev_offset]),
-                                            reinterpret_cast<const char *>(&vec_src[new_offset - 1]),
-                                            reinterpret_cast<unsigned char *>(buffer));
+            vec_res[i] = parseIPv6Whole(reinterpret_cast<const char *>(&vec_src[prev_offset]),
+                                        reinterpret_cast<const char *>(&vec_src[new_offset]),
+                                        reinterpret_cast<unsigned char *>(buffer));
             prev_offset = new_offset;
         }
 
@@ -1182,7 +1177,7 @@ struct NameFunctionIPv4NumToStringClassC { static constexpr auto name = "IPv4Num
 
 REGISTER_FUNCTION(Coding)
 {
-    // cutIPv6 function
+    /// cutIPv6 function
     FunctionDocumentation::Description description_cutipv6 = R"(
 Accepts a `FixedString(16)` value containing the IPv6 address in binary format.
 Returns a string containing the address of the specified number of bytes removed in text format.
@@ -1242,7 +1237,7 @@ SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr;
     factory.registerFunction<FunctionMACStringTo<ParseMACImpl>>();
     factory.registerFunction<FunctionMACStringTo<ParseOUIImpl>>();
 
-    // IPv6CIDRToRange function
+    /// IPv6CIDRToRange function
     FunctionDocumentation::Description description_ipv6cidr = R"(
 Takes an IPv6 address with its Classless Inter-Domain Routing (CIDR) prefix length and returns the subnet's address range as a tuple of two IPv6 values: the lowest and highest addresses in that subnet.
 For the IPv4 version see [`IPv4CIDRToRange`](#IPv4CIDRToRange).
@@ -1294,7 +1289,7 @@ SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16);
 
     factory.registerFunction<FunctionIPv4CIDRToRange>(documentation_ipv4cidr);
 
-    // isIPv4String function
+    /// isIPv4String function
     FunctionDocumentation::Description description_isipv4 = R"(
 Determines whether the input string is an IPv4 address or not.
 For the IPv6 version see [`isIPv6String`](#isIPv6String).
@@ -1329,7 +1324,7 @@ ARRAY JOIN addr;
 
     factory.registerFunction<FunctionIsIPv4String>(documentation_isipv4);
 
-    // isIPv6String function
+    /// isIPv6String function
     FunctionDocumentation::Description description_isipv6 = R"(
 Determines whether the input string is an IPv6 address or not.
 For the IPv4 version see [`isIPv4String`](#isIPv4String).
@@ -1363,7 +1358,7 @@ ARRAY JOIN addr;
 
     factory.registerFunction<FunctionIsIPv6String>(documentation_isipv6);
 
-    // IPv4NumToString function
+    /// IPv4NumToString function
     FunctionDocumentation::Description description_ipv4numtostring = R"(
 Converts a 32-bit integer to its IPv4 address string representation in dotted decimal notation (A.B.C.D format).
 Interprets the input using big-endian byte ordering.
@@ -1386,7 +1381,7 @@ Interprets the input using big-endian byte ordering.
 
     factory.registerFunction<FunctionIPv4NumToString<0, NameFunctionIPv4NumToString>>(documentation_ipv4numtostring);
 
-    // IPv4NumToStringClassC function
+    /// IPv4NumToStringClassC function
     FunctionDocumentation::Description description_ipv4numtostringclassc = R"(
 Converts a 32-bit integer to its IPv4 address string representation in dotted decimal notation (A.B.C.D format),
 similar to [`IPv4NumToString`](#IPv4NumToString) but using `xxx` instead of the last octet.
@@ -1426,7 +1421,7 @@ LIMIT 10
 
     factory.registerFunction<FunctionIPv4NumToString<1, NameFunctionIPv4NumToStringClassC>>(documentation_ipv4numtostringclassc);
 
-    // IPv4StringToNum function
+    /// IPv4StringToNum function
     FunctionDocumentation::Description description_ipv4stringtonum = R"(
 Converts an IPv4 address string in dotted decimal notation (A.B.C.D format) to its corresponding 32-bit integer representation. (The reverse of [`IPv4NumToString`](#IPv4NumToString)).
 If the IPv4 address has an invalid format, an exception is thrown.
@@ -1449,7 +1444,7 @@ If the IPv4 address has an invalid format, an exception is thrown.
 
     factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Throw>>(documentation_ipv4stringtonum);
 
-    // IPv4StringToNumOrDefault function
+    /// IPv4StringToNumOrDefault function
     FunctionDocumentation::Description description_ipv4stringtonumordefault = R"(
 Converts an IPv4 address string in dotted decimal notation (A.B.C.D format) to its corresponding 32-bit integer representation but if the IPv4 address has an invalid format, it returns `0`.
     )";
@@ -1475,7 +1470,7 @@ SELECT
 
     factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Default>>(documentation_ipv4stringtonumordefault);
 
-    // IPv4StringToNumOrNull function
+    /// IPv4StringToNumOrNull function
     FunctionDocumentation::Description description_ipv4stringtonumornull = R"(
 Converts a 32-bit integer to its IPv4 address string representation in dotted decimal notation (A.B.C.D format) but if the IPv4 address has an invalid format, it returns `NULL`.
     )";
@@ -1506,7 +1501,7 @@ IPv4StringToNumOrNull('invalid') AS invalid;
 
     factory.registerFunction<FunctionIPv4StringToNum<IPStringToNumExceptionMode::Null>>(documentation_ipv4stringtonumornull);
 
-    // IPv6NumToString function
+    /// IPv6NumToString function
     FunctionDocumentation::Description description_ipv6numtostring = R"(
 Converts an IPv6 address from binary format (FixedString(16)) to its standard text representation.
 IPv4-mapped IPv6 addresses are displayed in the format `::ffff:111.222.33.44`.
@@ -1589,7 +1584,7 @@ LIMIT 10
 
     factory.registerFunction<FunctionIPv6NumToString>(documentation_ipv6numtostring);
 
-    // IPv6StringToNum function
+    /// IPv6StringToNum function
     FunctionDocumentation::Description description_ipv6stringtonum = R"(
 Converts an IPv6 address from its standard text representation to binary format (`FixedString(16)`).
 Accepts IPv4-mapped IPv6 addresses in the format `::ffff:111.222.33.44.`.
@@ -1624,7 +1619,7 @@ SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['notaddress', '1
 
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Throw>>(documentation_ipv6stringtonum);
 
-    // IPv6StringToNumOrDefault function
+    /// IPv6StringToNumOrDefault function
     FunctionDocumentation::Description description_ipv6stringtonumordefault = R"(
 Converts an IPv6 address from its standard text representation to binary format (`FixedString(16)`).
 Accepts IPv4-mapped IPv6 addresses in the format `::ffff:111.222.33.44.`.
@@ -1652,7 +1647,7 @@ SELECT
 
     factory.registerFunction<FunctionIPv6StringToNum<IPStringToNumExceptionMode::Default>>(documentation_ipv6stringtonumordefault);
 
-    // IPv6StringToNumOrNull function
+    /// IPv6StringToNumOrNull function
     FunctionDocumentation::Description description_ipv6stringtonumornull = R"(
 Converts an IPv6 address from its standard text representation to binary format (`FixedString(16)`).
 Accepts IPv4-mapped IPv6 addresses in the format `::ffff:111.222.33.44.`.

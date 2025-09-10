@@ -379,8 +379,8 @@ Only works with datatypes: [String](/sql-reference/data-types/string.md), [Fixed
 Parameters:
 - `n` - ngram size.
 - `size_of_bloom_filter_in_bytes` - Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
-- `random_seed` - Seed for the bloom filter hash functions.
 - `number_of_hash_functions` - The number of hash functions used in the bloom filter.
+- `random_seed` - Seed for the bloom filter hash functions.
 
 To estimate the parameters of `ngrambf_v1`, you can use the following [UDFs](/sql-reference/statements/create/function.md).
 
@@ -455,7 +455,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
 | [startsWith](/sql-reference/functions/string-functions.md/#startswith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    |
 | [endsWith](/sql-reference/functions/string-functions.md/#endswith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✔    |
+| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗    |
 | [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
 | [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    |
 | [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    |

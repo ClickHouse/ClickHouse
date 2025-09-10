@@ -101,19 +101,6 @@ SELECT read_rows==4 from system.query_log
         AND result_rows==2
     LIMIT 1;
 
--- search text index with multiSearch
-SELECT * FROM tab_x WHERE multiSearchAny(s, [' a01 ', ' b01 ']) ORDER BY k;
-
--- check the query only read 2 granules (4 rows total; each granule has 2 rows)
-SYSTEM FLUSH LOGS query_log;
-SELECT read_rows==4 from system.query_log
-    WHERE query_kind ='Select'
-        AND current_database = currentDatabase()
-        AND endsWith(trimRight(query), 'SELECT * FROM tab_x WHERE multiSearchAny(s, [\' a01 \', \' b01 \']) ORDER BY k;')
-        AND type='QueryFinish'
-        AND result_rows==2
-    LIMIT 1;
-
 ----------------------------------------------------
 SELECT 'Test text(tokenizer = "ngram", ngram_size = 2) on a column with two parts';
 

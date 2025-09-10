@@ -13,9 +13,9 @@ std::unordered_map<UInt64, std::pair<time_t, size_t>> LogFrequencyLimiterImpl::l
 time_t LogFrequencyLimiterImpl::last_cleanup = 0;
 std::mutex LogFrequencyLimiterImpl::mutex;
 
-void LogFrequencyLimiterImpl::log(Poco::Message & message)
+void LogFrequencyLimiterImpl::log(Poco::Message && msg)
 {
-    std::string_view pattern = message.getFormatString();
+    std::string_view pattern = msg.getFormatString();
 
     SipHash hash;
     hash.update(logger->name());
@@ -55,10 +55,10 @@ void LogFrequencyLimiterImpl::log(Poco::Message & message)
         return;
 
     if (skipped_similar_messages)
-        message.appendText(fmt::format(" (skipped {} similar messages)", skipped_similar_messages));
+        msg.appendText(fmt::format(" (skipped {} similar messages)", skipped_similar_messages));
 
     if (auto * channel = logger->getChannel())
-        channel->log(message);
+        channel->log(std::move(msg));
 }
 
 void LogFrequencyLimiterImpl::cleanup(time_t too_old_threshold_s)
@@ -149,7 +149,7 @@ LogSeriesLimiter * LogSeriesLimiter::getChannel()
     return this;
 }
 
-void LogSeriesLimiter::log(Poco::Message & message)
+void LogSeriesLimiter::log(Poco::Message && message)
 {
     if (!accepted)
         return;
@@ -161,5 +161,5 @@ void LogSeriesLimiter::log(Poco::Message & message)
     }
 
     if (auto * channel = logger->getChannel())
-        channel->log(message);
+        channel->log(std::move(message));
 }

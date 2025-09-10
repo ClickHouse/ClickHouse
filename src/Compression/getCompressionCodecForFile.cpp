@@ -50,7 +50,7 @@ getCompressionCodecForFile(ReadBuffer & read_buffer, UInt32 & size_compressed, U
 
 CompressionCodecPtr getCompressionCodecForFile(const IDataPartStorage & data_part_storage, const String & relative_path)
 {
-    auto read_buffer = data_part_storage.readFile(relative_path, {}, std::nullopt, std::nullopt);
+    auto read_buffer = data_part_storage.readFile(relative_path, {}, std::nullopt);
     UInt32 size_compressed;
     UInt32 size_decompressed;
     return getCompressionCodecForFile(*read_buffer, size_compressed, size_decompressed, false);

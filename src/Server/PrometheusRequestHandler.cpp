@@ -238,7 +238,6 @@ public:
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
         response.setChunkedTransferEncoding(false);
-        response.send();
 
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Prometheus remote write protocol is disabled");

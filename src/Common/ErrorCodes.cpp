@@ -629,6 +629,13 @@
     M(747, FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS) /* private error code */ \
     M(748, AVRO_EXCEPTION) \
     M(749, TCP_CONNECTION_LIMIT_REACHED) \
+    M(750, ARROWFLIGHT_INTERNAL_ERROR) \
+    M(751, ARROWFLIGHT_CONNECTION_FAILURE) \
+    M(752, ARROWFLIGHT_FETCH_SCHEMA_ERROR) \
+    M(753, ARROWFLIGHT_WRITE_ERROR) \
+    M(754, UDF_EXECUTION_FAILED) \
+    M(755, TOO_LARGE_LIGHTWEIGHT_UPDATES) \
+    M(756, CANNOT_PARSE_PROMQL_QUERY) \
 \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
@@ -695,7 +702,7 @@ namespace ErrorCodes
 
     ErrorCode end() { return END + 1; }
 
-    size_t increment(ErrorCode error_code, bool remote, const std::string & message, const FramePointers & trace)
+    size_t increment(ErrorCode error_code, bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
     {
         if (error_code < 0 || error_code >= end())
         {
@@ -704,7 +711,7 @@ namespace ErrorCodes
             error_code = end() - 1;
         }
 
-        return values[error_code].increment(remote, message, trace);
+        return values[error_code].increment(remote, message, format_string, trace);
     }
 
     void extendedMessage(ErrorCode error_code, bool remote, size_t error_index, const std::string & message)
@@ -719,7 +726,7 @@ namespace ErrorCodes
         values[error_code].extendedMessage(remote, error_index, message);
     }
 
-    size_t ErrorPairHolder::increment(bool remote, const std::string & message, const FramePointers & trace)
+    size_t ErrorPairHolder::increment(bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
     {
         const auto now = std::chrono::system_clock::now();
 
@@ -728,6 +735,7 @@ namespace ErrorCodes
 
         size_t error_index = error.count++;
         error.message = message;
+        error.format_string = format_string;
         error.trace = trace;
         error.error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
         error.query_id = CurrentThread::getQueryId();

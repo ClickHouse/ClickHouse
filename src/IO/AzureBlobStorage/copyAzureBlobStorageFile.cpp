@@ -353,6 +353,7 @@ void copyAzureBlobStorageFile(
     const String & dest_blob,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
     const ReadSettings & read_settings,
+    const std::optional<ObjectAttributes> & object_to_attributes,
     bool same_credentials,
     ThreadPoolCallbackRunnerUnsafe<void> schedule)
 {
@@ -372,12 +373,26 @@ void copyAzureBlobStorageFile(
 
         if (size < settings->max_single_part_copy_size)
         {
+            Azure::Storage::Blobs::CopyBlobFromUriOptions copy_options;
+            if (object_to_attributes.has_value())
+            {
+                for (const auto & [key, value] : *object_to_attributes)
+                    copy_options.Metadata[key] = value;
+            }
+
             LOG_TRACE(log, "Copy blob sync {} -> {}", src_blob, dest_blob);
-            block_blob_client_dest.CopyFromUri(source_uri);
+            block_blob_client_dest.CopyFromUri(source_uri, copy_options);
         }
         else
         {
-            Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri);
+            Azure::Storage::Blobs::StartBlobCopyFromUriOptions copy_options;
+            if (object_to_attributes.has_value())
+            {
+                for (const auto & [key, value] : *object_to_attributes)
+                    copy_options.Metadata[key] = value;
+            }
+
+            Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri, copy_options);
 
             auto copy_response = operation.PollUntilDone(std::chrono::milliseconds(100));
             auto properties_model = copy_response.Value;

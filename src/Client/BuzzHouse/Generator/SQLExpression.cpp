@@ -235,7 +235,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         const SQLType * tp = randomTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
 
         lv->set_no_quote_str(
-            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false) : ""));
+            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false, false) : ""));
         delete tp;
     }
     else if (date_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + 1))
@@ -244,7 +244,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
 
         std::tie(tp, std::ignore) = randomDateType(rg, std::numeric_limits<uint32_t>::max());
         lv->set_no_quote_str(
-            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false) : ""));
+            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false, false) : ""));
         delete tp;
     }
     else if (datetime_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + 1))
@@ -252,7 +252,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         const SQLType * tp = randomDateTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
 
         lv->set_no_quote_str(
-            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false) : ""));
+            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false, false) : ""));
         delete tp;
     }
     else if (dec_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + 1))
@@ -315,8 +315,14 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     {
         SpecialVal * val = lv->mutable_special_val();
         std::uniform_int_distribution<uint32_t> special_range(1, static_cast<uint32_t>(SpecialVal::SpecialValEnum_MAX));
+        const SpecialVal_SpecialValEnum sval = static_cast<SpecialVal_SpecialValEnum>(special_range(rg.generator));
 
-        val->set_val(static_cast<SpecialVal_SpecialValEnum>(special_range(rg.generator)));
+        /// Can't use `*` on query oracles
+        val->set_val(
+            (sval != SpecialVal_SpecialValEnum_VAL_STAR || this->allow_not_deterministic
+             || this->levels[this->current_level].inside_aggregate)
+                ? sval
+                : SpecialVal_SpecialValEnum_VAL_NULL);
         val->set_paren(complex && rg.nextBool());
         nested_prob = 3;
     }
@@ -401,13 +407,13 @@ void StatementGenerator::generateColRef(RandomGenerator & rg, Expr * expr)
 
 void StatementGenerator::generateSubquery(RandomGenerator & rg, ExplainQuery * eq)
 {
+    this->current_level++;
     if (rg.nextMediumNumber() < 6)
     {
         prepareNextExplain(rg, eq);
     }
     else
     {
-        this->current_level++;
         this->levels[this->current_level] = QueryLevel(this->current_level);
 
         if (rg.nextBool())
@@ -433,8 +439,8 @@ void StatementGenerator::generateSubquery(RandomGenerator & rg, ExplainQuery * e
             std::numeric_limits<uint32_t>::max(),
             std::nullopt,
             eq->mutable_inner_query()->mutable_select()->mutable_sel());
-        this->current_level--;
     }
+    this->current_level--;
 }
 
 void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
