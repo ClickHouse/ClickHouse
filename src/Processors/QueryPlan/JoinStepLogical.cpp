@@ -1,5 +1,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
+#include <base/scope_guard.h>
+
 #include <Common/JSONBuilder.h>
 #include <Common/safe_cast.h>
 #include <Common/typeid_cast.h>
