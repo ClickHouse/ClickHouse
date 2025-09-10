@@ -1,33 +1,17 @@
 <clickhouse>
     <storage_configuration>
         <disks>
-            <disk_local>
-                <type>local</type>
-                <path>/iceberg_data/default/test_single_iceberg_file/</path>
-            </disk_local>
             <disk_local_common>
                 <type>local</type>
                 <path>/iceberg_data/default/</path>
             </disk_local_common>
-            <disk_s3>
-                <type>s3</type>
-                <endpoint>http://minio1:9001/root/iceberg_data/default/test_single_iceberg_file/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
-            </disk_s3>
             <disk_s3_common>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/iceberg_data/default/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </disk_s3_common>
-            <disk_s3_cluster>
-                <type>s3</type>
-                <endpoint>http://minio1:9001/root/iceberg_data/default/test_iceberg_cluster/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
-            </disk_s3_cluster>
         </disks>
     </storage_configuration>
-    <allowed_disks_for_table_engines>disk_local,disk_s3,disk_local_common,disk_s3_common,disk_s3_cluster</allowed_disks_for_table_engines>
+    <allowed_disks_for_table_engines>disk_local_common,disk_s3_common</allowed_disks_for_table_engines>
 </clickhouse>

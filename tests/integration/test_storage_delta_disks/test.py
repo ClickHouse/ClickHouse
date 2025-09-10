@@ -49,7 +49,7 @@ def get_spark():
 
     return builder.master("local").getOrCreate()
 
-def generate_cluster_def(local_path, common_path):
+def generate_cluster_def(common_path):
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
         "./_gen/named_collections.xml",
@@ -61,21 +61,10 @@ def generate_cluster_def(local_path, common_path):
 <clickhouse>
     <storage_configuration>
         <disks>
-            <disk_local>
-                <type>local</type>
-                <path>{local_path}</path>
-            </disk_local>
             <disk_local_common>
                 <type>local</type>
                 <path>{common_path}</path>
             </disk_local_common>
-            <disk_s3_0>
-                <type>s3</type>
-                <endpoint>http://minio1:9001/root/test_single_log_file_0/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
-                <no_sign_request>0</no_sign_request>
-            </disk_s3_0>
             <disk_s3_0_common>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/</endpoint>
@@ -83,13 +72,6 @@ def generate_cluster_def(local_path, common_path):
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <no_sign_request>0</no_sign_request>
             </disk_s3_0_common>
-            <disk_s3_1>
-                <type>s3</type>
-                <endpoint>http://minio1:9001/root/test_single_log_file_1/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
-                <no_sign_request>0</no_sign_request>
-            </disk_s3_1>
             <disk_s3_1_common>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/</endpoint>
@@ -99,7 +81,7 @@ def generate_cluster_def(local_path, common_path):
             </disk_s3_1_common>
         </disks>
     </storage_configuration>
-    <allowed_disks_for_table_engines>disk_local,disk_s3_0,disk_s3_1,disk_s3_1_common,disk_s3_0_common,disk_local_common</allowed_disks_for_table_engines>
+    <allowed_disks_for_table_engines>disk_s3_1_common,disk_s3_0_common,disk_local_common</allowed_disks_for_table_engines>
 </clickhouse>
 """
         )
@@ -113,8 +95,7 @@ def started_cluster():
         user_files_path = os.path.join(
             SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
         )
-        table_path = os.path.join(user_files_path, "test_single_log_file")
-        conf_path = generate_cluster_def(table_path + "/", user_files_path + "/")
+        conf_path = generate_cluster_def(user_files_path + "/")
         cluster.add_instance(
             "node1",
             main_configs=[conf_path, "configs/cluster.xml"],
