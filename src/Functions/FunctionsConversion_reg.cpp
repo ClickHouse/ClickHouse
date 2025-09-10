@@ -38,8 +38,7 @@ See also:
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
     };
     FunctionDocumentation::ReturnedValue toUInt8_returned_value = {"Returns an 8-bit unsigned integer value.", {"UInt8"}};
-    FunctionDocumentation::Examples toUInt8_examples =
-    {
+    FunctionDocumentation::Examples toUInt8_examples = {
     {
         "Usage example",
         R"(
@@ -95,8 +94,7 @@ See also:
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
     };
     FunctionDocumentation::ReturnedValue toUInt16_returned_value = {"Returns a 16-bit unsigned integer value.", {"UInt16"}};
-    FunctionDocumentation::Examples toUInt16_examples =
-    {
+    FunctionDocumentation::Examples toUInt16_examples = {
     {
         "Usage example",
         R"(
@@ -155,8 +153,7 @@ See also:
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
     };
     FunctionDocumentation::ReturnedValue toUInt32_returned_value = {"Returns a 32-bit unsigned integer value.", {"UInt32"}};
-    FunctionDocumentation::Examples toUInt32_examples =
-    {
+    FunctionDocumentation::Examples toUInt32_examples = {
     {
         "Usage example",
         R"(
@@ -552,8 +549,7 @@ See also:
         {"expr", "Expression returning a number or a string representation of a number. Supported: values or string representations of type (U)Int*, values of type Float*. Unsupported: string representations of Float* values including NaN and Inf, string representations of binary and hexadecimal values.", {"Expression"}}
     };
     FunctionDocumentation::ReturnedValue toInt64_returned_value = {"Returns a 64-bit integer value.", {"Int64"}};
-    FunctionDocumentation::Examples toInt64_examples =
-    {
+    FunctionDocumentation::Examples toInt64_examples = {
     {
         "Usage example",
         R"(
@@ -607,8 +603,7 @@ See also:
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
     };
     FunctionDocumentation::ReturnedValue toInt128_returned_value = {"Returns a 128-bit integer value.", {"Int128"}};
-    FunctionDocumentation::Examples toInt128_examples =
-    {
+    FunctionDocumentation::Examples toInt128_examples = {
     {
         "Usage example",
         R"(
@@ -662,8 +657,7 @@ See also:
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
     };
     FunctionDocumentation::ReturnedValue toInt256_returned_value = {"Returns a 256-bit integer value.", {"Int256"}};
-    FunctionDocumentation::Examples toInt256_examples =
-    {
+    FunctionDocumentation::Examples toInt256_examples = {
     {
         "Usage example",
         R"(
@@ -702,8 +696,7 @@ See also:
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
     };
     FunctionDocumentation::ReturnedValue toBFloat16_returned_value = {"Returns a 16-bit brain-float value.", {"BFloat16"}};
-    FunctionDocumentation::Examples toBFloat16_examples =
-    {
+    FunctionDocumentation::Examples toBFloat16_examples = {
     {
         "Usage example",
         R"(
@@ -750,8 +743,7 @@ See also:
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
     };
     FunctionDocumentation::ReturnedValue toFloat32_returned_value = {"Returns a 32-bit floating point value.", {"Float32"}};
-    FunctionDocumentation::Examples toFloat32_examples =
-    {
+    FunctionDocumentation::Examples toFloat32_examples = {
     {
         "Usage example",
         R"(
@@ -969,8 +961,7 @@ You can use a String input so the operations use the underlying integer type: `t
         {"S", "Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDecimal128 = {"Returns a value of type `Decimal(38, S)`", {"Decimal128(S)"}};
-    FunctionDocumentation::Examples examples_toDecimal128 =
-    {
+    FunctionDocumentation::Examples examples_toDecimal128 = {
     {
         "Usage example",
         R"(
@@ -1026,8 +1017,7 @@ You can use a String input so the operations use the underlying integer type: `t
         {"S", "Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDecimal256 = {"Returns a value of type `Decimal(76, S)`.", {"Decimal256(S)"}};
-    FunctionDocumentation::Examples examples_toDecimal256 =
-    {
+    FunctionDocumentation::Examples examples_toDecimal256 = {
     {
         "Usage example",
         R"(
@@ -1119,8 +1109,7 @@ If the argument is of type [`Date`](../data-types/date.md), it's bounds are take
         {"expr", "The value to convert.", {"String", "UInt32", "Date"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDate32 = {"Returns a calendar date.", {"Date32"}};
-    FunctionDocumentation::Examples examples_toDate32 =
-    {
+    FunctionDocumentation::Examples examples_toDate32 = {
     {
         "Within range",
         R"(
@@ -1164,8 +1153,7 @@ Supports conversion from String, FixedString, DateTime, or numeric types represe
         {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "(U)Int*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime = {"Returns the converted value.", {"Time"}};
-    FunctionDocumentation::Examples examples_toTime =
-    {
+    FunctionDocumentation::Examples examples_toTime = {
     {
         "String to Time conversion",
         R"(
@@ -1574,8 +1562,7 @@ toUnixTimestamp(date, [timezone])
         {"timezone", "Optional. Timezone to use for conversion. If not specified, the server's timezone is used.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_to_unix_timestamp = {"Returns the Unix timestamp.", {"UInt32"}};
-    FunctionDocumentation::Examples examples_to_unix_timestamp =
-    {
+    FunctionDocumentation::Examples examples_to_unix_timestamp = {
     {
         "Usage example",
         R"(
@@ -2398,8 +2385,7 @@ Like [`toTime64`](#toTime54) but returns `00:00:00.000` instead of throwing an e
         {"x", "A string representation of a time with subsecond precision.", {"String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime64OrZero = {"Returns a Time64 value if successful, otherwise `00:00:00.000`.", {"Time64"}};
-    FunctionDocumentation::Examples examples_toTime64OrZero =
-    {
+    FunctionDocumentation::Examples examples_toTime64OrZero = {
     {
     "Usage example",
     R"(
@@ -2428,8 +2414,7 @@ The same as [toDateTime](#todatetime) but returns lower boundary of [DateTime](.
         {"x", "A string representation of a date with time.", {"String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTimeOrZero = {"Returns a DateTime value if successful, otherwise the lower boundary of DateTime (`1970-01-01 00:00:00`).", {"DateTime"}};
-    FunctionDocumentation::Examples examples_toDateTimeOrZero =
-    {
+    FunctionDocumentation::Examples examples_toDateTimeOrZero = {
     {
         "Usage example",
         R"(
@@ -2463,8 +2448,7 @@ See also:
         {"x", "A string representation of a date with time and subsecond precision.", {"String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTime64OrZero = {"Returns a DateTime64 value if successful, otherwise the lower boundary of DateTime64 (`1970-01-01 00:00:00.000`).", {"DateTime64"}};
-    FunctionDocumentation::Examples examples_toDateTime64OrZero =
-    {
+    FunctionDocumentation::Examples examples_toDateTime64OrZero = {
     {
         "Usage example",
         R"(
@@ -2553,8 +2537,7 @@ See also:
         {"S", "Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDecimal64OrZero = {"Returns a Decimal(18, S) value if successful, otherwise `0`.", {"Decimal64(S)"}};
-    FunctionDocumentation::Examples examples_toDecimal64OrZero =
-    {
+    FunctionDocumentation::Examples examples_toDecimal64OrZero = {
     {
         "Usage example",
         R"(
@@ -2596,8 +2579,7 @@ If the input value exceeds the bounds of `Decimal128`:`(-1*10^(38 - S), 1*10^(38
         {"S", "Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDecimal128OrZero = {"Returns a Decimal(38, S) value if successful, otherwise `0`.", {"Decimal128(S)"}};
-    FunctionDocumentation::Examples examples_toDecimal128OrZero =
-    {
+    FunctionDocumentation::Examples examples_toDecimal128OrZero = {
     {
         "Basic usage",
         R"(
@@ -2645,17 +2627,17 @@ See also:
     };
     FunctionDocumentation::ReturnedValue returned_value_toDecimal256OrZero = {"Returns a Decimal(76, S) value if successful, otherwise `0`.", {"Decimal256(S)"}};
     FunctionDocumentation::Examples examples_toDecimal256OrZero = {
-        {
-            "Basic usage",
-            R"(
+    {
+        "Usage example",
+        R"(
 SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
-)",
-            R"(
+        )",
+        R"(
 ┌─toDecimal256OrZero('42.7', 2)─┬─toDecimal256OrZero('invalid', 2)─┐
 │                         42.70 │                             0.00 │
 └───────────────────────────────┴──────────────────────────────────┘
-)"
-        }
+        )"
+    }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDecimal256OrZero = {20, 8};
     FunctionDocumentation::Category category_toDecimal256OrZero = FunctionDocumentation::Category::TypeConversion;
@@ -2682,8 +2664,7 @@ Unsupported arguments (return zero UUID):
         {"x", "A string representation of a UUID.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toUUIDOrZero = {"Returns a UUID value if successful, otherwise zero UUID (`00000000-0000-0000-0000-000000000000`).", {"UUID"}};
-    FunctionDocumentation::Examples examples_toUUIDOrZero =
-    {
+    FunctionDocumentation::Examples examples_toUUIDOrZero = {
     {
         "Usage example",
         R"(
@@ -2724,8 +2705,7 @@ Unsupported arguments (return zero IPv4):
         {"x", "A string or integer representation of an IPv4 address.", {"String", "Integer"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toIPv4OrZero = {"Returns an IPv4 address if successful, otherwise zero IPv4 address (`0.0.0.0`).", {"IPv4"}};
-    FunctionDocumentation::Examples examples_toIPv4OrZero =
-    {
+    FunctionDocumentation::Examples examples_toIPv4OrZero = {
     {
         "Usage example",
         R"(
@@ -2767,8 +2747,7 @@ Unsupported arguments (return zero IPv6):
         {"x", "A string representation of an IPv6 or IPv4 address.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toIPv6OrZero = {"Returns an IPv6 address if successful, otherwise zero IPv6 address (`::`). ", {"IPv6"}};
-    FunctionDocumentation::Examples examples_toIPv6OrZero =
-    {
+    FunctionDocumentation::Examples examples_toIPv6OrZero = {
     {
         "Usage example",
         R"(
@@ -2816,8 +2795,7 @@ See also:
         {"x", "A String representation of a number.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toUInt8OrNull = {"Returns a value of type UInt8, otherwise `NULL` if the conversion is unsuccessful.", {"UInt8", "NULL"}};
-    FunctionDocumentation::Examples examples_toUInt8OrNull =
-    {
+    FunctionDocumentation::Examples examples_toUInt8OrNull = {
     {
         "Usage example",
         R"(
@@ -2867,8 +2845,7 @@ See also:
         {"x", "A String representation of a number.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toUInt16OrNull = {"Returns a value of type `UInt16`, otherwise `NULL` if the conversion is unsuccessful.", {"UInt16", "NULL"}};
-    FunctionDocumentation::Examples examples_toUInt16OrNull =
-    {
+    FunctionDocumentation::Examples examples_toUInt16OrNull = {
     {
         "Usage example",
         R"(
@@ -2918,8 +2895,7 @@ See also:
         {"x", "A String representation of a number.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toUInt32OrNull = {"Returns a value of type `UInt32`, otherwise `NULL` if the conversion is unsuccessful.", {"UInt32", "NULL"}};
-    FunctionDocumentation::Examples examples_toUInt32OrNull =
-    {
+    FunctionDocumentation::Examples examples_toUInt32OrNull = {
     {
         "Usage example",
         R"(
@@ -2969,8 +2945,7 @@ See also:
         {"x", "A String representation of a number.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toUInt64OrNull = {"Returns a value of type UInt64, otherwise `NULL` if the conversion is unsuccessful.", {"UInt64", "NULL"}};
-    FunctionDocumentation::Examples examples_toUInt64OrNull =
-    {
+    FunctionDocumentation::Examples examples_toUInt64OrNull = {
     {
         "Usage example",
         R"(
@@ -3020,8 +2995,7 @@ See also:
         {"x", "A String representation of a number.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toUInt128OrNull = {"Returns a value of type UInt128, otherwise `NULL` if the conversion is unsuccessful.", {"UInt128", "NULL"}};
-    FunctionDocumentation::Examples examples_toUInt128OrNull =
-    {
+    FunctionDocumentation::Examples examples_toUInt128OrNull = {
     {
         "Usage example",
         R"(
@@ -3071,8 +3045,7 @@ See also:
         {"x", "A String representation of a number.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toUInt256OrNull = {"Returns a value of type UInt256, otherwise `NULL` if the conversion is unsuccessful.", {"UInt256", "NULL"}};
-    FunctionDocumentation::Examples examples_toUInt256OrNull =
-    {
+    FunctionDocumentation::Examples examples_toUInt256OrNull = {
     {
         "Usage example",
         R"(
@@ -3122,8 +3095,7 @@ See also:
         {"x", "A String representation of a number.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toInt8OrNull = {"Returns a value of type Int8, otherwise `NULL` if the conversion is unsuccessful.", {"Int8", "NULL"}};
-    FunctionDocumentation::Examples examples_toInt8OrNull =
-    {
+    FunctionDocumentation::Examples examples_toInt8OrNull = {
     {
         "Usage example",
         R"(
@@ -3173,8 +3145,7 @@ See also:
         {"x", "A String representation of a number.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toInt16OrNull = {"Returns a value of type `Int16`, otherwise `NULL` if the conversion is unsuccessful.", {"Int16", "NULL"}};
-    FunctionDocumentation::Examples examples_toInt16OrNull =
-    {
+    FunctionDocumentation::Examples examples_toInt16OrNull = {
     {
         "Usage example",
         R"(
@@ -3224,8 +3195,7 @@ See also:
         {"x", "A String representation of a number.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toInt32OrNull = {"Returns a value of type Int32, otherwise `NULL` if the conversion is unsuccessful.", {"Int32", "NULL"}};
-    FunctionDocumentation::Examples examples_toInt32OrNull =
-    {
+    FunctionDocumentation::Examples examples_toInt32OrNull = {
     {
         "Usage example",
         R"(
@@ -3275,8 +3245,7 @@ See also:
         {"x", "A String representation of a number.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toInt64OrNull = {"Returns a value of type Int64, otherwise `NULL` if the conversion is unsuccessful.", {"Int64", "NULL"}};
-    FunctionDocumentation::Examples examples_toInt64OrNull =
-    {
+    FunctionDocumentation::Examples examples_toInt64OrNull = {
     {
         "Usage example",
         R"(
@@ -3326,8 +3295,7 @@ See also:
         {"x", "A String representation of a number.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toInt128OrNull = {"Returns a value of type Int128, otherwise `NULL` if the conversion is unsuccessful.", {"Int128", "NULL"}};
-    FunctionDocumentation::Examples examples_toInt128OrNull =
-    {
+    FunctionDocumentation::Examples examples_toInt128OrNull = {
     {
         "Usage example",
         R"(
@@ -3377,8 +3345,7 @@ See also:
         {"x", "A String representation of a number.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toInt256OrNull = {"Returns a value of type Int256, otherwise `NULL` if the conversion is unsuccessful.", {"Int256", "NULL"}};
-    FunctionDocumentation::Examples examples_toInt256OrNull =
-    {
+    FunctionDocumentation::Examples examples_toInt256OrNull = {
     {
         "Usage example",
         R"(
@@ -3427,8 +3394,7 @@ See also:
         {"x", "A String representation of a number.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue toBFloat16OrNull_returned_value = {"Reurns a 16-bit brain-float value, otherwise `NULL`.", {"BFloat16", "NULL"}};
-    FunctionDocumentation::Examples toBFloat16OrNull_examples =
-    {
+    FunctionDocumentation::Examples toBFloat16OrNull_examples = {
     {
         "Usage example",
         R"(
@@ -3475,8 +3441,7 @@ See also:
         {"x", "A string representation of a number.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toFloat32OrNull = {"Returns a 32-bit Float value if successful, otherwise `NULL`.", {"Float32", "NULL"}};
-    FunctionDocumentation::Examples examples_toFloat32OrNull =
-    {
+    FunctionDocumentation::Examples examples_toFloat32OrNull = {
     {
         "Usage example",
         R"(
@@ -3527,8 +3492,7 @@ See also:
         {"x", "A string representation of a number.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toFloat64OrNull = {"Returns a 64-bit Float value if successful, otherwise `NULL`.", {"Float64", "NULL"}};
-    FunctionDocumentation::Examples examples_toFloat64OrNull =
-    {
+    FunctionDocumentation::Examples examples_toFloat64OrNull = {
     {
         "Usage example",
         R"(
@@ -3564,8 +3528,7 @@ The same as [`toDate`](#toDate) but returns `NULL` if an invalid argument is rec
         {"x", "A string representation of a date.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateOrNull = {"Returns a Date value if successful, otherwise `NULL`.", {"Date", "NULL"}};
-    FunctionDocumentation::Examples examples_toDateOrNull =
-    {
+    FunctionDocumentation::Examples examples_toDateOrNull = {
     {
         "Usage example",
         R"(
@@ -3595,8 +3558,7 @@ The same as [`toDate32`](#toDate32) but returns `NULL` if an invalid argument is
         {"x", "A string representation of a date.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDate32OrNull = {"Returns a Date32 value if successful, otherwise `NULL`.", {"Date32", "NULL"}};
-    FunctionDocumentation::Examples examples_toDate32OrNull =
-    {
+    FunctionDocumentation::Examples examples_toDate32OrNull = {
     {
         "Usage example",
         R"(
@@ -3630,8 +3592,7 @@ See also:
         {"x", "A string representation of a time.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toTimeOrNull = {"Returns a Time value if successful, otherwise `NULL`.", {"Time", "NULL"}};
-    FunctionDocumentation::Examples examples_toTimeOrNull =
-    {
+    FunctionDocumentation::Examples examples_toTimeOrNull = {
     {
         "Usage example",
         R"(
@@ -3665,8 +3626,7 @@ See also:
         {"x", "A string representation of a time with subsecond precision.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime64OrNull = {"Returns a Time64 value if successful, otherwise `NULL`.", {"Time64", "NULL"}};
-    FunctionDocumentation::Examples examples_toTime64OrNull =
-    {
+    FunctionDocumentation::Examples examples_toTime64OrNull = {
     {
         "Usage example",
         R"(
@@ -3696,8 +3656,7 @@ The same as [`toDateTime`](#toDateTime) but returns `NULL` if an invalid argumen
         {"x", "A string representation of a date with time.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTimeOrNull = {"Returns a `DateTime` value if successful, otherwise `NULL`.", {"DateTime", "NULL"}};
-    FunctionDocumentation::Examples examples_toDateTimeOrNull =
-    {
+    FunctionDocumentation::Examples examples_toDateTimeOrNull = {
     {
         "Usage example",
         R"(
@@ -3727,8 +3686,7 @@ The same as `toDateTime64` but returns `NULL` if an invalid argument is received
         {"x", "A string representation of a date with time and subsecond precision.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTime64OrNull = {"Returns a DateTime64 value if successful, otherwise `NULL`.", {"DateTime64", "NULL"}};
-    FunctionDocumentation::Examples examples_toDateTime64OrNull =
-    {
+    FunctionDocumentation::Examples examples_toDateTime64OrNull = {
     {
         "Usage example",
         R"(
@@ -3773,8 +3731,7 @@ See also:
         {"S", "Scale parameter between 0 and 9, specifying how many digits the fractional part of a number can have.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDecimal32OrNull = {"Returns a Decimal(9, S) value if successful, otherwise `NULL`.", {"Decimal32(S)", "NULL"}};
-    FunctionDocumentation::Examples examples_toDecimal32OrNull =
-    {
+    FunctionDocumentation::Examples examples_toDecimal32OrNull = {
     {
         "Usage example",
         R"(
@@ -3819,8 +3776,7 @@ See also:
         {"S", "Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDecimal64OrNull = {"Returns a Decimal(18, S) value if successful, otherwise `NULL`.", {"Decimal64(S)", "NULL"}};
-    FunctionDocumentation::Examples examples_toDecimal64OrNull =
-    {
+    FunctionDocumentation::Examples examples_toDecimal64OrNull = {
     {
         "Usage example",
         R"(
@@ -3864,8 +3820,7 @@ See also:
         {"S", "Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDecimal128OrNull = {"Returns a Decimal(38, S) value if successful, otherwise `NULL`.", {"Decimal128(S)", "NULL"}};
-    FunctionDocumentation::Examples examples_toDecimal128OrNull =
-    {
+    FunctionDocumentation::Examples examples_toDecimal128OrNull = {
     {
         "Usage example",
         R"(
@@ -3910,8 +3865,7 @@ See also:
         {"S", "Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDecimal256OrNull = {"Returns a Decimal(76, S) value if successful, otherwise `NULL`.", {"Decimal256(S)", "NULL"}};
-    FunctionDocumentation::Examples examples_toDecimal256OrNull =
-    {
+    FunctionDocumentation::Examples examples_toDecimal256OrNull = {
     {
         "Usage example",
         R"(
@@ -3950,8 +3904,7 @@ Unsupported arguments (return `NULL`):
         {"x", "A string representation of a UUID.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toUUIDOrNull = {"Returns a UUID value if successful, otherwise `NULL`.", {"UUID", "NULL"}};
-    FunctionDocumentation::Examples examples_toUUIDOrNull =
-    {
+    FunctionDocumentation::Examples examples_toUUIDOrNull = {
     {
         "Usage examples",
         R"(
@@ -3993,8 +3946,7 @@ Unsupported arguments (return `NULL`):
         {"x", "A string or integer representation of an IPv4 address.", {"String", "Integer"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toIPv4OrNull = {"Returns an IPv4 address if successful, otherwise `NULL`.", {"IPv4", "NULL"}};
-    FunctionDocumentation::Examples examples_toIPv4OrNull =
-    {
+    FunctionDocumentation::Examples examples_toIPv4OrNull = {
     {
         "Usage example",
         R"(
@@ -4037,8 +3989,7 @@ Unsupported arguments (return `NULL`):
         {"x", "A string representation of an IPv6 or IPv4 address.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toIPv6OrNull = {"Returns an IPv6 address if successful, otherwise `NULL`.", {"IPv6", "NULL"}};
-    FunctionDocumentation::Examples examples_toIPv6OrNull =
-    {
+    FunctionDocumentation::Examples examples_toIPv6OrNull = {
     {
         "Usage example",
         R"(
@@ -4082,8 +4033,7 @@ If the year is not specified, it is considered to be equal to the current year.
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffort_returned_value = {"Returns `time_string` as a `DateTime`.", {"DateTime"}};
-    FunctionDocumentation::Examples parseDateTimeBestEffort_examples =
-    {
+    FunctionDocumentation::Examples parseDateTimeBestEffort_examples = {
     {
         "Usage example",
         R"(
@@ -4147,8 +4097,7 @@ If the year is not specified, it is considered to be equal to the current year.
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffortOrZero_returned_value = {"Returns `time_string` as a `DateTime`, or zero date/datetime (`1970-01-01` or `1970-01-01 00:00:00`) if the input cannot be parsed.", {"DateTime"}};
-    FunctionDocumentation::Examples parseDateTimeBestEffortOrZero_examples =
-    {
+    FunctionDocumentation::Examples parseDateTimeBestEffortOrZero_examples = {
     {
         "Usage example",
         R"(
@@ -4191,8 +4140,7 @@ If the year is not specified, it is considered to be equal to the current year.
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffortOrNull_returned_value = {"Returns `time_string` as a DateTime, or `NULL` if the input cannot be parsed.", {"DateTime", "NULL"}};
-    FunctionDocumentation::Examples parseDateTimeBestEffortOrNull_examples =
-    {
+    FunctionDocumentation::Examples parseDateTimeBestEffortOrNull_examples = {
     {
         "Usage example",
         R"(
@@ -4225,8 +4173,7 @@ As an exception to the previous statement, if the month is bigger than 12 and sm
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffortUS_returned_value = {"Returns `time_string` as a `DateTime` using US date format preference for ambiguous cases.", {"DateTime"}};
-    FunctionDocumentation::Examples parseDateTimeBestEffortUS_examples =
-    {
+    FunctionDocumentation::Examples parseDateTimeBestEffortUS_examples = {
     {
         "Usage example",
         R"(
@@ -4259,8 +4206,7 @@ This function behaves like [`parseDateTimeBestEffort`](#parseDateTimeBestEffort)
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffortUSOrZero_returned_value = {"Returns `time_string` as a `DateTime` using US format preference, or zero date/datetime (`1970-01-01` or `1970-01-01 00:00:00`) if the input cannot be parsed.", {"DateTime"}};
-    FunctionDocumentation::Examples parseDateTimeBestEffortUSOrZero_examples =
-    {
+    FunctionDocumentation::Examples parseDateTimeBestEffortUSOrZero_examples = {
     {
         "Usage example",
         R"(
@@ -4293,8 +4239,7 @@ This function behaves like [`parseDateTimeBestEffort`](#parseDateTimeBestEffort)
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffortUSOrNull_returned_value = {"Returns `time_string` as a DateTime using US format preference, or `NULL` if the input cannot be parsed.", {"DateTime", "NULL"}};
-    FunctionDocumentation::Examples parseDateTimeBestEffortUSOrNull_examples =
-    {
+    FunctionDocumentation::Examples parseDateTimeBestEffortUSOrNull_examples = {
     {
         "Usage example",
         R"(
@@ -4327,8 +4272,7 @@ The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 112
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffort = {"Returns `time_string` as a `DateTime`.", {"DateTime"}};
-    FunctionDocumentation::Examples examples_parseDateTime32BestEffort =
-    {
+    FunctionDocumentation::Examples examples_parseDateTime32BestEffort = {
     {
         "Usage example",
         R"(
@@ -4383,8 +4327,7 @@ Same as [`parseDateTime32BestEffort`](#parseDateTime32BestEffort) except that it
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffortOrZero = {"Returns a `DateTime` object parsed from the string, or zero date (`1970-01-01 00:00:00`) if the parsing fails.", {"DateTime"}};
-    FunctionDocumentation::Examples examples_parseDateTime32BestEffortOrZero =
-    {
+    FunctionDocumentation::Examples examples_parseDateTime32BestEffortOrZero = {
     {
     "Usage example",
     R"(
@@ -4416,8 +4359,7 @@ Same as [`parseDateTime32BestEffort`](#parseDateTime32BestEffort) except that it
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffortOrNull = {"Returns a `DateTime` object parsed from the string, or `NULL` if the parsing fails.", {"DateTime"}};
-    FunctionDocumentation::Examples examples_parseDateTime32BestEffortOrNull =
-    {
+    FunctionDocumentation::Examples examples_parseDateTime32BestEffortOrNull = {
     {
         "Usage example",
         R"(
@@ -4450,8 +4392,7 @@ Same as [`parseDateTimeBestEffort`](#parsedatetimebesteffort) function but also 
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffort = {"Returns `time_string` converted to the [`DateTime64`](../../sql-reference/data-types/datetime64.md) data type.", {"DateTime64"}};
-    FunctionDocumentation::Examples examples_parseDateTime64BestEffort =
-    {
+    FunctionDocumentation::Examples examples_parseDateTime64BestEffort = {
     {
         "Usage example",
         R"(
@@ -4492,8 +4433,7 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort) except that it
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortOrZero = {"Returns `time_string` converted to [`DateTime64`](../../sql-reference/data-types/datetime64.md), or zero date/datetime (`1970-01-01 00:00:00.000`) if the input cannot be parsed.", {"DateTime64"}};
-    FunctionDocumentation::Examples examples_parseDateTime64BestEffortOrZero =
-    {
+    FunctionDocumentation::Examples examples_parseDateTime64BestEffortOrZero = {
     {
         "Usage example",
         R"(
@@ -4525,8 +4465,7 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort) except that it
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortOrNull = {"Returns `time_string` converted to [`DateTime64`](../../sql-reference/data-types/datetime64.md), or `NULL` if the input cannot be parsed.", {"DateTime64", "NULL"}};
-    FunctionDocumentation::Examples examples_parseDateTime64BestEffortOrNull =
-    {
+    FunctionDocumentation::Examples examples_parseDateTime64BestEffortOrNull = {
     {
     "Usage example",
     R"(
@@ -4558,8 +4497,7 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that t
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortUS = {"Returns `time_string` converted to [`DateTime64`](../../sql-reference/data-types/datetime64.md) using US date format preference for ambiguous cases.", {"DateTime64"}};
-    FunctionDocumentation::Examples examples_parseDateTime64BestEffortUS =
-    {
+    FunctionDocumentation::Examples examples_parseDateTime64BestEffortUS = {
     {
         "Usage example",
         R"(
@@ -4591,8 +4529,7 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that t
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortUSOrZero = {"Returns `time_string` converted to [`DateTime64`](../../sql-reference/data-types/datetime64.md) using US format preference, or zero date/datetime (`1970-01-01 00:00:00.000`) if the input cannot be parsed.", {"DateTime64"}};
-    FunctionDocumentation::Examples examples_parseDateTime64BestEffortUSOrZero =
-    {
+    FunctionDocumentation::Examples examples_parseDateTime64BestEffortUSOrZero = {
     {
         "Usage example",
         R"(
@@ -4624,8 +4561,7 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that t
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortUSOrNull = {"Returns `time_string` converted to [`DateTime64`](../../sql-reference/data-types/datetime64.md) using US format preference, or `NULL` if the input cannot be parsed.", {"DateTime64", "NULL"}};
-    FunctionDocumentation::Examples examples_parseDateTime64BestEffortUSOrNull =
-    {
+    FunctionDocumentation::Examples examples_parseDateTime64BestEffortUSOrNull = {
     {
         "Usage example",
         R"(
