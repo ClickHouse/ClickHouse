@@ -1914,7 +1914,7 @@ void ZooKeeper::observeOperationIfNeeded(const ZooKeeperRequestPtr & request, co
 
     for (const auto [subrequest, subresponse] : std::views::zip(multi_request->requests, multi_response->responses))
     {
-        observeOperationIfNeeded(subrequest, std::static_pointer_cast<ZooKeeperResponse>(subresponse), elapsed_microseconds);
+        observeOperationIfNeeded(subrequest, std::dynamic_pointer_cast<ZooKeeperResponse>(subresponse), elapsed_microseconds);
     }
 }
 
