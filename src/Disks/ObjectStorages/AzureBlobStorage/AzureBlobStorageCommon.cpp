@@ -327,7 +327,7 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     if (config.has(config_prefix + ".container_already_exists"))
         container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
 
-    return {storage_url, account_name, "", container_name, prefix, "", container_already_exists, false};
+    return {storage_url, account_name, "", container_name, prefix, "", container_already_exists, endpoint_contains_account_name};
 }
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method)
