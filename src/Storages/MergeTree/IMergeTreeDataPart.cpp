@@ -2411,7 +2411,7 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
                 index_size.marks = mrk_checksum->second.file_size;
 
             total_secondary_indices_size.add(index_size);
-            secondary_index_sizes[index_description.name] = index_size;
+            secondary_index_sizes[index_description.name].add(index_size);
         }
     }
 }
