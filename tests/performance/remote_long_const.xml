@@ -1,4 +1,4 @@
 <test>
-    <query>select arrayResize([1], 100000) from remote('127.{1,2,3}', numbers(1)) settings optimize_const_name_size=-1</query>
-    <query>select arrayResize([1], 100000) from remote('127.{1,2,3}', numbers(1)) settings optimize_const_name_size=0</query>
+    <query>select arrayResize([1], 100000) from remote('127.0.0.{{1,2,3}}', numbers(1)) settings optimize_const_name_size=-1</query>
+    <query>select arrayResize([1], 100000) from remote('127.0.0.{{1,2,3}}', numbers(1)) settings optimize_const_name_size=0</query>
 </test>
