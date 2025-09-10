@@ -514,14 +514,14 @@ inline bool operator==(StringView_Compare16_1_ ## METHOD lhs, StringView_Compare
     return memequal<compare_  ## METHOD>(lhs.data(), rhs.data(), lhs.size()); \
 }
 
-Op(byMemcmp)
-Op(byUInt64_logicAnd)
-Op(byUInt64_bitAnd)
+Op(byMemcmp) /// NOLINT(bugprone-suspicious-stringview-data-usage)
+Op(byUInt64_logicAnd) /// NOLINT(bugprone-suspicious-stringview-data-usage)
+Op(byUInt64_bitAnd) /// NOLINT(bugprone-suspicious-stringview-data-usage)
 
 #ifdef __SSE4_1__
 
-Op(byIntSSE)
-Op(byFloatSSE)
+Op(byIntSSE) /// NOLINT(bugprone-suspicious-stringview-data-usage)
+Op(byFloatSSE) /// NOLINT(bugprone-suspicious-stringview-data-usage)
 
 
 inline bool operator==(StringView_Compare16_1_bySSE4 lhs, StringView_Compare16_1_bySSE4 rhs)

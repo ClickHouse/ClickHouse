@@ -755,7 +755,7 @@ TEST(ColumnDynamic, SerializeDeserializeFromArena1)
     column->serializeValueIntoArena(1, arena, pos);
     column->serializeValueIntoArena(2, arena, pos);
     column->serializeValueIntoArena(3, arena, pos);
-    pos = column->deserializeAndInsertFromArena(ref1.data());
+    pos = column->deserializeAndInsertFromArena(ref1.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     pos = column->deserializeAndInsertFromArena(pos);
     pos = column->deserializeAndInsertFromArena(pos);
     column->deserializeAndInsertFromArena(pos);
@@ -782,7 +782,7 @@ TEST(ColumnDynamic, SerializeDeserializeFromArena2)
     column_from->serializeValueIntoArena(3, arena, pos);
 
     auto column_to = ColumnDynamic::create(254);
-    pos = column_to->deserializeAndInsertFromArena(ref1.data());
+    pos = column_to->deserializeAndInsertFromArena(ref1.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     pos = column_to->deserializeAndInsertFromArena(pos);
     pos = column_to->deserializeAndInsertFromArena(pos);
     column_to->deserializeAndInsertFromArena(pos);
@@ -814,7 +814,7 @@ TEST(ColumnDynamic, SerializeDeserializeFromArenaOverflow1)
     column_from->serializeValueIntoArena(3, arena, pos);
 
     auto column_to = getDynamicWithManyVariants(253);
-    pos = column_to->deserializeAndInsertFromArena(ref1.data());
+    pos = column_to->deserializeAndInsertFromArena(ref1.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     pos = column_to->deserializeAndInsertFromArena(pos);
     pos = column_to->deserializeAndInsertFromArena(pos);
     column_to->deserializeAndInsertFromArena(pos);
@@ -848,7 +848,7 @@ TEST(ColumnDynamic, SerializeDeserializeFromArenaOverflow2)
 
     auto column_to = ColumnDynamic::create(2);
     column_to->insert(Field(42.42));
-    pos = column_to->deserializeAndInsertFromArena(ref1.data());
+    pos = column_to->deserializeAndInsertFromArena(ref1.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     pos = column_to->deserializeAndInsertFromArena(pos);
     pos = column_to->deserializeAndInsertFromArena(pos);
     pos = column_to->deserializeAndInsertFromArena(pos);
@@ -883,7 +883,7 @@ TEST(ColumnDynamic, skipSerializedInArena)
 
     const char * end = ref4.data() + ref4.size();
     auto column_to = ColumnDynamic::create(254);
-    pos = column_to->skipSerializedInArena(ref1.data());
+    pos = column_to->skipSerializedInArena(ref1.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     pos = column_to->skipSerializedInArena(pos);
     pos = column_to->skipSerializedInArena(pos);
     pos = column_to->skipSerializedInArena(pos);

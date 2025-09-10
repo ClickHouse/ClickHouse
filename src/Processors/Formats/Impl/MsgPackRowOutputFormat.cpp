@@ -147,13 +147,13 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
         case TypeIndex::Decimal128:
         {
             packer.pack_bin(static_cast<unsigned>(sizeof(Decimal128)));
-            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(Decimal128));
+            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(Decimal128)); /// NOLINT(bugprone-suspicious-stringview-data-usage)
             return;
         }
         case TypeIndex::Decimal256:
         {
             packer.pack_bin(static_cast<unsigned>(sizeof(Decimal256)));
-            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(Decimal256));
+            packer.pack_bin_body(column.getDataAt(row_num).data(), sizeof(Decimal256)); /// NOLINT(bugprone-suspicious-stringview-data-usage)
             return;
         }
         case TypeIndex::String:

@@ -70,7 +70,7 @@ public:
             auto ref = column_part_name->getDataAt(i);
 
             /// Allow empty part name to allow execute this function over the dictionary of LowCardinality.
-            if (ref.size() > 0)
+            if (!ref.empty())
             {
                 const auto * pos = find_first_symbols<'_'>(ref.data(), ref.data() + ref.size());
                 size_t bytes_to_copy = pos - ref.data();

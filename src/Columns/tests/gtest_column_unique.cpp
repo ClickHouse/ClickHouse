@@ -119,7 +119,7 @@ void column_unique_unique_deserialize_from_arena_impl(ColumnType & column, const
         {
             auto ref = column_unique_pattern->serializeValueIntoArena(idx->getUInt(i), arena, pos);
             const char * new_pos;
-            column_unique->uniqueDeserializeAndInsertFromArena(ref.data(), new_pos);
+            column_unique->uniqueDeserializeAndInsertFromArena(ref.data(), new_pos); /// NOLINT(bugprone-suspicious-stringview-data-usage)
             ASSERT_EQ(new_pos - ref.data(), ref.size()) << "Deserialized data has different sizes at position " << i;
 
             ASSERT_EQ(column_unique_pattern->getNestedNotNullableColumn()->getDataAt(idx->getUInt(i)),

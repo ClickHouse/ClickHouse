@@ -318,7 +318,7 @@ TEST(ColumnObject, SerializeDeserializerFromArena)
 
     auto col2 = type->createColumn();
     auto & col_object2 = assert_cast<ColumnObject &>(*col);
-    pos = col_object2.deserializeAndInsertFromArena(ref1.data());
+    pos = col_object2.deserializeAndInsertFromArena(ref1.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     pos = col_object2.deserializeAndInsertFromArena(pos);
     col_object2.deserializeAndInsertFromArena(pos);
 
@@ -344,7 +344,7 @@ TEST(ColumnObject, SkipSerializedInArena)
 
     const char * end = ref3.data() + ref3.size();
     auto col2 = type->createColumn();
-    pos = col2->skipSerializedInArena(ref1.data());
+    pos = col2->skipSerializedInArena(ref1.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     pos = col2->skipSerializedInArena(pos);
     pos = col2->skipSerializedInArena(pos);
     ASSERT_EQ(pos, end);
