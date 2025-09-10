@@ -187,11 +187,6 @@ private:
     const std::string storage_account_name;
     const std::string storage_account_key;
     const std::string table_location;
-
-    static std::string getTableLocation(const std::string url)
-    {
-        return url;
-    }
 };
 
 /// A helper class to manage local fs storage.
