@@ -567,21 +567,6 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.max_threads = params.max_threads;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
-    if (is_simple_sum)
-    {
-        const auto & arg_name = params.aggregates[0].argument_names[0];
-        const auto * column_type = header.findByName(arg_name);
-        // When an observer node receives the query, it does not have table column information locally
-        if (column_type != nullptr)
-        {
-            inline_sum_helper = createSumExtractorForType(column_type->type);
-            if (inline_sum_helper == nullptr)
-                is_simple_sum = false;
-        }
-        else
-            is_simple_sum = false;
-    }
-
 #if USE_EMBEDDED_COMPILER
     compileAggregateFunctionsIfNeeded();
 #endif
@@ -1249,7 +1234,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if (emplace_result.isInserted())
                     getInlinedStateUInt64(emplace_result.getMapped()) = value;
                 else
-                    getInlinedStateUInt64(emplace_result.getMapped()) += value; // TODO: overflow.
+                    getInlinedStateUInt64(emplace_result.getMapped()) += value;
             }
         }
         else
@@ -1261,7 +1246,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if (find_result.isFound())
                     getInlinedStateUInt64(find_result.getMapped()) += value;
                 else if (overflow_row)
-                    getStateUInt64(overflow_row) += value; // TODO: overflow.
+                    getStateUInt64(overflow_row) += value;
             }
         }
     };
@@ -1280,12 +1265,12 @@ void NO_INLINE Aggregator::executeImplBatch(
         if (all_keys_are_const)
             execute_inline_u64_batch([&]()
             {
-                return inline_sum_helper->get(aggregate_instructions[0].batch_arguments[0], 0) * (row_end - row_begin);
+                return aggregate_instructions[0].inline_sum_helper->get(aggregate_instructions[0].batch_arguments[0], 0) * (row_end - row_begin);
             });
         else
             execute_row_by_row_aggregation([&](size_t i)
             {
-                return inline_sum_helper->get(aggregate_instructions[0].batch_arguments[0], i);
+                return aggregate_instructions[0].inline_sum_helper->get(aggregate_instructions[0].batch_arguments[0], i);
             });
         return;
     }
@@ -1481,7 +1466,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 
     if (is_simple_sum)
     {
-        getStateUInt64(res) += addBatchForSimpleSum(inline_sum_helper, row_begin, row_end, aggregate_instructions);
+        getStateUInt64(res) += addBatchForSimpleSum(row_begin, row_end, aggregate_instructions);
         return;
     }
 
@@ -1549,14 +1534,13 @@ void Aggregator::addBatch(
 }
 
 UInt64 Aggregator::addBatchForSimpleSum(
-    const std::unique_ptr<IInlinedSumHelper> & inline_sum_helper,
     size_t row_begin, size_t row_end,
     AggregateFunctionInstruction * inst)
 {
     if (inst->has_sparse_arguments)
-        return inline_sum_helper->addSparse(inst->batch_arguments[0], row_begin, row_end);
+        return inst->inline_sum_helper->addSparse(inst->batch_arguments[0], row_begin, row_end);
     else
-        return inline_sum_helper->addMany(inst->batch_arguments[0], row_begin, row_end);
+        return inst->inline_sum_helper->addMany(inst->batch_arguments[0], row_begin, row_end);
 }
 
 
@@ -1603,7 +1587,7 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
 
     if (is_simple_sum)
     {
-        getStateUInt64(res) += addBatchForSimpleSum(inline_sum_helper, row_begin, row_end, aggregate_instructions);
+        getStateUInt64(res) += addBatchForSimpleSum(row_begin, row_end, aggregate_instructions);
         return;
     }
 
@@ -1681,6 +1665,10 @@ void Aggregator::prepareAggregateInstructions(
             if (aggregate_columns[i][j]->isSparse())
                 has_sparse_arguments = true;
         }
+
+        if (is_simple_sum)
+            aggregate_functions_instructions[i].inline_sum_helper = createSumExtractorForType(
+                header.getByName(params.aggregates[i].argument_names[0]).type);
 
         aggregate_functions_instructions[i].has_sparse_arguments = has_sparse_arguments;
         aggregate_functions_instructions[i].can_optimize_equal_keys_ranges = aggregate_functions[i]->canOptimizeEqualKeysRanges();

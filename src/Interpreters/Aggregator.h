@@ -273,6 +273,7 @@ public:
         const IColumn ** arguments{};
         const IAggregateFunction * batch_that{};
         const IColumn ** batch_arguments{};
+        std::unique_ptr<IInlinedSumHelper> inline_sum_helper{};
         const UInt64 * offsets{};
         bool has_sparse_arguments = false;
         bool can_optimize_equal_keys_ranges = true;
@@ -399,7 +400,6 @@ private:
     ///
     /// If true, we apply similar optimization as is_simple_count.
     bool is_simple_sum = false;
-    std::unique_ptr<IInlinedSumHelper> inline_sum_helper;
 
     LoggerPtr log = getLogger("Aggregator");
 
@@ -723,7 +723,6 @@ private:
         Arena * arena);
 
     static UInt64 addBatchForSimpleSum(
-        const std::unique_ptr<IInlinedSumHelper> & inline_sum_helper,
         size_t row_begin, size_t row_end,
         AggregateFunctionInstruction * inst);
 };
