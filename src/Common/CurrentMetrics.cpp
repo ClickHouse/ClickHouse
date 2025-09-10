@@ -233,8 +233,11 @@
     M(IDiskCopierThreadsActive, "Number of threads for copying data between disks of different types running a task.") \
     M(IDiskCopierThreadsScheduled, "Number of queued or active jobs for copying data between disks of different types.") \
     M(SystemReplicasThreads, "Number of threads in the system.replicas thread pool.") \
+    M(SystemDatabaseReplicasThreads, "Number of threads in the system.database_replicas thread pool.") \
     M(SystemReplicasThreadsActive, "Number of threads in the system.replicas thread pool running a task.") \
+    M(SystemDatabaseReplicasThreadsActive, "Number of threads in the system.database_replicas thread pool running a task.") \
     M(SystemReplicasThreadsScheduled, "Number of queued or active jobs in the system.replicas thread pool.") \
+    M(SystemDatabaseReplicasThreadsScheduled, "Number of queued or active jobs in the system.database_replicas thread pool.") \
     M(RestartReplicaThreads, "Number of threads in the RESTART REPLICA thread pool.") \
     M(RestartReplicaThreadsActive, "Number of threads in the RESTART REPLICA thread pool running a task.") \
     M(RestartReplicaThreadsScheduled, "Number of queued or active jobs in the RESTART REPLICA thread pool.") \
