@@ -26,47 +26,38 @@ ColumnsDescription AggregatedZooKeeperLogElement::getColumnsDescription()
 
     result.add({"hostname",
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Hostname of the server."});
 
     result.add({"event_date",
                 std::make_shared<DataTypeDate>(),
-                parseQuery(codec_parser, "(Delta(2), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Date the group was flushed."});
 
     result.add({"event_time",
                 std::make_shared<DataTypeDateTime>(),
-                parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Time the group was flushed."});
 
     result.add({"session_id",
                 std::make_shared<DataTypeInt64>(),
-                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Session id."});
 
     result.add({"parent_path",
                 std::make_shared<DataTypeString>(),
-                parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Prefix of the path."});
 
     result.add({"operation",
                 Coordination::SystemTablesDataTypes::operationEnum(),
-                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Type of ZooKeeper operation."});
 
     result.add({"count",
                 std::make_shared<DataTypeUInt32>(),
-                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Number of operations in the (session_id, parent_path, operation) group."});
 
     result.add({"errors",
                 std::make_shared<DataTypeMap>(Coordination::SystemTablesDataTypes::errorCodeEnum(), std::make_shared<DataTypeUInt32>()),
-                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Errors in the (session_id, parent_path, operation) group."});
 
     result.add({"average_latency",
                 std::make_shared<DataTypeFloat64>(),
-                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Average latency across all operations in (session_id, parent_path, operation) group, in microseconds."});
     return result;
 }
