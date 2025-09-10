@@ -150,17 +150,8 @@ ConstantNodePtr getConstantResultFromFunctionArgs(const QueryTreeNodePtr & node,
         }
         catch (const Exception & e)
         {
-            // Only catch specific exceptions that indicate the function can't be built
-            // with these argument types, not all exceptions
-            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT ||
-                e.code() == ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH)
-            {
-                // Log the error for debugging
-                LOG_DEBUG(&Poco::Logger::get("QueryAnalyzer"), "Function {} failed to build with error: {}", function_name, e.message());
-                return nullptr;
-            }
-            // Re-throw unexpected exceptions
-            throw;
+            LOG_DEBUG(&Poco::Logger::get("QueryAnalyzer"), "Function {} failed to build with error: {}", function_name, e.message());
+            return nullptr;
         }
 
         if (!base->isSuitableForConstantFolding())
