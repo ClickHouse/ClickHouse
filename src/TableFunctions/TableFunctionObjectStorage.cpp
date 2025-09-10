@@ -75,7 +75,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         Definition::name != "icebergClusterS3" &&
                         Definition::name != "deltaLakeS3" &&
                         Definition::name != "deltaLakeClusterS3")
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");       
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
                     if (std::string_view(Definition::name).starts_with("iceberg"))
                         configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
@@ -85,11 +85,11 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
 #endif
 #if USE_AZURE_BLOB_STORAGE && USE_AVRO
                 case ObjectStorageType::Azure:
-                    if (Definition::name != "iceberg" && 
+                    if (Definition::name != "iceberg" &&
                         Definition::name != "icebergCluster" &&
                         Definition::name != "deltaLake" &&
-                        Definition::name != "deltaLakeCluster" && 
-                        Definition::name != "icebergAzure" && 
+                        Definition::name != "deltaLakeCluster" &&
+                        Definition::name != "icebergAzure" &&
                         Definition::name != "icebergClusterAzure" &&
                         Definition::name != "deltaLakeAzure" &&
                         Definition::name != "deltaLakeClusterAzure")
@@ -103,7 +103,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
 #endif
 #if USE_AVRO
                 case ObjectStorageType::Local:
-                    if (Definition::name != "iceberg" && 
+                    if (Definition::name != "iceberg" &&
                         Definition::name != "icebergCluster" &&
                         Definition::name != "deltaLake" &&
                         Definition::name != "deltaLakeCluster" &&
