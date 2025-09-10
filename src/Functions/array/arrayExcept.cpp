@@ -402,7 +402,7 @@ The operation maintains these properties:
            {"with_nulls2", "SELECT arrayExcept([1, NULL, 2, NULL], [NULL, 2, NULL])", "[1]"},
            {"strings", "SELECT arrayExcept(['apple', 'banana', 'cherry'], ['banana', 'date'])", "['apple', 'cherry']"}};
 
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
