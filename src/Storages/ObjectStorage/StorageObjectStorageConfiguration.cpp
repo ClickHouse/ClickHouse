@@ -93,22 +93,6 @@ void StorageObjectStorageConfiguration::initialize(
             // Promote to wildcard in case it is not data lake to make it backwards compatible
             configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
         }
-        else
-        {
-            switch (local_context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
-            {
-                case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
-                {
-                    configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
-                    break;
-                }
-                case FileLikeEngineDefaultPartitionStrategy::HIVE:
-                {
-                    configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
-                    break;
-                }
-            }
-        }
     }
 
     if (configuration_to_initialize.format == "auto")
@@ -135,6 +119,27 @@ void StorageObjectStorageConfiguration::initialize(
 
 void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
+    if (partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
+    {
+        if (!partition_by)
+            return;
+
+        switch (context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
+        {
+            case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
+            {
+                if (getRawPath().hasPartitionWildcard())
+                    partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+                break;
+            }
+            case FileLikeEngineDefaultPartitionStrategy::HIVE:
+            {
+                partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
+                break;
+            }
+        }
+    }
+
     partition_strategy = PartitionStrategyFactory::get(
         partition_strategy_type,
         partition_by,
