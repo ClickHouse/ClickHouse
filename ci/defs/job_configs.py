@@ -120,7 +120,7 @@ class JobConfigs:
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         # --network=host required for ec2 metadata http endpoint to work
         run_in_docker=BINARY_DOCKER_COMMAND,
-        timeout=3600 * 2,
+        timeout=3600 * 3,
         digest_config=build_digest_config,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
@@ -222,7 +222,7 @@ class JobConfigs:
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         # --network=host required for ec2 metadata http endpoint to work
         run_in_docker=BINARY_DOCKER_COMMAND,
-        timeout=3600 * 2,
+        timeout=3600 * 3,
         digest_config=build_digest_config,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
@@ -607,7 +607,8 @@ class JobConfigs:
             requires=["Build (amd_msan)"],
         ),
     )
-    stress_test_azure_master_jobs = Job.Config(
+    # might be heavy on azure - run only on master
+    stress_test_azure_jobs = Job.Config(
         name=JobNames.STRESS,
         runs_on=[],  # from parametrize()
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
@@ -625,14 +626,14 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         Job.ParamSet(
-            parameter="azure, tsan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=["Build (amd_tsan)"],
-        ),
-        Job.ParamSet(
-            parameter="azure, msan",
+            parameter="azure, amd_msan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=["Build (amd_msan)"],
+        ),
+        Job.ParamSet(
+            parameter="azure, amd_tsan",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=["Build (amd_tsan)"],
         ),
     )
     upgrade_test_jobs = Job.Config(

@@ -34,7 +34,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsUInt64 merge_tree_min_read_task_size;
+    extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
 }
 

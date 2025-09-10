@@ -357,7 +357,54 @@ private:
 
 REGISTER_FUNCTION(FormatReadableTimeDelta)
 {
-    factory.registerFunction<FunctionFormatReadableTimeDelta>();
+    FunctionDocumentation::Description description = R"(
+Given a time interval (delta) in seconds, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as a string.
+
+This function accepts any numeric type as input, but internally it casts them to `Float64`. Results might be suboptimal with large values.
+    )";
+    FunctionDocumentation::Syntax syntax = "formatReadableTimeDelta(column[, maximum_unit, minimum_unit])";
+    FunctionDocumentation::Arguments arguments = {
+        {"column", "A column with a numeric time delta.", {"Float64"}},
+        {"maximum_unit", "Optional. Maximum unit to show. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. Default value: `years`.", {"const String"}},
+        {"minimum_unit", "Optional. Minimum unit to show. All smaller units are truncated. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown. Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a time delta as a string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    arrayJoin([100, 12345, 432546534]) AS elapsed,
+    formatReadableTimeDelta(elapsed) AS time_delta
+        )",
+        R"(
+┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
+│        100 │ 1 minute and 40 seconds                                        │
+│      12345 │ 3 hours, 25 minutes and 45 seconds                             │
+│  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds│
+└────────────┴────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "With maximum unit", R"(
+SELECT
+    arrayJoin([100, 12345, 432546534]) AS elapsed,
+    formatReadableTimeDelta(elapsed, 'minutes') AS time_delta
+        )",
+        R"(
+┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
+│        100 │ 1 minute and 40 seconds                                         │
+│      12345 │ 205 minutes and 45 seconds                                      │
+│  432546534 │ 7209108 minutes and 54 seconds                                  │
+└────────────┴─────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionFormatReadableTimeDelta>(documentation);
 }
 
 }

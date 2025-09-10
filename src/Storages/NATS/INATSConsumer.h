@@ -18,16 +18,17 @@ namespace DB
 
 using NATSSubscriptionPtr = std::unique_ptr<natsSubscription, decltype(&natsSubscription_Destroy)>;
 
-class NATSConsumer
+class INATSConsumer
 {
 public:
-    NATSConsumer(
+    INATSConsumer(
         NATSConnectionPtr connection_,
-        std::vector<String> & subjects_,
+        const std::vector<String> & subjects_,
         const String & subscribe_queue_name,
         LoggerPtr log_,
         uint32_t queue_size_,
         const std::atomic<bool> & stopped_);
+    virtual ~INATSConsumer() = default;
 
     struct MessageData
     {
@@ -36,7 +37,7 @@ public:
     };
 
     bool isSubscribed() const;
-    void subscribe();
+    virtual void subscribe() = 0;
     void unsubscribe();
 
     size_t subjectsCount() { return subjects.size(); }
@@ -53,18 +54,28 @@ public:
     /// or nullptr if there are no messages to process.
     ReadBufferPtr consume();
 
-private:
+protected:
+    const NATSConnectionPtr & getConnection() { return connection; }
+    natsConnection * getNativeConnection() { return connection->getConnection(); }
+
+    const std::vector<String> & getSubjects() const { return subjects; }
+    const LoggerPtr & getLogger() const { return log; }
+
+    const String & getQueueName() const { return queue_name; }
+
+    void setSubscriptions(std::vector<NATSSubscriptionPtr> subscriptions_) { subscriptions = std::move(subscriptions_); }
+
     static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * consumer);
 
+private:
     NATSConnectionPtr connection;
     std::vector<NATSSubscriptionPtr> subscriptions;
-    std::vector<String> subjects;
+    const std::vector<String> subjects;
     LoggerPtr log;
     const std::atomic<bool> & stopped;
 
     String queue_name;
 
-    String channel_id;
     ConcurrentBoundedQueue<MessageData> received;
     MessageData current;
 };

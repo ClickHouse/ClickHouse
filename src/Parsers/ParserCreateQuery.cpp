@@ -1781,7 +1781,15 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         targets = std::make_shared<ASTViewTargets>();
         if (to_table)
-            targets->setTableID(ViewTarget::To, to_table->as<ASTTableIdentifier>()->getTableId());
+        {
+            if (!to_table->as<ASTTableIdentifier>()->isParam())
+                targets->setTableID(ViewTarget::To, to_table->as<ASTTableIdentifier>()->getTableId());
+            else
+            {
+                chassert(is_materialized_view);
+                targets->setTableASTWithQueryParams(ViewTarget::To, to_table);
+            }
+        }
         if (to_inner_uuid)
             targets->setInnerUUID(ViewTarget::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
         if (storage)
