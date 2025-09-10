@@ -173,18 +173,54 @@ private:
 
 REGISTER_FUNCTION(FunctionColorOKLCHToSRGB)
 {
-    const FunctionDocumentation description = {
-        .description=R"(Converts color from OKLCH perceptual color space to sRGB color space.
-Takes an optional parameter gamma, that is defaulted at 2.2 in case it is not provided. Dual of colorSRGBToOKLCH)",
-        .arguments={
-            {"OKLCH_tuple", R"(A 3-element tuple of numeric values representing OKLCH coordinates: L (lightness in [0...1]),
-C (chroma >= 0), and H (hue in degrees [0...360]))"},
-            {"gamma", "Optional gamma exponent for sRGB transfer function. Defaults to 2.2 if omitted."},
-        },
-        .returned_value{"Returns a 3-element tuple of sRGB values", {"Tuple(Float64, Float64, Float64)"}},
-        .introduced_in = {25, 7},
-        .category = FunctionDocumentation::Category::Other
+    FunctionDocumentation::Description description = R"(
+Converts a colour from the **OKLCH** perceptual colour space to the familiar **sRGB** colour space.
+
+If `L` is outside the range `[0...1]`, `C` is negative, or `H` is outside the range `[0...360]`, the result is implementation-defined.
+
+:::note
+**OKLCH** is a cylindrical version of the OKLab colour space.
+It's three coordinates are `L` (the lightness in the range `[0...1]`), `C` (chroma `>= 0`) and `H` (hue in degrees  from `[0...360]`)**.
+OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
+:::
+
+The conversion is the inverse of [`colorSRGBToOKLCH`](#colorSRGBToOKLCH):
+
+1) OKLCH to OKLab.
+2) OKLab to Linear sRGB
+3) Linear sRGB to sRGB
+
+The second argument gamma is used at the last stage.
+
+For references of colors in OKLCH space, and how they correspond to sRGB colors please see [https://oklch.com/](https://oklch.com/).
+    )";
+    FunctionDocumentation::Syntax syntax = "colorOKLCHToSRGB(tuple [, gamma])";
+    FunctionDocumentation::Arguments arguments = {
+        {"tuple", "A tuple of three numeric values `L`, `C`, `H`, where `L` is in the range `[0...1]`, `C >= 0` and `H` is in the range `[0...360]`.", {"Tuple(Float64, Float64, Float64)"}},
+        {"gamma", "Optional. The exponent that is used to transform linear sRGB back to sRGB by applying `(x ^ (1 / gamma)) * 255` for each channel `x`. Defaults to `2.2`.", {"Float64"}}
     };
-    factory.registerFunction<FunctionColorOKLCHToSRGB>(description);
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (R, G, B) representing sRGB color values.", {"Tuple(Float64, Float64, Float64)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Convert OKLCH to sRGB",
+        R"(
+SELECT colorOKLCHToSRGB((0.4466, 0.0991, 45.44), 2.2) AS rgb
+WITH colorOKLCHToSRGB((0.7, 0.1, 54)) as t SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB
+        )",
+        R"(
+┌─rgb──────────────────────────────────────────────────────┐
+│ (127.03349738778945,66.06672044472008,37.11802592155851) │
+└──────────────────────────────────────────────────────────┘
+┌─RGB──────────┐
+│ (205,139,97) │
+└──────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionColorOKLCHToSRGB>(documentation);
 }
 }

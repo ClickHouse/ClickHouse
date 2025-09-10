@@ -10,4 +10,4 @@ SELECT explain FROM (
   SELECT * FROM viewExplain('EXPLAIN', (
     SELECT id FROM t WHERE a
   )))
-WHERE equals(id AS a); -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
+WHERE equals(id AS a); -- { serverError BAD_ARGUMENTS }

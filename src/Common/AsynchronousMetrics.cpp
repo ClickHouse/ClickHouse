@@ -18,6 +18,7 @@
 
 #include <boost/locale/date_time_facet.hpp>
 
+#include <ranges>
 #include <string_view>
 
 #include "config.h"
@@ -168,6 +169,8 @@ AsynchronousMetrics::AsynchronousMetrics(
 
     openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
     openFileIfExists("/proc/self/maps", vm_maps);
+    /// Note, "stat" does not include SigQ
+    openFileIfExists("/proc/self/status", process_status);
 
     openSensors();
     openBlockDevices();
@@ -1965,6 +1968,60 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/self/maps", vm_maps);
+        }
+    }
+
+    if (process_status)
+    {
+        try
+        {
+            process_status->rewind();
+
+            UInt64 signal_queue_size = 0;
+            UInt64 signal_queue_limit = 0;
+            std::array<UInt64 *, 2> signal_queue{&signal_queue_size, &signal_queue_limit};
+            while (!process_status->eof())
+            {
+                String key;
+                readStringInto(key, *process_status);
+                skipWhitespaceIfAny(*process_status, true);
+
+                String value;
+                readStringUntilNewlineInto(value, *process_status);
+
+                if (key == "SigQ:")
+                {
+                    auto parts = value
+                        | std::views::split('/')
+                        /// Convert to std::string_view
+                        | std::views::transform([](auto && range) { return std::string_view(&*range.begin(), std::ranges::distance(range)); })
+                        /// Parse numbers
+                        | std::views::transform([](auto && sv) { return parse<UInt64>(sv); });
+                    auto it = parts.begin();
+                    for (auto * signal_queue_part : signal_queue)
+                    {
+                        if (it == parts.end())
+                            throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot parse SigQ from /proc/self/status: {} {}", key, value);
+                        *signal_queue_part = *it++;
+                    }
+
+                    break;
+                }
+
+                if (*process_status->position() == '\n')
+                {
+                    skipToNextLineOrEOF(*process_status);
+                }
+            }
+            if (signal_queue_limit == 0)
+                LOG_WARNING(getLogger("AsynchronousMetrics"), "Cannot find SigQ in /proc/self/status");
+            new_values["ProcessSignalQueueSize"] = { signal_queue_size, "Size of signal queue (pending signals, timers for query profiling)" };
+            new_values["ProcessSignalQueueLimit"] = { signal_queue_limit, "Total limit of signal queue (once it reaches ProcessSignalQueueSize, you may get CANNOT_CREATE_TIMER errors)" };
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/self/status", process_status);
         }
     }
 
