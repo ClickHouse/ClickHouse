@@ -520,7 +520,7 @@ SELECT
     FunctionDocumentation documentation_UUIDNumToString = {description_UUIDNumToString, syntax_UUIDNumToString, arguments_UUIDNumToString, returned_value_UUIDNumToString, examples_UUIDNumToString, introduced_in_UUIDNumToString, category_UUIDNumToString};
 
     factory.registerFunction<FunctionUUIDNumToString>(documentation_UUIDNumToString);
-    
+
     /// UUIDStringToNum documentation
     FunctionDocumentation::Description description_UUIDStringToNum = R"(
 Accepts a string containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns a [FixedString(16)](../data-types/fixedstring.md) as its binary representation, with its format optionally specified by `variant` (`Big-endian` by default).
@@ -564,7 +564,7 @@ SELECT
     FunctionDocumentation documentation_UUIDStringToNum = {description_UUIDStringToNum, syntax_UUIDStringToNum, arguments_UUIDStringToNum, returned_value_UUIDStringToNum, examples_UUIDStringToNum, introduced_in_UUIDStringToNum, category_UUIDStringToNum};
 
     factory.registerFunction<FunctionUUIDStringToNum>(documentation_UUIDStringToNum);
-    
+
     /// UUIDToNum documentation
     FunctionDocumentation::Description description_UUIDToNum = R"(
 Accepts a [UUID](../data-types/uuid.md) and returns its binary representation as a [FixedString(16)](../data-types/fixedstring.md), with its format optionally specified by `variant` (`Big-endian` by default).
@@ -619,7 +619,7 @@ Returns the timestamp component of a UUID version 7.
         {"uuid", "A UUID version 7.", {"String"}},
         {"timezone", "Optional. [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_UUIDv7ToDateTime = "Timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns 1970-01-01 00:00:00.000. [DateTime64(3)](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_UUIDv7ToDateTime = {"Returns a timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns `1970-01-01 00:00:00.000`.", {"DateTime64(3)"}};
     FunctionDocumentation::Examples examples_UUIDv7ToDateTime = {
     {
         "Usage example",

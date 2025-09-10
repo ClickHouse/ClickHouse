@@ -140,7 +140,7 @@ Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake I
         {"value", "Date with time.", {"DateTime"}},
         {"epoch", "Optional. Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657.", {"UInt*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_dateTimeToSnowflakeID = "Returns the input value as the first Snowflake ID at that time.", {"UInt64"}};
+    FunctionDocumentation::ReturnedValue returned_value_dateTimeToSnowflakeID = {"Returns the input value as the first Snowflake ID at that time.", {"UInt64"}};
     FunctionDocumentation::Examples examples_dateTimeToSnowflakeID = {
     {
         "Usage example",
@@ -167,7 +167,7 @@ SELECT toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt, dateTimeToSnowf
         {"value", "Date with time.", {"DateTime"}},
         {"epoch", "Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657.", {"UInt*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_dateTime64ToSnowflakeID = "Returns the input value as the first Snowflake ID at that time.", {"UInt64"}};
+    FunctionDocumentation::ReturnedValue returned_value_dateTime64ToSnowflakeID = {"Returns the input value as the first Snowflake ID at that time.", {"UInt64"}};
     FunctionDocumentation::Examples examples_dateTime64ToSnowflakeID = {
    {
        "Usage example",

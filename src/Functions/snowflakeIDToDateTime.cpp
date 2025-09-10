@@ -217,7 +217,7 @@ Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wik
         {"epoch", "Optional. Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657.", {"UInt*"}},
         {"time_zone", "Optional. [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_snowflakeIDToDateTime64 = "The timestamp component of `value` as a [DateTime64](../data-types/datetime64.md) with scale = 3, i.e. millisecond precision.";
+    FunctionDocumentation::ReturnedValue returned_value_snowflakeIDToDateTime64 = {"Returns the timestamp component of `value`.", {"DateTime64"}};
     FunctionDocumentation::Examples examples_snowflakeIDToDateTime64 = {
     {
         "Usage example",

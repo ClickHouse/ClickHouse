@@ -24,7 +24,7 @@ Two uniqThetaSketch objects to do union calculation(set operation ∪), the resu
         R"(
 SELECT finalizeAggregation(uniqThetaUnion(a, b)) AS a_union_b, finalizeAggregation(a) AS a_cardinality, finalizeAggregation(b) AS b_cardinality
 FROM
-(SELECT arrayReduce('uniqThetaState',[1,2]) AS a, arrayReduce('uniqThetaState',[2,3,4]) AS b );
+(SELECT arrayReduce('uniqThetaState', [1, 2]) AS a, arrayReduce('uniqThetaState', [2, 3, 4]) AS b);
         )",
         R"(
 ┌─a_union_b─┬─a_cardinality─┬─b_cardinality─┐
@@ -52,7 +52,7 @@ Two uniqThetaSketch objects to do intersect calculation(set operation ∩), the 
         R"(
 SELECT finalizeAggregation(uniqThetaIntersect(a, b)) AS a_intersect_b, finalizeAggregation(a) AS a_cardinality, finalizeAggregation(b) AS b_cardinality
 FROM
-(SELECT arrayReduce('uniqThetaState',[1,2]) AS a, arrayReduce('uniqThetaState', [2, 3, 4]) AS b );
+(SELECT arrayReduce('uniqThetaState', [1, 2]) AS a, arrayReduce('uniqThetaState', [2, 3, 4]) AS b);
         )",
         R"(
 ┌─a_intersect_b─┬─a_cardinality─┬─b_cardinality─┐
@@ -80,7 +80,7 @@ Two uniqThetaSketch objects to do a_not_b calculation(set operation ×), the res
         R"(
 SELECT finalizeAggregation(uniqThetaNot(a, b)) AS a_not_b, finalizeAggregation(a) AS a_cardinality, finalizeAggregation(b) AS b_cardinality
 FROM
-(SELECT arrayReduce('uniqThetaState',[2,3,4]) AS a, arrayReduce('uniqThetaState',[1,2]) AS b );
+(SELECT arrayReduce('uniqThetaState', [2, 3, 4]) AS a, arrayReduce('uniqThetaState', [1, 2]) AS b);
         )",
         R"(
 ┌─a_not_b─┬─a_cardinality─┬─b_cardinality─┐

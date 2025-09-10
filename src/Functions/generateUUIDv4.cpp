@@ -99,7 +99,7 @@ REGISTER_FUNCTION(GenerateUUIDv4)
     FunctionDocumentation::Arguments arguments_generateUUIDv4 = {
         {"expr", "An arbitrary expression used to bypass common subexpression elimination if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_generateUUIDv4 = "A value of type UUIDv4.";
+    FunctionDocumentation::ReturnedValue returned_value_generateUUIDv4 = {"Returns a UUIDv4.", {"UUID"}};
     FunctionDocumentation::Examples examples_generateUUIDv4 = {
     {
         "Usage example",

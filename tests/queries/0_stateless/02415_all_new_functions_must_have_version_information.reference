@@ -36,10 +36,6 @@ JSON_QUERY
 JSON_VALUE
 URLHierarchy
 URLPathHierarchy
-UUIDNumToString
-UUIDStringToNum
-UUIDToNum
-UUIDv7ToDateTime
 _CAST
 __actionName
 __bitBoolMaskAnd
@@ -73,8 +69,6 @@ cutToFirstSignificantSubdomainWithWWWRFC
 cutURLParameter
 cutWWW
 dateDiff
-dateTime64ToSnowflake
-dateTimeToSnowflake
 decodeURLComponent
 decodeURLFormComponent
 dictGet
@@ -151,7 +145,6 @@ fromUnixTimestamp64Nano
 fromUnixTimestamp64Second
 generateRandomStructure
 generateSerialID
-generateUUIDv4
 getMaxTableNameLengthForDatabase
 getSubcolumn
 getTypeSerializationStreams
@@ -304,8 +297,6 @@ reinterpretAsUInt8
 reinterpretAsUUID
 sigmoid
 sin
-snowflakeToDateTime
-snowflakeToDateTime64
 structureToCapnProtoSchema
 structureToProtobufSchema
 svg

@@ -409,7 +409,7 @@ Converts a [DateTime](../data-types/datetime.md) value to the first [Snowflake I
     FunctionDocumentation::Arguments arguments_dateTimeToSnowflake = {
         {"value", "Date with time.", {"DateTime"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_dateTimeToSnowflake = "Returns the input value as the first Snowflake ID at that time.", {"Int64"}};
+    FunctionDocumentation::ReturnedValue returned_value_dateTimeToSnowflake = {"Returns the input value as the first Snowflake ID at that time.", {"Int64"}};
     FunctionDocumentation::Examples examples_dateTimeToSnowflake = {
     {
         "Usage example",
@@ -446,7 +446,7 @@ Converts a [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID]
     FunctionDocumentation::Arguments arguments_dateTime64ToSnowflake = {
         {"value", "Date with time.", {"DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_dateTime64ToSnowflake = "Returns the input value converted as the first Snowflake ID at that time.", {"Int64"}};
+    FunctionDocumentation::ReturnedValue returned_value_dateTime64ToSnowflake = {"Returns the input value converted as the first Snowflake ID at that time.", {"Int64"}};
     FunctionDocumentation::Examples examples_dateTime64ToSnowflake = {
     {
         "Usage example",

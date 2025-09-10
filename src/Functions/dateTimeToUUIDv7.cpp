@@ -160,7 +160,7 @@ Function `dateTimeToUUIDv7` guarantees that the counter field within a timestamp
     FunctionDocumentation::Arguments arguments_dateTimeToUUIDv7 = {
         {"value", "Date with time.", {"DateTime"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_dateTimeToUUIDv7 = "Returns a value of type UUIDv7.";
+    FunctionDocumentation::ReturnedValue returned_value_dateTimeToUUIDv7 = {"Returns a UUIDv7.", {"UUID"}};
     FunctionDocumentation::Examples examples_dateTimeToUUIDv7 = {
     {
         "Usage example",
@@ -180,13 +180,13 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
 SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
         )",
         R"(
-   ┌─dateTimeToUUIDv7(t⋯08-15 18:57:56'))─┐
-1. │ 017b4b2d-7720-76ed-ae44-bbcc23a8c550 │
-   └──────────────────────────────────────┘
-   ┌─dateTimeToUUIDv7(t⋯08-15 18:57:56'))─┐
-1. │ 017b4b2d-7720-76ed-ae44-bbcf71ed0fd3 │
-   └──────────────────────────────────────┘
-        )"
+┌─dateTimeToUUIDv7(t⋯08-15 18:57:56'))─┐
+│ 017b4b2d-7720-76ed-ae44-bbcc23a8c550 │
+└──────────────────────────────────────┘
+┌─dateTimeToUUIDv7(t⋯08-15 18:57:56'))─┐
+│ 017b4b2d-7720-76ed-ae44-bbcf71ed0fd3 │
+└──────────────────────────────────────┘
+       )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_dateTimeToUUIDv7 = {25, 9};

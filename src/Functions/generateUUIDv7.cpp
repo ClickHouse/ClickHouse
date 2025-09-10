@@ -137,7 +137,7 @@ Function `generateUUIDv7` guarantees that the counter field within a timestamp i
     FunctionDocumentation::Arguments arguments_generateUUIDv7 = {
         {"expr", "Optional. An arbitrary expression used to bypass common subexpression elimination if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_generateUUIDv7 = "A value of type UUIDv7.";
+    FunctionDocumentation::ReturnedValue returned_value_generateUUIDv7 = {"Returns a UUIDv7.", {"UUID"}};
     FunctionDocumentation::Examples examples_generateUUIDv7 = {
     {
         "Usage example",
