@@ -349,16 +349,19 @@ void putObjectsTagOnS3(
     const Strings & object_keys,
     const String & tag_key,
     const String & tag_value
-) {
+)
+{
     auto log = getLogger("putObjectsTagOnS3");
 
-    for (const String & object_key : object_keys) {
+    for (const String & object_key : object_keys)
+    {
         S3::GetObjectTaggingRequest get_request;
         get_request.SetBucket(bucket);
         get_request.SetKey(object_key);
 
         auto get_outcome = s3_client->GetObjectTagging(get_request);
-        if (!get_outcome.IsSuccess()) {
+        if (!get_outcome.IsSuccess())
+        {
             const auto & err = get_outcome.GetError();
             throw S3Exception(err.GetErrorType(), "{} (Code: {}) while getting tagging of S3 object path {}",
                               err.GetMessage(), static_cast<size_t>(err.GetErrorType()), object_key);
@@ -369,11 +372,13 @@ void putObjectsTagOnS3(
             std::find_if(
                 existing_tag_set.begin(),
                 existing_tag_set.end(),
-                [&] (const Aws::S3::Model::Tag& tag) {
+                [&] (const Aws::S3::Model::Tag& tag)
+                {
                     return tag.GetKey() == tag_key && tag.GetValue() == tag_value;
                 })
             != existing_tag_set.end());
-        if (present) {
+        if (present)
+        {
             LOG_TRACE(log, "S3 object path {} skipped as it already had the tag {}={}", object_key, tag_key, tag_value);
             continue;
         }
@@ -389,9 +394,12 @@ void putObjectsTagOnS3(
 
         auto put_outcome = s3_client->PutObjectTagging(put_request);
 
-        if (put_outcome.IsSuccess()) {
+        if (put_outcome.IsSuccess())
+        {
             LOG_TRACE(log, "Tags of S3 object {} updated", object_key);
-        } else {
+        }
+        else
+        {
             const auto & err = put_outcome.GetError();
             throw S3Exception(err.GetErrorType(), "{} (Code: {}) while putting tagging on S3 object {}",
                               err.GetMessage(), static_cast<size_t>(err.GetErrorType()), object_key);
