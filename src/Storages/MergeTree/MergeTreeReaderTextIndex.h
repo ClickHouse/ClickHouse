@@ -7,7 +7,15 @@
 namespace DB
 {
 
-using PostingsMap = absl::flat_hash_map<StringRef, CompressedPostings::Iterator>;
+struct PostingsIteratorPair
+{
+    explicit PostingsIteratorPair(const PostingList & postings) : it(postings.begin()), end(postings.end()) {}
+
+    PostingList::const_iterator it;
+    PostingList::const_iterator end;
+};
+
+using PostingsMap = absl::flat_hash_map<StringRef, PostingsIteratorPair>;
 
 class MergeTreeReaderTextIndex : public IMergeTreeReader
 {
@@ -36,7 +44,7 @@ private:
     {
         MergeTreeIndexGranulePtr granule;
         PostingsMap postings;
-        std::list<CompressedPostings> postings_holders;
+        std::list<PostingList> postings_holders;
         bool may_be_true = true;
         bool need_read_postings = true;
     };

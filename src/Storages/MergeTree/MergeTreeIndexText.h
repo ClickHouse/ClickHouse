@@ -27,59 +27,16 @@ struct MergeTreeIndexTextParams
 
 using PostingList = roaring::Roaring;
 
-struct CompressedPostings
+struct PostingsSerialization
 {
-public:
-    static constexpr size_t max_raw_deltas = 4;
-    static constexpr size_t num_cells_for_raw_deltas = max_raw_deltas * sizeof(UInt32) / sizeof(UInt64);
-
-    CompressedPostings(UInt8 delta_bits_, UInt32 cardinality_);
-    explicit CompressedPostings(const roaring::Roaring & postings);
-
-    UInt32 getDelta(size_t idx) const;
-    UInt32 getMinDelta() const { return min_delta; }
-    UInt32 getCardinality() const { return cardinality; }
-    UInt8 getDeltaBits() const { return delta_bits; }
-
-    bool empty() const { return cardinality == 0; }
-    bool hasRawDeltas() const { return cardinality <= max_raw_deltas; }
-
-    void serialize(WriteBuffer & ostr) const;
-    void deserialize(ReadBuffer & istr);
-
-    struct Iterator
+    enum Flags : UInt64
     {
-    public:
-        explicit Iterator(const CompressedPostings & postings_)
-            : postings(&postings_), row(postings->empty() ? 0 : postings->getMinDelta())
-        {
-        }
-
-        Iterator() : postings(nullptr), idx(0), row(0) {}
-
-        UInt32 getRow() const { return row; }
-        bool isValid() const { return idx < postings->getCardinality(); }
-
-        void next()
-        {
-            ++idx;
-            if (isValid())
-                row += postings->getDelta(idx);
-        }
-
-    private:
-        const CompressedPostings * postings;
-        UInt32 idx = 0;
-        UInt32 row = 0;
+        RawPostings = 1ULL << 0,
+        EmbeddedPostings = 1ULL << 1,
     };
 
-    Iterator getIterator() const { return Iterator(*this); }
-
-private:
-    UInt8 delta_bits = 0;
-    UInt32 cardinality = 0;
-    UInt32 min_delta = 0;
-    std::vector<UInt64> deltas_buffer;
+    static void serialize(UInt64 header, PostingList && postings, WriteBuffer & ostr);
+    static PostingList deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr);
 };
 
 struct TokenInfo
@@ -87,31 +44,29 @@ struct TokenInfo
 public:
     struct FuturePostings
     {
+        UInt64 header = 0;
         UInt32 cardinality = 0;
-        UInt8 delta_bits = 0;
         UInt64 offset_in_file = 0;
-
-        UInt32 getCardinality() const { return cardinality; }
     };
 
     TokenInfo() : postings(FuturePostings{}) {}
-    explicit TokenInfo(CompressedPostings postings_) : postings(std::move(postings_)) {}
+    explicit TokenInfo(PostingList postings_) : postings(std::move(postings_)) {}
     explicit TokenInfo(FuturePostings postings_) : postings(std::move(postings_)) {}
 
     UInt32 getCardinality() const;
     bool empty() const { return getCardinality() == 0; }
 
-    bool hasEmbeddedPostings() const { return std::holds_alternative<CompressedPostings>(postings); }
+    bool hasEmbeddedPostings() const { return std::holds_alternative<PostingList>(postings); }
     bool hasFuturePostings() const { return std::holds_alternative<FuturePostings>(postings); }
 
-    CompressedPostings & getEmbeddedPostings() { return std::get<CompressedPostings>(postings); }
+    PostingList & getEmbeddedPostings() { return std::get<PostingList>(postings); }
     FuturePostings & getFuturePostings() { return std::get<FuturePostings>(postings); }
 
-    const CompressedPostings & getEmbeddedPostings() const { return std::get<CompressedPostings>(postings); }
+    const PostingList & getEmbeddedPostings() const { return std::get<PostingList>(postings); }
     const FuturePostings & getFuturePostings() const { return std::get<FuturePostings>(postings); }
 
 private:
-    std::variant<CompressedPostings, FuturePostings> postings;
+    std::variant<PostingList, FuturePostings> postings;
 };
 
 struct DictionaryBlockBase

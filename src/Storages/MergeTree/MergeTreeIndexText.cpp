@@ -9,7 +9,6 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/logger_useful.h>
-#include <IO/BitHelpers.h>
 #include <base/range.h>
 
 namespace ProfileEvents
@@ -38,104 +37,21 @@ static size_t getBloomFilterSizeInBytes(size_t bits_per_row, size_t num_tokens)
     return std::max(1UL, (bits_per_row * num_tokens + atom_size - 1) / atom_size);
 }
 
-static constexpr UInt8 EMBEDDED_POSTINGS_FLAG = static_cast<UInt8>(1 << 6);
-
-CompressedPostings::CompressedPostings(UInt8 delta_bits_, UInt32 cardinality_)
-    : delta_bits(delta_bits_), cardinality(cardinality_)
-{
-    if (hasRawDeltas())
-    {
-        deltas_buffer.resize(num_cells_for_raw_deltas, 0);
-    }
-    else
-    {
-        size_t num_cells = getNumCellsForBitsPacked64(cardinality, delta_bits);
-        deltas_buffer.resize(num_cells, 0);
-    }
-}
-
-CompressedPostings::CompressedPostings(const roaring::Roaring & postings)
-{
-    cardinality = postings.cardinality();
-    std::vector<UInt32> raw_deltas(cardinality);
-
-    if (cardinality == 0)
-        return;
-
-    auto it = postings.begin();
-    min_delta = *it;
-    UInt32 prev = *it;
-    UInt32 max_delta = 0;
-
-    for (size_t i = 0; i < cardinality; ++i, ++it)
-    {
-        UInt32 delta = *it - prev;
-        max_delta = std::max(max_delta, delta);
-        raw_deltas[i] = delta;
-        prev = *it;
-    }
-
-    delta_bits = max_delta ? bitScanReverse(max_delta) + 1 : 0;
-
-    if (cardinality <= max_raw_deltas)
-    {
-        deltas_buffer.resize(num_cells_for_raw_deltas, 0);
-        memcpy(deltas_buffer.data(), raw_deltas.data(), sizeof(UInt32) * cardinality);
-        return;
-    }
-
-    size_t num_cells = getNumCellsForBitsPacked64(cardinality, delta_bits);
-    deltas_buffer.resize(num_cells, 0);
-
-    for (size_t i = 0; i < cardinality; ++i)
-        writeBitsPacked64(deltas_buffer.data(), i * delta_bits, raw_deltas[i]);
-}
-
-UInt32 CompressedPostings::getDelta(size_t idx) const
-{
-    if (hasRawDeltas())
-    {
-        return reinterpret_cast<const UInt32 *>(deltas_buffer.data())[idx];
-    }
-
-    return readBitsPacked64(deltas_buffer.data(), idx * delta_bits, delta_bits);
-}
-
-void CompressedPostings::serialize(WriteBuffer & ostr) const
-{
-    writeVarUInt(min_delta, ostr);
-
-    if (hasRawDeltas())
-    {
-        const auto * raw_deltas = reinterpret_cast<const UInt32 *>(deltas_buffer.data());
-        for (size_t i = 1; i < cardinality; ++i)
-            writeVarUInt(raw_deltas[i], ostr);
-    }
-    else
-    {
-        ostr.write(reinterpret_cast<const char *>(deltas_buffer.data()), sizeof(UInt64) * deltas_buffer.size());
-    }
-}
-
-void CompressedPostings::deserialize(ReadBuffer & istr)
-{
-    readVarUInt(min_delta, istr);
-
-    if (hasRawDeltas())
-    {
-        auto * raw_deltas = reinterpret_cast<UInt32 *>(deltas_buffer.data());
-        for (size_t i = 1; i < cardinality; ++i)
-            readVarUInt(raw_deltas[i], istr);
-    }
-    else
-    {
-        istr.readStrict(reinterpret_cast<char *>(deltas_buffer.data()), sizeof(UInt64) * deltas_buffer.size());
-    }
-}
+static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 16;
 
 UInt32 TokenInfo::getCardinality() const
 {
-    return std::visit([](const auto & arg) { return arg.getCardinality(); }, postings);
+    return std::visit([]<typename T>(const T & arg) -> UInt32
+    {
+        if constexpr (std::is_same_v<T, PostingList>)
+        {
+            return arg.cardinality();
+        }
+        else
+        {
+            return arg.cardinality;
+        }
+    }, postings);
 }
 
 bool DictionaryBlockBase::empty() const
@@ -199,6 +115,51 @@ DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenInfo> token
 {
 }
 
+void PostingsSerialization::serialize(UInt64 header, PostingList && postings, WriteBuffer & ostr)
+{
+    if (header & Flags::RawPostings)
+    {
+        for (const auto row_id : postings)
+            writeVarUInt(row_id, ostr);
+    }
+    else
+    {
+        postings.runOptimize();
+        size_t num_bytes = postings.getSizeInBytes();
+        writeVarUInt(num_bytes, ostr);
+
+        std::vector<char> memory(num_bytes);
+        postings.write(memory.data());
+        ostr.write(memory.data(), num_bytes);
+    }
+}
+
+PostingList PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr)
+{
+    if (header & Flags::RawPostings)
+    {
+        std::vector<UInt32> values(cardinality);
+        for (size_t i = 0; i < cardinality; ++i)
+            readVarUInt(values[i], istr);
+
+        PostingList postings;
+        postings.addMany(cardinality, values.data());
+        return postings;
+    }
+
+    size_t num_bytes;
+    readVarUInt(num_bytes, istr);
+
+    if (istr.position() && istr.position() + num_bytes <= istr.buffer().end())
+    {
+        return PostingList::read(istr.position());
+    }
+
+    std::vector<char> buf(num_bytes);
+    istr.readStrict(buf.data(), num_bytes);
+    return PostingList::read(buf.data());
+}
+
 MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_)
     : params(std::move(params_))
     , bloom_filter(params.bloom_filter_bits_per_row, params.bloom_filter_num_hashes, 0)
@@ -251,24 +212,22 @@ static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
 
     for (size_t i = 0; i < num_tokens; ++i)
     {
+        UInt64 header;
         UInt32 cardinality;
-        UInt8 delta_bits;
 
+        readVarUInt(header, istr);
         readVarUInt(cardinality, istr);
-        readVarUInt(delta_bits, istr);
 
-        if (delta_bits & EMBEDDED_POSTINGS_FLAG)
+        if (header & PostingsSerialization::EmbeddedPostings)
         {
-            delta_bits &= ~EMBEDDED_POSTINGS_FLAG;
-            CompressedPostings postings(delta_bits, cardinality);
-            postings.deserialize(istr);
+            auto postings = PostingsSerialization::deserialize(header, cardinality, istr);
             token_infos.emplace_back(std::move(postings));
         }
         else
         {
             UInt64 offset_in_file;
             readVarUInt(offset_in_file, istr);
-            token_infos.emplace_back(TokenInfo::FuturePostings{cardinality, delta_bits, offset_in_file});
+            token_infos.emplace_back(TokenInfo::FuturePostings{header, cardinality, offset_in_file});
         }
     }
 
@@ -476,22 +435,25 @@ DictionarySparseIndex serializeTokensAndPostings(
 
         for (size_t i = block_begin; i < block_end; ++i)
         {
-            const auto & postings = *tokens_and_postings[i].second;
-            CompressedPostings compressed_postings(postings);
+            auto & postings = *tokens_and_postings[i].second;
+            UInt32 cardinality = postings.cardinality();
 
-            UInt32 cardinality = compressed_postings.getCardinality();
-            UInt8 delta_bits = compressed_postings.getDeltaBits();
-
+            UInt64 header = 0;
+            bool raw_postings = cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS;
             bool embedded_postings = cardinality <= max_cardinality_for_embedded_postings;
-            if (embedded_postings)
-                delta_bits |= EMBEDDED_POSTINGS_FLAG;
 
+            if (raw_postings)
+                header |= PostingsSerialization::RawPostings;
+
+            if (embedded_postings)
+                header |= PostingsSerialization::EmbeddedPostings;
+
+            writeVarUInt(header, dictionary_stream.compressed_hashing);
             writeVarUInt(cardinality, dictionary_stream.compressed_hashing);
-            writeVarUInt(delta_bits, dictionary_stream.compressed_hashing);
 
             if (embedded_postings)
             {
-                compressed_postings.serialize(dictionary_stream.compressed_hashing);
+                PostingsSerialization::serialize(header, std::move(postings), dictionary_stream.compressed_hashing);
             }
             else
             {
@@ -501,7 +463,7 @@ DictionarySparseIndex serializeTokensAndPostings(
                 UInt64 offset_in_file = postings_mark.offset_in_compressed_file;
 
                 writeVarUInt(offset_in_file, dictionary_stream.compressed_hashing);
-                compressed_postings.serialize(postings_stream.compressed_hashing);
+                PostingsSerialization::serialize(header, std::move(postings), postings_stream.compressed_hashing);
             }
         }
     }

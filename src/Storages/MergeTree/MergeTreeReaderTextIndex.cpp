@@ -236,7 +236,7 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
         if (postings.hasEmbeddedPostings())
         {
             ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
-            granule.postings[token] = postings.getEmbeddedPostings().getIterator();
+            granule.postings.emplace(token, PostingsIteratorPair(postings.getEmbeddedPostings()));
             continue;
         }
 
@@ -248,9 +248,10 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
         auto * compressed_buffer = postings_stream->getCompressedDataBuffer();
 
         compressed_buffer->seek(future_postings.offset_in_file, 0);
-        auto & compressed_postings = granule.postings_holders.emplace_back(future_postings.delta_bits, future_postings.cardinality);
-        compressed_postings.deserialize(*data_buffer);
-        granule.postings[token] = compressed_postings.getIterator();
+        auto read_postings = PostingsSerialization::deserialize(future_postings.header, future_postings.cardinality, *data_buffer);
+
+        auto & postings_holder = granule.postings_holders.emplace_back(std::move(read_postings));
+        granule.postings.emplace(token, PostingsIteratorPair(postings_holder));
     }
 
     granule.need_read_postings = false;
@@ -272,10 +273,10 @@ void applyPostingsAny(
         if (it == postings_map.end())
             continue;
 
-        auto & postings_it = it->second;
-        for (; postings_it.isValid(); postings_it.next())
+        auto & [postings_it, postings_end] = it->second;
+        for (; postings_it != postings_end; ++postings_it)
         {
-            size_t row = postings_it.getRow();
+            size_t row = *postings_it;
             if (row < granule_offset)
                 continue;
 
@@ -299,7 +300,7 @@ void applyPostingsAll(
     if (postings_map.size() > std::numeric_limits<UInt16>::max())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many tokens ({}) for All search mode", postings_map.size());
 
-    std::vector<CompressedPostings::Iterator *> iterators;
+    std::vector<PostingsIteratorPair *> iterators;
 
     for (const auto & token : search_tokens)
     {
@@ -313,11 +314,11 @@ void applyPostingsAll(
     PaddedPODArray<UInt16> counters(num_rows, 0);
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
 
-    for (auto & postings_it : iterators)
+    for (auto & iters : iterators)
     {
-        for (; postings_it->isValid(); postings_it->next())
+        for (; iters->it != iters->end; ++iters->it)
         {
-            size_t row = postings_it->getRow();
+            size_t row = *iters->it;
             if (row < granule_offset)
                 continue;
 
