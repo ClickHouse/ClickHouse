@@ -137,56 +137,30 @@ bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const Memo &
 /// Make the same JOIN but with left and right inputs swapped
 std::unique_ptr<JoinStepLogical> cloneSwapped(const JoinStepLogical & join_step)
 {
+    /// Swap inputs
     auto left_input_header = join_step.getInputHeaders()[1];
     auto right_input_header = join_step.getInputHeaders()[0];
 #if 0
     JoinExpressionActions join_expression_actions(
         left_input_header->getColumnsWithTypeAndName(),
         right_input_header->getColumnsWithTypeAndName(),
-        join_step.getOutputHeader()->getColumnsWithTypeAndName());
+        join_step.getActionsDAG().clone());
 
-    std::vector<JoinPredicate> join_predicates;
-    for (const auto & predicate : join_step.getJoinInfo().expression.condition.predicates)
-    {
-        const auto * left_node = &join_expression_actions.left_pre_join_actions->findInOutputs(predicate.right_node.getColumnName());
-        const auto * right_node = &join_expression_actions.right_pre_join_actions->findInOutputs(predicate.left_node.getColumnName());
-
-        JoinPredicate join_predicate{
-            .left_node = JoinActionRef(left_node, join_expression_actions.left_pre_join_actions.get()),
-            .right_node = JoinActionRef(right_node, join_expression_actions.right_pre_join_actions.get()),
-            .op = PredicateOperator::Equals
-        };
-
-        join_predicates.emplace_back(std::move(join_predicate));
-    }
+    auto output_columns = join_step.getOutputHeader()->getNames();
 
     auto swapped_join_step = std::make_unique<JoinStepLogical>(
         left_input_header,
         right_input_header,
-        JoinInfo{
-            .expression = JoinExpression{
-                .condition = JoinCondition{
-                    .predicates = std::move(join_predicates),
-                    .left_filter_conditions = {},
-                    .right_filter_conditions = {},
-                    .residual_conditions = {}
-                },
-                .disjunctive_conditions = {}
-            },
-            .kind = JoinKind::Inner,
-            .strictness = JoinStrictness::All,
-            .locality = JoinLocality::Local
-        },
+        join_step.getJoinOperator(), /// FIXME: need to remap all expression-s to cloned ActionsDAG!
         std::move(join_expression_actions),
-        join_step.getOutputHeader()->getNames(),
-        join_step.useNulls(),
+        NameSet(output_columns.begin(), output_columns.end()),
+        /*changed_types*/ std::unordered_map<String, const ActionsDAG::Node *>{}, /// TODO:
+        /*use_nulls*/ false, /// TODO:
         join_step.getJoinSettings(),
         join_step.getSortingSettings());
 #else
     auto swapped_join_step = std::unique_ptr<JoinStepLogical>(dynamic_cast<JoinStepLogical*>(join_step.clone().release()));
-    auto inputs = swapped_join_step->getInputHeaders();
-    chassert(inputs.size() == 2);
-    swapped_join_step->updateInputHeaders({inputs[1], inputs[0]});
+    swapped_join_step->swapInputs();
 #endif
 
     return swapped_join_step;
