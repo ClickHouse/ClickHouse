@@ -1,14 +1,17 @@
 ---
-slug: /en/operations/system-tables/view_refreshes
+description: 'System table containing information about Refreshable Materialized Views.'
+keywords: ['system table', 'view_refreshes']
+slug: /operations/system-tables/view_refreshes
+title: 'system.view_refreshes'
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
-# view_refreshes
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.view_refreshes
 
 <SystemTableCloud/>
 
 Information about [Refreshable Materialized Views](../../sql-reference/statements/create/view.md#refreshable-materialized-view). Contains all refreshable materialized views, regardless of whether there's a refresh in progress or not.
-
 
 Columns:
 
@@ -28,7 +31,7 @@ Columns:
 - `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of bytes read during the current refresh. Not available if status is `RunningOnAnotherReplica`.
 - `total_rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Estimated total number of rows that need to be read by the current refresh. Not available if status is `RunningOnAnotherReplica`.
 - `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of rows written during the current refresh. Not available if status is `RunningOnAnotherReplica`.
-- `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number rof bytes written during the current refresh. Not available if status is `RunningOnAnotherReplica`.
+- `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of bytes written during the current refresh. Not available if status is `RunningOnAnotherReplica`.
 
 **Example**
 

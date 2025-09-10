@@ -12,13 +12,12 @@
 #include <Core/Defines.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/MemorySanitizer.h>
 
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
@@ -31,7 +30,7 @@
 
 /** NOTE HashTable could only be used for memmoveable (position independent) types.
   * Example: std::string is not position independent in libstdc++ with C++11 ABI or in libc++.
-  * Also, key in hash table must be of type, that zero bytes is compared equals to zero key.
+  * Also, key in hash table must be of a type, such as that zero bytes is compared equals to zero key.
   */
 
 

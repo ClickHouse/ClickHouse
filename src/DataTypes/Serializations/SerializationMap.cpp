@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeMap.h>
 
 #include <Common/StringUtils.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
@@ -41,11 +42,11 @@ static IColumn & extractNestedColumn(IColumn & column)
 
 void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const auto & map = field.safeGet<const Map &>();
+    const auto & map = field.safeGet<Map>();
     writeVarUInt(map.size(), ostr);
     for (const auto & elem : map)
     {
-        const auto & tuple = elem.safeGet<const Tuple>();
+        const auto & tuple = elem.safeGet<Tuple>();
         assert(tuple.size() == 2);
         key->serializeBinary(tuple[0], ostr, settings);
         value->serializeBinary(tuple[1], ostr, settings);
@@ -64,7 +65,7 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const
             size,
             settings.binary.max_binary_string_size);
     field = Map();
-    Map & map = field.safeGet<Map &>();
+    Map & map = field.safeGet<Map>();
     map.reserve(size);
     for (size_t i = 0; i < size; ++i)
     {
@@ -266,6 +267,12 @@ bool SerializationMap::tryDeserializeText(IColumn & column, ReadBuffer & istr, c
 
 void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    if (settings.json.write_map_as_array_of_tuples)
+    {
+        nested->serializeTextJSON(extractNestedColumn(column), row_num, ostr, settings);
+        return;
+    }
+
     serializeTextImpl(column, row_num, ostr,
         [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
         {
@@ -282,6 +289,12 @@ void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num,
 
 void SerializationMap::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
 {
+    if (settings.json.write_map_as_array_of_tuples)
+    {
+        nested->serializeTextJSONPretty(extractNestedColumn(column), row_num, ostr, settings, indent);
+        return;
+    }
+
     const auto & column_map = assert_cast<const ColumnMap &>(column);
 
     const auto & nested_array = column_map.getNestedColumn();
@@ -356,11 +369,20 @@ ReturnType SerializationMap::deserializeTextJSONImpl(IColumn & column, ReadBuffe
 
 void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    if (settings.json.read_map_as_array_of_tuples)
+    {
+        nested->deserializeTextJSON(extractNestedColumn(column), istr, settings);
+        return;
+    }
     deserializeTextJSONImpl<void>(column, istr, settings);
 }
 
 bool SerializationMap::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    if (settings.json.read_map_as_array_of_tuples)
+    {
+        return nested->tryDeserializeTextJSON(extractNestedColumn(column), istr, settings);
+    }
     return deserializeTextJSONImpl<bool>(column, istr, settings);
 }
 
@@ -464,13 +486,15 @@ void SerializationMap::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto & column_map = assert_cast<ColumnMap &>(*column->assumeMutable());
-    nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), limit, settings, state, cache);
+    const auto & column_map = assert_cast<const ColumnMap &>(*column);
+    ColumnPtr nested_ptr = column_map.getNestedColumnPtr();
+    nested->deserializeBinaryBulkWithMultipleStreams(nested_ptr, rows_offset, limit, settings, state, cache);
 }
 
 }

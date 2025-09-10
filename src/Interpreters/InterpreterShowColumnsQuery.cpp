@@ -7,7 +7,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowColumnsQuery.h>
-#include <Parsers/formatAST.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
@@ -156,12 +155,12 @@ WHERE
         rewritten_query += fmt::format("'{}'", query.like);
     }
     else if (query.where_expression)
-        rewritten_query += fmt::format(" AND ({})", query.where_expression);
+        rewritten_query += fmt::format(" AND ({})", query.where_expression->formatWithSecretsOneLine());
 
     rewritten_query += " ORDER BY field, type, null, key, default, extra";
 
     if (query.limit_length)
-        rewritten_query += fmt::format(" LIMIT {}", query.limit_length);
+        rewritten_query += fmt::format(" LIMIT {}", query.limit_length->formatWithSecretsOneLine());
 
     return rewritten_query;
 }

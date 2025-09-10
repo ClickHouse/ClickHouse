@@ -1,4 +1,4 @@
-#include "QueryProfiler.h"
+#include <Common/QueryProfiler.h>
 
 #include <IO/WriteHelpers.h>
 #include <base/defines.h>
@@ -56,12 +56,12 @@ namespace
             return;
         }
 
-        auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+        const auto saved_errno = errno; /// We must restore previous value of errno in signal handler.
 
 #if defined(OS_LINUX)
         if (info)
         {
-            int overrun_count = info->si_overrun;
+            const int overrun_count = info->si_overrun;
 
             /// Quickly drop if signal handler is called too frequently.
             /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.

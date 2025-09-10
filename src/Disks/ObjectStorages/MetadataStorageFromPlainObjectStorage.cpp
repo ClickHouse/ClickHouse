@@ -1,17 +1,19 @@
-#include "MetadataStorageFromPlainObjectStorage.h"
+#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
 
 #include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
 #include <Disks/ObjectStorages/StoredObject.h>
+#include <Storages/PartitionCommands.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/SipHash.h>
+#include <Common/logger_useful.h>
 
 #include <Common/filesystemHelpers.h>
+#include <IO/Expect404ResponseScope.h>
 
 #include <filesystem>
+
 
 namespace DB
 {
@@ -19,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -33,10 +36,12 @@ std::filesystem::path normalizeDirectoryPath(const std::filesystem::path & path)
 
 MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
     ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
-    : object_storage(object_storage_), storage_path_prefix(std::move(storage_path_prefix_))
+    : object_storage(object_storage_)
+    , storage_path_prefix(std::move(storage_path_prefix_))
+    , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
 {
     if (object_metadata_cache_size)
-        object_metadata_cache.emplace(object_metadata_cache_size);
+        object_metadata_cache.emplace(CurrentMetrics::end(), CurrentMetrics::end(), object_metadata_cache_size);
 }
 
 MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
@@ -46,7 +51,7 @@ MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction(
 
 const std::string & MetadataStorageFromPlainObjectStorage::getPath() const
 {
-    return storage_path_prefix;
+    return storage_path_full;
 }
 
 bool MetadataStorageFromPlainObjectStorage::existsFile(const std::string & path) const
@@ -88,6 +93,7 @@ uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path)
 
 std::optional<uint64_t> MetadataStorageFromPlainObjectStorage::getFileSizeIfExists(const String & path) const
 {
+    Expect404ResponseScope scope;  // 404 is not an error
     if (auto res = getObjectMetadataEntryWithCache(path))
         return res->file_size;
     return std::nullopt;
@@ -107,6 +113,11 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainObjectStorage::getLastMod
     if (existsFileOrDirectory(path))
         return Poco::Timestamp{};
     return std::nullopt;
+}
+
+bool MetadataStorageFromPlainObjectStorage::supportsPartitionCommand(const PartitionCommand & /*command*/) const
+{
+    return false;
 }
 
 std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(const std::string & path) const
@@ -140,6 +151,7 @@ DirectoryIteratorPtr MetadataStorageFromPlainObjectStorage::iterateDirectory(con
 {
     /// Required for MergeTree
     auto paths = listDirectory(path);
+
     /// Prepend path, since iterateDirectory() includes path, unlike listDirectory()
     std::for_each(paths.begin(), paths.end(), [&](auto & child) { child = fs::path(path) / child; });
     std::vector<std::filesystem::path> fs_paths(paths.begin(), paths.end());
@@ -214,6 +226,49 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std
     }
 }
 
+void MetadataStorageFromPlainObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
+{
+    if (metadata_storage.object_storage->isWriteOnce())
+        throwNotImplemented();
+
+    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
+        path_from, path_to, *metadata_storage.getPathMap(), object_storage));
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)
+{
+    if (metadata_storage.object_storage->isWriteOnce())
+        throwNotImplemented();
+
+    if (metadata_storage.existsDirectory(path_from))
+    {
+        moveDirectory(path_from, path_to);
+        return;
+    }
+
+    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
+        false, path_from, path_to, *metadata_storage.getPathMap(), object_storage));
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
+{
+    if (metadata_storage.object_storage->isWriteOnce())
+        throwNotImplemented();
+
+    if (metadata_storage.object_metadata_cache)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Replacing file is not supported with object metadata cache");
+
+    if (metadata_storage.existsDirectory(path_from))
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Replacing from directory is not supported {}", path_from);
+
+    if (metadata_storage.existsDirectory(path_to))
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Replacing to directory is not supported {}", path_to);
+
+    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
+        true, path_from, path_to, *metadata_storage.getPathMap(), object_storage));
+}
+
+
 void MetadataStorageFromPlainObjectStorageTransaction::createEmptyMetadataFile(const std::string & path)
 {
     if (metadata_storage.object_storage->isWriteOnce())
@@ -235,6 +290,15 @@ void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std
         return;
 
     auto normalized_path = normalizeDirectoryPath(path);
+    if (normalized_path.empty())
+    {
+        LOG_TRACE(
+            getLogger("MetadataStorageFromPlainObjectStorageTransaction"),
+            "Skipping creation of a directory '{}' with an empty normalized path",
+            path);
+        return;
+    }
+
     auto op = std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         std::move(normalized_path),
         *metadata_storage.getPathMap(),
@@ -279,8 +343,16 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTrans
     return result;
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::commit()
+void MetadataStorageFromPlainObjectStorageTransaction::commit(const TransactionCommitOptionsVariant & options)
 {
-    MetadataOperationsHolder::commitImpl(metadata_storage.metadata_mutex);
+    MetadataOperationsHolder::commitImpl(options, metadata_storage.metadata_mutex);
 }
+
+
+std::optional<StoredObjects>
+MetadataStorageFromPlainObjectStorageTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
+{
+    return metadata_storage.getStorageObjectsIfExist(path);
+}
+
 }

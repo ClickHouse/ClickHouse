@@ -1,6 +1,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/JSONCompactEachRowRowOutputFormat.h>
+#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <Formats/JSONUtils.h>
@@ -10,7 +11,7 @@ namespace DB
 
 
 JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         const FormatSettings & settings_,
         bool with_names_,
         bool with_types_)
@@ -123,12 +124,13 @@ void registerOutputFormatJSONCompactEachRow(FormatFactory & factory)
             factory.registerOutputFormat(format_name, [yield_strings, with_names, with_types](
                 WriteBuffer & buf,
                 const Block & sample,
-                const FormatSettings & format_settings)
+                const FormatSettings & format_settings,
+                FormatFilterInfoPtr /*format_filter_info*/)
             {
                 FormatSettings settings = format_settings;
                 settings.json.serialize_as_strings = yield_strings;
 
-                return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, settings, with_names, with_types);
+                return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings, with_names, with_types);
             });
 
             factory.markOutputFormatSupportsParallelFormatting(format_name);

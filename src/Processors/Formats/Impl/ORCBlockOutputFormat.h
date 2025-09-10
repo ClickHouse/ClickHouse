@@ -13,6 +13,9 @@
 namespace DB
 {
 
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
+using DataTypes = std::vector<DataTypePtr>;
 class WriteBuffer;
 
 
@@ -38,7 +41,7 @@ private:
 class ORCBlockOutputFormat : public IOutputFormat
 {
 public:
-    ORCBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    ORCBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "ORCBlockOutputFormat"; }
 

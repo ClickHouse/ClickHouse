@@ -1,7 +1,7 @@
 #include "config.h"
 
 #if USE_MONGODB
-#include "MongoDBSource.h"
+#include <Processors/Sources/MongoDBSource.h>
 
 #include <vector>
 
@@ -38,46 +38,46 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
     switch (type->getTypeId())
     {
         case TypeIndex::Int8:
-            assert_cast<ColumnInt8 &>(column).insertValue(BSONElementAsNumber<Int8, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt8 &>(column).insertValue(BSONElementAsNumber<Int8>(value.get_value(), name));
             break;
         case TypeIndex::UInt8:
-            assert_cast<ColumnUInt8 &>(column).insertValue(BSONElementAsNumber<UInt8, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt8 &>(column).insertValue(BSONElementAsNumber<UInt8>(value.get_value(), name));
             break;
         case TypeIndex::Int16:
-            assert_cast<ColumnInt16 &>(column).insertValue(BSONElementAsNumber<Int16, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt16 &>(column).insertValue(BSONElementAsNumber<Int16>(value.get_value(), name));
             break;
         case TypeIndex::UInt16:
-            assert_cast<ColumnUInt16 &>(column).insertValue(BSONElementAsNumber<UInt16, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt16 &>(column).insertValue(BSONElementAsNumber<UInt16>(value.get_value(), name));
             break;
         case TypeIndex::Int32:
-            assert_cast<ColumnInt32 &>(column).insertValue(BSONElementAsNumber<Int32, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt32 &>(column).insertValue(BSONElementAsNumber<Int32>(value.get_value(), name));
             break;
         case TypeIndex::UInt32:
-            assert_cast<ColumnUInt32 &>(column).insertValue(BSONElementAsNumber<UInt32, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt32 &>(column).insertValue(BSONElementAsNumber<UInt32>(value.get_value(), name));
             break;
         case TypeIndex::Int64:
-            assert_cast<ColumnInt64 &>(column).insertValue(BSONElementAsNumber<Int64, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt64 &>(column).insertValue(BSONElementAsNumber<Int64>(value.get_value(), name));
             break;
         case TypeIndex::UInt64:
-            assert_cast<ColumnUInt64 &>(column).insertValue(BSONElementAsNumber<UInt64, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt64 &>(column).insertValue(BSONElementAsNumber<UInt64>(value.get_value(), name));
             break;
         case TypeIndex::Int128:
-            assert_cast<ColumnInt128 &>(column).insertValue(BSONElementAsNumber<Int128, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt128 &>(column).insertValue(BSONElementAsNumber<Int128>(value.get_value(), name));
             break;
         case TypeIndex::UInt128:
-            assert_cast<ColumnUInt128 &>(column).insertValue(BSONElementAsNumber<UInt128, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt128 &>(column).insertValue(BSONElementAsNumber<UInt128>(value.get_value(), name));
             break;
         case TypeIndex::Int256:
-            assert_cast<ColumnInt256 &>(column).insertValue(BSONElementAsNumber<Int256, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnInt256 &>(column).insertValue(BSONElementAsNumber<Int256>(value.get_value(), name));
             break;
         case TypeIndex::UInt256:
-            assert_cast<ColumnUInt256 &>(column).insertValue(BSONElementAsNumber<UInt256, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnUInt256 &>(column).insertValue(BSONElementAsNumber<UInt256>(value.get_value(), name));
             break;
         case TypeIndex::Float32:
-            assert_cast<ColumnFloat32 &>(column).insertValue(BSONElementAsNumber<Float32, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnFloat32 &>(column).insertValue(BSONElementAsNumber<Float32>(value.get_value(), name));
             break;
         case TypeIndex::Float64:
-            assert_cast<ColumnFloat64 &>(column).insertValue(BSONElementAsNumber<Float64, bsoncxx::document::element>(value, name));
+            assert_cast<ColumnFloat64 &>(column).insertValue(BSONElementAsNumber<Float64>(value.get_value(), name));
             break;
         case TypeIndex::Date:
         {
@@ -117,16 +117,24 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
         }
         case TypeIndex::UUID:
         {
-            if (value.type() != bsoncxx::type::k_string)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected string (UUID), got {} for column {}",
+            if (value.type() != bsoncxx::type::k_binary)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected uuid(binary subtype 4), got {} for column {}",
                                 bsoncxx::to_string(value.type()), name);
+            if (value.get_binary().sub_type != bsoncxx::binary_sub_type::k_uuid || value.get_binary().size != 16)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Binary of type {} cannot be parsed to UUID for column {}",
+                    bsoncxx::to_string(value.get_binary().sub_type), name);
 
-            assert_cast<ColumnUUID &>(column).insertValue(parse<UUID>(value.get_string().value.data()));
+            UInt128 uuid_number;
+            auto valBuf = ReadBufferFromMemory(value.get_binary().bytes, value.get_binary().size);
+            readBinaryBigEndian(uuid_number.items[0], valBuf);
+            readBinaryBigEndian(uuid_number.items[1], valBuf);
+
+            assert_cast<ColumnUUID &>(column).insertValue(UUID(std::move(uuid_number)));
             break;
         }
         case TypeIndex::String:
         {
-            assert_cast<ColumnString &>(column).insert(BSONElementAsString(value, json_format_settings));
+            assert_cast<ColumnString &>(column).insert(BSONElementAsString(value.get_value(), json_format_settings));
             break;
         }
         case TypeIndex::Array:
@@ -149,15 +157,17 @@ MongoDBSource::MongoDBSource(
     const std::string & collection_name,
     const bsoncxx::document::view_or_value & query,
     const mongocxx::options::find & options,
-    const Block & sample_block_,
+    SharedHeader sample_block_,
     const UInt64 & max_block_size_)
     : ISource{sample_block_}
     , client{uri}
     , database{client.database(uri.database())}
     , collection{database.collection(collection_name)}
     , cursor{collection.find(query, options)}
-    , sample_block{sample_block_}
+    , sample_block{*sample_block_}
     , max_block_size{max_block_size_}
+    , db_json_format_settings{.json= {.max_depth = 0, .quote_64bit_integers = false}}
+    , json_format_settings{db_json_format_settings, 0, true, true}
 {
     for (const auto & idx : collections::range(0, sample_block.columns()))
     {

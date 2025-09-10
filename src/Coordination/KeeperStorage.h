@@ -60,7 +60,7 @@ struct NodeStats
 
     void setEphemeralOwner(int64_t ephemeral_owner)
     {
-        is_ephemeral_and_ctime.is_ephemeral = ephemeral_owner != 0;
+        is_ephemeral_and_ctime.is_ephemeral = true;
         ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
     }
 
@@ -124,7 +124,7 @@ private:
     /// node was created, we can use the MSB for a bool
     struct
     {
-        bool is_ephemeral : 1;
+        int64_t is_ephemeral : 1;
         int64_t ctime : 63;
     } is_ephemeral_and_ctime{false, 0};
 
@@ -251,8 +251,11 @@ struct KeeperMemNode
 
     void removeChild(StringRef child_path);
 
-    const auto & getChildren() const noexcept { return children; }
-    auto & getChildren() { return children; }
+    template <typename Self>
+    auto & getChildren(this Self & self)
+    {
+        return self.children;
+    }
 
     // Invalidate the calculated digest so it's recalculated again on the next
     // getDigest call
@@ -264,6 +267,11 @@ struct KeeperMemNode
     // copy only necessary information for preprocessing and digest calculation
     // (e.g. we don't need to copy list of children)
     void shallowCopy(const KeeperMemNode & other);
+
+    // copy data from node that is left only for snapshot write
+    // e.g. we don't need list of children when writing snapshots so we can
+    // move it to the new copy of node
+    KeeperMemNode copyFromSnapshotNode();
 private:
     ChildrenSet children{};
 };
@@ -497,9 +505,12 @@ public:
 
         Coordination::ACLs getACLs(StringRef path) const;
 
-        void applyDeltas(const std::list<Delta> & new_deltas);
-        void applyDelta(const Delta & delta);
+        void applyDeltas(const std::list<Delta> & new_deltas, uint64_t * digest);
+        void applyDelta(const Delta & delta, uint64_t * digest);
         void rollbackDelta(const Delta & delta);
+
+        /// Update digest with new nodes
+        UInt64 updateNodesDigest(UInt64 current_digest, UInt64 zxid) const;
 
         bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate) const;
 
@@ -507,7 +518,7 @@ public:
 
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path, bool should_lock_storage = true) const;
 
-        std::unordered_set<int64_t> closed_sessions;
+        std::unordered_map<int64_t, std::unordered_set<int64_t>> closed_sessions_to_zxids;
 
         struct UncommittedNode
         {
@@ -561,16 +572,13 @@ public:
     // Create node in the storage
     // Returns false if it failed to create the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
-    bool createNode(
-        const std::string & path,
-        String data,
-        const Coordination::Stat & stat,
-        Coordination::ACLs node_acls);
+    bool
+    createNode(const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest);
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
-    bool removeNode(const std::string & path, int32_t version);
+    bool removeNode(const std::string & path, int32_t version, bool update_digest);
 
     bool checkACL(StringRef path, int32_t permissions, int64_t session_id, bool is_local);
 
@@ -588,7 +596,7 @@ public:
         std::optional<int64_t> new_last_zxid,
         bool check_acl = true,
         bool is_local = false);
-    void preprocessRequest(
+    KeeperDigest preprocessRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
         int64_t time,

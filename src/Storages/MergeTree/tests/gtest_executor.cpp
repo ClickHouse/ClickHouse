@@ -6,6 +6,7 @@
 #include <random>
 #include <functional>
 
+#include <Common/Exception.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 
@@ -115,7 +116,7 @@ TEST(Executor, Simple)
 
     String schedule; // mutex is not required because we have a single worker
     String expected_schedule = "ABCDEABCDABCDBCDCDD";
-    std::barrier barrier(2);
+    std::barrier<std::__empty_completion> barrier(2);
     auto task = [&] (const String & name, size_t)
     {
         schedule += name;
@@ -197,7 +198,7 @@ TEST(Executor, RemoveTasksStress)
         CurrentMetrics::BackgroundMergesAndMutationsPoolSize
     );
 
-    std::barrier barrier(schedulers_count + removers_count);
+    std::barrier<std::__empty_completion> barrier(schedulers_count + removers_count);
 
     auto scheduler_routine = [&] ()
     {
@@ -250,7 +251,7 @@ TEST(Executor, UpdatePolicy)
 
     String schedule; // mutex is not required because we have a single worker
     String expected_schedule = "ABCDEDDDDDCCBACBACB";
-    std::barrier barrier(2);
+    std::barrier<std::__empty_completion> barrier(2);
     auto task = [&] (const String & name, size_t)
     {
         schedule += name;

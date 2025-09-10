@@ -82,18 +82,17 @@ struct SoundexImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        res_data.resize(input_rows_count * (length + 1));
+        res_data.resize(input_rows_count * length);
         res_offsets.resize(input_rows_count);
 
         size_t prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const char * value = reinterpret_cast<const char *>(&data[prev_offset]);
-            const size_t value_length = offsets[i] - prev_offset - 1;
-            const size_t out_index = i * (length + 1);
+            const size_t value_length = offsets[i] - prev_offset;
+            const size_t out_index = i * length;
             calculate(value, value_length, reinterpret_cast<char *>(&res_data[out_index]));
-            res_data[out_index + length] = '\0';
-            res_offsets[i] = (out_index + length + 1);
+            res_offsets[i] = out_index + length;
             prev_offset = offsets[i];
         }
     }
@@ -111,8 +110,30 @@ struct NameSoundex
 
 REGISTER_FUNCTION(Soundex)
 {
-    factory.registerFunction<FunctionStringToString<SoundexImpl, NameSoundex>>(
-        FunctionDocumentation{.description="Returns Soundex code of a string."}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the [Soundex code](https://en.wikipedia.org/wiki/Soundex) of a string.
+)";
+    FunctionDocumentation::Syntax syntax = "soundex(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "Input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the Soundex code of the input string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT soundex('aksel')",
+        R"(
+┌─soundex('aksel')─┐
+│ A240             │
+└──────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionStringToString<SoundexImpl, NameSoundex>>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 

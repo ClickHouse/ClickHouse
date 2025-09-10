@@ -1,3 +1,4 @@
+#include <Processors/Port.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -24,7 +25,7 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-OffsetStep::OffsetStep(const Header & input_header_, size_t offset_)
+OffsetStep::OffsetStep(const SharedHeader & input_header_, size_t offset_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , offset(offset_)
 {

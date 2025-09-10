@@ -12,7 +12,9 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaSettings.h>
@@ -231,7 +233,7 @@ void registerStorageKafka(StorageFactory & factory)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns. "
-                "See https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka/#configuration");
+                "See https://clickhouse.com/docs/engines/table-engines/integrations/kafka/#configuration");
         }
 
         const auto has_keeper_path = (*kafka_settings)[KafkaSetting::kafka_keeper_path].changed && !(*kafka_settings)[KafkaSetting::kafka_keeper_path].value.empty();
@@ -311,9 +313,45 @@ void registerStorageKafka(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .source_access_type = AccessType::KAFKA,
+            .source_access_type = AccessTypeObjects::Source::KAFKA,
             .has_builtin_setting_fn = KafkaSettings::hasBuiltin,
         });
+}
+
+template <typename RevocationCb, typename AssignmentCb>
+void stopConsumerImpl(
+    cppkafka::Consumer& consumer,
+    RevocationCb revocation_cb,
+    AssignmentCb assignment_cb,
+    const std::chrono::milliseconds drain_timeout,
+    const LoggerPtr& log,
+    StorageKafkaUtils::ErrorHandler error_handler)
+{
+    consumer.set_revocation_callback(revocation_cb);
+
+    consumer.set_assignment_callback(assignment_cb);
+
+    try
+    {
+        auto assignment = consumer.get_assignment();
+
+        if (!assignment.empty())
+        {
+            consumer.pause_partitions(assignment);
+
+            for (const auto& partition : assignment)
+            {
+                // that call disables the forwarding of the messages to the customer queue
+                consumer.get_partition_queue(partition);
+            }
+        }
+    }
+    catch (const cppkafka::HandleException & e)
+    {
+        LOG_ERROR(log, "Error during pause (stopConsumerImpl): {}", e.what());
+    }
+
+    StorageKafkaUtils::drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
 }
 
 namespace StorageKafkaUtils
@@ -332,6 +370,68 @@ String getDefaultClientId(const StorageID & table_id)
     return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id.database_name, table_id.table_name);
 }
 
+void consumerGracefulStop(
+    cppkafka::Consumer & consumer, const std::chrono::milliseconds drain_timeout, const LoggerPtr & log, ErrorHandler error_handler)
+{
+    // Note: librdkafka is very sensitive to the proper termination sequence and have some race conditions there.
+    // Before destruction, our objectives are:
+    //   (1) Process all outstanding callbacks by polling the event queue.
+    //   (2) Ensure that only special events (e.g. callbacks, rebalances) are polled (we don't want to poll regular messages).
+    //
+    // Previously, we performed an unsubscribe to stop message consumption and clear 'read' messages.
+    // However, unsubscribe triggers a rebalance that schedules additional background tasks, such as locking
+    // and removal of internal toppar queues. Meanwhile, polling to release callbacks may concurrently
+    // cause those same queues to be destroyed.
+    // This can lead to a situation where the background thread doing rebalance and the current thread doing polling access
+    // the toppar queues simultaneously, potentially locking them in a different order, which risks a deadlock.
+    //
+    // To mitigate this, we now:
+    //   (1) Avoid calling unsubscribe (letting rebalance occur naturally via consumer group timeout).
+    //   (2) Set up different rebalance callbacks to repeat (3) if a rebalance will occur before consumer destruction.
+    //   (3) Pause the consumer to stop processing new messages.
+    //   (4) Disconnect the toppar queues to reduce the risk of lock inversion (less cascading locks).
+    //   (5) Poll the event queue to process any remaining callbacks.
+
+    stopConsumerImpl(
+        consumer,
+        /*revocation*/ [](const cppkafka::TopicPartitionList &)
+        {
+            // we don't care during the destruction
+        },
+        /*assignment*/ [&consumer](const cppkafka::TopicPartitionList & topic_partitions)
+        {
+            if (!topic_partitions.empty())
+            {
+                consumer.pause_partitions(topic_partitions);
+            }
+
+            // it's not clear if get_partition_queue will work in that context
+            // as just after processing the callback cppkafka will call run assign
+            // and that can reset the queues
+        },
+        drain_timeout, log, std::move(error_handler));
+}
+
+void consumerStopWithoutRebalance(
+    cppkafka::Consumer & consumer, const std::chrono::milliseconds drain_timeout, const LoggerPtr & log, ErrorHandler error_handler)
+{
+    stopConsumerImpl(
+        consumer,
+        /*revocation*/ [](const cppkafka::TopicPartitionList &)
+        {
+            // we don't care during the destruction
+        },
+        /*assignment*/ [](const cppkafka::TopicPartitionList &)
+        {
+            // we don't care during the destruction
+        },
+        drain_timeout, log, std::move(error_handler));
+}
+
+// Needed to drain rest of the messages / queued callback calls from the consumer after unsubscribe, otherwise consumer
+// will hang on destruction. Partition queues doesn't have to be attached as events are not handled by those queues.
+// see https://github.com/edenhill/librdkafka/issues/2077
+//     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
 void drainConsumer(
     cppkafka::Consumer & consumer, const std::chrono::milliseconds drain_timeout, const LoggerPtr & log, ErrorHandler error_handler)
 {
@@ -370,7 +470,7 @@ void drainConsumer(
     }
 }
 
-void eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler error_handler)
+size_t eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler error_handler)
 {
     size_t skipped = std::erase_if(
         messages,
@@ -388,6 +488,8 @@ void eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler
 
     if (skipped)
         LOG_ERROR(log, "There were {} messages with an error", skipped);
+
+    return skipped;
 }
 
 SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const String & schema_name)
@@ -426,13 +528,12 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
     return result;
 }
 
-
 bool checkDependencies(const StorageID & table_id, const ContextPtr& context)
 {
     // Check if all dependencies are attached
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
     if (view_ids.empty())
-        return true;
+        return false;
 
     // Check the dependencies are ready?
     for (const auto & view_id : view_ids)
@@ -445,15 +546,10 @@ bool checkDependencies(const StorageID & table_id, const ContextPtr& context)
         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
             return false;
-
-        // Check all its dependencies
-        if (!checkDependencies(view_id, context))
-            return false;
     }
 
     return true;
 }
-
 
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {

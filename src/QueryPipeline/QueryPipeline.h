@@ -1,7 +1,10 @@
 #pragma once
+
+#include <Core/Block_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+
 #include <functional>
 
 namespace DB
@@ -35,7 +38,7 @@ class ReadProgressCallback;
 struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
-class QueryCacheWriter;
+class QueryResultCacheWriter;
 
 class SourceFromChunks;
 
@@ -98,6 +101,7 @@ public:
 
     /// Only for pushing and pulling.
     Block getHeader() const;
+    SharedHeader getSharedHeader() const;
 
     size_t getNumThreads() const { return num_threads; }
     void setNumThreads(size_t num_threads_) { num_threads = num_threads_; }
@@ -110,9 +114,9 @@ public:
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
 
-    void writeResultIntoQueryCache(std::shared_ptr<QueryCacheWriter> query_cache_writer);
-    void finalizeWriteInQueryCache();
-    void readFromQueryCache(
+    void writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer);
+    void finalizeWriteInQueryResultCache();
+    void readFromQueryResultCache(
         std::unique_ptr<SourceFromChunks> source,
         std::unique_ptr<SourceFromChunks> source_totals,
         std::unique_ptr<SourceFromChunks> source_extremes);

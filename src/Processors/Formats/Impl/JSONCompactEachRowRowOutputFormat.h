@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <IO/WriteBuffer.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 #include <Formats/FormatSettings.h>
@@ -10,6 +8,9 @@
 namespace DB
 {
 
+class Block;
+class WriteBuffer;
+
 /** The stream for outputting data in JSON format, by JSON array per line.
   */
 class JSONCompactEachRowRowOutputFormat : public RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>
@@ -17,7 +18,7 @@ class JSONCompactEachRowRowOutputFormat : public RowOutputFormatWithExceptionHan
 public:
     JSONCompactEachRowRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         const FormatSettings & settings_,
         bool with_names_,
         bool with_types_);

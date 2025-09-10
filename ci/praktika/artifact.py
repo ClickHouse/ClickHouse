@@ -20,6 +20,7 @@ class Artifact:
         name: str
         type: str
         path: Union[str, List[str]]
+        compress_zst: bool = False
         _provided_by: str = ""
         _s3_path: str = ""
 

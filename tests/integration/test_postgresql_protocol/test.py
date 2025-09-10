@@ -4,8 +4,11 @@ import datetime
 import decimal
 import logging
 import os
+import random
 import uuid
+from io import StringIO
 
+import psycopg
 import psycopg2 as py_psql
 import psycopg2.extras
 import pytest
@@ -21,7 +24,7 @@ cluster = ClickHouseCluster(__file__)
 cluster.add_instance(
     "node",
     main_configs=[
-        "configs/postresql.xml",
+        "configs/postgresql.xml",
         "configs/log.xml",
         "configs/ssl_conf.xml",
         "configs/dhparam.pem",
@@ -31,7 +34,21 @@ cluster.add_instance(
     user_configs=["configs/default_passwd.xml"],
     with_postgres=True,
     with_postgresql_java_client=True,
-    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
+)
+
+cluster.add_instance(
+    "node_secure",
+    main_configs=[
+        "configs/postgresql_secure.xml",
+        "configs/log.xml",
+        "configs/ssl_conf.xml",
+        "configs/dhparam.pem",
+        "configs/server.crt",
+        "configs/server.key",
+    ],
+    user_configs=["configs/default_passwd.xml"],
+    with_postgres=True,
+    with_postgresql_java_client=True,
 )
 
 server_port = 5433
@@ -70,7 +87,7 @@ def test_psql_client(started_cluster):
         )
     cmd_prefix = [
         "/usr/bin/psql",
-        f"sslmode=require host={node.hostname} port={server_port} user=default dbname=default password=123",
+        f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
     ]
     cmd_prefix += ["--no-align", "--field-separator=' '"]
 
@@ -133,6 +150,86 @@ def test_psql_client(started_cluster):
         ]
     )
 
+def test_psql_client_secure(started_cluster):
+    node = cluster.instances["node_secure"]
+
+    started_cluster.copy_file_to_container(
+        started_cluster.postgres_id,
+        os.path.join(SCRIPT_DIR, "queries", "query1.sql"),
+        "/query1.sql",
+    )
+
+    cmd_prefix = [
+        "/usr/bin/psql",
+        f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
+    ]
+    cmd_prefix += ["--no-align", "--field-separator=' '"]
+
+    res = started_cluster.exec_in_container(
+        started_cluster.postgres_id, cmd_prefix + ["-f", "/query1.sql"], shell=True
+    )
+    logging.debug(res)
+    assert res == "\n".join(["a", "1", "(1 row)", ""])
+
+
+    postgres_container = started_cluster.get_docker_handle(started_cluster.postgres_id);
+
+    cmd_prefix = [
+        "/usr/bin/psql",
+        f"sslmode=disable host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
+    ]
+    cmd_prefix += ["--no-align", "--field-separator=' '"]
+
+    code, (stdout, stderr) = postgres_container.exec_run(cmd_prefix + ["-f", "/query1.sql"], demux=True,)
+    logging.debug(f"test_psql_client_secure code:{code} stdout:{stdout}, stderr:{stderr}")
+    assert (
+        "ERROR:  SSL connection required.\n"
+        in stderr.decode()
+    )
+
+    assert node.contains_in_log(
+        f"<Error> PostgreSQLHandler: DB::Exception: SSL connection required."
+    )
+
+
+def test_new_user(started_cluster):
+    node = cluster.instances["node"]
+
+    db_id = f"x_{random.randint(0, 1000000)}"
+
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    cur = ch.cursor()
+    cur.execute(f"CREATE DATABASE {db_id}")
+    cur.execute(f"USE {db_id}")
+    cur.execute("CREATE USER IF NOT EXISTS name7 IDENTIFIED WITH scram_sha256_password BY 'my_password'")
+
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="name7",
+        password="my_password",
+        database=db_id,
+    )
+    cur = ch.cursor()
+    cur.execute("select 1;")
+    assert cur.fetchall() == [(1,)]
+
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    cur = ch.cursor()
+    cur.execute(f"DROP DATABASE {db_id}")
+
 
 def test_python_client(started_cluster):
     node = cluster.instances["node"]
@@ -182,6 +279,99 @@ def test_python_client(started_cluster):
         uuid.UUID("61f0c404-5cb3-11e7-907b-a6006ad3dba0"),
     )
     cur.execute("DROP DATABASE x")
+
+
+def test_prepared_statement(started_cluster):
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("drop table if exists test;")
+
+    cur.execute(
+        """CREATE TABLE test(
+            id INT
+        ) ENGINE = Memory;"""
+    )
+
+    cur.execute("INSERT INTO test (id) VALUES (1), (2), (3);")
+
+    cur.execute("SELECT * FROM test WHERE id > %s;", ('2',), prepare=True)
+    assert cur.fetchall() == [(3,)]
+
+    cur.execute("PREPARE select_test AS SELECT * FROM test WHERE id = $1;")
+    cur.execute("EXECUTE select_test(1);")
+    assert cur.fetchall() == [(1,)]
+
+    cur.execute("DEALLOCATE select_test;")
+    with pytest.raises(Exception) as exc:
+        cur.execute("EXECUTE select_test(1);")
+
+
+def test_copy_command(started_cluster):
+    node = cluster.instances["node"]
+
+    ch = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    cur = ch.cursor()
+    file_index = random.randint(0, 100000000)
+
+    cur.execute("CREATE DATABASE copy_x")
+    cur.execute("USE copy_x")
+
+    cur.execute("drop table if exists test;")
+    cur.execute("drop table if exists test_recreated;")
+
+    # test copy to -> copy from cycle for simple table
+    cur.execute("create table test (x UInt32) engine=Memory();")
+    cur.execute("insert into test values (42),(43),(44),(45);")
+    cur.execute("select * from test order by x;")
+    assert cur.fetchall() == [(42,), (43,), (44,), (45,)]
+
+    with open(f"out_{file_index}.tsv", "w") as f:
+        cur.copy_to(file=f, table="test")
+    with open(f"out_{file_index}.tsv", "r") as f:
+        assert f.read() == "42\n43\n44\n45\n"
+
+    cur.execute("create table test_recreated (x UInt32) engine=Memory();")
+    data_to_copy = "1\n2\n3\n4\n5\n"
+    cur.copy_from(StringIO(data_to_copy), "test_recreated", columns=("x",))
+    cur.execute("select * from test_recreated order by x;")
+
+    assert cur.fetchall() == [(1,), (2,), (3,), (4,), (5,)]
+
+    cur.execute("drop table if exists test;")
+    cur.execute("drop table if exists test_recreated;")
+
+    # test copy to -> copy from cycle for complex table
+    cur.execute("create table test (x UInt32, y String) engine=Memory();")
+    cur.execute("insert into test values (42,'a'),(43,'b'),(44,'c'),(45,'d');")
+    cur.execute("select * from test order by x;")
+
+    assert cur.fetchall() == [(42, "a"), (43, "b"), (44, "c"), (45, "d")]
+
+    with open(f"out_{file_index + 1}.tsv", "w") as f:
+        cur.copy_to(file=f, table="test")
+    with open(f"out_{file_index + 1}.tsv", "r") as f:
+        assert f.read() == '42\ta\n43\tb\n44\tc\n45\td\n'
+
+    cur.execute("create table test_recreated (x UInt32, y String) engine=Memory();")
+    data_to_copy = "1\ta\n2\tb\n3\tc\n"
+    cur.copy_from(StringIO(data_to_copy), "test_recreated", columns=("x","y"))
+    cur.execute("select * from test_recreated order by x;")
+
+    assert cur.fetchall() == [(1, "a"), (2, "b"), (3, "c")]
+    cur.execute("DROP DATABASE copy_x")
 
 
 def test_java_client(started_cluster):

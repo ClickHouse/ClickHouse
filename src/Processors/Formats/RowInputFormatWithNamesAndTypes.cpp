@@ -17,8 +17,9 @@
 #include <Processors/Formats/Impl/JSONCompactRowInputFormat.h>
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
-#include <fmt/format.h>
 
+#include <fmt/format.h>
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -55,7 +56,7 @@ namespace
 
 template <typename FormatReaderImpl>
 RowInputFormatWithNamesAndTypes<FormatReaderImpl>::RowInputFormatWithNamesAndTypes(
-    const Block & header_,
+    SharedHeader header_,
     ReadBuffer & in_,
     const Params & params_,
     bool is_binary_,
@@ -67,7 +68,7 @@ RowInputFormatWithNamesAndTypes<FormatReaderImpl>::RowInputFormatWithNamesAndTyp
     bool allow_variable_number_of_columns_)
     : RowInputFormatWithDiagnosticInfo(header_, in_, params_)
     , format_settings(format_settings_)
-    , data_types(header_.getDataTypes())
+    , data_types(header_->getDataTypes())
     , with_names(with_names_)
     , with_types(with_types_)
     , format_reader(std::move(format_reader_))
@@ -75,7 +76,7 @@ RowInputFormatWithNamesAndTypes<FormatReaderImpl>::RowInputFormatWithNamesAndTyp
     , try_detect_header(try_detect_header_)
     , allow_variable_number_of_columns(allow_variable_number_of_columns_)
 {
-    column_indexes_by_names = getPort().getHeader().getNamesToIndexesMap();
+    column_indexes_by_names = getNamesToIndexesMap(getPort().getHeader());
 }
 
 template <typename FormatReaderImpl>

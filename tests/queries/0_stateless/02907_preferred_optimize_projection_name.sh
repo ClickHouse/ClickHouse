@@ -44,20 +44,20 @@ SELECT test_string
 FROM test_opt_proj
 WHERE (test_id > 50)
     AND (test_id < 150)
-GROUP BY test_string;"
+GROUP BY test_string SETTINGS parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;"
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS;"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log;"
 
 $CLICKHOUSE_CLIENT -q "
 SELECT projections
 FROM system.query_log
-WHERE query_id = '02907_test_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
+WHERE initial_query_id = '02907_test_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
 LIMIT 1;" | grep -o "projection_test_by_string" || true
 
 $CLICKHOUSE_CLIENT -q "
 SELECT projections
 FROM system.query_log 
-WHERE query_id = '02907_test_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
+WHERE initial_query_id = '02907_test_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
 LIMIT 1;" | grep -o "projection_test_by_more" || true
 
 echo "Executing query with setting"
@@ -67,20 +67,20 @@ SELECT test_string
 FROM test_opt_proj
 WHERE (test_id > 50)
     AND (test_id < 150)
-GROUP BY test_string;"
+GROUP BY test_string SETTINGS parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;"
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS;"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log;"
 
 $CLICKHOUSE_CLIENT -q "
 SELECT projections
 FROM system.query_log
-WHERE query_id = '02907_test_1_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
+WHERE initial_query_id = '02907_test_1_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
 LIMIT 1;" | grep -o "projection_test_by_more" || true
 
 $CLICKHOUSE_CLIENT -q "
 SELECT projections
 FROM system.query_log
-WHERE query_id = '02907_test_1_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
+WHERE initial_query_id = '02907_test_1_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
 LIMIT 1" | grep -o "projection_test_by_string" || true
 
 echo "Executing query with wrong projection"
@@ -90,18 +90,18 @@ SELECT test_string
 FROM test_opt_proj
 WHERE (test_id > 50)
     AND (test_id < 150)
-GROUP BY test_string;"
+GROUP BY test_string SETTINGS parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;"
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS;"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log;"
 
 $CLICKHOUSE_CLIENT -q "
 SELECT projections
 FROM system.query_log
-WHERE query_id = '02907_test_2_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
+WHERE initial_query_id = '02907_test_2_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
 LIMIT 1;" | grep -o "projection_test_by_string" || true
 
 $CLICKHOUSE_CLIENT -q "
 SELECT projections
 FROM system.query_log 
-WHERE query_id = '02907_test_2_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
+WHERE initial_query_id = '02907_test_2_$CLICKHOUSE_DATABASE' AND current_database=currentDatabase()
 LIMIT 1;" | grep -o "projection_test_by_more" || true

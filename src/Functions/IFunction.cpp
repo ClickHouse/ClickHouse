@@ -1,5 +1,4 @@
 #include <Functions/FunctionDynamicAdaptor.h>
-#include <Functions/IFunctionAdaptors.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -49,9 +48,11 @@ extern const SettingsDouble short_circuit_function_evaluation_for_nulls_threshol
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -71,14 +72,14 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     size_t num_rows = input_rows_count;
     ColumnPtr indexes;
 
-    /// Find first LowCardinality column and replace it to nested dictionary.
+    /// Find first LowCardinality column and replace it with nested dictionary.
     for (auto & column : args)
     {
         if (const auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
         {
-            /// Single LowCardinality column is supported now.
+            /// Only a single LowCardinality column is supported now.
             if (indexes)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected single dictionary argument for function.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Default functions implementation for LowCardinality is supported only with a single LowCardinality argument.");
 
             const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
 
@@ -209,9 +210,11 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
     if (null_presence.has_nullable)
     {
-        /// Usually happens during analyzing. We should return non-const column to avoid wrong constant folding.
         if (input_rows_count == 0)
+        {
+            /// We are not sure if it is const column or not if has_nullable is true.
             return result_type->createColumn();
+        }
 
         bool all_columns_constant = true;
         bool all_numeric_types = true;
@@ -283,13 +286,18 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         {
             /// If short circuit is enabled, we only execute the function on rows with all arguments not null
 
+            /// Generate Filter
+            IColumn::Filter filter_mask(input_rows_count);
+            for (size_t i = 0; i < input_rows_count; ++i)
+                filter_mask[i] = !result_null_map_data[i];
+
             /// Filter every column by mask
             for (auto & col : temporary_columns)
-                col.column = col.column->filter(result_null_map_data, rows_without_nulls);
+                col.column = col.column->filter(filter_mask, rows_without_nulls);
 
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, rows_without_nulls, dry_run);
             auto mutable_res = IColumn::mutate(std::move(res));
-            mutable_res->expand(result_null_map_data, false);
+            mutable_res->expand(filter_mask, false);
 
             auto new_res = wrapInNullable(std::move(mutable_res), std::move(result_null_map));
             return new_res;
@@ -504,6 +512,21 @@ ColumnPtr IFunctionBase::execute(const DB::ColumnsWithTypeAndName& arguments, co
     return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
 }
 
+const Array & IFunctionBase::getParameters() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IFunctionBase doesn't support getParameters method");
+}
+
+IFunctionBase::Monotonicity IFunctionBase::getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its monotonicity", getName());
+}
+
+FieldIntervalPtr IFunctionBase::getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", getName());
+}
+
 void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_arguments) const
 {
     if (isVariadic())
@@ -621,8 +644,48 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
     return getReturnTypeImpl(arguments);
 }
 
+void IFunctionOverloadResolver::getLambdaArgumentTypesImpl(DataTypes & arguments [[maybe_unused]]) const
+{
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} can't have lambda-expressions as arguments", getName());
+}
+
+FunctionBasePtr IFunctionOverloadResolver::buildImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "buildImpl is not implemented for {}", getName());
+}
+
+DataTypePtr IFunctionOverloadResolver::getReturnTypeImpl(const DataTypes & /*arguments*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
+}
+
+IFunctionBase::Monotonicity IFunction::getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its monotonicity", getName());
+}
+
+FieldIntervalPtr IFunction::getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", getName());
+}
+
+DataTypePtr IFunction::getReturnTypeImpl(const DataTypes & /*arguments*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
+}
+
+void IFunction::getLambdaArgumentTypes(DataTypes & /*arguments*/) const
+{
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} can't have lambda-expressions as arguments", getName());
+}
+
 
 #if USE_EMBEDDED_COMPILER
+
+llvm::Value * IFunctionBase::compile(llvm::IRBuilderBase & /*builder*/, const ValuesWithType & /*arguments*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+}
 
 static std::optional<DataTypes> removeNullables(const DataTypes & types)
 {
@@ -706,6 +769,11 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
     }
 
     return compileImpl(builder, arguments, result_type);
+}
+
+llvm::Value * IFunction::compileImpl(llvm::IRBuilderBase & /*builder*/, const ValuesWithType & /*arguments*/, const DataTypePtr & /*result_type*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
 }
 
 #endif

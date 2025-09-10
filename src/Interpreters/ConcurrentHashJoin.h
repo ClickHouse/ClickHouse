@@ -2,8 +2,6 @@
 
 #include <memory>
 #include <Analyzer/IQueryTreeNode.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
@@ -18,7 +16,7 @@ namespace DB
 struct SelectQueryInfo;
 
 /**
- * The default `HashJoin` is not thread-safe for inserting the right table’s rows; thus, it is done on a single thread.
+ * The default `HashJoin` is not thread-safe for inserting the right table's rows; thus, it is done on a single thread.
  * When the right table is large, the join process is too slow.
  *
  * `ConcurrentHashJoin` can run `addBlockToJoin()` concurrently to speed up the join process. On the test, it scales almost linearly.
@@ -28,7 +26,7 @@ struct SelectQueryInfo;
  * that every `HashJoin` instance is written only from one thread at a time.
  *
  * When matching the left table, the input blocks are also split by hash and routed to corresponding `HashJoin` instances.
- * This introduces some noticeable overhead compared to the `hash` join algorithm that doesn’t have to split. Then,
+ * This introduces some noticeable overhead compared to the `hash` join algorithm that doesn't have to split. Then,
  * we introduced the following optimization. On the probe stage, we want to have the same execution as for the `hash` join algorithm,
  * i.e., we want to have a single shared hash map that we will read from each thread. No splitting of blocks is required.
  * We should somehow divide this shared hash map between threads so that we can still execute the build stage concurrently.
@@ -44,10 +42,9 @@ class ConcurrentHashJoin : public IJoin
 
 public:
     explicit ConcurrentHashJoin(
-        ContextPtr context_,
         std::shared_ptr<TableJoin> table_join_,
         size_t slots_,
-        const Block & right_sample_block,
+        SharedHeader right_sample_block,
         const StatsCollectingParams & stats_collecting_params_,
         bool any_take_last_row_ = false);
 
@@ -57,7 +54,7 @@ public:
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool addBlockToJoin(const Block & right_block_, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
-    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
+    JoinResultPtr joinBlock(Block block) override;
     void setTotals(const Block & block) override;
     const Block & getTotals() const override;
     size_t getTotalRowCount() const override;
@@ -65,20 +62,22 @@ public:
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
 
-    bool isScatteredJoin() const override { return true; }
-    void joinBlock(Block & block, ExtraScatteredBlocks & extra_blocks, std::vector<Block> & res) override;
-
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     bool isCloneSupported() const override
     {
-        return !getTotals() && getTotalRowCount() == 0;
+        return getTotals().empty() && getTotalRowCount() == 0;
     }
 
-    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_, const Block &, const Block & right_sample_block_) const override
+    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const override
     {
-        return std::make_shared<ConcurrentHashJoin>(context, table_join_, slots, right_sample_block_, stats_collecting_params);
+        return std::make_shared<ConcurrentHashJoin>(table_join_, slots, right_sample_block_, stats_collecting_params);
+    }
+
+    std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const override
+    {
+        return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row);
     }
 
     void onBuildPhaseFinish() override;
@@ -91,11 +90,12 @@ public:
     };
 
 private:
-    ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
+    bool any_take_last_row;
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
+    bool build_phase_finished = false;
 
     StatsCollectingParams stats_collecting_params;
 
@@ -105,8 +105,7 @@ private:
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
 };
 
+// The following two methods are deprecated and hopefully will be removed in the future.
 IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info);
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash);
-UInt64 calculateCacheKey(
-    std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info);
 }

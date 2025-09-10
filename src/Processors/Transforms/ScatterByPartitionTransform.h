@@ -1,14 +1,16 @@
 #pragma once
-#include <Common/WeakHash.h>
+#include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
+#include <Common/WeakHash.h>
 
 namespace DB
 {
 
 struct ScatterByPartitionTransform : IProcessor
 {
-    ScatterByPartitionTransform(Block header, size_t output_size_, ColumnNumbers key_columns_);
+    ScatterByPartitionTransform(SharedHeader header, size_t output_size_, ColumnNumbers key_columns_);
 
     String getName() const override { return "ScatterByPartitionTransform"; }
 

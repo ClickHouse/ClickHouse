@@ -40,7 +40,7 @@ INSERT INTO trace_log values ('2020-10-06','2020-10-06 13:43:39','2020-10-06 13:
 set allow_introspection_functions = 1;
 
 -- make sure query_log exists
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 WITH concat(addressToLine(arrayJoin(trace) AS addr), '#') AS symbol
 SELECT count() > 7
@@ -73,7 +73,7 @@ WHERE greaterOrEquals(event_date, ignore(ignore(ignore(NULL, '')), 256), yesterd
 
 DROP TABLE IF EXISTS trace_log;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 WITH
     (
@@ -112,7 +112,7 @@ WITH (
         LIMIT 1
     ) AS t)
 SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', '')
-SETTINGS allow_experimental_analyzer = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SETTINGS enable_analyzer = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 WITH (
     (

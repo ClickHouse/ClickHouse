@@ -1,4 +1,4 @@
-#include "MySQLDictionarySource.h"
+#include <Dictionaries/MySQLDictionarySource.h>
 
 
 #if USE_MYSQL
@@ -6,10 +6,11 @@
 #endif
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "registerDictionaries.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <Core/Settings.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
@@ -24,7 +25,7 @@
 #include <Common/LocalDateTime.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
-#include "readInvalidateQuery.h"
+#include <Dictionaries/readInvalidateQuery.h>
 
 
 namespace DB
@@ -66,7 +67,8 @@ static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allow
 
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=]([[maybe_unused]] const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                   [[maybe_unused]] const DictionaryStructure & dict_struct,
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
@@ -136,6 +138,9 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                     addresses,
                     named_collection->getAnyOrDefault<String>({"user", "username"}, ""),
                     named_collection->getOrDefault<String>("password", ""),
+                    named_collection->getOrDefault<String>("ssl_ca", ""),
+                    named_collection->getOrDefault<String>("ssl_cert", ""),
+                    named_collection->getOrDefault<String>("ssl_key", ""),
                     mysql_settings));
         }
         else

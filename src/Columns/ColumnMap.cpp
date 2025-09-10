@@ -81,7 +81,7 @@ void ColumnMap::get(size_t n, Field & res) const
     size_t size = offsets[n] - offsets[n - 1];
 
     res = Map();
-    auto & map = res.safeGet<Map &>();
+    auto & map = res.safeGet<Map>();
     map.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -128,7 +128,7 @@ void ColumnMap::insertData(const char *, size_t)
 
 void ColumnMap::insert(const Field & x)
 {
-    const auto & map = x.safeGet<const Map &>();
+    const auto & map = x.safeGet<Map>();
     nested->insert(Array(map.begin(), map.end()));
 }
 
@@ -137,7 +137,7 @@ bool ColumnMap::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Map)
         return false;
 
-    const auto & map = x.safeGet<const Map &>();
+    const auto & map = x.safeGet<Map>();
     return nested->tryInsert(Array(map.begin(), map.end()));
 }
 
@@ -158,6 +158,11 @@ StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const
 char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory) const
 {
     return nested->serializeValueIntoMemory(n, memory);
+}
+
+std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n) const
+{
+    return nested->getSerializedValueSize(n);
 }
 
 const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
@@ -286,13 +291,13 @@ size_t ColumnMap::capacity() const
     return nested->capacity();
 }
 
-void ColumnMap::prepareForSquashing(const Columns & source_columns)
+void ColumnMap::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
-    nested->prepareForSquashing(nested_source_columns);
+    nested->prepareForSquashing(nested_source_columns, factor);
 }
 
 void ColumnMap::shrinkToFit()

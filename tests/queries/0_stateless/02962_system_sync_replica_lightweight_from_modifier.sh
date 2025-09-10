@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-fasttest
+# Tags: zookeeper, no-parallel, no-fasttest, no-shared-merge-tree
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,20 +18,25 @@ for i in $(seq $TOTAL_REPLICAS); do
 done
 
 function insert_thread() {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         REPLICA=$(($RANDOM % $TOTAL_REPLICAS + 1))
-        $CLICKHOUSE_CLIENT --query "INSERT INTO test_table_$REPLICA VALUES ($RANDOM, $RANDOM % 255)"
+        with_lock test_table_$REPLICA $CLICKHOUSE_CLIENT --query "INSERT INTO test_table_$REPLICA VALUES ($RANDOM, $RANDOM % 255)"
         sleep 0.$RANDOM
     done
 }
 
 function sync_and_drop_replicas() {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         for i in $(seq $REPLICAS_TO_DROP); do
             local stable_replica_id=$((i + 1))
-            $CLICKHOUSE_CLIENT --query "ALTER TABLE test_table_$i MODIFY SETTING parts_to_throw_insert = 0"
-            $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA test_table_$stable_replica_id LIGHTWEIGHT FROM '$i'"
-            $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_table_$i"
+            # Note that "ALTER TABLE test_table_$i MODIFY SETTING parts_to_throw_insert = 0" does not prevent INSERTs that were run before the setting change
+            # We use locks to make sure SYNC/DROP and INSERT are not running concurrently
+            with_lock test_table_$i $CLICKHOUSE_CLIENT --query "
+                SYSTEM SYNC REPLICA test_table_$stable_replica_id LIGHTWEIGHT FROM '$i';
+                DROP TABLE IF EXISTS test_table_$i;
+            "
         done
 
         for i in $(seq $REPLICAS_TO_DROP); do
@@ -41,7 +46,8 @@ function sync_and_drop_replicas() {
 }
 
 function optimize_thread() {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         REPLICA=$(($RANDOM % $TOTAL_REPLICAS + 1))
         $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE test_table_$REPLICA FINAL"
         sleep 0.$RANDOM
@@ -49,7 +55,8 @@ function optimize_thread() {
 }
 
 function mutations_thread() {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         REPLICA=$(($RANDOM % $TOTAL_REPLICAS + 1))
         CONDITION="key % 2 = 0"
         $CLICKHOUSE_CLIENT --query "ALTER TABLE test_table_$REPLICA DELETE WHERE $CONDITION"
@@ -57,17 +64,32 @@ function mutations_thread() {
     done
 }
 
-export -f insert_thread
-export -f sync_and_drop_replicas
-export -f optimize_thread
-export -f mutations_thread
+function consistency_table_sync_non_existent_replica() {
+    echo "Testing sync from non-existent replica..."
+    local NON_EXISTENT_REPLICA="non_existent_replica_$RANDOM"
+
+    SYNC_OUTPUT=$($CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA test_table_1 LIGHTWEIGHT FROM '$NON_EXISTENT_REPLICA'" 2>&1)
+    EXIT_CODE=$?
+
+    if ! echo "$SYNC_OUTPUT" | grep -q "failed: replica does not exist"; then
+        echo "FAILED: Error was not detected properly for non-existent replica"
+        echo
+        echo "Full output from SYSTEM SYNC command (exit code $EXIT_CODE):"
+        echo
+        echo "$SYNC_OUTPUT"
+        exit 1
+    fi
+
+    echo "Error correctly detected for non-existent replica"
+}
 
 TIMEOUT=30
 
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c sync_and_drop_replicas 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
-timeout $TIMEOUT bash -c mutations_thread 2> /dev/null &
+consistency_table_sync_non_existent_replica
+insert_thread 2> /dev/null &
+sync_and_drop_replicas 2> /dev/null &
+optimize_thread 2> /dev/null &
+mutations_thread 2> /dev/null &
 
 wait
 

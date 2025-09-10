@@ -45,7 +45,6 @@
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
@@ -56,7 +55,6 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -64,7 +62,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool transform_null_in;
@@ -160,7 +157,7 @@ static ColumnsWithTypeAndName createBlockFromCollection(const Collection & colle
                 throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Invalid type in set. Expected tuple, got {}",
                     String(value.getTypeName()));
 
-            const auto & tuple = value.template safeGet<const Tuple &>();
+            const auto & tuple = value.template safeGet<Tuple>();
             size_t tuple_size = tuple.size();
             if (tuple_size != columns_num)
                 throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}",
@@ -373,14 +370,14 @@ ColumnsWithTypeAndName createBlockForSet(
         if (type_index == TypeIndex::Tuple)
         {
             const DataTypes & value_types = assert_cast<const DataTypeTuple *>(right_arg_type.get())->getElements();
-            block = createBlockFromCollection(right_arg_value.safeGet<const Tuple &>(), value_types, set_element_types, set_params);
+            block = createBlockFromCollection(right_arg_value.safeGet<Tuple>(), value_types, set_element_types, set_params);
         }
         else if (type_index == TypeIndex::Array)
         {
             const auto* right_arg_array_type =  assert_cast<const DataTypeArray *>(right_arg_type.get());
-            size_t right_arg_array_size = right_arg_value.safeGet<const Array &>().size();
+            size_t right_arg_array_size = right_arg_value.safeGet<Array>().size();
             DataTypes value_types(right_arg_array_size, right_arg_array_type->getNestedType());
-            block = createBlockFromCollection(right_arg_value.safeGet<const Array &>(), value_types, set_element_types, set_params);
+            block = createBlockFromCollection(right_arg_value.safeGet<Array>(), value_types, set_element_types, set_params);
         }
         else
             throw_unsupported_type(right_arg_type);
@@ -834,7 +831,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
         if (!untuple_alias.empty())
         {
-            auto element_alias = tuple_type->haveExplicitNames() ? element_name : toString(tid);
+            auto element_alias = tuple_type->hasExplicitNames() ? element_name : toString(tid);
             func->setAlias(untuple_alias + "." + element_alias);
         }
 
@@ -1057,7 +1054,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             for (const auto & arg : node.arguments->children)
             {
                 visit(arg, index_hint_data);
-                args.push_back({arg->getColumnNameWithoutAlias(), {}});
+
+                if (auto name_type = getNameAndTypeFromAST(arg, index_hint_data))
+                    args.push_back({name_type->name, {}});
+                else
+                    throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Unexpected element in AST inside the indexHint function: {}", arg->getID());
             }
         }
 
@@ -1375,9 +1376,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     DataTypePtr type;
     if (literal.custom_type)
         type = literal.custom_type;
-    else if (
-        data.getContext()->getSettingsRef()[Setting::allow_experimental_variant_type]
-        && data.getContext()->getSettingsRef()[Setting::use_variant_as_common_type])
+    else if (data.getContext()->getSettingsRef()[Setting::use_variant_as_common_type])
         type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), literal.value);
     else
         type = applyVisitor(FieldToDataType(), literal.value);
@@ -1467,7 +1466,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             const auto & query_tree = interpreter.getQueryTree();
             if (auto * query_node = query_tree->as<QueryNode>())
                 query_node->setIsSubquery(true);
-            set_key = query_tree->getTreeHash();
+            set_key = query_tree->getTreeHash({.ignore_cte = true});
         }
         else
             set_key = right_in_operand->getTreeHash(/*ignore_aliases=*/ true);

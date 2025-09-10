@@ -497,6 +497,9 @@ class JobReport:
             PENDING,
             SKIPPED.lower(),
         ), f"Invalid status [{self.status}]"
+        self.additional_files = sorted(  # type: ignore[assignment]
+            self.additional_files, key=lambda x: str(x).rsplit("/", maxsplit=1)[-1]
+        )
 
     @classmethod
     def exist(cls) -> bool:

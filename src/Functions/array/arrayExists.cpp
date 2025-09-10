@@ -64,7 +64,22 @@ ColumnPtr ArrayExistsImpl::execute(const ColumnArray & array, ColumnPtr mapped)
 
 REGISTER_FUNCTION(ArrayExists)
 {
-    factory.registerFunction<FunctionArrayExists>();
+    FunctionDocumentation::Description description = R"(
+Returns `1` if there is at least one element in a source array for which `func(x[, y1, y2, ... yN])` returns true. Otherwise, it returns `0`.
+)";
+    FunctionDocumentation::Syntax syntax = "arrayExists(func(x[, y1, ..., yN]), source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Arguments arguments = {
+        {"func(x[, y1, ..., yN])", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"source_arr", "The source array to process.", {"Array(T)"}},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the lambda function returns true for at least one element, `0` otherwise", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayExists(x, y -> x=y, [1, 2, 3], [0, 0, 0])", "0"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayExists>(documentation);
 }
 
 }

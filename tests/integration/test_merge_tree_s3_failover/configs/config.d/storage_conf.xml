@@ -6,7 +6,7 @@
                 <!-- Use custom S3 endpoint -->
                 <endpoint>http://resolver:8080/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <!-- ClickHouse starts earlier than custom S3 endpoint. Skip access check to avoid fail on start-up -->
                 <skip_access_check>true</skip_access_check>
                 <!-- Avoid extra retries to speed up tests -->
@@ -19,7 +19,7 @@
                 <!-- Use custom S3 endpoint -->
                 <endpoint>http://resolver:8080/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <!-- ClickHouse starts earlier than custom S3 endpoint. Skip access check to avoid fail on start-up -->
                 <skip_access_check>true</skip_access_check>
                 <connect_timeout_ms>20000</connect_timeout_ms>
@@ -29,7 +29,7 @@
                 <!-- Use custom S3 endpoint -->
                 <endpoint>http://resolver:8080/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <!-- ClickHouse starts earlier than custom S3 endpoint. Skip access check to avoid fail on start-up -->
                 <skip_access_check>true</skip_access_check>
                 <!-- Avoid extra retries to speed up tests -->

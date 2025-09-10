@@ -1,9 +1,14 @@
 #pragma once
+
+#include <Core/Block_fwd.h>
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
+
 #include <queue>
 
 namespace DB
 {
+class Block;
 
 /// Transform that buffers chunks from the input
 /// up to the certain limit  and pushes chunks to
@@ -15,7 +20,7 @@ class BufferChunksTransform : public IProcessor
 public:
     /// OR condition is used for the limits on rows and bytes.
     BufferChunksTransform(
-        const Block & header_,
+        SharedHeader header_,
         size_t max_rows_to_buffer_,
         size_t max_bytes_to_buffer_,
         size_t limit_);

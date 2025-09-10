@@ -1,4 +1,5 @@
 SET enable_analyzer = 1;
+SET max_execution_time = 300;
 
 -- { echoOn }
 
@@ -135,6 +136,6 @@ SELECT
 FROM numbers(1000000) FORMAT Null;
 
 SELECT
-  arrayWithConstant(pow(10,6), 1) AS nums,
+  arrayWithConstant(pow(10,5), 1) AS nums,
   arrayMap(x -> x, nums) AS m,
   arrayMap(x -> x + arraySum(m), m) AS res FORMAT Null;

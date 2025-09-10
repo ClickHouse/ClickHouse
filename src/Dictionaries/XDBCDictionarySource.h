@@ -2,12 +2,11 @@
 
 #include <Core/Block.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Poco/Data/SessionPool.h>
 #include <Poco/URI.h>
 #include <BridgeHelper/XDBCBridgeHelper.h>
-#include "DictionaryStructure.h"
-#include "ExternalQueryBuilder.h"
-#include "IDictionarySource.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/ExternalQueryBuilder.h>
+#include <Dictionaries/IDictionarySource.h>
 
 
 namespace Poco
@@ -27,7 +26,6 @@ namespace DB
 class XDBCDictionarySource final : public IDictionarySource, WithContext
 {
 public:
-
     struct Configuration
     {
         const std::string db;

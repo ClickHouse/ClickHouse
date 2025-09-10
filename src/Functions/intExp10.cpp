@@ -55,7 +55,7 @@ using FunctionIntExp10 = FunctionUnaryArithmetic<IntExp10Impl, NameIntExp10, tru
 template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp10>
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const IDataType &, const Field & left, const Field & right)
     {
         Float64 left_float = left.isNull()
             ? -std::numeric_limits<Float64>::infinity()
@@ -74,7 +74,20 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp10>
 
 REGISTER_FUNCTION(IntExp10)
 {
-    factory.registerFunction<FunctionIntExp10>();
+    FunctionDocumentation::Description description = R"(
+Like [exp10](#exp10) but returns a `UInt64` number.
+)";
+    FunctionDocumentation::Syntax syntax = "intExp10(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "The exponent.", {"Int*", "UInt*", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns 10^x.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT intExp10(2);", "100"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionIntExp10>(documentation);
 }
 
 }

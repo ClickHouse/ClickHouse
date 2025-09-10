@@ -4,19 +4,21 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
-#include <base/StringRef.h>
 
 #include <initializer_list>
-#include <list>
-#include <set>
 #include <vector>
-#include <sparsehash/dense_hash_map>
+#include <Common/StringHashForHeterogeneousLookup.h>
+
 
 class SipHash;
 
 namespace DB
 {
+
+class ISerialization;
+class SerializationInfoByName;
+using SerializationPtr = std::shared_ptr<const ISerialization>;
+using Serializations = std::vector<SerializationPtr>;
 
 /** Container for set of columns for bunch of rows in memory.
   * This is unit of data processing.
@@ -29,7 +31,7 @@ class Block
 {
 private:
     using Container = ColumnsWithTypeAndName;
-    using IndexByName = std::unordered_map<String, size_t>;
+    using IndexByName = std::unordered_map<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 
     Container data;
     IndexByName index_by_name;
@@ -69,6 +71,8 @@ public:
             const_cast<const Block *>(this)->findByName(name, case_insensitive));
     }
 
+    const ColumnWithTypeAndName * findByName(std::string_view name, bool case_insensitive = false) const;
+
     const ColumnWithTypeAndName * findByName(const std::string & name, bool case_insensitive = false) const;
     std::optional<ColumnWithTypeAndName> findSubcolumnByName(const std::string & name) const;
     std::optional<ColumnWithTypeAndName> findColumnOrSubcolumnByName(const std::string & name) const;
@@ -92,7 +96,8 @@ public:
 
     bool has(const std::string & name, bool case_insensitive = false) const;
 
-    size_t getPositionByName(const std::string & name) const;
+    size_t getPositionByName(const std::string & name, bool case_insensitive = false) const;
+    std::optional<size_t> findPositionByName(std::string_view name, bool case_insensitive = false) const;
 
     const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const;
     NamesAndTypesList getNamesAndTypesList() const;
@@ -102,8 +107,8 @@ public:
     Names getDataTypeNames() const;
 
     /// Hash table match `column name -> position in the block`.
-    using NameMap = ::google::dense_hash_map<StringRef, size_t, StringRefHash>;
-    NameMap getNamesToIndexesMap() const;
+
+    const IndexByName & getIndexByName() const { return index_by_name; }
 
     Serializations getSerializations() const;
     Serializations getSerializations(const SerializationInfoByName & hints) const;
@@ -122,8 +127,7 @@ public:
     /// Approximate number of allocated bytes in memory - for profiling and limits.
     size_t allocatedBytes() const;
 
-    explicit operator bool() const { return !!columns(); }
-    bool operator!() const { return !this->operator bool(); } /// NOLINT
+    bool empty() const { return !columns(); }
 
     /** Get a list of column names separated by commas. */
     std::string dumpNames() const;
@@ -188,21 +192,6 @@ private:
     friend class ActionsDAG;
 };
 
-using BlockPtr = std::shared_ptr<Block>;
-using Blocks = std::vector<Block>;
-using BlocksList = std::list<Block>;
-using BlocksPtr = std::shared_ptr<Blocks>;
-
-/// Extends block with extra data in derived classes
-struct ExtraBlock
-{
-    Block block;
-
-    bool empty() const { return !block; }
-};
-
-using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
-
 /// Compare number of columns, data types, column types, column names, and values of constant columns.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 
@@ -225,5 +214,11 @@ Block materializeBlock(const Block & block);
 void materializeBlockInplace(Block & block);
 
 Block concatenateBlocks(const std::vector<Block> & blocks);
+
+/// If the block has no columns, adds a dummy column with given number of rows.
+/// Without it, things like ExpressionActions can't tell many rows to output.
+/// Name of the new column is randomly generated and returned, so you can remove the column later.
+/// Returns empty string if the block is already not empty.
+String addDummyColumnWithRowCount(Block & block, size_t num_rows);
 
 }

@@ -1,5 +1,7 @@
--- Tags: long, zookeeper, no-replicated-database, no-polymorphic-parts, no-random-merge-tree-settings
+-- Tags: long, zookeeper, no-replicated-database, no-polymorphic-parts, no-random-merge-tree-settings, no-shared-merge-tree, no-async-insert
 -- Tag no-replicated-database: Fails due to additional replicas or shards
+-- no-shared-merge-tree: depends on structure in zookeeper of replicated merge tree
+-- no-async-insert: Test expects new part for each insert
 
 SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries
 
@@ -11,13 +13,12 @@ create table rmt (n int) engine=ReplicatedMergeTree('/test/01158/{database}/rmt'
     settings
         cleanup_delay_period=86400,
         max_cleanup_delay_period=86400,
-        replicated_can_become_leader=0,
-        allow_remote_fs_zero_copy_replication=0;
+        replicated_can_become_leader=0;
 system sync replica rmt;
 insert into rmt values (1);
 insert into rmt values (1);
 system sync replica rmt;
-system flush logs;
+system flush logs zookeeper_log, query_log;
 
 select 'log';
 select address, type, has_watch, op_num, path, is_ephemeral, is_sequential, version, requests_size, request_idx, error, watch_type,
@@ -61,6 +62,6 @@ order by xid, type, request_idx;
 
 drop table rmt sync;
 
-system flush logs;
+system flush logs zookeeper_log;
 select 'duration_microseconds';
 select count()>0 from system.zookeeper_log where path like '/test/01158/' || currentDatabase() || '/rmt%' and duration_microseconds > 0;

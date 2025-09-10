@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/Port.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
@@ -25,7 +26,7 @@ static ITransformingStep::Traits getTraits()
 }
 
 LimitStep::LimitStep(
-    const Header & input_header_,
+    const SharedHeader & input_header_,
     size_t limit_, size_t offset_,
     bool always_read_till_end_,
     bool with_ties_,
@@ -40,7 +41,7 @@ LimitStep::LimitStep(
 void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto transform = std::make_shared<LimitTransform>(
-        pipeline.getHeader(), limit, offset, pipeline.getNumStreams(), always_read_till_end, with_ties, description);
+        pipeline.getSharedHeader(), limit, offset, pipeline.getNumStreams(), always_read_till_end, with_ties, description);
 
     pipeline.addTransform(std::move(transform));
 }

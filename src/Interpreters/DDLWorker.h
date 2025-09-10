@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/CurrentMetrics.h>
@@ -89,10 +88,10 @@ public:
 
     bool isCurrentlyActive() const { return initialized && !stop_flag; }
 
-
     /// Returns cached ZooKeeper session (possibly expired).
-    ZooKeeperPtr tryGetZooKeeper() const;
+    ZooKeeperPtr getZooKeeper() const;
     /// If necessary, creates a new session and caches it.
+    /// Should be called in `initializeMainThread` only, so if it is expired, `runMainThread` will reinitialized the state.
     ZooKeeperPtr getAndSetZooKeeper();
 
 protected:
@@ -198,7 +197,7 @@ protected:
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
     std::atomic<bool> initialized = false;
-    std::atomic<bool> stop_flag = true;
+    std::atomic<bool> stop_flag = false;
 
     std::unique_ptr<ThreadFromGlobalPool> main_thread;
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;

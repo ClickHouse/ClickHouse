@@ -34,7 +34,7 @@ for _ in {1..10}; do
 done
 
 ${CLICKHOUSE_CLIENT} --query "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS part_log;
 
     -- If part is skipped in mutation and hardlinked then read_rows must be 0.
     SELECT part_name, read_rows

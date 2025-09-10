@@ -1,10 +1,12 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
+
+#include <Core/Block.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Common/formatReadable.h>
 #include <Columns/ColumnSparse.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Port.h>
 
 namespace ProfileEvents
 {
@@ -188,7 +190,7 @@ void ColumnGathererStream::consume(Input & input, size_t source_num)
 }
 
 ColumnGathererTransform::ColumnGathererTransform(
-    const Block & header,
+    SharedHeader header,
     size_t num_inputs,
     std::unique_ptr<ReadBuffer> row_sources_buf_,
     size_t block_preferred_size_rows_,
@@ -200,9 +202,9 @@ ColumnGathererTransform::ColumnGathererTransform(
     , row_sources_buf_holder(std::move(row_sources_buf_))
     , log(getLogger("ColumnGathererStream"))
 {
-    if (header.columns() != 1)
+    if (header->columns() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Header should have 1 column, but contains {}",
-            toString(header.columns()));
+            toString(header->columns()));
 }
 
 void ColumnGathererTransform::onFinish()
