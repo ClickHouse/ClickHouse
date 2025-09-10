@@ -173,6 +173,8 @@ public:
     JoinExpressionActions(JoinExpressionActions &&) = default;
     JoinExpressionActions & operator=(JoinExpressionActions &&) = default;
 
+    void swapExpressionSources();
+
 private:
     friend class JoinActionRef;
 
