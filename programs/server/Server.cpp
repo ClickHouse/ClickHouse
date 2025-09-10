@@ -240,6 +240,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
+    extern const ServerSettingsBool jemalloc_enable_global_profiler;
+    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
+    extern const ServerSettingsBool jemalloc_enable_background_threads;
+    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
     extern const ServerSettingsSeconds keep_alive_timeout;
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
@@ -1006,10 +1010,6 @@ static std::vector<String> getSanitizerNames()
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
-#if USE_JEMALLOC
-    setJemallocBackgroundThreads(true);
-#endif
-
 #if USE_SSL
     ::ssh::LibSSHInitializer::instance();
     ::ssh::libsshLogger::initialize();
@@ -1019,10 +1019,34 @@ try
 
     Poco::Logger * log = &logger();
 
+    // If the startupLevel is set in the config, we override the root logger level.
+    // Specific loggers can still override it.
+    std::string default_logger_level_config = config().getString("logger.level", "");
+    bool should_restore_default_logger_level = false;
+    if (config().has("logger.startupLevel") && !config().getString("logger.startupLevel").empty())
+    {
+        /// Set the root logger level to the startup level.
+        /// This is useful for debugging startup issues.
+        /// The root logger level will be reset to the default level after the server is fully initialized.
+        config().setString("logger.level", config().getString("logger.startupLevel"));
+        Loggers::updateLevels(config(), logger());
+        should_restore_default_logger_level = true;
+
+        LOG_INFO(log, "Starting root logger in level {}", config().getString("logger.startupLevel"));
+    }
+
     MainThreadStatus::getInstance();
 
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
+
+#if USE_JEMALLOC
+    Jemalloc::setup(
+        server_settings[ServerSetting::jemalloc_enable_global_profiler],
+        server_settings[ServerSetting::jemalloc_enable_background_threads],
+        server_settings[ServerSetting::jemalloc_max_background_threads_num],
+        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
+#endif
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
 
@@ -1223,7 +1247,7 @@ try
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
 
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
-    SCOPE_EXIT({
+    SCOPE_EXIT_SAFE({
         Stopwatch watch;
         LOG_INFO(log, "Waiting for background threads");
         GlobalThreadPool::instance().shutdown();
@@ -1274,7 +1298,7 @@ try
 
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
-    SCOPE_EXIT({
+    SCOPE_EXIT_SAFE({
         async_metrics.stop();
 
         /** Ask to cancel background jobs all table engines,
@@ -2741,6 +2765,14 @@ try
                 LOG_INFO(log, "Listening for {}", server.getDescription());
             }
 
+            // Restore the root logger level to the default level after the server is fully initialized.
+            if (should_restore_default_logger_level)
+            {
+                config().setString("logger.level", default_logger_level_config);
+                Loggers::updateLevels(config(), logger());
+                LOG_INFO(log, "Restored default logger level to {}", default_logger_level_config);
+            }
+
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
@@ -2767,6 +2799,15 @@ try
 #endif
 
         SCOPE_EXIT_SAFE({
+            if (config().has("logger.shutdownLevel") && !config().getString("logger.shutdownLevel").empty())
+            {
+                /// Set the root logger level to the shutdown level.
+                /// This is useful for debugging shutdown issues.
+                config().setString("logger.level", config().getString("logger.shutdownLevel"));
+                Loggers::updateLevels(config(), logger());
+
+                LOG_INFO(log, "Set root logger in level {} before shutdown", config().getString("logger.shutdownLevel"));
+            }
             LOG_DEBUG(log, "Received termination signal.");
 
             CurrentMetrics::set(CurrentMetrics::IsServerShuttingDown, 1);

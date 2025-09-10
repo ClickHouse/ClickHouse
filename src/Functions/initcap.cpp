@@ -76,7 +76,45 @@ using FunctionInitcap = FunctionStringToString<InitcapImpl, NameInitcap>;
 
 REGISTER_FUNCTION(Initcap)
 {
-    factory.registerFunction<FunctionInitcap>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Converts the first letter of each word to upper case and the rest to lower case.
+Words are sequences of alphanumeric characters separated by non-alphanumeric characters.
+
+:::note
+Because `initcap` converts only the first letter of each word to upper case you may observe unexpected behaviour for words containing apostrophes or capital letters.
+This is a known behaviour and there are no plans to fix it currently.
+:::
+)";
+    FunctionDocumentation::Syntax syntax = "initcap(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "Input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `s` with the first letter of each word converted to upper case.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT initcap('building for fast')",
+        R"(
+┌─initcap('building for fast')─┐
+│ Building For Fast            │
+└──────────────────────────────┘
+        )"
+    },
+    {
+        "Example of known behavior for words containing apostrophes or capital letters",
+        "SELECT initcap('John''s cat won''t eat.');",
+        R"(
+┌─initcap('Joh⋯n\'t eat.')─┐
+│ John'S Cat Won'T Eat.    │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionInitcap>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

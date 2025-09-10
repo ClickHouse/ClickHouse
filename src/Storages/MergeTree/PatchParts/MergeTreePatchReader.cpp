@@ -204,7 +204,8 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
     if (!loaded_part_info)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Applying patch parts is supported only for loaded data parts");
 
-    auto stats_entry = patch_join_cache->getStatsEntry(loaded_part_info->getDataPart());
+    auto reader_settings = range_reader.getReader()->getMergeTreeReaderSettings();
+    auto stats_entry = patch_join_cache->getStatsEntry(loaded_part_info->getDataPart(), reader_settings);
 
     if (!stats_entry->stats.empty())
     {

@@ -21,6 +21,7 @@
 #include <Common/ErrorCodes.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 
 #include <fmt/ranges.h>
 
@@ -36,7 +37,6 @@ namespace ErrorCodes
 
 namespace DataLakeStorageSetting
 {
-    extern DataLakeStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
     extern DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
     extern DataLakeStorageSettingsString object_storage_endpoint;
     extern DataLakeStorageSettingsString storage_aws_access_key_id;
@@ -66,6 +66,12 @@ public:
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
 
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
+
+    StorageObjectStorageConfiguration::Path getRawPath() const override
+    {
+        auto result = BaseStorageConfiguration::getRawPath().path;
+        return StorageObjectStorageConfiguration::Path(result.ends_with('/') ? result : result + "/");
+    }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
     bool update(
@@ -187,29 +193,10 @@ public:
         return current_metadata->getSchemaTransformer(local_context, object_info);
     }
 
-    bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override
-    {
-        if (!current_metadata)
-            return false;
-        return current_metadata->hasPositionDeleteTransformer(object_info);
-    }
-
-    std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & object_info,
-        const SharedHeader & header,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context_) const override
-    {
-        if (!current_metadata)
-            return {};
-        return current_metadata->getPositionDeleteTransformer(object_info, header, format_settings, context_);
-    }
-
     bool hasExternalDynamicMetadata() override
     {
         assertInitialized();
-        return (*settings)[DataLakeStorageSetting::allow_dynamic_metadata_for_data_lakes]
-            && current_metadata->supportsSchemaEvolution();
+        return current_metadata->supportsSchemaEvolution();
     }
 
     IDataLakeMetadata * getExternalMetadata() override
@@ -236,12 +223,12 @@ public:
         return current_metadata->iterate(filter_dag, callback, list_batch_size, context);
     }
 
+#if USE_PARQUET
     /// This is an awful temporary crutch,
     /// which will be removed once DeltaKernel is used by default for DeltaLake.
     /// By release 25.3.
     /// (Because it does not make sense to support it in a nice way
     /// because the code will be removed ASAP anyway)
-#if USE_PARQUET && USE_AWS_S3
     DeltaLakePartitionColumns getDeltaLakePartitionColumns() const
     {
         assertInitialized();
@@ -258,9 +245,21 @@ public:
         current_metadata->modifyFormatSettings(settings_);
     }
 
-    ColumnMapperPtr getColumnMapper() const override
+    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override
     {
-        return current_metadata->getColumnMapper();
+        assertInitialized();
+        return current_metadata->getColumnMapperForObject(object_info);
+    }
+    ColumnMapperPtr getColumnMapperForCurrentSchema() const override
+    {
+        assertInitialized();
+        return current_metadata->getColumnMapperForCurrentSchema();
+    }
+
+    void drop(ContextPtr local_context) override
+    {
+        if (current_metadata)
+            current_metadata->drop(local_context);
     }
 
     SinkToStoragePtr write(
@@ -325,6 +324,11 @@ public:
         return current_metadata->optimize(metadata_snapshot, context, format_settings);
     }
 
+    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override
+    {
+        current_metadata->addDeleteTransformers(object_info, builder, format_settings, local_context);
+    }
+
 private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
@@ -341,6 +345,7 @@ private:
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
+        bool supports_tuple_elements,
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams &) override
     {
@@ -352,7 +357,7 @@ private:
                 local_context);
         }
         return current_metadata->prepareReadingFromFormat(
-            requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
+            requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements);
     }
 
     bool updateMetadataIfChanged(

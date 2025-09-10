@@ -150,6 +150,13 @@ inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t max_strin
     buf.readStrict(s.data(), size);
 }
 
+inline void skipStringBinary(ReadBuffer & buf)
+{
+    size_t size = 0;
+    readVarUInt(size, buf);
+    buf.ignore(size);
+}
+
 /// For historical reasons we store IPv6 as a String
 inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
 {

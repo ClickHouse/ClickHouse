@@ -170,7 +170,7 @@ Result:
 └─────────────────┘
 ```
 
-Can be used with [MinHash](../../sql-reference/functions/hash-functions.md#ngramminhash) functions for detection of semi-duplicate strings:
+Can be used with [MinHash](../../sql-reference/functions/hash-functions.md#ngramMinHash) functions for detection of semi-duplicate strings:
 
 ```sql
 SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) AS HammingDistance

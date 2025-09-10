@@ -3,7 +3,7 @@ CREATE TABLE t0 (c0 Int) ENGINE = MergeTree() ORDER BY tuple() SETTINGS enable_b
 
 INSERT INTO TABLE t0 (c0) VALUES (0);
 
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 UPDATE t0 SET c0 = 1 WHERE 1;
 SELECT c0 FROM t0 ORDER BY c0;
 

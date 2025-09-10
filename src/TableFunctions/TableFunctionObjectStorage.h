@@ -90,6 +90,7 @@ protected:
         bool is_insert_query) const override;
 
     const char * getStorageEngineName() const override { return Definition::storage_engine_name; }
+    const String & getFunctionURI() const override { return configuration->getRawURI(); }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;

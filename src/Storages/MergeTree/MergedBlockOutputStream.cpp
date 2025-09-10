@@ -46,6 +46,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         data_part->storage.getContext()->getSettingsRef(),
         write_settings,
         storage_settings,
+        data_part,
         data_part->index_granularity_info.mark_type.adaptive,
         /* rewrite_primary_key = */ true,
         save_marks_in_cache,

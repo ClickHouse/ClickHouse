@@ -70,7 +70,7 @@ struct PatchJoinCache
     /// Cache entries should be get for the same ranges later.
     void init(const RangesInPatchParts & ranges_in_patches);
 
-    PatchStatsEntryPtr getStatsEntry(const DataPartPtr & patch_part);
+    PatchStatsEntryPtr getStatsEntry(const DataPartPtr & patch_part, const MergeTreeReaderSettings & settings);
     Entries getEntries(const String & patch_name, const MarkRanges & ranges, Reader reader);
 
 private:

@@ -145,60 +145,76 @@ using FunctionTryPunycodeDecode = FunctionStringToString<PunycodeDecode<ErrorHan
 
 REGISTER_FUNCTION(Punycode)
 {
-    factory.registerFunction<FunctionPunycodeEncode>(FunctionDocumentation{
-        .description=R"(
-Computes a Punycode representation of a string.)",
-        .syntax="punycodeEncode(str)",
-        .arguments={{"str", "Input string", {"String"}}},
-        .returned_value={"The punycode representation", {"String"}},
-        .examples={
-            {"simple",
-            "SELECT punycodeEncode('München') AS puny;",
-            R"(
-┌─puny───────┐
-│ Mnchen-3ya │
-└────────────┘
-            )"
-            }},
-        .category = FunctionDocumentation::Category::Encoding
-    });
+    FunctionDocumentation::Description description_encode = R"(
+Returns the [Punycode](https://en.wikipedia.org/wiki/Punycode) representation of a string.
+The string must be UTF8-encoded, otherwise the behavior is undefined.
+)";
+    FunctionDocumentation::Syntax syntax_encode = "punycodeEncode(s)";
+    FunctionDocumentation::Arguments arguments_encode = {
+        {"s", "Input value.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_encode = {"Returns a Punycode representation of the input value.", {"String"}};
+    FunctionDocumentation::Examples examples_encode = {
+    {
+        "Usage example",
+        "SELECT punycodeEncode('München')",
+        R"(
+┌─punycodeEncode('München')─┐
+│ Mnchen-3ya                │
+└───────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation_encode = {description_encode, syntax_encode, arguments_encode, returned_value_encode, examples_encode, introduced_in, category};
 
-    factory.registerFunction<FunctionPunycodeDecode>(FunctionDocumentation{
-        .description=R"(
-Computes a Punycode representation of a string. Throws an exception if the input is not valid Punycode.)",
-        .syntax="punycodeDecode(str)",
-        .arguments={{"str", "A Punycode-encoded string", {"String"}}},
-        .returned_value={"The plaintext representation", {"String"}},
-        .examples={
-            {"simple",
-            "SELECT punycodeDecode('Mnchen-3ya') AS plain;",
-            R"(
-┌─plain───┐
-│ München │
-└─────────┘
-            )"
-            }},
-        .category = FunctionDocumentation::Category::Encoding
-    });
+    FunctionDocumentation::Description description_decode = R"(
+Returns the UTF8-encoded plaintext of a [Punycode](https://en.wikipedia.org/wiki/Punycode)-encoded string.
+If no valid Punycode-encoded string is given, an exception is thrown.
+)";
+    FunctionDocumentation::Syntax syntax_decode = "punycodeDecode(s)";
+    FunctionDocumentation::Arguments arguments_decode = {
+        {"s", "Punycode-encoded string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_decode = {"Returns the plaintext of the input value.", {"String"}};
+    FunctionDocumentation::Examples examples_decode = {
+    {
+        "Usage example",
+        "SELECT punycodeDecode('Mnchen-3ya')",
+        R"(
+┌─punycodeDecode('Mnchen-3ya')─┐
+│ München                      │
+└──────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_decode = {description_decode, syntax_decode, arguments_decode, returned_value_decode, examples_decode, introduced_in, category};
 
-    factory.registerFunction<FunctionTryPunycodeDecode>(FunctionDocumentation{
-        .description=R"(
-Computes a Punycode representation of a string. Returns an empty string if the input is not valid Punycode.)",
-        .syntax="punycodeDecode(str)",
-        .arguments={{"str", "A Punycode-encoded string"}},
-        .returned_value={"The plaintext representation", {"String"}},
-        .examples={
-            {"simple",
-            "SELECT tryPunycodeDecode('Mnchen-3ya') AS plain;",
-            R"(
-┌─plain───┐
-│ München │
-└─────────┘
-            )"
-            }},
-        .category = FunctionDocumentation::Category::Encoding
+    FunctionDocumentation::Description description_try_decode = R"(
+Like `punycodeDecode` but returns an empty string if no valid Punycode-encoded string is given.
+)";
+    FunctionDocumentation::Syntax syntax_try_decode = "tryPunycodeDecode(s)";
+    FunctionDocumentation::Arguments arguments_try_decode = {
+        {"s", "Punycode-encoded string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_try_decode = {"Returns the plaintext of the input value, or empty string if input is invalid.", {"String"}};
+    FunctionDocumentation::Examples examples_try_decode = {
+    {
+        "Usage example",
+        "SELECT tryPunycodeDecode('Mnchen-3ya')",
+        R"(
+┌─tryPunycodeDecode('Mnchen-3ya')─┐
+│ München                         │
+└─────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_try_decode = {description_try_decode, syntax_try_decode, arguments_try_decode, returned_value_try_decode, examples_try_decode, introduced_in, category};
 
-});
+    factory.registerFunction<FunctionPunycodeEncode>(documentation_encode);
+    factory.registerFunction<FunctionPunycodeDecode>(documentation_decode);
+    factory.registerFunction<FunctionTryPunycodeDecode>(documentation_try_decode);
 }
 
 }

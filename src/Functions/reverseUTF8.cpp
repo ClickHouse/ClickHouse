@@ -88,7 +88,28 @@ using FunctionReverseUTF8 = FunctionStringToString<ReverseUTF8Impl, NameReverseU
 
 REGISTER_FUNCTION(ReverseUTF8)
 {
-    factory.registerFunction<FunctionReverseUTF8>();
+    FunctionDocumentation::Description description = R"(
+Reverses a sequence of Unicode code points in a string.
+Assumes that the string contains valid UTF-8 encoded text.
+If this assumption is violated, no exception is thrown and the result is undefined.
+)";
+    FunctionDocumentation::Syntax syntax = "reverseUTF8(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "String containing valid UTF-8 encoded text.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with the sequence of Unicode code points reversed.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT reverseUTF8('ClickHouse')",
+        "esuoHkcilC"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionReverseUTF8>(documentation);
 }
 
 }

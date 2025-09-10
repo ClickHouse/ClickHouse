@@ -117,7 +117,32 @@ public:
 
 REGISTER_FUNCTION(RegexpQuoteMeta)
 {
-    factory.registerFunction<FunctionRegexpQuoteMeta>();
+    FunctionDocumentation::Description description = R"(
+Adds a backslash before these characters with special meaning in regular expressions: `\0`, `\\`, `|`, `(`, `)`, `^`, `$`, `.`, `[`, `]`, `?`, `*`, `+`, `{`, `:`, `-`.
+This implementation slightly differs from re2::RE2::QuoteMeta.
+It escapes zero byte as `\0` instead of `\x00` and it escapes only required characters.
+)";
+    FunctionDocumentation::Syntax syntax = "regexpQuoteMeta(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "The input string containing characters to be escaped for regex.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with regex special characters escaped.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Escape regex special characters",
+        "SELECT regexpQuoteMeta('Hello. [World]? (Yes)*') AS res",
+        R"(
+┌─res───────────────────────────┐
+│ Hello\. \[World\]\? \(Yes\)\* │
+└───────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRegexpQuoteMeta>(documentation);
 }
 
 }

@@ -42,6 +42,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 {
 }
 
+MergeTreeReaderStream::~MergeTreeReaderStream() = default;
+
 void MergeTreeReaderStream::loadMarks()
 {
     if (!marks_getter)
@@ -80,7 +82,7 @@ void MergeTreeReaderStream::init()
                 return data_part_storage->readFile(
                     path_prefix + data_file_extension,
                     read_settings,
-                    estimated_sum_mark_range_bytes, std::nullopt);
+                    estimated_sum_mark_range_bytes);
             },
             uncompressed_cache,
             settings.allow_different_codecs);
@@ -101,8 +103,7 @@ void MergeTreeReaderStream::init()
             data_part_storage->readFile(
                 path_prefix + data_file_extension,
                 read_settings,
-                estimated_sum_mark_range_bytes,
-                std::nullopt), settings.allow_different_codecs);
+                estimated_sum_mark_range_bytes), settings.allow_different_codecs);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -142,6 +143,10 @@ void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_
     }
 }
 
+void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
+{
+    compressed_data_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+}
 
 void MergeTreeReaderStream::seekToStart()
 {

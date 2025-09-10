@@ -37,7 +37,6 @@ enum class MetadataStorageType : uint8_t
 };
 
 MetadataStorageType metadataTypeFromString(const String & type);
-String toString(DataSourceType data_source_type);
 
 struct DataSourceDescription
 {
@@ -45,19 +44,20 @@ struct DataSourceDescription
     ObjectStorageType object_storage_type = ObjectStorageType::None;
     MetadataStorageType metadata_type = MetadataStorageType::None;
 
-    std::string description;
+    String description;
 
     bool is_encrypted = false;
     bool is_cached = false;
 
-    std::string zookeeper_name;
+    String zookeeper_name;
 
     bool operator==(const DataSourceDescription & other) const;
     bool sameKind(const DataSourceDescription & other) const;
 
-    std::string toString() const;
-};
+    String name() const;
 
-bool canUseNativeCopy(const DataSourceDescription & left, const DataSourceDescription & right);
+    /// Returns a string with the name and all the fields of the DataSourceDescription
+    String toString() const;
+};
 
 }
