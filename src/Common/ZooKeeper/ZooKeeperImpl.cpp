@@ -1900,19 +1900,19 @@ void ZooKeeper::observeOperationIfNeeded(const ZooKeeperRequestPtr & request, co
 
     aggregated_zookeeper_log_->observe(session_id, response->getOpNum(), request->getPath(), elapsed_microseconds, response->error);
 
-    const auto multi_read_request = std::dynamic_pointer_cast<ZooKeeperMultiRequest>(request);
-    const auto multi_read_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(response);
+    const auto multi_request = std::dynamic_pointer_cast<ZooKeeperMultiRequest>(request);
+    const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(response);
 
-    chassert(!multi_read_request == !multi_read_response);
+    chassert(!multi_request == !multi_response);
 
-    if (!multi_read_response)
+    if (!multi_response)
     {
         return;
     }
 
-    chassert(multi_read_request->requests.size() == multi_read_response->responses.size());
+    chassert(multi_request->requests.size() == multi_response->responses.size());
 
-    for (const auto [subrequest, subresponse] : std::views::zip(multi_read_request->requests, multi_read_response->responses))
+    for (const auto [subrequest, subresponse] : std::views::zip(multi_request->requests, multi_response->responses))
     {
         observeOperationIfNeeded(subrequest, std::static_pointer_cast<ZooKeeperResponse>(subresponse), elapsed_microseconds);
     }
