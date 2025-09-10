@@ -632,7 +632,7 @@ class JobConfigs:
     upgrade_test_jobs = Job.Config(
         name=JobNames.UPGRADE,
         runs_on=["from param"],
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command="cd ./tests/ci && python3 ./upgrade_check.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/ci/upgrade_check.py",
@@ -646,22 +646,22 @@ class JobConfigs:
         Job.ParamSet(
             parameter="amd_asan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=["Build (amd_asan)"],
+            requires=[ArtifactNames.DEB_AMD_ASAN],
         ),
         Job.ParamSet(
             parameter="amd_tsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=["Build (amd_tsan)"],
+            requires=[ArtifactNames.DEB_AMD_TSAN],
         ),
         Job.ParamSet(
             parameter="amd_msan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=["Build (amd_msan)"],
+            requires=[ArtifactNames.DEB_AMD_MSAN],
         ),
         Job.ParamSet(
             parameter="amd_debug",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=["Build (amd_debug)"],
+            requires=[ArtifactNames.DEB_AMD_DEBUG],
         ),
     )
     # why it's master only?

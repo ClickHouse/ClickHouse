@@ -9,7 +9,7 @@ from typing import List, Tuple
 
 from ci_utils import Shell
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPO_COPY, TEMP_PATH
+from env_helper import REPO_COPY
 from get_robot_token import get_parameter_from_ssm
 from report import ERROR, JobReport, TestResults, read_test_results
 from stopwatch import Stopwatch
