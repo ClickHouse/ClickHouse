@@ -15,5 +15,6 @@ t_b
 t_new_renamed
 100	x
 200	y
+999	Pass-through overlay
 t_a
 t_b

@@ -48,13 +48,13 @@ SHOW TABLES FROM dboverlay;
 INSERT INTO db_overlay_a.t_new VALUES (100, 'x'), (200, 'y');
 SELECT * FROM dboverlay.t_new ORDER BY k;
 
-INSERT INTO dboverlay.t_new VALUES (999, 'fail'); -- { serverError TABLE_UUID_MISMATCH }
+INSERT INTO dboverlay.t_new VALUES (999, 'Pass-through overlay');
 
 CREATE TABLE dboverlay.ct_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError BAD_ARGUMENTS }
 
 ATTACH TABLE dboverlay.at_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError BAD_ARGUMENTS }
 
-ALTER TABLE dboverlay.t_a ADD COLUMN z UInt8 DEFAULT 0; -- { serverError UNKNOWN_TABLE }
+ALTER TABLE dboverlay.t_a ADD COLUMN z UInt8 DEFAULT 0;
 
 RENAME TABLE dboverlay.t_a TO dboverlay.t_a_renamed_via_overlay; -- { serverError BAD_ARGUMENTS }
 

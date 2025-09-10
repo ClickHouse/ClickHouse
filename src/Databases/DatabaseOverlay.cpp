@@ -277,8 +277,7 @@ String DatabaseOverlay::getTableDataPath(const ASTCreateQuery & query) const
 
 bool DatabaseOverlay::isReadOnly() const
 {
-    // return mode == Mode::FacadeOverCatalog;
-    return false;
+    return mode == Mode::FacadeOverCatalog;
 }
 
 UUID DatabaseOverlay::getUUID() const
