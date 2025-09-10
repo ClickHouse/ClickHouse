@@ -2312,7 +2312,8 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
     /// It will be ignored if database does not support UUIDs.
     create.generateRandomUUIDs();
 
-    create.generateColumnRandomUUIDs();
+    if (local_context->getServerSettings()[ServerSetting::enable_uuids_for_columns])
+        create.generateColumnRandomUUIDs();
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = local_context->getMacros()->expand(cluster_name);
