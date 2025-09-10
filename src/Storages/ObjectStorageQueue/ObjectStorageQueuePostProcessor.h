@@ -32,7 +32,6 @@ private:
     /// Move processed Azure blobs, possibly to another Azure storage
     void moveAzureBlobs(const StoredObjects & objects) const;
 
-private:
     ObjectStorageType type;
     const ObjectStoragePtr object_storage;
     const String engine_name;
