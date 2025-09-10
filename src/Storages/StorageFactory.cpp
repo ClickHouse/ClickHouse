@@ -266,7 +266,7 @@ std::optional<AccessTypeObjects::Source> StorageFactory::getSourceAccessObject(c
 {
     auto it = storages.find(table_engine);
     if (it == storages.end())
-        return std::nullopt;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown table engine {}", table_engine);
     return it->second.features.source_access_type;
 }
 
