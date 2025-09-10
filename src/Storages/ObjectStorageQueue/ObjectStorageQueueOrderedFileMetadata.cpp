@@ -133,7 +133,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
         path_,
-        /* processing_node_path */zk_path_ / getProcessingNodesPath(use_persistent_processing_nodes_) / getNodeName(path_),
+        /* processing_node_path */zk_path_ / "processing" / getNodeName(path_),
         /* processed_node_path */getProcessedPath(zk_path_, path_, buckets_num_),
         /* failed_node_path */zk_path_ / "failed" / getNodeName(path_),
         file_status_,
@@ -392,7 +392,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     if (is_path_with_hive_partitioning)
         processed_node_hive_path = std::filesystem::path(processed_node_path) / getHivePart(path);
 
-    const size_t max_num_tries = 1000;
+    const size_t max_num_tries = 100;
     Coordination::Error code;
     for (size_t i = 0; i < max_num_tries; ++i)
     {
@@ -517,7 +517,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", code);
 
         /// most likely the processing node id path node was removed or created so let's try again
-        LOG_TRACE(log, "Retrying setProcessing because processing node id path is unexpectedly missing or was created (error code: {})", code);
+        LOG_DEBUG(log, "Retrying setProcessing because processing node id path is unexpectedly missing or was created (error code: {})", code);
     }
 
     throw Exception(

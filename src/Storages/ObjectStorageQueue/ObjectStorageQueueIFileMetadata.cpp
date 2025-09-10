@@ -192,13 +192,6 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
     }
 }
 
-std::string ObjectStorageQueueIFileMetadata::getProcessingNodesPath(bool use_persistent_processing_nodes)
-{
-    if (use_persistent_processing_nodes)
-        return "persistent_processing";
-    return "processing";
-}
-
 std::string ObjectStorageQueueIFileMetadata::getNodeName(const std::string & path)
 {
     /// Since with are dealing with paths in object storage which can have "/",

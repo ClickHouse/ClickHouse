@@ -151,9 +151,9 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , is_path_with_hive_partitioning(is_path_with_hive_partitioning_)
 {
     LOG_TRACE(
-        log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
+        log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}, use persistent processing nodes: {}",
         table_metadata.mode, table_metadata.buckets.load(),
-        table_metadata.processing_threads_num.load(), buckets_num);
+        table_metadata.processing_threads_num.load(), buckets_num, use_persistent_processing_nodes.load());
 }
 
 ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
@@ -776,7 +776,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 if (supports_remove_recursive)
                 {
                     requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
-                    requests.push_back(zkutil::makeRemoveRecursiveRequest(zookeeper_path, std::numeric_limits<uint32_t>::max()));
+                    requests.push_back(zkutil::makeRemoveRecursiveRequest(*zk_client, zookeeper_path, std::numeric_limits<uint32_t>::max()));
                 }
                 else
                 {
@@ -1281,8 +1281,7 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
 
 void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(zkutil::ZooKeeperPtr zk_client)
 {
-    const fs::path zookeeper_persistent_processing_path = zookeeper_path
-        / ObjectStorageQueueIFileMetadata::getProcessingNodesPath(true);
+    const fs::path zookeeper_persistent_processing_path = zookeeper_path / "processing";
 
     Strings persistent_processing_nodes;
     auto code = zk_client->tryGetChildren(zookeeper_persistent_processing_path, persistent_processing_nodes);

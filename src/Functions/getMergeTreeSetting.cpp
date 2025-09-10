@@ -80,19 +80,32 @@ private:
 
 REGISTER_FUNCTION(GetMergeTreeSetting)
 {
-    factory.registerFunction<FunctionGetMergeTreeSetting>(FunctionDocumentation{
-        .description = R"(
-Returns the current value of merge tree setting.
-)",
-        .syntax = "getMergeTreeSetting('custom_setting')",
-        .arguments = {
-            {"custom_setting", "The setting name.", {"String"}}
-        },
-        .returned_value = {"The setting's current value."},
-        .examples = {
-            {"getMergeTreeSetting", "SELECT getMergeTreeSetting('index_granularity');", "8192"},
-        },
-        .category = FunctionDocumentation::Category::Other}, FunctionFactory::Case::Sensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the current value of a MergeTree setting.
+)";
+    FunctionDocumentation::Syntax syntax = "getMergeTreeSetting(setting_name)";
+    FunctionDocumentation::Arguments arguments = {
+        {"setting_name", "The setting name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the merge tree setting's current value.", {}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT getMergeTreeSetting('index_granularity');
+        )",
+        R"(
+┌─getMergeTreeSetting('index_granularity')─┐
+│                                     8192 │
+└──────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGetMergeTreeSetting>(documentation);
 }
 
 }
