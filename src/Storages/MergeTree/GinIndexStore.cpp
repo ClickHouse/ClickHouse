@@ -662,35 +662,15 @@ void GinIndexStore::writeSegment()
     write_buf.finalize();
 
     const size_t uncompressed_size = buffer.size();
-    const bool compress_fst = uncompressed_size >= FST_SIZE_COMPRESSION_THRESHOLD;
 
-    /// Header contains the uncompressed size and a single bit to indicate whether FST is compressed or uncompressed.
-    UInt64 fst_size_header = (uncompressed_size << 1) | (compress_fst ? 0x1 : 0x0);
+    /// Header contains the uncompressed size
     /// Write FST size header
-    writeVarUInt(fst_size_header, *dict_file_stream);
-    current_segment.dict_start_offset += getLengthOfVarUInt(fst_size_header);
+    writeVarUInt(uncompressed_size, *dict_file_stream);
+    current_segment.dict_start_offset += getLengthOfVarUInt(uncompressed_size);
 
-    if (compress_fst)
-    {
-        const auto & codec = GinCompressionFactory::zstdCodec();
-        Memory<> memory;
-        memory.resize(codec->getCompressedReserveSize(static_cast<UInt32>(uncompressed_size)));
-        auto compressed_size = codec->compress(reinterpret_cast<char *>(buffer.data()), uncompressed_size, memory.data());
-
-        /// Write FST compressed size
-        writeVarUInt(compressed_size, *dict_file_stream);
-        current_segment.dict_start_offset += getLengthOfVarUInt(compressed_size);
-
-        /// Write FST compressed blob
-        dict_file_stream->write(memory.data(), compressed_size);
-        current_segment.dict_start_offset += compressed_size;
-    }
-    else
-    {
-        /// Write FST uncompressed blob
-        dict_file_stream->write(reinterpret_cast<char *>(buffer.data()), uncompressed_size);
-        current_segment.dict_start_offset += uncompressed_size;
-    }
+    /// Write FST uncompressed blob
+    dict_file_stream->write(reinterpret_cast<char *>(buffer.data()), uncompressed_size);
+    current_segment.dict_start_offset += uncompressed_size;
 
     auto statistics = getStatistics() - before_write_segment_stats;
     LOG_TRACE(
@@ -806,7 +786,7 @@ void GinIndexStoreDeserializer::prepareSegmentForReading(UInt32 segment_id)
         ReadableSize(bloom_filter_file_stream->count() - dictionary->bloom_filter_start_offset));
 }
 
-void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinDictionary & dictionary)
+void GinIndexStoreDeserializer::prepareSegmentFST(UInt32 segment_id, GinDictionary & dictionary)
 {
     /// Set file pointer of dictionary file
     chassert(dict_file_stream != nullptr);
@@ -819,37 +799,10 @@ void GinIndexStoreDeserializer::readSegmentFST(UInt32 segment_id, GinDictionary 
         segment_id,
         store->storage->getPartDirectory());
 
-    dictionary.fst = std::make_unique<FST::FiniteStateTransducer>();
-
     switch (auto version = store->getVersion(); version)
     {
         case GinIndexStore::Format::v1: {
-            /// Read FST size header
-            UInt64 fst_size_header;
-            readVarUInt(fst_size_header, *dict_file_stream);
-
-            size_t uncompressed_fst_size = fst_size_header >> 1;
-            dictionary.fst->getData().clear();
-            dictionary.fst->getData().resize(uncompressed_fst_size);
-            if (fst_size_header & 0x1) /// FST is compressed
-            {
-                /// Read compressed FST size
-                size_t compressed_fst_size = 0;
-                readVarUInt(compressed_fst_size, *dict_file_stream);
-                /// Read compressed FST blob
-                std::vector<char> buf(compressed_fst_size);
-                dict_file_stream->readStrict(buf.data(), compressed_fst_size);
-                const auto & codec = DB::GinCompressionFactory::zstdCodec();
-                codec->decompress(
-                    buf.data(),
-                    static_cast<UInt32>(compressed_fst_size),
-                    reinterpret_cast<char *>(dictionary.fst->getData().data()));
-            }
-            else
-            {
-                /// Read uncompressed FST blob
-                dict_file_stream->readStrict(reinterpret_cast<char *>(dictionary.fst->getData().data()), uncompressed_fst_size);
-            }
+            dictionary.fst = std::make_unique<FST::FiniteStateTransducer>(*dict_file_stream);
             break;
         }
     }
@@ -884,9 +837,9 @@ GinSegmentPostingsLists GinIndexStoreDeserializer::readSegmentPostingsLists(cons
                     continue;
 
                 /// token might be in segment dictionary
-                readSegmentFST(segment_id, *dictionary);
+                prepareSegmentFST(segment_id, *dictionary);
             }
-
+            chassert(dictionary->fst != nullptr);
             fst_output = dictionary->fst->getOutput(token);
             if (!fst_output.found)
                 continue;

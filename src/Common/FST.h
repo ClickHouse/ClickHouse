@@ -165,15 +165,12 @@ public:
         bool found = false;
     };
 
-    FiniteStateTransducer() = default;
-    explicit FiniteStateTransducer(std::vector<UInt8> data_);
+    explicit FiniteStateTransducer(ReadBufferFromFileBase& read_buffer_);
 
     Output getOutput(std::string_view term);
-    std::vector<UInt8> & getData() { return data; }
-    void clear();
-
 private:
-    std::vector<UInt8> data;
+    ReadBufferFromFileBase& read_buffer;
+    UInt64 fst_size;
 };
 
 }

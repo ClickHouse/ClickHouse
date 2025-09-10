@@ -395,26 +395,22 @@ UInt64 Builder::build()
     return previous_state_index + previous_written_bytes + length + 1;
 }
 
-FiniteStateTransducer::FiniteStateTransducer(std::vector<UInt8> data_)
-    : data(std::move(data_))
+FiniteStateTransducer::FiniteStateTransducer(ReadBufferFromFileBase & read_buffer_)
+    : read_buffer(read_buffer_)
 {
-}
-
-void FiniteStateTransducer::clear()
-{
-    data.clear();
+    /// Read FST size
+    readVarUInt(fst_size, read_buffer);
 }
 
 FiniteStateTransducer::Output FiniteStateTransducer::getOutput(std::string_view term)
 {
-    if (data.empty())
+    if (fst_size == 0)
         return {0, false};
 
     FiniteStateTransducer::Output result;
 
     /// Read index of initial state
-    ReadBufferFromMemory read_buffer(data.data(), data.size());
-    read_buffer.seek(data.size() - 1, SEEK_SET);
+    read_buffer.seek(fst_size - 1, SEEK_SET);
 
     UInt8 length = 0;
     read_buffer.readStrict(reinterpret_cast<char &>(length));
@@ -423,7 +419,7 @@ FiniteStateTransducer::Output FiniteStateTransducer::getOutput(std::string_view 
     if (length == 0)
         return {0, false};
 
-    read_buffer.seek(data.size() - 1 - length, SEEK_SET);
+    read_buffer.seek(fst_size - 1 - length, SEEK_SET);
     UInt64 state_index = 0;
     readVarUInt(state_index, read_buffer);
 
@@ -455,16 +451,15 @@ FiniteStateTransducer::Output FiniteStateTransducer::getOutput(std::string_view 
             auto labels_position = read_buffer.getPosition();
 
             /// Find the index of the label from "labels" bytes
-            auto begin_it = data.begin() + labels_position;
-            auto end_it = data.begin() + labels_position + label_num;
+            std::vector<UInt8> labels;
+            read_buffer.readStrict(reinterpret_cast<char *>(labels.data()), label_num);
+            auto pos = std::find(labels.begin(), labels.end(), label);
 
-            auto pos = std::find(begin_it, end_it, label);
-
-            if (pos == end_it)
+            if (pos == labels.end())
                 return {0, false};
 
             /// Read the arc for the label
-            UInt64 arc_index = (pos - begin_it);
+            UInt64 arc_index = (pos - labels.begin());
             auto arcs_start_postion = labels_position + label_num;
 
             read_buffer.seek(arcs_start_postion, SEEK_SET);

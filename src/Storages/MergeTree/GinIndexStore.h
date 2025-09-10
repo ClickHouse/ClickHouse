@@ -362,7 +362,7 @@ public:
     void prepareSegmentForReading(UInt32 segment_id);
 
     /// Read FST for given segment dictionary from .gin_dict files
-    void readSegmentFST(UInt32 segment_id, GinDictionary & dictionary);
+    void prepareSegmentFST(UInt32 segment_id, GinDictionary & dictionary);
 
     /// Read postings lists for the token
     GinSegmentPostingsLists readSegmentPostingsLists(const String & token);

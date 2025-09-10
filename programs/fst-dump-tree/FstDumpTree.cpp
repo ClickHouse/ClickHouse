@@ -230,45 +230,17 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                         fmt::println("[Segment {}]: posting list compression = UNKNOWN", segment_id);
 
                     /// Read FST size header
-                    UInt64 fst_size_header = 0;
-                    readVarUInt(fst_size_header, *dictionary_read_buffer);
+                    // UInt64 fst_size_header = 0;
+                    // readVarUInt(fst_size_header, *dictionary_read_buffer);
 
                     /// Get uncompressed FST size
-                    size_t uncompressed_fst_size = fst_size_header >> 1;
+                    // size_t uncompressed_fst_size = fst_size_header >> 1;
 
-                    segment_dict->fst = std::make_unique<DB::FST::FiniteStateTransducer>();
-                    segment_dict->fst->getData().clear();
-                    segment_dict->fst->getData().resize(uncompressed_fst_size);
-                    if (fst_size_header & 0x1) /// FST is compressed
-                    {
-                        /// Read compressed FST size
-                        size_t compressed_fst_size = 0;
-                        readVarUInt(compressed_fst_size, *dictionary_read_buffer);
-
-                        /// Read compressed FST blob
-                        auto buf = std::make_unique<char[]>(compressed_fst_size);
-                        dictionary_read_buffer->readStrict(reinterpret_cast<char *>(buf.get()), compressed_fst_size);
-
-                        const auto & codec = DB::GinCompressionFactory::zstdCodec();
-                        codec->decompress(
-                            buf.get(),
-                            static_cast<UInt32>(compressed_fst_size),
-                            reinterpret_cast<char *>(segment_dict->fst->getData().data()));
-                        fmt::println(
-                            "[Segment {}]: FST uncompressed size = {} | compressed size = {}",
-                            segment_id,
-                            formatReadableSizeWithBinarySuffix(uncompressed_fst_size),
-                            formatReadableSizeWithBinarySuffix(compressed_fst_size));
-                    }
-                    else
-                    {
-                        dictionary_read_buffer->readStrict(
-                            reinterpret_cast<char *>(segment_dict->fst->getData().data()), uncompressed_fst_size);
-                        fmt::println(
-                            "[Segment {}]: FST uncompressed size = {}",
-                            segment_id,
-                            formatReadableSizeWithBinarySuffix(uncompressed_fst_size));
-                    }
+                    // segment_dict->fst = std::make_unique<DB::FST::FiniteStateTransducer>();
+                    // fmt::println(
+                    //     "[Segment {}]: FST uncompressed size = {}",
+                    //     segment_id,
+                    //     formatReadableSizeWithBinarySuffix(uncompressed_fst_size));
                 }
             }
         }
@@ -336,7 +308,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
 
             for (const auto & [segment_id, segment_dict] : segment_dictionaries)
             {
-                const auto data = segment_dict->fst->getData();
+                std::vector<UInt8> data;
 
                 DB::ReadBufferFromMemory read_buffer(data.data(), data.size());
                 read_buffer.seek(data.size() - 1, SEEK_SET);
