@@ -128,3 +128,37 @@ DROP TABLE IF EXISTS funnel_test2;
 
 
 drop table funnel_test_strict_increase;
+
+-- Test allow_reentry mode
+drop table if exists funnel_test_allow_reentry;
+create table funnel_test_allow_reentry (dt DateTime, user int, event String) engine = MergeTree() partition by dt order by user;
+
+insert into funnel_test_allow_reentry values (1, 1, 'a') (2, 1, 'b') (3, 1, 'a') (4, 1, 'c');
+insert into funnel_test_allow_reentry values (1, 2, 'a') (2, 2, 'b') (3, 2, 'a') (4, 2, 'b') (5, 2, 'c');
+insert into funnel_test_allow_reentry values (1, 3, 'a') (2, 3, 'b') (3, 3, 'c') (4, 3, 'b') (5, 3, 'd');
+insert into funnel_test_allow_reentry values (1, 4, 'a') (2, 4, 'c') (3, 4, 'b');
+insert into funnel_test_allow_reentry values (1, 5, 'a') (2, 5, 'b') (3, 5, 'c') (4, 5, 'a') (5, 5, 'b') (6, 5, 'c') (7, 5, 'd');
+
+select user, windowFunnel(86400, 'strict_order')(dt, event='a', event='b', event='c') as strict_order_result from funnel_test_allow_reentry group by user order by user format JSONCompactEachRow;
+select user, windowFunnel(86400, 'strict_order', 'allow_reentry')(dt, event='a', event='b', event='c') as allow_reentry_result from funnel_test_allow_reentry group by user order by user format JSONCompactEachRow;
+
+select user, windowFunnel(86400, 'strict_order')(dt, event='a', event='b', event='c', event='d') as strict_order_4step from funnel_test_allow_reentry group by user order by user format JSONCompactEachRow;
+select user, windowFunnel(86400, 'strict_order', 'allow_reentry')(dt, event='a', event='b', event='c', event='d') as allow_reentry_4step from funnel_test_allow_reentry group by user order by user format JSONCompactEachRow;
+
+select user, windowFunnel(86400, 'strict_order', 'allow_reentry', 'strict_deduplication')(dt, event='a', event='b', event='c') as combined_modes from funnel_test_allow_reentry group by user order by user format JSONCompactEachRow;
+
+drop table funnel_test_allow_reentry;
+
+drop table if exists funnel_test_ecommerce;
+create table funnel_test_ecommerce (timestamp UInt32, user_id UInt32, action String) engine=Memory;
+
+insert into funnel_test_ecommerce values (100, 1, 'begin_checkout') (200, 1, 'view_product_detail') (300, 1, 'begin_checkout') (400, 1, 'complete_payment');
+insert into funnel_test_ecommerce values (100, 2, 'begin_checkout') (200, 2, 'view_product_detail') (250, 2, 'view_product_detail') (300, 2, 'begin_checkout') (400, 2, 'complete_payment');
+insert into funnel_test_ecommerce values (100, 3, 'begin_checkout') (200, 3, 'view_product_detail') (300, 3, 'complete_payment');
+
+select user_id, windowFunnel(600, 'strict_order')(timestamp, action='begin_checkout', action='view_product_detail', action='complete_payment') as normal_funnel from funnel_test_ecommerce group by user_id order by user_id format JSONCompactEachRow;
+select user_id, windowFunnel(600, 'strict_order', 'allow_reentry')(timestamp, action='begin_checkout', action='view_product_detail', action='complete_payment') as reentry_funnel from funnel_test_ecommerce group by user_id order by user_id format JSONCompactEachRow;
+select user_id, windowFunnel(600, 'strict_order')(timestamp, action='begin_checkout', action='view_product_detail', action='begin_checkout', action='complete_payment') as normal_4step from funnel_test_ecommerce group by user_id order by user_id format JSONCompactEachRow;
+select user_id, windowFunnel(600, 'strict_order', 'allow_reentry')(timestamp, action='begin_checkout', action='view_product_detail', action='begin_checkout', action='complete_payment') as reentry_4step from funnel_test_ecommerce group by user_id order by user_id format JSONCompactEachRow;
+
+drop table funnel_test_ecommerce;
