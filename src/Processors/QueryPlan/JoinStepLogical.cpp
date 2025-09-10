@@ -718,7 +718,8 @@ static void addSortingForMergeJoin(
     QueryPlan::Nodes & nodes,
     const SortingStep::Settings & sort_settings,
     const JoinSettings & join_settings,
-    const TableJoin & table_join)
+    const TableJoin & table_join,
+    size_t max_step_description_length)
 {
     auto join_kind = table_join.kind();
     auto join_strictness = table_join.strictness();
@@ -731,7 +732,7 @@ static void addSortingForMergeJoin(
 
         auto sorting_step = std::make_unique<SortingStep>(
             node->step->getOutputHeader(), std::move(sort_description), 0 /*limit*/, sort_settings, true /*is_sorting_for_merge_join*/);
-        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side));
+        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side), max_step_description_length);
         node = &nodes.emplace_back(QueryPlan::Node{std::move(sorting_step), {node}});
     };
 
@@ -740,7 +741,7 @@ static void addSortingForMergeJoin(
     {
         auto creating_set_step = std::make_unique<CreateSetAndFilterOnTheFlyStep>(
             node->step->getOutputHeader(), key_names, join_settings.max_rows_in_set_to_optimize_join, crosswise_connection, join_table_side);
-        creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_table_side));
+        creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_table_side), max_step_description_length);
 
         auto * step_raw_ptr = creating_set_step.get();
         node = &nodes.emplace_back(QueryPlan::Node{std::move(creating_set_step), {node}});
@@ -803,7 +804,7 @@ static void constructPhysicalStep(
     node.children.resize(1);
 
     auto * join_left_node = node.children[0];
-    makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, "Left Join Actions");
+    makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, makeDescription("Left Join Actions"));
 
     node.step = std::make_unique<FilledJoinStep>(join_left_node->step->getOutputHeader(), join_ptr, join_settings.max_block_size);
 
@@ -811,7 +812,7 @@ static void constructPhysicalStep(
     makeFilterNodeOnTopOf(
         node, std::move(post_join_actions),
         residual_filter_condition.first, residual_filter_condition.second,
-        nodes, "Post Join Actions");
+        nodes, makeDescription("Post Join Actions"));
 }
 
 static void constructPhysicalStep(
@@ -835,13 +836,13 @@ static void constructPhysicalStep(
     auto * join_left_node = node.children[0];
     auto * join_right_node = node.children[1];
 
-    makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, "Left Pre Join Actions");
+    makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, makeDescription("Left Pre Join Actions"));
 
-    makeExpressionNodeOnTopOf(*join_right_node, std::move(right_pre_join_actions), nodes, "Right Pre Join Actions");
+    makeExpressionNodeOnTopOf(*join_right_node, std::move(right_pre_join_actions), nodes, makeDescription("Right Pre Join Actions"));
 
     if (const auto * fsmjoin = dynamic_cast<const FullSortingMergeJoin *>(join_ptr.get()))
         addSortingForMergeJoin(fsmjoin, join_left_node, join_right_node, nodes,
-            sorting_settings, join_settings, fsmjoin->getTableJoin());
+            sorting_settings, join_settings, fsmjoin->getTableJoin(), optimization_settings.max_step_description_length);
 
     auto required_output_from_join = post_join_actions.getRequiredColumnsNames();
     auto join_step = std::make_unique<JoinStep>(
@@ -864,7 +865,7 @@ static void constructPhysicalStep(
     makeFilterNodeOnTopOf(
         node, std::move(post_join_actions),
         residual_filter_condition.first, residual_filter_condition.second,
-        nodes, "Post Join Actions");
+        nodes, makeDescription("Post Join Actions"));
 }
 
 static QueryPlanNode buildPhysicalJoinImpl(
@@ -1459,7 +1460,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
         std::move(new_actions_after_join),
         join_settings,
         sorting_settings);
-    result_step->setStepDescription(getStepDescription());
+    result_step->setStepDescription(*this);
     return result_step;
 }
 

@@ -69,14 +69,14 @@ $CLICKHOUSE_CLIENT --enable_analyzer=0 -q "
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 4
     settings enable_optimize_predicate_expression=0" |
-    grep -o "Aggregating\|Filter column\|Filter column: notEquals(y, 0)\|FUNCTION and(minus(s, 4) :: 5, 1 :: 3) -> and(notEquals(y, 0), minus(s, 4))"
+    grep -o "Aggregating\|Filter column\|Filter column: notEquals(y, 0)\|FUNCTION minus(sum(x) :: 1, 4 :: 2) -> minus(s, 4)"
 echo "> (analyzer) one condition of filter should be pushed down after aggregating, other condition is cast"
 $CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 4
     settings enable_optimize_predicate_expression=0" |
-        grep -o "Aggregating\|Filter column\|Filter column: notEquals(__table1.y, 0_UInt8)\|FUNCTION and(minus(__table1.s, 4_UInt8) :: 1, 1 :: 3) -> and(notEquals(__table1.y, 0_UInt8), minus(__table1.s, 4_UInt8))"
+        grep -o "Aggregating\|Filter column\|Filter column: notEquals(__table1.y, 0_UInt8)\|FUNCTION minus(sum(__table2.x) :: 0, 4_UInt8 :: 2) -> minus(__table1.s, 4_UInt8)"
 $CLICKHOUSE_CLIENT -q "
     select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y

@@ -578,8 +578,9 @@ ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
         }
         else
         {
-            auto converted_column = ColumnUInt8::create(input_rows_count);
-            convertAnyColumnToBool(column, converted_column->getData(), ErrorCodes::ILLEGAL_COLUMN);
+            auto converted_column = ColumnUInt8::create();
+            if (!tryConvertAnyColumnToBool(*column, converted_column->getData()))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of column: {}", column->getName());
             uint8_args.push_back(converted_column.get());
             converted_columns_holder.emplace_back(std::move(converted_column));
         }
