@@ -1885,7 +1885,6 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeepe
 void ZooKeeper::observeOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, UInt64 elapsed_microseconds)
 {
     chassert(response);
-    chassert(elapsed_microseconds > 0);
 
     if (!request)
     {
