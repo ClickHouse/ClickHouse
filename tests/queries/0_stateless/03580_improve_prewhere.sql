@@ -15,17 +15,16 @@ CREATE TABLE test_improve_prewhere (
     primary_key String STATISTICS(CountMin),
     normal_column String STATISTICS(CountMin),
     value UInt32 STATISTICS(TDigest),
-    date Date
+    date Date STATISTICS(CountMin),
 ) ENGINE = MergeTree()
-ORDER BY primary_key
-PARTITION BY toYYYYMM(date);
+ORDER BY primary_key;
 
 INSERT INTO test_improve_prewhere
 SELECT
-    hex(rand() % 10) AS primary_key,
-    arrayElement(['hello', 'world', 'test', 'example', 'sample'], rand() % 5 + 1) AS normal_column,
-    rand() % 1000 + 1 AS value,
-    toDate('2025-08-01') + (rand() % 10) AS date
+    hex(number % 100) AS primary_key,
+    arrayElement(['hello', 'world', 'test', 'example', 'sample'], number % 5 + 1) AS normal_column,
+    number % 1000 + 1 AS value,
+    toDate('2025-08-01') + number AS date
 FROM numbers(100000);
 
 -- { echoOn }
