@@ -22,6 +22,9 @@ JSONSharedDataPathsWithTypes
 JSON_EXISTS
 JSON_QUERY
 JSON_VALUE
+MACNumToString
+MACStringToNum
+MACStringToOUI
 URLHierarchy
 URLPathHierarchy
 UUIDNumToString
