@@ -328,7 +328,7 @@ const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
     memcpy(chars.data() + old_size, pos, string_size_with_zero_byte - 1);
 
     offsets.push_back(new_size);
-    return pos + string_size_with_zero_byte + 1;
+    return pos + string_size_with_zero_byte;
 }
 
 const char * ColumnString::skipSerializedInArena(const char * pos) const
