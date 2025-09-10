@@ -55,7 +55,7 @@ std::optional<T> getFromPositionOrKeyValue(
 
 struct ParseFromDiskResult
 {
-    std::optional<String> path_suffix;
+    String path_suffix;
     std::optional<String> format;
     std::optional<String> structure;
     std::optional<String> compression_method;

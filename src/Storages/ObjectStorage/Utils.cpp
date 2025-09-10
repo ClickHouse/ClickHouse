@@ -12,6 +12,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Poco/UUIDGenerator.h>
 
 namespace DB
 {
@@ -218,7 +219,17 @@ ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr con
         path_value.has_value())
     {
         result.path_suffix = path_value.value();
+        if (result.path_suffix.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty path is not allowed");
+
+        if (result.path_suffix.find('.') != std::string::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path suffix with '.' or '..' are not allowed.");
+        size_t num_start_slashes = 0;
+        for (; num_start_slashes < result.path_suffix.size() && result.path_suffix.at(num_start_slashes) == '/'; ++num_start_slashes) {}
+        result.path_suffix = result.path_suffix.substr(num_start_slashes);
     }
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path should be specified");
 
     if (auto format_value = getFromPositionOrKeyValue<String>("format", args, engine_args_to_idx, key_value_args);
         format_value.has_value())

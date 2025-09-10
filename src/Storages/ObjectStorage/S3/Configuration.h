@@ -76,9 +76,9 @@ public:
     {
         return url;
     }
-    void setURL(const S3::URI & url_to_set)
+    void setURL(const S3::URI & url_)
     {
-        url = url_to_set;
+        url = url_;
     }
 
     const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }

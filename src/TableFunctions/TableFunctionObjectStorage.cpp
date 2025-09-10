@@ -60,15 +60,23 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
     {
         if constexpr (is_data_lake)
         {
-            if (context->getSettingsRef()[Setting::datalake_disk_name].changed)
+            if (context->getSettingsRef()[Setting::datalake_disk_name].changed && !context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
             {
-                if (Definition::name != "iceberg" && Definition::name != "icebergCluster" && Definition::name != "deltaLake" && Definition::name != "deltaLakeCluster")
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg with disk configuration is supported only for default iceberg or icebergCluster");
                 auto disk = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value);
                 switch (disk->getObjectStorage()->getType())
                 {
 #if USE_AWS_S3 && USE_AVRO
                 case ObjectStorageType::S3:
+                    if (Definition::name != "iceberg" && 
+                        Definition::name != "icebergCluster" &&
+                        Definition::name != "deltaLake" &&
+                        Definition::name != "deltaLakeCluster" && 
+                        Definition::name != "icebergS3" && 
+                        Definition::name != "icebergClusterS3" &&
+                        Definition::name != "deltaLakeS3" &&
+                        Definition::name != "deltaLakeClusterS3")
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");                
+
                     if (std::string_view(Definition::name).starts_with("iceberg"))
                         configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
                     else
@@ -77,6 +85,16 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
 #endif
 #if USE_AZURE_BLOB_STORAGE && USE_AVRO
                 case ObjectStorageType::Azure:
+                    if (Definition::name != "iceberg" && 
+                        Definition::name != "icebergCluster" &&
+                        Definition::name != "deltaLake" &&
+                        Definition::name != "deltaLakeCluster" && 
+                        Definition::name != "icebergAzure" && 
+                        Definition::name != "icebergClusterAzure" &&
+                        Definition::name != "deltaLakeAzure" &&
+                        Definition::name != "deltaLakeClusterAzure")
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");                
+
                     if (std::string_view(Definition::name).starts_with("iceberg"))
                         configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
                     else
@@ -85,6 +103,16 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
 #endif
 #if USE_AVRO
                 case ObjectStorageType::Local:
+                    if (Definition::name != "iceberg" && 
+                        Definition::name != "icebergCluster" &&
+                        Definition::name != "deltaLake" &&
+                        Definition::name != "deltaLakeCluster" && 
+                        Definition::name != "icebergLocal" && 
+                        Definition::name != "icebergClusterLocal" &&
+                        Definition::name != "deltaLakeLocal" &&
+                        Definition::name != "deltaLakeClusterLocal")
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");                
+
                     if (std::string_view(Definition::name).starts_with("iceberg"))
                         configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
                     else
@@ -252,7 +280,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         context->hasClusterFunctionReadTaskCallback();
 
     ObjectStoragePtr object_storage_;
-    if (configuration->isDataLakeConfiguration() && context->getSettingsRef()[Setting::datalake_disk_name].changed)
+    if (configuration->isDataLakeConfiguration() && context->getSettingsRef()[Setting::datalake_disk_name].changed && !context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
         object_storage_ = context->getDisk(context->getSettingsRef()[Setting::datalake_disk_name].value)->getObjectStorage();
     else
         object_storage_ = getObjectStorage(context, !is_insert_query);

@@ -70,7 +70,7 @@ void StorageObjectStorageConfiguration::initialize(
     ContextPtr local_context,
     bool with_table_structure)
 {
-    if (local_context->getSettingsRef()[Setting::datalake_disk_name].changed)
+    if (local_context->getSettingsRef()[Setting::datalake_disk_name].changed && !local_context->getSettingsRef()[Setting::datalake_disk_name].value.empty())
         configuration_to_initialize.fromDisk(local_context->getSettingsRef()[Setting::datalake_disk_name].value, engine_args, local_context, with_table_structure);
     else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);

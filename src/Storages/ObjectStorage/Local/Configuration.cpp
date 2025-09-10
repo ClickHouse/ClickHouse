@@ -36,8 +36,9 @@ void StorageLocalConfiguration::fromDisk(const String & disk_name, ASTs & args, 
     ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context);
 
     fs::path root = disk->getPath();
-    fs::path suffix = parsing_result.path_suffix.value_or("");
+    fs::path suffix = parsing_result.path_suffix;
     setPathForRead(String(root / suffix));
+    setPaths({String(root / suffix)});
     if (parsing_result.format.has_value())
         format = *parsing_result.format;
     if (parsing_result.compression_method.has_value())

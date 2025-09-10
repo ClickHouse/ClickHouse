@@ -2,6 +2,7 @@ import glob
 import json
 import logging
 import os
+import uuid
 
 import pyspark
 import pytest
@@ -243,6 +244,9 @@ def get_node(cluster, use_delta_kernel):
     else:
         assert False
 
+def get_uuid_str():
+    return str(uuid.uuid4()).replace("-", "_")
+
 
 def create_delta_table(
     instance,
@@ -310,9 +314,7 @@ def create_initial_data_file(
 def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
-    TABLE_NAME = "test_single_log_file"
-    if storage_type == "s3":
-        TABLE_NAME += "_" + str(use_delta_kernel)
+    TABLE_NAME = f"test_single_log_file_{get_uuid_str()}"
 
     inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(100)"
     parquet_data_path = create_initial_data_file(
@@ -332,7 +334,7 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
         started_cluster,
         storage_type,
         delta_path,
-        "",
+        TABLE_NAME,
     )
 
     assert len(files) == 2  # 1 metadata files + 1 data file
@@ -343,8 +345,8 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
         TABLE_NAME,
         started_cluster,
         use_delta_kernel,
-        "",
-        ""
+        f"'{TABLE_NAME}'",
+        "_common"
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
@@ -353,33 +355,16 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     )
 
     if storage_type == "s3":
-        disk_name = f"disk_s3_{use_delta_kernel}"
+        disk_name = f"disk_s3_{use_delta_kernel}_common"
     else:
-        disk_name = f"disk_local"
+        disk_name = f"disk_local_common"
 
-    assert instance.query(f"SELECT * FROM deltaLake() SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
+    assert instance.query(f"SELECT * FROM deltaLake('{TABLE_NAME}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
         inserted_data
     )
-
-    TABLE_NAME_COMMON = TABLE_NAME + "_common"
-    create_delta_table(
-        instance,
-        storage_type,
-        TABLE_NAME_COMMON,
-        started_cluster,
-        use_delta_kernel,
-        f"path = {TABLE_NAME}",
-        "_common"
-    )
-
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME_COMMON}")) == 100
-    assert instance.query(f"SELECT * FROM {TABLE_NAME_COMMON}") == instance.query(
-        inserted_data
-    )
-    instance.query(f"DROP TABLE {TABLE_NAME_COMMON}")
 
     if storage_type == "s3":
-        assert instance.query(f"SELECT * FROM deltaLakeCluster('cluster_simple') SETTINGS datalake_disk_name = 'disk_s3_{use_delta_kernel}'") == instance.query(
+        assert instance.query(f"SELECT * FROM deltaLakeCluster('cluster_simple', '{TABLE_NAME}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
             inserted_data
         )
 

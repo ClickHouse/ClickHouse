@@ -314,7 +314,7 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
     {
         String path = s3_object_storage.getURI().uri_str;
         fs::path root = path;
-        fs::path suffix = parsing_result.path_suffix.value_or("");
+        fs::path suffix = parsing_result.path_suffix;
         setURL(S3::URI(String(root / suffix)));
     }
 
@@ -322,8 +322,9 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
     {
         String path = object_storage_disk->getObjectsKeyPrefix();
         fs::path root = path;
-        fs::path suffix = parsing_result.path_suffix.value_or("");
+        fs::path suffix = parsing_result.path_suffix;
         setPathForRead(String(root / suffix));
+        setPaths({String(root / suffix)});
     }
     if (parsing_result.format.has_value())
         format = *parsing_result.format;
