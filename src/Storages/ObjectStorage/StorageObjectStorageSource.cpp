@@ -328,7 +328,8 @@ Chunk StorageObjectStorageSource::generate()
                  .data_lake_snapshot_version = file_iterator->getSnapshotVersion()},
                 read_context);
 
-#if USE_PARQUET && USE_AWS_S3
+
+#if USE_PARQUET
             if (chunk_size && chunk.hasColumns())
             {
                 /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
@@ -342,11 +343,19 @@ Chunk StorageObjectStorageSource::generate()
                     {
                         /// A terrible crutch, but it this code will be removed next month.
                         DeltaLakePartitionColumns partition_columns;
+#if USE_AWS_S3
                         if (auto * delta_conf_s3 = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
                         {
                             partition_columns = delta_conf_s3->getDeltaLakePartitionColumns();
                         }
-                        else if (auto * delta_conf_local = dynamic_cast<StorageLocalDeltaLakeConfiguration *>(configuration.get()))
+#endif
+#if USE_AZURE_BLOB_STORAGE
+                        if (auto * delta_conf_azure = dynamic_cast<StorageAzureDeltaLakeConfiguration *>(configuration.get()))
+                        {
+                            partition_columns = delta_conf_azure->getDeltaLakePartitionColumns();
+                        }
+#endif
+                        if (auto * delta_conf_local = dynamic_cast<StorageLocalDeltaLakeConfiguration *>(configuration.get()))
                         {
                             partition_columns = delta_conf_local->getDeltaLakePartitionColumns();
                         }
@@ -372,7 +381,6 @@ Chunk StorageObjectStorageSource::generate()
                                 }
                             }
                         }
-
                     }
                 }
             }

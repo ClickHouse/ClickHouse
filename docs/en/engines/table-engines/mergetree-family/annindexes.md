@@ -172,7 +172,7 @@ Memory consumption required to load a vector index:
 
 ```text
 Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
-Memory for in-memory graph (mg) = Number of vectors * hnsw_max_connections_per_layer * 2 * 4
+Memory for in-memory graph (mg) = Number of vectors * hnsw_max_connections_per_layer * Bytes_per_node_id (= 4) * Layer_node_repetition_factor (= 2)
 
 Memory consumption: mv + mg
 ```

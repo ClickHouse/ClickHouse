@@ -29,7 +29,7 @@ workflow = Workflow.Config(
         *JobConfigs.integration_test_jobs_non_required,
         *JobConfigs.functional_tests_jobs_coverage,
         *JobConfigs.stress_test_jobs,
-        *JobConfigs.stress_test_azure_master_jobs,
+        *JobConfigs.stress_test_azure_jobs,
         *JobConfigs.ast_fuzzer_jobs,
         *JobConfigs.buzz_fuzzer_jobs,
         *JobConfigs.performance_comparison_with_master_head_jobs,
