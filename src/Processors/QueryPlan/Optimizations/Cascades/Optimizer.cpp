@@ -328,9 +328,9 @@ GroupId CascadesOptimizer::populateMemoFromJoinGraph(const JoinGraph & join_grap
                             JoinSettings{settings},
                             SortingStep::Settings{settings});
 
-                        join_step->setStepDescription("JOIN '" +
-                                normalizedGroupName(larger_subgroup.relations) + "', '" +
-                                normalizedGroupName(smaller_subgroup.relations) + "'");
+                        join_step->setStepDescription(fmt::format("JOIN '{}' and '{}'",
+                                normalizedGroupName(larger_subgroup.relations),
+                                normalizedGroupName(smaller_subgroup.relations)), 200);
 
                         join_expression->plan_step = std::move(join_step);
                     }
