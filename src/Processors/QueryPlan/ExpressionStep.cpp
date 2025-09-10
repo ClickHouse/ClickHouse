@@ -150,7 +150,7 @@ IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(Na
     // If the actions are not updated and no outputs has to be removed, then there is nothing to update
     // Note: required_outputs must be a subset of already existing outputs
     if (!updated_actions && output_header->columns() == required_output_count)
-        return UnusedColumnRemovalResult{false, false};
+        return UnusedColumnRemovalResult::nothingChanged();
 
     if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
@@ -170,12 +170,12 @@ IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(Na
         SharedHeader new_shared_input_header = std::make_shared<const Block>(std::move(new_input_header));
         updateInputHeader(std::move(new_shared_input_header), 0);
 
-        return UnusedColumnRemovalResult{true, true};
+        return UnusedColumnRemovalResult::removedInputs();
     }
 
     updateOutputHeader();
 
-    return UnusedColumnRemovalResult{true, false};
+    return UnusedColumnRemovalResult::updatedButKeptInputs();
 }
 
 bool ExpressionStep::canRemoveColumnsFromOutput() const

@@ -121,6 +121,11 @@ public:
     {
         bool updated_anything;
         bool removed_any_input;
+
+        static UnusedColumnRemovalResult nothingChanged() { return {false, false}; }
+        static UnusedColumnRemovalResult updatedButKeptInputs() { return {true, false}; }
+        static UnusedColumnRemovalResult removedInputs() { return {true, true}; }
+
     };
 
     /// Removes the unnecessary inputs and outputs from the step based on required_outputs.

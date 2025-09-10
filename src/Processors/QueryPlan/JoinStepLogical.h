@@ -168,10 +168,10 @@ protected:
     JoinExpressionActions expression_actions;
     JoinOperator join_operator;
 
-    /// This is the nodes which used to split expressions calculated before and after join
+    /// These are the nodes which are used to split expressions calculated before and after join
     /// Nodes from this list are used as inputs for ActionsDAG executed after join operation
     /// It can be input or node with toNullable function applied to input
-    std::vector<const ActionsDAG::Node *> actions_after_join = {};
+    ActionsDAG::NodeRawConstPtrs actions_after_join = {};
 
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
