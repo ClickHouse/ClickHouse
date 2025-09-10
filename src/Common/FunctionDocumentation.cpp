@@ -1,6 +1,7 @@
 #include <Common/FunctionDocumentation.h>
 
 #include <Common/Exception.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <unordered_map>
 
@@ -147,7 +148,17 @@ String FunctionDocumentation::argumentsAsString() const
 
 String FunctionDocumentation::syntaxAsString() const
 {
-    return boost::algorithm::trim_copy(syntax);
+    String trimmed_syntax = boost::algorithm::trim_copy(syntax);
+
+    /// It is tempting to write 'SELECT someFunction(arg1, arg2)' in the syntax field but we
+    /// really want 'someFunction(arg1, arg2)'.
+    if (boost::algorithm::istarts_with(trimmed_syntax, "SELECT "))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Syntax field must not start with 'SELECT': {}", syntax);
+
+    if (syntax.ends_with(";"))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Syntax field must not end with ';': {}", syntax);
+
+    return trimmed_syntax;
 }
 
 String FunctionDocumentation::returnedValueAsString() const
