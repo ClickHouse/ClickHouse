@@ -11,7 +11,8 @@ size_t getTotalSize(const StoredObjects & objects)
     return size;
 }
 
-Strings collectRemotePaths(const StoredObjects & objects) {
+Strings collectRemotePaths(const StoredObjects & objects)
+{
     Strings remote_paths;
     remote_paths.reserve(objects.size());
     for (const auto & object : objects)
