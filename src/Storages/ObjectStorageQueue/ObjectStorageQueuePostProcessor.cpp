@@ -180,13 +180,13 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             auto read_settings = getReadSettings();
             const auto read_settings_to_use = s3_storage->patchSettings(read_settings);
             auto scheduler = threadPoolCallbackRunnerUnsafe<void>(
-                s3_storage->getThreadPoolWriter(),
+                IObjectStorage::getThreadPoolWriter(),
                 "ObjStorQueue_move_s3");
             for (const auto & object_from : objects)
             {
                 const String src_bucket = s3_storage->getObjectsNamespace();
                 size_t object_size = S3::getObjectSize(
-                    *src_client.get(),
+                    *src_client,
                     src_bucket,
                     object_from.remote_path);
                 auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
@@ -268,7 +268,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                 const auto read_settings_to_use = azure_storage->patchSettings(read_settings);
                 bool same_credentials = compareAzureAuthMethod(azure_storage->getAzureBlobStorageAuthMethod(), connection_params.auth_method);
                 auto scheduler = threadPoolCallbackRunnerUnsafe<void>(
-                    azure_storage->getThreadPoolWriter(),
+                    IObjectStorage::getThreadPoolWriter(),
                     "ObjStorQueue_move_azure");
 
                 LOG_INFO(log, "copying {} (size {}B) to container {}", object_from.remote_path, blob_size, move_container);
