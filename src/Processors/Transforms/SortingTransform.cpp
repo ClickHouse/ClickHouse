@@ -11,7 +11,6 @@
 
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -56,10 +55,6 @@ MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & 
         using QueueType = std::decay_t<decltype(queue)>;
         queue = QueueType(cursors);
     });
-}
-
-MergeSorter::~MergeSorter()
-{
 }
 
 
