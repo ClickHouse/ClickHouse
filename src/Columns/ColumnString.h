@@ -205,6 +205,7 @@ public:
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+    std::optional<size_t> getSerializedValueSize(size_t n) const override;
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory) const override;
