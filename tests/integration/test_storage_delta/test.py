@@ -2974,7 +2974,7 @@ def test_writes(started_cluster):
     table_name = randomize_table_name("test_writes")
     result_file = f"{table_name}_data"
 
-    schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
+    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
     write_deltalake(
         f"s3://root/{result_file}",
@@ -3056,7 +3056,11 @@ def test_partitioned_writes(started_cluster):
     partition_columns = ["id", "comment"]
 
     schema = pa.schema(
-        [("id", pa.int32()), ("name", pa.string()), ("comment", pa.string())]
+        [
+            ("id", pa.int32(), False),
+            ("name", pa.string(), False),
+            ("comment", pa.string(), False),
+        ]
     )
     empty_arrays = [
         pa.array([], type=pa.int32()),
@@ -3177,7 +3181,7 @@ def test_concurrent_queries(started_cluster, partitioned):
     TABLE_NAME = randomize_table_name("test_concurrent_queries")
     result_file = f"{TABLE_NAME}"
 
-    schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
+    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
     write_deltalake(
         f"s3://root/{result_file}",
@@ -3339,7 +3343,7 @@ def test_write_limits(started_cluster, partitioned, limit_enabled):
     table_name = randomize_table_name("test_write_limits")
     result_file = f"{table_name}_data"
 
-    schema = pa.schema([("id", pa.int32()), ("name", pa.string())])
+    schema = pa.schema([("id", pa.int32(), False), ("name", pa.string(), False)])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
     write_deltalake(
         f"file:///{result_file}",
@@ -3521,6 +3525,80 @@ deltaLake(
         "2025-06-04\t('100022','2025-06-04 18:40:56.000000','2025-06-09 21:19:00.364000')\t100022"
         == node.query(f"SELECT * FROM {table_name} ORDER BY all").strip()
     )
+    assert (
+        "100022\t2025-06-04 18:40:56.000000"
+        == node.query(
+            f"SELECT col_x2D2.col_x2D3, col_x2D2.col_x2D4 FROM {table_name} ORDER BY all"
+        ).strip()
+    )
+
+
+@pytest.mark.parametrize("column_mapping", ["", "name"])
+def test_subcolumns_2(started_cluster, column_mapping):
+    instance = started_cluster.instances["node1"]
+    instance_disabled_kernel = cluster.instances["node_with_disabled_delta_kernel"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_write_column_order")
+    spark = started_cluster.spark_session
+    path = f"/{table_name}"
+
+    if column_mapping == "name":
+        table_properties = "'delta.minReaderVersion' = '2', 'delta.minWriterVersion' = '5', 'delta.columnMapping.mode' = 'name'"
+    else:
+        table_properties = ""
+
+    create_query = f"""
+CREATE TABLE {table_name}
+    (c1 STRUCT<_2: ARRAY<INT>> NOT NULL)
+    USING DELTA
+    LOCATION '{path}'
+    """
+    if len(table_properties) > 0:
+        create_query += f" TBLPROPERTIES ({table_properties})"
+
+    spark.sql(create_query)
+    LocalUploader(instance).upload_directory(f"{path}/", f"{path}/")
+
+    table_function = f"deltaLakeLocal('{path}')"
+    assert 0 == int(instance.query(f"SELECT count() FROM {table_function}"))
+    assert (
+        "c1\tTuple(\\n    _2 Array(Nullable(Int32)))"
+        == instance.query(f"DESCRIBE TABLE {table_function}").strip()
+    )
+
+    instance.query(
+        f"CREATE TABLE {table_name} ENGINE = DeltaLakeLocal('{path}') SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+    assert 0 == int(instance.query(f"SELECT count() FROM {table_name}"))
+    assert "" == instance.query(f"SELECT {table_name}.`c1._2` FROM {table_name}")
+
+    spark.sql(
+        f"""
+    INSERT INTO {table_name}
+    VALUES (named_struct('_2', array(1, NULL, 3))),
+        (named_struct('_2', array(4, 5)))
+    """
+    )
+    LocalUploader(instance).upload_directory(f"{path}/", f"{path}/")
+
+    assert (
+        "([1,NULL,3])\n([4,5])" == instance.query(f"SELECT * FROM {table_name}").strip()
+    )
+    assert (
+        "[1,NULL,3]\n[4,5]"
+        == instance.query(f"SELECT {table_name}.`c1._2` FROM {table_name}").strip()
+    )
+    assert (
+        "3\n2"
+        == instance.query(
+            f"SELECT {table_name}.`c1._2`.size0 FROM {table_name}"
+        ).strip()
+    )
+    assert (
+        "[0,1,0]\n[0,0]"
+        == instance.query(f"SELECT {table_name}.`c1._2`.null FROM {table_name}").strip()
+    )
 
 
 def test_write_column_order(started_cluster):
@@ -3529,7 +3607,7 @@ def test_write_column_order(started_cluster):
     bucket = started_cluster.minio_bucket
     table_name = randomize_table_name("test_write_column_order")
     result_file = f"{table_name}_data"
-    schema = pa.schema([("c1", pa.int32()), ("c0", pa.string())])
+    schema = pa.schema([("c1", pa.int32(), False), ("c0", pa.string(), False)])
     empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.string())]
     write_deltalake(
         f"file:///{result_file}",
@@ -3557,3 +3635,63 @@ def test_write_column_order(started_cluster):
     )
 
     assert num_rows * 2 == int(instance.query(f"SELECT count() FROM {table_name}"))
+
+
+@pytest.mark.parametrize("column_mapping", ["", "name"])
+def test_type_from_storage_def(started_cluster, column_mapping):
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_types_2")
+    spark = started_cluster.spark_session
+    path = f"/{table_name}"
+
+    spark_schema = StructType([
+        StructField("c0", IntegerType(), nullable=False),
+        StructField("c1", TimestampType(), nullable=False),
+        StructField("c2", StructType([
+            StructField("created_at", TimestampType(), nullable=True),
+            StructField("updated_at", TimestampType(), nullable=True),
+        ]), nullable=False),
+    ])
+    data = [
+        (
+            1,
+            datetime(2000, 10, 10, 0, 0, 0),
+            {
+                "created_at": datetime(2000, 11, 11, 0, 0, 0),
+                "updated_at": datetime(2000, 12, 12, 0, 0, 0),
+            }
+        )
+    ]
+
+    df = spark.createDataFrame(data, schema=spark_schema)
+    if len(column_mapping) > 0:
+        df.write.format("delta").option(
+            "delta.minReaderVersion", "2"
+        ).option("delta.minWriterVersion", "5").option(
+            "delta.columnMapping.mode", column_mapping
+        ).save(
+            path
+        )
+    else:
+        df.write.format("delta").save(path)
+
+    LocalUploader(instance).upload_directory(f"{path}/", f"{path}/")
+
+    instance.query(
+        f"""CREATE TABLE {table_name}
+        (c0 Int32, c1 DateTime, c2 Tuple(created_at DateTime, updated_at DateTime))
+        ENGINE = DeltaLakeLocal('{path}') SETTINGS output_format_parquet_compression_method = 'none'
+    """)
+
+    assert (
+        "('2000-11-11 00:00:00','2000-12-12 00:00:00')"
+        == instance.query(f"SELECT c2 FROM {table_name}").strip()
+    )
+    assert (
+        "2000-11-11 00:00:00"
+        == instance.query(f"SELECT c2.created_at FROM {table_name}").strip()
+    )
+    assert (
+        "2000-11-11 00:00:00"
+        == instance.query(f"SELECT c2.created_at FROM {table_name}").strip()
+    )
