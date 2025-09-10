@@ -173,7 +173,7 @@ std::vector<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr 
     chassert(join_step);
 
     auto swapped_join_step = cloneSwapped(*join_step);
-    swapped_join_step->setStepDescription(join_step->getStepDescription() + " swapped");
+    swapped_join_step->setStepDescription(fmt::format("{} swapped", join_step->getStepDescription()), 200);
 
     GroupExpressionPtr expression_with_swapped_inputs = std::make_shared<GroupExpression>(nullptr);
     expression_with_swapped_inputs->plan_step = std::move(swapped_join_step);
@@ -232,7 +232,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
 
     auto new_join_step = join_step->clone();
 
-    new_join_step->setStepDescription("IMPL: " + join_step->getStepDescription());
+    new_join_step->setStepDescription(fmt::format("IMPL: {}", join_step->getStepDescription()), 200);
 
     GroupExpressionPtr hash_join_expression = std::make_shared<GroupExpression>(*expression);
     hash_join_expression->plan_step = std::move(new_join_step);
