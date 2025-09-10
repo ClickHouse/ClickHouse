@@ -7062,7 +7062,7 @@ DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
 )", EXPERIMENTAL) \
     DECLARE(Bool, rewrite_in_to_join, false, R"(
-Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query when join reordering is implemented.
+Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
 )", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \
