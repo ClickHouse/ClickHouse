@@ -229,6 +229,7 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     String account_name;
     String container_name;
     String prefix;
+    bool endpoint_contains_account_name = false;
 
     auto get_container_name = [&]
     {
@@ -247,7 +248,7 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
 
         /// For some authentication methods account name is not present in the endpoint
         /// 'endpoint_contains_account_name' bool is used to understand how to split the endpoint (default : true)
-        bool endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
+        endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
 
         size_t pos = endpoint.find("//");
         if (pos == std::string::npos)
