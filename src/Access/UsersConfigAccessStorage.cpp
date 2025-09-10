@@ -114,7 +114,7 @@ namespace
 
     UserPtr parseUser(
         const Poco::Util::AbstractConfiguration & config,
-        const String & user_name,
+        String user_name,
         const std::unordered_set<UUID> & allowed_profile_ids,
         const std::unordered_set<UUID> & allowed_role_ids,
         bool allow_no_password,
@@ -122,8 +122,12 @@ namespace
     {
         const bool validate = true;
         auto user = std::make_shared<User>();
-        user->setName(user_name);
         String user_config = "users." + user_name;
+
+        /// If the user name contains a dot, it is escaped with a backslash when parsed from the config file.
+        /// We need to remove the backslash to get the correct user name.
+        Poco::replaceInPlace(user_name, "\\.", ".");
+        user->setName(user_name);
         bool has_no_password = config.has(user_config + ".no_password");
         bool has_password_plaintext = config.has(user_config + ".password");
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
