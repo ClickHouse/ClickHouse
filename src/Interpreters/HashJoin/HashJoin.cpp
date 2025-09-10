@@ -730,7 +730,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             auto join_mask_col = JoinCommon::getColumnAsMask(block, onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
-                        if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
+            if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
             {
                 /// Save rows that do not hold conditions
                 not_joined_map = ColumnUInt8::create(block.rows(), 0);
