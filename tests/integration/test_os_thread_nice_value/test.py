@@ -27,19 +27,25 @@ def started_cluster():
 def test_zookeeper_client_send_receive(started_cluster):
     for _ in range(42):
         send_thread_nice_ok = bool(
-            node.exec_in_container([
-                "bash",
-                "-c",
-                "ps -eT -o comm,nice --no-headers | grep 'ZooKeeperSend.*-5$'",
-            ]).strip()
+            node.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "ps -eT -o comm,nice --no-headers | grep 'ZooKeeperSend.*-5$'",
+                ],
+                nothrow=True,
+            ).strip()
         )
 
         receive_thread_nice_ok = bool(
-            node.exec_in_container([
-                "bash",
-                "-c",
-                "ps -eT -o comm,nice --no-headers | grep 'ZooKeeperRecv.*-5$'",
-            ]).strip()
+            node.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "ps -eT -o comm,nice --no-headers | grep 'ZooKeeperRecv.*-5$'",
+                ],
+                nothrow=True,
+            ).strip()
         )
 
         if send_thread_nice_ok and receive_thread_nice_ok:
@@ -58,19 +64,25 @@ def test_query(started_cluster):
 
     while query_thread.is_alive():
         query_pull_pipeline_executor_nice_ok = bool(
-            node.exec_in_container([
-                "bash",
-                "-c",
-                "ps -eT -o comm,nice --no-headers | grep 'QueryPullPipeEx.*4$'",
-            ]).strip()
+            node.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "ps -eT -o comm,nice --no-headers | grep 'QueryPullPipeEx.*4$'",
+                ],
+                nothrow=True,
+            ).strip()
         )
 
         tcp_handler_nice_ok = bool(
-            node.exec_in_container([
-                "bash",
-                "-c",
-                "ps -eT -o comm,nice --no-headers | grep 'TCPHandler.*4$'",
-            ]).strip()
+            node.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "ps -eT -o comm,nice --no-headers | grep 'TCPHandler.*4$'",
+                ],
+                nothrow=True,
+            ).strip()
         )
 
         if query_pull_pipeline_executor_nice_ok and tcp_handler_nice_ok:
