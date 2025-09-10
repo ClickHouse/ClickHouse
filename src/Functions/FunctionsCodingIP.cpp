@@ -1209,13 +1209,13 @@ SELECT
 
     factory.registerFunction<FunctionCutIPv6>(documentation_cutipv6);
 
-    // IPv4ToIPv6 function
+    /// IPv4ToIPv6 function
     FunctionDocumentation::Description description_ipv4toipv6 = R"(
-Converts a 32-bit integer to its IPv4 address representation, then returns the equivalent IPv6 address in binary format as a 16-byte fixed string
+Converts a 32-bit integer to its IPv4 address representation, then returns the equivalent IPv6 address in binary format as a 16-byte fixed string.
     )";
     FunctionDocumentation::Syntax syntax_ipv4toipv6 = "IPv4ToIPv6(x)";
     FunctionDocumentation::Arguments arguments_ipv4toipv6 = {
-        {"x", "IPv4 address as UInt32 number.", {"UInt32"}}
+        {"x", "IPv4 address.", {"UInt32"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_ipv4toipv6 = {"Returns an IPv6 address in binary format.", {"FixedString(16)"}};
     FunctionDocumentation::Examples examples_ipv4toipv6 = {
@@ -1367,7 +1367,7 @@ Interprets the input using big-endian byte ordering.
     FunctionDocumentation::Arguments arguments_ipv4numtostring = {
         {"num", "IPv4 address as UInt32 number.", {"UInt32"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_ipv4numtostring = {"Returns the IPv4 address string in A.B.C.D format.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value_ipv4numtostring = {"Returns a number representing the MAC address, or `0` if the format is invalid.", {"String"}};
     FunctionDocumentation::Examples example_ipv4numtostring = {
     {
         "Usage example",
@@ -1430,7 +1430,7 @@ If the IPv4 address has an invalid format, an exception is thrown.
     FunctionDocumentation::Arguments arguments_ipv4stringtonum = {
         {"string", "IPv4 address string.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_ipv4stringtonum = {"Returns theIPv4 address as UInt32 number.", {"UInt32"}};
+    FunctionDocumentation::ReturnedValue returned_value_ipv4stringtonum = {"Returns theIPv4 address.", {"UInt32"}};
     FunctionDocumentation::Examples examples_ipv4stringtonum = {
     {
         "Usage example",
@@ -1452,9 +1452,9 @@ Converts an IPv4 address string in dotted decimal notation (A.B.C.D format) to i
     FunctionDocumentation::Arguments arguments_ipv4stringtonumordefault = {
         {"string", "IPv4 address string.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_ipv4stringtonumordefault = {"IPv4 address as UInt32 number, or `0` if invalid.", {"UInt32"}};
+    FunctionDocumentation::ReturnedValue returned_value_ipv4stringtonumordefault = {"Returns the IPv4 address, or `0` if invalid.", {"UInt32"}};
     FunctionDocumentation::Examples examples_ipv4stringtonumordefault = {
-        {"Basic example with invalid address", R"(
+        {"Example with an invalid address", R"(
 SELECT
     IPv4StringToNumOrDefault('127.0.0.1') AS valid,
     IPv4StringToNumOrDefault('invalid') AS invalid;
@@ -1478,7 +1478,7 @@ Converts a 32-bit integer to its IPv4 address string representation in dotted de
     FunctionDocumentation::Arguments arguments_ipv4stringtonumornull = {
         {"string", "IPv4 address string.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_ipv4stringtonumornull = {"Returns the IPv4 address as UInt32 number, or `NULL` if invalid.", {"Nullable(UInt32)"}};
+    FunctionDocumentation::ReturnedValue returned_value_ipv4stringtonumornull = {"Returns the IPv4 address, or `NULL` if invalid.", {"Nullable(UInt32)"}};
     FunctionDocumentation::Examples examples_ipv4stringtonumornull =
     {
     {
@@ -1513,7 +1513,7 @@ IPv4-mapped IPv6 addresses are displayed in the format `::ffff:111.222.33.44`.
     FunctionDocumentation::ReturnedValue returned_value_ipv6numtostring = {"Returns the IPv6 address string in text format.", {"String"}};
     FunctionDocumentation::Examples examples_ipv6numtostring = {
     {
-        "Basic example",
+        "Usage example",
         R"(
 SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr;
         )",

@@ -429,7 +429,7 @@ If the IPv6 address has an invalid format, it returns `::` (0 IPv6) or the provi
     FunctionDocumentation::Syntax toIPv6OrDefault_syntax = "toIPv6OrDefault(string[, default])";
     FunctionDocumentation::Arguments toIPv6OrDefault_arguments = {
         {"string", "IP address string to convert."},
-        {"default", "(Optional) The value to return if string has an invalid format."}
+        {"default", "Optional. The value to return if string has an invalid format."}
     };
     FunctionDocumentation::ReturnedValue toIPv6OrDefault_returned_value = {"Returns the IPv6 address, otherwise `::` or the provided optional default if argument `string` has an invalid format.", {"IPv6"}};
     FunctionDocumentation::Examples toIPv6OrDefault_examples = {
