@@ -216,7 +216,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
-
     /// Resolve function parameters
 
     auto parameters_projection_names = resolveExpressionNodeList(
