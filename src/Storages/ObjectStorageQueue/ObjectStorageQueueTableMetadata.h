@@ -24,14 +24,14 @@ struct ObjectStorageQueueTableMetadata
     const String columns;
     const String mode;
     const String last_processed_path;
-    const String after_processing_move_uri;  // is it changeable or not?
-    const String after_processing_move_prefix;  // is it changeable or not?
-    const String after_processing_move_access_key_id;  // is it changeable or not?
-    const String after_processing_move_secret_access_key;  // is it changeable or not?
-    const String after_processing_move_connection_string;  // is it changeable or not?
-    const String after_processing_move_container;  // is it changeable or not?
-    const String after_processing_tag_key;  // is it changeable or not?
-    const String after_processing_tag_value;  // is it changeable or not?
+    const String after_processing_move_uri;
+    const String after_processing_move_prefix;
+    const String after_processing_move_access_key_id;
+    const String after_processing_move_secret_access_key;
+    const String after_processing_move_connection_string;
+    const String after_processing_move_container;
+    const String after_processing_tag_key;
+    const String after_processing_tag_value;
     /// Changeable settings.
     std::atomic<ObjectStorageQueueAction> after_processing;
     std::atomic<UInt64> loading_retries;
