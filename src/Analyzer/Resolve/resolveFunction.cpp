@@ -775,9 +775,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         /// This is a hack to allow a query like `select randConstant(), randConstant(), randConstant()`.
         /// Function randConstant() would return the same value for the same arguments (in scope).
-
+        /// Also we want to use most outer scope for cases like `with (select randConstant()) as a select a as x, a as y, a as z`
+        IdentifierResolveScope * function_scope = &scope;
+        while (function_scope->parent_scope)
+            function_scope = function_scope->parent_scope;
         auto hash = function_node_ptr->getTreeHash();
-        function_cache = &scope.functions_cache[hash];
+
+        function_cache = &function_scope->functions_cache[hash];
         if (!function_cache->resolver)
             function_cache->resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
 
