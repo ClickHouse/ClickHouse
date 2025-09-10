@@ -160,7 +160,7 @@ ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
     shutdown();
 }
 
-ZooKeeperWithFaultInjection::Ptr ObjectStorageQueueMetadata::getZooKeeper()
+ZooKeeperWithFaultInjection::Ptr ObjectStorageQueueMetadata::getZooKeeper(LoggerPtr log)
 {
     auto context = Context::getGlobalContextInstance();
     auto zk_client = context->getZooKeeper();
@@ -171,7 +171,7 @@ ZooKeeperWithFaultInjection::Ptr ObjectStorageQueueMetadata::getZooKeeper()
             /* seed */0,
             zk_client,
             "S3Queue",
-            getLogger("S3Queue"));
+            log);
     }
     return std::make_shared<ZooKeeperWithFaultInjection>(zk_client);
 }
@@ -282,7 +282,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
 {
     const fs::path alter_settings_lock_path = zookeeper_path / "alter_settings_lock";
     zkutil::EphemeralNodeHolder::Ptr alter_settings_lock;
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = getZooKeeper(log);
 
     /// We will retry taking alter_settings_lock for the duration of 5 seconds.
     /// Do we need to add a setting for this?
@@ -460,14 +460,14 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     const auto table_metadata_path = zookeeper_path / "metadata";
     bool warned = false;
 
-    zk_retries.retryLoop([&] { getZooKeeper()->createAncestors(zookeeper_path); });
+    zk_retries.retryLoop([&] { getZooKeeper(log)->createAncestors(zookeeper_path); });
 
     for (size_t i = 0; i < 1000; ++i)
     {
         std::optional<ObjectStorageQueueTableMetadata> metadata_from_zk;
         zk_retries.retryLoop([&]
         {
-            auto zookeeper = getZooKeeper();
+            auto zookeeper = getZooKeeper(log);
             if (zookeeper->exists(table_metadata_path))
             {
                 const auto metadata_str = zookeeper->get(table_metadata_path);
@@ -531,7 +531,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
         Coordination::Responses responses;
         Coordination::Error code;
-        zk_retries.retryLoop([&] { code = getZooKeeper()->tryMulti(requests, responses); });
+        zk_retries.retryLoop([&] { code = getZooKeeper(log)->tryMulti(requests, responses); });
         if (code == Coordination::Error::ZNODEEXISTS)
         {
             auto exception = zkutil::KeeperMultiException(code, requests, responses);
@@ -622,7 +622,7 @@ void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
     Coordination::Error code;
     getKeeperRetriesControl(log).retryLoop([&]
     {
-        code = getZooKeeper()->tryCreate(
+        code = getZooKeeper(log)->tryCreate(
             table_path,
             self.serialize(),
             zkutil::CreateMode::Ephemeral);
@@ -642,7 +642,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
     const auto drop_lock_path = zookeeper_path / "drop";
 
     auto zk_retries = getKeeperRetriesControl(log);
-    bool supports_remove_recursive = getZooKeeper()->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
+    bool supports_remove_recursive = getZooKeeper(log)->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
 
     Coordination::Error code;
     const size_t max_tries = 1000;
@@ -655,7 +655,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
         Coordination::Responses responses;
 
         bool registry_exists = false;
-        zk_retries.retryLoop([&] { registry_exists = getZooKeeper()->tryGet(registry_path, registry_str, &stat); });
+        zk_retries.retryLoop([&] { registry_exists = getZooKeeper(log)->tryGet(registry_path, registry_str, &stat); });
         if (registry_exists)
         {
             created_new_metadata = false;
@@ -689,10 +689,10 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
                 zkutil::CreateMode::Persistent));
 
             if (!supports_remove_recursive)
-                zkutil::addCheckNotExistsRequest(requests, *getZooKeeper(), drop_lock_path);
+                zkutil::addCheckNotExistsRequest(requests, *getZooKeeper(log), drop_lock_path);
         }
 
-        zk_retries.retryLoop([&] { code = getZooKeeper()->tryMulti(requests, responses); });
+        zk_retries.retryLoop([&] { code = getZooKeeper(log)->tryMulti(requests, responses); });
         if (code == Coordination::Error::ZOK)
         {
             LOG_TRACE(log, "Added {} to registry", self.table_id);
@@ -720,14 +720,14 @@ Strings ObjectStorageQueueMetadata::getRegistered(bool active)
     if (active)
     {
         Coordination::Error code;
-        zk_retries.retryLoop([&] { code = getZooKeeper()->tryGetChildren(registry_path, registered); });
+        zk_retries.retryLoop([&] { code = getZooKeeper(log)->tryGetChildren(registry_path, registered); });
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
             throw zkutil::KeeperException(code);
     }
     else
     {
         std::string registry_str;
-        zk_retries.retryLoop([&] { getZooKeeper()->tryGet(registry_path, registry_str); });
+        zk_retries.retryLoop([&] { getZooKeeper(log)->tryGet(registry_path, registry_str); });
         if (!registry_str.empty())
             splitInto<','>(registered, registry_str);
     }
@@ -740,7 +740,7 @@ void ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
     const auto table_path = registry_path / getProcessorID(storage_id);
 
     Coordination::Error code;
-    getKeeperRetriesControl(log).retryLoop([&] { code = getZooKeeper()->tryRemove(table_path); });
+    getKeeperRetriesControl(log).retryLoop([&] { code = getZooKeeper(log)->tryRemove(table_path); });
 
     if (code == Coordination::Error::ZOK)
     {
@@ -782,7 +782,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
 
         try
         {
-            zk_client = getZooKeeper();
+            zk_client = getZooKeeper(log);
             supports_remove_recursive = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
 
             Coordination::Stat stat;
@@ -1084,7 +1084,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds);
 
     const fs::path zookeeper_cleanup_lock_path = zookeeper_path / "cleanup_lock";
-    const auto zk_client = getZooKeeper();
+    const auto zk_client = getZooKeeper(log);
     auto zk_retries = getKeeperRetriesControl(log);
 
     /// Create a lock so that with distributed processing
@@ -1108,7 +1108,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     Coordination::Error code;
     zk_retries.retryLoop([&]
     {
-        code = getZooKeeper()->tryGetChildren(zookeeper_processed_path, processed_nodes);
+        code = getZooKeeper(log)->tryGetChildren(zookeeper_processed_path, processed_nodes);
     });
     if (code != Coordination::Error::ZOK)
     {
@@ -1123,7 +1123,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     Strings failed_nodes;
     zk_retries.retryLoop([&]
     {
-        code = getZooKeeper()->tryGetChildren(zookeeper_failed_path, failed_nodes);
+        code = getZooKeeper(log)->tryGetChildren(zookeeper_failed_path, failed_nodes);
     });
     if (code != Coordination::Error::ZOK)
     {
@@ -1197,22 +1197,8 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         for (const auto & node : nodes)
         {
             paths.push_back(base_path / node);
-            try
-            {
-                if (paths.size() == keeper_multiread_batch_size)
-                    get_paths();
-            }
-            catch (const zkutil::KeeperException & e)
-            {
-                if (!Coordination::isHardwareError(e.code))
-                {
-                    LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
-                    chassert(false);
-                }
-
-                /// Will retry with a new zk connection.
-                throw;
-            }
+            if (paths.size() == keeper_multiread_batch_size)
+                get_paths();
         }
 
         if (!paths.empty())
@@ -1268,7 +1254,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
                     /// so we try removing it again without multi requests
                     zk_retries.retryLoop([&]
                     {
-                        code = getZooKeeper()->tryRemove(remove_requests[i]->getPath());
+                        code = getZooKeeper(log)->tryRemove(remove_requests[i]->getPath());
                     });
                     if (code == Coordination::Error::ZOK)
                     {
@@ -1361,7 +1347,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     Coordination::Error code;
     zk_retries.retryLoop([&]
     {
-        code = getZooKeeper()->tryGetChildren(zookeeper_persistent_processing_path, persistent_processing_nodes);
+        code = getZooKeeper(log)->tryGetChildren(zookeeper_persistent_processing_path, persistent_processing_nodes);
     });
     if (code != Coordination::Error::ZOK)
     {
@@ -1392,7 +1378,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
         zkutil::ZooKeeper::MultiTryGetResponse response;
         zk_retries.retryLoop([&]
         {
-            response = getZooKeeper()->tryGet(get_batch);
+            response = getZooKeeper(log)->tryGet(get_batch);
         });
 
         for (size_t i = 0; i < response.size(); ++i)
@@ -1416,22 +1402,8 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     for (const auto & node : persistent_processing_nodes)
     {
         get_batch.push_back(zookeeper_persistent_processing_path / node);
-        try
-        {
-            if (get_batch.size() == keeper_multiread_batch_size)
-                get_paths();
-        }
-        catch (const zkutil::KeeperException & e)
-        {
-            if (!Coordination::isHardwareError(e.code))
-            {
-                LOG_WARNING(log, "Unexpected exception: {}", getCurrentExceptionMessage(true));
-                chassert(false);
-            }
-
-            /// Will retry with a new zk connection.
-            throw;
-        }
+        if (get_batch.size() == keeper_multiread_batch_size)
+            get_paths();
     }
     for (const auto & node : bucket_lock_paths)
     {
@@ -1468,7 +1440,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     {
         zk_retries.retryLoop([&]
         {
-            code = getZooKeeper()->tryRemove(node);
+            code = getZooKeeper(log)->tryRemove(node);
         });
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
             throw zkutil::KeeperException::fromPath(code, node);

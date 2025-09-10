@@ -251,7 +251,7 @@ ObjectStorageQueueSource::FileIterator::next()
                 Coordination::Error code;
                 zk_retries.retryLoop([&]
                 {
-                    code = ObjectStorageQueueMetadata::getZooKeeper()->tryMulti(requests, responses);
+                    code = ObjectStorageQueueMetadata::getZooKeeper(log)->tryMulti(requests, responses);
                 });
                 if (code == Coordination::Error::ZOK)
                 {
@@ -1250,7 +1250,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         object_storage->removeObjectsIfExist(successful_objects);
     }
 
-    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
+    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
     Coordination::Responses responses;
     auto code = zk_client->tryMulti(requests, responses);
     if (code != Coordination::Error::ZOK)

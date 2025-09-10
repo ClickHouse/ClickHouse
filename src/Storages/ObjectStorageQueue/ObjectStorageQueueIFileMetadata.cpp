@@ -173,7 +173,7 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             Coordination::Error code;
             ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
             {
-                code = ObjectStorageQueueMetadata::getZooKeeper()->tryMulti(requests, responses);
+                code = ObjectStorageQueueMetadata::getZooKeeper(log)->tryMulti(requests, responses);
             });
             if (code != Coordination::Error::ZOK
                 && !Coordination::isHardwareError(code)
@@ -345,7 +345,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     Coordination::Error code;
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
-        code = ObjectStorageQueueMetadata::getZooKeeper()->tryMulti(requests, responses);
+        code = ObjectStorageQueueMetadata::getZooKeeper(log)->tryMulti(requests, responses);
     });
     if (code == Coordination::Error::ZOK)
         return;
@@ -495,7 +495,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     bool has_failed_before = false;
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
-        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
         has_failed_before = zk_client->tryGet(retrieable_failed_node_path, res, &retriable_failed_node_stat);
     });
     if (has_failed_before)

@@ -36,7 +36,7 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
 ObjectStorageQueueUnorderedFileMetadata::SetProcessingResponseIndexes
 ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordination::Requests & requests)
 {
-    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper();
+    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
     bool create_if_not_exists_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
 
     processing_id = node_metadata.processing_id = getRandomASCIIString(10);
@@ -71,7 +71,7 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordinat
         bool processing_node_id_path_exists = false;
         ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
         {
-            processing_node_id_path_exists = zk_client->exists(processing_node_id_path);
+            processing_node_id_path_exists = ObjectStorageQueueMetadata::getZooKeeper(log)->exists(processing_node_id_path);
         });
 
         if (!processing_node_id_path_exists)
@@ -92,7 +92,7 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordinat
 
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueUnorderedFileMetadata::setProcessingImpl()
 {
-    bool create_if_not_exists_enabled = ObjectStorageQueueMetadata::getZooKeeper()->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
+    bool create_if_not_exists_enabled = ObjectStorageQueueMetadata::getZooKeeper(log)->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
     auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
 
     const size_t max_num_tries = 1000;
@@ -106,7 +106,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         Coordination::Responses responses;
         zk_retries.retryLoop([&]
         {
-            code = ObjectStorageQueueMetadata::getZooKeeper()->tryMulti(requests, responses);
+            code = ObjectStorageQueueMetadata::getZooKeeper(log)->tryMulti(requests, responses);
         });
         auto has_request_failed = [&](size_t request_index) { return responses[request_index]->error != Coordination::Error::ZOK; };
 
@@ -176,7 +176,7 @@ void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
     zkutil::ZooKeeper::MultiTryGetResponse responses;
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log_).retryLoop([&]
     {
-        responses = ObjectStorageQueueMetadata::getZooKeeper()->tryGet(check_paths);
+        responses = ObjectStorageQueueMetadata::getZooKeeper(log_)->tryGet(check_paths);
     });
 
     auto check_code = [&](auto code, const std::string & path)

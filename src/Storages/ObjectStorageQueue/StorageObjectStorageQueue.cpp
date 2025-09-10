@@ -258,7 +258,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         std::move(table_metadata),
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
-        (*queue_settings_)[ObjectStorageQueueSetting::use_persistent_processing_nodes],
+        /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
 

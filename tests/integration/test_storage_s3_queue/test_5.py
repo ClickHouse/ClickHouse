@@ -1323,12 +1323,12 @@ def test_persistent_processing(started_cluster):
     )
     node.query(
         f"""
-        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * FROM {table_name} WHERE NOT sleepEachRow(1);
+        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * FROM {table_name} WHERE NOT sleepEachRow(0.5);
         """
     )
 
     found = False
-    for _ in range(10):
+    for _ in range(20):
         nodes = zk.get_children(f"{keeper_path}/processing")
         if len(nodes) > 0:
             found = True
