@@ -4033,7 +4033,8 @@ If the year is not specified, it is considered to be equal to the current year.
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffort_returned_value = {"Returns `time_string` as a `DateTime`.", {"DateTime"}};
-    FunctionDocumentation::Examples parseDateTimeBestEffort_examples = {
+    FunctionDocumentation::Examples parseDateTimeBestEffort_examples =
+    {
     {
         "Usage example",
         R"(
@@ -4097,7 +4098,8 @@ If the year is not specified, it is considered to be equal to the current year.
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffortOrZero_returned_value = {"Returns `time_string` as a `DateTime`, or zero date/datetime (`1970-01-01` or `1970-01-01 00:00:00`) if the input cannot be parsed.", {"DateTime"}};
-    FunctionDocumentation::Examples parseDateTimeBestEffortOrZero_examples = {
+    FunctionDocumentation::Examples parseDateTimeBestEffortOrZero_examples =
+    {
     {
         "Usage example",
         R"(
@@ -4140,7 +4142,8 @@ If the year is not specified, it is considered to be equal to the current year.
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffortOrNull_returned_value = {"Returns `time_string` as a DateTime, or `NULL` if the input cannot be parsed.", {"DateTime", "NULL"}};
-    FunctionDocumentation::Examples parseDateTimeBestEffortOrNull_examples = {
+    FunctionDocumentation::Examples parseDateTimeBestEffortOrNull_examples =
+    {
     {
         "Usage example",
         R"(
@@ -4173,7 +4176,8 @@ As an exception to the previous statement, if the month is bigger than 12 and sm
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffortUS_returned_value = {"Returns `time_string` as a `DateTime` using US date format preference for ambiguous cases.", {"DateTime"}};
-    FunctionDocumentation::Examples parseDateTimeBestEffortUS_examples = {
+    FunctionDocumentation::Examples parseDateTimeBestEffortUS_examples =
+    {
     {
         "Usage example",
         R"(
@@ -4206,7 +4210,8 @@ This function behaves like [`parseDateTimeBestEffort`](#parseDateTimeBestEffort)
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffortUSOrZero_returned_value = {"Returns `time_string` as a `DateTime` using US format preference, or zero date/datetime (`1970-01-01` or `1970-01-01 00:00:00`) if the input cannot be parsed.", {"DateTime"}};
-    FunctionDocumentation::Examples parseDateTimeBestEffortUSOrZero_examples = {
+    FunctionDocumentation::Examples parseDateTimeBestEffortUSOrZero_examples =
+    {
     {
         "Usage example",
         R"(
@@ -4239,7 +4244,8 @@ This function behaves like [`parseDateTimeBestEffort`](#parseDateTimeBestEffort)
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffortUSOrNull_returned_value = {"Returns `time_string` as a DateTime using US format preference, or `NULL` if the input cannot be parsed.", {"DateTime", "NULL"}};
-    FunctionDocumentation::Examples parseDateTimeBestEffortUSOrNull_examples = {
+    FunctionDocumentation::Examples parseDateTimeBestEffortUSOrNull_examples =
+    {
     {
         "Usage example",
         R"(
@@ -4272,7 +4278,8 @@ The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 112
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffort = {"Returns `time_string` as a `DateTime`.", {"DateTime"}};
-    FunctionDocumentation::Examples examples_parseDateTime32BestEffort = {
+    FunctionDocumentation::Examples examples_parseDateTime32BestEffort =
+    {
     {
         "Usage example",
         R"(
@@ -4327,7 +4334,8 @@ Same as [`parseDateTime32BestEffort`](#parseDateTime32BestEffort) except that it
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffortOrZero = {"Returns a `DateTime` object parsed from the string, or zero date (`1970-01-01 00:00:00`) if the parsing fails.", {"DateTime"}};
-    FunctionDocumentation::Examples examples_parseDateTime32BestEffortOrZero = {
+    FunctionDocumentation::Examples examples_parseDateTime32BestEffortOrZero =
+    {
     {
     "Usage example",
     R"(
@@ -4359,7 +4367,8 @@ Same as [`parseDateTime32BestEffort`](#parseDateTime32BestEffort) except that it
         {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffortOrNull = {"Returns a `DateTime` object parsed from the string, or `NULL` if the parsing fails.", {"DateTime"}};
-    FunctionDocumentation::Examples examples_parseDateTime32BestEffortOrNull = {
+    FunctionDocumentation::Examples examples_parseDateTime32BestEffortOrNull =
+    {
     {
         "Usage example",
         R"(
@@ -4392,7 +4401,8 @@ Same as [`parseDateTimeBestEffort`](#parsedatetimebesteffort) function but also 
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffort = {"Returns `time_string` converted to the [`DateTime64`](../../sql-reference/data-types/datetime64.md) data type.", {"DateTime64"}};
-    FunctionDocumentation::Examples examples_parseDateTime64BestEffort = {
+    FunctionDocumentation::Examples examples_parseDateTime64BestEffort =
+    {
     {
         "Usage example",
         R"(
@@ -4433,7 +4443,8 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort) except that it
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortOrZero = {"Returns `time_string` converted to [`DateTime64`](../../sql-reference/data-types/datetime64.md), or zero date/datetime (`1970-01-01 00:00:00.000`) if the input cannot be parsed.", {"DateTime64"}};
-    FunctionDocumentation::Examples examples_parseDateTime64BestEffortOrZero = {
+    FunctionDocumentation::Examples examples_parseDateTime64BestEffortOrZero =
+    {
     {
         "Usage example",
         R"(
@@ -4465,7 +4476,8 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort) except that it
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortOrNull = {"Returns `time_string` converted to [`DateTime64`](../../sql-reference/data-types/datetime64.md), or `NULL` if the input cannot be parsed.", {"DateTime64", "NULL"}};
-    FunctionDocumentation::Examples examples_parseDateTime64BestEffortOrNull = {
+    FunctionDocumentation::Examples examples_parseDateTime64BestEffortOrNull =
+    {
     {
     "Usage example",
     R"(
@@ -4497,7 +4509,8 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that t
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortUS = {"Returns `time_string` converted to [`DateTime64`](../../sql-reference/data-types/datetime64.md) using US date format preference for ambiguous cases.", {"DateTime64"}};
-    FunctionDocumentation::Examples examples_parseDateTime64BestEffortUS = {
+    FunctionDocumentation::Examples examples_parseDateTime64BestEffortUS =
+    {
     {
         "Usage example",
         R"(
@@ -4529,7 +4542,8 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that t
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortUSOrZero = {"Returns `time_string` converted to [`DateTime64`](../../sql-reference/data-types/datetime64.md) using US format preference, or zero date/datetime (`1970-01-01 00:00:00.000`) if the input cannot be parsed.", {"DateTime64"}};
-    FunctionDocumentation::Examples examples_parseDateTime64BestEffortUSOrZero = {
+    FunctionDocumentation::Examples examples_parseDateTime64BestEffortUSOrZero =
+    {
     {
         "Usage example",
         R"(
@@ -4561,7 +4575,8 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that t
         {"time_zone", "Optional. Timezone. The function parses `time_string` according to the timezone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime64BestEffortUSOrNull = {"Returns `time_string` converted to [`DateTime64`](../../sql-reference/data-types/datetime64.md) using US format preference, or `NULL` if the input cannot be parsed.", {"DateTime64", "NULL"}};
-    FunctionDocumentation::Examples examples_parseDateTime64BestEffortUSOrNull = {
+    FunctionDocumentation::Examples examples_parseDateTime64BestEffortUSOrNull =
+    {
     {
         "Usage example",
         R"(

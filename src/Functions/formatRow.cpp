@@ -165,12 +165,14 @@ Only row-based formats are supported in this function.
 :::
     )";
     FunctionDocumentation::Syntax formatRow_syntax = "formatRow(format, x, y, ...)";
-    FunctionDocumentation::Arguments formatRow_arguments = {
+    FunctionDocumentation::Arguments formatRow_arguments =
+    {
         {"format", "Text format. For example, CSV, TSV.", {"String"}},
         {"x, y, ...", "Expressions.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue formatRow_returned_value = {"A formatted string. (for text formats it's usually terminated with the new line character).", {"String"}};
-    FunctionDocumentation::Examples formatRow_examples = {
+    FunctionDocumentation::Examples formatRow_examples =
+    {
     {
         "Basic usage",
         R"(
@@ -221,12 +223,14 @@ Same as [`formatRow`](#formatRow), but trims the newline character of each row.
 Converts arbitrary expressions into a string via given format, but removes any trailing newline characters from the result.
     )";
     FunctionDocumentation::Syntax formatRowNoNewline_syntax = "formatRowNoNewline(format, x, y, ...)";
-    FunctionDocumentation::Arguments formatRowNoNewline_arguments = {
+    FunctionDocumentation::Arguments formatRowNoNewline_arguments =
+    {
         {"format", "Text format. For example, CSV, TSV.", {"String"}},
         {"x, y, ...", "Expressions.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue formatRowNoNewline_returned_value = {"Returns a formatted string with newlines removed.", {"String"}};
-    FunctionDocumentation::Examples formatRowNoNewline_examples = {
+    FunctionDocumentation::Examples formatRowNoNewline_examples =
+    {
     {
         "Basic usage",
         R"(
