@@ -99,14 +99,14 @@ Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no
 
 ### `after_processing` {#after_processing}
 
-How to handle file after successul processing.
+How to handle file after successful processing.
 
 Possible values:
 
 - keep.
 - delete.
 - move.
-- tag
+- tag.
 
 Default value: `keep`.
 

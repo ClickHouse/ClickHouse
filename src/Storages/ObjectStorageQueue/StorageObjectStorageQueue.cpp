@@ -192,10 +192,12 @@ namespace
         }
         if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::TAG)
         {
-            if (queue_settings[ObjectStorageQueueSetting::after_processing_tag_key].toString().empty()) {
+            if (queue_settings[ObjectStorageQueueSetting::after_processing_tag_key].toString().empty())
+            {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "after_processing action 'tag' requires non-empty after_processing_tag_key");
             }
-            if (queue_settings[ObjectStorageQueueSetting::after_processing_tag_value].toString().empty()) {
+            if (queue_settings[ObjectStorageQueueSetting::after_processing_tag_value].toString().empty())
+            {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "after_processing action 'tag' requires non-empty after_processing_tag_value");
             }
         }
