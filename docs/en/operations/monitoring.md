@@ -7,7 +7,7 @@ sidebar_label: 'Monitoring'
 sidebar_position: 45
 slug: /operations/monitoring
 title: 'Monitoring'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 import Image from '@theme/IdealImage';

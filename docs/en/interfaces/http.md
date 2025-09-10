@@ -5,7 +5,7 @@ sidebar_label: 'HTTP Interface'
 sidebar_position: 15
 slug: /interfaces/http
 title: 'HTTP Interface'
-doc_type: 'how-to'
+doc_type: 'reference'
 ---
 
 import PlayUI from '@site/static/images/play.png';

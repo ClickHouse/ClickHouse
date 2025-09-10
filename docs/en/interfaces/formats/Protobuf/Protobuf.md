@@ -6,7 +6,7 @@ keywords: ['Protobuf']
 output_format: true
 slug: /interfaces/formats/Protobuf
 title: 'Protobuf'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

@@ -6,7 +6,7 @@ keywords: ['CapnProto']
 output_format: true
 slug: /interfaces/formats/CapnProto
 title: 'CapnProto'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

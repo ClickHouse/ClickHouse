@@ -5,7 +5,7 @@ sidebar_label: 'iceberg'
 sidebar_position: 90
 slug: /sql-reference/table-functions/iceberg
 title: 'iceberg'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 # iceberg Table Function {#iceberg-table-function}

@@ -5,7 +5,7 @@ sidebar_label: 'NATS'
 sidebar_position: 140
 slug: /engines/table-engines/integrations/nats
 title: 'NATS Engine'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 # NATS engine {#redisstreams-engine}

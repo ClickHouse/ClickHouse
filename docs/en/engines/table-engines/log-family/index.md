@@ -4,7 +4,7 @@ sidebar_label: 'Log Family'
 sidebar_position: 20
 slug: /engines/table-engines/log-family/
 title: 'Log Engine Family'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 # Log engine family

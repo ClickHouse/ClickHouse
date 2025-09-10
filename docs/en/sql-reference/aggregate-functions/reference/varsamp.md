@@ -3,7 +3,7 @@ description: 'Calculate the sample variance of a data set.'
 sidebar_position: 212
 slug: /sql-reference/aggregate-functions/reference/varSamp
 title: 'varSamp'
-doc_type: 'how-to'
+doc_type: 'reference'
 ---
 
 ## varSamp {#varsamp}

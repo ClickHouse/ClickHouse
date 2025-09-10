@@ -3,7 +3,7 @@ description: 'Controlling behavior on server CPU overload.'
 sidebar_label: 'Server overload'
 slug: /operations/settings/server-overload
 title: 'Server overload'
-doc_type: 'explanation'
+doc_type: 'guide'
 ---
 
 # Server overload

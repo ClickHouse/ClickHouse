@@ -4,7 +4,7 @@ description: 'This function can be used for the purpose of testing exception saf
 sidebar_position: 101
 slug: /sql-reference/aggregate-functions/reference/aggthrow
 title: 'aggThrow'
-doc_type: 'how-to'
+doc_type: 'reference'
 ---
 
 # aggThrow

@@ -4,7 +4,7 @@ sidebar_label: 'PostgreSQL'
 sidebar_position: 40
 slug: /engines/database-engines/postgresql
 title: 'PostgreSQL'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 # PostgreSQL

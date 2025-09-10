@@ -6,7 +6,7 @@ keywords: ['Values']
 output_format: true
 slug: /interfaces/formats/Values
 title: 'Values'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 | Input | Output | Alias |

@@ -4,7 +4,7 @@ sidebar_label: 'Window Functions'
 sidebar_position: 1
 slug: /sql-reference/window-functions/
 title: 'Window Functions'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 # Window functions 

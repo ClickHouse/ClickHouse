@@ -4,7 +4,7 @@ sidebar_label: 'CONSTRAINT'
 sidebar_position: 43
 slug: /sql-reference/statements/alter/constraint
 title: 'Manipulating Constraints'
-doc_type: 'how-to'
+doc_type: 'guide'
 ---
 
 # Manipulating Constraints

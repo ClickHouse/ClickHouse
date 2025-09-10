@@ -4,7 +4,7 @@ sidebar_label: 'Redis'
 sidebar_position: 175
 slug: /engines/table-engines/integrations/redis
 title: 'Redis'
-doc_type: 'how-to'
+doc_type: 'guide'
 ---
 
 # Redis

@@ -5,7 +5,7 @@ sidebar_position: 24
 slug: /interfaces/third-party/
 toc_folder_title: 'Third-Party'
 title: 'Third-Party Interfaces'
-doc_type: 'reference'
+doc_type: 'landing-page'
 ---
 
 # Third-party interfaces

@@ -3,7 +3,7 @@ description: 'Documentation for Functions for Time-Series Analysis'
 sidebar_label: 'Time-Series Analysis'
 slug: /sql-reference/functions/time-series-analysis-functions
 title: 'Functions for Time-Series Analysis'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 # Functions for Time Series Analysis

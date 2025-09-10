@@ -3,7 +3,7 @@ description: 'Documentation for Functions for Working with Embedded Dictionaries
 sidebar_label: 'Embedded dictionary'
 slug: /sql-reference/functions/ym-dict-functions
 title: 'Functions for Working with Embedded Dictionaries'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 # Functions for Working with Embedded Dictionaries

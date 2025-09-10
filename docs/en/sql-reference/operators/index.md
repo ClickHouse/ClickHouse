@@ -5,7 +5,7 @@ sidebar_label: 'Operators'
 sidebar_position: 38
 slug: /sql-reference/operators/
 title: 'Operators'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 # Operators

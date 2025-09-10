@@ -5,7 +5,7 @@ sidebar_label: 'MergeTree'
 sidebar_position: 11
 slug: /engines/table-engines/mergetree-family/mergetree
 title: 'MergeTree'
-doc_type: 'how-to'
+doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

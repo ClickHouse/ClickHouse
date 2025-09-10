@@ -3,7 +3,7 @@ description: 'Documentation for GROUP BY Clause'
 sidebar_label: 'GROUP BY'
 slug: /sql-reference/statements/select/group-by
 title: 'GROUP BY Clause'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 # GROUP BY Clause

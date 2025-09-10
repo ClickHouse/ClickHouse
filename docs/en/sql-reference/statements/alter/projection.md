@@ -4,7 +4,7 @@ sidebar_label: 'PROJECTION'
 sidebar_position: 49
 slug: /sql-reference/statements/alter/projection
 title: 'Projections'
-doc_type: 'tutorial'
+doc_type: 'guide'
 ---
 
 Projections store data in a format that optimizes query execution, this feature is useful for:

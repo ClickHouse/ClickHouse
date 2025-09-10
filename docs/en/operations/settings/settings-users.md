@@ -4,7 +4,7 @@ sidebar_label: 'User Settings'
 sidebar_position: 63
 slug: /operations/settings/settings-users
 title: 'Users and roles settings'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 # Users and roles settings

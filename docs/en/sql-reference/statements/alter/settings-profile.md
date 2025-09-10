@@ -4,7 +4,7 @@ sidebar_label: 'SETTINGS PROFILE'
 sidebar_position: 48
 slug: /sql-reference/statements/alter/settings-profile
 title: 'ALTER SETTINGS PROFILE'
-doc_type: 'how-to'
+doc_type: 'reference'
 ---
 
 Changes settings profiles.

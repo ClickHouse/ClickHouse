@@ -4,7 +4,7 @@ sidebar_label: 'VIEW'
 sidebar_position: 50
 slug: /sql-reference/statements/alter/view
 title: 'ALTER TABLE ... MODIFY QUERY Statement'
-doc_type: 'how-to'
+doc_type: 'reference'
 ---
 
 # ALTER TABLE ... MODIFY QUERY Statement

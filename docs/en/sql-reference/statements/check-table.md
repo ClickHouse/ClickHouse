@@ -4,7 +4,7 @@ sidebar_label: 'CHECK TABLE'
 sidebar_position: 41
 slug: /sql-reference/statements/check-table
 title: 'CHECK TABLE Statement'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 The `CHECK TABLE` query in ClickHouse is used to perform a validation check on a specific table or its partitions. It ensures the integrity of the data by verifying the checksums and other internal data structures.
@@ -127,6 +127,8 @@ rm /var/lib/clickhouse-server/data/default/t0/201003_3_3_0/checksums.txt
 CHECK TABLE t0 PARTITION ID '201003'
 FORMAT PrettyCompactMonoBlock
 SETTINGS check_query_single_value_result = 0
+
+
 Output:
 
 ```text

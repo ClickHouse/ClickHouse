@@ -5,7 +5,7 @@ sidebar_label: 'Hive'
 sidebar_position: 84
 slug: /engines/table-engines/integrations/hive
 title: 'Hive'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -186,6 +186,8 @@ f_array_array_int:    [[1,2],[3,4]]
 f_array_array_string: [['a','b'],['c','d']]
 f_array_array_float:  [[1.11,2.22],[3.33,4.44]]
 day:                  2021-09-18
+
+
 1 rows in set. Elapsed: 0.078 sec.
 ```
 
@@ -351,6 +353,8 @@ OUTPUTFORMAT
 LOCATION
   'hdfs://testcluster/data/hive/test.db/test_text'
 Time taken: 0.1 seconds, Fetched: 34 row(s)
+
+
 hive >  insert into test.test_text partition(day='2021-09-18') select 1, 2, 3, 4, 5, 6.11, 7.22, 8.333, current_timestamp(), current_date(), 'hello world', 'hello world', 'hello world', true, 'hello world', array(1, 2, 3), array('hello world', 'hello world'), array(float(1.1), float(1.2)), array(array(1, 2), array(3, 4)), array(array('a', 'b'), array('c', 'd')), array(array(float(1.11), float(2.22)), array(float(3.33), float(4.44)));
 OK
 Time taken: 36.025 seconds

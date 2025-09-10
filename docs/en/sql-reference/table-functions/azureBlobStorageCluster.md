@@ -5,7 +5,7 @@ sidebar_label: 'azureBlobStorageCluster'
 sidebar_position: 15
 slug: /sql-reference/table-functions/azureBlobStorageCluster
 title: 'azureBlobStorageCluster'
-doc_type: 'how-to'
+doc_type: 'guide'
 ---
 
 # azureBlobStorageCluster Table Function

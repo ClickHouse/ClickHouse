@@ -7,7 +7,7 @@ sidebar_label: 'AggregatingMergeTree'
 sidebar_position: 60
 slug: /engines/table-engines/mergetree-family/aggregatingmergetree
 title: 'AggregatingMergeTree'
-doc_type: 'tutorial'
+doc_type: 'reference'
 ---
 
 # AggregatingMergeTree

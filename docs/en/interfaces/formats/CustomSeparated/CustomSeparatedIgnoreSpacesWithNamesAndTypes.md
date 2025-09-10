@@ -3,7 +3,7 @@ description: 'Documentation for the CustomSeparatedIgnoreSpacesWithNamesAndTypes
 keywords: ['CustomSeparatedIgnoreSpacesWithNamesAndTypes']
 slug: /interfaces/formats/CustomSeparatedIgnoreSpacesWithNamesAndTypes
 title: 'CustomSeparatedIgnoreSpacesWithNamesAndTypes'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 | Input | Output | Alias |

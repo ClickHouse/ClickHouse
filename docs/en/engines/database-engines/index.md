@@ -5,7 +5,7 @@ toc_folder_title: 'Database Engines'
 toc_priority: 27
 toc_title: 'Introduction'
 title: 'Database Engines'
-doc_type: 'reference'
+doc_type: 'landing-page'
 ---
 
 # Database engines

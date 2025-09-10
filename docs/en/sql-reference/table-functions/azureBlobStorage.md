@@ -6,7 +6,7 @@ sidebar_label: 'azureBlobStorage'
 sidebar_position: 10
 slug: /sql-reference/table-functions/azureBlobStorage
 title: 'azureBlobStorage'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

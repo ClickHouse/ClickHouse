@@ -5,7 +5,7 @@ sidebar_label: 'VersionedCollapsingMergeTree'
 sidebar_position: 80
 slug: /engines/table-engines/mergetree-family/versionedcollapsingmergetree
 title: 'VersionedCollapsingMergeTree'
-doc_type: 'tutorial'
+doc_type: 'guide'
 ---
 
 # VersionedCollapsingMergeTree

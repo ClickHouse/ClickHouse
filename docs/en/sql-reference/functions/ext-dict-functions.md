@@ -3,7 +3,7 @@ description: 'Documentation for Functions for Working with Dictionaries'
 sidebar_label: 'Dictionaries'
 slug: /sql-reference/functions/ext-dict-functions
 title: 'Functions for Working with Dictionaries'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 # Functions for Working with Dictionaries
@@ -394,6 +394,8 @@ SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.nu
 │ []                                                         │
 └────────────────────────────────────────────────────────────┘
 ```
+
+
 ## dictGetAll {#dictgetall}
 
 Retrieves the attribute values of all nodes that matched each key in a [regular expression tree dictionary](../../sql-reference/dictionaries/index.md#regexp-tree-dictionary).

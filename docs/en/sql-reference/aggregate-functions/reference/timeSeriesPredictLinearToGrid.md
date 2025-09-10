@@ -3,7 +3,7 @@ description: 'Aggregate function that calculates PromQL-like linear prediction o
 sidebar_position: 228
 slug: /sql-reference/aggregate-functions/reference/timeSeriesPredictLinearToGrid
 title: 'timeSeriesPredictLinearToGrid'
-doc_type: 'how-to'
+doc_type: 'reference'
 ---
 
 Aggregate function that takes time series data as pairs of timestamps and values and calculates a [PromQL-like linear prediction](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear) with a specified prediction timestamp offset from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `predict_linear` are considered within the specified time window.

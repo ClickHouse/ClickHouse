@@ -4,7 +4,7 @@ sidebar_label: 'Defining Dictionaries'
 sidebar_position: 35
 slug: /sql-reference/dictionaries
 title: 'Dictionaries'
-doc_type: 'reference'
+doc_type: 'guide'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
@@ -70,6 +70,8 @@ The dictionary configuration file has the following format:
 
     <!--Optional element. File name with substitutions-->
     <include_from>/etc/metrika.xml</include_from>
+
+
     <dictionary>
         <!-- Dictionary configuration. -->
         <!-- There can be any number of dictionary sections in a configuration file. -->
@@ -885,11 +887,15 @@ SELECT dictGet('my_ip_trie_dictionary', 'cca2', toIPv4('202.79.32.10')) AS resul
 ┌─result─┐
 │ NP     │
 └────────┘
+
+
 SELECT dictGet('my_ip_trie_dictionary', 'asn', IPv6StringToNum('2001:db8::1')) AS result;
 
 ┌─result─┐
 │  65536 │
 └────────┘
+
+
 SELECT dictGet('my_ip_trie_dictionary', ('asn', 'cca2'), IPv6StringToNum('2001:db8::1')) AS result;
 
 ┌─result───────┐
@@ -1432,6 +1438,8 @@ Configuring the driver:
 
     # test TDS connection
     $ sqsh -S MSSQL -D database -U user -P password
+
+
     $ cat /etc/odbcinst.ini
 
     [FreeTDS]
@@ -1452,6 +1460,8 @@ Configuring the driver:
     UID             = test
     PWD             = test
     Port            = 1433
+
+
     # (optional) test ODBC connection (to use isql-tool install the [unixodbc](https://packages.debian.org/sid/unixodbc)-package)
     $ isql -v MSSQL "user" "password"
 ```
