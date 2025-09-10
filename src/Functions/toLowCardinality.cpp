@@ -61,7 +61,7 @@ For example: `CAST(x as String)`.
     )";
     FunctionDocumentation::Syntax toLowCardinality_syntax = "toLowCardinality(expr)";
     FunctionDocumentation::Arguments toLowCardinality_arguments = {
-        {"expr", "Expression resulting in one of the supported data types.", {"String", "FixedString", "Date", "DateTime", "Enum", "Numbers"}}
+        {"expr", "Expression resulting in one of the supported data types.", {"String", "FixedString", "Date", "DateTime", "Enum", "(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue toLowCardinality_returned_value = {"Input value converted to the `LowCardinality` data type.", {"LowCardinality"}};
     FunctionDocumentation::Examples toLowCardinality_examples = {
