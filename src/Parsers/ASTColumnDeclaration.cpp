@@ -17,14 +17,6 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->type);
     }
 
-    /* TODO
-    if (uuid != UUIDHelpers::Nil)
-    {
-        res->uuid = uuid;
-        res->children.push_back(res->uuid);
-    }
-    */
-
     if (default_expression)
     {
         res->default_expression = default_expression->clone();
