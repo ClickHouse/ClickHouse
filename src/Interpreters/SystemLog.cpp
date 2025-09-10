@@ -1,10 +1,11 @@
 #include <Interpreters/SystemLog.h>
+#include <Common/Exception.h>
+#include <Daemon/BaseDaemon.h>
 
 #include <base/scope_guard.h>
 #include <Common/Logger.h>
 #include <Common/SystemLogBase.h>
 #include <Common/logger_useful.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Core/ServerSettings.h>
@@ -20,17 +21,20 @@
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/ZooKeeperConnectionLog.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/MetricLog.h>
-#include <Interpreters/LatencyLog.h>
+#include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryThreadLog.h>
+#include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
+#include <Interpreters/DeadLetterQueue.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
@@ -42,13 +46,17 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/DistributedCacheLog.h>
+#include <Interpreters/DistributedCacheServerLog.h>
+#endif
 
 #include <fmt/core.h>
 
@@ -133,7 +141,6 @@ namespace
 {
 
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
-constexpr size_t DEFAULT_LATENCY_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
@@ -160,7 +167,11 @@ std::shared_ptr<TSystemLog> createSystemLog(
     SystemLogSettings log_settings;
 
     log_settings.queue_settings.database = config.getString(config_prefix + ".database", default_database_name);
-    log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
+
+    if (default_table_name != TransposedMetricLog::TABLE_NAME_WITH_VIEW)
+        log_settings.queue_settings.table = config.getString(config_prefix + ".table", default_table_name);
+    else
+        log_settings.queue_settings.table = default_table_name;
 
     if (log_settings.queue_settings.database != default_database_name)
     {
@@ -220,7 +231,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
         log_settings.engine += " ORDER BY (" + order_by + ")";
 
         /// SETTINGS expr is not necessary.
-        ///   https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#settings
+        ///   https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#settings
         ///
         /// STORAGE POLICY expr is retained for backward compatible.
         String storage_policy = config.getString(config_prefix + ".storage_policy", "");
@@ -277,11 +288,38 @@ std::shared_ptr<TSystemLog> createSystemLog(
                                                                        TSystemLog::shouldNotifyFlushOnCrash());
 
     if constexpr (std::is_same_v<TSystemLog, TraceLog>)
-        log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", false);
+        log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", true);
 
     log_settings.queue_settings.turn_off_logger = TSystemLog::shouldTurnOffLogger();
 
+    if constexpr (std::is_same_v<TSystemLog, MetricLog>)
+    {
+        auto schema = config.getString(config_prefix + ".schema_type", "wide");
+        if (schema == "wide")
+            return std::make_shared<TSystemLog>(context, log_settings);
+
+        return {};
+    }
+    else if (std::is_same_v<TSystemLog, TransposedMetricLog>)
+    {
+        auto schema = config.getString(config_prefix + ".schema_type", "wide");
+        if (schema == "transposed_with_wide_view")
+        {
+            log_settings.view_name_for_transposed_metric_log = config.getString(config_prefix + ".table", "metric_log");
+            return std::make_shared<TSystemLog>(context, log_settings);
+        }
+        else if (schema == "transposed")
+        {
+            return std::make_shared<TSystemLog>(context, log_settings);
+        }
+        else if (schema != "wide")
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide', 'transposed' and 'transposed_with_wide_view' are allowed", schema);
+        }
+    }
+
     return std::make_shared<TSystemLog>(context, log_settings);
+
 }
 
 
@@ -307,8 +345,24 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     member = createSystemLog<log_type>(global_context, "system", #member, config, #member, descr); \
 
     LIST_OF_ALL_SYSTEM_LOGS(CREATE_PUBLIC_MEMBERS)
+    #if CLICKHOUSE_CLOUD
+        LIST_OF_CLOUD_SYSTEM_LOGS(CREATE_PUBLIC_MEMBERS)
+    #endif
 #undef CREATE_PUBLIC_MEMBERS
+
 /// NOLINTEND(bugprone-macro-parentheses)
+
+    if (metric_log == nullptr && config.has("metric_log") && config.getString("metric_log.schema_type", "wide") == "transposed")
+    {
+        transposed_metric_log = createSystemLog<TransposedMetricLog>(
+            global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
+    }
+    else if (metric_log == nullptr && config.has("metric_log") && config.getString("metric_log.schema_type", "wide") == "transposed_with_wide_view")
+    {
+        transposed_metric_log = createSystemLog<TransposedMetricLog>(
+            global_context, "system", TransposedMetricLog::TABLE_NAME_WITH_VIEW, config, "metric_log", TransposedMetricLog::DESCRIPTION);
+    }
+
 
     bool should_prepare = global_context->getServerSettings()[ServerSetting::prepare_system_log_tables_on_startup];
     try
@@ -316,7 +370,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         for (auto & log : getAllLogs())
         {
             log->startup();
-            if (should_prepare)
+            if (should_prepare || log->mustBePreparedAtStartup())
                 log->prepareTable();
         }
     }
@@ -334,11 +388,11 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         metric_log->startCollect("MetricLog", collect_interval_milliseconds);
     }
 
-    if (latency_log)
+    if (transposed_metric_log)
     {
-        size_t collect_interval_milliseconds = config.getUInt64("latency_log.collect_interval_milliseconds",
-                                                                DEFAULT_LATENCY_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        latency_log->startCollect("LatencyLog", collect_interval_milliseconds);
+        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
+                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
+        transposed_metric_log->startCollect("TMetricLog", collect_interval_milliseconds);
     }
 
     if (error_log)
@@ -361,6 +415,9 @@ std::vector<ISystemLog *> SystemLogs::getAllLogs() const
 
     std::vector<ISystemLog *> result = {
         LIST_OF_ALL_SYSTEM_LOGS(GET_RAW_POINTERS)
+        #if CLICKHOUSE_CLOUD
+            LIST_OF_CLOUD_SYSTEM_LOGS(GET_RAW_POINTERS)
+        #endif
     };
 #undef GET_RAW_POINTERS
 
@@ -391,12 +448,15 @@ constexpr String getLowerCaseAndRemoveUnderscores(const String & name)
 }
 }
 
-void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
+void SystemLogs::flushImpl(const Strings & names, bool should_prepare_tables_anyway, bool ignore_errors)
 {
     std::vector<std::pair<ISystemLog *, ISystemLog::Index>> logs_to_wait;
 
     if (names.empty())
     {
+        if (text_log)
+            BaseDaemon::instance().flushTextLogs();
+
         for (auto * log : getAllLogs())
         {
             auto last_log_index = log->getLastLogIndex();
@@ -413,6 +473,9 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
         std::unordered_map<String, ISystemLog *> logs_map
         {
             LIST_OF_ALL_SYSTEM_LOGS(GET_MAP_VALUES)
+            #if CLICKHOUSE_CLOUD
+                LIST_OF_CLOUD_SYSTEM_LOGS(GET_MAP_VALUES)
+            #endif
         };
         #undef GET_MAP_VALUES
 
@@ -428,6 +491,9 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
                 /// The log exists but it's not initialized. Nothing to do
                 continue;
 
+            if (it->second == text_log.get())
+                BaseDaemon::instance().flushTextLogs();
+
             auto last_log_index = it->second->getLastLogIndex();
             logs_to_wait.push_back({it->second, it->second->getLastLogIndex()});
             it->second->notifyFlush(last_log_index, should_prepare_tables_anyway);
@@ -436,12 +502,31 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
 
     /// We must wait for the async flushes to finish
     for (const auto & [log, index] : logs_to_wait)
-        log->flush(index, should_prepare_tables_anyway);
+    {
+        if (!ignore_errors)
+            log->flush(index, should_prepare_tables_anyway);
+        else
+        {
+            try
+            {
+                log->flush(index, should_prepare_tables_anyway);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    }
+}
+
+void SystemLogs::flush(const Strings & names)
+{
+    flushImpl(names, /*should_prepare_tables_anyway=*/ true, /*ignore_errors=*/ false);
 }
 
 void SystemLogs::flushAndShutdown()
 {
-    flush(/* should_prepare_tables_anyway */ false, {});
+    flushImpl(/*names=*/ {}, /*should_prepare_tables_anyway=*/ false, /*ignore_errors=*/ true);
     shutdown();
 }
 
@@ -469,7 +554,7 @@ SystemLog<LogElement>::SystemLog(
     , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
-    , create_query(serializeAST(*getCreateTableQuery()))
+    , create_query(getCreateTableQuery()->formatWithSecretsOneLine())
 {
     assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
 }
@@ -607,7 +692,7 @@ void SystemLog<LogElement>::prepareTable()
     {
         if (old_create_query.empty())
         {
-            old_create_query = serializeAST(*getCreateTableQueryClean(table_id, getContext()));
+            old_create_query = getCreateTableQueryClean(table_id, getContext())->formatWithSecretsOneLine();
             if (old_create_query.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty CREATE QUERY for {}", backQuoteIfNeed(table_id.table_name));
         }
@@ -726,6 +811,15 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
 
+    if constexpr (std::is_same_v<LogElement, TransposedMetricLogElement>)
+    {
+        if (table_id.table_name == TransposedMetricLog::TABLE_NAME_WITH_VIEW)
+        {
+            auto * storage = storage_with_comment.storage->as<ASTStorage>();
+            storage->set(storage->order_by, TransposedMetricLog::getDefaultOrderByAST());
+        }
+    }
+
     create->set(create->storage, storage_with_comment.storage);
     create->set(create->comment, storage_with_comment.comment);
 
@@ -743,5 +837,8 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 
 #define INSTANTIATE_SYSTEM_LOG(ELEMENT) template class SystemLog<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG)
+#if CLICKHOUSE_CLOUD
+SYSTEM_LOG_ELEMENTS_CLOUD(INSTANTIATE_SYSTEM_LOG)
+#endif
 
 }

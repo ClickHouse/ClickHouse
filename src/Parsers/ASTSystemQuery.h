@@ -1,11 +1,11 @@
 #pragma once
 
+#include "config.h"
+
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
-
-#include "config.h"
 
 
 namespace DB
@@ -30,11 +30,14 @@ public:
         DROP_UNCOMPRESSED_CACHE,
         DROP_INDEX_MARK_CACHE,
         DROP_INDEX_UNCOMPRESSED_CACHE,
-        DROP_SKIPPING_INDEX_CACHE,
+        DROP_VECTOR_SIMILARITY_INDEX_CACHE,
         DROP_MMAP_CACHE,
+        DROP_QUERY_CONDITION_CACHE,
         DROP_QUERY_CACHE,
         DROP_COMPILED_EXPRESSION_CACHE,
+        DROP_ICEBERG_METADATA_CACHE,
         DROP_FILESYSTEM_CACHE,
+        DROP_DISTRIBUTED_CACHE,
         DROP_DISK_METADATA_CACHE,
         DROP_PAGE_CACHE,
         DROP_SCHEMA_CACHE,
@@ -45,9 +48,11 @@ public:
         RESTART_REPLICAS,
         RESTART_REPLICA,
         RESTORE_REPLICA,
+        RESTORE_DATABASE_REPLICA,
         WAIT_LOADING_PARTS,
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
+        DROP_CATALOG_REPLICA,
         JEMALLOC_PURGE,
         JEMALLOC_ENABLE_PROFILE,
         JEMALLOC_DISABLE_PROFILE,
@@ -81,6 +86,8 @@ public:
         START_REPLICATED_SENDS,
         STOP_REPLICATION_QUEUES,
         START_REPLICATION_QUEUES,
+        STOP_REPLICATED_DDL_QUERIES,
+        START_REPLICATED_DDL_QUERIES,
         FLUSH_LOGS,
         FLUSH_DISTRIBUTED,
         FLUSH_ASYNC_INSERT_QUEUE,
@@ -102,12 +109,19 @@ public:
         WAIT_VIEW,
         START_VIEW,
         START_VIEWS,
+        START_REPLICATED_VIEW,
         STOP_VIEW,
         STOP_VIEWS,
+        STOP_REPLICATED_VIEW,
         CANCEL_VIEW,
         TEST_VIEW,
         LOAD_PRIMARY_KEY,
         UNLOAD_PRIMARY_KEY,
+        STOP_VIRTUAL_PARTS_UPDATE,
+        START_VIRTUAL_PARTS_UPDATE,
+        STOP_REDUCE_BLOCKING_PARTS,
+        START_REDUCE_BLOCKING_PARTS,
+        UNLOCK_SNAPSHOT,
         END
     };
 
@@ -117,6 +131,7 @@ public:
 
     ASTPtr database;
     ASTPtr table;
+    bool if_exists = false;
     ASTPtr query_settings;
 
     String getDatabase() const;
@@ -136,13 +151,17 @@ public:
     String disk;
     UInt64 seconds{};
 
-    std::optional<String> query_cache_tag;
+    std::optional<String> query_result_cache_tag;
 
     String filesystem_cache_name;
+    String distributed_cache_server_id;
+    bool distributed_cache_drop_connections = false;
+
     std::string key_to_drop;
     std::optional<size_t> offset_to_drop;
 
     String backup_name;
+    ASTPtr backup_source; /// SYSTEM UNFREEZE SNAPSHOT `backup_name` FROM `backup_source`
 
     String schema_cache_storage;
 
@@ -157,6 +176,10 @@ public:
     Strings logs;
 
     ServerType server_type;
+
+#if USE_JEMALLOC
+    String jemalloc_profile_path;
+#endif
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
     /// Unix time.

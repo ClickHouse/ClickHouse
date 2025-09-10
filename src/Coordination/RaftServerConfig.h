@@ -2,10 +2,11 @@
 
 #include <base/defines.h>
 #include <base/types.h>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <libnuraft/srv_config.hxx>
 
 #include <optional>
+#include <variant>
 #include <vector>
 
 

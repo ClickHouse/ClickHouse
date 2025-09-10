@@ -42,6 +42,8 @@ struct ACL
         return std::tuple(permissions, scheme, id)
             < std::tuple(other.permissions, other.scheme, other.id);
     }
+
+    bool operator==(const ACL & other) const = default;
 };
 
 using ACLs = std::vector<ACL>;
@@ -82,6 +84,7 @@ enum class Error : int32_t
     ZOPERATIONTIMEOUT = -7,     /// Operation timeout
     ZBADARGUMENTS = -8,         /// Invalid arguments
     ZINVALIDSTATE = -9,         /// Invalid zhandle state
+    ZOUTOFMEMORY = -10,         /// Keeper has reached soft memory limit
 
     /** API errors.
         * This is never thrown by the server, it shouldn't be used other than
@@ -454,6 +457,7 @@ using CheckCallback = std::function<void(const CheckResponse &)>;
 using SyncCallback = std::function<void(const SyncResponse &)>;
 using ReconfigCallback = std::function<void(const ReconfigResponse &)>;
 using MultiCallback = std::function<void(const MultiResponse &)>;
+using GetACLCallback = std::function<void(const GetACLResponse &)>;
 
 /// For watches.
 enum State
@@ -598,6 +602,8 @@ public:
     virtual void multi(
         const Requests & requests,
         MultiCallback callback) = 0;
+
+    virtual void getACL(const String & path, GetACLCallback  callback) = 0;
 
     virtual bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const = 0;
 

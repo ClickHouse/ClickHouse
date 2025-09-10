@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from contextlib import contextmanager
 from multiprocessing import Pool, cpu_count
+from time import sleep
 from typing import Any, List, Literal, Optional
 
 import __main__
@@ -126,11 +127,19 @@ def unshallow(thin: bool = True) -> None:
     )
 
 
-def checkout_submodule(name: str) -> None:
+def checkout_submodule(name: str, retry: int = 3) -> None:
     """checkout the single submodule by its name"""
-    Shell.check(
-        f"git submodule update --depth=1 --single-branch {name}", cwd=git_runner.cwd
-    )
+    start_sleep = 5
+    for n in range(retry):
+        if Shell.check(
+            f"git submodule update --depth=1 --single-branch {name}", cwd=git_runner.cwd
+        ):
+            return
+        if n < retry - 1:
+            # progressive sleep before retry
+            sleep(start_sleep * (n + 1))
+
+    raise subprocess.SubprocessError(f"Unable to retreive submodule {name}")
 
 
 def checkout_submodules() -> None:

@@ -3,11 +3,18 @@
 #include <Core/Block.h>
 
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/PreparedSets.h>
 #include <Interpreters/ActionsDAG.h>
 
 namespace DB
 {
+
+class IAST;
+class Field;
+class FutureSet;
+using FutureSetPtr = std::shared_ptr<FutureSet>;
+class PreparedSets;
+using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
+struct Settings;
 
 /** Context of RPNBuilderTree.
   *
@@ -149,6 +156,8 @@ public:
     /// Get function name
     std::string getFunctionName() const;
 
+    FunctionBasePtr getFunctionBase() const;
+
     /// Get function arguments size
     size_t getArgumentsSize() const;
 
@@ -192,10 +201,17 @@ public:
     explicit RPNBuilder(const ActionsDAG::Node * filter_actions_dag_node,
         ContextPtr query_context_,
         const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
-        : tree_context(std::move(query_context_))
-        , extract_atom_from_tree_function(extract_atom_from_tree_function_)
+        : extract_atom_from_tree_function(extract_atom_from_tree_function_)
     {
+        RPNBuilderTreeContext tree_context(query_context_);
         traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context));
+    }
+
+    explicit RPNBuilder(const RPNBuilderTreeNode & node,
+        const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
+        : extract_atom_from_tree_function(extract_atom_from_tree_function_)
+    {
+        traverseTree(node);
     }
 
     RPNElements && extractRPN() && { return std::move(rpn_elements); }
@@ -269,7 +285,6 @@ private:
         return true;
     }
 
-    RPNBuilderTreeContext tree_context;
     const ExtractAtomFromTreeFunction & extract_atom_from_tree_function;
     RPNElements rpn_elements;
 };

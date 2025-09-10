@@ -107,10 +107,9 @@ public:
         checkAvailable(value_len);
 
         auto chars_cursor = column.getChars().size();
-        column.getChars().resize(chars_cursor + value_len + 1);
+        column.getChars().resize(chars_cursor + value_len);
 
         memcpySmallAllowReadWriteOverflow15(&column.getChars()[chars_cursor], data, value_len);
-        column.getChars().back() = 0;
 
         column.getOffsets().data()[cursor] = column.getChars().size();
         consume(value_len);

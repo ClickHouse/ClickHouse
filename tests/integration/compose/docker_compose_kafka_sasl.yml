@@ -1,0 +1,30 @@
+services:
+  kafka_sasl:
+    image: confluentinc/cp-kafka:7.9.0
+    hostname: kafka_sasl
+    ports:
+      - ${KAFKA_EXTERNAL_PORT}:${KAFKA_EXTERNAL_PORT}
+    environment:
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      KAFKA_LISTENERS: INSIDE://0.0.0.0:${KAFKA_EXTERNAL_PORT},OUTSIDE://0.0.0.0:19092,CONTROLLER://:19093
+      KAFKA_ADVERTISED_LISTENERS: INSIDE://localhost:${KAFKA_EXTERNAL_PORT},OUTSIDE://kafka_sasl:19092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:SASL_PLAINTEXT,OUTSIDE:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
+
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
+
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/secrets/kafka_server_jaas.conf"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      CLUSTER_ID: "Ch3OEYBSD34fcwNTASDNDM2Qk"
+    volumes:
+      - ${KAFKA_DIR:-}/secrets:/etc/kafka/secrets
+    security_opt:
+      - label:disable
+    sysctls:
+      net.ipv4.ip_local_port_range: '55000 65535'
+    stop_grace_period: 5s

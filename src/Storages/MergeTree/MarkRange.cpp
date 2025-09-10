@@ -1,7 +1,11 @@
-#include "MarkRange.h"
+#include <Storages/MergeTree/MarkRange.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+
+#include <base/defines.h>
+#include <fmt/ranges.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -9,6 +13,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+MarkRange::MarkRange(size_t begin_, size_t end_) : begin(begin_), end(end_)
+{
+    chassert(begin <= end);
 }
 
 size_t MarkRange::getNumberOfMarks() const
@@ -26,7 +35,7 @@ bool MarkRange::operator<(const MarkRange & rhs) const
     /// We allow only consecutive non-intersecting ranges
     /// Here we check whether a beginning of one range lies inside another range
     /// (ranges are intersect)
-    if (this != &rhs)
+    if (*this != rhs)
     {
         const bool is_intersection = (begin <= rhs.begin && rhs.begin < end) ||
             (rhs.begin <= begin && begin < rhs.end);
@@ -113,6 +122,26 @@ void MarkRanges::deserialize(ReadBuffer & in)
         readBinaryLittleEndian((*this)[i].begin, in);
         readBinaryLittleEndian((*this)[i].end, in);
     }
+}
+
+MarkRangesInfo::MarkRangesInfo(UUID table_uuid_, const String & part_name_, size_t marks_count_, bool has_final_mark_, MarkRanges mark_ranges_)
+    : table_uuid(table_uuid_)
+    , part_name(part_name_)
+    , marks_count(marks_count_)
+    , has_final_mark(has_final_mark_)
+    , mark_ranges(mark_ranges_)
+{}
+void MarkRangesInfo::appendMarkRanges(const MarkRanges & mark_ranges_)
+{
+    mark_ranges.insert(mark_ranges.end(), mark_ranges_.begin(), mark_ranges_.end());
+}
+
+size_t MarkRangeHash::operator()(const MarkRange & range) const
+{
+    SipHash hash;
+    hash.update(range.begin);
+    hash.update(range.end);
+    return hash.get64();
 }
 
 }

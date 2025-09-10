@@ -1,7 +1,10 @@
 ---
+description: 'Guide to using the format utility for working with ClickHouse data formats'
 slug: /operations/utilities/clickhouse-format
-title: clickhouse-format
+title: 'clickhouse-format'
 ---
+
+# clickhouse-format utility
 
 Allows formatting input queries.
 
@@ -9,7 +12,7 @@ Keys:
 
 - `--help` or`-h` — Produce help message.
 - `--query` — Format queries of any length and complexity.
-- `--hilite` — Add syntax highlight with ANSI terminal escape sequences.
+- `--hilite` or `--highlight` — Add syntax highlight with ANSI terminal escape sequences.
 - `--oneline` — Format in single line.
 - `--max_line_length` — Format in single line queries with length less than specified.
 - `--comments` — Keep comments in the output.

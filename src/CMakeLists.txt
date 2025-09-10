@@ -8,14 +8,6 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
-if(COMPILER_PIPE)
-    set(MAX_COMPILER_MEMORY 2500)
-else()
-    set(MAX_COMPILER_MEMORY 1500)
-endif()
-set(MAX_LINKER_MEMORY 3500)
-include(../cmake/limit_jobs.cmake)
-
 include (../cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
 include (configure_config.cmake)
@@ -67,6 +59,14 @@ add_subdirectory (Processors)
 add_subdirectory (Compression)
 add_subdirectory (Server)
 add_subdirectory (Coordination)
+
+if (ENABLE_CLICKHOUSE_DISTRIBUTED_CACHE)
+    message(STATUS "ClickHouse distributed cache is enabled, will build with it")
+    add_subdirectory (DistributedCache)
+else()
+    message(STATUS "ClickHouse distributed cache is disabled, will build without it")
+endif()
+
 add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
@@ -94,6 +94,7 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
 endif()
 
 add_headers_and_sources(clickhouse_common_io Common)
+add_headers_and_sources(clickhouse_common_io Common/Crypto)
 add_headers_and_sources(clickhouse_common_io Common/JSONParsers)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler)
@@ -103,7 +104,8 @@ add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/Protobuf)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
-list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
+add_headers_and_sources(clickhouse_common_io Disks/ObjectStorages/AzureBlobStorage)
+list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/AllocationInterceptors.cpp)
 
 
 add_headers_and_sources(clickhouse_compression Compression)
@@ -130,8 +132,13 @@ add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
 add_headers_and_sources(dbms Storages/ObjectStorage/Local)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
+add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
 add_headers_and_sources(dbms Common/NamedCollections)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
+
+
+add_headers_and_sources(dbms Core/YTsaurus)
+add_headers_and_sources(dbms Storages/YTsaurus)
 
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
@@ -161,7 +168,7 @@ if (TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
 endif()
 
-add_headers_and_sources(dbms Databases/Iceberg)
+add_headers_and_sources(dbms Databases/DataLake)
 
 add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
 add_headers_and_sources(dbms Disks/ObjectStorages/Local)
@@ -180,6 +187,10 @@ if (ENABLE_BUZZHOUSE)
     add_headers_and_sources(dbms Client/BuzzHouse/Utils)
 endif()
 
+if (ENABLE_CLIENT_AI)
+    add_headers_and_sources(dbms Client/AI)
+endif()
+
 if (OS_LINUX)
     add_headers_and_sources(dbms Storages/FileLog)
 else()
@@ -195,12 +206,19 @@ endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
+if (ENABLE_CLICKHOUSE_DISTRIBUTED_CACHE)
+    target_compile_definitions(clickhouse_common_io PUBLIC ENABLE_DISTRIBUTED_CACHE=1)
+else()
+    target_compile_definitions(clickhouse_common_io PUBLIC ENABLE_DISTRIBUTED_CACHE=0)
+endif()
+
+
 set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
 
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
-add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
+add_library (clickhouse_new_delete STATIC Common/AllocationInterceptors.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::jemalloc)
@@ -213,6 +231,9 @@ if (TARGET ch_contrib::azure_sdk)
 endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_contrib::incbin)
+if (TARGET ch_contrib::consistent_hashing)
+    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::consistent_hashing)
+endif()
 
 add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
@@ -257,6 +278,7 @@ add_object_library(clickhouse_storages_mergetree_compaction_merge_predicates Sto
 add_object_library(clickhouse_storages_mergetree_compaction_merge_selectors Storages/MergeTree/Compaction/MergeSelectors)
 add_object_library(clickhouse_storages_mergetree_compaction_parts_collectors Storages/MergeTree/Compaction/PartsCollectors)
 add_object_library(clickhouse_storages_mergetree_compaction_parts_finders Storages/MergeTree/Compaction/PartsFinders)
+add_object_library(clickhouse_storages_mergetree_patch_parts Storages/MergeTree/PatchParts)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
@@ -268,6 +290,12 @@ add_object_library(clickhouse_client Client)
 # https://github.com/ClickHouse/ClickHouse/issues/65745
 set_source_files_properties(Client/ClientBaseOptimizedParts.cpp PROPERTIES COMPILE_FLAGS "-O3")
 add_object_library(clickhouse_bridge BridgeHelper)
+
+if (ENABLE_CLICKHOUSE_DISTRIBUTED_CACHE)
+    add_object_library(clickhouse_distributed_cache DistributedCache)
+    add_object_library(clickhouse_server_distributed_cache Server/DistributedCache)
+endif()
+
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
 if (TARGET ch_contrib::ssh)
@@ -298,7 +326,7 @@ if (TARGET ch_contrib::nuraft)
 endif()
 
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-target_link_libraries (dbms PRIVATE ch_contrib::libdivide)
+target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
 endif()
@@ -330,11 +358,6 @@ if (TARGET ch_contrib::llvm)
     target_link_libraries (clickhouse_compression PUBLIC ch_contrib::llvm)
 endif ()
 
-if (TARGET ch_contrib::gwp_asan)
-    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::gwp_asan)
-    target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::gwp_asan)
-endif()
-
 # Otherwise it will slow down stack traces printing too much.
 if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
     set_source_files_properties(
@@ -365,6 +388,9 @@ target_link_libraries (clickhouse_compression
             ch_contrib::lz4
             ch_contrib::roaring
 )
+if (TARGET ch_contrib::fastpfor)
+    target_link_libraries (clickhouse_compression PRIVATE ch_contrib::fastpfor)
+endif()
 
 # Use X86 AVX2/AVX512 instructions to accelerate filter operations
 set_source_files_properties(
@@ -405,6 +431,10 @@ if (TARGET ch_contrib::crc32-vpmsum)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32-vpmsum)
  endif()
 
+if (TARGET ch_contrib::jwt-cpp)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::jwt-cpp)
+endif()
+
 if (TARGET ch_contrib::ssh)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::ssh)
 endif()
@@ -415,6 +445,9 @@ target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tabl
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
 dbms_target_link_libraries(PUBLIC ch_contrib::roaring)
+if (TARGET ch_contrib::fastpfor)
+    dbms_target_link_libraries(PUBLIC ch_contrib::fastpfor)
+endif()
 
 if (TARGET ch_contrib::rdkafka)
     dbms_target_link_libraries(PUBLIC ch_contrib::rdkafka ch_contrib::cppkafka)
@@ -455,10 +488,6 @@ dbms_target_link_libraries (
         clickhouse_common_io
         Poco::Redis
 )
-
-if (USE_MONGODB)
-    dbms_target_link_libraries (PUBLIC Poco::MongoDB)
-endif()
 
 if (TARGET ch_contrib::mongocxx)
     dbms_target_link_libraries(
@@ -517,6 +546,10 @@ if (TARGET OpenSSL::Crypto)
     dbms_target_link_libraries (PRIVATE OpenSSL::Crypto)
     target_link_libraries (clickhouse_common_io PRIVATE OpenSSL::Crypto)
 endif ()
+
+if (ENABLE_CLIENT_AI AND TARGET ch_contrib::ai-sdk-cpp)
+    dbms_target_link_libraries (PUBLIC ch_contrib::ai-sdk-cpp)
+endif()
 
 if (TARGET ch_contrib::ldap)
     dbms_target_link_libraries (PRIVATE ch_contrib::ldap ch_contrib::lber)
@@ -674,6 +707,18 @@ if (TARGET ch_contrib::google_cloud_cpp)
     dbms_target_link_libraries(PUBLIC ch_contrib::google_cloud_cpp)
 endif()
 
+if (TARGET ch_contrib::delta_kernel_rs)
+    target_link_libraries(dbms PRIVATE ch_contrib::delta_kernel_rs)
+endif ()
+
+if (TARGET ch_contrib::sha3iuf)
+    dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
+endif()
+
+if (TARGET ch_contrib::arrow_flight)
+    dbms_target_link_libraries(PUBLIC ch_contrib::arrow_flight)
+endif()
+
 if (ENABLE_BUZZHOUSE)
     dbms_target_link_libraries(PRIVATE clickhouse_buzzhouse_proto)
 endif()
@@ -703,8 +748,7 @@ if (ENABLE_TESTS)
         dbms
         clickhouse_common_zookeeper_base
         clickhouse_common_config
-        clickhouse_common_zookeeper
-        hilite_comparator)
+        clickhouse_common_zookeeper)
 
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
@@ -713,6 +757,10 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::yaml_cpp)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
     endif()
+
+    if (TARGET ch_contrib::delta_kernel_rs)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::delta_kernel_rs)
+    endif ()
 
     if (TARGET ch_contrib::azure_sdk)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)

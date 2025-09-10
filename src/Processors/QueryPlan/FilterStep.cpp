@@ -59,16 +59,6 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
     dag = std::move(split_result.second);
 
     const auto * split_filter_node = split_result.split_nodes_mapping[filter_node];
-    auto filter_type = removeLowCardinality(split_filter_node->result_type);
-    if (!filter_type->onlyNull() && !isUInt8(removeNullable(filter_type)))
-    {
-        DataTypePtr cast_type = DataTypeFactory::instance().get("Bool");
-        if (filter_type->isNullable())
-            cast_type = std::make_shared<DataTypeNullable>(std::move(cast_type));
-
-        split_filter_node = &split_result.first.addCast(*split_filter_node, cast_type, {});
-    }
-
     split_result.first.getOutputs().emplace(split_result.first.getOutputs().begin(), split_filter_node);
     auto name = split_filter_node->result_name;
     return ActionsAndName{std::move(split_result.first), std::move(name)};
@@ -126,17 +116,17 @@ std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, c
 }
 
 FilterStep::FilterStep(
-    const Header & input_header_,
+    const SharedHeader & input_header_,
     ActionsDAG actions_dag_,
     String filter_column_name_,
     bool remove_filter_column_)
     : ITransformingStep(
         input_header_,
-        FilterTransform::transformHeader(
-            input_header_,
+        std::make_shared<const Block>(FilterTransform::transformHeader(
+            *input_header_,
             &actions_dag_,
             filter_column_name_,
-            remove_filter_column_),
+            remove_filter_column_)),
         getTraits())
     , actions_dag(std::move(actions_dag_))
     , filter_column_name(std::move(filter_column_name_))
@@ -161,7 +151,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     for (auto & and_atom : and_atoms)
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag), settings.getActionsSettings());
-        pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
+        pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
         {
             bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
             return std::make_shared<FilterTransform>(header, expression, and_atom.name, true, on_totals);
@@ -170,10 +160,10 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
+    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals);
+        return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition);
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
@@ -184,7 +174,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
                 ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
-        pipeline.addSimpleTransform([&](const Block & header)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<ExpressionTransform>(header, convert_actions);
         });
@@ -242,12 +232,16 @@ void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void FilterStep::updateOutputHeader()
 {
-    output_header = FilterTransform::transformHeader(input_headers.front(), &actions_dag, filter_column_name, remove_filter_column);
+    output_header = std::make_shared<const Block>(FilterTransform::transformHeader(*input_headers.front(), &actions_dag, filter_column_name, remove_filter_column));
 
     if (!getDataStreamTraits().preserves_sorting)
         return;
 }
 
+void FilterStep::setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_)
+{
+    condition = {condition_hash_, condition_};
+}
 
 bool FilterStep::canUseType(const DataTypePtr & filter_type)
 {
@@ -267,7 +261,7 @@ void FilterStep::serialize(Serialization & ctx) const
     actions_dag.serialize(ctx.out, ctx.registry);
 }
 
-std::unique_ptr<IQueryPlanStep> FilterStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "FilterStep must have one input stream");
@@ -283,6 +277,11 @@ std::unique_ptr<IQueryPlanStep> FilterStep::deserialize(Deserialization & ctx)
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
 
     return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+}
+
+QueryPlanStepPtr FilterStep::clone() const
+{
+    return std::make_unique<FilterStep>(*this);
 }
 
 void registerFilterStep(QueryPlanStepRegistry & registry)

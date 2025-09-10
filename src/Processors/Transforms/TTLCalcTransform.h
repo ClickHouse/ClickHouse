@@ -1,4 +1,6 @@
 #pragma once
+
+#include <Interpreters/PreparedSets.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -15,7 +17,7 @@ class TTLCalcTransform : public IAccumulatingTransform
 public:
     TTLCalcTransform(
         const ContextPtr & context,
-        const Block & header_,
+        SharedHeader header_,
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,

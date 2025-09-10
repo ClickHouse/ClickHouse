@@ -1,25 +1,33 @@
 ---
-slug: /sql-reference/data-types/newjson
+description: 'Documentation for the JSON data type in ClickHouse, which provides native
+  support for working with JSON data'
+keywords: ['json', 'data type']
+sidebar_label: 'JSON'
 sidebar_position: 63
-sidebar_label: JSON
-keywords: [json, data type]
-title: "JSON Data Type"
+slug: /sql-reference/data-types/newjson
+title: 'JSON Data Type'
 ---
-import BetaBadge from '@theme/badges/BetaBadge';
 
-<BetaBadge/>
+import {CardSecondary} from '@clickhouse/click-ui/bundled';
+import Link from '@docusaurus/Link'
+
+<Link to="/docs/best-practices/use-json-where-appropriate" style={{display: 'flex', textDecoration: 'none', width: 'fit-content'}}>
+<CardSecondary
+  badgeState="success"
+  badgeText=""
+  description="Check out our JSON best practice guide for examples, advanced features and considerations for using the JSON type."
+  icon="book"
+  infoText="Read more"
+  infoUrl="/docs/best-practices/use-json-where-appropriate"
+  title="Looking for a guide?"
+/>
+</Link>
+<br/>
 
 The `JSON` type stores JavaScript Object Notation (JSON) documents in a single column.
 
 :::note
-This feature is in beta and is not yet production-ready. If you need to work with JSON documents, consider using [this guide](/docs/integrations/data-formats/json/overview) instead.
-
-If you want to use the `JSON` type, and for the examples on this page, please use:
-
-```sql
-SET enable_json_type = 1
-```
-
+In ClickHouse Open-Source JSON data type is marked as production ready in version 25.3. It's not recommended to use this type in production in previous versions.
 :::
 
 To declare a column of `JSON` type, you can use the following syntax:
@@ -44,11 +52,11 @@ Where the parameters in the syntax above are defined as:
 | `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                   |               |
 | `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                           |               |
 
-## Creating JSON
+## Creating JSON {#creating-json}
 
 In this section we'll take a look at the various ways that you can create `JSON`.
 
-### Using `JSON` in a table column definition
+### Using `JSON` in a table column definition {#using-json-in-a-table-column-definition}
 
 ```sql title="Query (Example 1)"
 CREATE TABLE test (json JSON) ENGINE = Memory;
@@ -72,29 +80,29 @@ SELECT json FROM test;
 
 ```text title="Response (Example 2)"
 ┌─json──────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3]}        │
+│ {"a":{"b":42},"c":["1","2","3"]}  │
 │ {"a":{"b":0},"f":"Hello, World!"} │
-│ {"a":{"b":43},"c":[4,5,6]}        │
+│ {"a":{"b":43},"c":["4","5","6"]}  │
 └───────────────────────────────────┘
 ```
 
-### Using CAST with `::JSON`
+### Using CAST with `::JSON` {#using-cast-with-json}
 
 It is possible to cast various types using the special syntax `::JSON`.
 
-#### CAST from `String` to `JSON`
+#### CAST from `String` to `JSON` {#cast-from-string-to-json}
 
 ```sql title="Query"
 SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json;
 ```
 
 ```text title="Response"
-┌─json───────────────────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
-└────────────────────────────────────────────────┘
+┌─json───────────────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+└────────────────────────────────────────────────────────┘
 ```
 
-#### CAST from `Tuple` to `JSON`
+#### CAST from `Tuple` to `JSON` {#cast-from-tuple-to-json}
 
 ```sql title="Query"
 SET enable_named_columns_in_function_tuple = 1;
@@ -102,25 +110,25 @@ SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json
 ```
 
 ```text title="Response"
-┌─json───────────────────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
-└────────────────────────────────────────────────┘
+┌─json───────────────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+└────────────────────────────────────────────────────────┘
 ```
 
-#### CAST from `Map` to `JSON`
+#### CAST from `Map` to `JSON` {#cast-from-map-to-json}
 
 ```sql title="Query"
-SET enable_variant_type=1, use_variant_as_common_type=1;
+SET use_variant_as_common_type=1;
 SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
 ```
 
 ```text title="Response"
-┌─json───────────────────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
-└────────────────────────────────────────────────┘
+┌─json───────────────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+└────────────────────────────────────────────────────────┘
 ```
 
-#### CAST from deprecated `Object('json')` to `JSON`
+#### CAST from deprecated `Object('json')` to `JSON` {#cast-from-deprecated-objectjson-to-json}
 
 ```sql title="Query"
 SET allow_experimental_object_type = 1;
@@ -128,9 +136,9 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json
 ```
 
 ```text title="Response"
-┌─json───────────────────────────────────────────┐
-│ {"a":{"b":42},"c":[1,2,3],"d":"Hello, World!"} │
-└────────────────────────────────────────────────┘
+┌─json───────────────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+└────────────────────────────────────────────────────────┘
 ```
 
 :::note
@@ -141,7 +149,7 @@ Our implementation will always assume the latter.
 For example:
 
 ```sql
-SELECT CAST('{"a.b.c" : 42}', 'JSON') as json
+SELECT CAST('{"a.b.c" : 42}', 'JSON') AS json
 ```
 
 will return:
@@ -161,11 +169,11 @@ and **not**:
 ```
 :::
 
-## Reading JSON paths as sub-columns
+## Reading JSON paths as sub-columns {#reading-json-paths-as-sub-columns}
 
 The `JSON` type supports reading every path as a separate sub-column. 
 If the type of the requested path is not specified in the JSON type declaration, 
-then the sub column of the path will always have type [Dynamic](/docs/sql-reference/data-types/dynamic.md).
+then the sub column of the path will always have type [Dynamic](/sql-reference/data-types/dynamic.md).
 
 For example:
 
@@ -176,11 +184,11 @@ SELECT json FROM test;
 ```
 
 ```text title="Response"
-┌─json──────────────────────────────────────────────────┐
-│ {"a":{"b":42,"g":42.42},"c":[1,2,3],"d":"2020-01-01"} │
-│ {"a":{"b":0},"d":"2020-01-02","f":"Hello, World!"}    │
-│ {"a":{"b":43,"g":43.43},"c":[4,5,6]}                  │
-└───────────────────────────────────────────────────────┘
+┌─json────────────────────────────────────────────────────────┐
+│ {"a":{"b":42,"g":42.42},"c":["1","2","3"],"d":"2020-01-01"} │
+│ {"a":{"b":0},"d":"2020-01-02","f":"Hello, World!"}          │
+│ {"a":{"b":43,"g":43.43},"c":["4","5","6"]}                  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ```sql title="Query (Reading JSON paths as sub-columns)"
@@ -193,6 +201,20 @@ SELECT json.a.b, json.a.g, json.c, json.d FROM test;
 │        0 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ    │ 2020-01-02 │
 │       43 │ 43.43    │ [4,5,6] │ ᴺᵁᴸᴸ       │
 └──────────┴──────────┴─────────┴────────────┘
+```
+
+You can also use `getSubcolumn` function to read subcolumns from JSON type:
+
+```sql title="Query"
+SELECT getSubcolumn(json, 'a.b'), getSubcolumn(json, 'a.g'), getSubcolumn(json, 'c'), getSubcolumn(json, 'd') FROM test;
+```
+
+```text title="Response"
+┌─getSubcolumn(json, 'a.b')─┬─getSubcolumn(json, 'a.g')─┬─getSubcolumn(json, 'c')─┬─getSubcolumn(json, 'd')─┐
+│                        42 │ 42.42                     │ [1,2,3]                 │ 2020-01-01              │
+│                         0 │ ᴺᵁᴸᴸ                      │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
+│                        43 │ 43.43                     │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
+└───────────────────────────┴───────────────────────────┴─────────────────────────┴─────────────────────────┘
 ```
 
 If the requested path wasn't found in the data, it will be filled with `NULL` values:
@@ -274,7 +296,7 @@ while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CA
 (NOT_IMPLEMENTED)
 ```
 
-## Reading JSON sub-objects as sub-columns
+## Reading JSON sub-objects as sub-columns {#reading-json-sub-objects-as-sub-columns}
 
 The `JSON` type supports reading nested objects as sub-columns with type `JSON` using the special syntax `json.^some.path`:
 
@@ -285,11 +307,11 @@ SELECT json FROM test;
 ```
 
 ```text title="Response"
-┌─json────────────────────────────────────────────────────────────────────────────────────────┐
-│ {"a":{"b":{"c":42,"g":42.42}},"c":[1,2,3],"d":{"e":{"f":{"g":"Hello, World","h":[1,2,3]}}}} │
-│ {"d":{"e":{"f":{"h":[4,5,6]}}},"f":"Hello, World!"}                                         │
-│ {"a":{"b":{"c":43,"e":10,"g":43.43}},"c":[4,5,6]}                                           │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─json──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"a":{"b":{"c":"42","g":42.42}},"c":["1","2","3"],"d":{"e":{"f":{"g":"Hello, World","h":["1","2","3"]}}}} │
+│ {"d":{"e":{"f":{"h":["4","5","6"]}}},"f":"Hello, World!"}                                                 │
+│ {"a":{"b":{"c":"43","e":"10","g":43.43}},"c":["4","5","6"]}                                               │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```sql title="Query"
@@ -297,33 +319,33 @@ SELECT json.^a.b, json.^d.e.f FROM test;
 ```
 
 ```text title="Response"
-┌─json.^`a`.b───────────────┬─json.^`d`.e.f────────────────────┐
-│ {"c":42,"g":42.42}        │ {"g":"Hello, World","h":[1,2,3]} │
-│ {}                        │ {"h":[4,5,6]}                    │
-│ {"c":43,"e":10,"g":43.43} │ {}                               │
-└───────────────────────────┴──────────────────────────────────┘
+┌─json.^`a`.b───────────────────┬─json.^`d`.e.f──────────────────────────┐
+│ {"c":"42","g":42.42}          │ {"g":"Hello, World","h":["1","2","3"]} │
+│ {}                            │ {"h":["4","5","6"]}                    │
+│ {"c":"43","e":"10","g":43.43} │ {}                                     │
+└───────────────────────────────┴────────────────────────────────────────┘
 ```
 
 :::note
 Reading sub-objects as sub-columns may be inefficient, as this may require a near full scan of the JSON data.
 :::
 
-## Type inference for paths
+## Type inference for paths {#type-inference-for-paths}
 
 During parsing of `JSON`, ClickHouse tries to detect the most appropriate data type for each JSON path. 
-It works similarly to [automatic schema inference from input data](/docs/interfaces/schema-inference.md),
+It works similarly to [automatic schema inference from input data](/interfaces/schema-inference.md),
 and is controlled by the same settings:
  
-- [input_format_try_infer_integers](/docs/interfaces/schema-inference.md#inputformattryinferintegers)
-- [input_format_try_infer_dates](/docs/interfaces/schema-inference.md#inputformattryinferdates)
-- [input_format_try_infer_datetimes](/docs/interfaces/schema-inference.md#inputformattryinferdatetimes)
-- [schema_inference_make_columns_nullable](/docs/interfaces/schema-inference.md#schemainferencemakecolumnsnullable)
-- [input_format_json_try_infer_numbers_from_strings](/docs/interfaces/schema-inference.md#inputformatjsontryinfernumbersfromstrings)
-- [input_format_json_infer_incomplete_types_as_strings](/docs/interfaces/schema-inference.md#inputformatjsoninferincompletetypesasstrings)
-- [input_format_json_read_numbers_as_strings](/docs/interfaces/schema-inference.md#inputformatjsonreadnumbersasstrings)
-- [input_format_json_read_bools_as_strings](/docs/interfaces/schema-inference.md#inputformatjsonreadboolsasstrings)
-- [input_format_json_read_bools_as_numbers](/docs/interfaces/schema-inference.md#inputformatjsonreadboolsasnumbers)
-- [input_format_json_read_arrays_as_strings](/docs/interfaces/schema-inference.md#inputformatjsonreadarraysasstrings)
+- [input_format_try_infer_dates](/operations/settings/formats#input_format_try_infer_dates)
+- [input_format_try_infer_datetimes](/operations/settings/formats#input_format_try_infer_datetimes)
+- [schema_inference_make_columns_nullable](/operations/settings/formats#schema_inference_make_columns_nullable)
+- [input_format_json_try_infer_numbers_from_strings](/operations/settings/formats#input_format_json_try_infer_numbers_from_strings)
+- [input_format_json_infer_incomplete_types_as_strings](/operations/settings/formats#input_format_json_infer_incomplete_types_as_strings)
+- [input_format_json_read_numbers_as_strings](/operations/settings/formats#input_format_json_read_numbers_as_strings)
+- [input_format_json_read_bools_as_strings](/operations/settings/formats#input_format_json_read_bools_as_strings)
+- [input_format_json_read_bools_as_numbers](/operations/settings/formats#input_format_json_read_bools_as_numbers)
+- [input_format_json_read_arrays_as_strings](/operations/settings/formats#input_format_json_read_arrays_as_strings)
+- [input_format_json_infer_array_of_dynamic_from_array_of_different_types](/operations/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
 
 Let's take a look at some examples:
 
@@ -367,7 +389,7 @@ SELECT JSONAllPathsWithTypes('{"a" : [1, 2, 3]}'::JSON) AS paths_with_types sett
 └──────────────────────┘
 ```
 
-## Handling arrays of JSON objects
+## Handling arrays of JSON objects {#handling-arrays-of-json-objects}
 
 JSON paths that contain an array of objects are parsed as type `Array(JSON)` and inserted into a `Dynamic` column for the path. 
 To read an array of objects, you can extract it from the `Dynamic` column as a sub-column:
@@ -478,7 +500,115 @@ SELECT json.a.b[].^k FROM test
 └──────────────────────────────────────┘
 ```
 
-## Reading JSON type from data
+## Handling JSON keys with dots {#handling-json-keys-with-dots}
+
+Internally JSON column stores all paths and values in a flattened form. It means that by default these 2 objects are considered as the same:
+```json
+{"a" : {"b" : 42}}
+{"a.b" : 42}
+```
+
+They both will be stored internally as a pair of path `a.b` and value `42`. During formatting of JSON we always form nested objects based on the path parts separated by dot:
+
+```sql title="Query"
+SELECT '{"a" : {"b" : 42}}'::JSON AS json1, '{"a.b" : 42}'::JSON AS json2, JSONAllPaths(json1), JSONAllPaths(json2);
+```
+
+```text title="Response"
+┌─json1────────────┬─json2────────────┬─JSONAllPaths(json1)─┬─JSONAllPaths(json2)─┐
+│ {"a":{"b":"42"}} │ {"a":{"b":"42"}} │ ['a.b']             │ ['a.b']             │
+└──────────────────┴──────────────────┴─────────────────────┴─────────────────────┘
+```
+
+As you can see, initial JSON `{"a.b" : 42}` is now formatted as `{"a" : {"b" : 42}}`.
+
+This limitation also leads to the failure of parsing valid JSON objects like this:
+
+```sql title="Query"
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json;
+```
+
+```text title="Response"
+Code: 117. DB::Exception: Cannot insert data into JSON column: Duplicate path found during parsing JSON object: a.b. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert: In scope SELECT CAST('{"a.b" : 42, "a" : {"b" : "Hello, World"}}', 'JSON') AS json. (INCORRECT_DATA)
+```
+
+If you want to keep keys with dots and avoid formatting them as nested objects, you can enable
+setting [json_type_escape_dots_in_keys](/operations/settings/formats#json_type_escape_dots_in_keys) (available starting from version `25.8`). In this case during parsing all dots in JSON keys will be
+escaped into `%2E` and unescaped back during formatting.
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a" : {"b" : 42}}'::JSON AS json1, '{"a.b" : 42}'::JSON AS json2, JSONAllPaths(json1), JSONAllPaths(json2);
+```
+
+```text title="Response"
+┌─json1────────────┬─json2────────┬─JSONAllPaths(json1)─┬─JSONAllPaths(json2)─┐
+│ {"a":{"b":"42"}} │ {"a.b":"42"} │ ['a.b']             │ ['a%2Eb']           │
+└──────────────────┴──────────────┴─────────────────────┴─────────────────────┘
+```
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, JSONAllPaths(json);
+```
+
+```text title="Response"
+┌─json──────────────────────────────────┬─JSONAllPaths(json)─┐
+│ {"a.b":"42","a":{"b":"Hello World!"}} │ ['a%2Eb','a.b']    │
+└───────────────────────────────────────┴────────────────────┘
+```
+
+To read key with escaped dot as a subcolumn you have to use escaped dot in the subcolumn name:
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, json.`a%2Eb`, json.a.b;
+```
+
+```text title="Response"
+┌─json──────────────────────────────────┬─json.a%2Eb─┬─json.a.b─────┐
+│ {"a.b":"42","a":{"b":"Hello World!"}} │ 42         │ Hello World! │
+└───────────────────────────────────────┴────────────┴──────────────┘
+```
+
+Note: due to identifiers parser and analyzer limitations subcolumn ``json.`a.b`\`` is equivalent to subcolumn `json.a.b` and won't read path with escaped dot:
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, json.`a%2Eb`, json.`a.b`, json.a.b;
+```
+
+```text title="Response"
+┌─json──────────────────────────────────┬─json.a%2Eb─┬─json.a.b─────┬─json.a.b─────┐
+│ {"a.b":"42","a":{"b":"Hello World!"}} │ 42         │ Hello World! │ Hello World! │
+└───────────────────────────────────────┴────────────┴──────────────┴──────────────┘
+```
+
+Also, if you want to specify a hint for a JSON path that contains keys with dots (or use it in the `SKIP`/`SKIP REGEX` sections), you have to use escaped dots in the hint:
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(`a%2Eb` UInt8) as json, json.`a%2Eb`, toTypeName(json.`a%2Eb`);
+```
+
+```text title="Response"
+┌─json────────────────────────────────┬─json.a%2Eb─┬─toTypeName(json.a%2Eb)─┐
+│ {"a.b":42,"a":{"b":"Hello World!"}} │         42 │ UInt8                  │
+└─────────────────────────────────────┴────────────┴────────────────────────┘
+```
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(SKIP `a%2Eb`) as json, json.`a%2Eb`;
+```
+
+```text title="Response"
+┌─json───────────────────────┬─json.a%2Eb─┐
+│ {"a":{"b":"Hello World!"}} │ ᴺᵁᴸᴸ       │
+└────────────────────────────┴────────────┘
+```
+
+## Reading JSON type from data {#reading-json-type-from-data}
 
 All text formats 
 ([`JSONEachRow`](../../interfaces/formats/JSON/JSONEachRow.md), 
@@ -530,19 +660,19 @@ SELECT json FROM format(TSV, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP REGEXP \'
 └───────────────────────────────────────────────────────────────┘
 ```
 
-## Reaching the limit of dynamic paths inside JSON
+## Reaching the limit of dynamic paths inside JSON {#reaching-the-limit-of-dynamic-paths-inside-json}
 
 The `JSON` data type can store only a limited number of paths as separate sub-columns internally. 
 By default, this limit is `1024`, but you can change it in the type declaration using parameter `max_dynamic_paths`.
 
 When the limit is reached, all new paths inserted to a `JSON` column will be stored in a single shared data structure. 
 It's still possible to read such paths as sub-columns, 
-but it will require reading the entire shared data structure to extract the values of this path. 
+but it might be less efficient ([see section about shared data](#shared-data-structure)). 
 This limit is needed to avoid having an enormous number of different sub-columns that can make the table unusable.
 
 Let's see what happens when the limit is reached in a few different scenarios.
 
-### Reaching the limit during data parsing
+### Reaching the limit during data parsing {#reaching-the-limit-during-data-parsing}
 
 During parsing of `JSON` objects from data, when the limit is reached for the current block of data, 
 all new paths will be stored in a shared data structure. We can use the following two introspection functions `JSONDynamicPaths`, `JSONSharedDataPaths`:
@@ -570,7 +700,7 @@ SELECT json, JSONDynamicPaths(json), JSONSharedDataPaths(json) FROM format(JSONE
 As we can see, after inserting paths `e` and `f.g` the limit was reached, 
 and they got inserted into a shared data structure.
 
-### During merges of data parts in MergeTree table engines
+### During merges of data parts in MergeTree table engines {#during-merges-of-data-parts-in-mergetree-table-engines}
 
 During a merge of several data parts in a `MergeTree` table the `JSON` column in the resulting data part can reach the limit of dynamic paths 
 and won't be able to store all paths from source parts as sub-columns.
@@ -582,7 +712,7 @@ Let's see an example of such a merge.
 First, let's create a table with a `JSON` column, set the limit of dynamic paths to `3` and then insert values with `5` different paths:
 
 ```sql title="Query"
-CREATE TABLE test (id UInt64, json JSON(max_dynamic_paths=3)) engine=MergeTree ORDER BY id;
+CREATE TABLE test (id UInt64, json JSON(max_dynamic_paths=3)) ENGINE=MergeTree ORDER BY id;
 SYSTEM STOP MERGES test;
 INSERT INTO test SELECT number, formatRow('JSONEachRow', number as a) FROM numbers(5);
 INSERT INTO test SELECT number, formatRow('JSONEachRow', number as b) FROM numbers(4);
@@ -635,7 +765,64 @@ ORDER BY _part ASC
 
 As we can see, ClickHouse kept the most frequent paths `a`, `b` and `c` and moved paths `d` and `e` to a shared data structure.
 
-## Introspection functions
+## Shared data structure {#shared-data-structure}
+
+As was described in the previous section, when the `max_dynamic_paths` limit is reached all new paths are stored in a single shared data structure.
+In this section we will look into the details of the shared data structure and how we read paths sub-columns from it.
+
+### Shared data structure in memory {#shared-data-structure-in-memory}
+
+In memory, shared data structure is just a sub-column with type `Map(String, String)` that stores mapping from a flattened JSON path to a binary encoded value.
+To extract a path subcolumn from it, we just iterate over all rows in this `Map` column and try to find the requested path and its values.
+
+### Shared data structure in MergeTree parts {#shared-data-structure-in-merge-tree-parts}
+
+In [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables we store data in data parts that stores everything on disk (local or remote). And data on disk can be stored in a different way compared to memory.
+Currently, there are 3 different shared data structure serializations in MergeTree data parts: `map`, `map_with_buckets`
+and `advanced`.
+
+The serialization version is controlled by MergeTree
+settings [object_shared_data_serialization_version](../../operations/settings/merge-tree-settings.md#object_shared_data_serialization_version)
+and [object_shared_data_serialization_version_for_zero_level_parts](../../operations/settings/merge-tree-settings.md#object_shared_data_serialization_version_for_zero_level_parts) 
+(zero level part is the part created during inserting data into the table, during merges parts have higher level).
+
+Note: changing shared data structure serialization is supported only
+for `v3` [object serialization version](../../operations/settings/merge-tree-settings.md#object_serialization_version)
+
+#### Map {#shared-data-map}
+
+In `map` serialization version shared data is serialized as a single column with type `Map(String, String)` the same as it's stored in
+memory. To read path sub-column from this type of serialization ClickHouse reads the whole `Map` column and
+extracts the requested path in memory.
+
+This serialization is efficient for writing data and reading the whole `JSON` column, but it's not efficient for reading paths sub-columns.
+
+#### Map with buckets {#shared-data-map-with-buckets} 
+
+In `map_with_buckets` serialization version shared data is serialized as `N` columns ("buckets") with type `Map(String, String)`.
+Each such bucket contains only subset of paths. To read path sub-column from this type of serialization ClickHouse
+reads the whole `Map` column from a single bucket and extracts the requested path in memory.
+
+This serialization is less efficient for writing data and reading the whole `JSON` column, but it's more efficient for reading paths sub-columns
+because it reads data only from required buckets.
+
+Number of buckets `N` is controlled by MergeTree settings [object_shared_data_buckets_for_compact_part](
+../../operations/settings/merge-tree-settings.md#object_shared_data_buckets_for_compact_part) (8 by default)
+and [object_shared_data_buckets_for_wide_part](
+../../operations/settings/merge-tree-settings.md#object_shared_data_buckets_for_wide_part) (32 by default).
+
+#### Advanced {#shared-data-advanced}
+
+In `advanced` serialization version shared data is serialized in a special data structure that maximizes the performance
+of paths sub-columns reading by storing some additional information that allows to read only the data of requested paths.
+This serialization also supports buckets, so each bucket contains only sub-set of paths.
+
+This serialization is quite inefficient for writing data (so it's not recommended to use this serialization for zero-level parts), reading the whole `JSON` column is slightly less efficient compared to `map` serialization, but it's very efficient for reading paths sub-columns.
+
+Note: because of storing some additional information inside the data structure, the disk storage size is higher with this serialization compared to 
+`map` and `map_with_buckets` serializations.
+
+## Introspection functions {#introspection-functions}
 
 There are several functions that can help to inspect the content of the JSON column: 
 - [`JSONAllPaths`](../functions/json-functions.md#jsonallpaths)
@@ -717,7 +904,6 @@ FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz
 SETTINGS date_time_input_format = 'best_effort'
 ```
 
-
 ```text
 ┌─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┐
 │ ('actor.avatar_url',['String'])                             │
@@ -773,14 +959,14 @@ SETTINGS date_time_input_format = 'best_effort'
 └─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┘
 ```
 
-## ALTER MODIFY COLUMN to JSON type
+## ALTER MODIFY COLUMN to JSON type {#alter-modify-column-to-json-type}
 
 It's possible to alter an existing table and change the type of the column to the new `JSON` type. Right now only `ALTER` from a `String` type is supported.
 
 **Example**
 
 ```sql title="Query"
-CREATE TABLE test (json String) ENGINE=MergeTree ORDeR BY tuple();
+CREATE TABLE test (json String) ENGINE=MergeTree ORDER BY tuple();
 INSERT INTO test VALUES ('{"a" : 42}'), ('{"a" : 43, "b" : "Hello"}'), ('{"a" : 44, "b" : [1, 2, 3]}'), ('{"c" : "2020-01-01"}');
 ALTER TABLE test MODIFY COLUMN json JSON;
 SELECT json, json.a, json.b, json.c FROM test;
@@ -795,51 +981,54 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-## Comparison between values of the JSON type
+## Comparison between values of the JSON type {#comparison-between-values-of-the-json-type}
 
-Values of a `JSON` column cannot be compared with the `less/greater` functions, 
-but can be compared using the `equal` function.
-
-Two JSON objects are considered equal when they have the same set of paths and each of these paths has the same type and value in both objects.
+JSON objects are compared similarly to Maps. 
 
 For example:
 
 ```sql title="Query"
-CREATE TABLE test (json1 JSON(a UInt32), json2 JSON(a UInt32)) ENGINE=Memory;
+CREATE TABLE test (json1 JSON, json2 JSON) ENGINE=Memory;
 INSERT INTO test FORMAT JSONEachRow
-{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}}
-{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 43, "b" : 42, "c" : "Hello"}}
-{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 43, "b" : 42, "c" : "Hello"}}
-{"json1" : {"a" : 42, "b" : 42, "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "World"}}
-{"json1" : {"a" : 42, "b" : [1, 2, 3], "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}}
-{"json1" : {"a" : 42, "b" : 42.0, "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}}
-{"json1" : {"a" : 42, "b" : "42", "c" : "Hello"}, "json2" : {"a" : 42, "b" : 42, "c" : "Hello"}};
+{"json1" : {}, "json2" : {}}
+{"json1" : {"a" : 42}, "json2" : {}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 41}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 42}}
+{"json1" : {"a" : 42}, "json2" : {"a" : [1, 2, 3]}}
+{"json1" : {"a" : 42}, "json2" : {"a" : "Hello"}}
+{"json1" : {"a" : 42}, "json2" : {"b" : 42}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 42, "b" : 42}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 41, "b" : 42}}
 
-SELECT json1, json2, json1 == json2 FROM test;
+SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 ```
 
 ```text title="Response"
-┌─json1──────────────────────────────────┬─json2─────────────────────────┬─equals(json1, json2)─┐
-│ {"a":42,"b":"42","c":"Hello"}          │ {"a":42,"b":"42","c":"Hello"} │                    1 │
-│ {"a":42,"b":"42","c":"Hello"}          │ {"a":43,"b":"42","c":"Hello"} │                    0 │
-│ {"a":42,"b":"42","c":"Hello"}          │ {"a":43,"b":"42","c":"Hello"} │                    0 │
-│ {"a":42,"b":"42","c":"Hello"}          │ {"a":42,"b":"42","c":"World"} │                    0 │
-│ {"a":42,"b":["1","2","3"],"c":"Hello"} │ {"a":42,"b":"42","c":"Hello"} │                    0 │
-│ {"a":42,"b":42,"c":"Hello"}            │ {"a":42,"b":"42","c":"Hello"} │                    0 │
-│ {"a":42,"b":"42","c":"Hello"}          │ {"a":42,"b":"42","c":"Hello"} │                    0 │
-└────────────────────────────────────────┴───────────────────────────────┴──────────────────────┘
+┌─json1──────┬─json2───────────────┬─less(json1, json2)─┬─equals(json1, json2)─┬─greater(json1, json2)─┐
+│ {}         │ {}                  │                  0 │                    1 │                     0 │
+│ {"a":"42"} │ {}                  │                  0 │                    0 │                     1 │
+│ {"a":"42"} │ {"a":"41"}          │                  0 │                    0 │                     1 │
+│ {"a":"42"} │ {"a":"42"}          │                  0 │                    1 │                     0 │
+│ {"a":"42"} │ {"a":["1","2","3"]} │                  0 │                    0 │                     1 │
+│ {"a":"42"} │ {"a":"Hello"}       │                  1 │                    0 │                     0 │
+│ {"a":"42"} │ {"b":"42"}          │                  1 │                    0 │                     0 │
+│ {"a":"42"} │ {"a":"42","b":"42"} │                  1 │                    0 │                     0 │
+│ {"a":"42"} │ {"a":"41","b":"42"} │                  0 │                    0 │                     1 │
+└────────────┴─────────────────────┴────────────────────┴──────────────────────┴───────────────────────┘
 ```
 
-## Tips for better usage of the JSON type
+**Note:** when 2 paths contain values of different data types, they are compared according to [comparison rule](/sql-reference/data-types/variant#comparing-values-of-variant-data) of `Variant` data type.
+
+## Tips for better usage of the JSON type {#tips-for-better-usage-of-the-json-type}
 
 Before creating `JSON` column and loading data into it, consider the following tips:
 
 - Investigate your data and specify as many path hints with types as you can. It will make storage and reading much more efficient.
 - Think about what paths you will need and what paths you will never need. Specify paths that you won't need in the `SKIP` section, and `SKIP REGEXP` section if needed. This will improve the storage.
 - Don't set the `max_dynamic_paths` parameter to very high values, as it can make storage and reading less efficient. 
-  While highly dependent on system parameters such as memory, CPU, etc., a general rule of thumb would be to not set `max_dynamic_paths` > 10 000.
+  While highly dependent on system parameters such as memory, CPU, etc., a general rule of thumb would be to not set `max_dynamic_paths` greater than 10 000 for the local filesystem storage and 1024 for the remote filesystem storage.
 
-## Further Reading
+## Further Reading {#further-reading}
 
 - [How we built a new powerful JSON data type for ClickHouse](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse)
 - [The billion docs JSON Challenge: ClickHouse vs. MongoDB, Elasticsearch, and more](https://clickhouse.com/blog/json-bench-clickhouse-vs-mongodb-elasticsearch-duckdb-postgresql)

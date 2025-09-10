@@ -84,7 +84,7 @@ SELECT name FROM system.parts WHERE active AND database = currentDatabase() AND 
 SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/$SHARD/replicas/2$REPLICA/parts';
 
 SELECT '*** Test ALTER ***';
-ALTER TABLE part_header_r1 MODIFY COLUMN y String;
+ALTER TABLE part_header_r1 MODIFY COLUMN y String SETTINGS alter_sync = 2;
 SELECT '*** replica 1 ***';
 SELECT x, length(y) FROM part_header_r1 ORDER BY x;
 SELECT '*** replica 2 ***';
@@ -92,7 +92,7 @@ SELECT x, length(y) FROM part_header_r2 ORDER BY x;
 
 SELECT '*** Test CLEAR COLUMN ***';
 SET replication_alter_partitions_sync = 2;
-ALTER TABLE part_header_r1 CLEAR COLUMN y IN PARTITION tuple();
+ALTER TABLE part_header_r1 CLEAR COLUMN y IN PARTITION tuple() SETTINGS alter_sync = 2;
 SELECT '*** replica 1 ***';
 SELECT x, length(y) FROM part_header_r1 ORDER BY x;
 SELECT '*** replica 2 ***';

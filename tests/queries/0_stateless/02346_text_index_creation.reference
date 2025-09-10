@@ -1,0 +1,22 @@
+Must not have no arguments.
+Test single tokenizer argument.
+-- tokenizer must be default, ngram, split or no_op.
+Test ngram_size argument.
+-- ngram size must be between 2 and 8.
+Test separators argument.
+-- separators must be array.
+-- separators must be an array of strings.
+Test segment_digestion_threshold_bytes argument.
+-- segment_digestion_threshold_bytes must be an integer.
+-- segment_digestion_threshold_bytes can be 0 (zero).
+Test bloom_filter_false_positive_rate argument.
+-- bloom_filter_false_positive_rate must be a double.
+-- bloom_filter_false_positive_rate must be between 0.0 and 1.0.
+Parameters are shuffled.
+Types are incorrect.
+Same argument appears >1 times.
+Must be created on single column.
+A column must not have >1 text index
+-- CREATE TABLE
+-- ALTER TABLE
+Must be created on String or FixedString or LowCardinality(String) or LowCardinality(FixedString) columns.

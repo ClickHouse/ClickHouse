@@ -7,7 +7,6 @@
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadHelpers.h>
 #include <IO/PeekableReadBuffer.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -19,7 +18,7 @@ class TemplateRowInputFormat final : public RowInputFormatWithDiagnosticInfo
 {
     using EscapingRule = FormatSettings::EscapingRule;
 public:
-    TemplateRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+    TemplateRowInputFormat(SharedHeader header_, ReadBuffer & in_, const Params & params_,
                            FormatSettings settings_, bool ignore_spaces_,
                            ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
                            std::string row_between_delimiter);
@@ -31,7 +30,7 @@ public:
     void resetReadBuffer() override;
 
 private:
-    TemplateRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_,
+    TemplateRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_,
                            FormatSettings settings_, bool ignore_spaces_,
                            ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
                            std::string row_between_delimiter);

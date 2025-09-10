@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
+#include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
@@ -124,19 +125,17 @@ String DataPartStorageOnDiskFull::getUniqueId() const
 std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFile(
     const std::string & name,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t> read_hint) const
 {
-    return volume->getDisk()->readFile(fs::path(root_path) / part_dir / name, settings, read_hint, file_size);
+    return volume->getDisk()->readFile(fs::path(root_path) / part_dir / name, settings, read_hint);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExists(
     const std::string & name,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t> read_hint) const
 {
-    return volume->getDisk()->readFileIfExists(fs::path(root_path) / part_dir / name, settings, read_hint, file_size);
+    return volume->getDisk()->readFileIfExists(fs::path(root_path) / part_dir / name, settings, read_hint);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(

@@ -205,6 +205,9 @@ class ZooKeeperMetadataTransaction
     String task_path;
     Coordination::Requests ops;
 
+    using FinalizerCallback = std::function<void()>;
+    FinalizerCallback finalizer;
+
     /// CREATE OR REPLACE is special query that consists of 3 separate DDL queries (CREATE, RENAME, DROP)
     /// and not all changes should be applied to metadata in ZooKeeper
     /// (otherwise we may get partially applied changes on connection loss).
@@ -241,10 +244,22 @@ public:
         ops.emplace_back(op);
     }
 
+    /// Allow to run arbitrary code after executing transaction
+    void addFinalizer(FinalizerCallback && callback)
+    {
+        if (isExecuted())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add finalizer because transaction had been already executed. It's a bug.");
+        if (finalizer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Finalizer already set. It's a bug.");
+        finalizer = std::move(callback);
+    }
+
     void moveOpsTo(Coordination::Requests & other_ops)
     {
         if (isExecuted())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add ZooKeeper operation because query is executed. It's a bug.");
+        if (finalizer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot move ZooKeeper operations out from transaction with finalizer. It's a bug.");
         std::move(ops.begin(), ops.end(), std::back_inserter(other_ops));
         ops.clear();
         state = COMMITTED;

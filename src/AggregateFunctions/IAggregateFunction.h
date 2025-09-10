@@ -245,6 +245,8 @@ public:
         AggregateDataPtr * places,
         size_t place_offset,
         const AggregateDataPtr * rhs,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
         Arena * arena) const = 0;
 
     /** The same for single place.
@@ -369,8 +371,6 @@ public:
     /// Description of AggregateFunction in form of name(parameters)(argument_types).
     String getDescription() const;
 
-#if USE_EMBEDDED_COMPILER
-
     /// Is function JIT compilable
     virtual bool isCompilable() const { return false; }
 
@@ -378,8 +378,7 @@ public:
     virtual void compileCreate(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
 
     /// compileAdd should generate code for updating aggregate function state stored in aggregate_data_ptr
-    virtual void
-    compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const ValuesWithType & /*arguments*/) const;
+    virtual void compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const ValuesWithType & /*arguments*/) const;
 
     /// compileMerge should generate code for merging aggregate function states stored in aggregate_data_dst_ptr and aggregate_data_src_ptr
     virtual void compileMerge(
@@ -387,8 +386,6 @@ public:
 
     /// compileGetResult should generate code for getting result value from aggregate function state stored in aggregate_data_ptr
     virtual llvm::Value * compileGetResult(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
-
-#endif
 
 protected:
     DataTypes argument_types;
@@ -509,11 +506,20 @@ public:
         AggregateDataPtr * places,
         size_t place_offset,
         const AggregateDataPtr * rhs,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
         Arena * arena) const override
     {
         for (size_t i = row_begin; i < row_end; ++i)
+        {
             if (places[i])
-                static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
+            {
+                if constexpr (Derived::parallelizeMergeWithKey())
+                    static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], thread_pool, is_cancelled, arena);
+                else
+                    static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
+            }
+        }
     }
 
     void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * rhs_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override

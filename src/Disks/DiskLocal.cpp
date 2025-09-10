@@ -1,7 +1,7 @@
-#include "DiskLocal.h"
-#include <Common/Throttler_fwd.h>
+#include <Disks/DiskLocal.h>
+#include <Common/IThrottler.h>
 #include <Common/createHardLink.h>
-#include "DiskFactory.h"
+#include <Disks/DiskFactory.h>
 
 #include <Disks/LocalDirectorySyncGuard.h>
 #include <Interpreters/Context.h>
@@ -52,22 +52,6 @@ std::mutex DiskLocal::reservation_mutex;
 
 
 using DiskLocalPtr = std::shared_ptr<DiskLocal>;
-
-std::optional<size_t> fileSizeSafe(const fs::path & path)
-{
-    std::error_code ec;
-
-    size_t size = fs::file_size(path, ec);
-    if (!ec)
-        return size;
-
-    if (ec == std::errc::no_such_file_or_directory)
-        return std::nullopt;
-    if (ec == std::errc::operation_not_supported)
-        return std::nullopt;
-
-    throw fs::filesystem_error("DiskLocal", path, ec);
-}
 
 class DiskLocalReservation : public IReservation
 {
@@ -336,11 +320,9 @@ bool DiskLocal::renameExchangeIfSupported(const std::string & old_path, const st
     return DB::renameExchangeIfSupported(fs::path(disk_path) / old_path, fs::path(disk_path) / new_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
+std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint) const
 {
-    if (!file_size.has_value())
-        file_size = fileSizeSafe(fs::path(disk_path) / path);
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, file_size);
+    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -398,6 +380,8 @@ void DiskLocal::removeDirectory(const String & path)
 void DiskLocal::removeDirectoryIfExists(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
+    if (!existsDirectory(fs_path))
+        return;
     if (0 != rmdir(fs_path.c_str()))
         if (errno != ENOENT)
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, fs_path, "Cannot remove directory {}", fs_path);
@@ -445,9 +429,11 @@ bool DiskLocal::isSymlinkNoThrow(const String & path) const
     return FS::isSymlinkNoThrow(fs::path(disk_path) / path);
 }
 
-void DiskLocal::createDirectoriesSymlink(const String & target, const String & link)
+void DiskLocal::createDirectorySymlink(const String & target, const String & link)
 {
-    fs::create_directory_symlink(fs::path(disk_path) / target, fs::path(disk_path) / link);
+    auto link_path_inside_disk = fs::path(disk_path) / link;
+    /// Symlinks will be relative.
+    fs::create_directory_symlink(fs::proximate(fs::path(disk_path) / target, link_path_inside_disk.parent_path()), link_path_inside_disk);
 }
 
 String DiskLocal::readSymlink(const fs::path & path) const
@@ -587,7 +573,7 @@ try
     ReadSettings read_settings;
     /// Proper disk read checking requires direct io
     read_settings.direct_io_threshold = 1;
-    auto buf = readFile(disk_checker_path, read_settings, {}, {});
+    auto buf = readFile(disk_checker_path, read_settings, {});
     UInt32 magic_number;
     readIntBinary(magic_number, *buf);
     if (buf->eof())
@@ -741,7 +727,7 @@ void DiskLocal::setup()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "disk_checker_magic_number is not initialized. It's a bug");
 }
 
-void DiskLocal::startupImpl(ContextPtr)
+void DiskLocal::startupImpl()
 {
     broken = false;
     disk_checker_magic_number = -1;
@@ -800,7 +786,7 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         std::shared_ptr<IDisk> disk
             = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config, config_prefix);
-        disk->startup(context, skip_access_check);
+        disk->startup(skip_access_check);
         return disk;
     };
     factory.registerDiskType("local", creator);

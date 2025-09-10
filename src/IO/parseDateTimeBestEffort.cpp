@@ -62,7 +62,14 @@ inline void readDecimalNumber(T & res, const char * src)
 template <typename T>
 inline void readDecimalNumber(T & res, size_t num_digits, const char * src)
 {
-#define READ_DECIMAL_NUMBER(N) do { res *= common::exp10_i32(N); readDecimalNumber<N>(res, src); src += (N); num_digits -= (N); } while (false)
+#define READ_DECIMAL_NUMBER(N) \
+    do \
+    { \
+        res *= common::exp10_i32(N); \
+        readDecimalNumber<N>(res, src); \
+        src += (N); \
+        num_digits -= (N); \
+    } while (false)
     while (num_digits)
     {
         switch (num_digits)
@@ -91,9 +98,10 @@ ReturnType parseDateTimeBestEffortImpl(
     DateTimeSubsecondPart * fractional,
     const char * allowed_date_delimiters = nullptr)
 {
-    auto on_error = [&]<typename... FmtArgs>(int error_code [[maybe_unused]],
-                                             FormatStringHelper<FmtArgs...> fmt_string [[maybe_unused]],
-                                             FmtArgs && ...fmt_args [[maybe_unused]])
+    auto on_error = [&]<typename... FmtArgs>(
+                        int error_code [[maybe_unused]],
+                        FormatStringHelper<FmtArgs...> fmt_string [[maybe_unused]],
+                        FmtArgs &&... fmt_args [[maybe_unused]])
     {
         if constexpr (std::is_same_v<ReturnType, void>)
             throw Exception(error_code, std::move(fmt_string), std::forward<FmtArgs>(fmt_args)...);
@@ -185,6 +193,12 @@ ReturnType parseDateTimeBestEffortImpl(
 
                 /// This is unix timestamp.
                 readDecimalNumber<10>(res, digits);
+                if (fractional && !in.eof() && *in.position() == '.')
+                {
+                    ++in.position();
+                    fractional->digits = readDigits(digits, sizeof(digits), in);
+                    readDecimalNumber(fractional->value, fractional->digits, digits);
+                }
                 return ReturnType(true);
             }
             if (num_digits == 9 && !year && !has_time)
@@ -194,6 +208,12 @@ ReturnType parseDateTimeBestEffortImpl(
 
                 /// This is unix timestamp.
                 readDecimalNumber<9>(res, digits);
+                if (fractional && !in.eof() && *in.position() == '.')
+                {
+                    ++in.position();
+                    fractional->digits = readDigits(digits, sizeof(digits), in);
+                    readDecimalNumber(fractional->value, fractional->digits, digits);
+                }
                 return ReturnType(true);
             }
             if (num_digits == 14 && !year && !has_time)
@@ -557,7 +577,10 @@ ReturnType parseDateTimeBestEffortImpl(
                         readDecimalNumber<1>(time_zone_offset_hour, digits);
                     }
                     else
-                        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits for time zone offset: {}", num_digits);
+                        return on_error(
+                            ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Cannot read DateTime: unexpected number of decimal digits for time zone offset: {}",
+                            num_digits);
 
                     if (num_digits < 3 && checkChar(':', in))
                     {
@@ -572,7 +595,10 @@ ReturnType parseDateTimeBestEffortImpl(
                             readDecimalNumber<1>(time_zone_offset_minute, digits);
                         }
                         else
-                            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits for time zone offset in minutes: {}", num_digits);
+                            return on_error(
+                                ErrorCodes::CANNOT_PARSE_DATETIME,
+                                "Cannot read DateTime: unexpected number of decimal digits for time zone offset in minutes: {}",
+                                num_digits);
                     }
                 }
             }
@@ -703,7 +729,8 @@ ReturnType parseDateTimeBestEffortImpl(
 
     auto check_date = [](const auto & is_leap_year_, const auto & month_, const auto & day_)
     {
-        if ((month_ == 1 || month_ == 3 || month_ == 5 || month_ == 7 || month_ == 8 || month_ == 10 || month_ == 12) && day_ >= 1 && day_ <= 31)
+        if ((month_ == 1 || month_ == 3 || month_ == 5 || month_ == 7 || month_ == 8 || month_ == 10 || month_ == 12) && day_ >= 1
+            && day_ <= 31)
             return true;
         if (month_ == 2 && ((is_leap_year_ && day_ >= 1 && day_ <= 29) || (!is_leap_year_ && day_ >= 1 && day_ <= 28)))
             return true;
@@ -713,8 +740,12 @@ ReturnType parseDateTimeBestEffortImpl(
     };
 
     if (!check_date(is_leap_year, month, day_of_month))
-        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected date: {}-{}-{}",
-                        year, static_cast<UInt16>(month), static_cast<UInt16>(day_of_month));
+        return on_error(
+            ErrorCodes::CANNOT_PARSE_DATETIME,
+            "Cannot read DateTime: unexpected date: {}-{}-{}",
+            year,
+            static_cast<UInt16>(month),
+            static_cast<UInt16>(day_of_month));
 
     if (is_am && hour == 12)
         hour = 0;

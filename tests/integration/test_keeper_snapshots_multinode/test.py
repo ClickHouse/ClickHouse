@@ -5,14 +5,16 @@ import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
+
+# Disable `with_remote_database_disk` as the test does not use the default Keeper.
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True
+    "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True, with_remote_database_disk=False,
 )
 node2 = cluster.add_instance(
-    "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True
+    "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True, with_remote_database_disk=False,
 )
 node3 = cluster.add_instance(
-    "node3", main_configs=["configs/enable_keeper3.xml"], stay_alive=True
+    "node3", main_configs=["configs/enable_keeper3.xml"], stay_alive=True, with_remote_database_disk=False,
 )
 
 
@@ -128,5 +130,8 @@ def test_restart_multinode(started_cluster):
         except Exception as ex:
             print("Got exception as ex", ex)
         finally:
+            for i in range(100):
+                if node1_zk.exists("/test_read_write_multinode_node" + str(i)):
+                    node1_zk.delete("/test_read_write_multinode_node" + str(i))
             for zk in [node1_zk, node2_zk, node3_zk]:
                 stop_zk(zk)

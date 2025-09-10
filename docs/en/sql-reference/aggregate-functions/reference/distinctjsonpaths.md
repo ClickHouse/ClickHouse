@@ -1,11 +1,13 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/distinctjsonpaths
+description: 'Calculates a list of distinct paths stored in a JSON column.'
 sidebar_position: 216
+slug: /sql-reference/aggregate-functions/reference/distinctjsonpaths
+title: 'distinctJSONPaths'
 ---
 
 # distinctJSONPaths
 
-Calculates the list of distinct paths stored in [JSON](../../data-types/newjson.md) column.
+Calculates a list of distinct paths stored in a [JSON](../../data-types/newjson.md) column.
 
 **Syntax**
 

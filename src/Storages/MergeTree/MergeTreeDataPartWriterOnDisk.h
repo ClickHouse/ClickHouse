@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -134,6 +135,7 @@ public:
     void cancel() noexcept override;
 
     const Block & getColumnsSample() const override { return block_sample; }
+    const ColumnsSubstreams & getColumnsSubstreams() const override { return columns_substreams; }
 
 protected:
      /// Count index_granularity for block and store in `index_granularity`
@@ -166,7 +168,7 @@ protected:
     /// Get unique non ordered skip indices column.
     Names getSkipIndicesColumns() const;
 
-    virtual void addStreams(const NameAndTypePair & name_and_type, const ColumnPtr & column, const ASTPtr & effective_codec_desc) = 0;
+    virtual void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) = 0;
 
     /// On first block create all required streams for columns with dynamic subcolumns and remember the block sample.
     /// On each next block check if dynamic structure of the columns equals to the dynamic structure of the same
@@ -211,6 +213,9 @@ protected:
 
     bool is_dynamic_streams_initialized = false;
     Block block_sample;
+
+    /// List of substreams for each column in order of serialization.
+    ColumnsSubstreams columns_substreams;
 
 private:
     void initSkipIndices();

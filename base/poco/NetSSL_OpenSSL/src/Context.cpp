@@ -16,7 +16,6 @@
 #include "Poco/Net/SSLManager.h"
 #include "Poco/Net/SSLException.h"
 #include "Poco/Net/Utility.h"
-#include "Poco/Crypto/OpenSSLInitializer.h"
 #include "Poco/File.h"
 #include "Poco/Path.h"
 #include "Poco/DirectoryIterator.h"
@@ -114,7 +113,6 @@ Context::~Context()
 	try
 	{
 		SSL_CTX_free(_pSSLContext);
-		Poco::Crypto::OpenSSLInitializer::uninitialize();
 	}
 	catch (...)
 	{
@@ -233,8 +231,6 @@ static int poco_ssl_probe_and_set_default_ca_location(SSL_CTX *ctx, Context::CAP
 
 void Context::init(const Params& params)
 {
-	Poco::Crypto::OpenSSLInitializer::initialize();
-
 	createSSLContext();
 
 	try
@@ -332,60 +328,6 @@ void Context::init(const Params& params)
 	{
 		SSL_CTX_free(_pSSLContext);
 		throw;
-	}
-}
-
-
-void Context::useCertificate(const Poco::Crypto::X509Certificate& certificate)
-{
-	int errCode = SSL_CTX_use_certificate(_pSSLContext, const_cast<X509*>(certificate.certificate()));
-	if (errCode != 1)
-	{
-		std::string msg = Utility::getLastError();
-		throw SSLContextException("Cannot set certificate for Context", msg);
-	}
-}
-
-
-void Context::addChainCertificate(const Poco::Crypto::X509Certificate& certificate)
-{
-	X509* pCert = certificate.dup();
-	int errCode = SSL_CTX_add_extra_chain_cert(_pSSLContext, pCert);
-	if (errCode != 1)
-	{
-		X509_free(pCert);
-		std::string msg = Utility::getLastError();
-		throw SSLContextException("Cannot add chain certificate to Context", msg);
-	}
-}
-
-
-void Context::addCertificateAuthority(const Crypto::X509Certificate &certificate)
-{
-	if (X509_STORE* store = SSL_CTX_get_cert_store(_pSSLContext))
-	{
-		int errCode = X509_STORE_add_cert(store, const_cast<X509*>(certificate.certificate()));
-		if (errCode != 1)
-		{
-			std::string msg = Utility::getLastError();
-			throw SSLContextException("Cannot add certificate authority to Context", msg);
-		}
-	}
-	else
-	{
-		std::string msg = Utility::getLastError();
-		throw SSLContextException("Cannot add certificate authority to Context", msg);
-	}
-}
-
-
-void Context::usePrivateKey(const Poco::Crypto::RSAKey& key)
-{
-	int errCode = SSL_CTX_use_RSAPrivateKey(_pSSLContext, key.impl()->getRSA());
-	if (errCode != 1)
-	{
-		std::string msg = Utility::getLastError();
-		throw SSLContextException("Cannot set private key for Context", msg);
 	}
 }
 
@@ -536,32 +478,24 @@ void Context::createSSLContext()
 {
 	if (SSLManager::isFIPSEnabled())
 	{
-		_pSSLContext = SSL_CTX_new(TLSv1_method());
+		_pSSLContext = SSL_CTX_new(TLS_method());
 	}
 	else
 	{
 		switch (_usage)
 		{
 		case CLIENT_USE:
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 			_pSSLContext = SSL_CTX_new(TLS_client_method());
-#else
-			_pSSLContext = SSL_CTX_new(SSLv23_client_method());
-#endif
 			break;
 		case SERVER_USE:
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 			_pSSLContext = SSL_CTX_new(TLS_server_method());
-#else
-			_pSSLContext = SSL_CTX_new(SSLv23_server_method());
-#endif
 			break;
 #if defined(SSL_OP_NO_TLSv1) && !defined(OPENSSL_NO_TLS1)
 		case TLSV1_CLIENT_USE:
-			_pSSLContext = SSL_CTX_new(TLSv1_client_method());
+			_pSSLContext = SSL_CTX_new(TLS_client_method());
 			break;
 		case TLSV1_SERVER_USE:
-			_pSSLContext = SSL_CTX_new(TLSv1_server_method());
+			_pSSLContext = SSL_CTX_new(TLS_server_method());
 			break;
 #endif
 #if defined(SSL_OP_NO_TLSv1_1) && !defined(OPENSSL_NO_TLS1)
@@ -570,18 +504,18 @@ void Context::createSSLContext()
  * if TLS1.x was removed at OpenSSL library build time via Configure options.
  */
         case TLSV1_1_CLIENT_USE:
-            _pSSLContext = SSL_CTX_new(TLSv1_1_client_method());
+            _pSSLContext = SSL_CTX_new(TLS_client_method());
             break;
         case TLSV1_1_SERVER_USE:
-            _pSSLContext = SSL_CTX_new(TLSv1_1_server_method());
+            _pSSLContext = SSL_CTX_new(TLS_server_method());
             break;
 #endif
 #if defined(SSL_OP_NO_TLSv1_2) && !defined(OPENSSL_NO_TLS1)
         case TLSV1_2_CLIENT_USE:
-            _pSSLContext = SSL_CTX_new(TLSv1_2_client_method());
+            _pSSLContext = SSL_CTX_new(TLS_client_method());
             break;
         case TLSV1_2_SERVER_USE:
-            _pSSLContext = SSL_CTX_new(TLSv1_2_server_method());
+            _pSSLContext = SSL_CTX_new(TLS_server_method());
             break;
 #endif
 		default:
@@ -670,7 +604,7 @@ void Context::initDH(const std::string& dhParamsFile)
 			std::string msg = Utility::getLastError();
 			throw SSLContextException("Error creating Diffie-Hellman parameters", msg);
 		}
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER) && !defined(BORINGSSL_DEPRECATED)
+#if !defined(LIBRESSL_VERSION_NUMBER) && !defined(BORINGSSL_DEPRECATED)
 		BIGNUM* p = BN_bin2bn(dh1024_p, sizeof(dh1024_p), 0);
 		BIGNUM* g = BN_bin2bn(dh1024_g, sizeof(dh1024_g), 0);
 		DH_set0_pqg(dh, p, 0, g);
@@ -707,7 +641,6 @@ void Context::initDH(const std::string& dhParamsFile)
 
 void Context::initECDH(const std::string& curve)
 {
-#if OPENSSL_VERSION_NUMBER >= 0x0090800fL
 #ifndef OPENSSL_NO_ECDH
 	int nid = 0;
 	if (!curve.empty())
@@ -731,7 +664,6 @@ void Context::initECDH(const std::string& curve)
 	SSL_CTX_set_tmp_ecdh(_pSSLContext, ecdh);
 	SSL_CTX_set_options(_pSSLContext, SSL_OP_SINGLE_ECDH_USE);
 	EC_KEY_free(ecdh);
-#endif
 #endif
 }
 

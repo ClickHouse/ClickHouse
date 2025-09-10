@@ -544,7 +544,7 @@ public:
         }
         else
         {
-            auto first_u32 = UTF8::convertUTF8ToCodePoint(needle, needle_size);
+            auto first_u32 = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(needle), needle_size);
 
             /// Invalid UTF-8
             if (!first_u32)
@@ -561,8 +561,8 @@ public:
                 uint32_t first_u_u32 = Poco::Unicode::toUpper(*first_u32);
 
                 /// lower and uppercase variants of the first octet of the first character in `needle`
-                size_t length_l = UTF8::convertCodePointToUTF8(first_l_u32, l_seq, sizeof(l_seq));
-                size_t length_u = UTF8::convertCodePointToUTF8(first_u_u32, u_seq, sizeof(u_seq));
+                size_t length_l = UTF8::convertCodePointToUTF8(first_l_u32, reinterpret_cast<char *>(l_seq), sizeof(l_seq));
+                size_t length_u = UTF8::convertCodePointToUTF8(first_u_u32, reinterpret_cast<char *>(u_seq), sizeof(u_seq));
 
                 if (length_l != length_u)
                     force_fallback = true;
@@ -595,15 +595,15 @@ public:
             }
 
             size_t src_len = std::min<size_t>(needle_end - needle_pos, UTF8::seqLength(*needle_pos));
-            auto c_u32 = UTF8::convertUTF8ToCodePoint(needle_pos, src_len);
+            auto c_u32 = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(needle_pos), src_len);
 
             if (c_u32)
             {
                 int c_l_u32 = Poco::Unicode::toLower(*c_u32);
                 int c_u_u32 = Poco::Unicode::toUpper(*c_u32);
 
-                size_t dst_l_len = UTF8::convertCodePointToUTF8(c_l_u32, l_seq, sizeof(l_seq));
-                size_t dst_u_len = UTF8::convertCodePointToUTF8(c_u_u32, u_seq, sizeof(u_seq));
+                size_t dst_l_len = UTF8::convertCodePointToUTF8(c_l_u32, reinterpret_cast<char *>(l_seq), sizeof(l_seq));
+                size_t dst_u_len = UTF8::convertCodePointToUTF8(c_u_u32, reinterpret_cast<char *>(u_seq), sizeof(u_seq));
 
                 /// @note Unicode standard states it is a rare but possible occasion
                 if (!(dst_l_len == dst_u_len && dst_u_len == src_len))
@@ -641,8 +641,8 @@ public:
     {
         while (haystack_pos < haystack_end && needle_pos < needle_end)
         {
-            auto haystack_code_point = UTF8::convertUTF8ToCodePoint(haystack_pos, haystack_end - haystack_pos);
-            auto needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
+            auto haystack_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(haystack_pos), haystack_end - haystack_pos);
+            auto needle_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(needle_pos), needle_end - needle_pos);
 
             /// Invalid UTF-8, should not compare equals
             if (!haystack_code_point || !needle_code_point)

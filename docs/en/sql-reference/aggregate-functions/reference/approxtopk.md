@@ -1,14 +1,16 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/approxtopk
+description: 'Returns an array of the approximately most frequent values and their
+  counts in the specified column.'
 sidebar_position: 107
+slug: /sql-reference/aggregate-functions/reference/approxtopk
+title: 'approx_top_k'
 ---
 
 # approx_top_k
 
 Returns an array of the approximately most frequent values and their counts in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
 
-
-``` sql
+```sql
 approx_top_k(N)(column)
 approx_top_k(N, reserved)(column)
 ```
@@ -30,14 +32,14 @@ We recommend using the `N < 10` value; performance is reduced with large `N` val
 
 Query:
 
-``` sql
+```sql
 SELECT approx_top_k(2)(k)
 FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10));
 ```
 
 Result:
 
-``` text
+```text
 ┌─approx_top_k(2)(k)────┐
 │ [('y',3,0),('x',1,0)] │
 └───────────────────────┘
@@ -52,4 +54,3 @@ Is an alias to `approx_top_k` function
 - [topK](../../../sql-reference/aggregate-functions/reference/topk.md)
 - [topKWeighted](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
 - [approx_top_sum](../../../sql-reference/aggregate-functions/reference/approxtopsum.md)
-

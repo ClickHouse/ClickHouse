@@ -11,9 +11,9 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Port.h>
-#include <base/map.h>
 
 #include <memory>
+#include <ranges>
 
 
 namespace DB
@@ -95,12 +95,9 @@ public:
             row_output_format->finalize();
             if constexpr (no_newline)
             {
-                // replace '\n' with '\0'
                 if (buffer.position() != buffer.buffer().begin() && buffer.position()[-1] == '\n')
-                    buffer.position()[-1] = '\0';
+                    --buffer.position();
             }
-            else
-                writeChar('\0', buffer);
 
             offsets[i] = buffer.count();
             row_output_format->resetFormatter();
@@ -143,7 +140,7 @@ public:
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 std::make_shared<FunctionFormatRow<no_newline>>(name_col->getValue<String>(), std::move(arguments_column_names), context),
-                collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
                 return_type);
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument to {} must be a format name", getName());
     }
