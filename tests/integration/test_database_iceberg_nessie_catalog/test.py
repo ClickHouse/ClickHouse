@@ -97,7 +97,6 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
 def load_catalog_impl(started_cluster):
     minio_ip = started_cluster.get_instance_ip('minio')
     s3_endpoint = f"http://{minio_ip}:9002"
-    print(f"S3 endpoint: {s3_endpoint}")
 
     return RestCatalog(
         name="my_catalog",
@@ -110,7 +109,6 @@ def load_catalog_impl(started_cluster):
             "s3.secret-access-key": minio_secret_key,
             "s3.region": "us-east-1",
             "s3.path-style-access": "true",
-            "s3.request-timeout": "5",
         },
     )
 
@@ -394,7 +392,12 @@ def test_timestamps(started_cluster):
     df = pa.Table.from_pylist(data)
     table.append(df)
 
-    # Extract table location from metadata
+    # Extract the table path from S3 location for ClickHouse Iceberg ENGINE configuration
+    # 
+    # The table metadata contains the full S3 URI which needs to be processed:
+    # table.metadata.location:  s3://warehouse-rest/<test_namespace>/<test_table_uuid>
+    # extracted_table_path: <test_namespace>/<test_table_uuid>
+    
     table_metadata = table.metadata
     table_location = table_metadata.location
     if "warehouse-rest/" in table_location:
