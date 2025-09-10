@@ -1900,21 +1900,21 @@ void ZooKeeper::observeOperationIfNeeded(const ZooKeeperRequestPtr & request, co
 
     aggregated_zookeeper_log_->observe(session_id, response->getOpNum(), request->getPath(), elapsed_microseconds, response->error);
 
-    const auto multiRequest = std::dynamic_pointer_cast<ZooKeeperMultiRequest>(request);
-    const auto multiResponse = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(response);
+    const auto multi_read_request = std::dynamic_pointer_cast<ZooKeeperMultiRequest>(request);
+    const auto multi_read_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(response);
 
-    chassert(!multiRequest == !multiResponse);
+    chassert(!multi_read_request == !multi_read_response);
 
-    if (!multiResponse)
+    if (!multi_read_response)
     {
         return;
     }
 
-    chassert(multiRequest->requests.size() == multiResponse->responses.size());
+    chassert(multi_read_request->requests.size() == multi_read_response->responses.size());
 
-    for (size_t i = 0; i != multiResponse->responses.size(); ++i)
+    for (const auto [subrequest, subresponse] : std::views::zip(multi_read_request->requests, multi_read_response->responses))
     {
-        observeOperationIfNeeded(multiRequest->requests[i], std::static_pointer_cast<ZooKeeperResponse>(multiResponse->responses[i]), elapsed_microseconds);
+        observeOperationIfNeeded(subrequest, std::static_pointer_cast<ZooKeeperResponse>(subresponse), elapsed_microseconds);
     }
 }
 
