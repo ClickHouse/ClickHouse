@@ -548,7 +548,7 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
             }
             else
             {
-                LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Skipping writing empty blob for path {}, key {}", object->local_path, object->remote_path);
+                LOG_TRACE(getLogger("DiskObjectStorageTransaction"), "Skipping writing empty blob for path {}, key {}", object->local_path, object->remote_path);
                 tx->createEmptyMetadataFile(object->local_path);
             }
         }
