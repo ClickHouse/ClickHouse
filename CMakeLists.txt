@@ -89,8 +89,6 @@ string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 
 list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fvisibility=hidden -fvisibility-inlines-hidden")
-
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
 option (ENABLE_BUZZHOUSE "Enable BuzzHouse fuzzer on the client" OFF)
 option (ENABLE_FUZZER_TEST "Build testing fuzzers in order to test libFuzzer functionality" OFF)

@@ -1,9 +1,6 @@
 #pragma once
 
 #include <cassert>
-#include <stdexcept>
-#include <type_traits>
-#include <utility>
 #include <vector>
 #include <algorithm>
 #include <cmath>
@@ -31,9 +28,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/logger_useful.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 
 #include "config.h"
 
@@ -117,21 +111,6 @@ struct SortCursorImpl
         if (permutation)
             return (*permutation)[pos];
         return pos;
-    }
-
-    String dumpRow() const
-    {
-        auto row = getRow();
-        WriteBufferFromOwnString wb;
-        size_t i = 0;
-        for (const auto * col : sort_columns)
-        {
-            auto field_str = (*col)[row].dump();
-            wb.write(field_str.data(), field_str.size());
-            if (++i != sort_columns.size())
-                wb.write(", ", 2);
-        }
-        return wb.str();
     }
 
     /// We need a possibility to change pos (see MergeJoin).
