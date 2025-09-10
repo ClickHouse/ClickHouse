@@ -5,6 +5,13 @@
 #include <Disks/IDisk.h>
 
 #include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -95,6 +102,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/NullSource.h>
@@ -583,6 +591,7 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     return allOutputsDependsOnlyOnAllowedNodes(sharding_key_dag, irreducibe_nodes, matches);
 }
 
+// TODO: support additional table functions
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
 {
     bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
@@ -641,6 +650,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     return QueryProcessingStage::Complete;
 }
 
+// TODO: support additional table functions
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const
 {
     bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
@@ -750,9 +760,11 @@ static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr
 
 StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
+    /// TODO: support additional table functions
     return getStorageSnapshotForQuery(metadata_snapshot, nullptr, query_context);
 }
 
+/// TODO: support additional table functions
 StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
     const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr /*query_context*/) const
 {
@@ -888,7 +900,8 @@ bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
 QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     const StorageSnapshotPtr & distributed_storage_snapshot,
     const StorageID & remote_storage_id,
-    const ASTPtr & remote_table_function)
+    const ASTPtr & remote_table_function,
+    const ASTPtr & additional_filter = nullptr)
 {
     auto & planner_context = query_info.planner_context;
     const auto & query_context = planner_context->getQueryContext();
@@ -955,7 +968,45 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
+
+    QueryTreeNodePtr filter;
+    // static auto logger = getLogger("StorageDistributed");
+
+    if (additional_filter)
+    {
+        const auto & context = query_info.planner_context->getQueryContext();
+
+        filter = buildQueryTree(additional_filter->clone(), query_context);
+
+        // LOG_ERROR(logger, "DEBUG: About to call QueryAnalysisPass(replacement_table_expression).run(filter, context)");
+        // LOG_ERROR(logger, "DEBUG: filter: {}", filter->dumpTree());
+
+        QueryAnalysisPass(replacement_table_expression).run(filter, context);
+
+        // LOG_ERROR(logger, "DEBUG: filter after pass.run: {}", filter->dumpTree());
+
+    }
+
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
+
+    // Apply additional filter if provided
+    if (filter)
+    {
+        // LOG_ERROR(logger, "DEBUG: query_tree_to_modify: {}", query_tree_to_modify->dumpTree());
+
+        auto & query = query_tree_to_modify->as<QueryNode &>();
+        query.getWhere() = query.hasWhere()
+            ? mergeConditionNodes({query.getWhere(), filter}, query_context)
+            : std::move(filter);
+
+        // LOG_ERROR(logger, "DEBUG: query_tree_to_modify after mergeConditionNodes: {}", query_tree_to_modify->dumpTree());
+
+        // QueryAnalysisPass pass;
+        // pass.run(query_tree_to_modify, query_context);
+
+        // LOG_ERROR(logger, "DEBUG: query_tree_to_modify after pass.run: {}", query_tree_to_modify->dumpTree());
+    }
+
     ReplaseAliasColumnsVisitor replase_alias_columns_visitor;
     replase_alias_columns_visitor.visit(query_tree_to_modify);
 
@@ -974,6 +1025,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     }
 
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
+
 }
 
 }
@@ -992,56 +1044,141 @@ void StorageDistributed::read(
 
     SelectQueryInfo modified_query_info = query_info;
 
+    std::vector<Block> all_headers;
+    std::vector<SelectQueryInfo> all_query_infos;
+
     const auto & settings = local_context->getSettingsRef();
 
     if (settings[Setting::allow_experimental_analyzer])
     {
-        // Apply additional filter if present (for TieredDistributedMerge)
-        // Add to filter_asts like additional_table_filters do
-        if (additional_filter)
-        {
-            modified_query_info.filter_asts.push_back(additional_filter);
-        }
-
         StorageID remote_storage_id = StorageID::createEmpty();
         if (!remote_table_function_ptr)
             remote_storage_id = StorageID{remote_database, remote_table};
 
+        // LOG_ERROR(log, "DEBUG: About to call buildQueryTreeDistributed for main query");
+        // LOG_ERROR(log, "DEBUG: modified_query_info.query_tree: {}", modified_query_info.query_tree ? modified_query_info.query_tree->formatASTForErrorMessage() : "null");
+        // LOG_ERROR(log, "DEBUG: modified_query_info.query: {}", modified_query_info.query ? modified_query_info.query->formatForErrorMessage() : "null");
+        // LOG_ERROR(log, "DEBUG: remote_storage_id: {}", remote_storage_id.getFullNameNotQuoted());
+        // LOG_ERROR(log, "DEBUG: remote_table_function_ptr: {}", remote_table_function_ptr ? remote_table_function_ptr->formatForErrorMessage() : "null");
+        // LOG_ERROR(log, "DEBUG: additional_filter: {}", additional_filter ? additional_filter->formatForErrorMessage() : "null");
         auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
             query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
             remote_storage_id,
-            remote_table_function_ptr);
+            remote_table_function_ptr,
+            additional_filter);
+        // LOG_ERROR(log, "DEBUG: Successfully completed buildQueryTreeDistributed for main query");
+        // LOG_ERROR(log, "DEBUG: query_tree_distributed: {}", query_tree_distributed ? query_tree_distributed->formatASTForErrorMessage() : "null");
 
-        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
+
+        // LOG_ERROR(log, "DEBUG: About to call InterpreterSelectQueryAnalyzer::getSampleBlock");
+        // LOG_ERROR(log, "DEBUG: processed_stage: {}", static_cast<int>(processed_stage));
+        SelectQueryOptions options = SelectQueryOptions(processed_stage).analyze();
+        // LOG_ERROR(log, "DEBUG: SelectQueryOptions created");
+        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, options);
+        // LOG_ERROR(log, "DEBUG: Successfully completed InterpreterSelectQueryAnalyzer::getSampleBlock");
+
         /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
           * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
           */
         for (auto & column : header)
             column.column = column.column->convertToFullColumnIfConst();
+
         modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_distributed);
 
         modified_query_info.query_tree = std::move(query_tree_distributed);
 
-        /// Return directly (with correct header) if no shard to query.
-        if (modified_query_info.getCluster()->getShardsInfo().empty())
+        if (!additional_table_functions.empty())
+        {
+            for (const auto & table_function_entry : additional_table_functions)
+            {
+                // Create a modified query info with the additional predicate
+                SelectQueryInfo additional_query_info = query_info;
+
+                // LOG_ERROR(log, "DEBUG: About to call buildQueryTreeDistributed for additional table function");
+                // LOG_ERROR(log, "DEBUG: additional_query_info.query_tree: {}", additional_query_info.query_tree ? additional_query_info.query_tree->formatASTForErrorMessage() : "null");
+                // LOG_ERROR(log, "DEBUG: additional_query_info.query: {}", additional_query_info.query ? additional_query_info.query->formatForErrorMessage() : "null");
+                // LOG_ERROR(log, "DEBUG: table_function_entry.table_function_ast: {}", table_function_entry.table_function_ast ? table_function_entry.table_function_ast->formatForErrorMessage() : "null");
+                // LOG_ERROR(log, "DEBUG: table_function_entry.predicate_ast: {}", table_function_entry.predicate_ast ? table_function_entry.predicate_ast->formatForErrorMessage() : "null");
+                auto additional_query_tree = buildQueryTreeDistributed(additional_query_info,
+                    query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
+                    StorageID::createEmpty(),
+                    table_function_entry.table_function_ast,
+                    table_function_entry.predicate_ast);
+                // LOG_ERROR(log, "DEBUG: Successfully completed buildQueryTreeDistributed for additional table function");
+                // LOG_ERROR(log, "DEBUG: additional_query_tree: {}", additional_query_tree ? additional_query_tree->formatASTForErrorMessage() : "null");
+
+                // LOG_ERROR(log, "DEBUG: About to call InterpreterSelectQueryAnalyzer::getSampleBlock for additional table function");
+
+
+                // TODO: somewhere here the DESCRIBE TABLE is triggered, try to avoid it.
+                auto additional_header = InterpreterSelectQueryAnalyzer::getSampleBlock(additional_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
+
+                // LOG_ERROR(log, "DEBUG: Successfully completed InterpreterSelectQueryAnalyzer::getSampleBlock for additional table function");
+                for (auto & column : additional_header)
+                    column.column = column.column->convertToFullColumnIfConst();
+
+                additional_query_info.query = queryNodeToDistributedSelectQuery(additional_query_tree);
+                additional_query_info.query_tree = std::move(additional_query_tree);
+
+                all_headers.push_back(additional_header);
+                all_query_infos.push_back(additional_query_info);
+            }
+        }
+
+        // For empty shards - avoid early return if we have additional table functions
+        if (modified_query_info.getCluster()->getShardsInfo().empty() && additional_table_functions.empty())
             return;
     }
     else
     {
-        // Apply additional filter if present (for TieredDistributedMerge)
-        // Add to filter_asts like additional_table_filters do
-        if (additional_filter)
-        {
-            modified_query_info.filter_asts.push_back(additional_filter);
-        }
+        // LOG_ERROR(log, "DEBUG: About to call InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock");
+        // LOG_ERROR(log, "DEBUG: modified_query_info.query: {}", modified_query_info.query ? modified_query_info.query->formatForErrorMessage() : "null");
+        // LOG_ERROR(log, "DEBUG: processed_stage: {}", static_cast<int>(processed_stage));
 
         header = InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        // LOG_ERROR(log, "DEBUG: Successfully completed InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock");
+        // LOG_ERROR(log, "DEBUG: header: {}", header.dumpStructure());
+        // LOG_ERROR(log, "DEBUG: About to call ClusterProxy::rewriteSelectQuery");
+
 
         modified_query_info.query = ClusterProxy::rewriteSelectQuery(
             local_context, modified_query_info.query,
-            remote_database, remote_table, remote_table_function_ptr);
+            remote_database, remote_table, remote_table_function_ptr,
+            additional_filter);
 
-        if (modified_query_info.getCluster()->getShardsInfo().empty())
+        // LOG_ERROR(log, "DEBUG: Successfully completed ClusterProxy::rewriteSelectQuery");
+        // LOG_ERROR(log, "DEBUG: modified_query_info.query: {}", modified_query_info.query ? modified_query_info.query->formatForErrorMessage() : "null");
+
+        if (!additional_table_functions.empty())
+        {
+            for (const auto & table_function_entry : additional_table_functions)
+            {
+                SelectQueryInfo additional_query_info = query_info;
+
+                // LOG_ERROR(log, "DEBUG: About to call InterpreterSelectQuery(additional_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock");
+                // LOG_ERROR(log, "DEBUG: additional_query_info.query: {}", additional_query_info.query ? additional_query_info.query->formatForErrorMessage() : "null");
+                // LOG_ERROR(log, "DEBUG: processed_stage: {}", static_cast<int>(processed_stage));
+
+                auto additional_header = InterpreterSelectQuery(additional_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+                // LOG_ERROR(log, "DEBUG: Successfully completed InterpreterSelectQuery(additional_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock");
+                // LOG_ERROR(log, "DEBUG: additional_header: {}", additional_header.dumpStructure());
+                // LOG_ERROR(log, "DEBUG: About to call ClusterProxy::rewriteSelectQuery");
+
+                additional_query_info.query = ClusterProxy::rewriteSelectQuery(
+                    local_context, additional_query_info.query,
+                    "", "", table_function_entry.table_function_ast,
+                    table_function_entry.predicate_ast);
+
+                // LOG_ERROR(log, "DEBUG: Successfully completed ClusterProxy::rewriteSelectQuery");
+                // LOG_ERROR(log, "DEBUG: additional_query_info.query: {}", additional_query_info.query ? additional_query_info.query->formatForErrorMessage() : "null");
+
+                all_headers.push_back(additional_header);
+                all_query_infos.push_back(additional_query_info);
+            }
+        }
+
+        // For empty shards - avoid early return if we have additional table functions
+        if (modified_query_info.getCluster()->getShardsInfo().empty() && additional_table_functions.empty())
         {
             Pipe pipe(std::make_shared<NullSource>(header));
             auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
@@ -1053,35 +1190,159 @@ void StorageDistributed::read(
     }
 
     const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
-    ClusterProxy::SelectStreamFactory select_stream_factory =
-        ClusterProxy::SelectStreamFactory(
+
+    if (!modified_query_info.getCluster()->getShardsInfo().empty())
+    {
+        ClusterProxy::SelectStreamFactory select_stream_factory =
+            ClusterProxy::SelectStreamFactory(
+                header,
+                snapshot_data.objects_by_shard,
+                storage_snapshot,
+                processed_stage);
+
+        auto shard_filter_generator = ClusterProxy::getShardFilterGeneratorForCustomKey(
+            *modified_query_info.getCluster(), local_context, getInMemoryMetadataPtr()->columns);
+
+        ClusterProxy::executeQuery(
+            query_plan,
             header,
-            snapshot_data.objects_by_shard,
-            storage_snapshot,
-            processed_stage);
+            processed_stage,
+            remote_storage,
+            remote_table_function_ptr,
+            select_stream_factory,
+            log,
+            local_context,
+            modified_query_info,
+            sharding_key_expr,
+            sharding_key_column_name,
+            *distributed_settings,
+            shard_filter_generator,
+            is_remote_function);
 
-    auto shard_filter_generator = ClusterProxy::getShardFilterGeneratorForCustomKey(
-        *modified_query_info.getCluster(), local_context, getInMemoryMetadataPtr()->columns);
+        /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
+        if (!query_plan.isInitialized())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline is not initialized");
+    }
 
-    ClusterProxy::executeQuery(
-        query_plan,
-        header,
-        processed_stage,
-        remote_storage,
-        remote_table_function_ptr,
-        select_stream_factory,
-        log,
-        local_context,
-        modified_query_info,
-        sharding_key_expr,
-        sharding_key_column_name,
-        *distributed_settings,
-        shard_filter_generator,
-        is_remote_function);
+    std::vector<QueryPlan> additional_plans;
+    for (size_t i = 0; i < all_query_infos.size(); ++i)
+    {
+        auto additional_query_info = all_query_infos[i];
+        const auto & storage = additional_table_functions[i].storage;
+        auto additional_header = all_headers[i];
 
-    /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
-    if (!query_plan.isInitialized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline is not initialized");
+        // LOG_ERROR(log, "DEBUG: About to call storage->read for additional storage");
+        // LOG_ERROR(log, "DEBUG: additional_header: {}", additional_header.dumpStructure());
+        // LOG_ERROR(log, "DEBUG: storage: {}", storage->getName());
+        // LOG_ERROR(log, "DEBUG: additional_query_info: {}", additional_query_info.query ? additional_query_info.query->formatForErrorMessage() : "null");
+        // LOG_ERROR(log, "DEBUG: processed_stage: {}", static_cast<int>(processed_stage));
+
+
+        // Create a new query plan for this additional storage
+        QueryPlan additional_plan;
+        // Execute the query against the additional storage
+        storage->read(
+            additional_plan,
+            {}, // column names
+            storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), local_context),
+            additional_query_info,
+            local_context,
+            processed_stage,
+            0, // max_block_size
+            0); // num_streams
+
+        // LOG_ERROR(log, "DEBUG: Successfully completed storage->read for additional storage");
+
+        additional_plans.push_back(std::move(additional_plan));
+    }
+
+    // Combine all plans using UnionStep
+    if (!additional_plans.empty())
+    {
+        // Convert QueryPlan objects to QueryPlanPtr
+        std::vector<QueryPlanPtr> plan_ptrs;
+        plan_ptrs.reserve(additional_plans.size() + 1);
+
+        // Add the main plan to the list
+        plan_ptrs.push_back(std::make_unique<QueryPlan>(std::move(query_plan)));
+
+        // Add additional plans
+        for (auto & plan : additional_plans)
+        {
+            plan_ptrs.push_back(std::make_unique<QueryPlan>(std::move(plan)));
+        }
+
+        // Create a new query plan that unions all the results
+        QueryPlan union_plan;
+
+        // Get headers from all plans
+        std::vector<Block> headers;
+        headers.reserve(plan_ptrs.size());
+        for (const auto & plan_ptr : plan_ptrs)
+        {
+            headers.push_back(plan_ptr->getCurrentHeader());
+        }
+
+        // Create UnionStep to combine all plans
+        auto union_step = std::make_unique<UnionStep>(std::move(headers), 0);
+
+
+        /* TODO!!: simple union step is not enough, we need to add a conversion step to match the headers
+    
+SELECT
+    id % 2 AS x,
+    count()
+FROM test_tiered_predicate_filtering_analyzer_off
+GROUP BY x
+ORDER BY x ASC
+
+
+SELECT
+    hostName(),
+    id % 2 AS x,
+    count()
+FROM test_tiered_predicate_filtering_analyzer_off
+GROUP BY x
+ORDER BY x ASC
+
+Query id: 88fbdc56-33de-468d-87ef-155121cdbea2
+
+
+Elapsed: 0.012 sec. 
+
+[mfilimonov-MS-7E12] 2025.09.10 22:24:47.280713 [ 399165 ] {70b3d45e-77e5-4acd-b3af-3e1e4b6c1e58} <Error> executeQuery: Code: 60. DB::Exception: Unknown table expression identifier 'test_tiered_predicate_filtering_analyzer_off' in scope SELECT hostName(), id % 2 AS x, count() FROM test_tiered_predicate_filtering_analyzer_off GROUP BY x ORDER BY x ASC. (UNKNOWN_TABLE) (version v25.6.2.20000.altinityantalya.28000) (from [::ffff:127.0.0.1]:56130) (query 1, line 1) (in query: SELECT hostName(), id % 2 as x, count() FROM test_tiered_predicate_filtering_analyzer_off group by x ORDER BY x ASC ;), Stack trace (when copying this message, always include the lines below):
+
+0. /home/mfilimonov/workspace/ClickHouse/master/contrib/llvm-project/libcxx/include/__exception/exception.h:113: Poco::Exception::Exception(String const&, int) @ 0x000000001bc06a92
+1. /home/mfilimonov/workspace/ClickHouse/master/src/Common/Exception.cpp:115: DB::Exception::Exception(DB::Exception::MessageMasked&&, int, bool) @ 0x00000000107b4b5b
+2. /home/mfilimonov/workspace/ClickHouse/master/src/Common/Exception.h:119: DB::Exception::Exception(PreformattedMessage&&, int) @ 0x000000000a2d1e2c
+3. /home/mfilimonov/workspace/ClickHouse/master/src/Common/Exception.h:137: DB::Exception::Exception<String const&, String>(int, FormatStringHelperImpl<std::type_identity<String const&>::type, std::type_identity<String>::type>, String const&, String&&) @ 0x000000000a946e8b
+4. /home/mfilimonov/workspace/ClickHouse/master/src/Analyzer/Resolve/QueryAnalyzer.cpp:4475: DB::QueryAnalyzer::initializeQueryJoinTreeNode(std::shared_ptr<DB::IQueryTreeNode>&, DB::IdentifierResolveScope&) @ 0x0000000014f28356
+5. /home/mfilimonov/workspace/ClickHouse/master/src/Analyzer/Resolve/QueryAnalyzer.cpp:5755: DB::QueryAnalyzer::resolveQuery(std::shared_ptr<DB::IQueryTreeNode> const&, DB::IdentifierResolveScope&) @ 0x0000000014ef57bb
+6. /home/mfilimonov/workspace/ClickHouse/master/src/Analyzer/Resolve/QueryAnalyzer.cpp:181: DB::QueryAnalyzer::resolve(std::shared_ptr<DB::IQueryTreeNode>&, std::shared_ptr<DB::IQueryTreeNode> const&, std::shared_ptr<DB::Context const>) @ 0x0000000014ef493a
+7. /home/mfilimonov/workspace/ClickHouse/master/src/Analyzer/Resolve/QueryAnalysisPass.cpp:18: DB::QueryAnalysisPass::run(std::shared_ptr<DB::IQueryTreeNode>&, std::shared_ptr<DB::Context const>) @ 0x0000000014ef414e
+8. /home/mfilimonov/workspace/ClickHouse/master/src/Analyzer/QueryTreePassManager.cpp:187: DB::QueryTreePassManager::run(std::shared_ptr<DB::IQueryTreeNode>) @ 0x0000000014f5246a
+9. /home/mfilimonov/workspace/ClickHouse/master/src/Interpreters/InterpreterSelectQueryAnalyzer.cpp:165: DB::buildQueryTreeAndRunPasses(std::shared_ptr<DB::IAST> const&, DB::SelectQueryOptions const&, std::shared_ptr<DB::Context const> const&, std::shared_ptr<DB::IStorage> const&) @ 0x0000000015903a3c
+10. /home/mfilimonov/workspace/ClickHouse/master/src/Interpreters/InterpreterSelectQueryAnalyzer.cpp:182: DB::InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(std::shared_ptr<DB::IAST> const&, std::shared_ptr<DB::Context const> const&, DB::SelectQueryOptions const&, std::vector<String, std::allocator<String>> const&) @ 0x000000001590222d
+11. /home/mfilimonov/workspace/ClickHouse/master/contrib/llvm-project/libcxx/include/__memory/unique_ptr.h:634: std::__unique_if<DB::InterpreterSelectQueryAnalyzer>::__unique_single std::make_unique[abi:se190107]<DB::InterpreterSelectQueryAnalyzer, std::shared_ptr<DB::IAST>&, std::shared_ptr<DB::Context> const&, DB::SelectQueryOptions const&>(std::shared_ptr<DB::IAST>&, std::shared_ptr<DB::Context> const&, DB::SelectQueryOptions const&) @ 0x0000000015904c04
+12. /home/mfilimonov/workspace/ClickHouse/master/contrib/llvm-project/libcxx/include/__functional/function.h:716: ? @ 0x000000001589c9cb
+13. /home/mfilimonov/workspace/ClickHouse/master/src/Interpreters/executeQuery.cpp:1455: DB::executeQueryImpl(char const*, char const*, std::shared_ptr<DB::Context>, DB::QueryFlags, DB::QueryProcessingStage::Enum, DB::ReadBuffer*, std::shared_ptr<DB::IAST>&) @ 0x0000000015bd48c0
+14. /home/mfilimonov/workspace/ClickHouse/master/src/Interpreters/executeQuery.cpp:1715: DB::executeQuery(String const&, std::shared_ptr<DB::Context>, DB::QueryFlags, DB::QueryProcessingStage::Enum) @ 0x0000000015bcf388
+15. /home/mfilimonov/workspace/ClickHouse/master/src/Server/TCPHandler.cpp:721: DB::TCPHandler::runImpl() @ 0x0000000017920812
+16. /home/mfilimonov/workspace/ClickHouse/master/src/Server/TCPHandler.cpp:2727: DB::TCPHandler::run() @ 0x0000000017939bb9
+17. /home/mfilimonov/workspace/ClickHouse/master/base/poco/Net/src/TCPServerConnection.cpp:40: Poco::Net::TCPServerConnection::start() @ 0x000000001bca8687
+18. /home/mfilimonov/workspace/ClickHouse/master/base/poco/Net/src/TCPServerDispatcher.cpp:115: Poco::Net::TCPServerDispatcher::run() @ 0x000000001bca8b5e
+19. /home/mfilimonov/workspace/ClickHouse/master/base/poco/Foundation/src/ThreadPool.cpp:205: Poco::PooledThread::run() @ 0x000000001bc52e32
+20. /home/mfilimonov/workspace/ClickHouse/master/base/poco/Foundation/src/Thread_POSIX.cpp:335: Poco::ThreadImpl::runnableEntry(void*) @ 0x000000001bc50a6f
+21. start_thread @ 0x00000000000a27f1
+22. __GI___clone3 @ 0x0000000000133c9c
+
+
+*/ 
+        union_plan.unitePlans(std::move(union_step), std::move(plan_ptrs));
+
+        // Replace the original query plan with the union plan
+        query_plan = std::move(union_plan);
+    }
 }
 
 
@@ -2178,7 +2439,8 @@ void registerStorageDistributed(StorageFactory & factory)
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     });
 
-    // Register TieredDistributedMerge engine - Step 3: Add first argument validation
+    // Register TieredDistributedMerge engine
+    // TODO: consider moving it to a separate file / subclass of StorageDistributed
     factory.registerStorage("TieredDistributedMerge", [](const StorageFactory::Arguments & args) -> StoragePtr
     {
         ASTs & engine_args = args.engine_args;
@@ -2208,7 +2470,7 @@ void registerStorageDistributed(StorageFactory & factory)
                             "First argument must be a table function, got: {}", first_arg->getID());
         }
 
-        // Validate second argument - must be a SQL expression (not a string literal)
+        // TODO: Validate second argument - must be a SQL expression (just rejecting a string literal for now)
         ASTPtr second_arg = engine_args[1];
         if (const auto * literal = second_arg->as<ASTLiteral>())
         {
@@ -2223,16 +2485,106 @@ void registerStorageDistributed(StorageFactory & factory)
         // Create the underlying StorageDistributed using the table function
         const ContextPtr & context = args.getContext();
 
+        // Parse additional table function pairs (if any)
+        std::vector<StorageDistributed::TableFunctionEntry> additional_table_functions;
+        for (size_t i = 2; i < engine_args.size(); i += 2)
+        {
+            if (i + 1 >= engine_args.size())
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "Table function pairs must have both table function and predicate, got odd number of arguments");
+
+            ASTPtr table_function_ast = engine_args[i];
+            ASTPtr predicate_ast = engine_args[i + 1];
+
+            // Validate table function
+            const auto * func = table_function_ast->as<ASTFunction>();
+            if (!func)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Additional table function must be a table function, got: {}", table_function_ast->getID());
+            }
+            else if (!TableFunctionFactory::instance().isTableFunctionName(func->name))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Argument #{}: additional table function must be a valid table function, got: {}", i, func->name);
+            }
+
+            // Additional table functions can be either TableFunctionRemote or ITableFunctionCluster
+            // Check if it's a supported table function type
+            String table_function_name = func->name;
+
+                // Check for ITableFunctionCluster types (ending with "Cluster")
+            // Use a whitelist of supported table function names for clarity and safety
+            static const std::unordered_set<std::string> supported_table_functions = {
+                "remote", "remoteSecure", "cluster", "clusterAllReplicas",
+                "s3Cluster", "urlCluster", "fileCluster", "S3Cluster", "AzureCluster", "HDFSCluster",
+                "IcebergS3Cluster", "IcebergAzureCluster", "IcebergHDFSCluster", "DeltaLakeCluster", "HudiCluster"
+            };
+
+            if (supported_table_functions.find(table_function_name) == supported_table_functions.end())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Argument #{}: additional table function '{}' is not supported. "
+                    "TieredDistributedMerge engine requires additional table functions to be either ITableFunctionCluster-based "
+                    "(like s3Cluster, urlCluster, DeltaLakeCluster, etc.) or TableFunctionRemote-based "
+                    "(like remote, remoteSecure, cluster, clusterAllReplicas).", i, table_function_name);
+            }
+
+            // TODO: Validate predicate - must be a SQL expression (just rejecting a string literal for now)
+            if (const auto * literal = predicate_ast->as<ASTLiteral>())
+            {
+                if (literal->value.getType() == Field::Types::String)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Additional predicate must be a SQL expression, got string literal");
+                }
+            }
+
+            // Create table function instance and execute it to get StoragePtr
+            auto table_function = TableFunctionFactory::instance().get(table_function_ast, context);
+            if (!table_function)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid additional table function in TieredDistributedMerge engine");
+
+            // Execute the table function to get the underlying storage
+            StoragePtr additional_storage = table_function->execute(
+                table_function_ast,
+                context,
+                args.table_id.table_name,
+                args.columns, // Use the same columns as the main table function
+                false, // use_global_context = false
+                false); // is_insert_query = false
+
+            // Handle StorageTableFunctionProxy if present
+            if (auto proxy = std::dynamic_pointer_cast<StorageTableFunctionProxy>(additional_storage))
+            {
+                additional_storage = proxy->getNested();
+            }
+
+           // additional_storage->renameInMemory({args.table_id.database_name, args.table_id.table_name, args.table_id.uuid});
+
+
+            additional_table_functions.emplace_back(std::move(additional_storage), table_function_ast,  predicate_ast);
+        }
+
+        // Now handle the first table function (which must be a TableFunctionRemote)
         auto table_function = TableFunctionFactory::instance().get(first_arg, context);
         if (!table_function)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid table function in TieredDistributedMerge engine");
+
+        // For schema inference, we need to determine the columns first if they're not provided
+        ColumnsDescription columns_to_use = args.columns;
+        if (columns_to_use.empty())
+        {
+            // Get the column structure from the table function
+            columns_to_use = table_function->getActualTableStructure(context, true);
+        }
 
         // Execute the table function to get the underlying storage
         StoragePtr storage = table_function->execute(
             first_arg,
             context,
             args.table_id.table_name,
-            args.columns,
+            columns_to_use,
             false, // use_global_context = false
             false); // is_insert_query = false
 
@@ -2261,12 +2613,15 @@ void registerStorageDistributed(StorageFactory & factory)
         // Store the filter expression for later use in read operations
         distributed_storage->setAdditionalFilter(second_arg);
 
+        // Store additional table functions for later use
+        distributed_storage->setAdditionalTableFunctions(std::move(additional_table_functions));
+
         return distributed_storage;
     },
     {
         .supports_settings = false,
-        .supports_parallel_insert = false,
-        .supports_schema_inference = false,
+        .supports_parallel_insert = true,
+        .supports_schema_inference = true,
         .source_access_type = AccessType::REMOTE,
     });
 }

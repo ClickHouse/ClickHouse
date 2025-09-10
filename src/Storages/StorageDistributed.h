@@ -50,6 +50,20 @@ class StorageDistributed final : public IStorage, WithContext
     friend class StorageSystemDistributionQueue;
 
 public:
+    /// Structure to hold storage, its AST, and associated predicate
+    struct TableFunctionEntry
+    {
+        StoragePtr storage;
+        ASTPtr table_function_ast;
+        ASTPtr predicate_ast;
+
+        TableFunctionEntry(StoragePtr storage_, ASTPtr table_function_ast_, ASTPtr predicate_ast_)
+            : storage(std::move(storage_))
+            , table_function_ast(std::move(table_function_ast_))
+            , predicate_ast(std::move(predicate_ast_))
+        {}
+    };
+
     StorageDistributed(
         const StorageID & id_,
         const ColumnsDescription & columns_,
@@ -70,7 +84,10 @@ public:
 
     ~StorageDistributed() override;
 
-    std::string getName() const override { return "Distributed"; }
+    std::string getName() const override
+    {
+        return additional_table_functions.empty() ? "Distributed" : "TieredDistributedMerge";
+    }
 
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
@@ -151,6 +168,18 @@ public:
 
     /// Set additional filter for TieredDistributedMerge engine
     void setAdditionalFilter(ASTPtr filter) { additional_filter = std::move(filter); }
+
+    /// Set additional table functions for TieredDistributedMerge engine
+    void setAdditionalTableFunctions(std::vector<TableFunctionEntry> additional_table_functions_)
+    {
+        additional_table_functions = std::move(additional_table_functions_);
+    }
+
+    /// Getter methods for ClusterProxy::executeQuery
+    StorageID getRemoteStorageID() const { return remote_storage; }
+    ExpressionActionsPtr getShardingKeyExpression() const { return sharding_key_expr; }
+    const DistributedSettings * getDistributedSettings() const { return distributed_settings.get(); }
+    bool isRemoteFunction() const { return is_remote_function; }
 
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
 
@@ -288,6 +317,9 @@ private:
 
     /// Additional filter expression for TieredDistributedMerge engine
     ASTPtr additional_filter;
+
+    /// Additional table functions for TieredDistributedMerge engine
+    std::vector<TableFunctionEntry> additional_table_functions;
 };
 
 }

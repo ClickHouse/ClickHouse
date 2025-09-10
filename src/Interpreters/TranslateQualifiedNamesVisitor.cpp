@@ -399,4 +399,15 @@ void RestoreQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &, D
     }
 }
 
+void ResetSemanticTableMatcher::visit(ASTPtr & ast, Data & data)
+{
+    if (auto * t = ast->as<ASTIdentifier>())
+        visit(*t, ast, data);
+}
+
+void ResetSemanticTableMatcher::visit(ASTIdentifier & identifier, ASTPtr &, Data &)
+{
+    identifier.resetSemanticTable();
+}
+
 }
