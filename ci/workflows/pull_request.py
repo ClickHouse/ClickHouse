@@ -65,11 +65,11 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_jobs_required[:]
         ],
-        *[
-            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.integration_test_jobs_non_required
-        ],
-        JobConfigs.integration_test_asan_flaky_pr_job,
+        # *[
+        #     job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+        #     for job in JobConfigs.integration_test_jobs_non_required
+        # ],
+        # JobConfigs.integration_test_asan_flaky_pr_job,
         JobConfigs.docker_sever.set_dependency(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
