@@ -300,6 +300,22 @@ ActionsDAG JoinExpressionActions::getSubDAG(JoinActionRef action)
     return getSubDAG(std::views::single(action));
 }
 
+void JoinExpressionActions::swapExpressionSources()
+{
+    if (!data)
+        return;
+
+    for (auto & source : data->expression_sources)
+    {
+        auto previous_relation_id = source.second.getSingleBit();
+        if (!previous_relation_id || previous_relation_id > 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected expression source {}, shoud have 0th or 1st bit set", source.second);
+        size_t new_relation_id = previous_relation_id == 1 ? 0 : 1;
+        source.second.set(*previous_relation_id, false);
+        source.second.set(new_relation_id, true);
+    }
+}
+
 JoinExpressionActions JoinExpressionActions::clone(ActionsDAG::NodeMapping & node_map) const
 {
     auto actions_dag = getActionsDAG()->clone(node_map);
