@@ -633,10 +633,10 @@ def test_position_deletes(started_cluster, use_roaring_bitmaps,  storage_type):
     # Clean up
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
-@pytest.mark.parametrize("infer_format", [True, False])
+
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_schema_inference(started_cluster, format_version, storage_type, infer_format):
+def test_schema_inference(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     for format in ["Parquet", "ORC", "Avro"]:
@@ -666,14 +666,10 @@ def test_schema_inference(started_cluster, format_version, storage_type, infer_f
             f"/iceberg_data/default/{TABLE_NAME}/",
         )
 
-        if infer_format:
-            create_iceberg_table(
-                storage_type, instance, TABLE_NAME, started_cluster
-            )
-        else:
-            create_iceberg_table(
-                storage_type, instance, TABLE_NAME, started_cluster, format=format
-            )
+        create_iceberg_table(
+            storage_type, instance, TABLE_NAME, started_cluster, format=format
+        )
+
         res = instance.query(
             f"DESC {TABLE_NAME} FORMAT TSVRaw", settings={"print_pretty_type_names": 0}
         )
@@ -1251,6 +1247,7 @@ def test_schema_evolution_with_time_travel(
         TABLE_NAME,
         started_cluster,
         table_function=True,
+        allow_dynamic_metadata_for_data_lakes=True,
     )
 
     table_select_expression =  table_creation_expression
@@ -2435,6 +2432,7 @@ def test_minmax_pruning_for_arrays_and_maps_subfields_disabled(started_cluster, 
         TABLE_NAME,
         started_cluster,
         table_function=True,
+        allow_dynamic_metadata_for_data_lakes=True,
     )
 
     table_select_expression = table_creation_expression
@@ -2484,7 +2482,7 @@ def test_writes_create_table(started_cluster, format_version, storage_type):
 
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-@pytest.mark.parametrize("partition_type", ["y", "identity(y)", "(identity(y))", "icebergTruncate(3, y)", "(identity(y), icebergBucket(3, x))", "(x, y)"])
+@pytest.mark.parametrize("partition_type", ["identity(y)", "(identity(y))", "icebergTruncate(3, y)", "(identity(y), icebergBucket(3, x))"])
 def test_writes_create_partitioned_table(started_cluster, format_version, storage_type, partition_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -2571,20 +2569,13 @@ def test_relevant_iceberg_schema_chosen(started_cluster, storage_type):
     instance.query(f"SELECT * FROM {table_creation_expression} WHERE b >= 2", settings={"input_format_parquet_filter_push_down": 0, "input_format_parquet_bloom_filter_push_down": 0})
 
 
-def test_writes_create_table_bugs(started_cluster):
+def test_writes_create_table_with_empty_data(started_cluster):
     instance = started_cluster.instances["node1"]
     TABLE_NAME = "test_relevant_iceberg_schema_chosen_" + get_uuid_str()
-    TABLE_NAME_1 = "test_relevant_iceberg_schema_chosen_" + get_uuid_str()
     instance.query(
         f"CREATE TABLE {TABLE_NAME} (c0 Int) ENGINE = IcebergLocal('/iceberg_data/default/{TABLE_NAME}/', 'CSV') AS (SELECT 1 OFFSET 1 ROW);",
         settings={"allow_experimental_insert_into_iceberg": 1}
     )
-
-    instance.query(
-        f"CREATE TABLE {TABLE_NAME_1} (c0 Int) ENGINE = IcebergLocal('/iceberg_data/default/{TABLE_NAME_1}/', 'CSV') PARTITION BY (icebergTruncate(c0));",
-        settings={"allow_experimental_insert_into_iceberg": 1}
-    )
-
 
 @pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("storage_type", ["local"])
@@ -2976,47 +2967,6 @@ def test_writes_mutate_delete(started_cluster, storage_type, partition_type):
     df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 1
 
-
-
-@pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("storage_type", ["s3"])
-def test_pruning_nullable_bug(started_cluster, format_version, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
-
-    spark.sql(f"""
-        CREATE TABLE {TABLE_NAME} (c0 STRING)
-        USING iceberg
-    """)
-
-    spark.sql(f"""
-        INSERT INTO {TABLE_NAME} VALUES ('Pasha Technick'), (NULL)
-    """)
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
-
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} WHERE c0 IS NULL;")) == 1
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} WHERE c0 IS NULL;") == '\\N\n'
-
-
-@pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("storage_type", ["s3"])
-def test_writes_nullable_bugs2(started_cluster, format_version, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
-
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(c0 Nullable(String))", format_version, "(c0)")
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (NULL), ('Monetochka'), ('Maneskin'), ('Noize MC');", settings={"allow_experimental_insert_into_iceberg": 1})
-
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == 'Maneskin\nMonetochka\nNoize MC\n\\N\n'
-
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
 def test_system_iceberg_metadata(started_cluster, format_version, storage_type):
@@ -3128,139 +3078,3 @@ def test_system_iceberg_metadata(started_cluster, format_version, storage_type):
         except:
             print("Dictionary: {}, Allowed Content Types: {}".format(diction, allowed_content_types))
             raise
-
-    
-@pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
-def test_writes_field_partitioning(started_cluster, storage_type):
-    format_version = 2
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
-
-    partition_spec = "(identity(id), identity(i32), identity(u32), identity(d), identity(d32), identity(i64), identity(u64), identity(dt), identity(s))"
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(id UInt32,i32 Int32,u32 UInt32,d Date,d32 Date32,i64 Int64,u64 UInt64,dt DateTime,f32 Float32,f64 Float64,s String)", format_version, partition_spec)
-
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
-
-    instance.query(f"""
-    INSERT INTO {TABLE_NAME} VALUES
-    (
-        1,
-        -123,
-        123,
-        '2025-08-27',
-        '2025-08-27',
-        -123456789,
-        123456789,
-        '2025-08-27 12:34:56',
-        3.14,
-        2.718281828,
-        '@capibarsci'
-    );""", settings={"allow_experimental_insert_into_iceberg": 1})
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1\t-123\t123\t2025-08-27\t2025-08-27\t-123456789\t123456789\t2025-08-27 12:34:56.000000\t3.14\t2.718281828\t@capibarsci\n'
-    if storage_type != "local":
-        return
-
-    default_download_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
-
-    df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
-    df.sort()
-    assert str(df) == "[Row(id=1, i32=-123, u32=123, d=datetime.date(2025, 8, 27), d32=datetime.date(2025, 8, 27), i64=-123456789, u64=123456789, dt=datetime.datetime(2025, 8, 27, 12, 34, 56), f32=3.140000104904175, f64=2.718281828, s='@capibarsci')]"
-
-
-@pytest.mark.parametrize("storage_type", ["s3", "local", "azure"])
-@pytest.mark.parametrize("partition_type", ["", "identity(x)", "icebergBucket(3, x)"])
-def test_writes_mutate_update(started_cluster, storage_type, partition_type):
-    format_version = 2
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
-
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String, y Int32)", format_version, partition_type)
-
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
-
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_experimental_insert_into_iceberg": 1})
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\t1\n'
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('456', 2);", settings={"allow_experimental_insert_into_iceberg": 1})
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\t1\n456\t2\n'
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('999', 3);", settings={"allow_experimental_insert_into_iceberg": 1})
-
-    instance.query(f"ALTER TABLE {TABLE_NAME} UPDATE x = '777' WHERE x = '123';", settings={"allow_experimental_insert_into_iceberg": 1})
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '456\t2\n777\t1\n999\t3\n'
-
-    instance.query(f"ALTER TABLE {TABLE_NAME} UPDATE x = 'goshan dr' WHERE x = '777';", settings={"allow_experimental_insert_into_iceberg": 1})
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '456\t2\n999\t3\ngoshan dr\t1\n'
-
-    instance.query(f"ALTER TABLE {TABLE_NAME} UPDATE x = 'pudge1000-7' WHERE y = 2;", settings={"allow_experimental_insert_into_iceberg": 1})
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '999\t3\ngoshan dr\t1\npudge1000-7\t2\n'
-
-    if storage_type != "local":
-        return
-    default_download_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
-
-    df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
-    df.sort()
-    assert str(df) == "[Row(x='999', y=3), Row(x='goshan dr', y=1), Row(x='pudge1000-7', y=2)]"
-
-@pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("storage_type", ["s3"])
-def test_writes_different_path_format_error(started_cluster, format_version, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-
-    TABLE_NAME = "test_row_based_deletes_" + storage_type + "_" + get_uuid_str()
-
-    spark.sql(
-        f"CREATE TABLE {TABLE_NAME} (id string) USING iceberg TBLPROPERTIES ('format-version' = '{format_version}')")
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
-
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
-
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('maneskin');", settings={"allow_experimental_insert_into_iceberg": 1})
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('radiohead');", settings={"allow_experimental_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": True})
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL;") == 'maneskin\nradiohead\n'
-
-@pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("storage_type", ["local"])
-def test_writes_multiple_files(started_cluster, format_version, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
-
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x Int32)", format_version)
-
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
-
-    data = ""
-    expected_result = ""
-    for i in range(1058449):
-        data += f"({i}), "
-        expected_result += f"{i}\n"
-    data = data[:len(data) - 2]
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES {data};", settings={"allow_experimental_insert_into_iceberg": 1, "max_iceberg_data_file_rows" : 1})
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == expected_result
-
-    files = default_download_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
-
-    assert sum([file[-7:] == "parquet" for file in files]) == 2

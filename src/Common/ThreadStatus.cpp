@@ -6,7 +6,6 @@
 #include <Common/logger_useful.h>
 #include <Common/memory.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Core/Settings.h>
 #include <base/getPageSize.h>
 #include <Interpreters/Context.h>
 

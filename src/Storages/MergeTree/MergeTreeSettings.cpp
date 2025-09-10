@@ -896,7 +896,7 @@ namespace ErrorCodes
     )", 0) \
     \
     /** Replication settings. */ \
-    DECLARE(UInt64, replicated_deduplication_window, 10000, R"(
+    DECLARE(UInt64, replicated_deduplication_window, 1000, R"(
     The number of most recently inserted blocks for which ClickHouse Keeper stores
     hash sums to check for duplicates.
 
@@ -1269,7 +1269,7 @@ namespace ErrorCodes
     to avoid redundant conflicts in merges assignment). 0 means disabled. Only
     available in ClickHouse Cloud
     )", 0) \
-    DECLARE(Bool, shared_merge_tree_use_outdated_parts_compact_format, true, R"(
+    DECLARE(Bool, shared_merge_tree_use_outdated_parts_compact_format, false, R"(
     Use compact format for outdated parts: reduces load to Keeper, improves
     outdated parts processing. Only available in ClickHouse Cloud
     )", 0) \
@@ -1284,10 +1284,6 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_max_outdated_parts_to_process_at_once, 1000, R"(
     Maximum amount of outdated parts leader will try to confirm for removal at
     one HTTP request. Only available in ClickHouse Cloud.
-    )", 0) \
-    DECLARE(UInt64, shared_merge_tree_outdated_parts_group_size, 2, R"(
-    How many replicas will be in the same rendezvous hash group for outdated parts cleanup.
-    Only available in ClickHouse Cloud.
     )", 0) \
     DECLARE(UInt64, shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold, 1000000, R"(
     Minimum size of part (in rows) to postpone assigning a next merge just after
@@ -1493,7 +1489,7 @@ namespace ErrorCodes
     Allow Nullable types as primary keys.
     )", 0) \
     DECLARE(Bool, allow_part_offset_column_in_projections, true, R"(
-    Allow usage of '_part_offset' column in projections select query.
+    Allow ussage of '_part_offfset' column in projections select query.
     )", 0) \
     DECLARE(Bool, remove_empty_parts, true, R"(
     Remove empty parts after they were pruned by TTL, mutation, or collapsing
@@ -1782,12 +1778,6 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
     How many partition discoveries should be packed into batch
     )", EXPERIMENTAL) \
-    DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, false, R"(
-    Enabled cleanup of Keeper entries of empty partition.
-    )", 0) \
-    DECLARE(Seconds, shared_merge_tree_empty_partition_lifetime, 86400, R"(
-    How many seconds partition will be stored in keeper if it has no parts.
-    )", 0) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, R"(

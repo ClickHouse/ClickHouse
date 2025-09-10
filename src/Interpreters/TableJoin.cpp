@@ -198,36 +198,36 @@ TableJoin::TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStric
 
 JoinKind TableJoin::kind() const
 {
-    if (join_operator)
-        return join_operator->kind;
+    if (join_info)
+        return join_info->kind;
     return table_join.kind;
 }
 
 void TableJoin::setKind(JoinKind kind)
 {
-    if (join_operator)
-        join_operator->kind = kind;
+    if (join_info)
+        join_info->kind = kind;
     table_join.kind = kind;
 }
 
 JoinStrictness TableJoin::strictness() const
 {
-    if (join_operator)
-        return join_operator->strictness;
+    if (join_info)
+        return join_info->strictness;
     return table_join.strictness;
 }
 
 bool TableJoin::hasUsing() const
 {
-    if (join_operator)
-        return false;
+    if (join_info)
+        return join_info->expression.is_using;
     return table_join.using_expression_list != nullptr;
 }
 
 bool TableJoin::hasOn() const
 {
-    if (join_operator)
-        return true;
+    if (join_info)
+        return !join_info->expression.is_using;
     return table_join.on_expression != nullptr;
 }
 

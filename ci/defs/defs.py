@@ -44,34 +44,27 @@ BASE_BRANCH = "master"
 
 azure_secret = Secret.Config(
     name="azure_connection_string",
-    type=Secret.Type.AWS_SSM_PARAMETER,
-)
-
-chcache_secret = Secret.Config(
-    name="chcache_password",
-    type=Secret.Type.AWS_SSM_PARAMETER,
-    region="us-east-1",
+    type=Secret.Type.AWS_SSM_VAR,
 )
 
 SECRETS = [
     Secret.Config(
         name="dockerhub_robot_password",
-        type=Secret.Type.AWS_SSM_PARAMETER,
+        type=Secret.Type.AWS_SSM_VAR,
     ),
     Secret.Config(
         name="clickhouse-test-stat-url",
-        type=Secret.Type.AWS_SSM_PARAMETER,
+        type=Secret.Type.AWS_SSM_VAR,
     ),
     Secret.Config(
         name="clickhouse-test-stat-login",
-        type=Secret.Type.AWS_SSM_PARAMETER,
+        type=Secret.Type.AWS_SSM_VAR,
     ),
     Secret.Config(
         name="clickhouse-test-stat-password",
-        type=Secret.Type.AWS_SSM_PARAMETER,
+        type=Secret.Type.AWS_SSM_VAR,
     ),
     azure_secret,
-    chcache_secret,
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
@@ -353,9 +346,6 @@ class JobNames:
 class ToolSet:
     COMPILER_C = "clang-19"
     COMPILER_CPP = "clang++-19"
-
-    COMPILER_CACHE = "chcache"
-    COMPILER_CACHE_LEGACY = "sccache"
 
 
 class ArtifactNames:

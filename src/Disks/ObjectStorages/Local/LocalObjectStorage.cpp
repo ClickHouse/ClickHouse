@@ -54,10 +54,14 @@ ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_setting
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
 {
+    if (!file_size)
+        file_size = tryGetSizeFromFilePath(object.remote_path);
+
     LOG_TEST(log, "Read object: {}", object.remote_path);
-    return createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
+    return createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NOLINT

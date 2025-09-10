@@ -317,7 +317,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_move_pool_size;
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
-    extern const ServerSettingsFloat background_schedule_pool_max_parallel_tasks_per_type_ratio;
     extern const ServerSettingsBool display_secrets_in_show_and_select;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
@@ -1125,7 +1124,6 @@ ContextData::ContextData(const ContextData &o) :
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
-    storage_alias_behaviour(o.storage_alias_behaviour),
     kitchen_sink(o.kitchen_sink),
     part_uuids(o.part_uuids),
     ignored_part_uuids(o.ignored_part_uuids),
@@ -1465,7 +1463,7 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), volume);
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, std::move(temporary_data_on_disk_settings));
     shared->temporary_volume_legacy = volume;
 }
 
@@ -1505,21 +1503,8 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), volume);
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, std::move(temporary_data_on_disk_settings));
     shared->temporary_volume_legacy = volume;
-}
-
-void Context::setTemporaryStorageInDistributedCache([[maybe_unused]] size_t max_size)
-{
-#if ENABLE_DISTRIBUTED_CACHE
-    TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
-    temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    auto temp_data = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), DistributedCacheTag{});
-    std::lock_guard lock(shared->mutex);
-    shared->root_temp_data_on_disk = std::move(temp_data);
-#else
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed cache for temporary files is not supported");
-#endif
 }
 
 void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
@@ -1543,7 +1528,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), file_cache.get());
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(file_cache.get(), std::move(temporary_data_on_disk_settings));
     shared->temporary_volume_legacy = volume;
 }
 
@@ -3980,7 +3965,6 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
     callOnce(shared->buffer_flush_schedule_pool_initialized, [&] {
         shared->buffer_flush_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_buffer_flush_schedule_pool_size],
-            /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             "BgBufSchPool");
@@ -4022,12 +4006,9 @@ BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSetting
 
 BackgroundSchedulePool & Context::getSchedulePool() const
 {
-    size_t max_parallel_tasks_per_type = static_cast<size_t>(shared->server_settings[ServerSetting::background_schedule_pool_size]
-        * shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]);
     callOnce(shared->schedule_pool_initialized, [&] {
         shared->schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_schedule_pool_size],
-            max_parallel_tasks_per_type,
             CurrentMetrics::BackgroundSchedulePoolTask,
             CurrentMetrics::BackgroundSchedulePoolSize,
             "BgSchPool");
@@ -4041,7 +4022,6 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
     callOnce(shared->distributed_schedule_pool_initialized, [&] {
         shared->distributed_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_distributed_schedule_pool_size],
-            /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             "BgDistSchPool");
@@ -4055,7 +4035,6 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     callOnce(shared->message_broker_schedule_pool_initialized, [&] {
         shared->message_broker_schedule_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_message_broker_schedule_pool_size],
-            /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             "BgMBSchPool");
@@ -6786,16 +6765,6 @@ void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
 PreparedSetsCachePtr Context::getPreparedSetsCache() const
 {
     return prepared_sets_cache;
-}
-
-void Context::setStorageAliasBehaviour(uint8_t storage_alias_behaviour_)
-{
-    storage_alias_behaviour = storage_alias_behaviour_;
-}
-
-uint8_t Context::getStorageAliasBehaviour() const
-{
-    return storage_alias_behaviour;
 }
 
 UInt64 Context::getClientProtocolVersion() const

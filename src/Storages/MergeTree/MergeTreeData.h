@@ -32,6 +32,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
+#include <Storages/MarkCache.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -67,9 +68,6 @@ using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
 struct MergeTreeSettings;
 struct WriteSettings;
-
-class MarkCache;
-using MarkCachePtr = std::shared_ptr<MarkCache>;
 
 /// Auxiliary struct holding information about the future merged or mutated part.
 struct EmergingPartInfo

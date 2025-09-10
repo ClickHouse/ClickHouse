@@ -5,7 +5,6 @@ SET enable_parallel_replicas = 0;
 -- Disable table swaps during query planning
 SET query_plan_join_swap_table = false;
 
-DROP TABLE IF EXISTS test;
 CREATE TABLE test(
     i1 Int64,
     i2 Int64,

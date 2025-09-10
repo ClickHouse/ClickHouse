@@ -22,15 +22,6 @@
             [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114
         -->
         <level>trace</level>
-
-        <!-- Startup level is used to set the root logger level at server startup.
-             It is useful for debugging startup issues.
-             The root logger level will be reset to the default level after the server is fully initialized -->
-        <!-- <startupLevel>trace</startupLevel> -->
-       <!-- Shutdown level is used to set the root logger level at server Shutdown.
-             It is useful for debugging shutdown issues -->
-        <!-- <shutdownLevel>trace</shutdownLevel> -->
-
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
         <!-- Rotation policy
@@ -1604,7 +1595,7 @@
         <max_replicated_fetches_network_bandwidth>1000000000</max_replicated_fetches_network_bandwidth>
     </replicated_merge_tree>
     -->
-
+    
     <!-- Settings to fine-tune DatabaseReplicatedSettings. See documentation in source code, in DatabaseReplicatedSettings.h -->
     <!--
     <database_replicated>
@@ -1690,9 +1681,7 @@
     <!-- Uncomment to use custom http handlers.
 
         rules are checked from top to bottom, first match runs the handler
-            url - to match request URL (path and query string only), you can use 'regex:' prefix to use regex match(optional)
-            full_url - to match request **full** URL (schema, host:port, path and query string), you can use 'regex:' prefix to use regex match(optional)
-                       note, ClickHouse does not support "virtual hosts" so "host" will contain IP address not the "Host" header.
+            url - to match request URL, you can use 'regex:' prefix to use regex match(optional)
             empty_query_string - check that there is no query string in the URL
             methods - to match request method, you can use commas to separate multiple method matches(optional)
             headers - to match request headers, match each child element (child element name is header name), you can use 'regex:' prefix to use regex match(optional)
@@ -1725,22 +1714,6 @@
             <handler>
                 <type>predefined_query_handler</type>
                 <query>SELECT * FROM system.settings</query>
-            </handler>
-        </rule>
-
-        <rule>
-            <url>/play</url>
-            <handler>
-                <type>redirect</type>
-                <location>/play?user=play</location>
-            </handler>
-        </rule>
-
-        <rule>
-            <full_url>regex:http?://[^/]/dashboard</full_url>
-            <handler>
-                <type>redirect</type>
-                <location>/dashboard?user=play</location>
             </handler>
         </rule>
 
@@ -1877,18 +1850,5 @@
         when instrumenting ClickHouse via eBPF probes.
 
     <skip_binary_checksum_checks>false</skip_binary_checksum_checks>
-    -->
-
-    <!-- Tune maximum core file size (RLIMIT_CORE) -->
-    <!--
-    <core_dump>
-        <size_limit></size_limit>
-    </core_dump>
-    -->
-
-    <!-- Tune maximum number of pending signals
-         (You may want to increase it if you see CANNOT_CREATE_TIMER exceptions) -->
-    <!--
-    <pending_signals></pending_signals>
     -->
 </clickhouse>
