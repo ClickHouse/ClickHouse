@@ -148,7 +148,8 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
 
     if (!move_uri.empty() || !move_access_key_id.empty() || !move_secret_access_key.empty())
     {
-        if (move_uri.empty() || move_access_key_id.empty() || move_secret_access_key.empty()) {
+        if (move_uri.empty() || move_access_key_id.empty() || move_secret_access_key.empty())
+        {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "not enough settings to move S3 objects");
         }
 
@@ -250,7 +251,8 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                 connection_params,
                 is_readonly);
 
-            for (const auto & object_from : objects) {
+            for (const auto & object_from : objects)
+            {
                 Azure::Storage::Blobs::BlobClient blobClient = src_client->GetBlobClient(object_from.remote_path);
                 auto properties = blobClient.GetProperties().Value;
                 auto blob_size = properties.BlobSize;
