@@ -937,7 +937,7 @@ XMLDocumentPtr ConfigProcessor::hideElements(XMLDocumentPtr xml_tree)
     /// Create a copy of XML Document because hiding elements from preprocessed_xml document
     /// also influences on configuration which has a pointer to preprocessed_xml document.
 
-    XMLDocumentPtr xml_tree_copy = new Poco::XML::Document;
+    XMLDocumentPtr xml_tree_copy = new Poco::XML::Document(name_pool);
 
     for (Node * node = xml_tree->firstChild(); node; node = node->nextSibling())
     {
