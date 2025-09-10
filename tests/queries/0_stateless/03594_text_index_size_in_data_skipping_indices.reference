@@ -1,0 +1,3 @@
+database	table	name	type	type_full	expr	granularity	data_compressed_bytes	data_uncompressed_bytes	marks_bytes
+default	tab	text_idx	text	text(tokenizer = \'ngram\', ngram_size = 3)	str	1	132	99	150
+default	tab	set_idx	set	set(10)	str	1	45	22	50
