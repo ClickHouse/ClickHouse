@@ -5,6 +5,7 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 #include <IO/S3/copyS3File.h>
@@ -105,6 +106,8 @@ static StoredObject applyMovePrefixIfPresent(const StoredObject & src, const Str
     return StoredObject(remote_path);
 }
 
+#if USE_AZURE_BLOB_STORAGE
+
 static AzureBlobStorage::ConnectionParams getAzureConnectionParams(
     const String & connection_url,
     const String & container_name,
@@ -118,6 +121,8 @@ static AzureBlobStorage::ConnectionParams getAzureConnectionParams(
 
     return connection_params;
 }
+
+#endif
 
 void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & objects, const String & move_prefix) const
 {
@@ -227,6 +232,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
 
 void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objects) const
 {
+#if USE_AZURE_BLOB_STORAGE
     const String & move_connection_string = table_metadata.after_processing_move_connection_string;
     const String & move_container = table_metadata.after_processing_move_container;
     const String & move_prefix = table_metadata.after_processing_move_prefix;
@@ -298,6 +304,9 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "no settings to move Azure blobs");
     }
+#else
+    (void) objects;
+#endif
 }
 
 }
