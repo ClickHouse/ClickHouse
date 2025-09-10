@@ -196,7 +196,8 @@ def create_clickhouse_glue_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-SET allow_experimental_database_glue_catalog=true;
+SET allow_database_glue_catalog=true;
+SET write_full_path_in_iceberg_metadata=true;
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', '{minio_access_key}', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
@@ -206,11 +207,11 @@ def create_clickhouse_glue_table(
     started_cluster, node, database_name, table_name, schema, additional_settings={}
 ):
     settings = {
-        "iceberg_catalog_type": "glue",
-        "iceberg_warehouse": "test",
-        "iceberg_storage_endpoint": "http://minio:9000/warehouse-glue",
-        "iceberg_region": "us-east-1",
-        "iceberg_catalog_url" : BASE_URL
+        "storage_catalog_type": "glue",
+        "storage_warehouse": "test",
+        "object_storage_endpoint": "http://minio:9000/warehouse-glue",
+        "storage_region": "us-east-1",
+        "storage_catalog_url" : BASE_URL
     }
 
     settings.update(additional_settings)
@@ -218,10 +219,21 @@ def create_clickhouse_glue_table(
     node.query(
         f"""
 SET allow_experimental_database_glue_catalog=true;
+SET write_full_path_in_iceberg_metadata=true;
 CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio:9000/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
+
+def drop_clickhouse_glue_table(
+    node, database_name, table_name
+):
+    node.query(
+        f"""
+DROP TABLE {CATALOG_NAME}.`{database_name}.{table_name}`;
+    """
+    )
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -342,6 +354,8 @@ def test_select(started_cluster):
         )
 
     assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 4
+    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 4
+    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 0
 
 
 def test_hide_sensitive_info(started_cluster):
@@ -468,8 +482,8 @@ def test_empty_table(started_cluster):
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     assert len(node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")) == 0
-    
-    
+
+
 def test_timestamps(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -546,3 +560,21 @@ def test_create(started_cluster):
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
+def test_drop_table(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    assert len(catalog.list_tables(root_namespace)) == 1
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == ""
+
+    drop_clickhouse_glue_table(node, root_namespace, table_name)
+    assert len(catalog.list_tables(root_namespace)) == 0

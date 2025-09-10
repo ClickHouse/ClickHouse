@@ -5,6 +5,8 @@
 #include <IO/S3Defines.h>
 #include <IO/S3Common.h>
 #include <Common/Exception.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -231,6 +233,74 @@ HTTPHeaderEntries S3AuthSettings::getHeaders() const
     HTTPHeaderEntries result(headers);
     result.insert(result.end(), access_headers.begin(), access_headers.end());
 
+    return result;
+}
+
+
+void S3AuthSettings::serialize(WriteBuffer & out, ContextPtr) const
+{
+    impl->writeChangedBinary(out);
+
+    writeVarUInt(headers.size(), out);
+    for (const auto & header : headers)
+    {
+        writeStringBinary(header.name, out);
+        writeStringBinary(header.value, out);
+    }
+
+    writeVarUInt(access_headers.size(), out);
+    for (const auto & access_header : access_headers)
+    {
+        writeStringBinary(access_header.name, out);
+        writeStringBinary(access_header.value, out);
+    }
+
+    writeVarUInt(users.size(), out);
+    for (const auto & user : users)
+    {
+        writeStringBinary(user, out);
+    }
+
+    ///TODO ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
+}
+
+S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
+{
+    S3AuthSettings result;
+    result.impl = std::make_unique<S3AuthSettingsImpl>();
+    result.impl->readBinary(in);
+
+    size_t headers_size;
+    readVarUInt(headers_size, in);
+    for (size_t i = 0; i < headers_size; ++i)
+    {
+        std::string name;
+        std::string value;
+        readStringBinary(name, in);
+        readStringBinary(value, in);
+        result.headers.emplace_back(name, value);
+    }
+
+    size_t access_headers_size;
+    readVarUInt(access_headers_size, in);
+    for (size_t i = 0; i < access_headers_size; ++i)
+    {
+        std::string name;
+        std::string value;
+        readStringBinary(name, in);
+        readStringBinary(value, in);
+        result.access_headers.emplace_back(name, value);
+    }
+    size_t users_size;
+    readVarUInt(users_size, in);
+    for (size_t i = 0; i < users_size; ++i)
+    {
+        std::string user;
+        readStringBinary(user, in);
+        result.users.insert(user);
+    }
+
+    ///TODO ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
     return result;
 }
 

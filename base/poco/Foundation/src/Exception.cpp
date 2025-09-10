@@ -56,7 +56,7 @@ Exception::Exception(const Exception& exc):
 	_pNested = exc._pNested ? exc._pNested->clone() : 0;
 }
 
-	
+
 Exception::~Exception() throw()
 {
 	delete _pNested;
@@ -88,13 +88,13 @@ const char* Exception::className() const throw()
 	return typeid(*this).name();
 }
 
-	
+
 const char* Exception::what() const throw()
 {
 	return name();
 }
 
-	
+
 std::string Exception::displayText() const
 {
 	std::string txt = name();
@@ -111,7 +111,12 @@ void Exception::extendedMessage(const std::string& arg)
 {
 	if (!arg.empty())
 	{
-		if (!_msg.empty()) _msg.append(": ");
+		if (!_msg.empty())
+        {
+            if (_msg.ends_with('.'))
+                _msg.pop_back();
+            _msg.append(": ");
+        }
 		_msg.append(arg);
 	}
 }

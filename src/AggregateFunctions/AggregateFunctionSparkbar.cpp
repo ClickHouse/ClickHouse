@@ -29,7 +29,7 @@ namespace ErrorCodes
 namespace
 {
 
-template<typename X, typename Y>
+template <typename X, typename Y>
 struct AggregateFunctionSparkbarData
 {
     /// TODO: calculate histogram instead of storing all points
@@ -129,7 +129,7 @@ struct AggregateFunctionSparkbarData
     }
 };
 
-template<typename X, typename Y>
+template <typename X, typename Y>
 class AggregateFunctionSparkbar final
     : public IAggregateFunctionDataHelper<AggregateFunctionSparkbarData<X, Y>, AggregateFunctionSparkbar<X, Y>>
 {
@@ -163,8 +163,8 @@ private:
 
         if (data.points.empty())
         {
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? 1 : offsets.back() + 1);
+            auto last = offsets.back();
+            offsets.push_back(last);
             return;
         }
 
@@ -174,8 +174,7 @@ private:
         if (from_x >= to_x)
         {
             size_t sz = updateFrame(values, Y{8});
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
+            offsets.push_back(offsets.back() + sz);
             return;
         }
 
@@ -231,8 +230,8 @@ private:
 
         if (y_max == 0)
         {
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? 1 : offsets.back() + 1);
+            auto last = offsets.back();
+            offsets.push_back(last);
             return;
         }
 
@@ -266,8 +265,7 @@ private:
         for (const auto & y : histogram)
             sz += updateFrame(values, y);
 
-        values.push_back('\0');
-        offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
+        offsets.push_back(offsets.back() + sz);
     }
 
 public:

@@ -62,8 +62,6 @@ public:
     /// because all tables may be already unloaded when we destroy AsynchronousInsertQueue
     void flushAndShutdown();
 
-private:
-
     struct InsertQuery
     {
     public:
@@ -93,6 +91,7 @@ private:
         std::vector<SettingChange> setting_changes;
     };
 
+private:
     struct DataChunk : public std::variant<String, Block>
     {
         using std::variant<String, Block>::variant;

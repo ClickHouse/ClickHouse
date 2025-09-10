@@ -98,7 +98,10 @@ size_t ReadWriteBufferFromHTTP::getOffset() const
 
 void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const
 {
-    request.setHost(current_uri.getHost());
+    if (current_uri.getPort())
+        request.setHost(current_uri.getHost(), current_uri.getPort());
+    else
+        request.setHost(current_uri.getHost());
 
     if (out_stream_callback)
         request.setChunkedTransferEncoding(true);

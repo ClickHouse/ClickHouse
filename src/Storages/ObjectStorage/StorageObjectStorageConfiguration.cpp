@@ -46,10 +46,11 @@ ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
     bool supports_subset_of_columns,
+    bool supports_tuple_elements,
     ContextPtr local_context,
     const PrepareReadingFromFormatHiveParams & hive_parameters)
 {
-    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, hive_parameters);
+    return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements, hive_parameters);
 }
 
 std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTableStructureFromMetadata() const
@@ -81,8 +82,11 @@ void StorageObjectStorageConfiguration::initialize(
     }
     else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
     {
-        // Promote to wildcard in case it is not data lake to make it backwards compatible
-        configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+        if (configuration_to_initialize.getRawPath().hasPartitionWildcard())
+        {
+            // Promote to wildcard in case it is not data lake to make it backwards compatible
+            configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+        }
     }
 
     if (configuration_to_initialize.format == "auto")
@@ -203,5 +207,12 @@ void StorageObjectStorageConfiguration::assertInitialized() const
     }
 }
 
+void StorageObjectStorageConfiguration::addDeleteTransformers(
+    ObjectInfoPtr,
+    QueryPipelineBuilder &,
+    const std::optional<FormatSettings> &,
+    ContextPtr) const
+{
+}
 
 }

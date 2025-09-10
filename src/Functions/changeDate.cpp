@@ -345,7 +345,7 @@ REGISTER_FUNCTION(ChangeDate)
 {
     {
         FunctionDocumentation::Description description = "Changes the year component of a date or date time.";
-        FunctionDocumentation::Syntax syntax = "changeYear(date_or_datetime, value);";
+        FunctionDocumentation::Syntax syntax = "changeYear(date_or_datetime, value)";
         FunctionDocumentation::Arguments arguments = {
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
@@ -361,7 +361,7 @@ REGISTER_FUNCTION(ChangeDate)
     }
     {
         FunctionDocumentation::Description description = "Changes the month component of a date or date time.";
-        FunctionDocumentation::Syntax syntax = "changeMonth(date_or_datetime, value);";
+        FunctionDocumentation::Syntax syntax = "changeMonth(date_or_datetime, value)";
         FunctionDocumentation::Arguments arguments = {
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
@@ -377,7 +377,7 @@ REGISTER_FUNCTION(ChangeDate)
     }
     {
         FunctionDocumentation::Description description = "Changes the day component of a date or date time.";
-        FunctionDocumentation::Syntax syntax = "changeDay(date_or_datetime, value);";
+        FunctionDocumentation::Syntax syntax = "changeDay(date_or_datetime, value)";
         FunctionDocumentation::Arguments arguments = {
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
@@ -393,7 +393,7 @@ REGISTER_FUNCTION(ChangeDate)
     }
     {
         FunctionDocumentation::Description description = "Changes the hour component of a date or date time.";
-        FunctionDocumentation::Syntax syntax = "changeHour(date_or_datetime, value);";
+        FunctionDocumentation::Syntax syntax = "changeHour(date_or_datetime, value)";
         FunctionDocumentation::Arguments arguments = {
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
@@ -409,7 +409,7 @@ REGISTER_FUNCTION(ChangeDate)
     }
     {
         FunctionDocumentation::Description description = "Changes the minute component of a `date or date time`.";
-        FunctionDocumentation::Syntax syntax = "changeMinute(date_or_datetime, value);";
+        FunctionDocumentation::Syntax syntax = "changeMinute(date_or_datetime, value)";
         FunctionDocumentation::Arguments arguments = {
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}
@@ -425,7 +425,7 @@ REGISTER_FUNCTION(ChangeDate)
     }
     {
         FunctionDocumentation::Description description = "Changes the second component of a date or date time.";
-        FunctionDocumentation::Syntax syntax = "changeSecond(date_or_datetime, value);";
+        FunctionDocumentation::Syntax syntax = "changeSecond(date_or_datetime, value)";
         FunctionDocumentation::Arguments arguments = {
             {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
             {"value", "The new value.", {"(U)Int*"}}

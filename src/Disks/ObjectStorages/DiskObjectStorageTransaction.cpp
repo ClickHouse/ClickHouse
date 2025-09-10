@@ -1,5 +1,6 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/StoredObject.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #include <Disks/IO/WriteBufferFromDistributedCache.h>
 #include <Core/DistributedCacheProtocol.h>
@@ -93,7 +94,7 @@ struct PureMetadataObjectStorageOperation final : public IDiskObjectStorageOpera
     {
     }
 
-    void finalize() override
+    void finalize(StoredObjects & /*to_remove*/) override
     {
     }
 
@@ -181,7 +182,7 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 
     }
 
-    void finalize() override
+    void finalize(StoredObjects & to_remove) override
     {
         /// The client for an object storage may do retries internally
         /// and there could be a situation when a query succeeded, but the response is lost
@@ -191,7 +192,7 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
         if (!delete_metadata_only && !objects_to_remove.objects.empty()
             && objects_to_remove.unlink_outcome->num_hardlinks == 0)
         {
-            object_storage.removeObjectsIfExist(objects_to_remove.objects);
+            to_remove.append_range(std::move(objects_to_remove.objects));
         }
     }
 };
@@ -283,7 +284,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
     {
     }
 
-    void finalize() override
+    void finalize(StoredObjects & to_remove) override
     {
         StoredObjects remove_from_remote;
         for (auto && [objects, unlink_outcome] : objects_to_remove)
@@ -295,7 +296,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
         /// Read comment inside RemoveObjectStorageOperation class
         /// TL;DR Don't pay any attention to 404 status code
         if (!remove_from_remote.empty())
-            object_storage.removeObjectsIfExist(remove_from_remote);
+            to_remove.append_range(std::move(remove_from_remote));
 
         if (!keep_all_batch_data)
         {
@@ -400,7 +401,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
     {
     }
 
-    void finalize() override
+    void finalize(StoredObjects & to_remove) override
     {
         if (!keep_all_batch_data)
         {
@@ -420,7 +421,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
 
             /// Read comment inside RemoveObjectStorageOperation class
             /// TL;DR Don't pay any attention to 404 status code
-            object_storage.removeObjectsIfExist(remove_from_remote);
+            to_remove.append_range(std::move(remove_from_remote));
 
             LOG_DEBUG(
                 getLogger("RemoveRecursiveObjectStorageOperation"),
@@ -477,12 +478,12 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
 
     }
 
-    void finalize() override
+    void finalize(StoredObjects & to_remove) override
     {
         /// Read comment inside RemoveObjectStorageOperation class
         /// TL;DR Don't pay any attention to 404 status code
         if (!objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(objects_to_remove);
+            to_remove.append_range(std::move(objects_to_remove));
     }
 };
 
@@ -520,7 +521,7 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
         object_storage.removeObjectIfExists(object);
     }
 
-    void finalize() override
+    void finalize(StoredObjects & /*to_remove*/) override
     {
     }
 };
@@ -590,7 +591,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
          destination_object_storage.removeObjectsIfExist(created_objects);
     }
 
-    void finalize() override
+    void finalize(StoredObjects & /*to_remove*/) override
     {
     }
 
@@ -643,13 +644,13 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
 
     }
 
-    void finalize() override
+    void finalize(StoredObjects & to_remove) override
     {
         if (!truncate_outcome)
             return;
 
         if (!truncate_outcome->objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(truncate_outcome->objects_to_remove);
+            to_remove.append_range(std::move(truncate_outcome->objects_to_remove));
     }
 };
 
@@ -683,7 +684,9 @@ struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOp
         object_storage.removeObjectIfExists(object);
     }
 
-    void finalize() override {}
+    void finalize(StoredObjects & /*to_remove*/) override
+    {
+    }
 };
 
 }
@@ -1100,11 +1103,12 @@ void DiskObjectStorageTransaction::commit(const TransactionCommitOptionsVariant 
         throw;
     }
 
+    StoredObjects objects_to_remove;
     for (const auto & operation : operations_to_execute)
-        operation->finalize();
+        operation->finalize(objects_to_remove);
 
+    object_storage.removeObjectsIfExist(objects_to_remove);
     operations_to_execute.clear();
-
     is_committed = true;
 }
 
@@ -1173,11 +1177,12 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
         throw;
     }
 
+    StoredObjects objects_to_remove;
     for (const auto & operation : operations_to_execute)
-        operation->finalize();
+        operation->finalize(objects_to_remove);
 
+    object_storage.removeObjectsIfExist(objects_to_remove);
     operations_to_execute.clear();
-
     is_committed = true;
     return outcome;
 }

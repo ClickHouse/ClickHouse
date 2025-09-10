@@ -7,13 +7,12 @@ slug: /sql-reference/statements/update
 title: 'The Lightweight UPDATE Statement'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import BetaBadge from '@theme/badges/BetaBadge';
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 :::note
-Lightweight updates are currently experimental.
-To enable them, please first run `SET allow_experimental_lightweight_update = 1`.
+Lightweight updates are currently beta.
 If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
 
@@ -22,7 +21,7 @@ It is called "lightweight update" to contrast it to the [`ALTER TABLE ... UPDATE
 It is only available for the [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) table engine family.
 
 ```sql
-UPDATE [db.]table SET column1 = expr1 [, ...] [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE filter_expr;
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr;
 ```
 
 The `filter_expr` must be of type `UInt8`. This query updates values of the specified columns to the values of the corresponding expressions in rows for which the `filter_expr` takes a non-zero value.
@@ -44,7 +43,7 @@ The process of updating is similar to a `INSERT ... SELECT ...` query but the `U
 
 The updated values are:
 - **Immediately visible** in `SELECT` queries through patches application
-- **Physically materialized** only during subsequent merges and mutations  
+- **Physically materialized** only during subsequent merges and mutations
 - **Automatically cleaned up** once all active parts have the patches materialized
 ## Lightweight updates requirements {#lightweight-update-requirements}
 
@@ -66,7 +65,7 @@ A [lightweight `DELETE`](/sql-reference/statements/delete) query can be run as a
 
 **Potential performance impacts:**
 - Adds an overhead to `SELECT` queries that need to apply patches
-- [Skipping indexes](/engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-data_skipping-indexes) and [projections](/engines/table-engines/mergetree-family/mergetree.md/#projections) will not be used if there are patch parts for a table, including for data parts that don't have patches to be applied.
+- [Skipping indexes](/engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-data_skipping-indexes) will not be used for columns in data parts that have patches to be applied. [Projections](/engines/table-engines/mergetree-family/mergetree.md/#projections) will not be used if there are patch parts for table, including for data parts that don't have patches to be applied.
 - Small updates which are too frequent may lead to a "too many parts" error. It is recommended to batch several updates into a single query, for example by putting ids for updates in a single `IN` clause in the `WHERE` clause
 - Lightweight updates are designed to update small amounts of rows (up to about 10% of the table). If you need to update a larger amount, it is recommended to use the [`ALTER TABLE ... UPDATE`](/sql-reference/statements/alter/update) mutation
 
