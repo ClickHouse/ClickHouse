@@ -71,6 +71,7 @@ CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
 LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "tests/integration/compose/")
 DEFAULT_ENV_NAME = ".env"
 
+
 def find_default_config_path():
     path = os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", None)
     if path is not None:
@@ -129,6 +130,7 @@ try:
     os.remove(NET_LOCK_PATH)
 except Exception:
     pass
+
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
@@ -315,6 +317,7 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p.communicate()
     return p.returncode == 0
 
+
 def check_mysql_dotnet_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
         docker_exec(postgresql_java_client_id, "dotnet", "--version"),
@@ -477,6 +480,7 @@ def find_binary(name):
         return bin_path
 
     raise RuntimeError(f"{name} was not found in PATH")
+
 
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
@@ -1836,7 +1840,6 @@ class ClickHouseCluster:
         with_iceberg_catalog=False,
         with_glue_catalog=False,
         with_hms_catalog=False,
-
         with_ytsaurus=False,
         handle_prometheus_remote_write=None,
         handle_prometheus_remote_read=None,
@@ -3913,6 +3916,7 @@ services:
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
+            {lakehouses_path}
         entrypoint: /integration-tests-entrypoint.sh {entrypoint_cmd}
         # Increase it to allow jeprof to dump the profile report and gdb collect stacktraces
         #
@@ -4154,6 +4158,9 @@ class ClickHouseInstance:
         else:
             self.keytab_path = ""
             self.krb5_conf = ""
+
+        # Use a common path for data lakes on the filesystem
+        self.lakehouses_path = "- /lakehouses:/lakehouses" if with_dolor else ""
 
         self.docker_client = None
         self.ip_address = None
@@ -5293,7 +5300,7 @@ class ClickHouseInstance:
         # async replication is only supported in version 23.9+
         # for tags that don't specify a version we assume it has a version of ClickHouse
         # that supports async replication if a test for it is present
-        if (
+        if not self.with_dolor and (
             version == None
             or version["major"] > 23
             or (version["major"] == 23 and version["minor"] >= 9)
@@ -5518,6 +5525,7 @@ class ClickHouseInstance:
                     odbc_ini_path=odbc_ini_path,
                     keytab_path=self.keytab_path,
                     krb5_conf=self.krb5_conf,
+                    lakehouses_path=self.lakehouses_path,
                     entrypoint_cmd=entrypoint_cmd,
                     networks=networks,
                     app_net=app_net,
