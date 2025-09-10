@@ -1893,7 +1893,7 @@ void ZooKeeper::observeOperationIfNeeded(const ZooKeeperRequestPtr & request, co
     }
 
     auto aggregated_zookeeper_log_ = getAggregatedZooKeeperLog();
-    if (!log)
+    if (!aggregated_zookeeper_log_)
     {
         return;
     }
