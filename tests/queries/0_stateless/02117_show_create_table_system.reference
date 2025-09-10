@@ -54,6 +54,7 @@ CREATE TABLE system.clusters
     `database_shard_name` String,
     `database_replica_name` String,
     `is_active` Nullable(UInt8),
+    `unsynced_after_recovery` Nullable(UInt8),
     `replication_lag` Nullable(UInt32),
     `recovery_time` Nullable(UInt64),
     `name` String ALIAS cluster
@@ -90,7 +91,8 @@ CREATE TABLE system.columns
     `numeric_precision_radix` Nullable(UInt64),
     `numeric_scale` Nullable(UInt64),
     `datetime_precision` Nullable(UInt64),
-    `serialization_hint` Nullable(String)
+    `serialization_hint` Nullable(String),
+    `column` String ALIAS name
 )
 ENGINE = SystemColumns
 COMMENT 'Lists all columns from all tables of the current server.'
@@ -264,6 +266,7 @@ CREATE TABLE system.errors
     `value` UInt64,
     `last_error_time` DateTime,
     `last_error_message` String,
+    `last_error_format_string` String,
     `last_error_trace` Array(UInt64),
     `remote` UInt8,
     `query_id` String
@@ -286,7 +289,14 @@ CREATE TABLE system.formats
     `is_output` UInt8,
     `supports_parallel_parsing` UInt8,
     `supports_parallel_formatting` UInt8,
-    `is_tty_friendly` UInt8
+    `is_tty_friendly` UInt8,
+    `content_type` String,
+    `supports_random_access` UInt8,
+    `has_schema_inference` UInt8,
+    `has_external_schema` UInt8,
+    `prefers_large_blocks` UInt8,
+    `supports_append` UInt8,
+    `supports_subsets_of_columns` UInt8
 )
 ENGINE = SystemFormats
 COMMENT 'Contains a list of all the formats along with flags whether a format is suitable for input/output or whether it supports parallelization.'
@@ -1146,6 +1156,7 @@ CREATE TABLE system.tables
     `loading_dependencies_table` Array(String),
     `loading_dependent_database` Array(String),
     `loading_dependent_table` Array(String),
+    `definer` String,
     `table` String ALIAS name
 )
 ENGINE = SystemTables
@@ -1170,7 +1181,7 @@ CREATE TABLE system.users
     `name` String,
     `id` UUID,
     `storage` String,
-    `auth_type` Array(Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10, 'scram_sha256_password' = 11)),
+    `auth_type` Array(Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10, 'scram_sha256_password' = 11, 'no_authentication' = 12)),
     `auth_params` Array(String),
     `host_ip` Array(String),
     `host_names` Array(String),

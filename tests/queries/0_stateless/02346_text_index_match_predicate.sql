@@ -1,8 +1,10 @@
 -- Tags: no-parallel-replicas
 
--- Tests that match() utilizes the inverted index
+-- Tests that match() utilizes the text index
 
 SET allow_experimental_full_text_index = true;
+-- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
+SET use_skip_indexes_on_data_read = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -14,8 +16,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1,
-         min_bytes_for_full_part_storage = 0; -- Text indexes currently don't work with packed parts
+SETTINGS index_granularity = 1;
 INSERT INTO tab VALUES (1, 'Well, Hello ClickHouse !'), (2, 'Well, Hello World !'), (3, 'Good Weather !'), (4, 'Say Hello !'), (5, 'Its An OLAP Database'), (6, 'True World Champion');
 
 SELECT * FROM tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id;

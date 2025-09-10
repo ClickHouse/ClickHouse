@@ -6,7 +6,7 @@
 #include <barrier>
 #include <atomic>
 
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/CancelToken.h>
 #include <Common/SharedMutex.h>
 #include <Common/CancelableSharedMutex.h>
@@ -38,7 +38,7 @@ void TestSharedMutex()
     {
         T sm;
         std::atomic<int> test(0);
-        std::barrier sync(readers + 1);
+        std::barrier<std::__empty_completion> sync(readers + 1);
 
         std::vector<std::thread> threads;
         threads.reserve(readers);
@@ -71,7 +71,7 @@ void TestSharedMutex()
     {
         T sm;
         int test = 0;
-        std::barrier sync(writers);
+        std::barrier<std::__empty_completion> sync(writers);
         std::vector<std::thread> threads;
 
         threads.reserve(writers);
@@ -97,7 +97,7 @@ void TestSharedMutex()
     {
         T sm;
         std::atomic<int> test(0);
-        std::barrier sync(readers + 1);
+        std::barrier<std::__empty_completion> sync(readers + 1);
 
         std::vector<std::thread> threads;
         threads.reserve(readers);
@@ -145,8 +145,8 @@ void TestSharedMutexCancelReader()
     T sm;
     std::atomic<int> successes(0);
     std::atomic<int> cancels(0);
-    std::barrier sync(readers + 1);
-    std::barrier cancel_sync(readers / 2 + 1);
+    std::barrier<std::__empty_completion> sync(readers + 1);
+    std::barrier<std::__empty_completion> cancel_sync(readers / 2 + 1);
     std::vector<std::thread> threads;
 
     std::mutex m;
@@ -219,7 +219,7 @@ void TestSharedMutexCancelWriter()
     T sm;
     std::atomic<int> successes(0);
     std::atomic<int> cancels(0);
-    std::barrier sync(writers);
+    std::barrier<std::__empty_completion> sync(writers);
     std::vector<std::thread> threads;
 
     std::mutex m;

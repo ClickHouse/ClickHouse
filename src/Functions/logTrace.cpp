@@ -41,7 +41,7 @@ namespace
         {
             String message;
             if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
-                message = col->getDataAt(0).data;
+                message = col->getDataAt(0).toString();
             else
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Constant string",
                     getName());
@@ -57,7 +57,32 @@ namespace
 
 REGISTER_FUNCTION(LogTrace)
 {
-    factory.registerFunction<FunctionLogTrace>();
+    FunctionDocumentation::Description description = R"(
+Emits a trace log message to the server log for each [Block](/development/architecture/#block).
+    )";
+    FunctionDocumentation::Syntax syntax = "logTrace(message)";
+    FunctionDocumentation::Arguments arguments = {
+        {"message", "Message that is emitted to the server log.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `0` always.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Basic example",
+        R"(
+SELECT logTrace('logTrace message');
+        )",
+        R"(
+┌─logTrace('logTrace message')─┐
+│                            0 │
+└──────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionLogTrace>(documentation);
 }
 
 }

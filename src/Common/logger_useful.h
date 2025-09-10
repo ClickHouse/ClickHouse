@@ -26,7 +26,7 @@ namespace impl
     [[maybe_unused]] inline LoggerPtr getLoggerHelper(const DB::AtomicLogger & logger) { return logger.load(); }
     [[maybe_unused]] inline LogToStrImpl getLoggerHelper(LogToStrImpl && logger) { return logger; }
     [[maybe_unused]] inline LogFrequencyLimiterImpl getLoggerHelper(LogFrequencyLimiterImpl && logger) { return logger; }
-    [[maybe_unused]] inline LogSeriesLimiterPtr getLoggerHelper(LogSeriesLimiterPtr & logger) { return logger; }
+    [[maybe_unused]] inline LogSeriesLimiterPtr getLoggerHelper(const LogSeriesLimiterPtr & logger) { return logger; }
     [[maybe_unused]] inline LogSeriesLimiter * getLoggerHelper(LogSeriesLimiter & logger) { return &logger; }
 }
 
@@ -79,20 +79,20 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
         break;                                                                                                      \
                                                                                                                     \
     Stopwatch _logger_watch;                                                                                        \
+    ProfileEvents::incrementForLogMessage(PRIORITY);                                                                \
+    auto _channel = _logger->getChannel();                                                                          \
+    if (!_channel)                                                                                                  \
+        break;                                                                                                      \
+                                                                                                                    \
+    constexpr size_t _nargs = CH_VA_ARGS_NARGS(__VA_ARGS__);                                                        \
+    using LogTypeInfo = FormatStringTypeInfo<std::decay_t<decltype(LOG_IMPL_FIRST_ARG(__VA_ARGS__))>>;              \
+                                                                                                                    \
+    std::string_view _format_string;                                                                                \
+    std::string _formatted_message;                                                                                 \
+    std::vector<std::string> _format_string_args;                                                                   \
+                                                                                                                    \
     try                                                                                                             \
     {                                                                                                               \
-        ProfileEvents::incrementForLogMessage(PRIORITY);                                                            \
-        auto _channel = _logger->getChannel();                                                                      \
-        if (!_channel)                                                                                              \
-            break;                                                                                                  \
-                                                                                                                    \
-        constexpr size_t _nargs = CH_VA_ARGS_NARGS(__VA_ARGS__);                                                    \
-        using LogTypeInfo = FormatStringTypeInfo<std::decay_t<decltype(LOG_IMPL_FIRST_ARG(__VA_ARGS__))>>;          \
-                                                                                                                    \
-        std::string_view _format_string;                                                                            \
-        std::string _formatted_message;                                                                             \
-        std::vector<std::string> _format_string_args;                                                               \
-                                                                                                                    \
         if constexpr (LogTypeInfo::is_static)                                                                       \
         {                                                                                                           \
             formatStringCheckArgsNum(LOG_IMPL_FIRST_ARG(__VA_ARGS__), _nargs - 1);                                  \
@@ -107,14 +107,26 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
         }                                                                                                           \
         else                                                                                                        \
         {                                                                                                           \
-             _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
+            _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
         }                                                                                                           \
+    }                                                                                                               \
+    /* We want to propagate all exceptions from arguments evaluation, e.g.                                       */ \
+    /* LOG_TRACE(log, "my value is {}", empty_optional.value());                                                 */ \
+    /* because we assume that the user code is to be blamed. Still it means that we have to catch errors that were not a user's fault. */ \
+    catch (const std::bad_alloc & logger_exception)                                                                 \
+    {                                                                                                               \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        const char * logger_exception_message = logger_exception.what();                                            \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
+    }                                                                                                               \
                                                                                                                     \
+    try                                                                                                             \
+    {                                                                                                               \
         std::string _file_function = __FILE__ "; ";                                                                 \
         _file_function += __PRETTY_FUNCTION__;                                                                      \
         Poco::Message _poco_message(_logger->name(), std::move(_formatted_message),                                 \
-            (PRIORITY), _file_function.c_str(), __LINE__, _format_string, _format_string_args);                     \
-        _channel->log(_poco_message);                                                                               \
+            (PRIORITY), std::move(_file_function), __LINE__, _format_string, _format_string_args);                  \
+        _channel->log(std::move(_poco_message));                                                                               \
     }                                                                                                               \
     catch (const Poco::Exception & logger_exception)                                                                \
     {                                                                                                               \

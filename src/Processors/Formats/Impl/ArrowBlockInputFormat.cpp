@@ -1,4 +1,4 @@
-#include "ArrowBlockInputFormat.h"
+#include <Processors/Formats/Impl/ArrowBlockInputFormat.h>
 #include <optional>
 
 #if USE_ARROW
@@ -11,8 +11,8 @@
 #include <arrow/api.h>
 #include <arrow/ipc/reader.h>
 #include <arrow/result.h>
-#include "ArrowBufferedStreams.h"
-#include "ArrowColumnToCHColumn.h"
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 
 
 namespace DB
@@ -24,7 +24,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
+ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_)
     : IInputFormat(header_, &in_)
     , stream(stream_)
     , block_missing_values(getPort().getHeader().columns())
@@ -48,7 +48,14 @@ Chunk ArrowBlockInputFormat::read()
 
         batch_result = stream_reader->Next();
         if (batch_result.ok() && !(*batch_result))
+        {
+            /// Make sure we try to read past the end to fully drain the ReadBuffer (e.g. read
+            /// compression frame footer or HTTP chunked encoding's final empty chunk).
+            /// This is needed for HTTP keepalive.
+            in->eof();
+
             return res;
+        }
 
         if (need_only_count && batch_result.ok())
             return getChunkForCount((*batch_result)->num_rows());
@@ -62,7 +69,10 @@ Chunk ArrowBlockInputFormat::read()
             return {};
 
         if (record_batch_current >= record_batch_total)
+        {
+            in->eof();
             return res;
+        }
 
         if (need_only_count)
         {
@@ -163,6 +173,9 @@ void ArrowBlockInputFormat::prepareReader()
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
         getPort().getHeader(),
         "Arrow",
+        format_settings,
+        std::nullopt,
+        std::nullopt,
         format_settings.arrow.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.date_time_overflow_behavior,
@@ -212,6 +225,7 @@ NamesAndTypesList ArrowSchemaReader::readSchema()
         *schema,
         file_reader ? file_reader->metadata() : nullptr,
         stream ? "ArrowStream" : "Arrow",
+        format_settings,
         format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference,
         format_settings.schema_inference_make_columns_nullable != 0,
         false,
@@ -242,7 +256,7 @@ void registerInputFormatArrow(FormatFactory & factory)
            const RowInputFormatParams & /* params */,
            const FormatSettings & format_settings)
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, sample, false, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, std::make_shared<const Block>(sample), false, format_settings);
         });
     factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
@@ -252,7 +266,7 @@ void registerInputFormatArrow(FormatFactory & factory)
            const RowInputFormatParams & /* params */,
            const FormatSettings & format_settings)
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, sample, true, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, std::make_shared<const Block>(sample), true, format_settings);
         });
 }
 

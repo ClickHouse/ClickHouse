@@ -260,7 +260,6 @@ def test_user_access_ip_change(cluster_ready, node_name):
         user="root",
     )
 
-
     assert_eq_with_retry(
         node3,
         f"SELECT * FROM remote('{node_name}', 'system', 'one')",
@@ -277,6 +276,9 @@ def test_user_access_ip_change(cluster_ready, node_name):
         sleep_time=10,
     )
 
+    node3_ipv6 = node3.ipv6_address
+    node4_ipv6 = node4.ipv6_address
+
     node.set_hosts(
         [
             ("127.255.255.255", "node3"),
@@ -284,18 +286,33 @@ def test_user_access_ip_change(cluster_ready, node_name):
         ],
     )
 
-    node3_ipv6 = node3.ipv6_address
-    node4_ipv6 = node4.ipv6_address
+    # restart the node and return the time taken for restart
+    def restart_with_timing(node, new_ip):
+        """Restart a single node and return the time taken"""
+        start_time = time.time()
+        cluster.restart_instance_with_ip_change(node, new_ip)
+        elapsed = time.time() - start_time
+        return node.name, elapsed
 
-    restart_start_time = time.time()
+    # restart the nodes concurrently and time each node separately
     with ThreadPoolExecutor(max_workers=2) as pool:
-        pool.map(
-            lambda x: cluster.restart_instance_with_ip_change(*x),
-            ((node3, f"2001:3984:3989::1:88{node_num}3"), (node4, f"2001:3984:3989::1:88{node_num}4"))
+        results = list(
+            pool.map(
+                lambda x: restart_with_timing(x[0], x[1]),
+                [
+                    (node3, f"2001:3984:3989::1:88{node_num}3"),
+                    (node4, f"2001:3984:3989::1:88{node_num}4"),
+                ],
+            )
         )
-    restart_elapsed = time.time() - restart_start_time
 
-    if restart_elapsed < 8:
+    # choose the maximum individual restart time for the timing decision
+    max_individual_restart = max(elapsed for _, elapsed in results)
+    logging.info(f"Slowest node restart: {max_individual_restart:.2f}s")
+
+    if max_individual_restart < 5:
+        # Add small buffer to ensure container networking is stable
+        time.sleep(1)
         with pytest.raises(QueryRuntimeException):
             node3.query(f"SELECT * FROM remote('{node_name}', 'system', 'one')")
     else:

@@ -1,6 +1,7 @@
 #include <Storages/StorageMergeTreeIndex.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -39,10 +40,11 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "MergeTreeIndex"; }
+    const char * getStorageEngineName() const override { return "MergeTreeIndex"; }
 
     StorageID source_table_id{StorageID::createEmpty()};
     bool with_marks = false;
+    bool with_minmax = false;
 };
 
 void TableFunctionMergeTreeIndex::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -52,9 +54,9 @@ void TableFunctionMergeTreeIndex::parseArguments(const ASTPtr & ast_function, Co
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function ({}) must have arguments.", quoteString(getName()));
 
     ASTs & args = args_func.at(0)->children;
-    if (args.size() < 2 || args.size() > 3)
+    if (args.size() < 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{}' must have 2 or 3 arguments, got: {}", getName(), args.size());
+            "Table function '{}' must have at least 2 arguments, got: {}", getName(), args.size());
 
     args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
     args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], context);
@@ -66,20 +68,29 @@ void TableFunctionMergeTreeIndex::parseArguments(const ASTPtr & ast_function, Co
     if (!rest_args.empty())
     {
         auto params = getParamsMapFromAST(rest_args, context);
-        auto param = params.extract("with_marks");
 
-        if (!param.empty())
+        auto extract_flag = [&](auto param, const String & param_name) -> UInt64
         {
-            auto & value = param.mapped();
-            if (value.getType() != Field::Types::Bool && value.getType() != Field::Types::UInt64)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Table function '{}' expected bool flag for 'with_marks' argument", getName());
+            if (!param.empty())
+            {
+                auto & value = param.mapped();
+                if (value.getType() != Field::Types::Bool && value.getType() != Field::Types::UInt64)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Table function '{}' expected bool flag for '{}' argument", getName(), param_name);
 
-            if (value.getType() == Field::Types::Bool)
-                with_marks = value.safeGet<bool>();
+                if (value.getType() == Field::Types::Bool)
+                    return value.template safeGet<bool>();
+                else
+                    return value.template safeGet<UInt64>();
+            }
             else
-                with_marks = value.safeGet<UInt64>();
-        }
+            {
+                return 0;
+            }
+        };
+
+        with_marks = extract_flag(params.extract("with_marks"), "with_marks");
+        with_minmax = extract_flag(params.extract("with_minmax"), "with_minmax");
 
         if (!params.empty())
         {
@@ -99,7 +110,7 @@ static NameSet getAllPossibleStreamNames(
     NameSet all_streams;
 
     /// Add the stream with the name of column
-    /// because it may be abcent in serialization streams (e.g. for Tuple type)
+    /// because it may be absent in serialization streams (e.g. for Tuple type)
     /// but in compact parts we write only marks for whole columns, not subsubcolumns.
     auto main_stream_name = escapeForFileName(column.name);
     all_streams.insert(Nested::concatenateName(main_stream_name, "mark"));
@@ -139,6 +150,16 @@ ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextP
     ColumnsDescription columns;
     for (const auto & column : StorageMergeTreeIndex::virtuals_sample_block)
         columns.add({column.name, column.type});
+
+    if (with_minmax)
+    {
+        const auto & partition_key = metadata_snapshot->getPartitionKey();
+        if (!partition_key.column_names.empty() && partition_key.expression)
+        {
+            for (const auto & column : partition_key.expression->getRequiredColumnsWithTypes())
+                columns.add({fmt::format("minmax_{}", column.name), std::make_shared<DataTypeTuple>(DataTypes{column.type, column.type})});
+        }
+    }
 
     for (const auto & column : metadata_snapshot->getPrimaryKey().sample_block)
         columns.add({column.name, column.type});
@@ -183,7 +204,8 @@ StoragePtr TableFunctionMergeTreeIndex::executeImpl(
     auto columns = getActualTableStructure(context, is_insert_query);
 
     StorageID storage_id(getDatabaseName(), table_name);
-    auto res = std::make_shared<StorageMergeTreeIndex>(std::move(storage_id), std::move(source_table), std::move(columns), with_marks);
+    auto res = std::make_shared<StorageMergeTreeIndex>(
+        std::move(storage_id), std::move(source_table), std::move(columns), with_marks, with_minmax);
 
     res->startup();
     return res;
@@ -196,7 +218,7 @@ void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory)
         .documentation =
         {
             .description = "Represents the contents of index and marks files of MergeTree tables. It can be used for introspection",
-            .examples = {{"mergeTreeIndex", "SELECT * FROM mergeTreeIndex(currentDatabase(), mt_table, with_marks = true)", ""}},
+            .examples = {{"mergeTreeIndex", "SELECT * FROM mergeTreeIndex(currentDatabase(), mt_table, with_marks = true, with_minmax = true)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         .allow_readonly = true,

@@ -1,4 +1,3 @@
-
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ColumnNode.h>
@@ -24,6 +23,7 @@
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Analyzer/UnionNode.h>
 
 
 namespace DB
@@ -36,6 +36,7 @@ namespace Setting
     extern const SettingsUInt64 min_external_table_block_size_bytes;
     extern const SettingsBool parallel_replicas_prefer_local_join;
     extern const SettingsBool prefer_global_in_and_join;
+    extern const SettingsBool enable_add_distinct_to_in_subqueries;
 }
 
 namespace ErrorCodes
@@ -198,11 +199,20 @@ private:
 
         if (distributed_product_mode == DistributedProductMode::LOCAL)
         {
-            StorageID remote_storage_id = StorageID{distributed_storage->getRemoteDatabaseName(),
-                distributed_storage->getRemoteTableName()};
-            auto resolved_remote_storage_id = getContext()->resolveStorageID(remote_storage_id);
+            std::optional<StorageID> resolved_remote_storage_id;
+
+            bool database_can_be_changed = distributed_storage->getCluster()->maybeCrossReplication();
+            if (database_can_be_changed)
+                resolved_remote_storage_id = StorageID{{}, distributed_storage->getRemoteTableName()};
+            else
+            {
+                StorageID remote_storage_id = StorageID{distributed_storage->getRemoteDatabaseName(),
+                    distributed_storage->getRemoteTableName()};
+                resolved_remote_storage_id = getContext()->resolveStorageID(remote_storage_id);
+            }
+
             const auto & distributed_storage_columns = table_node_typed.getStorageSnapshot()->metadata->getColumns();
-            auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_columns);
+            auto storage = std::make_shared<StorageDummy>(*resolved_remote_storage_id, distributed_storage_columns);
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
             if (auto table_expression_modifiers = table_node_typed.getTableExpressionModifiers())
                 replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
@@ -244,6 +254,29 @@ private:
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
 };
 
+// Helper function to add DISTINCT to all QueryNode objects inside a query/union subtree
+void addDistinctRecursively(const QueryTreeNodePtr & node)
+{
+    if (auto * query_node = node->as<QueryNode>())
+    {
+        if (!query_node->isDistinct())
+            query_node->setIsDistinct(true);
+    }
+    else if (auto * union_node = node->as<UnionNode>())
+    {
+        auto union_mode = union_node->getUnionMode();
+        // Only add DISTINCT recursively for UNION operations where it's beneficial
+        // For UNION_DISTINCT, the union already ensures distinctness, so adding DISTINCT to subqueries is redundant
+        // For EXCEPT and INTERSECT operations, adding DISTINCT can change the result set semantics
+        if (union_mode == SelectUnionMode::UNION_DEFAULT ||
+            union_mode == SelectUnionMode::UNION_ALL)
+        {
+            for (auto & child : union_node->getQueries().getNodes())
+                addDistinctRecursively(child);
+        }
+    }
+}
+
 /** Execute subquery node and put result in mutable context temporary table.
   * Returns table node that is initialized with temporary table storage.
   */
@@ -270,21 +303,21 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     InterpreterSelectQueryAnalyzer interpreter(subquery_node, context_copy, subquery_options);
     auto & query_plan = interpreter.getQueryPlan();
 
-    auto sample_block_with_unique_names = query_plan.getCurrentHeader();
+    auto sample_block_with_unique_names = *query_plan.getCurrentHeader();
     makeUniqueColumnNamesInBlock(sample_block_with_unique_names);
 
-    if (!blocksHaveEqualStructure(sample_block_with_unique_names, query_plan.getCurrentHeader()))
+    if (!blocksHaveEqualStructure(sample_block_with_unique_names, *query_plan.getCurrentHeader()))
     {
         auto actions_dag = ActionsDAG::makeConvertingActions(
-            query_plan.getCurrentHeader().getColumnsWithTypeAndName(),
+            query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
             sample_block_with_unique_names.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position);
         auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
         query_plan.addStep(std::move(converting_step));
     }
 
-    Block sample = interpreter.getSampleBlock();
-    NamesAndTypesList columns = sample.getNamesAndTypesList();
+    auto sample = interpreter.getSampleBlock();
+    NamesAndTypesList columns = sample->getNamesAndTypesList();
 
     auto external_storage_holder = TemporaryTableHolder(
         mutable_context,
@@ -305,7 +338,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     size_t min_block_size_rows = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_rows];
     size_t min_block_size_bytes = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_bytes];
-    auto squashing = std::make_shared<SimpleSquashingChunksTransform>(builder->getHeader(), min_block_size_rows, min_block_size_bytes);
+    auto squashing = std::make_shared<SimpleSquashingChunksTransform>(builder->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
 
     builder->resize(1);
     builder->addTransform(std::move(squashing));
@@ -332,8 +365,7 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
     {
         subquery_node = join_table_expression;
     }
-    else if (
-        join_table_expression_node_type == QueryTreeNodeType::TABLE || join_table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION)
+    else if (join_table_expression_node_type == QueryTreeNodeType::TABLE || join_table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION)
     {
         auto columns_it = column_source_to_columns.find(join_table_expression);
         const NamesAndTypes & columns = columns_it != column_source_to_columns.end() ? columns_it->second.columns : NamesAndTypes();
@@ -367,6 +399,8 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
 
+    bool enable_add_distinct_to_in_subqueries = planner_context->getQueryContext()->getSettingsRef()[Setting::enable_add_distinct_to_in_subqueries];
+
     for (const auto & global_in_or_join_node : global_in_or_join_nodes)
     {
         if (auto * join_node = global_in_or_join_node.query_node->as<JoinNode>())
@@ -386,8 +420,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Unexpected global join kind: {}", toString(join_kind));
             }
 
-            auto subquery_node
-                = getSubqueryFromTableExpression(join_table_expression, column_source_to_columns, planner_context->getQueryContext());
+            auto subquery_node = getSubqueryFromTableExpression(join_table_expression, column_source_to_columns, planner_context->getQueryContext());
 
             auto temporary_table_expression_node = executeSubqueryNode(subquery_node,
                 planner_context->getMutableQueryContext(),
@@ -415,11 +448,15 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                         subquery_to_execute,
                         planner_context->getQueryContext());
 
+                // If DISTINCT optimization is enabled, add DISTINCT before executing the subquery
+                if (enable_add_distinct_to_in_subqueries)
+                    addDistinctRecursively(subquery_to_execute);
+
                 temporary_table_expression_node = executeSubqueryNode(
                     subquery_to_execute,
                     planner_context->getMutableQueryContext(),
                     global_in_or_join_node.subquery_depth);
-                    replacement_table_expression = temporary_table_expression_node;
+                replacement_table_expression = temporary_table_expression_node;
             }
             else
             {

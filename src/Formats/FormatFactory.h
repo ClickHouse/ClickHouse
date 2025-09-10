@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatFilterInfo.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ParallelReadBuffer.h>
@@ -47,6 +49,8 @@ using RowOutputFormatPtr = std::shared_ptr<IRowOutputFormat>;
 
 template <typename Allocator>
 struct Memory;
+
+struct FormatParserSharedResources;
 
 FormatSettings getFormatSettings(const ContextPtr & context);
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings);
@@ -97,13 +101,14 @@ private:
         const FormatSettings & settings,
         const ReadSettings & read_settings,
         bool is_remote_fs,
-        size_t max_download_threads,
-        size_t max_parsing_threads)>;
+        FormatParserSharedResourcesPtr parser_shared_resources,
+        FormatFilterInfoPtr format_filter_info)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & settings)>;
+            const FormatSettings & settings,
+            FormatFilterInfoPtr format_filter_info)>;
 
     /// Some input formats can have non trivial readPrefix() and readSuffix(),
     /// so in some cases there is no possibility to use parallel parsing.
@@ -113,6 +118,9 @@ private:
     /// Some formats can support append depending on settings.
     /// The checker should return true if format support append.
     using AppendSupportChecker = std::function<bool(const FormatSettings & settings)>;
+
+    /// Obtain HTTP content-type for the output format.
+    using ContentTypeGetter = std::function<String(const std::optional<FormatSettings> & settings)>;
 
     using SchemaReaderCreator = std::function<SchemaReaderPtr(ReadBuffer & in, const FormatSettings & settings)>;
     using ExternalSchemaReaderCreator = std::function<ExternalSchemaReaderPtr(const FormatSettings & settings)>;
@@ -128,6 +136,8 @@ private:
     /// The checker should return true if format support append.
     using SubsetOfColumnsSupportChecker = std::function<bool(const FormatSettings & settings)>;
 
+    using PrewhereSupportChecker = std::function<bool(const FormatSettings & settings)>;
+
     struct Creators
     {
         String name;
@@ -140,10 +150,12 @@ private:
         bool supports_parallel_formatting{false};
         bool prefers_large_blocks{false};
         bool is_tty_friendly{true}; /// If false, client will ask before output in the terminal.
+        ContentTypeGetter content_type = [](const std::optional<FormatSettings> &){ return "text/plain; charset=UTF-8"; };
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
         AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter;
         SubsetOfColumnsSupportChecker subset_of_columns_support_checker;
+        PrewhereSupportChecker prewhere_support_checker;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -157,6 +169,7 @@ public:
     ///    To enable it, make sure `buf` is a SeekableReadBuffer implementing readBigAt().
     ///  * Parallel parsing.
     /// `buf` must outlive the returned IInputFormat.
+    /// The caller should make sure getFormatParsingThreadPool() is initialized.
     InputFormatPtr getInput(
         const String & name,
         ReadBuffer & buf,
@@ -164,8 +177,8 @@ public:
         const ContextPtr & context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt,
-        std::optional<size_t> max_parsing_threads = std::nullopt,
-        std::optional<size_t> max_download_threads = std::nullopt,
+        FormatParserSharedResourcesPtr parser_shared_resources = nullptr,
+        FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(),
         // affects things like buffer sizes and parallel reading
         bool is_remote_fs = false,
         // allows to do: buf -> parallel read -> decompression,
@@ -179,19 +192,19 @@ public:
         WriteBuffer & buf,
         const Block & sample,
         const ContextPtr & context,
-        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+        const std::optional<FormatSettings> & format_settings = std::nullopt,
+        FormatFilterInfoPtr format_filter_info = nullptr) const;
 
     OutputFormatPtr getOutputFormat(
         const String & name,
         WriteBuffer & buf,
         const Block & sample,
         const ContextPtr & context,
-        const std::optional<FormatSettings> & _format_settings = std::nullopt) const;
+        const std::optional<FormatSettings> & _format_settings = std::nullopt,
+        FormatFilterInfoPtr format_filter_info = nullptr) const;
 
-    String getContentType(
-        const String & name,
-        const ContextPtr & context,
-        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+    /// Content-Type to set when sending HTTP response with this output format.
+    String getContentType(const String & name, const std::optional<FormatSettings> & settings) const;
 
     SchemaReaderPtr getSchemaReader(
         const String & name,
@@ -238,9 +251,15 @@ public:
     void markOutputFormatPrefersLargeBlocks(const String & name);
     void markOutputFormatNotTTYFriendly(const String & name);
 
+    void setContentType(const String & name, const String & content_type);
+    void setContentType(const String & name, ContentTypeGetter content_type);
+
     void markFormatSupportsSubsetOfColumns(const String & name);
     void registerSubsetOfColumnsSupportChecker(const String & name, SubsetOfColumnsSupportChecker subset_of_columns_support_checker);
     bool checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
+
+    void registerPrewhereSupportChecker(const String & name, PrewhereSupportChecker prewhere_support_checker);
+    bool checkIfFormatSupportsPrewhere(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
     bool checkIfFormatHasSchemaReader(const String & name) const;
     bool checkIfFormatHasExternalSchemaReader(const String & name) const;
@@ -282,7 +301,7 @@ private:
         const FormatSettings & format_settings,
         const Settings & settings,
         bool is_remote_fs,
-        size_t max_download_threads) const;
+        const FormatParserSharedResourcesPtr & parser_shared_resources) const;
 };
 
 }

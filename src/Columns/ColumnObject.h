@@ -31,7 +31,7 @@ public:
         Source source;
         /// Statistics for dynamic paths: (path) -> (total number of not-null values).
         std::unordered_map<String, size_t> dynamic_paths_statistics;
-        /// Statistics for paths in shared data: path) -> (total number of not-null values).
+        /// Statistics for paths in shared data: (path) -> (total number of not-null values).
         /// We don't store statistics for all paths in shared data but only for some subset of them
         /// (is 10000 a good limit? It should not be expensive to store 10000 paths per part)
         static const size_t MAX_SHARED_DATA_STATISTICS_SIZE = 10000;
@@ -146,6 +146,7 @@ public:
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
+    std::optional<size_t> getSerializedValueSize(size_t) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
@@ -230,6 +231,13 @@ public:
         return {assert_cast<ColumnString *>(&column_tuple.getColumn(0)), assert_cast<ColumnString *>(&column_tuple.getColumn(1))};
     }
 
+    static std::tuple<ColumnString *, ColumnString *, Offsets *> getSharedDataPathsValuesAndOffsets(IColumn & shared_data_column)
+    {
+        auto & column_array = assert_cast<ColumnArray &>(shared_data_column);
+        auto & column_tuple = assert_cast<ColumnTuple &>(column_array.getData());
+        return {assert_cast<ColumnString *>(&column_tuple.getColumn(0)), assert_cast<ColumnString *>(&column_tuple.getColumn(1)), &column_array.getOffsets()};
+    }
+
     std::pair<const ColumnString *, const ColumnString *> getSharedDataPathsAndValues() const
     {
         const auto & column_array = assert_cast<const ColumnArray &>(*shared_data);
@@ -237,15 +245,25 @@ public:
         return {assert_cast<const ColumnString *>(&column_tuple.getColumn(0)), assert_cast<const ColumnString *>(&column_tuple.getColumn(1))};
     }
 
+    static std::tuple<const ColumnString *, const ColumnString *, const Offsets *> getSharedDataPathsValuesAndOffsets(const IColumn & shared_data_column)
+    {
+        const auto & column_array = assert_cast<const ColumnArray &>(shared_data_column);
+        const auto & column_tuple = assert_cast<const ColumnTuple &>(column_array.getData());
+        return {assert_cast<const ColumnString *>(&column_tuple.getColumn(0)), assert_cast<const ColumnString *>(&column_tuple.getColumn(1)), &column_array.getOffsets()};
+    }
+
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
     size_t getGlobalMaxDynamicPaths() const { return global_max_dynamic_paths; }
+    DataTypePtr getDynamicType() const { return std::make_shared<DataTypeDynamic>(max_dynamic_types); }
 
     /// Try to add new dynamic path. Returns pointer to the new dynamic
     /// path column or nullptr if limit on dynamic paths is reached.
     ColumnDynamic * tryToAddNewDynamicPath(std::string_view path);
     /// Throws an exception if cannot add.
     void addNewDynamicPath(std::string_view path);
+    void addNewDynamicPath(std::string_view path, MutableColumnPtr column);
+    bool canAddNewDynamicPath() const { return dynamic_paths.size() < max_dynamic_paths; }
 
     void setDynamicPaths(const std::vector<String> & paths);
     void setDynamicPaths(const std::vector<std::pair<String, ColumnPtr>> & paths);
@@ -253,7 +271,7 @@ public:
     void setGlobalMaxDynamicPaths(size_t global_max_dynamic_paths_);
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 
-    static void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const IColumn & column, size_t n);
+    static void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const ColumnDynamic & column, size_t n);
     static void deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column);
 
     /// Paths in shared data are sorted in each row. Use this method to find the lower bound for specific path in the row.
@@ -274,7 +292,7 @@ private:
     std::vector<std::string_view> sorted_typed_paths;
     /// Map path -> column for dynamically added paths. All columns
     /// here are Dynamic columns. This set of paths can be extended
-    /// during inerts into the column.
+    /// during inserts into the column.
     PathToColumnMap dynamic_paths;
     /// Sorted list of dynamic paths. Used to avoid sorting paths every time in some methods.
     std::set<std::string_view> sorted_dynamic_paths;

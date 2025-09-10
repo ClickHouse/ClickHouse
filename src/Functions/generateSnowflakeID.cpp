@@ -1,12 +1,12 @@
+#include <Functions/generateSnowflakeID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsRandom.h>
 #include <Functions/FunctionHelpers.h>
 #include <Core/ServerUUID.h>
-#include <Common/Logger.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
-#include "base/types.h"
+#include <base/types.h>
 
 namespace DB
 {
@@ -147,6 +147,13 @@ struct Data
 
 }
 
+uint64_t generateSnowflakeID()
+{
+    Data data;
+    SnowflakeId snowflake_id = data.reserveRange(getMachineId(), 1);
+    return fromSnowflakeId(snowflake_id);
+}
+
 class FunctionGenerateSnowflakeID : public IFunction
 {
 public:
@@ -219,10 +226,10 @@ REGISTER_FUNCTION(GenerateSnowflakeID)
     FunctionDocumentation::Description description = R"(Generates a Snowflake ID. The generated Snowflake ID contains the current Unix timestamp in milliseconds (41 + 1 top zero bits), followed by a machine id (10 bits), and a counter (12 bits) to distinguish IDs within a millisecond. For any given timestamp (unix_ts_ms), the counter starts at 0 and is incremented by 1 for each new Snowflake ID until the timestamp changes. In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to 0. Function generateSnowflakeID guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.)";
     FunctionDocumentation::Syntax syntax = "generateSnowflakeID([expression, [machine_id]])";
     FunctionDocumentation::Arguments arguments = {
-        {"expression", "The expression is used to bypass common subexpression elimination if the function is called multiple times in a query but otherwise ignored. Optional."},
-        {"machine_id", "A machine ID, the lowest 10 bits are used. Optional."}
+        {"expression", "Optional. The expression is used to bypass common subexpression elimination if the function is called multiple times in a query but otherwise ignored."},
+        {"machine_id", "Optional. A machine ID, the lowest 10 bits are used."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "A value of type UInt64";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the Snowflake ID.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {{"no_arguments", "SELECT generateSnowflakeID()", "7201148511606784000"}, {"with_machine_id", "SELECT generateSnowflakeID(1)", "7201148511606784001"}, {"with_expression_and_machine_id", "SELECT generateSnowflakeID('some_expression', 1)", "7201148511606784002"}};
     FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;

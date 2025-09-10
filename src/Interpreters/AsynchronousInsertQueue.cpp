@@ -108,12 +108,12 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const std::optional<UUID> & user_id_,
     const std::vector<UUID> & current_roles_,
     const Settings & settings_,
-    DataKind data_kind_)
+    AsynchronousInsertQueueDataKind data_kind_)
     : query(query_->clone())
     , query_str(query->formatWithSecretsOneLine())
     , user_id(user_id_)
     , current_roles(current_roles_)
-    , settings(settings_)
+    , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
 {
     SipHash siphash;
@@ -128,19 +128,34 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
             siphash.update(current_role);
     }
 
-    setting_changes = settings.changes();
-    for (auto it = setting_changes.begin(); it != setting_changes.end(); ++it)
+    setting_changes = settings->changes();
+    for (auto it = setting_changes.begin(); it != setting_changes.end();)
     {
         if (settings_to_skip.contains(it->name))
+        {
             it = setting_changes.erase(it);
+        }
         else
         {
             siphash.update(it->name);
             applyVisitor(FieldVisitorHash(siphash), it->value);
+            ++it;
         }
     }
 
     hash = siphash.get128();
+}
+
+AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
+{
+    query = other.query->clone();
+    query_str = other.query_str;
+    user_id = other.user_id;
+    current_roles = other.current_roles;
+    settings = std::make_unique<Settings>(*other.settings);
+    data_kind = other.data_kind;
+    hash = other.hash;
+    setting_changes = other.setting_changes;
 }
 
 AsynchronousInsertQueue::InsertQuery &
@@ -152,7 +167,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         query_str = other.query_str;
         user_id = other.user_id;
         current_roles = other.current_roles;
-        settings = other.settings;
+        settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;
         setting_changes = other.setting_changes;
@@ -371,7 +386,17 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
 AsynchronousInsertQueue::PushResult
 AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context)
 {
-    query = query->clone();
+    {
+        /// we clone query to avoid modifying the original one
+        /// but we move tail buffer to the new query
+        auto copy_ptr = query;
+        query = query->clone();
+        if (auto * insert_query = copy_ptr->as<ASTInsertQuery>())
+        {
+            if (insert_query->tail)
+                insert_query->tail.reset();
+        }
+    }
     preprocessInsertQuery(query, query_context);
 
     String bytes;
@@ -446,7 +471,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 
     /// If data is parsed on client we don't care of format which is written
     /// in INSERT query. Replace it to put all such queries into one bucket in queue.
-    if (data_kind == DataKind::Preprocessed)
+    if (data_kind == AsynchronousInsertQueueDataKind::Preprocessed)
         insert_query.format = "Native";
 
     /// Query parameters make sense only for format Values.
@@ -484,7 +509,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         auto & data = queue_it->second.data;
         size_t entry_data_size = entry->chunk.byteSize();
 
-        assert(data);
+        chassert(data);
         auto size_in_bytes = data->size_in_bytes;
         data->size_in_bytes += entry_data_size;
         /// We rely on the fact that entries are being added to the list in order of creation time in `scheduleDataProcessingJob()`
@@ -494,9 +519,9 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         LOG_TRACE(log, "Have {} pending inserts with total {} bytes of data for query '{}'",
             data->entries.size(), data->size_in_bytes, key.query_str);
 
-        bool has_enough_bytes = data->size_in_bytes >= key.settings[Setting::async_insert_max_data_size];
+        bool has_enough_bytes = data->size_in_bytes >= (*key.settings)[Setting::async_insert_max_data_size];
         bool has_enough_queries
-            = data->entries.size() >= key.settings[Setting::async_insert_max_query_number] && key.settings[Setting::async_insert_deduplicate];
+            = data->entries.size() >= (*key.settings)[Setting::async_insert_max_query_number] && (*key.settings)[Setting::async_insert_deduplicate];
 
         auto max_busy_timeout_exceeded = [&shard, &settings, &now, &flush_time_points]() -> bool
         {
@@ -799,10 +824,10 @@ try
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span{nullptr};
 
     /// 'resetParser' doesn't work for parallel parsing.
-    key.settings.set("input_format_parallel_parsing", false);
+    key.settings->set("input_format_parallel_parsing", false);
     /// It maybe insert into distributed table.
     /// It doesn't make sense to make insert into destination tables asynchronous.
-    key.settings.set("async_insert", false);
+    key.settings->set("async_insert", false);
 
     insert_context->makeQueryContext();
 
@@ -813,7 +838,7 @@ try
         insert_context->setCurrentRoles(key.current_roles);
     }
 
-    insert_context->setSettings(key.settings);
+    insert_context->setSettings(*key.settings);
 
     /// Set initial_query_id, because it's used in InterpreterInsertQuery for table lock.
     insert_context->setCurrentQueryId("");
@@ -900,7 +925,7 @@ try
             return it->second;
         };
 
-        if (entry->chunk.getDataKind() == DataKind::Parsed)
+        if (entry->chunk.getDataKind() == AsynchronousInsertQueueDataKind::Parsed)
             elem.query_for_logging = key.query_str;
         else
             elem.query_for_logging = get_query_by_format(entry->format);
@@ -923,7 +948,7 @@ try
     try
     {
         interpreter = std::make_unique<InterpreterInsertQuery>(
-            key.query, insert_context, key.settings[Setting::insert_allow_materialized_columns], false, false, true);
+            key.query, insert_context, (*key.settings)[Setting::insert_allow_materialized_columns], false, false, true);
 
         pipeline = interpreter->execute().pipeline;
         chassert(pipeline.pushing());
@@ -980,12 +1005,12 @@ try
     try
     {
         Chunk chunk;
-        auto header = pipeline.getHeader();
+        auto header = pipeline.getSharedHeader();
 
-        if (key.data_kind == DataKind::Parsed)
-            chunk = processEntriesWithParsing(key, data, header, insert_context, log, add_entry_to_asynchronous_insert_log);
+        if (key.data_kind == AsynchronousInsertQueueDataKind::Parsed)
+            chunk = processEntriesWithParsing(key, data, *header, insert_context, log, add_entry_to_asynchronous_insert_log);
         else
-            chunk = processPreprocessedEntries(data, header, add_entry_to_asynchronous_insert_log);
+            chunk = processPreprocessedEntries(data, *header, add_entry_to_asynchronous_insert_log);
 
         ProfileEvents::increment(ProfileEvents::AsyncInsertRows, chunk.getNumRows());
 
@@ -1060,7 +1085,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         const auto & columns = metadata_snapshot->getColumns();
         if (columns.hasDefaults())
-            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(header, columns, *format, insert_context);
+            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
     }
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)

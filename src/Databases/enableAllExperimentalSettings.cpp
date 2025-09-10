@@ -21,15 +21,13 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_nlp_functions", 1);
     context->setSetting("allow_experimental_hash_functions", 1);
     context->setSetting("allow_experimental_object_type", 1);
-    context->setSetting("allow_experimental_variant_type", 1);
-    context->setSetting("allow_experimental_dynamic_type", 1);
-    context->setSetting("allow_experimental_json_type", 1);
     context->setSetting("allow_experimental_vector_similarity_index", 1);
     context->setSetting("allow_experimental_window_functions", 1);
     context->setSetting("allow_experimental_geo_types", 1);
     context->setSetting("allow_experimental_map_type", 1);
     context->setSetting("allow_experimental_bigint_types", 1);
     context->setSetting("allow_experimental_bfloat16_type", 1);
+    context->setSetting("allow_experimental_time_time64_type", 1);
     context->setSetting("allow_experimental_correlated_subqueries", 1);
     context->setSetting("allow_deprecated_error_prone_window_functions", 1);
 
@@ -55,12 +53,21 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_not_comparable_types_in_order_by", 1);
     context->setSetting("allow_experimental_database_unity_catalog", 1);
     context->setSetting("allow_experimental_database_glue_catalog", 1);
+    context->setSetting("allow_database_unity_catalog", 1);
+    context->setSetting("allow_database_glue_catalog", 1);
+    context->setSetting("allow_database_iceberg", 1);
     context->setSetting("allow_experimental_delta_kernel_rs", 1);
+    context->setSetting("allow_experimental_ytsaurus_table_function", 1);
+    context->setSetting("allow_experimental_ytsaurus_table_engine", 1);
+    context->setSetting("allow_experimental_ytsaurus_dictionary_source", 1);
+    context->setSetting("allow_experimental_time_series_aggregate_functions", 1);
+    context->setSetting("allow_experimental_lightweight_update", 1);
+    context->setSetting("allow_experimental_insert_into_iceberg", 1);
+    context->setSetting("allow_experimental_iceberg_compaction", 1);
+    context->setSetting("allow_experimental_delta_lake_writes", 1);
 
     /// clickhouse-private settings
     context->setSetting("allow_experimental_shared_set_join", 1);
-    context->setSetting("allow_experimental_lightweight_update", 1);
-    context->setSetting("allow_experimental_ts_to_grid_aggregate_function", 1);
 }
 
 }

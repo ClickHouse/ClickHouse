@@ -70,14 +70,6 @@ static PreformattedMessage getPreformatted()
     return PreformattedMessage::create("test3 {}", thread_local_rng());
 }
 
-static size_t getLogMessageParamOrThrow()
-{
-    size_t x = thread_local_rng();
-    if (x % 1000 == 0)
-        return x;
-    throw Poco::Exception("error", 42);
-}
-
 TEST(Logger, SideEffects)
 {
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -98,8 +90,6 @@ TEST(Logger, SideEffects)
     LOG_TRACE(log, var);
     EXPECT_EQ(var.text.starts_with("test4 "), true);
     EXPECT_EQ(var.format_string, "test4 {}");
-
-    LOG_TRACE(log, "test no throw {}", getLogMessageParamOrThrow());
 }
 
 TEST(Logger, SharedRawLogger)
@@ -173,4 +163,38 @@ TEST(Logger, SharedLoggersThreadSafety)
     size_t loggers_size_after = names.size();
 
     EXPECT_EQ(loggers_size_before, loggers_size_after);
+}
+
+TEST(Logger, ExceptionsPropagatedFromArguments)
+{
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss));
+    auto log = createLogger("Logger", my_channel.get());
+    log->setLevel("trace");
+
+    std::optional<int> empty_optional;
+    EXPECT_THROW(LOG_TRACE(log, "my value is {}", empty_optional.value()), std::bad_optional_access);
+}
+
+class AlwaysFailingChannel : public Poco::StreamChannel
+{
+public:
+    explicit AlwaysFailingChannel(std::ostream & str)
+        : Poco::StreamChannel(str)
+    {
+    }
+
+    void log(const Poco::Message &) override { throw Poco::Exception("Exception from AlwaysFailingChannel"); }
+};
+
+TEST(Logger, ExceptionsFromPocoLoggerAreNotPropagated)
+{
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new AlwaysFailingChannel(oss));
+    auto log = createLogger("Logger", my_channel.get());
+    log->setLevel("trace");
+
+    EXPECT_NO_THROW(LOG_TRACE(log, "my value is {}", 42));
+
+    EXPECT_EQ(oss.str(), "");
 }
