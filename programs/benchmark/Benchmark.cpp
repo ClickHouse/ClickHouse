@@ -35,7 +35,7 @@
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
-#include "IO/WriteBuffer.h"
+#include <IO/WriteBuffer.h>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -66,6 +66,7 @@ class Benchmark : public Poco::Util::Application
 {
 public:
     Benchmark(unsigned concurrency_,
+            unsigned max_concurrency_,
             double delay_,
             Strings && hosts_,
             Ports && ports_,
@@ -95,8 +96,10 @@ public:
         :
         round_robin(round_robin_),
         concurrency(concurrency_),
+        max_concurrency(std::max(concurrency_, max_concurrency_)),
+        threads(concurrency_),
         delay(delay_),
-        queue(concurrency),
+        queue(max_concurrency),
         randomize(randomize_),
         cumulative(cumulative_),
         max_iterations(max_iterations_),
@@ -113,7 +116,7 @@ public:
         settings(settings_),
         shared_context(Context::createShared()),
         global_context(Context::createGlobal(shared_context.get())),
-        pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, concurrency)
+        pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, max_concurrency)
     {
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
         size_t connections_cnt = std::max(ports_.size(), hosts_.size());
@@ -128,7 +131,7 @@ public:
             std::string cur_host = i >= hosts_.size() ? "localhost" : hosts_[i];
 
             connections.emplace_back(std::make_unique<ConnectionPool>(
-                concurrency,
+                max_concurrency,
                 cur_host, cur_port,
                 default_database_, user_, password_,
                 proto_send_chunked_, proto_recv_chunked_,
@@ -196,6 +199,8 @@ private:
 
     bool round_robin;
     unsigned concurrency;
+    unsigned max_concurrency;
+    unsigned threads;
     double delay;
 
     using Query = std::string;
@@ -358,10 +363,36 @@ private:
         if (delay > 0 && seconds > delay)
         {
             printNumberOfQueriesExecuted(queries_executed);
+            if (concurrency < max_concurrency)
+            {
+                std::lock_guard lock(mutex);
+                log << "Concurrency: " << threads;
+                log << " of " << max_concurrency;
+                log << " parallel queries.\n" << flush;
+            }
             cumulative
                 ? report(comparison_info_total, total_watch.elapsedSeconds())
                 : report(comparison_info_per_interval, seconds);
             delay_watch.restart();
+
+            // Special mode: gradually increasing concurrency.
+            // Concurrency is constant between reports and increased by one after every report.
+            if (concurrency < max_concurrency)
+            {
+                if (threads == max_concurrency)
+                    return false; // Reached maximum concurrency
+                try
+                {
+                    pool.scheduleOrThrowOnError([this]() mutable { thread(); });
+                    threads++;
+                }
+                catch (...)
+                {
+                    shutdown = true;
+                    pool.wait();
+                    throw;
+                }
+            }
         }
 
         return true;
@@ -484,7 +515,7 @@ private:
         if (should_reconnect)
             entry->disconnect();
 
-        RemoteQueryExecutor executor(*entry, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+        RemoteQueryExecutor executor(*entry, query, std::make_shared<const Block>(), global_context, nullptr, Scalars(), Tables(), query_processing_stage);
 
         if (!query_id.empty())
             executor.setQueryId(query_id);
@@ -497,7 +528,7 @@ private:
         executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
 
         ProfileInfo info;
-        while (Block block = executor.readBlock())
+        for (Block block = executor.readBlock(); !block.empty(); block = executor.readBlock())
             info.update(block);
 
         executor.finish();
@@ -608,6 +639,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         /// So we copy the results to std::string.
         std::optional<std::string> env_user_str;
         std::optional<std::string> env_password_str;
+        std::optional<std::string> env_host_str;
         std::optional<std::string> env_quota_key_str;
 
         const char * env_user = getenv("CLICKHOUSE_USER"); // NOLINT(concurrency-mt-unsafe)
@@ -618,15 +650,21 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         if (env_password != nullptr)
             env_password_str.emplace(std::string(env_password));
 
+        const char * env_host = getenv("CLICKHOUSE_HOST"); // NOLINT(concurrency-mt-unsafe)
+        if (env_host != nullptr)
+            env_host_str.emplace(std::string(env_host));
+
         const char * env_quota_key = getenv("CLICKHOUSE_QUOTA_KEY"); // NOLINT(concurrency-mt-unsafe)
         if (env_quota_key != nullptr)
             env_quota_key_str.emplace(std::string(env_quota_key));
 
-        boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
-        desc.add_options()
-            ("help",                                                            "produce help message")
+        boost::program_options::options_description options_description = createOptionsDescription("Allowed options", getTerminalWidth());
+        options_description.add_options()
+            ("help", "Print usage summary and exit; combine with --verbose to display all options")
+            ("verbose", "Increase output verbosity")
             ("query,q",       value<std::string>()->default_value(""),          "query to execute")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
+            ("max_concurrency,C", value<unsigned>()->default_value(0),          "gradually increase number of parallel queries up to specified value, making one report for every concurrency level")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
             ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
             ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
@@ -647,15 +685,16 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("query_id_prefix", value<std::string>()->default_value(""), "")
             ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
             ("ignore-error,continue_on_errors", "continue testing even if a query fails")
-            ("reconnect", value<size_t>()->default_value(1), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries)")
+            ("reconnect", value<size_t>()->default_value(0), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries)")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
         ;
 
         Settings settings;
-        settings.addToProgramOptions(desc);
+        auto options_description_non_verbose = options_description;
+        settings.addToProgramOptions(options_description);
 
         boost::program_options::variables_map options;
-        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, options_description), options);
         boost::program_options::notify(options);
 
         clearPasswordFromCommandLine(argc, argv);
@@ -663,7 +702,10 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         if (options.contains("help"))
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
-            std::cout << desc << "\n";
+            if (options.contains("verbose"))
+                std::cout << options_description << "\n";
+            else
+                std::cout << options_description_non_verbose << "\n";
             std::cout << "\nSee also: https://clickhouse.com/docs/operations/utilities/clickhouse-benchmark/\n";
             return 0;
         }
@@ -678,7 +720,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ? options["port"].as<Ports>()
             : Ports({default_port});
 
-        Strings hosts = options.contains("host") ? options["host"].as<Strings>() : Strings({"localhost"});
+        Strings hosts = options.contains("host") ? options["host"].as<Strings>() : Strings({env_host_str.value_or("localhost")});
 
         String proto_send_chunked {"notchunked"};
         String proto_recv_chunked {"notchunked"};
@@ -726,6 +768,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         Benchmark benchmark(
             options["concurrency"].as<unsigned>(),
+            options["max_concurrency"].as<unsigned>(),
             options["delay"].as<double>(),
             std::move(hosts),
             std::move(ports),

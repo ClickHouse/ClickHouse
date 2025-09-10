@@ -114,7 +114,7 @@ namespace
 
     UserPtr parseUser(
         const Poco::Util::AbstractConfiguration & config,
-        const String & user_name,
+        String user_name,
         const std::unordered_set<UUID> & allowed_profile_ids,
         const std::unordered_set<UUID> & allowed_role_ids,
         bool allow_no_password,
@@ -122,8 +122,12 @@ namespace
     {
         const bool validate = true;
         auto user = std::make_shared<User>();
-        user->setName(user_name);
         String user_config = "users." + user_name;
+
+        /// If the user name contains a dot, it is escaped with a backslash when parsed from the config file.
+        /// We need to remove the backslash to get the correct user name.
+        Poco::replaceInPlace(user_name, "\\.", ".");
+        user->setName(user_name);
         bool has_no_password = config.has(user_config + ".no_password");
         bool has_password_plaintext = config.has(user_config + ".password");
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
@@ -699,6 +703,19 @@ namespace
                     profile_element.min_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "max")
                     profile_element.max_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
+                /// When the xml config is parsed, the first constraint_type is parsed as `disallowed` and the subsequent ones are parsed as
+                /// disallowed[1], disallowed[2] and so on. So, both `disallowed` and `disallowed[` should be considered as valid constraint types.
+                /// Example:
+                ///   <constraints>
+                ///     <max_execution_time>
+                ///         <max>50</max>
+                ///         <disallowed>3</disallowed>
+                ///         <disallowed>4</disallowed>
+                ///         <disallowed>5</disallowed>
+                ///     </max_execution_time>
+                /// </constraints>
+                else if (constraint_type == "disallowed" || constraint_type.starts_with("disallowed["))
+                    profile_element.disallowed_values.push_back(settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type)));
                 else if (constraint_type == "readonly" || constraint_type == "const")
                 {
                     writability_count++;

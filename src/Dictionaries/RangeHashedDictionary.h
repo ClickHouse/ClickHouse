@@ -26,7 +26,9 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 
 #include <Columns/ColumnNullable.h>
 
@@ -173,6 +175,7 @@ private:
             AttributeContainerType<Decimal128>,
             AttributeContainerType<Decimal256>,
             AttributeContainerType<DateTime64>,
+            AttributeContainerType<Time64>,
             AttributeContainerType<Float32>,
             AttributeContainerType<Float64>,
             AttributeContainerType<UUID>,
@@ -215,6 +218,7 @@ private:
         ContainerType<Decimal128>,
         ContainerType<Decimal256>,
         ContainerType<DateTime64>,
+        ContainerType<Time64>,
         ContainerType<Float32>,
         ContainerType<Float64>,
         ContainerType<UUID>,
@@ -299,7 +303,7 @@ namespace impl
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::LeftType;
 
-            if constexpr ((IsDataTypeDecimalOrNumber<DataType> || IsDataTypeDateOrDateTime<DataType> || IsDataTypeEnum<DataType>)
+            if constexpr ((IsDataTypeDecimalOrNumber<DataType> || IsDataTypeDateOrDateTimeOrTime<DataType> || IsDataTypeEnum<DataType>)
                 && !std::is_same_v<DataType, DataTypeBFloat16>)
             {
                 using ColumnType = typename DataType::ColumnType;
@@ -708,7 +712,7 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
 
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
-                update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
+                update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
 
             for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
             {
@@ -725,10 +729,10 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
         auto pipe = source_ptr->loadUpdatedAll();
 
         /// Use complex dictionary key type to count range columns as part of complex primary key during update
-        mergeBlockWithPipe<DictionaryKeyType::Complex>(
+        update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<DictionaryKeyType::Complex>(
             dict_struct.getKeysSize() + range_columns_size,
             *update_field_loaded_block,
-            std::move(pipe));
+            std::move(pipe)));
     }
 
     if (update_field_loaded_block)

@@ -103,12 +103,12 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
             const auto & element_column = extractElementColumn(column, i);
             if (element_column.size() != new_size)
             {
+                restore_elements();
                 // This is not a logical error because it may work with
                 // user-supplied data.
                 if constexpr (throw_exception)
                     throw Exception(ErrorCodes::SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH,
                         "Cannot read a tuple because not all elements are present");
-                restore_elements();
                 return ReturnType(false);
             }
         }
@@ -233,7 +233,7 @@ bool SerializationTuple::tryDeserializeText(DB::IColumn & column, DB::ReadBuffer
 void SerializationTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (settings.json.write_named_tuples_as_objects
-        && have_explicit_names)
+        && has_explicit_names)
     {
         writeChar('{', ostr);
 
@@ -271,7 +271,7 @@ void SerializationTuple::serializeTextJSON(const IColumn & column, size_t row_nu
 void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
 {
     if (settings.json.write_named_tuples_as_objects
-        && have_explicit_names)
+        && has_explicit_names)
     {
         writeCString("{\n", ostr);
 
@@ -318,7 +318,7 @@ ReturnType SerializationTuple::deserializeTupleJSONImpl(IColumn & column, ReadBu
     static constexpr auto throw_exception = std::is_same_v<ReturnType, void>;
 
     if (settings.json.read_named_tuples_as_objects
-        && have_explicit_names)
+        && has_explicit_names)
     {
         skipWhitespaceIfAny(istr);
         if constexpr (throw_exception)
@@ -774,19 +774,19 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
 {
     if (elems.empty())
     {
-        auto cached_column = getFromSubstreamsCache(cache, settings.path);
-        if (cached_column)
+        if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
         {
-            column = cached_column;
+            /// Data was inserted from substreams cache.
         }
         else if (ReadBuffer * stream = settings.getter(settings.path))
         {
+            size_t prev_size = column->size();
             auto mutable_column = column->assumeMutable();
             auto ignored_size = stream->tryIgnore(rows_offset + limit);
             auto delta = ignored_size < rows_offset ? 0 : ignored_size - rows_offset;
             typeid_cast<ColumnTuple &>(*mutable_column).addSize(delta);
             column = std::move(mutable_column);
-            addToSubstreamsCache(cache, settings.path, column);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
         }
 
         return;

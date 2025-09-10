@@ -23,7 +23,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -47,8 +46,7 @@ public:
 
     explicit FunctionMap(ContextPtr context_)
         : context(context_)
-        , use_variant_as_common_type(
-              context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type])
+        , use_variant_as_common_type(context->getSettingsRef()[Setting::use_variant_as_common_type])
         , function_array(FunctionFactory::instance().get("array", context))
         , function_map_from_arrays(FunctionFactory::instance().get("mapFromArrays", context))
     {

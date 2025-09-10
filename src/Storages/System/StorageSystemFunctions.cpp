@@ -10,10 +10,18 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Storages/System/StorageSystemFunctions.h>
+#include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
+#include <Common/Logger.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_FUNCTION;
+}
 
 enum class FunctionOrigin : int8_t
 {
@@ -69,9 +77,9 @@ namespace
             {
                 auto documentation = factory.getDocumentation(name);
                 res_columns[6]->insert(documentation.description);
-                res_columns[7]->insert(documentation.syntax);
+                res_columns[7]->insert(documentation.syntaxAsString());
                 res_columns[8]->insert(documentation.argumentsAsString());
-                res_columns[9]->insert(documentation.returned_value);
+                res_columns[9]->insert(documentation.returnedValueAsString());
                 res_columns[10]->insert(documentation.examplesAsString());
                 res_columns[11]->insert(documentation.introducedInAsString());
                 res_columns[12]->insert(documentation.categoryAsString());
@@ -140,7 +148,18 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & user_defined_sql_functions_names = user_defined_sql_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : user_defined_sql_functions_names)
     {
-        auto create_query = user_defined_sql_functions_factory.get(function_name)->formatWithSecretsOneLine();
+        String create_query;
+        try
+        {
+            create_query = user_defined_sql_functions_factory.get(function_name)->formatWithSecretsOneLine();
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_FUNCTION)
+                tryLogCurrentException(getLogger("system.functions"), fmt::format("Function {} does not exist", function_name), LogsLevel::debug);
+            else
+                throw;
+        }
         fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
     }
 

@@ -14,19 +14,6 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_expression;
 }
 
-ExpressionActionsSettings::ExpressionActionsSettings()
-{
-    can_compile_expressions = false;
-    min_count_to_compile_expression = 0;
-
-    max_temporary_columns = 0;
-    max_temporary_non_const_columns = 0;
-
-    compile_expressions = CompileExpressions::no;
-
-    short_circuit_function_evaluation = ShortCircuitFunctionEvaluation::DISABLE;
-}
-
 ExpressionActionsSettings::ExpressionActionsSettings(const Settings & from, CompileExpressions compile_expressions_)
 {
     can_compile_expressions = from[Setting::compile_expressions];

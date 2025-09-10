@@ -1,4 +1,4 @@
-#include "ICompressionCodec.h"
+#include <Compression/ICompressionCodec.h>
 
 #include <cassert>
 

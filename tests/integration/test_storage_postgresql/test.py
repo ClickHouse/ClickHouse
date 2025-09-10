@@ -268,7 +268,7 @@ def test_postgres_array_ndim_error_messges(started_cluster):
         assert False
     except Exception as error:
         assert (
-            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces". Make sure no empty array values in the first row.'
+            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces". Make sure no empty array values in the first row'
             in str(error)
         )
 
@@ -867,6 +867,29 @@ def test_parameters_validation_for_postgresql_function(started_cluster):
     )
     assert int(result) == 1
     cursor.execute(f'DROP TABLE "{table}\'"')
+
+
+def test_postgres_datetime(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute(f"DROP TABLE IF EXISTS test_datetime")
+    cursor.execute("CREATE TABLE test_datetime AS (SELECT '2025-01-02 03:04:05.678900'::timestamptz AS ts, '2025-01-02'::date as d)")
+
+    node1.query("DROP TABLE IF EXISTS test_datetime")
+    node1.query(
+        f"CREATE TABLE test_datetime (ts DateTime64(6, 'UTC'), d Date) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_datetime', 'postgres', '{pg_pass}')"
+    )
+
+    result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::DateTime")
+    assert result == "2025-01-02 03:04:05.678900\n"
+
+    result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::DateTime64")
+    assert result == "2025-01-02 03:04:05.678900\n"
+
+    result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::Nullable(DateTime)")
+    assert result == "2025-01-02 03:04:05.678900\n"
+
+    result = node1.query("SELECT ts FROM test_datetime WHERE ts > '2025-01-01'::Nullable(DateTime64)")
+    assert result == "2025-01-02 03:04:05.678900\n"
 
 
 if __name__ == "__main__":

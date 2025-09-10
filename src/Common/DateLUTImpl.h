@@ -62,7 +62,7 @@ class DateLUTImpl
 {
 private:
     friend class DateLUT;
-    explicit DateLUTImpl(const std::string & time_zone);
+    explicit DateLUTImpl(std::string_view time_zone);
 
     DateLUTImpl(const DateLUTImpl &) = delete; /// NOLINT
     DateLUTImpl & operator=(const DateLUTImpl &) = delete; /// NOLINT
@@ -1204,6 +1204,16 @@ public:
         return lut[index].date + time_offset;
     }
 
+    Time makeTime(int64_t hour, UInt8 minute, UInt8 second) const
+    {
+        Time time_offset = hour * 3600 + minute * 60 + second;
+
+        if (time_offset >= lut[1].time_at_offset_change())
+            time_offset -= lut[0].amount_of_offset_change();
+
+        return time_offset;
+    }
+
     template <typename DateOrTime>
     const Values & getValues(DateOrTime v) const { return lut[toLUTIndex(v)]; }
 
@@ -1241,7 +1251,8 @@ public:
 
     struct TimeComponents
     {
-        uint8_t hour;
+        bool is_negative = false;
+        uint64_t hour;
         uint8_t minute;
         uint8_t second;
     };
@@ -1289,6 +1300,31 @@ public:
         /// In case time was changed backwards at the start of next day, we will repeat the hour 23.
         if (unlikely(res.time.hour > 23))
             res.time.hour = 23;
+
+        return res;
+    }
+
+    TimeComponents toTimeComponents(Time t) const
+    {
+        TimeComponents res;
+
+        bool is_negative = false;
+
+        if (unlikely(t < 0))
+        {
+            is_negative = true;
+            t = -t;
+        }
+
+        // Cap at 3599999 seconds (999:59:59)
+        if (unlikely(t > 3599999))
+            t = 3599999;
+
+        res.second = t % 60;
+        res.minute = t / 60 % 60;
+        res.hour = t / 3600;
+
+        res.is_negative = is_negative;
 
         return res;
     }

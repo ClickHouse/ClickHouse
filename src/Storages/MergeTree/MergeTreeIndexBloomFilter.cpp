@@ -373,6 +373,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
         function_name == "notEquals" ||
         function_name == "has" ||
         function_name == "mapContains" ||
+        function_name == "mapContainsKey" ||
+        function_name == "mapContainsValue" ||
         function_name == "indexOf" ||
         function_name == "hasAny" ||
         function_name == "hasAll")
@@ -385,7 +387,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
             if (traverseTreeEquals(function_name, lhs_argument, const_type, const_value, out, parent))
                 return true;
         }
-        else if (lhs_argument.tryGetConstant(const_value, const_type) && (function_name == "equals" || function_name == "notEquals"))
+        else if (lhs_argument.tryGetConstant(const_value, const_type) &&
+            (function_name == "equals" || function_name == "has" || function_name == "hasAny" || function_name == "notEquals"))
         {
             if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, out, parent))
                 return true;
@@ -528,6 +531,30 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 }
 
 
+static ColumnPtr createColumnFromConstantArray(const Field & value_field, const DataTypePtr & actual_type)
+{
+    if (value_field.getType() != Field::Types::Array)
+        return nullptr;
+
+    const bool is_nullable = actual_type->isNullable();
+    auto mutable_column = actual_type->createColumn();
+
+    for (const auto & f : value_field.safeGet<Array>())
+    {
+        if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
+            return nullptr;
+
+        auto converted = convertFieldToType(f, *actual_type);
+        if (converted.isNull())
+            return nullptr;
+
+        mutable_column->insert(converted);
+    }
+
+    return std::move(mutable_column);
+}
+
+
 static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
 {
     if (!parent)
@@ -624,21 +651,32 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
         if (function_name == "has" || function_name == "indexOf")
         {
-            if (!array_type)
-                return false;
-
-            /// We can treat `indexOf` function similar to `has`.
-            /// But it is little more cumbersome, compare: `has(arr, elem)` and `indexOf(arr, elem) != 0`.
-            /// The `parent` in this context is expected to be function `!=` (`notEquals`).
-            if (function_name == "has" || indexOfCanUseBloomFilter(parent))
+            if (array_type)
             {
-                out.function = RPNElement::FUNCTION_HAS;
-                const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-                auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-                if (converted_field.isNull())
+                /// We can treat `indexOf` function similar to `has`.
+                /// But it is little more cumbersome, compare: `has(arr, elem)` and `indexOf(arr, elem) != 0`.
+                /// The `parent` in this context is expected to be function `!=` (`notEquals`).
+                if (function_name == "has" || indexOfCanUseBloomFilter(parent))
+                {
+                    out.function = RPNElement::FUNCTION_HAS;
+                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
+                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                    if (converted_field.isNull())
+                        return false;
+
+                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+                }
+            }
+            else if (function_name == "has")
+            {
+                const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
+                ColumnPtr column = createColumnFromConstantArray(value_field, actual_type);
+
+                if (!column)
                     return false;
 
-                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+                out.function = RPNElement::FUNCTION_HAS_ANY;
+                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size())));
             }
         }
         else if (function_name == "hasAny" || function_name == "hasAll")
@@ -646,29 +684,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             if (!array_type)
                 return false;
 
-            if (value_field.getType() != Field::Types::Array)
-                return false;
-
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-            ColumnPtr column;
-            {
-                const bool is_nullable = actual_type->isNullable();
-                auto mutable_column = actual_type->createColumn();
+            ColumnPtr column = createColumnFromConstantArray(value_field, actual_type);
 
-                for (const auto & f : value_field.safeGet<Array>())
-                {
-                    if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
-                        return false;
-
-                    auto converted = convertFieldToType(f, *actual_type);
-                    if (converted.isNull())
-                        return false;
-
-                    mutable_column->insert(converted);
-                }
-
-                column = std::move(mutable_column);
-            }
+            if (!column)
+                return false;
 
             out.function = function_name == "hasAny" ?
                 RPNElement::FUNCTION_HAS_ANY :
@@ -692,13 +712,17 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         return true;
     }
 
-    if (function_name == "mapContains" || function_name == "has")
+    if (function_name == "mapContainsValue" || function_name == "mapContainsKey" || function_name == "mapContains" || function_name == "has")
     {
         auto map_keys_index_column_name = fmt::format("mapKeys({})", key_column_name);
+        if (function_name == "mapContainsValue")
+            map_keys_index_column_name = fmt::format("mapValues({})", key_column_name);
+
         if (!header.has(map_keys_index_column_name))
             return false;
 
         size_t position = header.getPositionByName(map_keys_index_column_name);
+
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
 
@@ -866,7 +890,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const
 
 static void assertIndexColumnsType(const Block & header)
 {
-    if (!header || !header.columns())
+    if (header.empty() || !header.columns())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Index must have columns.");
 
     const DataTypes & columns_data_types = header.getDataTypes();
@@ -886,15 +910,15 @@ static void assertIndexColumnsType(const Block & header)
 MergeTreeIndexPtr bloomFilterIndexCreator(
     const IndexDescription & index)
 {
-    double max_conflict_probability = 0.025;
+    double false_positive_rate = 0.025;
 
     if (!index.arguments.empty())
     {
         const auto & argument = index.arguments[0];
-        max_conflict_probability = std::min<Float64>(1.0, std::max<Float64>(argument.safeGet<Float64>(), 0.0));
+        false_positive_rate = std::min<Float64>(1.0, std::max<Float64>(argument.safeGet<Float64>(), 0.0));
     }
 
-    const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(max_conflict_probability);
+    const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(false_positive_rate);
 
     return std::make_shared<MergeTreeIndexBloomFilter>(
         index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);

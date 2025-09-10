@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include "Disks/ObjectStorages/Local/LocalObjectStorage.h"
+#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
@@ -13,11 +13,9 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-class StorageLocalConfiguration : public StorageObjectStorage::Configuration
+class StorageLocalConfiguration : public StorageObjectStorageConfiguration
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
     static constexpr auto type = ObjectStorageType::Local;
     static constexpr auto type_name = "local";
     /// All possible signatures for Local engine with structure argument (for example for local table function).
@@ -45,17 +43,15 @@ public:
     std::string getSignatures(bool with_structure = true) const { return with_structure ? signatures_with_structure : signatures_without_structure; }
     size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
-    Path getPath() const override { return path; }
-    void setPath(const Path & path_) override { path = path_; }
+    Path getRawPath() const override { return path; }
+    const String & getRawURI() const override { return path.path; }
 
     const Paths & getPaths() const override { return paths; }
     void setPaths(const Paths & paths_) override { paths = paths_; }
 
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return ""; }
-    StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
-
-    ConfigurationPtr clone() override { return std::make_shared<StorageLocalConfiguration>(*this); }
+    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     ObjectStoragePtr createObjectStorage(ContextPtr, bool readonly) override
     {

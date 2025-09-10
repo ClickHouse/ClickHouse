@@ -9,20 +9,15 @@ set -e
 # Config file contains KEY=VALUE pairs with any necessary parameters like:
 # CLICKHOUSE_CI_LOGS_HOST - remote host
 # CLICKHOUSE_CI_LOGS_USER - password for user
-# CLICKHOUSE_CI_LOGS_PACreate all configured system logsSSWORD - password for user
+# CLICKHOUSE_CI_LOGS_PASSWORD - password for user
 
 # Pre-configured destination cluster, where to export the data
 CLICKHOUSE_CI_LOGS_CLUSTER=${CLICKHOUSE_CI_LOGS_CLUSTER:-system_logs_export}
 
 [ -n "$EXTRA_COLUMNS_EXPRESSION" ] || { echo "ERROR: EXTRA_COLUMNS_EXPRESSION env must be defined"; exit 1; }
-EXTRA_COLUMNS=${EXTRA_COLUMNS:-"pull_request_number UInt32, commit_sha String, check_start_time DateTime('UTC'), check_name LowCardinality(String), instance_type LowCardinality(String), instance_id String, INDEX ix_pr (pull_request_number) TYPE set(100), INDEX ix_commit (commit_sha) TYPE set(100), INDEX ix_check_time (check_start_time) TYPE minmax, "}
-EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:-"CAST(0 AS UInt32) AS pull_request_number, '' AS commit_sha, now() AS check_start_time, toLowCardinality('') AS check_name, toLowCardinality('') AS instance_type, '' AS instance_id"}
+EXTRA_COLUMNS=${EXTRA_COLUMNS:-"repo LowCardinality(String), pull_request_number UInt32, commit_sha String, check_start_time DateTime('UTC'), check_name LowCardinality(String), instance_type LowCardinality(String), instance_id String, INDEX ix_repo (repo) TYPE set(100), INDEX ix_pr (pull_request_number) TYPE set(100), INDEX ix_commit (commit_sha) TYPE set(100), INDEX ix_check_time (check_start_time) TYPE minmax, "}
 echo "EXTRA_COLUMNS_EXPRESSION=$EXTRA_COLUMNS_EXPRESSION"
 EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name"}
-
-# trace_log needs more columns for symbolization
-EXTRA_COLUMNS_TRACE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String)), lines Array(LowCardinality(String)), "
-EXTRA_COLUMNS_EXPRESSION_TRACE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> demangle(addressToSymbol(x)), trace)::Array(LowCardinality(String)) AS symbols, arrayMap(x -> addressToLine(x), trace)::Array(LowCardinality(String)) AS lines"
 
 # coverage_log needs more columns for symbolization, but only symbol names (the line numbers are too heavy to calculate)
 EXTRA_COLUMNS_COVERAGE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String)), "
@@ -81,11 +76,6 @@ function setup_logs_replication
     # The function is launched in a separate shell instance to not expose the
     # exported values
     set +x
-    # disable output
-    __shadow_credentials
-    echo "Checking if the credentials work"
-    check_logs_credentials || return 0
-    __set_connection_args
 
     echo "My hostname is ${HOSTNAME}"
 
@@ -112,19 +102,7 @@ function setup_logs_replication
     echo 'Create %_log tables'
     clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
     do
-        if [[ "$table" = "trace_log" ]]
-        then
-            EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS_TRACE_LOG}"
-            # Do not try to resolve stack traces in case of debug/sanitizers
-            # build, since it is too slow (flushing of trace_log can take ~1min
-            # with such MV attached)
-            if [[ "$debug_or_sanitizer_build" = 1 ]]
-            then
-                EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
-            else
-                EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_TRACE_LOG}"
-            fi
-        elif [[ "$table" = "coverage_log" ]]
+        if [[ "$table" = "coverage_log" ]]
         then
             EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS_COVERAGE_LOG}"
             EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG}"
@@ -133,13 +111,14 @@ function setup_logs_replication
             EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
         fi
 
-        # Calculate hash of its structure. Note: 4 is the version of extra columns - increment it if extra columns are changed:
+        # Calculate hash of its structure according to the columns and their types, including extra columns
         hash=$(clickhouse-client --query "
-            SELECT sipHash64(9, groupArray((name, type)))
+            SELECT sipHash64(groupArray((SELECT columns FROM external)), groupArray((name, type)))
             FROM (SELECT name, type FROM system.columns
                 WHERE database = 'system' AND table = '$table'
                 ORDER BY position)
-            ")
+            " --external --name=external --file=- --structure='columns String' <<< "$EXTRA_COLUMNS_FOR_TABLE"
+        )
 
         # Create the destination table with adapted name and structure:
         statement=$(clickhouse-client --format TSVRaw --query "SHOW CREATE TABLE system.${table}" | sed -r -e '
@@ -180,9 +159,11 @@ function setup_logs_replication
         echo "Creating materialized view system.${table}_watcher" >&2
 
         clickhouse-client --query "
-            CREATE MATERIALIZED VIEW system.${table}_watcher TO system.${table}_sender AS
-            SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, *
-            FROM system.${table}
+            CREATE MATERIALIZED VIEW system.${table}_watcher
+            TO system.${table}_sender
+            DEFINER = ci_logs_sender
+            AS
+            SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, * FROM system.${table}
         " || continue
     done
 )
@@ -193,7 +174,7 @@ function stop_logs_replication
     clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
         tee /dev/stderr
     } | {
-        timeout --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -P10 -r -i clickhouse-client --query "drop table {}"
+        timeout --verbose --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -P10 -r -i clickhouse-client --query "drop table {}"
     }
 }
 

@@ -23,7 +23,7 @@ public:
     /** with_names - in the first line the header with column names
       * with_types - on the next line header with type names
       */
-    CSVRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+    CSVRowInputFormat(SharedHeader header_, ReadBuffer & in_, const Params & params_,
                       bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
     String getName() const override { return "CSVRowInputFormat"; }
@@ -32,10 +32,10 @@ public:
     void resetReadBuffer() override;
 
 protected:
-    CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_, const Params & params_,
+    CSVRowInputFormat(SharedHeader header_, std::shared_ptr<PeekableReadBuffer> in_, const Params & params_,
                                bool with_names_, bool with_types_, const FormatSettings & format_settings_, std::unique_ptr<CSVFormatReader> format_reader_);
 
-    CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_buf_, const Params & params_,
+    CSVRowInputFormat(SharedHeader header_, std::shared_ptr<PeekableReadBuffer> in_buf_, const Params & params_,
                       bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
 private:

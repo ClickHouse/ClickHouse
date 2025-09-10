@@ -17,7 +17,6 @@
 #include <unordered_map>
 #include <utility>
 
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControl.h>
 #include <Access/User.h>
@@ -61,6 +60,8 @@ enum class FrontMessageType : Int32
     FLUSH = 'H',
     CLOSE = 'C',
     EXECUTE = 'E',
+    COPY_DATA = 'd',
+    COPY_COMPLETION = 'c',
 };
 
 enum class MessageType : Int32
@@ -1060,6 +1061,183 @@ public:
         return MessageType::DATA_ROW;
     }
 };
+
+class CopyDataQuery : FrontMessage
+{
+public:
+    String query;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz;
+        readBinaryBigEndian(sz, in);
+        readNullTerminated(query, in);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DATA;
+    }
+};
+
+class CopyInResponse : public BackendMessage
+{
+public:
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('G');
+        writeBinaryBigEndian(size(), out);
+        writeBinaryBigEndian(static_cast<char>(0), out);
+        writeBinaryBigEndian(static_cast<Int16>(0), out);
+    }
+
+    Int32 size() const override
+    {
+        return 4 + 1 + 2;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_IN_RESPONSE;
+    }
+};
+
+class CopyOutResponse : public BackendMessage
+{
+    int num_columns;
+public:
+    explicit CopyOutResponse(int num_columns_ = 1)
+        : num_columns(num_columns_)
+    {
+    }
+
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('H');
+        writeBinaryBigEndian(size(), out);
+        writeBinaryBigEndian(static_cast<Int8>(FormatCode::TEXT), out);
+        writeBinaryBigEndian(static_cast<Int16>(num_columns), out);
+        for (int i = 0; i < num_columns; ++i)
+            writeBinaryBigEndian(static_cast<Int16>(FormatCode::TEXT), out);
+    }
+
+    Int32 size() const override
+    {
+        return 4 + 1 + 2 + 2 * num_columns;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_OUT_RESPONSE;
+    }
+};
+
+class CopyInData : FrontMessage
+{
+public:
+    String query;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz;
+        readBinaryBigEndian(sz, in);
+        query.reserve(sz - sizeof(Int32));
+        for (size_t i = 0; i < sz - sizeof(Int32); ++i)
+        {
+            char byte;
+            readBinary(byte, in);
+            query.push_back(byte);
+        }
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DATA;
+    }
+};
+
+class CopyDone : FrontMessage
+{
+public:
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz;
+        readBinaryBigEndian(sz, in);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DONE;
+    }
+};
+
+class CopyOutData : public BackendMessage
+{
+    std::vector<char> data;
+public:
+    explicit CopyOutData(std::vector<char> data_)
+        : data(data_)
+    {
+    }
+
+    void serialize(WriteBuffer & out) const override
+    {
+        writeBinaryBigEndian('d', out);
+        writeBinaryBigEndian(size(), out);
+        out.write(data.data(), data.size());
+    }
+
+    Int32 size() const override
+    {
+        return 4 + static_cast<Int32>(data.size());
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DATA;
+    }
+};
+
+class CopyDataResponse : BackendMessage
+{
+public:
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('d');
+        writeBinaryBigEndian(size(), out);
+    }
+
+    Int32 size() const override
+    {
+        return 4;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DATA;
+    }
+};
+
+class CopyCompletionResponse : BackendMessage
+{
+public:
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('c');
+        writeBinaryBigEndian(size(), out);
+    }
+
+    Int32 size() const override
+    {
+        return 4;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DONE;
+    }
+};
+
 
 class CommandComplete : BackendMessage
 {

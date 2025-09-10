@@ -10,8 +10,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include "KernelPointerWrapper.h"
-#include "KernelHelper.h"
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <boost/noncopyable.hpp>
 #include "delta_kernel_ffi.hpp"
 
@@ -25,19 +25,17 @@ namespace DeltaLake
 class TableSnapshot
 {
 public:
-    using ConfigurationWeakPtr = DB::StorageObjectStorage::ConfigurationObserverPtr;
-
     explicit TableSnapshot(
         KernelHelperPtr helper_,
         DB::ObjectStoragePtr object_storage_,
-        bool read_schema_same_as_table_schema_,
+        DB::ContextPtr context_,
         LoggerPtr log_);
 
     /// Get snapshot version.
     size_t getVersion() const;
 
     /// Update snapshot to latest version.
-    bool update();
+    bool update(const DB::ContextPtr & context);
 
     /// Iterate over DeltaLake data files.
     DB::ObjectIterator iterate(
@@ -62,25 +60,38 @@ private:
     using KernelExternEngine = KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
     using KernelSnapshot = KernelPointerWrapper<ffi::SharedSnapshot, ffi::free_snapshot>;
     using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
-    using KernelGlobalScanState = KernelPointerWrapper<ffi::SharedGlobalScanState, ffi::free_global_scan_state>;
 
     const KernelHelperPtr helper;
     const DB::ObjectStoragePtr object_storage;
     const LoggerPtr log;
 
-    mutable KernelExternEngine engine;
-    mutable KernelSnapshot snapshot;
-    mutable KernelScan scan;
-    mutable KernelGlobalScanState scan_state;
-    mutable size_t snapshot_version;
+    bool enable_expression_visitor_logging;
+    bool throw_on_engine_visitor_error;
+    bool enable_engine_predicate;
+    std::optional<size_t> snapshot_version_to_read;
 
-    mutable DB::NamesAndTypesList table_schema;
+    struct KernelSnapshotState : private boost::noncopyable
+    {
+        KernelSnapshotState(const IKernelHelper & helper_, std::optional<size_t> snapshot_version_);
+
+        KernelExternEngine engine;
+        KernelSnapshot snapshot;
+        KernelScan scan;
+        size_t snapshot_version;
+    };
+    mutable std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
+
+    using TableSchema = DB::NamesAndTypesList;
+    using ReadSchema = DB::NamesAndTypesList;
+
+    mutable TableSchema table_schema;
+    mutable ReadSchema read_schema;
     mutable DB::NameToNameMap physical_names_map;
-    mutable DB::NamesAndTypesList read_schema;
     mutable DB::Names partition_columns;
 
     void initSnapshot() const;
     void initSnapshotImpl() const;
+    void updateSettings(const DB::ContextPtr & context);
 };
 
 /// TODO; Enable event tracing in DeltaKernel.

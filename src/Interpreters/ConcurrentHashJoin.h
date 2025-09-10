@@ -9,8 +9,6 @@
 #include <base/types.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Interpreters/TableJoin.h>
-#include <atomic>
 
 namespace DB
 {
@@ -43,15 +41,10 @@ class ConcurrentHashJoin : public IJoin
 {
 
 public:
-    using Creator = std::function<std::shared_ptr<HashJoin>(size_t)>;
-    using Slot = size_t;
-    static inline constexpr Slot NO_SLOT = std::numeric_limits<Slot>::max();
-    using LockedSlot = std::tuple<std::shared_ptr<HashJoin>, Slot>;
-
     explicit ConcurrentHashJoin(
         std::shared_ptr<TableJoin> table_join_,
         size_t slots_,
-        const Block & right_sample_block,
+        SharedHeader right_sample_block,
         const StatsCollectingParams & stats_collecting_params_,
         bool any_take_last_row_ = false);
 
@@ -61,7 +54,7 @@ public:
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool addBlockToJoin(const Block & right_block_, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
-    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
+    JoinResultPtr joinBlock(Block block) override;
     void setTotals(const Block & block) override;
     const Block & getTotals() const override;
     size_t getTotalRowCount() const override;
@@ -69,33 +62,22 @@ public:
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
 
-    bool isScatteredJoin() const override { return true; }
-    void joinBlock(Block & block, ExtraScatteredBlocks & extra_blocks, std::vector<Block> & res) override;
-
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     bool isCloneSupported() const override
     {
-        return !getTotals() && getTotalRowCount() == 0;
+        return getTotals().empty() && getTotalRowCount() == 0;
     }
 
-    bool hasNonJoinedRows() const;
-
-    static bool canProcessNonJoinedBlocks(const TableJoin & table_join_)
-    {
-        return isRight(table_join_.kind());
-    }
-
-    static bool needUsedFlagsForPerLeftTableRow(const std::shared_ptr<TableJoin> & table_join)
-    {
-        // For RIGHT JOIN, if the strictness is not Semi or Asof, we must track which left rows were matched.
-        return table_join->strictness() != JoinStrictness::Semi && table_join->strictness() != JoinStrictness::Asof;
-    }
-
-    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_, const Block &, const Block & right_sample_block_) const override
+    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const override
     {
         return std::make_shared<ConcurrentHashJoin>(table_join_, slots, right_sample_block_, stats_collecting_params);
+    }
+
+    std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const override
+    {
+        return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row);
     }
 
     void onBuildPhaseFinish() override;
@@ -105,62 +87,22 @@ public:
         std::mutex mutex;
         std::unique_ptr<HashJoin> data;
         bool space_was_preallocated = false;
-        std::atomic<bool> has_non_joined_rows{false};
     };
 
-    friend class NotJoinedHash;
-
 private:
-    void finalizeSlots();
-
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
     bool any_take_last_row;
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
-    /// Shared flags map for all HashJoin instances.
-    std::shared_ptr<JoinStuff::JoinUsedFlags> shared_used_flags;
+    bool build_phase_finished = false;
 
     StatsCollectingParams stats_collecting_params;
 
     std::mutex totals_mutex;
     Block totals;
 
-    // Atomically set if non-joined rows are detected in any slot
-    mutable std::atomic<bool> has_non_joined_rows{false};
-    mutable std::atomic<bool> has_non_joined_rows_checked{false};
-
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
-
-    bool isUsedByAnotherAlgorithm() const;
-    bool canRemoveColumnsFromLeftBlock() const;
-    bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
-    mutable std::atomic<bool> build_phase_finished{false};
-
-    /// A little helper to concatenate multiple non-joined streams.
-    class ConcatNotJoinedStreams final : public IBlocksStream
-    {
-    public:
-        explicit ConcatNotJoinedStreams(std::vector<IBlocksStreamPtr> children_)
-            : children(std::move(children_)) {}
-
-        Block nextImpl() override
-        {
-            while (idx < children.size())
-            {
-                auto & child = children[idx];
-                if (!child) { ++idx; continue; }
-                Block b = child->next();
-                if (b) return b;
-                ++idx;
-            }
-            return {};
-        }
-
-    private:
-        std::vector<IBlocksStreamPtr> children;
-        size_t idx = 0;
-    };
 };
 
 // The following two methods are deprecated and hopefully will be removed in the future.

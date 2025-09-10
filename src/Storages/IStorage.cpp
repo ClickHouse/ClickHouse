@@ -35,6 +35,8 @@ namespace ErrorCodes
     extern const int TABLE_IS_BEING_RESTARTED;
 }
 
+const VirtualColumnsDescription IStorage::common_virtuals = IStorage::createCommonVirtuals();
+
 IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
     : storage_id(std::move(storage_id_))
     , virtuals(std::make_unique<VirtualColumnsDescription>())
@@ -48,7 +50,16 @@ IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadat
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
 {
     /// Virtual column maybe overridden by real column
-    return !metadata_snapshot->getColumns().has(column_name) && virtuals.get()->has(column_name);
+    return !metadata_snapshot->getColumns().has(column_name) && (virtuals.get()->has(column_name) || common_virtuals.has(column_name));
+}
+
+VirtualColumnsDescription IStorage::createCommonVirtuals()
+{
+    VirtualColumnsDescription desc;
+
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of table which the row comes from");
+
+    return desc;
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
@@ -100,11 +111,6 @@ std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const std::ch
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
 
     return lock;
-}
-
-void IStorage::updateExternalDynamicMetadata(ContextPtr)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateExternalDynamicMetadata is not supported by storage {}", getName());
 }
 
 IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
@@ -280,6 +286,16 @@ bool IStorage::optimize(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", getName());
 }
 
+std::expected<void, PreformattedMessage> IStorage::supportsLightweightUpdate() const
+{
+    return std::unexpected(PreformattedMessage::create("Table with engine {} doesn't support lightweight updates", getName()));
+}
+
+QueryPipeline IStorage::updateLightweight(const MutationCommands &, ContextPtr)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported by storage {}", getName());
+}
+
 void IStorage::mutate(const MutationCommands &, ContextPtr)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
@@ -372,7 +388,7 @@ std::optional<CheckResult> IStorage::checkDataNext(DataValidationTasksPtr & /* c
     return {};
 }
 
-void IStorage::adjustCreateQueryForBackup(ASTPtr &) const
+void IStorage::applyMetadataChangesToCreateQueryForBackup(ASTPtr &) const
 {
 }
 

@@ -152,6 +152,8 @@ public:
 };
 static_assert(sizeof(HashTableGrowerWithPrecalculationAndMaxLoadFactor<>) == 64);
 
+HashTableGrowerWithPrecalculationAndMaxLoadFactor() -> HashTableGrowerWithPrecalculationAndMaxLoadFactor<8>;
+
 /// Above goes various specialisations for the hash table that will be used for
 /// HASHED/SPARSE_HASHED dictionary, it could use one of the following depends
 /// on the layout of the dictionary and types of key/value (for more info see

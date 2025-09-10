@@ -1,4 +1,4 @@
-#include "Common/ZooKeeper/IKeeper.h"
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
@@ -181,6 +181,14 @@ struct TestKeeperReconfigRequest final : ReconfigRequest, TestKeeperRequest
 {
     TestKeeperReconfigRequest() = default;
     explicit TestKeeperReconfigRequest(const ReconfigRequest & base) : ReconfigRequest(base) {}
+    ResponsePtr createResponse() const override;
+    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+};
+
+struct TestKeeperGetACLRequest final : GetACLRequest, TestKeeperRequest
+{
+    TestKeeperGetACLRequest() = default;
+    explicit TestKeeperGetACLRequest(const GetACLRequest & base) : GetACLRequest(base) {}
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
@@ -567,6 +575,15 @@ std::pair<ResponsePtr, Undo> TestKeeperReconfigRequest::process(TestKeeper::Cont
     return { std::make_shared<ReconfigResponse>(std::move(response)), {} };
 }
 
+std::pair<ResponsePtr, Undo> TestKeeperGetACLRequest::process(TestKeeper::Container & /*container*/, int64_t zxid) const
+{
+    GetACLResponse response;
+    response.acl = {};
+    response.zxid = zxid;
+
+    return { std::make_shared<GetACLResponse>(std::move(response)), {} };
+}
+
 std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     MultiResponse response;
@@ -629,6 +646,7 @@ ResponsePtr TestKeeperListRequest::createResponse() const { return std::make_sha
 ResponsePtr TestKeeperCheckRequest::createResponse() const { return std::make_shared<CheckResponse>(); }
 ResponsePtr TestKeeperSyncRequest::createResponse() const { return std::make_shared<SyncResponse>(); }
 ResponsePtr TestKeeperReconfigRequest::createResponse() const { return std::make_shared<ReconfigResponse>(); }
+ResponsePtr TestKeeperGetACLRequest::createResponse() const { return std::make_shared<GetACLResponse>(); }
 ResponsePtr TestKeeperMultiRequest::createResponse() const { return std::make_shared<MultiResponse>(); }
 
 
@@ -1016,6 +1034,17 @@ void TestKeeper::multi(
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperMultiRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const MultiResponse &>(response)); };
+    pushRequest(std::move(request_info));
+}
+
+void TestKeeper::getACL(const String & path, GetACLCallback  callback)
+{
+    TestKeeperGetACLRequest request;
+    request.path = path;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<TestKeeperGetACLRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const GetACLResponse &>(response)); };
     pushRequest(std::move(request_info));
 }
 
