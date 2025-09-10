@@ -83,6 +83,7 @@
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
+#include <Storages/Cache/ObjectStorageListObjectsCache.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/registerFunctions.h>
@@ -154,6 +155,10 @@
 #if USE_AZURE_BLOB_STORAGE
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #   include <azure/core/diagnostics/logger.hpp>
+#endif
+
+#if USE_PARQUET
+#   include <Processors/Formats/Impl/ParquetFileMetaDataCache.h>
 #endif
 
 
@@ -326,6 +331,11 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
     extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
+    extern const ServerSettingsUInt64 input_format_parquet_metadata_cache_max_size;
+    extern const ServerSettingsUInt64 object_storage_list_objects_cache_size;
+    extern const ServerSettingsUInt64 object_storage_list_objects_cache_max_entries;
+    extern const ServerSettingsUInt64 object_storage_list_objects_cache_ttl;
+
 }
 
 namespace ErrorCodes
@@ -413,6 +423,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int STARTUP_SCRIPTS_ERROR;
 }
 
 
@@ -2421,7 +2432,15 @@ try
     if (dns_cache_updater)
         dns_cache_updater->start();
 
+    ObjectStorageListObjectsCache::instance().setMaxSizeInBytes(server_settings[ServerSetting::object_storage_list_objects_cache_size]);
+    ObjectStorageListObjectsCache::instance().setMaxCount(server_settings[ServerSetting::object_storage_list_objects_cache_max_entries]);
+    ObjectStorageListObjectsCache::instance().setTTL(server_settings[ServerSetting::object_storage_list_objects_cache_ttl]);
+
     auto replicas_reconnector = ReplicasReconnector::init(global_context);
+
+#if USE_PARQUET
+    ParquetFileMetaDataCache::instance()->setMaxSizeInBytes(server_settings[ServerSetting::input_format_parquet_metadata_cache_max_size]);
+#endif
 
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.

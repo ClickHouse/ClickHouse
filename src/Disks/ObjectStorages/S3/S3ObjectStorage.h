@@ -61,6 +61,8 @@ public:
 
     ObjectStorageType getType() const override { return ObjectStorageType::S3; }
 
+    bool supportsListObjectsCache() override { return true; }
+
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT

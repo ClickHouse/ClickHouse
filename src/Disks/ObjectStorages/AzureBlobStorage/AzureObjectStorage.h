@@ -35,6 +35,8 @@ public:
         const String & description_,
         const String & common_key_prefix_);
 
+    bool supportsListObjectsCache() override { return true; }
+
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     /// Sanitizer build may crash with max_keys=1; this looks like a false positive.

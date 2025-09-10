@@ -65,6 +65,7 @@ namespace Setting
     extern const SettingsBool use_iceberg_partition_pruning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsBool table_engine_read_through_distributed_cache;
+    extern const SettingsBool use_object_storage_list_objects_cache;
 }
 
 namespace ErrorCodes
@@ -172,11 +173,36 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 query_settings.ignore_non_existent_file, skip_object_metadata, file_progress_callback);
         }
         else
+        {
+            std::shared_ptr<IObjectStorageIterator> object_iterator = nullptr;
+            std::unique_ptr<GlobIterator::ListObjectsCacheWithKey> cache_ptr = nullptr;
+
+            if (local_context->getSettingsRef()[Setting::use_object_storage_list_objects_cache] && object_storage->supportsListObjectsCache())
+            {
+                auto & cache = ObjectStorageListObjectsCache::instance();
+                ObjectStorageListObjectsCache::Key cache_key {object_storage->getDescription(), configuration->getNamespace(), configuration->getRawPath().cutGlobs(configuration->supportsPartialPathPrefix())};
+
+                if (auto objects_info = cache.get(cache_key, /*filter_by_prefix=*/ false))
+                {
+                    object_iterator = std::make_shared<ObjectStorageIteratorFromList>(std::move(*objects_info));
+                }
+                else
+                {
+                    cache_ptr = std::make_unique<GlobIterator::ListObjectsCacheWithKey>(cache, cache_key);
+                    object_iterator = object_storage->iterate(configuration->getRawPath().cutGlobs(configuration->supportsPartialPathPrefix()), query_settings.list_object_keys_size);
+                }
+            }
+            else
+            {
+                object_iterator = object_storage->iterate(configuration->getRawPath().cutGlobs(configuration->supportsPartialPathPrefix()), query_settings.list_object_keys_size);
+            }
+
             /// Iterate through disclosed globs and make a source for each file
             iterator = std::make_unique<GlobIterator>(
-                object_storage, configuration, predicate, virtual_columns, hive_columns,
-                local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
-                query_settings.throw_on_zero_files_match, file_progress_callback);
+                object_iterator, configuration, predicate, virtual_columns, hive_columns,
+                local_context, is_archive ? nullptr : read_keys,
+                query_settings.throw_on_zero_files_match, file_progress_callback, std::move(cache_ptr));
+        }
     }
     else if (configuration->supportsFileIterator())
     {
@@ -470,21 +496,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (object_info->getPath().empty())
             return {};
 
-        if (!object_info->metadata)
-        {
-            const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
-
-            if (query_settings.ignore_non_existent_file)
-            {
-                auto metadata = object_storage->tryGetObjectMetadata(path);
-                if (!metadata)
-                    return {};
-
-                object_info->metadata = metadata;
-            }
-            else
-                object_info->metadata = object_storage->getObjectMetadata(path);
-        }
+        object_info->loadMetadata(object_storage, query_settings.ignore_non_existent_file);
     }
     while (not_a_path || (query_settings.skip_empty_files && object_info->metadata->size_bytes == 0));
 
@@ -573,6 +585,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (need_only_count)
             input_format->needOnlyCount();
+
+        if (!object_info->getPath().empty())
+            input_format->setStorageRelatedUniqueKey(context_->getSettingsRef(), object_info->getPath() + ":" + object_info->metadata->etag);
 
         builder.init(Pipe(input_format));
 
@@ -795,18 +810,18 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
 }
 
 StorageObjectStorageSource::GlobIterator::GlobIterator(
-    ObjectStoragePtr object_storage_,
+    const ObjectStorageIteratorPtr & object_storage_iterator_,
     ConfigurationPtr configuration_,
     const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns_,
     const NamesAndTypesList & hive_columns_,
     ContextPtr context_,
     ObjectInfos * read_keys_,
-    size_t list_object_keys_size,
     bool throw_on_zero_files_match_,
-    std::function<void(FileProgress)> file_progress_callback_)
+    std::function<void(FileProgress)> file_progress_callback_,
+    std::unique_ptr<ListObjectsCacheWithKey> list_cache_)
     : WithContext(context_)
-    , object_storage(object_storage_)
+    , object_storage_iterator(object_storage_iterator_)
     , configuration(configuration_)
     , virtual_columns(virtual_columns_)
     , hive_columns(hive_columns_)
@@ -815,14 +830,13 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     , read_keys(read_keys_)
     , local_context(context_)
     , file_progress_callback(file_progress_callback_)
+    , list_cache(std::move(list_cache_))
 {
     const auto & reading_path = configuration->getPathForRead();
     if (reading_path.hasGlobs())
     {
         const auto & key_with_globs = reading_path;
         const auto key_prefix = reading_path.cutGlobs(configuration->supportsPartialPathPrefix());
-
-        object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size);
 
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs.path));
         if (!matcher->ok())
@@ -887,11 +901,21 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
             auto result = object_storage_iterator->getCurrentBatchAndScheduleNext();
             if (!result.has_value())
             {
+                if (list_cache)
+                {
+                    list_cache->set(std::move(object_list));
+                }
                 is_finished = true;
                 return {};
             }
 
             new_batch = std::move(result.value());
+
+            if (list_cache)
+            {
+                object_list.insert(object_list.end(), new_batch.begin(), new_batch.end());
+            }
+
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
                 if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
