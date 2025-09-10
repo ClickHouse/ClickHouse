@@ -90,8 +90,10 @@ private:
     /// as temporary names for constant columns at first.
     /// Actual names will be assigned to them once the result expression is formed.
     size_t literal_counter = 0;
+    /// Table read schema. Expression transform will be created on top of it.
+    const DB::NamesAndTypesList & read_schema;
     /// Result expression schema.
-    const DB::NamesAndTypesList & schema;
+    const DB::NamesAndTypesList & expression_schema;
 
     const bool enable_logging;
 
@@ -105,9 +107,11 @@ private:
     DB::ContextPtr context; /// TODO: pass query context
 
 public:
+
     /// `schema` is the expression schema of result expression.
-    explicit ExpressionVisitorData(const DB::NamesAndTypesList & schema_, bool enable_logging_)
-        : schema(schema_)
+    explicit ExpressionVisitorData(const DB::NamesAndTypesList & read_schema_, const DB::NamesAndTypesList & expression_schema_, bool enable_logging_)
+        : read_schema(read_schema_)
+        , expression_schema(expression_schema_)
         , enable_logging(enable_logging_)
         , dag(std::make_shared<DB::ActionsDAG>())
         , context(DB::Context::getGlobalContextInstance())
@@ -141,15 +145,15 @@ public:
         }
 
         const auto & nodes = node_lists[0][0]->children;
-        if (nodes.size() != schema.size())
+        if (nodes.size() != expression_schema.size())
         {
             throw DB::Exception(
                 DB::ErrorCodes::LOGICAL_ERROR,
                 "Unexpected size of expression list: {} (expected: {})",
-                nodes.size(), schema.size());
+                nodes.size(), expression_schema.size());
         }
 
-        auto schema_it = schema.begin();
+        auto schema_it = expression_schema.begin();
 
         DB::ColumnsWithTypeAndName result_columns;
 
@@ -186,6 +190,14 @@ public:
             }
             else
             {
+                if (node->result_name != schema_it->name)
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::LOGICAL_ERROR,
+                        "Expected column at pos {} to have name {}, got {}",
+                        std::distance(expression_schema.begin(), schema_it), schema_it->name, node->result_name);
+                }
+
                 column_with_type_and_name = DB::ColumnWithTypeAndName(node->column, node->result_type, node->result_name);
             }
 
@@ -258,13 +270,13 @@ public:
         else
             column_name = name;
 
-        auto name_and_type = schema.tryGetByName(column_name);
+        auto name_and_type = expression_schema.tryGetByName(column_name);
         if (!name_and_type.has_value())
         {
             throw DB::Exception(
                 DB::ErrorCodes::LOGICAL_ERROR,
                 "Cannot find column {} in schema ({})",
-                name, schema.toString());
+                name, expression_schema.toString());
         }
 
         auto column = DB::ColumnWithTypeAndName(
@@ -352,6 +364,85 @@ public:
 
         return std::pair(values, types);
     }
+
+    void moveList(
+        size_t to_list_id,
+        size_t from_list_id,
+        const std::string * after_field_name,
+        bool prepend)
+    {
+        auto from_it = node_lists.find(from_list_id);
+        if (from_it == node_lists.end())
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR, "Cannot find list id {}", from_list_id);
+        }
+
+        auto to_it = node_lists.find(to_list_id);
+        if (to_it == node_lists.end())
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR, "Cannot find list id {}", to_list_id);
+        }
+
+        auto & to_list = to_it->second;
+        auto & from_list = from_it->second;
+
+        if (to_list.empty())
+        {
+            for (const auto & elem : read_schema)
+                addIdentifier(to_list_id, elem.name);
+
+            chassert(!to_list.empty());
+        }
+
+        if (after_field_name)
+        {
+            size_t pos = 0;
+            size_t result_pos = 0;
+            for (auto elem_it = to_list.begin(); elem_it != to_list.end(); ++elem_it)
+            {
+                ++pos;
+                const auto * node = *elem_it;
+                if (node->type == DB::ActionsDAG::ActionType::INPUT && node->result_name == *after_field_name)
+                {
+                    result_pos = pos;
+                    to_list.insert(
+                        std::next(elem_it),
+                        std::make_move_iterator(from_list.begin()),
+                        std::make_move_iterator(from_list.end()));
+                    break;
+                }
+            }
+            if (!result_pos)
+            {
+                throw DB::Exception(
+                    DB::ErrorCodes::LOGICAL_ERROR,
+                    "Did not find {} in list by id {}", *after_field_name, to_list_id);
+            }
+        }
+        else
+        {
+            /// FIXME: prepend is suboptimal,
+            /// but DB::ActionsDAG::NodeRawConstPtrs is a vector
+            /// and changing it to deque is not an option.
+            to_list.insert(
+                prepend ? to_list.begin() : to_list.end(),
+                std::make_move_iterator(from_list.begin()),
+                std::make_move_iterator(from_list.end()));
+        }
+
+        node_lists.erase(from_it);
+
+        if (enable_logging)
+        {
+            LOG_TEST(
+                log, "Appended to list id {} from list id {} "
+                "(size: {}, appended after field: {})",
+                to_list_id, from_list_id, to_it->second.size(),
+                after_field_name ? *after_field_name : "None");
+        }
+    }
 };
 
 class ExpressionVisitor
@@ -434,8 +525,8 @@ private:
             .visit_divide = &throwNotImplemented<DIVIDE>,
             .visit_column = &visitColumnExpression,
             .visit_struct_expr = &visitStructExpression,
-            .visit_transform_expr = &throwNotImplementedTransformExpression,
-            .visit_field_transform = &throwNotImplementedFieldTransform,
+            .visit_transform_expr = &visitTransformExpression,
+            .visit_field_transform = &visitFieldTransform,
             .visit_opaque_expr = &throwNotImplementedOpaqueExpression,
             .visit_opaque_pred = &throwNotImplementedOpaquePredicate,
             .visit_unknown = &throwNotImplementedUnknown
@@ -517,46 +608,6 @@ private:
             throw DB::Exception(
                 DB::ErrorCodes::NOT_IMPLEMENTED,
                 "Method OpaquePred not implemented");
-        });
-    }
-
-    static void throwNotImplementedTransformExpression(
-        void * data,
-        uintptr_t sibling_list_id,
-        uintptr_t input_path_list_id,
-        uintptr_t field_transform_list_id)
-    {
-        UNUSED(sibling_list_id);
-        UNUSED(input_path_list_id);
-        UNUSED(field_transform_list_id);
-
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::NOT_IMPLEMENTED,
-                "Method visitTransformExpression not implemented");
-        });
-    }
-
-    static void throwNotImplementedFieldTransform(
-        void * data,
-        uintptr_t sibling_list_id,
-        const ffi::KernelStringSlice * field_name,
-        uintptr_t expr_list_id,
-        bool is_replace)
-    {
-        UNUSED(sibling_list_id);
-        UNUSED(field_name);
-        UNUSED(expr_list_id);
-        UNUSED(is_replace);
-
-        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
-        visitorImpl(*state, [&]()
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::NOT_IMPLEMENTED,
-                "Method visitFieldTransform not implemented");
         });
     }
 
@@ -843,6 +894,89 @@ private:
             state->addLiteral(sibling_list_id, map, std::make_shared<DB::DataTypeMap>(key_types[0], value_types[0]));
         });
     }
+
+    static void visitTransformExpression(
+        void * data,
+        uintptr_t sibling_list_id,
+        uintptr_t input_path_list_id,
+        uintptr_t field_transform_list_id)
+    {
+        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
+        visitorImpl(*state, [&]()
+        {
+            if (state->enableLogging())
+                LOG_TEST(
+                    state->logger(),
+                    "List id: {}, input path list id: {}, field transform list id: {}",
+                    sibling_list_id, input_path_list_id, field_transform_list_id);
+
+            if (input_path_list_id)
+            {
+                throw DB::Exception(
+                    DB::ErrorCodes::NOT_IMPLEMENTED,
+                    "Non zero input_path_list_id is not supported at the moment");
+            }
+
+            DB::FunctionOverloadResolverPtr function =
+                std::make_unique<DB::FunctionToOverloadResolverAdaptor>(
+                    std::make_shared<DB::FunctionTuple>());
+
+            state->addFunction(sibling_list_id, field_transform_list_id, std::move(function));
+        });
+    }
+
+    static void visitFieldTransform(
+        void * data,
+        uintptr_t sibling_list_id,
+        const ffi::KernelStringSlice * field_name,
+        uintptr_t expr_list_id,
+        bool is_replace)
+    {
+        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
+        visitorImpl(*state, [&]()
+        {
+            std::string field_name_str;
+            if (field_name)
+                field_name_str = KernelUtils::fromDeltaString(*field_name);
+
+            if (state->enableLogging())
+                LOG_TEST(
+                    state->logger(),
+                    "List id: {}, field name: {}, expr list id: {}, is replace: {}",
+                    sibling_list_id, field_name_str, expr_list_id, is_replace);
+
+            /// From delta-kernel-rs doc:
+            /// |field_name? |expr_list? |is_replace? |meaning|
+            /// |-|-|-|-|
+            /// | NO  | NO  | *   | NO-OP (prepend an empty list of expressions to the output)
+            /// | NO  | YES | *   | Prepend a list of expressions to the output
+            /// | YES | NO  | NO  | NO-OP (insert an empty list of expressions after the named input field)
+            /// | YES | NO  | YES | Drop the named input field
+            /// | YES | YES | NO  | Insert a list of expressions after the named input field
+            /// | YES | YES | YES | Replace the named input field with a list of expressions
+
+            if (is_replace)
+            {
+                /// Will be implemented with CDF support.
+                throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Replace action is not implemented");
+            }
+
+            if (expr_list_id)
+            {
+                state->moveList(
+                    sibling_list_id,
+                    expr_list_id,
+                    field_name ? &field_name_str : nullptr,
+                    /* prepend */!field_name);
+            }
+            else
+            {
+                /// Will be implemented with CDF support.
+                throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Drop action is not implemented");
+            }
+        });
+    }
+
 };
 
 std::vector<DB::Field> getConstValuesFromExpression(const DB::Names & columns, const DB::ActionsDAG & dag)
@@ -869,10 +1003,11 @@ std::vector<DB::Field> getConstValuesFromExpression(const DB::Names & columns, c
 
 std::shared_ptr<DB::ActionsDAG> visitScanCallbackExpression(
     const ffi::Expression * expression,
+    const DB::NamesAndTypesList & read_schema,
     const DB::NamesAndTypesList & expression_schema,
     bool enable_logging)
 {
-    ExpressionVisitorData data(expression_schema, enable_logging);
+    ExpressionVisitorData data(read_schema, expression_schema, enable_logging);
     ExpressionVisitor::visit(expression, data);
     return data.getScanCallbackExpressionResult();
 }
@@ -881,7 +1016,7 @@ std::shared_ptr<DB::ActionsDAG> visitExpression(
     ffi::SharedExpression * expression,
     const DB::NamesAndTypesList & expression_schema)
 {
-    ExpressionVisitorData data(expression_schema, /* enable_logging */true);
+    ExpressionVisitorData data(expression_schema, expression_schema, /* enable_logging */true);
     ExpressionVisitor::visit(expression, data);
     return data.getScanCallbackExpressionResult();
 }
