@@ -730,12 +730,9 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             auto join_mask_col = JoinCommon::getColumnAsMask(block, onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
-            if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
+                        if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
             {
-                /// Save rows that do not hold conditions.
-                /// IMPORTANT: stored_columns->columns contain the full source block, while the selector
-                /// indicates which rows belong to this shard. The auxiliary map must be aligned to the full
-                /// block row count to match columns' sizes used later in NotJoinedBlocks processing.
+                /// Save rows that do not hold conditions
                 not_joined_map = ColumnUInt8::create(block.rows(), 0);
 
                 const auto & sel = stored_columns->selector;
@@ -744,11 +741,11 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                     auto range = sel.getRange();
                     for (size_t i = range.first; i < range.second; ++i)
                     {
-                        /// Condition holds -> do not save row
+                        /// Condition hold, do not save row
                         if (!join_mask_col.isRowFiltered(i))
                             continue;
 
-                        /// NULL key will be saved anyway, do not save twice
+                        /// NULL key will be saved anyway because, do not save twice
                         if (save_nullmap && (*null_map)[i])
                             continue;
 
@@ -757,13 +754,16 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 }
                 else
                 {
+                    /// for non-continuous selector iterate explicit indices that belong to this shard
                     const auto & idxs = sel.getIndexes().getData();
                     for (size_t pos = 0; pos < idxs.size(); ++pos)
                     {
                         size_t i = idxs[pos];
 
-                        if (!join_mask_col.isRowFiltered(i))
+                        if (!join_mask_col.isRowFiltered(i)) /// Keep rows that failed the ON condition
                             continue;
+
+                        /// skip if right key is null
                         if (save_nullmap && (*null_map)[i])
                             continue;
 
@@ -1205,8 +1205,6 @@ JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
-
-    // chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
 
     for (const auto & onexpr : table_join->getClauses())
     {

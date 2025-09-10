@@ -9,7 +9,6 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
-#include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/createBlockSelector.h>
@@ -168,16 +167,13 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     , stats_collecting_params(stats_collecting_params_)
 {
     hash_joins.resize(slots);
-    /// a single shared flags map for all HashJoin slots
-    shared_used_flags = std::make_shared<JoinStuff::JoinUsedFlags>();
-    auto shared_used_flags_local = shared_used_flags;
 
     try
     {
         for (size_t i = 0; i < slots; ++i)
         {
             pool->scheduleOrThrow(
-                [&, i, thread_group = CurrentThread::getGroup(), shared_used_flags_local]()
+                [&, i, thread_group = CurrentThread::getGroup()]()
                 {
                     ThreadGroupSwitcher switcher(thread_group, "ConcurrentJoin");
 
@@ -191,8 +187,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         any_take_last_row_,
                         reserve_size,
                         fmt::format("concurrent{}", i),
-                        /*use_two_level_maps*/ true,
-                        shared_used_flags_local);
+                        /*use_two_level_maps*/ true);
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
                     hash_joins[i] = std::move(inner_hash_join);
@@ -406,105 +401,22 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
     return true;
 }
 
-bool ConcurrentHashJoin::hasNonJoinedRows() const
-{
-    if (has_non_joined_rows_checked.load(std::memory_order_acquire))
-        return has_non_joined_rows.load(std::memory_order_acquire);
-
-    if (!isRightOrFull(table_join->kind()))
-        return false;
-
-    /// Check if any shard has non-joined rows
-    bool found_non_joined = false;
-    for (const auto & hash_join_ptr : hash_joins)
-    {
-        std::lock_guard lock(hash_join_ptr->mutex);
-        if (hash_join_ptr->data->hasNonJoinedRows() || hash_join_ptr->has_non_joined_rows.load(std::memory_order_relaxed))
-        {
-            found_non_joined = true;
-            break;
-        }
-    }
-
-    has_non_joined_rows.store(found_non_joined, std::memory_order_release);
-    has_non_joined_rows_checked.store(true, std::memory_order_release);
-    return found_non_joined;
-}
-
-bool ConcurrentHashJoin::isUsedByAnotherAlgorithm() const
-{
-    return table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO) || table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
-}
-
-bool ConcurrentHashJoin::canRemoveColumnsFromLeftBlock() const
-{
-    return table_join->enableAnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm() && table_join->strictness() != JoinStrictness::RightAny;
-}
-
-bool ConcurrentHashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const
-{
-    if (!table_join_->oneDisjunct())
-        return true;
-    /// If it'a a all right join with inequal conditions, we need to mark each row
-    if (table_join_->getMixedJoinExpression() && isRightOrFull(table_join_->kind()))
-        return true;
-    return false;
-}
-
 IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
-    const Block & left_sample_block,
-    const Block & result_sample_block,
-    UInt64 max_block_size) const
+        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
 
-    if (!isRightOrFull(table_join->kind()))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Invalid join type for non-joined blocks: kind={}, strictness={}",
-            table_join->kind(), table_join->strictness());
-
-    /// Collect non-joined streams from each slot
-    std::vector<IBlocksStreamPtr> streams;
-    streams.reserve(slots);
-
-    // Special handling for joins with always false condition
-    if (table_join->getOnlyClause().key_names_right.empty())
+    if (isRightOrFull(table_join->kind()))
     {
-        /// for RIGHT/FULL joins with always false condition, all rows should be considered non-joined
-        /// we need to return all rows from the right table
-        std::lock_guard lock(hash_joins[0]->mutex);
-        if (auto s = hash_joins[0]->data->getNonJoinedBlocks(
-                left_sample_block, result_sample_block, max_block_size))
-            streams.push_back(std::move(s));
-    }
-    else
-    {
-        /// for regular joins, we need to deduplicate NULL values
-        std::unordered_set<size_t> processed_rows;
-        for (const auto & hash_join : hash_joins)
-        {
-            std::lock_guard lock(hash_join->mutex);
-
-            if (hash_join->data->hasNonJoinedRows() || 
-                hash_join->has_non_joined_rows.load(std::memory_order_relaxed))
-            {
-                if (auto s = hash_join->data->getNonJoinedBlocks(
-                        left_sample_block, result_sample_block, max_block_size))
-                {
-                    streams.push_back(std::move(s));
-                }
-            }
-        }
+        /// Build phase is already finished at this point and for two-level maps the buckets
+        /// were merged into a common map in onBuildPhaseFinish
+        /// That common map and the used_flags should be shared among all HashJoin shards
+        return hash_joins.front()->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
 
-    if (streams.empty())
-        return {};
-    if (streams.size() == 1)
-        return streams[0];
-
-    return std::make_shared<ConcatNotJoinedStreams>(std::move(streams));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}",
+                    table_join->kind(), table_join->strictness());
 }
 
 template <typename HashTable>
