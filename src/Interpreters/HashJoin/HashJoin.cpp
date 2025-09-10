@@ -730,6 +730,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             auto join_mask_col = JoinCommon::getColumnAsMask(block, onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
+            bool has_not_joined = false;
             if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
             {
                 /// Save rows that do not hold conditions
@@ -750,16 +751,15 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             continue;
 
                         not_joined_map->getData()[i] = 1;
+                        has_not_joined = true;
                     }
                 }
                 else
                 {
                     /// for non-continuous selector iterate explicit indices that belong to this shard
                     const auto & idxs = sel.getIndexes().getData();
-                    for (size_t pos = 0; pos < idxs.size(); ++pos)
+                    for (size_t i : idxs)
                     {
-                        size_t i = idxs[pos];
-
                         if (!join_mask_col.isRowFiltered(i)) /// Keep rows that failed the ON condition
                             continue;
 
@@ -768,6 +768,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             continue;
 
                         not_joined_map->getData()[i] = 1;
+                        has_not_joined = true;
                     }
                 }
             }
@@ -807,13 +808,13 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 data->nullmaps_allocated_size += data->nullmaps.back().allocatedBytes();
             }
 
-            if (!flag_per_row && not_joined_map && is_inserted)
+            if (!flag_per_row && not_joined_map && (is_inserted || has_not_joined))
             {
                 data->nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
                 data->nullmaps_allocated_size += data->nullmaps.back().allocatedBytes();
             }
 
-            if (!flag_per_row && !is_inserted)
+            if (!flag_per_row && !is_inserted && !save_nullmap && !has_not_joined)
             {
                 doDebugAsserts();
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);

@@ -628,6 +628,34 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 },
                 getData(hash_joins[0])->maps.at(0));
         }
+
+        /// getNonJoinedBlocks() delegates to the first shard, so it must see all right-only rows
+        HashJoin::RightTableDataPtr front_data = getData(hash_joins[0]);
+        for (size_t i = 1; i < slots; ++i)
+        {
+            HashJoin::RightTableDataPtr other = getData(hash_joins[i]);
+
+            if (!other->columns.empty())
+            {
+                front_data->columns.splice(front_data->columns.end(), other->columns);
+            }
+
+            if (!other->nullmaps.empty())
+            {
+                for (auto & nm : other->nullmaps)
+                {
+                    front_data->nullmaps.emplace_back(nm);
+                    front_data->nullmaps_allocated_size += nm.allocatedBytes();
+                }
+                other->nullmaps.clear();
+                other->nullmaps_allocated_size = 0;
+            }
+
+            front_data->allocated_size += other->allocated_size;
+            other->allocated_size = 0;
+            front_data->rows_to_join += other->rows_to_join;
+            other->rows_to_join = 0;
+        }
     }
 
     /// Synchronize all `HashJoin`s on the `all_values_unique` flag.
