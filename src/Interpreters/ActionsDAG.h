@@ -1,6 +1,7 @@
 #pragma once
 
 #include <utility>
+#include <vector>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
@@ -134,6 +135,9 @@ public:
     Names getNames() const;
     std::string dumpNames() const;
     std::string dumpDAG() const;
+
+    std::vector<const Node *> getIdToNode() const;
+    std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
 
     void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
     static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context);
@@ -270,10 +274,12 @@ public:
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    ActionsDAG clone(std::unordered_map<const Node *, Node *> & old_to_new_nodes) const;
+    using NodeMapping = std::unordered_map<const Node *, const Node *>;
+    ActionsDAG clone(NodeMapping & old_to_new_nodes) const;
     ActionsDAG clone() const;
 
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
+    static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping & copy_map, bool remove_aliases);
 
     /// Execute actions for header. Input block must have empty columns.
     /// Result should be equal to the execution of ExpressionActions built from this DAG.
@@ -334,10 +340,14 @@ public:
     /// Invariant : no nodes are removed from the first (this) DAG.
     /// So that pointers to nodes are kept valid.
     void mergeInplace(ActionsDAG && second);
+    void mergeInplace(ActionsDAG && second, NodeMapping & inputs_map, bool remove_dangling_inputs);
 
     /// Merge current nodes with specified dag nodes.
     /// *out_outputs is filled with pointers to the nodes corresponding to second.getOutputs().
     void mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs = nullptr);
+
+    /// Union current nodes with second dag without any matching of inputs and outputs.
+    void unite(ActionsDAG && second);
 
     struct SplitResult;
 
@@ -459,6 +469,21 @@ public:
     UInt64 getHash() const;
     void updateHash(SipHash & hash_state) const;
 
+    /* Create actions which calculate conjunction of selected nodes.
+     * Conjunction nodes are assumed to be predicates that will be combined with AND if multiple.
+     *
+     * The resulting DAG will have:
+     * - Inputs: all columns from all_inputs that are required by the conjunction
+     * - Outputs: all columns from all_inputs (preserved for pipeline compatibility)
+     *            plus the conjunction result (at position 0 if newly added)
+     *
+     * Returns nullopt if conjunction is empty, otherwise ActionsForFilterPushDown containing:
+     *   - dag: the new actions
+     *   - filter_pos: position of filter column in outputs
+     *   - remove_filter: whether the filter column should be removed from original DAG after evaluation
+     */
+    static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
 
@@ -475,8 +500,6 @@ private:
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
-
-    static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
 
     void removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
 };
