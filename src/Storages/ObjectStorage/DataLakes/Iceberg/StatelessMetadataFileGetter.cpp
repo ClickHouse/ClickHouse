@@ -137,8 +137,6 @@ ManifestFileCacheKeys getManifestList(
     {
         StorageObjectStorage::ObjectInfo object_info(filename);
 
-        LOG_DEBUG(log, "Reading manifest list from file {}", filename);
-
         auto read_settings = local_context->getReadSettings();
         /// Do not utilize filesystem cache if more precise cache enabled
         if (use_iceberg_metadata_cache)
