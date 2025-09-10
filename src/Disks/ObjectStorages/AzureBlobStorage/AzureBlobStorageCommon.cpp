@@ -654,6 +654,8 @@ std::optional<AzureBlobStorage::RequestSettings> AzureSettingsByEndpoint::getSet
     return {};
 }
 
+#if USE_AZURE_BLOB_STORAGE
+
 bool compareAzureAuthMethod(AzureBlobStorage::AuthMethod auth_method_a, AzureBlobStorage::AuthMethod auth_method_b)
 {
     const auto * conn_string_a = std::get_if<AzureBlobStorage::ConnectionString>(&auth_method_a);
@@ -701,5 +703,7 @@ bool compareAzureAuthMethod(AzureBlobStorage::AuthMethod auth_method_a, AzureBlo
     }
     return false;
 }
+
+#endif
 
 }
