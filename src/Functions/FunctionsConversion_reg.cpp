@@ -11,11 +11,11 @@ Converts an input value to a value of type [`UInt8`](../data-types/int-uint.md).
 Throws an exception in case of an error.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values of type Float*.
 
 Unsupported arguments:
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt8('0xc0fe');`.
 
 :::note
@@ -27,7 +27,12 @@ For example: `SELECT toUInt8(256) == 0;`.
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
 :::
-)";
+
+See also:
+- [`toUInt8OrZero`](#toUInt8OrZero).
+- [`toUInt8OrNull`](#toUInt8OrNull).
+- [`toUInt8OrDefault`](#toUInt8OrDefault).
+    )";
     FunctionDocumentation::Syntax toUInt8_syntax = "toUInt8(expr)";
     FunctionDocumentation::Arguments toUInt8_arguments = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
@@ -57,21 +62,21 @@ toUInt8('8'): 8
     FunctionDocumentation::Category toUInt8_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toUInt8_documentation = {toUInt8_description, toUInt8_syntax, toUInt8_arguments, toUInt8_returned_value, toUInt8_examples, toUInt8_introduced_in, toUInt8_category};
 
-    // toUInt16 documentation
+    /// toUInt16 documentation
     FunctionDocumentation::Description toUInt16_description = R"(
 Converts an input value to a value of type [`UInt16`](../data-types/int-uint.md).
 Throws an exception in case of an error.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values of type Float*.
 
 Unsupported arguments:
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt16('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [UInt16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [`UInt16`](../data-types/int-uint.md), overflow or underflow of the result occurs.
 This is not considered an error.
 For example: `SELECT toUInt16(65536) == 0;`.
 :::
@@ -79,7 +84,12 @@ For example: `SELECT toUInt16(65536) == 0;`.
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
 :::
-)";
+
+See also:
+- [`toUInt16OrZero`](#toUInt16OrZero).
+- [`toUInt16OrNull`](#toUInt16OrNull).
+- [`toUInt16OrDefault`](#toUInt16OrDefault).
+    )";
     FunctionDocumentation::Syntax toUInt16_syntax = "toUInt16(expr)";
     FunctionDocumentation::Arguments toUInt16_arguments = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
@@ -111,20 +121,22 @@ toUInt16('16'):  16
 
     factory.registerFunction<detail::FunctionToUInt8>(toUInt8_documentation);
     factory.registerFunction<detail::FunctionToUInt16>(toUInt16_documentation);
+
+    /// toUInt32 documentation
     FunctionDocumentation::Description toUInt32_description = R"(
 Converts an input value to a value of type [`UInt32`](../data-types/int-uint.md).
 Throws an exception in case of an error.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values of type Float*.
 
 Unsupported arguments:
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt32('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [UInt32](../data-types/int-uint.md), the result over or under flows.
+If the input value cannot be represented within the bounds of [`UInt32`](../data-types/int-uint.md), the result over or under flows.
 This is not considered an error.
 For example: `SELECT toUInt32(4294967296) == 0;`
 :::
@@ -132,6 +144,11 @@ For example: `SELECT toUInt32(4294967296) == 0;`
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
 :::
+
+See also:
+- [`toUInt32OrZero`](#toUInt32OrZero).
+- [`toUInt32OrNull`](#toUInt32OrNull).
+- [`toUInt32OrDefault`](#toUInt32OrDefault).
     )";
     FunctionDocumentation::Syntax toUInt32_syntax = "toUInt32(expr)";
     FunctionDocumentation::Arguments toUInt32_arguments = {
@@ -163,20 +180,22 @@ toUInt32('32'):  32
     FunctionDocumentation toUInt32_documentation = {toUInt32_description, toUInt32_syntax, toUInt32_arguments, toUInt32_returned_value, toUInt32_examples, toUInt32_introduced_in, toUInt32_category};
 
     factory.registerFunction<detail::FunctionToUInt32>(toUInt32_documentation);
+
+    /// toUInt64 documentation
     FunctionDocumentation::Description toUInt64_description = R"(
 Converts an input value to a value of type [`UInt64`](../data-types/int-uint.md).
 Throws an exception in case of an error.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values of type Float*.
 
 Unsupported types:
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt64('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [UInt64](../data-types/int-uint.md), the result over or under flows.
+If the input value cannot be represented within the bounds of [`UInt64`](../data-types/int-uint.md), the result over or under flows.
 This is not considered an error.
 For example: `SELECT toUInt64(18446744073709551616) == 0;`
 :::
@@ -184,6 +203,11 @@ For example: `SELECT toUInt64(18446744073709551616) == 0;`
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
 :::
+
+See also:
+- [`toUInt64OrZero`](#toUInt64OrZero).
+- [`toUInt64OrNull`](#toUInt64OrNull).
+- [`toUInt64OrDefault`](#toUInt64OrDefault).
     )";
     FunctionDocumentation::Syntax toUInt64_syntax = "toUInt64(expr)";
     FunctionDocumentation::Arguments toUInt64_arguments = {
@@ -214,24 +238,31 @@ toUInt64('64'):  64
     FunctionDocumentation toUInt64_documentation = {toUInt64_description, toUInt64_syntax, toUInt64_arguments, toUInt64_returned_value, toUInt64_examples, toUInt64_introduced_in, toUInt64_category};
 
     factory.registerFunction<detail::FunctionToUInt64>(toUInt64_documentation);
+
+    /// toUInt128 documentation
     FunctionDocumentation::Description toUInt128_description = R"(
-Converts an input value to a value of type UInt128.
+Converts an input value to a value of type [`UInt128`](/sql-reference/functions/type-conversion-functions#touint128).
 Throws an exception in case of an error.
 The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values of type Float*.
 
 Unsupported arguments:
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt128('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of UInt128, the result over or under flows.
 This is not considered an error.
 :::
-)";
+
+See also:
+- [`toUInt128OrZero`](#toUInt128OrZero).
+- [`toUInt128OrNull`](#toUInt128OrNull).
+- [`toUInt128OrDefault`](#toUInt128OrDefault).
+    )";
     FunctionDocumentation::Syntax toUInt128_syntax = "toUInt128(expr)";
     FunctionDocumentation::Arguments toUInt128_arguments = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
@@ -267,18 +298,23 @@ Throws an exception in case of an error.
 The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values of type Float*.
 
 Unsupported arguments:
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt256('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of UInt256, the result over or under flows.
 This is not considered an error.
 :::
-)";
+
+See also:
+- [`toUInt256OrZero`](#toUInt256OrZero).
+- [`toUInt256OrNull`](#toUInt256OrNull).
+- [`toUInt256OrDefault`](#toUInt256OrDefault).
+    )";
     FunctionDocumentation::Syntax toUInt256_syntax = "toUInt256(expr)";
     FunctionDocumentation::Arguments toUInt256_arguments = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
@@ -315,11 +351,11 @@ Converts an input value to a value of type [`Int8`](../data-types/int-uint.md).
 Throws an exception in case of an error.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values of type Float*.
 
 Unsupported arguments:
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8('0xc0fe');`.
 
 :::note
@@ -331,7 +367,12 @@ For example: `SELECT toInt8(128) == -128;`.
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
 :::
-)";
+
+See also:
+- [`toInt8OrZero`](#toInt8OrZero).
+- [`toInt8OrNull`](#toInt8OrNull).
+- [`toInt8OrDefault`](#toInt8OrDefault).
+    )";
     FunctionDocumentation::Syntax toInt8_syntax = "toInt8(expr)";
     FunctionDocumentation::Arguments toInt8_arguments = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
@@ -360,17 +401,19 @@ toInt8('-8'): -8
     FunctionDocumentation::Category toInt8_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toInt8_documentation = {toInt8_description, toInt8_syntax, toInt8_arguments, toInt8_returned_value, toInt8_examples, toInt8_introduced_in, toInt8_category};
 
+    factory.registerFunction<detail::FunctionToInt8>(toInt8_documentation);
+
     /// toInt16 documentation
     FunctionDocumentation::Description toInt16_description = R"(
 Converts an input value to a value of type [`Int16`](../data-types/int-uint.md).
 Throws an exception in case of an error.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values of type Float*.
 
 Unsupported arguments:
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16('0xc0fe');`.
 
 :::note
@@ -382,7 +425,12 @@ For example: `SELECT toInt16(32768) == -32768;`.
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
 :::
-)";
+
+See also:
+- [`toInt16OrZero`](#toInt16OrZero).
+- [`toInt16OrNull`](#toInt16OrNull).
+- [`toInt16OrDefault`](#toInt16OrDefault).
+    )";
     FunctionDocumentation::Syntax toInt16_syntax = "toInt16(expr)";
     FunctionDocumentation::Arguments toInt16_arguments = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
@@ -411,18 +459,19 @@ toInt16('-16'):  -16
     FunctionDocumentation::Category toInt16_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toInt16_documentation = {toInt16_description, toInt16_syntax, toInt16_arguments, toInt16_returned_value, toInt16_examples, toInt16_introduced_in, toInt16_category};
 
-    factory.registerFunction<detail::FunctionToInt8>(toInt8_documentation);
     factory.registerFunction<detail::FunctionToInt16>(toInt16_documentation);
+
+    /// toInt32 documentation
     FunctionDocumentation::Description toInt32_description = R"(
 Converts an input value to a value of type [`Int32`](../data-types/int-uint.md).
 Throws an exception in case of an error.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values of type Float*.
 
 Unsupported arguments:
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32('0xc0fe');`.
 
 :::note
@@ -434,7 +483,12 @@ For example: `SELECT toInt32(2147483648) == -2147483648;`
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
 :::
-)";
+
+See also:
+- [`toInt32OrZero`](#toInt32OrZero).
+- [`toInt32OrNull`](#toInt32OrNull).
+- [`toInt32OrDefault`](#toInt32OrDefault).
+    )";
     FunctionDocumentation::Syntax toInt32_syntax = "toInt32(expr)";
     FunctionDocumentation::Arguments toInt32_arguments = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
@@ -464,111 +518,152 @@ toInt32('-32'):  -32
     FunctionDocumentation toInt32_documentation = {toInt32_description, toInt32_syntax, toInt32_arguments, toInt32_returned_value, toInt32_examples, toInt32_introduced_in, toInt32_category};
 
     factory.registerFunction<detail::FunctionToInt32>(toInt32_documentation);
+
+    /// toInt64 documentation
     FunctionDocumentation::Description toInt64_description = R"(
-Converts an input value to a value of type Int64.
+Converts an input value to a value of type [`Int64`](../data-types/int-uint.md).
 Throws an exception in case of an error.
-The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
-)";
+
+Supported arguments:
+- Values or string representations of type (U)Int*.
+- Values of type Float*.
+
+Unsupported arguments:
+- String representations of Float* values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt64('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), the result over or under flows.
+This is not considered an error.
+For example: `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
+:::
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
+
+See also:
+- [`toInt64OrZero`](#toInt64OrZero).
+- [`toInt64OrNull`](#toInt64OrNull).
+- [`toInt64OrDefault`](#toInt64OrDefault).
+    )";
     FunctionDocumentation::Syntax toInt64_syntax = "toInt64(expr)";
     FunctionDocumentation::Arguments toInt64_arguments = {
-        {"expr", "Expression returning a number or a string representation of a number. Supported: values or string representations of type (U)Int8/16/32/64/128/256, values of type Float32/64. Unsupported: string representations of Float32/64 values including NaN and Inf, string representations of binary and hexadecimal values.", {"Expression"}}
+        {"expr", "Expression returning a number or a string representation of a number. Supported: values or string representations of type (U)Int*, values of type Float*. Unsupported: string representations of Float* values including NaN and Inf, string representations of binary and hexadecimal values.", {"Expression"}}
     };
-    FunctionDocumentation::ReturnedValue toInt64_returned_value = {"64-bit integer value.", {"Int64"}};
-    FunctionDocumentation::Examples toInt64_examples = {
-        {
-            "Usage example",
-            R"(
+    FunctionDocumentation::ReturnedValue toInt64_returned_value = {"Returns a 64-bit integer value.", {"Int64"}};
+    FunctionDocumentation::Examples toInt64_examples =
+    {
+    {
+        "Usage example",
+        R"(
 SELECT
     toInt64(-64),
     toInt64(-64.64),
     toInt64('-64')
 FORMAT Vertical
-)",
-            R"(
+        )",
+        R"(
 Row 1:
 ──────
 toInt64(-64):    -64
 toInt64(-64.64): -64
 toInt64('-64'):  -64
-)"
-        }
+        )"
+    }
     };
     FunctionDocumentation::IntroducedIn toInt64_introduced_in = {1, 1};
     FunctionDocumentation::Category toInt64_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toInt64_documentation = {toInt64_description, toInt64_syntax, toInt64_arguments, toInt64_returned_value, toInt64_examples, toInt64_introduced_in, toInt64_category};
 
     factory.registerFunction<detail::FunctionToInt64>(toInt64_documentation);
+
+    /// toInt128 documentation
     FunctionDocumentation::Description toInt128_description = R"(
-Converts an input value to a value of type Int128.
+Converts an input value to a value of type [Int128](/sql-reference/data-types/int-uint).
 Throws an exception in case of an error.
 The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values of type Float*.
 
 Unsupported arguments:
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt128('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of Int128, the result over or under flows.
 This is not considered an error.
 :::
-)";
+
+See also:
+- [`toInt128OrZero`](#toInt128OrZero).
+- [`toInt128OrNull`](#toInt128OrNull).
+- [`toInt128OrDefault`](#toInt128OrDefault).
+    )";
     FunctionDocumentation::Syntax toInt128_syntax = "toInt128(expr)";
     FunctionDocumentation::Arguments toInt128_arguments = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
     };
     FunctionDocumentation::ReturnedValue toInt128_returned_value = {"Returns a 128-bit integer value.", {"Int128"}};
-    FunctionDocumentation::Examples toInt128_examples = {
-        {
-            "Usage example",
-            R"(
+    FunctionDocumentation::Examples toInt128_examples =
+    {
+    {
+        "Usage example",
+        R"(
 SELECT
     toInt128(-128),
     toInt128(-128.8),
     toInt128('-128')
 FORMAT Vertical
-)",
-            R"(
+        )",
+        R"(
 Row 1:
 ──────
 toInt128(-128):   -128
 toInt128(-128.8): -128
 toInt128('-128'): -128
-)"
-        }
+        )"
+    }
     };
     FunctionDocumentation::IntroducedIn toInt128_introduced_in = {1, 1};
     FunctionDocumentation::Category toInt128_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation toInt128_documentation = {toInt128_description, toInt128_syntax, toInt128_arguments, toInt128_returned_value, toInt128_examples, toInt128_introduced_in, toInt128_category};
 
     factory.registerFunction<detail::FunctionToInt128>(toInt128_documentation);
+
+    /// toInt256 documentation
     FunctionDocumentation::Description toInt256_description = R"(
-Converts an input value to a value of type Int256.
+Converts an input value to a value of type [Int256](/sql-reference/data-types/int-uint).
 Throws an exception in case of an error.
 The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values of type Float*.
 
 Unsupported arguments:
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of Int256, the result over or under flows.
 This is not considered an error.
 :::
-)";
+
+See also:
+- [`toInt256OrZero`](#toInt256OrZero).
+- [`toInt256OrNull`](#toInt256OrNull).
+- [`toInt256OrDefault`](#toInt256OrDefault).
+    )";
     FunctionDocumentation::Syntax toInt256_syntax = "toInt256(expr)";
     FunctionDocumentation::Arguments toInt256_arguments = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
     };
     FunctionDocumentation::ReturnedValue toInt256_returned_value = {"Returns a 256-bit integer value.", {"Int256"}};
-    FunctionDocumentation::Examples toInt256_examples = {
+    FunctionDocumentation::Examples toInt256_examples =
+    {
     {
         "Usage example",
         R"(
@@ -593,29 +688,37 @@ toInt256('-256'):   -256
 
     factory.registerFunction<detail::FunctionToInt256>(toInt256_documentation);
 
+    /// toBFloat16 documentation
     FunctionDocumentation::Description toBFloat16_description = R"(
 Converts an input value to a value of type BFloat16.
 Throws an exception in case of an error.
-)";
+
+See also:
+- [`toBFloat16OrZero`](#toBFloat16OrZero).
+- [`toBFloat16OrNull`](#toBFloat16OrNull).
+    )";
     FunctionDocumentation::Syntax toBFloat16_syntax = "toBFloat16(expr)";
     FunctionDocumentation::Arguments toBFloat16_arguments = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
     };
-    FunctionDocumentation::ReturnedValue toBFloat16_returned_value = {"16-bit brain-float value.", {"BFloat16"}};
-    FunctionDocumentation::Examples toBFloat16_examples = {
-        {
-            "Usage example",
-            R"(
-SELECT toBFloat16(toFloat32(42.7)),
-       toBFloat16(toFloat32('42.7')),
-       toBFloat16('42.7')
-)",
-            R"(
-42.5
-42.5
-42.5
-)"
-        }
+    FunctionDocumentation::ReturnedValue toBFloat16_returned_value = {"Returns a 16-bit brain-float value.", {"BFloat16"}};
+    FunctionDocumentation::Examples toBFloat16_examples =
+    {
+    {
+        "Usage example",
+        R"(
+SELECT
+toBFloat16(toFloat32(42.7)),
+toBFloat16(toFloat32('42.7')),
+toBFloat16('42.7')
+FORMAT Vertical;
+        )",
+        R"(
+toBFloat16(toFloat32(42.7)): 42.5
+toBFloat16(t⋯32('42.7')):    42.5
+toBFloat16('42.7'):          42.5
+        )"
+    }
     };
     FunctionDocumentation::IntroducedIn toBFloat16_introduced_in = {1, 1};
     FunctionDocumentation::Category toBFloat16_category = FunctionDocumentation::Category::TypeConversion;
@@ -623,25 +726,32 @@ SELECT toBFloat16(toFloat32(42.7)),
 
     factory.registerFunction<detail::FunctionToBFloat16>(toBFloat16_documentation);
 
+    /// toFloat32 documentation
     FunctionDocumentation::Description toFloat32_description = R"(
-Converts an input value to a value of type Float32.
+Converts an input value to a value of type [Float32](/sql-reference/data-types/float).
 Throws an exception in case of an error.
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values of type (U)Int*.
 - String representations of (U)Int8/16/32/128/256.
-- Values of type Float32/64, including `NaN` and `Inf`.
-- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
+- Values of type Float*, including `NaN` and `Inf`.
+- String representations of Float*, including `NaN` and `Inf` (case-insensitive).
 
 Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toFloat32('0xc0fe');`.
-)";
+
+See also:
+- [`toFloat32OrZero`](#toFloat32OrZero).
+- [`toFloat32OrNull`](#toFloat32OrNull).
+- [`toFloat32OrDefault`](#toFloat32OrDefault).
+    )";
     FunctionDocumentation::Syntax toFloat32_syntax = "toFloat32(expr)";
     FunctionDocumentation::Arguments toFloat32_arguments = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
     };
     FunctionDocumentation::ReturnedValue toFloat32_returned_value = {"Returns a 32-bit floating point value.", {"Float32"}};
-    FunctionDocumentation::Examples toFloat32_examples = {
+    FunctionDocumentation::Examples toFloat32_examples =
+    {
     {
         "Usage example",
         R"(
@@ -650,7 +760,7 @@ SELECT
     toFloat32('42.7'),
     toFloat32('NaN')
 FORMAT Vertical
-)",
+        )",
         R"(
 Row 1:
 ──────
@@ -672,14 +782,19 @@ Converts an input value to a value of type [`Float64`](../data-types/float.md).
 Throws an exception in case of an error.
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values of type (U)Int*.
 - String representations of (U)Int8/16/32/128/256.
-- Values of type Float32/64, including `NaN` and `Inf`.
-- String representations of type Float32/64, including `NaN` and `Inf` (case-insensitive).
+- Values of type Float*, including `NaN` and `Inf`.
+- String representations of type Float*, including `NaN` and `Inf` (case-insensitive).
 
 Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toFloat64('0xc0fe');`.
-)";
+
+See also:
+- [`toFloat64OrZero`](#toFloat64OrZero).
+- [`toFloat64OrNull`](#toFloat64OrNull).
+- [`toFloat64OrDefault`](#toFloat64OrDefault).
+    )";
     FunctionDocumentation::Syntax toFloat64_syntax = "toFloat64(expr)";
     FunctionDocumentation::Arguments toFloat64_arguments = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}}
@@ -710,16 +825,17 @@ toFloat64('NaN'):  nan
 
     factory.registerFunction<detail::FunctionToFloat64>(toFloat64_documentation);
 
+    /// toDecimal64 documentation
     FunctionDocumentation::Description description_toDecimal64 = R"(
 Converts an input value to a value of type [`Decimal(18, S)`](../data-types/decimal.md) with scale of `S`.
 Throws an exception in case of an error.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values or string representations of type Float*.
 
 Unsupported arguments:
-- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64('0xc0fe', 1);`.
 
 :::note
@@ -733,7 +849,7 @@ Conversions drop extra digits and could operate in an unexpected way when workin
 For example: `toDecimal64(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
 You can use a String input so the operations use the underlying integer type: `toDecimal64('1.15', 2) = 1.15`
 :::
-)";
+    )";
     FunctionDocumentation::Syntax syntax_toDecimal64 = "toDecimal64(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal64 = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}},
@@ -771,11 +887,11 @@ type_c: Decimal(18, 3)
 Converts an input value to a value of type [`Decimal(9, S)`](../data-types/decimal.md) with scale of `S`. Throws an exception in case of an error.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values or string representations of type Float*.
 
 Unsupported arguments:
-- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32('0xc0fe', 1);`.
 
 :::note
@@ -790,7 +906,7 @@ For example: `toDecimal32(1.15, 2)` is equal to `1.14` because 1.15 * 100 in flo
 You can use a String input so the operations use the underlying integer type: `toDecimal32('1.15', 2) = 1.15`
 :::
     )";
-    FunctionDocumentation::Syntax syntax_toDecimal32 = R"(toDecimal32(expr, S))";
+    FunctionDocumentation::Syntax syntax_toDecimal32 = "toDecimal32(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal32 = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}},
         {"S", "Scale parameter between 0 and 9, specifying how many digits the fractional part of a number can have.", {"UInt8"}}
@@ -824,14 +940,15 @@ type_c: Decimal(9, 3)
 
     /// toDecimal128 documentation
     FunctionDocumentation::Description description_toDecimal128 = R"(
-Converts an input value to a value of type [`Decimal(38, S)`](../data-types/decimal.md) with scale of `S`. Throws an exception in case of an error.
+Converts an input value to a value of type [`Decimal(38, S)`](../data-types/decimal.md) with scale of `S`.
+Throws an exception in case of an error.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values or string representations of type Float*.
 
 Unsupported arguments:
-- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128('0xc0fe', 1);`.
 
 :::note
@@ -845,16 +962,15 @@ Conversions drop extra digits and could operate in an unexpected way when workin
 For example: `toDecimal128(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
 You can use a String input so the operations use the underlying integer type: `toDecimal128('1.15', 2) = 1.15`
 :::
-)";
-
-    FunctionDocumentation::Syntax syntax_toDecimal128 = R"(toDecimal128(expr, S))";
-
+    )";
+    FunctionDocumentation::Syntax syntax_toDecimal128 = "toDecimal128(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal128 = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}},
         {"S", "Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDecimal128 = {"Returns a value of type `Decimal(38, S)`", {"Decimal128(S)"}};
-    FunctionDocumentation::Examples examples_toDecimal128 = {
+    FunctionDocumentation::Examples examples_toDecimal128 =
+    {
     {
         "Usage example",
         R"(
@@ -885,11 +1001,11 @@ type_c: Decimal(38, 3)
 Converts an input value to a value of type [`Decimal(76, S)`](../data-types/decimal.md) with scale of `S`. Throws an exception in case of an error.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values or string representations of type Float*.
 
 Unsupported arguments:
-- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256('0xc0fe', 1);`.
 
 :::note
@@ -910,7 +1026,8 @@ You can use a String input so the operations use the underlying integer type: `t
         {"S", "Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDecimal256 = {"Returns a value of type `Decimal(76, S)`.", {"Decimal256(S)"}};
-    FunctionDocumentation::Examples examples_toDecimal256 = {
+    FunctionDocumentation::Examples examples_toDecimal256 =
+    {
     {
         "Usage example",
         R"(
@@ -941,16 +1058,16 @@ type_c: Decimal(76, 3)
     factory.registerFunction<detail::FunctionToDecimal128>(documentation_toDecimal128);
     factory.registerFunction<detail::FunctionToDecimal256>(documentation_toDecimal256);
 
+    /// toDate documentation
     FunctionDocumentation::Description description_toDate = R"(
 Converts an input value to type [`Date`](/en/sql-reference/data-types/date).
 Supports conversion from String, FixedString, DateTime, or numeric types.
-If the input value cannot be converted, an exception is thrown.
     )";
     FunctionDocumentation::Syntax syntax_toDate = "toDate(x)";
     FunctionDocumentation::Arguments arguments_toDate = {
-        {"x", "Input value to convert. Type: [String](/en/sql-reference/data-types/string), [FixedString](/en/sql-reference/data-types/fixedstring), [DateTime](/en/sql-reference/data-types/datetime), [Int](/en/sql-reference/data-types/int-uint), [UInt](/en/sql-reference/data-types/int-uint), [Float](/en/sql-reference/data-types/float)"}
+        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toDate = {"Input value converted to [Date](/en/sql-reference/data-types/date) data type. Throws exception if conversion fails.", {"Date"}};
+    FunctionDocumentation::ReturnedValue returned_value_toDate = {"Returns the converted input value.", {"Date"}};
     FunctionDocumentation::Examples examples_toDate = {
     {
         "String to Date conversion",
@@ -993,40 +1110,43 @@ SELECT toDate(19489)
 
     /// toDate32 documentation
     FunctionDocumentation::Description description_toDate32 = R"(
-Converts the argument to the [Date32](../data-types/date32.md) data type. If the value is outside the range, `toDate32` returns the border values supported by [Date32](../data-types/date32.md). If the argument has [Date](../data-types/date.md) type, it's borders are taken into account.
+Converts the argument to the [Date32](../data-types/date32.md) data type.
+If the value is outside the range, `toDate32` returns the border values supported by [Date32](../data-types/date32.md).
+If the argument is of type [`Date`](../data-types/date.md), it's bounds are taken into account.
     )";
     FunctionDocumentation::Syntax syntax_toDate32 = "toDate32(expr)";
     FunctionDocumentation::Arguments arguments_toDate32 = {
-        {"expr", "The value.", {"String", "UInt32", "Date"}}
+        {"expr", "The value to convert.", {"String", "UInt32", "Date"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDate32 = {"Returns a calendar date.", {"Date32"}};
-    FunctionDocumentation::Examples examples_toDate32 = {
-        {
-            "Within range",
-            R"(
+    FunctionDocumentation::Examples examples_toDate32 =
+    {
+    {
+        "Within range",
+        R"(
 SELECT toDate32('1955-01-01') AS value, toTypeName(value)
 FORMAT Vertical
-            )",
-            R"(
+        )",
+        R"(
 Row 1:
 ──────
 value:           1955-01-01
 toTypeName(value): Date32
-            )"
-        },
-        {
-            "Outside range",
-            R"(
+        )"
+    },
+    {
+        "Outside range",
+        R"(
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
 FORMAT Vertical
-            )",
-            R"(
+        )",
+        R"(
 Row 1:
 ──────
 value:           1900-01-01
 toTypeName(value): Date32
-            )"
-        }
+        )"
+    }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDate32 = {21, 9};
     FunctionDocumentation::Category category_toDate32 = FunctionDocumentation::Category::TypeConversion;
@@ -1034,17 +1154,18 @@ toTypeName(value): Date32
 
     factory.registerFunction<detail::FunctionToDate32>(documentation_toDate32);
 
+    /// toTime documentation
     FunctionDocumentation::Description description_toTime = R"(
 Converts an input value to type [Time](/en/sql-reference/data-types/time).
 Supports conversion from String, FixedString, DateTime, or numeric types representing seconds since midnight.
-If the input value cannot be converted, an exception is thrown.
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
     FunctionDocumentation::Arguments arguments_toTime = {
-        {"x", "Input value to convert. Type: [String](/en/sql-reference/data-types/string), [FixedString](/en/sql-reference/data-types/fixedstring), [DateTime](/en/sql-reference/data-types/datetime), [Int](/en/sql-reference/data-types/int-uint), [UInt](/en/sql-reference/data-types/int-uint), [Float](/en/sql-reference/data-types/float)"}
+        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toTime = {"Input value converted to [Time](/en/sql-reference/data-types/time) data type. Throws exception if conversion fails.", {"Time"}};
-    FunctionDocumentation::Examples examples_toTime = {
+    FunctionDocumentation::ReturnedValue returned_value_toTime = {"Returns the converted value.", {"Time"}};
+    FunctionDocumentation::Examples examples_toTime =
+    {
     {
         "String to Time conversion",
         R"(
@@ -1064,7 +1185,7 @@ SELECT toTime(toDateTime('2023-04-15 14:30:25'))
         )"
     },
     {
-        "Numeric to Time conversion",
+        "Integer to Time conversion",
         R"(
 SELECT toTime(52225)
         )",
@@ -1083,13 +1204,12 @@ SELECT toTime(52225)
 Converts an input value to type [Time64](/en/sql-reference/data-types/time64).
 Supports conversion from String, FixedString, DateTime64, or numeric types representing microseconds since midnight.
 Provides microsecond precision for time values.
-If the input value cannot be converted, an exception is thrown.
     )";
     FunctionDocumentation::Syntax syntax_toTime64 = "toTime64(x)";
     FunctionDocumentation::Arguments arguments_toTime64 = {
         {"x", "Input value to convert.", {"String", "FixedString", "DateTime64", "(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toTime64 = {"Input value converted to [Time64](/en/sql-reference/data-types/time64) data type with microsecond precision. Throws exception if conversion fails.", {"Time64(6)"}};
+    FunctionDocumentation::ReturnedValue returned_value_toTime64 = {"Returns the converted input value with microsecond precision.", {"Time64(6)"}};
     FunctionDocumentation::Examples examples_toTime64 = {
     {
         "String to Time64 conversion",
@@ -1110,7 +1230,7 @@ SELECT toTime64(toDateTime64('2023-04-15 14:30:25.123456', 6))
         )"
     },
     {
-        "Numeric to Time64 conversion",
+        "Integer to Time64 conversion",
         R"(
 SELECT toTime64(52225123456)
         )",
@@ -1127,7 +1247,7 @@ SELECT toTime64(52225123456)
 
     /// toDateTime documentation
     FunctionDocumentation::Description description_toDateTime = R"(
-Converts an input value to [DateTime](../data-types/datetime.md).
+Converts an input value to type [DateTime](../data-types/datetime.md).
 
 :::note
 If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).
@@ -1162,18 +1282,18 @@ toDateTime(1685457500, 'UTC'):     2023-05-30 14:38:20
 
     factory.registerFunction<detail::FunctionToDateTime>(documentation_toDateTime);
 
+    /// toDateTime32 documentation
     FunctionDocumentation::Description description_toDateTime32 = R"(
 Converts an input value to type `DateTime`.
-Supports conversion from String, FixedString, Date, Date32, DateTime, or numeric types.
-DateTime32 provides extended range compared to DateTime, supporting dates from 1900-01-01 to 2299-12-31.
-If the input value cannot be converted, an exception is thrown.
+Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `DateTime`, or numeric types (`(U)Int*`, `Float*`, `Decimal`).
+DateTime32 provides extended range compared to `DateTime`, supporting dates from `1900-01-01` to `2299-12-31`.
     )";
     FunctionDocumentation::Syntax syntax_toDateTime32 = "toDateTime32(x[, timezone])";
     FunctionDocumentation::Arguments arguments_toDateTime32 = {
-        {"x", "Input value to convert.", {"String", "FixedString", "Date", "DateTime", "DateTime64", "UInt*", "Float*"}},
-        {"timezone", "Optional. Timezone for the returned DateTime value.", {"String"}}
+        {"x", "Input value to convert.", {"String", "FixedString", "UInt*", "Float*", "Date", "DateTime", "DateTime64"}},
+        {"timezone", "Optional. Timezone for the returned `DateTime` value.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toDateTime32 = {"Input value converted to [DateTime32](/en/sql-reference/data-types/datetime32) data type. Throws exception if conversion fails.", {"DateTime"}};
+    FunctionDocumentation::ReturnedValue returned_value_toDateTime32 = {"Returns the converted input value.", {"DateTime"}};
     FunctionDocumentation::Examples examples_toDateTime32 = {
     {
         "The value is within the range",
@@ -1222,13 +1342,13 @@ SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
 
     /// toDateTime64 documentation
     FunctionDocumentation::Description description_toDateTime64 = R"(
-Converts an input value to a value of type [DateTime64](../data-types/datetime64.md).
+Converts an input value to a value of type [`DateTime64`](../data-types/datetime64.md).
     )";
     FunctionDocumentation::Syntax syntax_toDateTime64 = "toDateTime64(expr, scale[, timezone])";
     FunctionDocumentation::Arguments arguments_toDateTime64 = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}},
         {"scale", "Tick size (precision): 10^(-scale) seconds.", {"UInt8"}},
-        {"timezone", "Time zone for the specified DateTime64 object.", {"String"}}
+        {"timezone", "Optional. Time zone for the specified `DateTime64` object.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTime64 = {"Returns a calendar date and time of day, with sub-second precision.", {"DateTime64"}};
     FunctionDocumentation::Examples examples_toDateTime64 = {
@@ -1276,8 +1396,8 @@ SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
 
     /// toUUID documentation
     FunctionDocumentation::Description description_toUUID = R"(
-Converts a value of type String to a UUID.
-)";
+Converts a String value to a UUID value.
+    )";
     FunctionDocumentation::Syntax syntax_toUUID = "toUUID(string)";
     FunctionDocumentation::Arguments arguments_toUUID = {
         {"string", "UUID as a string.", {"String", "FixedString"}}
@@ -1300,10 +1420,12 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
     FunctionDocumentation::Category category_toUUID = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toUUID = {description_toUUID, syntax_toUUID, arguments_toUUID, returned_value_toUUID, examples_toUUID, introduced_in_toUUID, category_toUUID};
 
+    factory.registerFunction<detail::FunctionToUUID>(documentation_toUUID);
+
     /// toIPv4 documentation
     FunctionDocumentation::Description description_toIPv4 = R"(
-Converts a string or a UInt32 form of IPv4 address to IPv4 type.
-Similar to [IPv4StringToNum](/sql-reference/functions/ip-address-functions#IPv4StringToNum) and [IPv4NumToString](/sql-reference/functions/ip-address-functions#IPv4NumToString) functions but it supports both string and unsigned integer data types as input arguments.
+Converts a string or a UInt32 form of IPv4 address to type IPv4.
+It is similar to [`IPv4StringToNum`](/sql-reference/functions/ip-address-functions#IPv4StringToNum) and [`IPv4NumToString`](/sql-reference/functions/ip-address-functions#IPv4NumToString) functions but it supports both string and unsigned integer data types as input arguments.
 )";
     FunctionDocumentation::Syntax syntax_toIPv4 = "toIPv4(x)";
     FunctionDocumentation::Arguments arguments_toIPv4 = {
@@ -1353,9 +1475,11 @@ SELECT toIPv4(2130706433);
     FunctionDocumentation::Category category_toIPv4 = FunctionDocumentation::Category::IPAddress;
     FunctionDocumentation documentation_toIPv4 = {description_toIPv4, syntax_toIPv4, arguments_toIPv4, returned_value_toIPv4, examples_toIPv4, introduced_in_toIPv4, category_toIPv4};
 
+    factory.registerFunction<detail::FunctionToIPv4>(documentation_toIPv4);
+
     /// toIPv6 documentation
     FunctionDocumentation::Description description_toIPv6 = R"(
-onverts a string or a UInt128 form of IPv6 address to [IPv6](../data-types/ipv6.md) type.
+onverts a string or a `UInt128` form of IPv6 address to [`IPv6`](../data-types/ipv6.md) type.
 For strings, if the IPv6 address has an invalid format, returns an empty value.
 Similar to [`IPv6StringToNum`](/sql-reference/functions/ip-address-functions#IPv6StringToNum) and [`IPv6NumToString`](/sql-reference/functions/ip-address-functions#IPv6NumToString) functions, which convert IPv6 address to and from binary format (i.e. `FixedString(16)`).
 
@@ -1397,8 +1521,6 @@ SELECT toIPv6('127.0.0.1');
     FunctionDocumentation::Category category_toIPv6 = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIPv6 = {description_toIPv6, syntax_toIPv6, arguments_toIPv6, returned_value_toIPv6, examples_toIPv6, introduced_in_toIPv6, category_toIPv6};
 
-    factory.registerFunction<detail::FunctionToUUID>(documentation_toUUID);
-    factory.registerFunction<detail::FunctionToIPv4>(documentation_toIPv4);
     factory.registerFunction<detail::FunctionToIPv6>(documentation_toIPv6);
 
     FunctionDocumentation::Description toString_description = R"(
@@ -1410,7 +1532,7 @@ For DateTime arguments, the function can take a second String argument containin
         {"value", "Value to convert to string.", {"Any"}},
         {"timezone", "Optional. Timezone name for DateTime conversion.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue toString_returned_value = {"String representation of the input value.", {"String"}};
+    FunctionDocumentation::ReturnedValue toString_returned_value = {"Returns a string representation of the input value.", {"String"}};
     FunctionDocumentation::Examples toString_examples = {
     {
         "Usage example",
@@ -1440,6 +1562,7 @@ LIMIT 10
 
     factory.registerFunction<detail::FunctionToString>(toString_documentation);
 
+    /// toUnixTimestamp documentation
     FunctionDocumentation::Description description_to_unix_timestamp = R"(
 Converts a `String`, `Date`, or `DateTime` to a Unix timestamp (seconds since `1970-01-01 00:00:00 UTC`) as `UInt32`.
     )";
@@ -1448,10 +1571,11 @@ toUnixTimestamp(date, [timezone])
     )";
     FunctionDocumentation::Arguments arguments_to_unix_timestamp = {
         {"date", "Value to convert.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
-        {"timezone", "Optional.Timezone to use for conversion. If not specified, the server's timezone is used.", {"String"}}
+        {"timezone", "Optional. Timezone to use for conversion. If not specified, the server's timezone is used.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_unix_timestamp = {"Returns the Unix timestamp as", {"UInt32"}};
-    FunctionDocumentation::Examples examples_to_unix_timestamp = {
+    FunctionDocumentation::ReturnedValue returned_value_to_unix_timestamp = {"Returns the Unix timestamp.", {"UInt32"}};
+    FunctionDocumentation::Examples examples_to_unix_timestamp =
+    {
     {
         "Usage example",
         R"(
@@ -1481,20 +1605,29 @@ from_date32:     1509840000
     FunctionDocumentation::IntroducedIn introduced_in_to_unix_timestamp = {1, 1};
     FunctionDocumentation::Category category_to_unix_timestamp = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation_to_unix_timestamp = {description_to_unix_timestamp, syntax_to_unix_timestamp, arguments_to_unix_timestamp, returned_value_to_unix_timestamp, examples_to_unix_timestamp, introduced_in_to_unix_timestamp, category_to_unix_timestamp};
+
     factory.registerFunction<detail::FunctionToUnixTimestamp>(documentation_to_unix_timestamp);
 
     /// toUInt8OrZero documentation
     FunctionDocumentation::Description description_toUInt8OrZero = R"(
-Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [`UInt8`](../data-types/int-uint.md) but returns `0` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `0`):
-- String representations of ordinary Float32/64 values, including `NaN` and `Inf`.
+- String representations of ordinary Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrZero('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [UInt8](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [`UInt8`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toUInt8`](#toUInt8).
+- [`toUInt8OrNull`](#toUInt8OrNull).
+- [`toUInt8OrDefault`](#toUInt8OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toUInt8OrZero = "toUInt8OrZero(x)";
     FunctionDocumentation::Arguments arguments_toUInt8OrZero = {
@@ -1526,16 +1659,24 @@ toUInt8OrZero('abc'): 0
 
     /// toUInt16OrZero documentation
     FunctionDocumentation::Description description_toUInt16OrZero = R"(
-Like [`toUInt16`](#toUInt16), this function converts an input value to a value of type [UInt16](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toUInt16`](#toUInt16), this function converts an input value to a value of type [`UInt16`](../data-types/int-uint.md) but returns `0` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `0`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrZero('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [UInt16](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [`UInt16`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toUInt16`](#toUInt16).
+- [`toUInt16OrNull`](#toUInt16OrNull).
+- [`toUInt16OrDefault`](#toUInt16OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toUInt16OrZero = "toUInt16OrZero(x)";
     FunctionDocumentation::Arguments arguments_toUInt16OrZero = {
@@ -1567,16 +1708,24 @@ toUInt16OrZero('abc'): 0
 
     /// toUInt32OrZero documentation
     FunctionDocumentation::Description description_toUInt32OrZero = R"(
-Like [`toUInt32`](#toUInt32), this function converts an input value to a value of type [UInt32](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toUInt32`](#toUInt32), this function converts an input value to a value of type [`UInt32`](../data-types/int-uint.md) but returns `0` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `0`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrZero('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [UInt32](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [`UInt32`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toUInt32`](#toUInt32).
+- [`toUInt32OrNull`](#toUInt32OrNull).
+- [`toUInt32OrDefault`](#toUInt32OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toUInt32OrZero = "toUInt32OrZero(x)";
     FunctionDocumentation::Arguments arguments_toUInt32OrZero = {
@@ -1605,18 +1754,27 @@ toUInt32OrZero('abc'): 0
     FunctionDocumentation documentation_toUInt32OrZero = {description_toUInt32OrZero, syntax_toUInt32OrZero, arguments_toUInt32OrZero, returned_value_toUInt32OrZero, examples_toUInt32OrZero, introduced_in_toUInt32OrZero, category_toUInt32OrZero};
 
     factory.registerFunction<detail::FunctionToUInt32OrZero>(documentation_toUInt32OrZero);
+
     /// toUInt64OrZero documentation
     FunctionDocumentation::Description description_toUInt64OrZero = R"(
-Like [`toUInt64`](#toUInt64), this function converts an input value to a value of type [UInt64](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toUInt64`](#toUInt64), this function converts an input value to a value of type [`UInt64`](../data-types/int-uint.md) but returns `0` in case of an error.
 
 Supported arguments:
-- String representations of (U)Int8/16/32/64/128/256.
+- String representations of (U)Int*.
 
 Unsupported arguments (return `0`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrZero('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [UInt64](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [`UInt64`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toUInt64`](#toUInt64).
+- [`toUInt64OrNull`](#toUInt64OrNull).
+- [`toUInt64OrDefault`](#toUInt64OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toUInt64OrZero = "toUInt64OrZero(x)";
     FunctionDocumentation::Arguments arguments_toUInt64OrZero = {
@@ -1648,17 +1806,24 @@ toUInt64OrZero('abc'): 0
 
     /// toUInt128OrZero documentation
     FunctionDocumentation::Description description_toUInt128OrZero = R"(
-Like [`toUInt128`](#toUInt128), this function converts an input value to a value of type [UInt128](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toUInt128`](#toUInt128), this function converts an input value to a value of type [`UInt128`](../data-types/int-uint.md) but returns `0` in case of an error.
 
 Supported arguments:
-- String representations of (U)Int8/16/32/64/128/256.
+- String representations of (U)Int*.
 
 Unsupported arguments (return `0`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrZero('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [UInt128](../data-types/int-uint.md), overflow or underflow of the result occurs.
+:::note
+If the input value cannot be represented within the bounds of [`UInt128`](../data-types/int-uint.md), overflow or underflow of the result occurs.
 This is not considered an error.
+:::
+
+See also:
+- [`toUInt128`](#toUInt128).
+- [`toUInt128OrNull`](#toUInt128OrNull).
+- [`toUInt128OrDefault`](#toUInt128OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toUInt128OrZero = "toUInt128OrZero(x)";
     FunctionDocumentation::Arguments arguments_toUInt128OrZero = {
@@ -1687,18 +1852,27 @@ toUInt128OrZero('abc'): 0
     FunctionDocumentation documentation_toUInt128OrZero = {description_toUInt128OrZero, syntax_toUInt128OrZero, arguments_toUInt128OrZero, returned_value_toUInt128OrZero, examples_toUInt128OrZero, introduced_in_toUInt128OrZero, category_toUInt128OrZero};
 
     factory.registerFunction<detail::FunctionToUInt128OrZero>(documentation_toUInt128OrZero);
+
     /// toUInt256OrZero documentation
     FunctionDocumentation::Description description_toUInt256OrZero = R"(
-Like [`toUInt256`](#toUInt256), this function converts an input value to a value of type [UInt256](../data-types/int-uint.md) but returns `0` in case of an error.
+Like [`toUInt256`](#toUInt256), this function converts an input value to a value of type [`UInt256`](../data-types/int-uint.md) but returns `0` in case of an error.
 
 Supported arguments:
-- String representations of (U)Int8/16/32/64/128/256.
+- String representations of (U)Int*.
 
 Unsupported arguments (return `0`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrZero('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [UInt256](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [`UInt256`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toUInt256`](#toUInt256).
+- [`toUInt256OrNull`](#toUInt256OrNull).
+- [`toUInt256OrDefault`](#toUInt256OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toUInt256OrZero = "toUInt256OrZero(x)";
     FunctionDocumentation::Arguments arguments_toUInt256OrZero = {
@@ -1733,13 +1907,21 @@ toUInt256OrZero('abc'): 0
 Like [`toInt8`](#toInt8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns `0` in case of an error.
 
 Supported arguments:
-- String representations of (U)Int8/16/32/64/128/256.
+- String representations of (U)Int*.
 
 Unsupported arguments (return `0`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrZero('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toInt8`](#toInt8).
+- [`toInt8OrNull`](#toInt8OrNull).
+- [`toInt8OrDefault`](#toInt8OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toInt8OrZero = "toInt8OrZero(x)";
     FunctionDocumentation::Arguments arguments_toInt8OrZero = {
@@ -1774,13 +1956,21 @@ toInt8OrZero('abc'): 0
 Like [`toInt16`](#toInt16), this function converts an input value to a value of type [Int16](../data-types/int-uint.md) but returns `0` in case of an error.
 
 Supported arguments:
-- String representations of (U)Int8/16/32/64/128/256.
+- String representations of (U)Int*.
 
 Unsupported arguments (return `0`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrZero('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toInt16`](#toInt16).
+- [`toInt16OrNull`](#toInt16OrNull).
+- [`toInt16OrDefault`](#toInt16OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toInt16OrZero = "toInt16OrZero(x)";
     FunctionDocumentation::Arguments arguments_toInt16OrZero = {
@@ -1815,13 +2005,21 @@ toInt16OrZero('abc'): 0
 Like [`toInt32`](#toInt32), this function converts an input value to a value of type [Int32](../data-types/int-uint.md) but returns `0` in case of an error.
 
 Supported arguments:
-- String representations of (U)Int8/16/32/64/128/256.
+- String representations of (U)Int*.
 
 Unsupported arguments (return `0`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrZero('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toInt32`](#toInt32).
+- [`toInt32OrNull`](#toInt32OrNull).
+- [`toInt32OrDefault`](#toInt32OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toInt32OrZero = "toInt32OrZero(x)";
     FunctionDocumentation::Arguments arguments_toInt32OrZero = {
@@ -1854,12 +2052,17 @@ toInt32OrZero('abc'): 0
     FunctionDocumentation::Description description_toInt64OrZero = R"(
 Converts an input value to type [Int64](/en/sql-reference/data-types/int-uint) but returns `0` in case of an error.
 Like [`toInt64`](#toint64) but returns `0` instead of throwing an exception.
+
+See also:
+- [`toInt64`](#toInt64).
+- [`toInt64OrNull`](#toInt64OrNull).
+- [`toInt64OrDefault`](#toInt64OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toInt64OrZero = "toInt64OrZero(x)";
     FunctionDocumentation::Arguments arguments_toInt64OrZero = {
-        {"x", "Input value to convert. Type: [String](/en/sql-reference/data-types/string), [FixedString](/en/sql-reference/data-types/fixedstring), [Float](/en/sql-reference/data-types/float), [Decimal](/en/sql-reference/data-types/decimal), [Int](/en/sql-reference/data-types/int-uint), [Date](/en/sql-reference/data-types/date), [DateTime](/en/sql-reference/data-types/datetime)"}
+        {"x", "Input value to convert.", {"String", "FixedString", "Float*", "Decimal", "(U)Int*", "Date", "DateTime"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toInt64OrZero = {"Input value converted to [Int64](/en/sql-reference/data-types/int-uint) data type. Returns `0` if conversion fails.", {"Int64"}};
+    FunctionDocumentation::ReturnedValue returned_value_toInt64OrZero = {"Returns the converted input value, otherwise `0` if conversion fails.", {"Int64"}};
     FunctionDocumentation::Examples examples_toInt64OrZero = {
     {
         "Usage example",
@@ -1889,12 +2092,17 @@ SELECT toInt64OrZero('abc')
     FunctionDocumentation::Description description_toInt128OrZero = R"(
 Converts an input value to type [Int128](/en/sql-reference/data-types/int-uint) but returns `0` in case of an error.
 Like [`toInt128`](#toint128) but returns `0` instead of throwing an exception.
+
+See also:
+- [`toInt128`](#toInt128).
+- [`toInt128OrNull`](#toInt128OrNull).
+- [`toInt128OrDefault`](#toInt128OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toInt128OrZero = "toInt128OrZero(x)";
     FunctionDocumentation::Arguments arguments_toInt128OrZero = {
-        {"x", "Input value to convert. Type: [String](/en/sql-reference/data-types/string), [FixedString](/en/sql-reference/data-types/fixedstring), [Float](/en/sql-reference/data-types/float), [Decimal](/en/sql-reference/data-types/decimal), [Int](/en/sql-reference/data-types/int-uint), [Date](/en/sql-reference/data-types/date), [DateTime](/en/sql-reference/data-types/datetime)"}
+        {"x", "Input value to convert.", {"String", "FixedString", "Float*", "Decimal", "(U)Int*", "Date", "DateTime"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toInt128OrZero = {"Input value converted to [Int128](/en/sql-reference/data-types/int-uint) data type. Returns `0` if conversion fails.", {"Int128"}};
+    FunctionDocumentation::ReturnedValue returned_value_toInt128OrZero = {"Returns the converted input value, otherwise `0` if conversion fails.", {"Int128"}};
     FunctionDocumentation::Examples examples_toInt128OrZero = {
     {
         "Usage example",
@@ -1924,12 +2132,17 @@ SELECT toInt128OrZero('abc')
     FunctionDocumentation::Description description_toInt256OrZero = R"(
 Converts an input value to type [Int256](/en/sql-reference/data-types/int-uint) but returns `0` in case of an error.
 Like [`toInt256`](#toint256) but returns `0` instead of throwing an exception.
+
+See also:
+- [`toInt256`](#toInt256).
+- [`toInt256OrNull`](#toInt256OrNull).
+- [`toInt256OrDefault`](#toInt256OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toInt256OrZero = "toInt256OrZero(x)";
     FunctionDocumentation::Arguments arguments_toInt256OrZero = {
-        {"x", "Input value to convert. Type: [String](/en/sql-reference/data-types/string), [FixedString](/en/sql-reference/data-types/fixedstring), [Float](/en/sql-reference/data-types/float), [Decimal](/en/sql-reference/data-types/decimal), [Int](/en/sql-reference/data-types/int-uint), [Date](/en/sql-reference/data-types/date), [DateTime](/en/sql-reference/data-types/datetime)"}
+        {"x", "Input value to convert.", {"String", "FixedString", "Float*", "Decimal", "(U)Int*", "Date", "DateTime"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toInt256OrZero = {"Input value converted to [Int256](/en/sql-reference/data-types/int-uint) data type. Returns `0` if conversion fails.", {"Int256"}};
+    FunctionDocumentation::ReturnedValue returned_value_toInt256OrZero = {"Returns the converted input value, otherwise `0` if conversion fails.", {"Int256"}};
     FunctionDocumentation::Examples examples_toInt256OrZero = {
     {
         "Usage example",
@@ -1956,6 +2169,7 @@ SELECT toInt256OrZero('abc')
 
     factory.registerFunction<detail::FunctionToInt256OrZero>(documentation_toInt256OrZero);
 
+    /// toBFloat16OrZero documentation
     FunctionDocumentation::Description toBFloat16OrZero_description = R"(
 Converts a String input value to a value of type BFloat16.
 If the string does not represent a floating point value, the function returns zero.
@@ -1970,6 +2184,10 @@ Unsupported arguments (return `0`):
 :::note
 The function allows a silent loss of precision while converting from the string representation.
 :::
+
+See also:
+- [`toBFloat16`](#toBFloat16).
+- [`toBFloat16OrNull`](#toBFloat16OrNull).
     )";
     FunctionDocumentation::Syntax toBFloat16OrZero_syntax = "toBFloat16OrZero(x)";
     FunctionDocumentation::Arguments toBFloat16OrZero_arguments = {
@@ -2001,6 +2219,11 @@ SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
     FunctionDocumentation::Description description_toFloat32OrZero = R"(
 Converts an input value to a value of type [Float32](../data-types/float.md) but returns `0` in case of an error.
 Like [`toFloat32`](#tofloat32) but returns `0` instead of throwing an exception on conversion errors.
+
+See also:
+- [`toFloat32`](#toFloat32).
+- [`toFloat32OrNull`](#toFloat32OrNull).
+- [`toFloat32OrDefault`](#toFloat32OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toFloat32OrZero = "toFloat32OrZero(x)";
     FunctionDocumentation::Arguments arguments_toFloat32OrZero = {
@@ -2034,6 +2257,11 @@ toFloat32OrZero('abc'):  0
     FunctionDocumentation::Description description_toFloat64OrZero = R"(
 Converts an input value to a value of type [Float64](../data-types/float.md) but returns `0` in case of an error.
 Like [`toFloat64`](#toFloat64) but returns `0` instead of throwing an exception on conversion errors.
+
+See also:
+- [`toFloat64`](#toFloat64).
+- [`toFloat64OrNull`](#toFloat64OrNull).
+- [`toFloat64OrDefault`](#toFloat64OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toFloat64OrZero = "toFloat64OrZero(x)";
     FunctionDocumentation::Arguments arguments_toFloat64OrZero = {
@@ -2065,9 +2293,13 @@ toFloat64OrZero('abc'):  0
 
     /// toDateOrZero documentation
     FunctionDocumentation::Description description_toDateOrZero = R"(
-Converts an input value to a value of type [Date](../data-types/date.md) but returns the lower boundary of [Date](../data-types/date.md) if an invalid argument is received.
-The same as [toDate](#todate) but returns lower boundary of [Date](../data-types/date.md) if an invalid argument is received.
-Only [String](../data-types/string.md) argument is supported.
+Converts an input value to a value of type [`Date`](../data-types/date.md) but returns the lower boundary of [`Date`](../data-types/date.md) if an invalid argument is received.
+The same as [toDate](#todate) but returns lower boundary of [`Date`](../data-types/date.md) if an invalid argument is received.
+
+See also:
+- [`toDate`](#toDate)
+- [`toDateOrNull`](#toDateOrNull)
+- [`toDateOrDefault`](#toDateOrDefault)
     )";
     FunctionDocumentation::Syntax syntax_toDateOrZero = "toDateOrZero(x)";
     FunctionDocumentation::Arguments arguments_toDateOrZero = {
@@ -2096,8 +2328,12 @@ SELECT toDateOrZero('2022-12-30'), toDateOrZero('')
     /// toDate32OrZero documentation
     FunctionDocumentation::Description description_toDate32OrZero = R"(
 Converts an input value to a value of type [Date32](../data-types/date32.md) but returns the lower boundary of [Date32](../data-types/date32.md) if an invalid argument is received.
-The same as [toDate32](#todate32) but returns lower boundary of [Date32](../data-types/date32.md) if an invalid argument is received.
-Only [String](../data-types/string.md) argument is supported.
+The same as [toDate32](#toDate32) but returns lower boundary of [Date32](../data-types/date32.md) if an invalid argument is received.
+
+See also:
+- [`toDate32`](#toDate32)
+- [`toDate32OrNull`](#toDate32OrNull)
+- [`toDate32OrDefault`](#toDate32OrDefault)
     )";
     FunctionDocumentation::Syntax syntax_toDate32OrZero = "toDate32OrZero(x)";
     FunctionDocumentation::Arguments arguments_toDate32OrZero = {
@@ -2162,18 +2398,19 @@ Like [`toTime64`](#toTime54) but returns `00:00:00.000` instead of throwing an e
         {"x", "A string representation of a time with subsecond precision.", {"String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime64OrZero = {"Returns a Time64 value if successful, otherwise `00:00:00.000`.", {"Time64"}};
-    FunctionDocumentation::Examples examples_toTime64OrZero = {
-        {
-            "Basic usage",
-            R"(
+    FunctionDocumentation::Examples examples_toTime64OrZero =
+    {
+    {
+    "Usage example",
+    R"(
 SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
-)",
-            R"(
+    )",
+    R"(
 ┌─toTime64OrZero('12:30:45.123')─┬─toTime64OrZero('invalid')─┐
 │                   12:30:45.123 │             00:00:00.000 │
 └────────────────────────────────┴──────────────────────────┘
-)"
-        }
+    )"
+    }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toTime64OrZero = {25, 6};
     FunctionDocumentation::Category category_toTime64OrZero = FunctionDocumentation::Category::TypeConversion;
@@ -2185,25 +2422,25 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
     FunctionDocumentation::Description description_toDateTimeOrZero = R"(
 Converts an input value to a value of type [DateTime](../data-types/datetime.md) but returns the lower boundary of [DateTime](../data-types/datetime.md) if an invalid argument is received.
 The same as [toDateTime](#todatetime) but returns lower boundary of [DateTime](../data-types/datetime.md) if an invalid argument is received.
-Only [String](../data-types/string.md) argument is supported.
-)";
+    )";
     FunctionDocumentation::Syntax syntax_toDateTimeOrZero = "toDateTimeOrZero(x)";
     FunctionDocumentation::Arguments arguments_toDateTimeOrZero = {
         {"x", "A string representation of a date with time.", {"String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTimeOrZero = {"Returns a DateTime value if successful, otherwise the lower boundary of DateTime (`1970-01-01 00:00:00`).", {"DateTime"}};
-    FunctionDocumentation::Examples examples_toDateTimeOrZero = {
-        {
-            "Basic usage",
-            R"(
+    FunctionDocumentation::Examples examples_toDateTimeOrZero =
+    {
+    {
+        "Usage example",
+        R"(
 SELECT toDateTimeOrZero('2022-12-30 13:44:17'), toDateTimeOrZero('invalid')
-)",
-            R"(
+        )",
+        R"(
 ┌─toDateTimeOrZero('2022-12-30 13:44:17')─┬─toDateTimeOrZero('invalid')─┐
 │                     2022-12-30 13:44:17 │         1970-01-01 00:00:00 │
 └─────────────────────────────────────────┴─────────────────────────────┘
-)"
-        }
+        )"
+    }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDateTimeOrZero = {1, 1};
     FunctionDocumentation::Category category_toDateTimeOrZero = FunctionDocumentation::Category::TypeConversion;
@@ -2215,25 +2452,30 @@ SELECT toDateTimeOrZero('2022-12-30 13:44:17'), toDateTimeOrZero('invalid')
     FunctionDocumentation::Description description_toDateTime64OrZero = R"(
 Converts an input value to a value of type [DateTime64](../data-types/datetime64.md) but returns the lower boundary of [DateTime64](../data-types/datetime64.md) if an invalid argument is received.
 The same as [toDateTime64](#todatetime64) but returns lower boundary of [DateTime64](../data-types/datetime64.md) if an invalid argument is received.
-Only [String](../data-types/string.md) argument is supported.
-)";
+
+See also:
+- [toDateTime64](#toDateTime64).
+- [toDateTime64OrNull](#toDateTime64OrNull).
+- [toDateTime64OrDefault](#toDateTime64OrDefault).
+    )";
     FunctionDocumentation::Syntax syntax_toDateTime64OrZero = "toDateTime64OrZero(x)";
     FunctionDocumentation::Arguments arguments_toDateTime64OrZero = {
         {"x", "A string representation of a date with time and subsecond precision.", {"String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTime64OrZero = {"Returns a DateTime64 value if successful, otherwise the lower boundary of DateTime64 (`1970-01-01 00:00:00.000`).", {"DateTime64"}};
-    FunctionDocumentation::Examples examples_toDateTime64OrZero = {
-        {
-            "Basic usage",
-            R"(
+    FunctionDocumentation::Examples examples_toDateTime64OrZero =
+    {
+    {
+        "Usage example",
+        R"(
 SELECT toDateTime64OrZero('2022-12-30 13:44:17.123'), toDateTime64OrZero('invalid')
-)",
-            R"(
+        )",
+        R"(
 ┌─toDateTime64OrZero('2022-12-30 13:44:17.123')─┬─toDateTime64OrZero('invalid')─┐
 │                         2022-12-30 13:44:17.123 │             1970-01-01 00:00:00.000 │
 └─────────────────────────────────────────────────┴─────────────────────────────────────┘
-)"
-        }
+        )"
+    }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDateTime64OrZero = {20, 1};
     FunctionDocumentation::Category category_toDateTime64OrZero = FunctionDocumentation::Category::TypeConversion;
@@ -2247,11 +2489,11 @@ Converts an input value to a value of type [Decimal(9, S)](../data-types/decimal
 Like [`toDecimal32`](#todecimal32) but returns `0` instead of throwing an exception on conversion errors.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values or string representations of type Float*.
 
 Unsupported arguments (return `0`):
-- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 
 :::note
@@ -2289,35 +2531,41 @@ Converts an input value to a value of type [Decimal(18, S)](../data-types/decima
 Like [`toDecimal64`](#todecimal64) but returns `0` instead of throwing an exception on conversion errors.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values or string representations of type Float*.
 
 Unsupported arguments (return `0`):
-- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 
 :::note
 If the input value exceeds the bounds of `Decimal64`:`(-1*10^(18 - S), 1*10^(18 - S))`, the function returns `0`.
 :::
-)";
+
+See also:
+- [`toDecimal64`](#toDecimal64).
+- [`toDecimal64OrNull`](#toDecimal64OrNull).
+- [`toDecimal64OrDefault`](#toDecimal64OrDefault).
+    )";
     FunctionDocumentation::Syntax syntax_toDecimal64OrZero = "toDecimal64OrZero(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal64OrZero = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}},
         {"S", "Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDecimal64OrZero = {"Returns a Decimal(18, S) value if successful, otherwise `0`.", {"Decimal64(S)"}};
-    FunctionDocumentation::Examples examples_toDecimal64OrZero = {
-        {
-            "Basic usage",
-            R"(
+    FunctionDocumentation::Examples examples_toDecimal64OrZero =
+    {
+    {
+        "Usage example",
+        R"(
 SELECT toDecimal64OrZero('42.7', 2), toDecimal64OrZero('invalid', 2)
-)",
-            R"(
+        )",
+        R"(
 ┌─toDecimal64OrZero('42.7', 2)─┬─toDecimal64OrZero('invalid', 2)─┐
 │                        42.70 │                            0.00 │
 └──────────────────────────────┴─────────────────────────────────┘
-)"
-        }
+        )"
+    }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDecimal64OrZero = {20, 1};
     FunctionDocumentation::Category category_toDecimal64OrZero = FunctionDocumentation::Category::TypeConversion;
@@ -2331,35 +2579,36 @@ Converts an input value to a value of type [Decimal(38, S)](../data-types/decima
 Like [`toDecimal128`](#todecimal128) but returns `0` instead of throwing an exception on conversion errors.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values or string representations of type Float*.
 
 Unsupported arguments (return `0`):
-- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 
 :::note
 If the input value exceeds the bounds of `Decimal128`:`(-1*10^(38 - S), 1*10^(38 - S))`, the function returns `0`.
 :::
-)";
+    )";
     FunctionDocumentation::Syntax syntax_toDecimal128OrZero = "toDecimal128OrZero(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal128OrZero = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}},
         {"S", "Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDecimal128OrZero = {"Returns a Decimal(38, S) value if successful, otherwise `0`.", {"Decimal128(S)"}};
-    FunctionDocumentation::Examples examples_toDecimal128OrZero = {
-        {
-            "Basic usage",
-            R"(
+    FunctionDocumentation::Examples examples_toDecimal128OrZero =
+    {
+    {
+        "Basic usage",
+        R"(
 SELECT toDecimal128OrZero('42.7', 2), toDecimal128OrZero('invalid', 2)
-)",
-            R"(
+        )",
+        R"(
 ┌─toDecimal128OrZero('42.7', 2)─┬─toDecimal128OrZero('invalid', 2)─┐
 │                         42.70 │                             0.00 │
 └───────────────────────────────┴──────────────────────────────────┘
-)"
-        }
+        )"
+    }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toDecimal128OrZero = {20, 1};
     FunctionDocumentation::Category category_toDecimal128OrZero = FunctionDocumentation::Category::TypeConversion;
@@ -2373,17 +2622,22 @@ Converts an input value to a value of type [Decimal(76, S)](../data-types/decima
 Like [`toDecimal256`](#todecimal256) but returns `0` instead of throwing an exception on conversion errors.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values or string representations of type Float*.
 
 Unsupported arguments (return `0`):
-- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 
 :::note
 If the input value exceeds the bounds of `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`, the function returns `0`.
 :::
-)";
+
+See also:
+- [`toDecimal256`](#toDecimal256).
+- [`toDecimal256OrNull`](#toDecimal256OrNull).
+- [`toDecimal256OrDefault`](#toDecimal256OrDefault).
+    )";
     FunctionDocumentation::Syntax syntax_toDecimal256OrZero = "toDecimal256OrZero(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal256OrZero = {
         {"expr", "Expression returning a number or a string representation of a number.", {"Expression"}},
@@ -2537,16 +2791,24 @@ SELECT
 
     /// toUInt8OrNull documentation
     FunctionDocumentation::Description description_toUInt8OrNull = R"(
-Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toUInt8`](#toUInt8), this function converts an input value to a value of type [`UInt8`](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `NULL`):
-- String representations of ordinary Float32/64 values, including `NaN` and `Inf`.
+- String representations of ordinary Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrNull('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [UInt8](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [`UInt8`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toUInt8`](#toUInt8).
+- [`toUInt8OrZero`](#toUInt8OrZero).
+- [`toUInt8OrDefault`](#toUInt8OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toUInt8OrNull = "toUInt8OrNull(x)";
     FunctionDocumentation::Arguments arguments_toUInt8OrNull =
@@ -2580,23 +2842,31 @@ toUInt8OrNull('abc'): \N
 
     /// toUInt16OrNull documentation
     FunctionDocumentation::Description description_toUInt16OrNull = R"(
-Like [`toUInt16`](#toUInt16), this function converts an input value to a value of type [UInt16](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toUInt16`](#toUInt16), this function converts an input value to a value of type [`UInt16`](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `NULL`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrNull('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [UInt16](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [`UInt16`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toUInt16`](#toUInt16).
+- [`toUInt16OrZero`](#toUInt16OrZero).
+- [`toUInt16OrDefault`](#toUInt16OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toUInt16OrNull = "toUInt16OrNull(x)";
     FunctionDocumentation::Arguments arguments_toUInt16OrNull =
     {
         {"x", "A String representation of a number.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toUInt16OrNull = {"Returns a value of type UInt16, otherwise `NULL` if the conversion is unsuccessful.", {"UInt16", "NULL"}};
+    FunctionDocumentation::ReturnedValue returned_value_toUInt16OrNull = {"Returns a value of type `UInt16`, otherwise `NULL` if the conversion is unsuccessful.", {"UInt16", "NULL"}};
     FunctionDocumentation::Examples examples_toUInt16OrNull =
     {
     {
@@ -2623,23 +2893,31 @@ toUInt16OrNull('abc'): \N
 
     /// toUInt32OrNull documentation
     FunctionDocumentation::Description description_toUInt32OrNull = R"(
-Like [`toUInt32`](#toUInt32), this function converts an input value to a value of type [UInt32](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toUInt32`](#toUInt32), this function converts an input value to a value of type [`UInt32`](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 Supported arguments:
 - String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `NULL`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrNull('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [UInt32](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [`UInt32`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toUInt32`](#toUInt32).
+- [`toUInt32OrZero`](#toUInt32OrZero).
+- [`toUInt32OrDefault`](#toUInt32OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toUInt32OrNull = "toUInt32OrNull(x)";
     FunctionDocumentation::Arguments arguments_toUInt32OrNull =
     {
         {"x", "A String representation of a number.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toUInt32OrNull = {"Returns a value of type UInt32, otherwise `NULL` if the conversion is unsuccessful.", {"UInt32", "NULL"}};
+    FunctionDocumentation::ReturnedValue returned_value_toUInt32OrNull = {"Returns a value of type `UInt32`, otherwise `NULL` if the conversion is unsuccessful.", {"UInt32", "NULL"}};
     FunctionDocumentation::Examples examples_toUInt32OrNull =
     {
     {
@@ -2666,16 +2944,24 @@ toUInt32OrNull('abc'): \N
 
     /// toUInt64OrNull documentation
     FunctionDocumentation::Description description_toUInt64OrNull = R"(
-Like [`toUInt64`](#toUInt64), this function converts an input value to a value of type [UInt64](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toUInt64`](#toUInt64), this function converts an input value to a value of type [`UInt64`](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 Supported arguments:
-- String representations of (U)Int8/16/32/64/128/256.
+- String representations of (U)Int*.
 
 Unsupported arguments (return `NULL`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrNull('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [UInt64](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [`UInt64`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toUInt64`](#toUInt64).
+- [`toUInt64OrZero`](#toUInt64OrZero).
+- [`toUInt64OrDefault`](#toUInt64OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toUInt64OrNull = "toUInt64OrNull(x)";
     FunctionDocumentation::Arguments arguments_toUInt64OrNull =
@@ -2709,16 +2995,24 @@ toUInt64OrNull('abc'): \N
 
     /// toUInt128OrNull documentation
     FunctionDocumentation::Description description_toUInt128OrNull = R"(
-Like [`toUInt128`](#toUInt128), this function converts an input value to a value of type [UInt128](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toUInt128`](#toUInt128), this function converts an input value to a value of type [`UInt128`](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 Supported arguments:
-- String representations of (U)Int8/16/32/64/128/256.
+- String representations of (U)Int*.
 
 Unsupported arguments (return `NULL`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrNull('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [UInt128](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [`UInt128`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toUInt128`](#toUInt128).
+- [`toUInt128OrZero`](#toUInt128OrZero).
+- [`toUInt128OrDefault`](#toUInt128OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toUInt128OrNull = "toUInt128OrNull(x)";
     FunctionDocumentation::Arguments arguments_toUInt128OrNull =
@@ -2752,16 +3046,24 @@ toUInt128OrNull('abc'): \N
 
     /// toUInt256OrNull documentation
     FunctionDocumentation::Description description_toUInt256OrNull = R"(
-Like [`toUInt256`](#toUInt256), this function converts an input value to a value of type [UInt256](../data-types/int-uint.md) but returns `NULL` in case of an error.
+Like [`toUInt256`](#toUInt256), this function converts an input value to a value of type [`UInt256`](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 Supported arguments:
-- String representations of (U)Int8/16/32/64/128/256.
+- String representations of (U)Int*.
 
 Unsupported arguments (return `NULL`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrNull('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [UInt256](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [`UInt256`](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toUInt256`](#toUInt256).
+- [`toUInt256OrZero`](#toUInt256OrZero).
+- [`toUInt256OrDefault`](#toUInt256OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toUInt256OrNull = "toUInt256OrNull(x)";
     FunctionDocumentation::Arguments arguments_toUInt256OrNull =
@@ -2798,13 +3100,21 @@ toUInt256OrNull('abc'): \N
 Like [`toInt8`](#toInt8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 Supported arguments:
-- String representations of (U)Int8/16/32/64/128/256.
+- String representations of (U)Int*.
 
 Unsupported arguments (return `NULL`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrNull('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toInt8`](#toInt8).
+- [`toInt8OrZero`](#toInt8OrZero).
+- [`toInt8OrDefault`](#toInt8OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toInt8OrNull = "toInt8OrNull(x)";
     FunctionDocumentation::Arguments arguments_toInt8OrNull =
@@ -2841,20 +3151,28 @@ toInt8OrNull('abc'): \N
 Like [`toInt16`](#toInt16), this function converts an input value to a value of type [Int16](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 Supported arguments:
-- String representations of (U)Int8/16/32/64/128/256.
+- String representations of (U)Int*.
 
 Unsupported arguments (return `NULL`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrNull('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
+:::note
+If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toInt16`](#toInt16).
+- [`toInt16OrZero`](#toInt16OrZero).
+- [`toInt16OrDefault`](#toInt16OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toInt16OrNull = "toInt16OrNull(x)";
     FunctionDocumentation::Arguments arguments_toInt16OrNull =
     {
         {"x", "A String representation of a number.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toInt16OrNull = {"Returns a value of type Int16, otherwise `NULL` if the conversion is unsuccessful.", {"Int16", "NULL"}};
+    FunctionDocumentation::ReturnedValue returned_value_toInt16OrNull = {"Returns a value of type `Int16`, otherwise `NULL` if the conversion is unsuccessful.", {"Int16", "NULL"}};
     FunctionDocumentation::Examples examples_toInt16OrNull =
     {
     {
@@ -2884,14 +3202,22 @@ toInt16OrNull('abc'): \N
 Like [`toInt32`](#toInt32), this function converts an input value to a value of type [Int32](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 Supported arguments:
-- String representations of (U)Int8/16/32/64/128/256.
+- String representations of (U)Int*.
 
 Unsupported arguments (return `NULL`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrNull('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
-)";
+:::note
+If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toInt32`](#toInt32).
+- [`toInt32OrZero`](#toInt32OrZero).
+- [`toInt32OrDefault`](#toInt32OrDefault).
+    )";
     FunctionDocumentation::Syntax syntax_toInt32OrNull = "toInt32OrNull(x)";
     FunctionDocumentation::Arguments arguments_toInt32OrNull =
     {
@@ -2927,14 +3253,22 @@ toInt32OrNull('abc'): \N
 Like [`toInt64`](#toInt64), this function converts an input value to a value of type [Int64](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 Supported arguments:
-- String representations of (U)Int8/16/32/64/128/256.
+- String representations of (U)Int*.
 
 Unsupported arguments (return `NULL`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrNull('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
-)";
+:::note
+If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toInt64`](#toInt64).
+- [`toInt64OrZero`](#toInt64OrZero).
+- [`toInt64OrDefault`](#toInt64OrDefault).
+    )";
     FunctionDocumentation::Syntax syntax_toInt64OrNull = "toInt64OrNull(x)";
     FunctionDocumentation::Arguments arguments_toInt64OrNull =
     {
@@ -2970,14 +3304,22 @@ toInt64OrNull('abc'): \N
 Like [`toInt128`](#toInt128), this function converts an input value to a value of type [Int128](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 Supported arguments:
-- String representations of (U)Int8/16/32/64/128/256.
+- String representations of (U)Int*.
 
 Unsupported arguments (return `NULL`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrNull('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
-)";
+:::note
+If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toInt128`](#toInt128).
+- [`toInt128OrZero`](#toInt128OrZero).
+- [`toInt128OrDefault`](#toInt128OrDefault).
+    )";
     FunctionDocumentation::Syntax syntax_toInt128OrNull = "toInt128OrNull(x)";
     FunctionDocumentation::Arguments arguments_toInt128OrNull =
     {
@@ -3013,14 +3355,22 @@ toInt128OrNull('abc'):  \N
 Like [`toInt256`](#toInt256), this function converts an input value to a value of type [Int256](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
 Supported arguments:
-- String representations of (U)Int8/16/32/64/128/256.
+- String representations of (U)Int*.
 
 Unsupported arguments (return `NULL`):
-- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrNull('0xc0fe');`.
 
-If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs. This is not considered an error.
-)";
+:::note
+If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+See also:
+- [`toInt256`](#toInt256).
+- [`toInt256OrZero`](#toInt256OrZero).
+- [`toInt256OrDefault`](#toInt256OrDefault).
+    )";
     FunctionDocumentation::Syntax syntax_toInt256OrNull = "toInt256OrNull(x)";
     FunctionDocumentation::Arguments arguments_toInt256OrNull =
     {
@@ -3051,6 +3401,7 @@ toInt256OrNull('abc'):  \N
 
     factory.registerFunction<detail::FunctionToInt256OrNull>(documentation_toInt256OrNull);
 
+    /// toBFloat16OrNull documentation
     FunctionDocumentation::Description toBFloat16OrNull_description = R"(
 Converts a String input value to a value of type BFloat16.
 If the string does not represent a floating point value, the function returns NULL.
@@ -3065,6 +3416,10 @@ Unsupported arguments (return `NULL`):
 :::note
 The function allows a silent loss of precision while converting from the string representation.
 :::
+
+See also:
+- [`toBFloat16`](#toBFloat16).
+- [`toBFloat16OrZero`](#toBFloat16OrZero).
     )";
     FunctionDocumentation::Syntax toBFloat16OrNull_syntax = "toBFloat16OrNull(x)";
     FunctionDocumentation::Arguments toBFloat16OrNull_arguments =
@@ -3100,14 +3455,19 @@ Converts an input value to a value of type [Float32](../data-types/float.md) but
 Like [`toFloat32`](#toFloat32) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values of type (U)Int*.
 - String representations of (U)Int8/16/32/128/256.
-- Values of type Float32/64, including `NaN` and `Inf`.
-- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
+- Values of type Float*, including `NaN` and `Inf`.
+- String representations of Float*, including `NaN` and `Inf` (case-insensitive).
 
 Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toFloat32OrNull('0xc0fe');`.
 - Invalid string formats.
+
+See also:
+- [`toFloat32`](#toFloat32).
+- [`toFloat32OrZero`](#toFloat32OrZero).
+- [`toFloat32OrDefault`](#toFloat32OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toFloat32OrNull = "toFloat32OrNull(x)";
     FunctionDocumentation::Arguments arguments_toFloat32OrNull =
@@ -3147,14 +3507,19 @@ Converts an input value to a value of type [Float64](../data-types/float.md) but
 Like [`toFloat64`](#tofloat64) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values of type (U)Int*.
 - String representations of (U)Int8/16/32/128/256.
-- Values of type Float32/64, including `NaN` and `Inf`.
-- String representations of type Float32/64, including `NaN` and `Inf` (case-insensitive).
+- Values of type Float*, including `NaN` and `Inf`.
+- String representations of type Float*, including `NaN` and `Inf` (case-insensitive).
 
 Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toFloat64OrNull('0xc0fe');`.
 - Invalid string formats.
+
+See also:
+- [`toFloat64`](#toFloat64).
+- [`toFloat64OrZero`](#toFloat64OrZero).
+- [`toFloat64OrDefault`](#toFloat64OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toFloat64OrNull = "toFloat64OrNull(x)";
     FunctionDocumentation::Arguments arguments_toFloat64OrNull =
@@ -3190,9 +3555,8 @@ toFloat64OrNull('abc'):  \N
 
     /// toDateOrNull documentation
     FunctionDocumentation::Description description_toDateOrNull = R"(
-Converts an input value to a value of type [Date](../data-types/date.md) but returns `NULL` if an invalid argument is received.
-The same as [toDate](#todate) but returns `NULL` if an invalid argument is received.
-Only [String](../data-types/string.md) argument is supported.
+Converts an input value to a value of type `Date` but returns `NULL` if an invalid argument is received.
+The same as [`toDate`](#toDate) but returns `NULL` if an invalid argument is received.
     )";
     FunctionDocumentation::Syntax syntax_toDateOrNull = "toDateOrNull(x)";
     FunctionDocumentation::Arguments arguments_toDateOrNull =
@@ -3222,9 +3586,8 @@ SELECT toDateOrNull('2022-12-30'), toDateOrNull('invalid')
 
     /// toDate32OrNull documentation
     FunctionDocumentation::Description description_toDate32OrNull = R"(
-Converts an input value to a value of type [Date32](../data-types/date32.md) but returns `NULL` if an invalid argument is received.
-The same as [toDate32](#todate32) but returns `NULL` if an invalid argument is received.
-Only [String](../data-types/string.md) argument is supported.
+Converts an input value to a value of type Date32 but returns `NULL` if an invalid argument is received.
+The same as [`toDate32`](#toDate32) but returns `NULL` if an invalid argument is received.
     )";
     FunctionDocumentation::Syntax syntax_toDate32OrNull = "toDate32OrNull(x)";
     FunctionDocumentation::Arguments arguments_toDate32OrNull =
@@ -3255,7 +3618,11 @@ SELECT toDate32OrNull('1955-01-01'), toDate32OrNull('invalid')
     /// toTimeOrNull documentation
     FunctionDocumentation::Description description_toTimeOrNull = R"(
 Converts an input value to a value of type Time but returns `NULL` in case of an error.
-Like toTime but returns `NULL` instead of throwing an exception on conversion errors.
+Like [`toTime`](#toTime) but returns `NULL` instead of throwing an exception on conversion errors.
+
+See also:
+- [`toTime`](#toTime)
+- [`toTimeOrZero`](#toTimeOrZero)
     )";
     FunctionDocumentation::Syntax syntax_toTimeOrNull = "toTimeOrNull(x)";
     FunctionDocumentation::Arguments arguments_toTimeOrNull =
@@ -3285,8 +3652,12 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
 
     /// toTime64OrNull documentation
     FunctionDocumentation::Description description_toTime64OrNull = R"(
-Converts an input value to a value of type Time64 but returns `NULL` in case of an error.
-Like toTime64 but returns `NULL` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type `Time64` but returns `NULL` in case of an error.
+Like [`toTime64`](#toTime64) but returns `NULL` instead of throwing an exception on conversion errors.
+
+See also:
+- [`toTime64`](#toTime64)
+- [`toTime64OrZero`](#toTime64OrZero)
     )";
     FunctionDocumentation::Syntax syntax_toTime64OrNull = "toTime64OrNull(x)";
     FunctionDocumentation::Arguments arguments_toTime64OrNull =
@@ -3316,16 +3687,15 @@ SELECT toTime64OrNull('12:30:45.123'), toTime64OrNull('invalid')
 
     /// toDateTimeOrNull documentation
     FunctionDocumentation::Description description_toDateTimeOrNull = R"(
-Converts an input value to a value of type [DateTime](../data-types/datetime.md) but returns `NULL` if an invalid argument is received.
-The same as [toDateTime](#todatetime) but returns `NULL` if an invalid argument is received.
-Only [String](../data-types/string.md) argument is supported.
+Converts an input value to a value of type `DateTime` but returns `NULL` if an invalid argument is received.
+The same as [`toDateTime`](#toDateTime) but returns `NULL` if an invalid argument is received.
     )";
     FunctionDocumentation::Syntax syntax_toDateTimeOrNull = "toDateTimeOrNull(x)";
     FunctionDocumentation::Arguments arguments_toDateTimeOrNull =
     {
         {"x", "A string representation of a date with time.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toDateTimeOrNull = {"Returns a DateTime value if successful, otherwise `NULL`.", {"DateTime", "NULL"}};
+    FunctionDocumentation::ReturnedValue returned_value_toDateTimeOrNull = {"Returns a `DateTime` value if successful, otherwise `NULL`.", {"DateTime", "NULL"}};
     FunctionDocumentation::Examples examples_toDateTimeOrNull =
     {
     {
@@ -3348,9 +3718,8 @@ SELECT toDateTimeOrNull('2022-12-30 13:44:17'), toDateTimeOrNull('invalid')
 
     /// toDateTime64OrNull documentation
     FunctionDocumentation::Description description_toDateTime64OrNull = R"(
-Converts an input value to a value of type [DateTime64](../data-types/datetime64.md) but returns `NULL` if an invalid argument is received.
-The same as [toDateTime64](#todatetime64) but returns `NULL` if an invalid argument is received.
-Only [String](../data-types/string.md) argument is supported.
+Converts an input value to a value of type `DateTime64` but returns `NULL` if an invalid argument is received.
+The same as `toDateTime64` but returns `NULL` if an invalid argument is received.
     )";
     FunctionDocumentation::Syntax syntax_toDateTime64OrNull = "toDateTime64OrNull(x)";
     FunctionDocumentation::Arguments arguments_toDateTime64OrNull =
@@ -3380,17 +3749,22 @@ SELECT toDateTime64OrNull('2022-12-30 13:44:17.123'), toDateTime64OrNull('invali
 
     /// toDecimal32OrNull documentation
     FunctionDocumentation::Description description_toDecimal32OrNull = R"(
-Converts an input value to a value of type [Decimal(9, S)](../data-types/decimal.md) but returns `NULL` in case of an error.
-Like [`toDecimal32`](#todecimal32) but returns `NULL` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type [`Decimal(9, S)`](../data-types/decimal.md) but returns `NULL` in case of an error.
+Like [`toDecimal32`](#toDecimal32) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values or string representations of type Float*.
 
 Unsupported arguments (return `NULL`):
-- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 - Values that exceed the bounds of `Decimal32`:`(-1*10^(9 - S), 1*10^(9 - S))`.
+
+See also:
+- [`toDecimal32`](#toDecimal32).
+- [`toDecimal32OrZero`](#toDecimal32OrZero).
+- [`toDecimal32OrDefault`](#toDecimal32OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toDecimal32OrNull = "toDecimal32OrNull(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal32OrNull =
@@ -3425,14 +3799,19 @@ Converts an input value to a value of type [Decimal(18, S)](../data-types/decima
 Like [`toDecimal64`](#todecimal64) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values or string representations of type Float*.
 
 Unsupported arguments (return `NULL`):
-- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 - Values that exceed the bounds of `Decimal64`:`(-1*10^(18 - S), 1*10^(18 - S))`.
-)";
+
+See also:
+- [`toDecimal64`](#toDecimal64).
+- [`toDecimal64OrZero`](#toDecimal64OrZero).
+- [`toDecimal64OrDefault`](#toDecimal64OrDefault).
+    )";
     FunctionDocumentation::Syntax syntax_toDecimal64OrNull = "toDecimal64OrNull(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal64OrNull =
     {
@@ -3462,17 +3841,22 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
 
     /// toDecimal128OrNull documentation
     FunctionDocumentation::Description description_toDecimal128OrNull = R"(
-Converts an input value to a value of type [Decimal(38, S)](../data-types/decimal.md) but returns `NULL` in case of an error.
-Like [`toDecimal128`](#todecimal128) but returns `NULL` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type [`Decimal(38, S)`](../data-types/decimal.md) but returns `NULL` in case of an error.
+Like [`toDecimal128`](#toDecimal128) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values or string representations of type Float*.
 
 Unsupported arguments (return `NULL`):
-- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 - Values that exceed the bounds of `Decimal128`:`(-1*10^(38 - S), 1*10^(38 - S))`.
+
+See also:
+- [`toDecimal128`](#toDecimal128).
+- [`toDecimal128OrZero`](#toDecimal128OrZero).
+- [`toDecimal128OrDefault`](#toDecimal128OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toDecimal128OrNull = "toDecimal128OrNull(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal128OrNull = {
@@ -3502,17 +3886,22 @@ SELECT toDecimal128OrNull('42.7', 2), toDecimal128OrNull('invalid', 2)
 
     /// toDecimal256OrNull documentation
     FunctionDocumentation::Description description_toDecimal256OrNull = R"(
-Converts an input value to a value of type [Decimal(76, S)](../data-types/decimal.md) but returns `NULL` in case of an error.
-Like [`toDecimal256`](#todecimal256) but returns `NULL` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type [`Decimal(76, S)`](../data-types/decimal.md) but returns `NULL` in case of an error.
+Like [`toDecimal256`](#toDecimal256) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
-- Values or string representations of type (U)Int8/16/32/64/128/256.
-- Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int*.
+- Values or string representations of type Float*.
 
 Unsupported arguments (return `NULL`):
-- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 - Values that exceed the bounds of `Decimal256`: `(-1 * 10^(76 - S), 1 * 10^(76 - S))`.
+
+See also:
+- [`toDecimal256`](#toDecimal256).
+- [`toDecimal256OrZero`](#toDecimal256OrZero).
+- [`toDecimal256OrDefault`](#toDecimal256OrDefault).
     )";
     FunctionDocumentation::Syntax syntax_toDecimal256OrNull = "toDecimal256OrNull(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal256OrNull =
@@ -3543,7 +3932,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
 
     /// toUUIDOrNull documentation
     FunctionDocumentation::Description description_toUUIDOrNull = R"(
-Converts an input value to a value of type [UUID](../data-types/uuid.md) but returns `NULL` in case of an error.
+Converts an input value to a value of type `UUID` but returns `NULL` in case of an error.
 Like [`toUUID`](#touuid) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
@@ -3578,15 +3967,15 @@ SELECT
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUUIDOrNull = {20, 12};
-    FunctionDocumentation::Category category_toUUIDOrNull = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation::Category category_toUUIDOrNull = FunctionDocumentation::Category::UUID;
     FunctionDocumentation documentation_toUUIDOrNull = {description_toUUIDOrNull, syntax_toUUIDOrNull, arguments_toUUIDOrNull, returned_value_toUUIDOrNull, examples_toUUIDOrNull, introduced_in_toUUIDOrNull, category_toUUIDOrNull};
 
     factory.registerFunction<detail::FunctionToUUIDOrNull>(documentation_toUUIDOrNull);
 
     /// toIPv4OrNull documentation
     FunctionDocumentation::Description description_toIPv4OrNull = R"(
-Converts an input value to a value of type [IPv4](../data-types/ipv4.md) but returns `NULL` in case of an error.
-Like [`toIPv4`](#toipv4) but returns `NULL` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type `IPv4` but returns `NULL` in case of an error.
+Like [`toIPv4`](#toIPv4) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of IPv4 addresses in dotted decimal notation.
@@ -3621,15 +4010,15 @@ SELECT
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIPv4OrNull = {22, 3};
-    FunctionDocumentation::Category category_toIPv4OrNull = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation::Category category_toIPv4OrNull = FunctionDocumentation::Category::IPAddress;
     FunctionDocumentation documentation_toIPv4OrNull = {description_toIPv4OrNull, syntax_toIPv4OrNull, arguments_toIPv4OrNull, returned_value_toIPv4OrNull, examples_toIPv4OrNull, introduced_in_toIPv4OrNull, category_toIPv4OrNull};
 
     factory.registerFunction<detail::FunctionToIPv4OrNull>(documentation_toIPv4OrNull);
 
     /// toIPv6OrNull documentation
     FunctionDocumentation::Description description_toIPv6OrNull = R"(
-Converts an input value to a value of type [IPv6](../data-types/ipv6.md) but returns `NULL` in case of an error.
-Like [`toIPv6`](#toipv6) but returns `NULL` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type `IPv6` but returns `NULL` in case of an error.
+Like [`toIPv6`](#toIPv6) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of IPv6 addresses in standard notation.
@@ -3665,14 +4054,15 @@ SELECT
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_toIPv6OrNull = {22, 3};
-    FunctionDocumentation::Category category_toIPv6OrNull = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation::Category category_toIPv6OrNull = FunctionDocumentation::Category::IPAddress;
     FunctionDocumentation documentation_toIPv6OrNull = {description_toIPv6OrNull, syntax_toIPv6OrNull, arguments_toIPv6OrNull, returned_value_toIPv6OrNull, examples_toIPv6OrNull, introduced_in_toIPv6OrNull, category_toIPv6OrNull};
 
     factory.registerFunction<detail::FunctionToIPv6OrNull>(documentation_toIPv6OrNull);
 
+    /// parseDateTimeBestEffort documentation
     FunctionDocumentation::Description parseDateTimeBestEffort_description = R"(
 Converts a date and time in the String representation to DateTime data type.
-The function parses ISO 8601, RFC 1123 - 5.2.14 RFC-822 Date and Time Specification, ClickHouse's and some other date and time formats.
+The function parses [ISO 8601](https://www.iso.org/iso-8601-date-and-time-format.html), [RFC 1123 - 5.2.14 RFC-822](https://datatracker.ietf.org/doc/html/rfc822) Date and Time Specification, ClickHouse's and some other date and time formats.
 
 Supported non-standard formats:
 - A string containing 9..10 digit unix timestamp.
@@ -3685,11 +4075,11 @@ Supported non-standard formats:
 For all of the formats with separator the function parses months names expressed by their full name or by the first three letters of a month name.
 If the year is not specified, it is considered to be equal to the current year.
     )";
-    FunctionDocumentation::Syntax parseDateTimeBestEffort_syntax = "parseDateTimeBestEffort(time_string [, time_zone])";
+    FunctionDocumentation::Syntax parseDateTimeBestEffort_syntax = "parseDateTimeBestEffort(time_string[, time_zone])";
     FunctionDocumentation::Arguments parseDateTimeBestEffort_arguments =
     {
         {"time_string", "String containing a date and time to convert.", {"String"}},
-        {"time_zone", "Time zone. The function parses `time_string` according to the time zone.", {"String"}}
+        {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffort_returned_value = {"Returns `time_string` as a `DateTime`.", {"DateTime"}};
     FunctionDocumentation::Examples parseDateTimeBestEffort_examples =
@@ -3733,6 +4123,8 @@ SELECT parseDateTimeBestEffort('1284101485') AS parseDateTimeBestEffort
     FunctionDocumentation parseDateTimeBestEffort_documentation = {parseDateTimeBestEffort_description, parseDateTimeBestEffort_syntax, parseDateTimeBestEffort_arguments, parseDateTimeBestEffort_returned_value, parseDateTimeBestEffort_examples, parseDateTimeBestEffort_introduced_in, parseDateTimeBestEffort_category};
 
     factory.registerFunction<detail::FunctionParseDateTimeBestEffort>(parseDateTimeBestEffort_documentation);
+
+    /// parseDateTimeBestEffortOrZero documentation
     FunctionDocumentation::Description parseDateTimeBestEffortOrZero_description = R"(
 Same as [`parseDateTimeBestEffort`](#parseDateTimeBestEffort) except that it returns a zero date or a zero date time when it encounters a date format that cannot be processed.
 The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse's and some other date and time formats.
@@ -3752,9 +4144,9 @@ If the year is not specified, it is considered to be equal to the current year.
     FunctionDocumentation::Arguments parseDateTimeBestEffortOrZero_arguments =
     {
         {"time_string", "String containing a date and time to convert.", {"String"}},
-        {"time_zone", "Optional. Time zone. The function parses time_string according to the time zone.", {"String"}}
+        {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue parseDateTimeBestEffortOrZero_returned_value = {"Returns `time_string` as a DateTime, or zero date/datetime (`1970-01-01` or `1970-01-01 00:00:00`) if the input cannot be parsed.", {"DateTime"}};
+    FunctionDocumentation::ReturnedValue parseDateTimeBestEffortOrZero_returned_value = {"Returns `time_string` as a `DateTime`, or zero date/datetime (`1970-01-01` or `1970-01-01 00:00:00`) if the input cannot be parsed.", {"DateTime"}};
     FunctionDocumentation::Examples parseDateTimeBestEffortOrZero_examples =
     {
     {
@@ -3775,8 +4167,10 @@ SELECT parseDateTimeBestEffortOrZero('23/10/2020 12:12:57') AS valid,
     FunctionDocumentation parseDateTimeBestEffortOrZero_documentation = {parseDateTimeBestEffortOrZero_description, parseDateTimeBestEffortOrZero_syntax, parseDateTimeBestEffortOrZero_arguments, parseDateTimeBestEffortOrZero_returned_value, parseDateTimeBestEffortOrZero_examples, parseDateTimeBestEffortOrZero_introduced_in, parseDateTimeBestEffortOrZero_category};
 
     factory.registerFunction<detail::FunctionParseDateTimeBestEffortOrZero>(parseDateTimeBestEffortOrZero_documentation);
+
+    /// parseDateTimeBestEffortOrNull documentation
     FunctionDocumentation::Description parseDateTimeBestEffortOrNull_description = R"(
-Same as [`parseDateTimeBestEffort`](#parseDateTimeBestEffort) except that it returns `NULL` when it encounters a date format that cannot be processed.
+The same as [`parseDateTimeBestEffort`](#parseDateTimeBestEffort) except that it returns `NULL` when it encounters a date format that cannot be processed.
 The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse's and some other date and time formats.
 
 Supported non-standard formats:
@@ -3794,7 +4188,7 @@ If the year is not specified, it is considered to be equal to the current year.
     FunctionDocumentation::Arguments parseDateTimeBestEffortOrNull_arguments =
     {
         {"time_string", "String containing a date and time to convert.", {"String"}},
-        {"time_zone", "Optional. Time zone. The function parses `time_string` according to the time zone.", {"String"}}
+        {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffortOrNull_returned_value = {"Returns `time_string` as a DateTime, or `NULL` if the input cannot be parsed.", {"DateTime", "NULL"}};
     FunctionDocumentation::Examples parseDateTimeBestEffortOrNull_examples =
@@ -3817,16 +4211,18 @@ SELECT parseDateTimeBestEffortOrNull('23/10/2020 12:12:57') AS valid,
     FunctionDocumentation parseDateTimeBestEffortOrNull_documentation = {parseDateTimeBestEffortOrNull_description, parseDateTimeBestEffortOrNull_syntax, parseDateTimeBestEffortOrNull_arguments, parseDateTimeBestEffortOrNull_returned_value, parseDateTimeBestEffortOrNull_examples, parseDateTimeBestEffortOrNull_introduced_in, parseDateTimeBestEffortOrNull_category};
 
     factory.registerFunction<detail::FunctionParseDateTimeBestEffortOrNull>(parseDateTimeBestEffortOrNull_documentation);
+
+    /// parseDateTimeBestEffortUS documentation
     FunctionDocumentation::Description parseDateTimeBestEffortUS_description = R"(
 This function behaves like [`parseDateTimeBestEffort`](#parseDateTimeBestEffort) for ISO date formats, e.g. `YYYY-MM-DD hh:mm:ss`, and other date formats where the month and date components can be unambiguously extracted, e.g. `YYYYMMDDhhmmss`, `YYYY-MM`, `DD hh`, or `YYYY-MM-DD hh:mm:ss ±h:mm`.
 If the month and the date components cannot be unambiguously extracted, e.g. `MM/DD/YYYY`, `MM-DD-YYYY`, or `MM-DD-YY`, it prefers the US date format instead of `DD/MM/YYYY`, `DD-MM-YYYY`, or `DD-MM-YY`.
-As an exception to the previous statement, if the month is bigger than 12 and smaller or equal than 31, this function falls back to the behavior of [`parseDateTimeBestEffort`](#parsedatetimebesteffort), e.g. `15/08/2020` is parsed as `2020-08-15`.
+As an exception to the previous statement, if the month is bigger than 12 and smaller or equal than 31, this function falls back to the behavior of [`parseDateTimeBestEffort`](#parseDateTimeBestEffort), e.g. `15/08/2020` is parsed as `2020-08-15`.
     )";
     FunctionDocumentation::Syntax parseDateTimeBestEffortUS_syntax = "parseDateTimeBestEffortUS(time_string[, time_zone])";
     FunctionDocumentation::Arguments parseDateTimeBestEffortUS_arguments =
     {
         {"time_string", "String containing a date and time to convert.", {"String"}},
-        {"time_zone", "Optional. Time zone. The function parses `time_string` according to the time zone.", {"String"}}
+        {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffortUS_returned_value = {"Returns `time_string` as a `DateTime` using US date format preference for ambiguous cases.", {"DateTime"}};
     FunctionDocumentation::Examples parseDateTimeBestEffortUS_examples =
@@ -3849,6 +4245,8 @@ SELECT parseDateTimeBestEffortUS('02/10/2021') AS us_format,
     FunctionDocumentation parseDateTimeBestEffortUS_documentation = {parseDateTimeBestEffortUS_description, parseDateTimeBestEffortUS_syntax, parseDateTimeBestEffortUS_arguments, parseDateTimeBestEffortUS_returned_value, parseDateTimeBestEffortUS_examples, parseDateTimeBestEffortUS_introduced_in, parseDateTimeBestEffortUS_category};
 
     factory.registerFunction<detail::FunctionParseDateTimeBestEffortUS>(parseDateTimeBestEffortUS_documentation);
+
+    /// parseDateTimeBestEffortUSOrZero documentation
     FunctionDocumentation::Description parseDateTimeBestEffortUSOrZero_description = R"(
 Same as [`parseDateTimeBestEffortUS`](#parseDateTimeBestEffortUS) function except that it returns zero date (`1970-01-01`) or zero date with time (`1970-01-01 00:00:00`) when it encounters a date format that cannot be processed.
 
@@ -3858,9 +4256,9 @@ This function behaves like [`parseDateTimeBestEffort`](#parseDateTimeBestEffort)
     FunctionDocumentation::Arguments parseDateTimeBestEffortUSOrZero_arguments =
     {
         {"time_string", "String containing a date and time to convert.", {"String"}},
-        {"time_zone", "Optional. Time zone. The function parses `time_string` according to the time zone.", {"String"}}
+        {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue parseDateTimeBestEffortUSOrZero_returned_value = {"Returns `time_string` as a DateTime using US format preference, or zero date/datetime (`1970-01-01` or `1970-01-01 00:00:00`) if the input cannot be parsed.", {"DateTime"}};
+    FunctionDocumentation::ReturnedValue parseDateTimeBestEffortUSOrZero_returned_value = {"Returns `time_string` as a `DateTime` using US format preference, or zero date/datetime (`1970-01-01` or `1970-01-01 00:00:00`) if the input cannot be parsed.", {"DateTime"}};
     FunctionDocumentation::Examples parseDateTimeBestEffortUSOrZero_examples =
     {
     {
@@ -3881,6 +4279,8 @@ SELECT parseDateTimeBestEffortUSOrZero('02/10/2021') AS valid_us,
     FunctionDocumentation parseDateTimeBestEffortUSOrZero_documentation = {parseDateTimeBestEffortUSOrZero_description, parseDateTimeBestEffortUSOrZero_syntax, parseDateTimeBestEffortUSOrZero_arguments, parseDateTimeBestEffortUSOrZero_returned_value, parseDateTimeBestEffortUSOrZero_examples, parseDateTimeBestEffortUSOrZero_introduced_in, parseDateTimeBestEffortUSOrZero_category};
 
     factory.registerFunction<detail::FunctionParseDateTimeBestEffortUSOrZero>(parseDateTimeBestEffortUSOrZero_documentation);
+
+    /// parseDateTimeBestEffortUSOrNull documentation
     FunctionDocumentation::Description parseDateTimeBestEffortUSOrNull_description = R"(
 Same as [`parseDateTimeBestEffortUS`](#parseDateTimeBestEffortUS) function except that it returns `NULL` when it encounters a date format that cannot be processed.
 
@@ -3890,7 +4290,7 @@ This function behaves like [`parseDateTimeBestEffort`](#parseDateTimeBestEffort)
     FunctionDocumentation::Arguments parseDateTimeBestEffortUSOrNull_arguments =
     {
         {"time_string", "String containing a date and time to convert.", {"String"}},
-        {"time_zone", "Optional. Time zone. The function parses `time_string` according to the time zone.", {"String"}}
+        {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue parseDateTimeBestEffortUSOrNull_returned_value = {"Returns `time_string` as a DateTime using US format preference, or `NULL` if the input cannot be parsed.", {"DateTime", "NULL"}};
     FunctionDocumentation::Examples parseDateTimeBestEffortUSOrNull_examples =
@@ -3914,16 +4314,17 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2021') AS valid_us,
 
     factory.registerFunction<detail::FunctionParseDateTimeBestEffortUSOrNull>(parseDateTimeBestEffortUSOrNull_documentation);
 
+    /// parseDateTime32BestEffort documentation
     FunctionDocumentation::Description description_parseDateTime32BestEffort = R"(
 Converts a string representation of a date and time to the [`DateTime`](/sql-reference/data-types/datetime) data type.
 
 The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse's and some other date and time formats.
-)";
+    )";
     FunctionDocumentation::Syntax syntax_parseDateTime32BestEffort = "parseDateTime32BestEffort(time_string[, time_zone])";
     FunctionDocumentation::Arguments arguments_parseDateTime32BestEffort =
     {
         {"time_string", "String containing a date and time to convert.", {"String"}},
-        {"time_zone", "Optional. Time zone. The function parses time_string according to the time zone.", {"String"}}
+        {"time_zone", "Optional. Time zone according to which `time_string` is parsed", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffort = {"Returns `time_string` as a `DateTime`.", {"DateTime"}};
     FunctionDocumentation::Examples examples_parseDateTime32BestEffort =
@@ -3969,6 +4370,9 @@ AS parseDateTime32BestEffort
     FunctionDocumentation::Category category_parseDateTime32BestEffort = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_parseDateTime32BestEffort = {description_parseDateTime32BestEffort, syntax_parseDateTime32BestEffort, arguments_parseDateTime32BestEffort, returned_value_parseDateTime32BestEffort, examples_parseDateTime32BestEffort, introduced_in_parseDateTime32BestEffort, category_parseDateTime32BestEffort};
 
+    factory.registerFunction<detail::FunctionParseDateTime32BestEffort>(documentation_parseDateTime32BestEffort);
+
+    /// parseDateTime32BestEffortOrZero documentation
     FunctionDocumentation::Description description_parseDateTime32BestEffortOrZero = R"(
 Same as [`parseDateTime32BestEffort`](#parseDateTime32BestEffort) except that it returns a zero date or a zero date time when it encounters a date format that cannot be processed.
     )";
@@ -3976,9 +4380,9 @@ Same as [`parseDateTime32BestEffort`](#parseDateTime32BestEffort) except that it
     FunctionDocumentation::Arguments arguments_parseDateTime32BestEffortOrZero =
     {
         {"time_string", "String containing a date and time to convert.", {"String"}},
-        {"time_zone", "Optional. Time zone. The function parses time_string according to the time zone.", {"String"}}
+        {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffortOrZero = {"Returns a [`DateTime`](/sql-reference/data-types/datetime) object parsed from the string, or zero date (`1970-01-01 00:00:00`) if the parsing fails.", {"DateTime"}};
+    FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffortOrZero = {"Returns a `DateTime` object parsed from the string, or zero date (`1970-01-01 00:00:00`) if the parsing fails.", {"DateTime"}};
     FunctionDocumentation::Examples examples_parseDateTime32BestEffortOrZero =
     {
     {
@@ -3997,9 +4401,11 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime32BestEffortOrZero = {20, 9};
     FunctionDocumentation::Category category_parseDateTime32BestEffortOrZero = FunctionDocumentation::Category::TypeConversion;
-
     FunctionDocumentation documentation_parseDateTime32BestEffortOrZero = {description_parseDateTime32BestEffortOrZero, syntax_parseDateTime32BestEffortOrZero, arguments_parseDateTime32BestEffortOrZero, returned_value_parseDateTime32BestEffortOrZero, examples_parseDateTime32BestEffortOrZero, introduced_in_parseDateTime32BestEffortOrZero, category_parseDateTime32BestEffortOrZero};
 
+    factory.registerFunction<detail::FunctionParseDateTime32BestEffortOrZero>(documentation_parseDateTime32BestEffortOrZero);
+
+    /// parseDateTime32BestEffortOrNull documentation
     FunctionDocumentation::Description description_parseDateTime32BestEffortOrNull = R"(
 Same as [`parseDateTime32BestEffort`](#parseDateTime32BestEffort) except that it returns `NULL` when it encounters a date format that cannot be processed.
     )";
@@ -4007,9 +4413,9 @@ Same as [`parseDateTime32BestEffort`](#parseDateTime32BestEffort) except that it
     FunctionDocumentation::Arguments arguments_parseDateTime32BestEffortOrNull =
     {
         {"time_string", "String containing a date and time to convert.", {"String"}},
-        {"time_zone", "Optional. Time zone. The function parses `time_string` according to the time zone.", {"String"}}
+        {"time_zone", "Optional. Time zone according to which `time_string` is parsed.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffortOrNull = {"Returns a DateTime object parsed from the string, or `NULL` if the parsing fails.", {"DateTime"}};
+    FunctionDocumentation::ReturnedValue returned_value_parseDateTime32BestEffortOrNull = {"Returns a `DateTime` object parsed from the string, or `NULL` if the parsing fails.", {"DateTime"}};
     FunctionDocumentation::Examples examples_parseDateTime32BestEffortOrNull =
     {
     {
@@ -4028,11 +4434,8 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime32BestEffortOrNull = {20, 9};
     FunctionDocumentation::Category category_parseDateTime32BestEffortOrNull = FunctionDocumentation::Category::TypeConversion;
-
     FunctionDocumentation documentation_parseDateTime32BestEffortOrNull = {description_parseDateTime32BestEffortOrNull, syntax_parseDateTime32BestEffortOrNull, arguments_parseDateTime32BestEffortOrNull, returned_value_parseDateTime32BestEffortOrNull, examples_parseDateTime32BestEffortOrNull, introduced_in_parseDateTime32BestEffortOrNull, category_parseDateTime32BestEffortOrNull};
 
-    factory.registerFunction<detail::FunctionParseDateTime32BestEffort>(documentation_parseDateTime32BestEffort);
-    factory.registerFunction<detail::FunctionParseDateTime32BestEffortOrZero>(documentation_parseDateTime32BestEffortOrZero);
     factory.registerFunction<detail::FunctionParseDateTime32BestEffortOrNull>(documentation_parseDateTime32BestEffortOrNull);
 
     /// parseDateTime64BestEffort documentation
@@ -4075,6 +4478,8 @@ FORMAT PrettyCompactMonoBlock
     FunctionDocumentation::Category category_parseDateTime64BestEffort = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffort_documentation = {description_parseDateTime64BestEffort, syntax_parseDateTime64BestEffort, arguments_parseDateTime64BestEffort, returned_value_parseDateTime64BestEffort, examples_parseDateTime64BestEffort, introduced_in_parseDateTime64BestEffort, category_parseDateTime64BestEffort};
 
+    factory.registerFunction<detail::FunctionParseDateTime64BestEffort>(parseDateTime64BestEffort_documentation);
+
     /// parseDateTime64BestEffortOrZero documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortOrZero = R"(
 Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
@@ -4105,6 +4510,8 @@ SELECT parseDateTime64BestEffortOrZero('2021-01-01 01:01:00.123') AS valid,
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime64BestEffortOrZero = {20, 1};
     FunctionDocumentation::Category category_parseDateTime64BestEffortOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortOrZero_documentation = {description_parseDateTime64BestEffortOrZero, syntax_parseDateTime64BestEffortOrZero, arguments_parseDateTime64BestEffortOrZero, returned_value_parseDateTime64BestEffortOrZero, examples_parseDateTime64BestEffortOrZero, introduced_in_parseDateTime64BestEffortOrZero, category_parseDateTime64BestEffortOrZero};
+
+    factory.registerFunction<detail::FunctionParseDateTime64BestEffortOrZero>(parseDateTime64BestEffortOrZero_documentation);
 
     /// parseDateTime64BestEffortOrNull documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortOrNull = R"(
@@ -4137,6 +4544,8 @@ SELECT parseDateTime64BestEffortOrNull('2021-01-01 01:01:00.123') AS valid,
     FunctionDocumentation::Category category_parseDateTime64BestEffortOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortOrNull_documentation = {description_parseDateTime64BestEffortOrNull, syntax_parseDateTime64BestEffortOrNull, arguments_parseDateTime64BestEffortOrNull, returned_value_parseDateTime64BestEffortOrNull, examples_parseDateTime64BestEffortOrNull, introduced_in_parseDateTime64BestEffortOrNull, category_parseDateTime64BestEffortOrNull};
 
+    factory.registerFunction<detail::FunctionParseDateTime64BestEffortOrNull>(parseDateTime64BestEffortOrNull_documentation);
+
     /// parseDateTime64BestEffortUS documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortUS = R"(
 Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity.
@@ -4167,6 +4576,8 @@ SELECT parseDateTime64BestEffortUS('02/10/2021 12:30:45.123') AS us_format,
     FunctionDocumentation::IntroducedIn introduced_in_parseDateTime64BestEffortUS = {22, 8};
     FunctionDocumentation::Category category_parseDateTime64BestEffortUS = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortUS_documentation = {description_parseDateTime64BestEffortUS, syntax_parseDateTime64BestEffortUS, arguments_parseDateTime64BestEffortUS, returned_value_parseDateTime64BestEffortUS, examples_parseDateTime64BestEffortUS, introduced_in_parseDateTime64BestEffortUS, category_parseDateTime64BestEffortUS};
+
+    factory.registerFunction<detail::FunctionParseDateTime64BestEffortUS>(parseDateTime64BestEffortUS_documentation);
 
     /// parseDateTime64BestEffortUSOrZero documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortUSOrZero = R"(
@@ -4199,6 +4610,8 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2021 12:30:45.123') AS valid_us,
     FunctionDocumentation::Category category_parseDateTime64BestEffortUSOrZero = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortUSOrZero_documentation = {description_parseDateTime64BestEffortUSOrZero, syntax_parseDateTime64BestEffortUSOrZero, arguments_parseDateTime64BestEffortUSOrZero, returned_value_parseDateTime64BestEffortUSOrZero, examples_parseDateTime64BestEffortUSOrZero, introduced_in_parseDateTime64BestEffortUSOrZero, category_parseDateTime64BestEffortUSOrZero};
 
+    factory.registerFunction<detail::FunctionParseDateTime64BestEffortUSOrZero>(parseDateTime64BestEffortUSOrZero_documentation);
+
     /// parseDateTime64BestEffortUSOrNull documentation
     FunctionDocumentation::Description description_parseDateTime64BestEffortUSOrNull = R"(
 Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity and returns `NULL` when it encounters a date format that cannot be processed.
@@ -4230,21 +4643,17 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2021 12:30:45.123') AS valid_us,
     FunctionDocumentation::Category category_parseDateTime64BestEffortUSOrNull = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation parseDateTime64BestEffortUSOrNull_documentation = {description_parseDateTime64BestEffortUSOrNull, syntax_parseDateTime64BestEffortUSOrNull, arguments_parseDateTime64BestEffortUSOrNull, returned_value_parseDateTime64BestEffortUSOrNull, examples_parseDateTime64BestEffortUSOrNull, introduced_in_parseDateTime64BestEffortUSOrNull, category_parseDateTime64BestEffortUSOrNull};
 
-    factory.registerFunction<detail::FunctionParseDateTime64BestEffort>(parseDateTime64BestEffort_documentation);
-    factory.registerFunction<detail::FunctionParseDateTime64BestEffortOrZero>(parseDateTime64BestEffortOrZero_documentation);
-    factory.registerFunction<detail::FunctionParseDateTime64BestEffortOrNull>(parseDateTime64BestEffortOrNull_documentation);
-    factory.registerFunction<detail::FunctionParseDateTime64BestEffortUS>(parseDateTime64BestEffortUS_documentation);
-    factory.registerFunction<detail::FunctionParseDateTime64BestEffortUSOrZero>(parseDateTime64BestEffortUSOrZero_documentation);
     factory.registerFunction<detail::FunctionParseDateTime64BestEffortUSOrNull>(parseDateTime64BestEffortUSOrNull_documentation);
 
+    /// toIntervalSecond documentation
     FunctionDocumentation::Description description_toIntervalSecond = R"(
 Returns an interval of `n` seconds of data type [`IntervalSecond`](../data-types/special-data-types/interval.md).
-)";
+    )";
     FunctionDocumentation::Syntax syntax_toIntervalSecond = "toIntervalSecond(n)";
     FunctionDocumentation::Arguments arguments_toIntervalSecond = {
         {"n", "Number of seconds. Integer numbers or string representations thereof, and float numbers.", {"(U)Int*", "Float*", "String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toIntervalSecond = {"Interval of `n` seconds.", {"Interval"}};
+    FunctionDocumentation::ReturnedValue returned_value_toIntervalSecond = {"Returns an interval of `n` seconds.", {"Interval"}};
     FunctionDocumentation::Examples examples_toIntervalSecond = {
     {
         "Usage example",
@@ -4265,9 +4674,10 @@ SELECT date + interval_to_seconds AS result
     FunctionDocumentation::Category category_toIntervalSecond = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalSecond = {description_toIntervalSecond, syntax_toIntervalSecond, arguments_toIntervalSecond, returned_value_toIntervalSecond, examples_toIntervalSecond, introduced_in_toIntervalSecond, category_toIntervalSecond};
 
+    /// toIntervalMinute documentation
     FunctionDocumentation::Description description_toIntervalMinute = R"(
 Returns an interval of `n` minutes of data type [`IntervalMinute`](../data-types/special-data-types/interval.md).
-)";
+    )";
     FunctionDocumentation::Syntax syntax_toIntervalMinute = "toIntervalMinute(n)";
     FunctionDocumentation::Arguments arguments_toIntervalMinute = {
         {"n", "Number of minutes. Integer numbers or string representations thereof, and float numbers.", {"(U)Int*", "Float*", "String"}}
@@ -4293,6 +4703,7 @@ SELECT date + interval_to_minutes AS result
     FunctionDocumentation::Category category_toIntervalMinute = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalMinute = {description_toIntervalMinute, syntax_toIntervalMinute, arguments_toIntervalMinute, returned_value_toIntervalMinute, examples_toIntervalMinute, introduced_in_toIntervalMinute, category_toIntervalMinute};
 
+    /// toIntervalHour documentation
     FunctionDocumentation::Description description_toIntervalHour = R"(
 Returns an interval of `n` hours of data type [`IntervalHour`](../data-types/special-data-types/interval.md).
     )";
@@ -4321,6 +4732,7 @@ SELECT date + interval_to_hours AS result
     FunctionDocumentation::Category category_toIntervalHour = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalHour = {description_toIntervalHour, syntax_toIntervalHour, arguments_toIntervalHour, returned_value_toIntervalHour, examples_toIntervalHour, introduced_in_toIntervalHour, category_toIntervalHour};
 
+    /// toIntervalDay documentation
     FunctionDocumentation::Description description_toIntervalDay = R"(
 Returns an interval of `n` days of data type [`IntervalDay`](../data-types/special-data-types/interval.md).
     )";
@@ -4349,7 +4761,7 @@ SELECT date + interval_to_days AS result
     FunctionDocumentation::Category category_toIntervalDay = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalDay = {description_toIntervalDay, syntax_toIntervalDay, arguments_toIntervalDay, returned_value_toIntervalDay, examples_toIntervalDay, introduced_in_toIntervalDay, category_toIntervalDay};
 
-    // toIntervalNanosecond documentation
+    /// toIntervalNanosecond documentation
     FunctionDocumentation::Description description_toIntervalNanosecond = R"(
 Returns an interval of `n` nanoseconds of data type [`IntervalNanosecond`](../../sql-reference/data-types/special-data-types/interval.md).
     )";
@@ -4378,7 +4790,7 @@ SELECT date + interval_to_nanoseconds AS result
     FunctionDocumentation::Category category_toIntervalNanosecond = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalNanosecond = {description_toIntervalNanosecond, syntax_toIntervalNanosecond, arguments_toIntervalNanosecond, returned_value_toIntervalNanosecond, examples_toIntervalNanosecond, introduced_in_toIntervalNanosecond, category_toIntervalNanosecond};
 
-    // toIntervalMicrosecond documentation
+    /// toIntervalMicrosecond documentation
     FunctionDocumentation::Description description_toIntervalMicrosecond = R"(
 Returns an interval of `n` microseconds of data type [`IntervalMicrosecond`](../../sql-reference/data-types/special-data-types/interval.md).
     )";
@@ -4407,7 +4819,7 @@ SELECT date + interval_to_microseconds AS result
     FunctionDocumentation::Category category_toIntervalMicrosecond = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalMicrosecond = {description_toIntervalMicrosecond, syntax_toIntervalMicrosecond, arguments_toIntervalMicrosecond, returned_value_toIntervalMicrosecond, examples_toIntervalMicrosecond, introduced_in_toIntervalMicrosecond, category_toIntervalMicrosecond};
 
-    // toIntervalMillisecond documentation
+    /// toIntervalMillisecond documentation
     FunctionDocumentation::Description description_toIntervalMillisecond = R"(
 Returns an interval of `n` milliseconds of data type [IntervalMillisecond](../../sql-reference/data-types/special-data-types/interval.md).
     )";
@@ -4436,7 +4848,7 @@ SELECT date + interval_to_milliseconds AS result
     FunctionDocumentation::Category category_toIntervalMillisecond = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalMillisecond = {description_toIntervalMillisecond, syntax_toIntervalMillisecond, arguments_toIntervalMillisecond, returned_value_toIntervalMillisecond, examples_toIntervalMillisecond, introduced_in_toIntervalMillisecond, category_toIntervalMillisecond};
 
-    // toIntervalWeek documentation
+    /// toIntervalWeek documentation
     FunctionDocumentation::Description description_toIntervalWeek = R"(
 Returns an interval of `n` weeks of data type [`IntervalWeek`](../../sql-reference/data-types/special-data-types/interval.md).
     )";
@@ -4465,7 +4877,7 @@ SELECT date + interval_to_week AS result
     FunctionDocumentation::Category category_toIntervalWeek = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalWeek = {description_toIntervalWeek, syntax_toIntervalWeek, arguments_toIntervalWeek, returned_value_toIntervalWeek, examples_toIntervalWeek, introduced_in_toIntervalWeek, category_toIntervalWeek};
 
-    // toIntervalMonth documentation
+    /// toIntervalMonth documentation
     FunctionDocumentation::Description description_toIntervalMonth = R"(
 Returns an interval of `n` months of data type [`IntervalMonth`](../../sql-reference/data-types/special-data-types/interval.md).
     )";
@@ -4494,7 +4906,7 @@ SELECT date + interval_to_month AS result
     FunctionDocumentation::Category category_toIntervalMonth = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalMonth = {description_toIntervalMonth, syntax_toIntervalMonth, arguments_toIntervalMonth, returned_value_toIntervalMonth, examples_toIntervalMonth, introduced_in_toIntervalMonth, category_toIntervalMonth};
 
-    // toIntervalQuarter documentation
+    /// toIntervalQuarter documentation
     FunctionDocumentation::Description description_toIntervalQuarter = R"(
 Returns an interval of `n` quarters of data type [`IntervalQuarter`](../../sql-reference/data-types/special-data-types/interval.md).
     )";
@@ -4523,7 +4935,7 @@ SELECT date + interval_to_quarter AS result
     FunctionDocumentation::Category category_toIntervalQuarter = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation documentation_toIntervalQuarter = {description_toIntervalQuarter, syntax_toIntervalQuarter, arguments_toIntervalQuarter, returned_value_toIntervalQuarter, examples_toIntervalQuarter, introduced_in_toIntervalQuarter, category_toIntervalQuarter};
 
-    // toIntervalYear documentation
+    /// toIntervalYear documentation
     FunctionDocumentation::Description description_toIntervalYear = R"(
 Returns an interval of `n` years of data type [`IntervalYear`](../../sql-reference/data-types/special-data-types/interval.md).
     )";
