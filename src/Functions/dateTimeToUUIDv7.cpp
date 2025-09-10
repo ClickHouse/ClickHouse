@@ -132,17 +132,68 @@ private:
 
 REGISTER_FUNCTION(DateTimeToUUIDv7)
 {
-    FunctionDocumentation::Description description = R"(Converts a [DateTime](../data-types/datetime.md) value to the first [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) at the giving time.)";
-    FunctionDocumentation::Syntax syntax = "dateTimeToUUIDv7(value)";
-    FunctionDocumentation::Arguments arguments = {
+    /// dateTimeToUUIDv7 documentation
+    FunctionDocumentation::Description description_dateTimeToUUIDv7 = R"(
+Converts a [DateTime](../data-types/datetime.md) value to a [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) at the given time.
+
+The generated UUID casts the 32 bit DateTime value to milliseconds and stores in the 48 bit unix_ts_ms, followed by version "7" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field "2", 2 bit), and a random field (32 bits).
+For any given timestamp (unix_ts_ms), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes.
+In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value.
+
+Function `dateTimeToUUIDv7` guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
+
+```text
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                           unix_ts_ms                          |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|          unix_ts_ms           |  ver  |   counter_high_bits   |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|var|                   counter_low_bits                        |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                            rand_b                             |
+└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
+```
+    )";
+    FunctionDocumentation::Syntax syntax_dateTimeToUUIDv7 = "dateTimeToUUIDv7(value)";
+    FunctionDocumentation::Arguments arguments_dateTimeToUUIDv7 = {
         {"value", "Date with time.", {"DateTime"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Input value converted to", {"UUID"}};
-    FunctionDocumentation::Examples examples = {{"simple", "SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))", "6832626392367104000"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation::ReturnedValue returned_value_dateTimeToUUIDv7 = "Returns a value of type UUIDv7.";
+    FunctionDocumentation::Examples examples_dateTimeToUUIDv7 = {
+    {
+        "Usage example",
+        R"(
+SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'));
+        )",
+        R"(
+┌─dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))─┐
+│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "multiple UUIDs for the same timestamp",
+        R"(
+SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
+SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
+        )",
+        R"(
+   ┌─dateTimeToUUIDv7(t⋯08-15 18:57:56'))─┐
+1. │ 017b4b2d-7720-76ed-ae44-bbcc23a8c550 │
+   └──────────────────────────────────────┘
+   ┌─dateTimeToUUIDv7(t⋯08-15 18:57:56'))─┐
+1. │ 017b4b2d-7720-76ed-ae44-bbcf71ed0fd3 │
+   └──────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_dateTimeToUUIDv7 = {25, 9};
+    FunctionDocumentation::Category category_dateTimeToUUIDv7 = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_dateTimeToUUIDv7 = {description_dateTimeToUUIDv7, syntax_dateTimeToUUIDv7, arguments_dateTimeToUUIDv7, returned_value_dateTimeToUUIDv7, examples_dateTimeToUUIDv7, introduced_in_dateTimeToUUIDv7, category_dateTimeToUUIDv7};
 
-    factory.registerFunction<FunctionDateTimeToUUIDv7>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionDateTimeToUUIDv7>(documentation_dateTimeToUUIDv7);
 
 }
 }

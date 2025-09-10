@@ -109,15 +109,68 @@ private:
 
 REGISTER_FUNCTION(GenerateUUIDv7)
 {
-    FunctionDocumentation::Description description = R"(Generates a UUID of version 7. The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), a counter (42 bit, including a variant field "2", 2 bit) to distinguish UUIDs within a millisecond, and a random field (32 bits). For any given timestamp (unix_ts_ms), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes. In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value. Function generateUUIDv7 guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.)";
-    FunctionDocumentation::Syntax syntax = "generateUUIDv7()";
-    FunctionDocumentation::Arguments arguments = {{"expression", "Optional. The expression is used to bypass common subexpression elimination if the function is called multiple times in a query but otherwise ignored."}};
-    FunctionDocumentation::ReturnedValue returned_value = {"A value of type UUID version 7."};
-    FunctionDocumentation::Examples examples = {{"single", "SELECT generateUUIDv7()", ""}, {"multiple", "SELECT generateUUIDv7(1), generateUUIDv7(2)", ""}};
-    FunctionDocumentation::IntroducedIn introduced_in = {24, 5};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
+    /// generateUUIDv7 documentation
+    FunctionDocumentation::Description description_generateUUIDv7 = R"(
+Generates a [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) [UUID](../data-types/uuid.md).
 
-    factory.registerFunction<FunctionGenerateUUIDv7Base>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), a counter (42 bit) to distinguish UUIDs within a millisecond (including a variant field "2", 2 bit), and a random field (32 bits).
+For any given timestamp (unix_ts_ms), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes.
+In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value.
+
+Function `generateUUIDv7` guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
+
+```text
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                           unix_ts_ms                          |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|          unix_ts_ms           |  ver  |   counter_high_bits   |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|var|                   counter_low_bits                        |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                            rand_b                             |
+└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
+```
+    )";
+    FunctionDocumentation::Syntax syntax_generateUUIDv7 = "generateUUIDv7([expr])";
+    FunctionDocumentation::Arguments arguments_generateUUIDv7 = {
+        {"expr", "Optional. An arbitrary expression used to bypass common subexpression elimination if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_generateUUIDv7 = "A value of type UUIDv7.";
+    FunctionDocumentation::Examples examples_generateUUIDv7 = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE tab (uuid UUID) ENGINE = Memory;
+
+INSERT INTO tab SELECT generateUUIDv7();
+
+SELECT * FROM tab;
+        )",
+        R"(
+┌─────────────────────────────────uuid─┐
+│ 018f05af-f4a8-778f-beee-1bedbc95c93b │
+└──────────────────────────────────────┘
+        )"
+    },
+    {
+        "multiple UUIDs generated per row",
+        R"(
+SELECT generateUUIDv7(1), generateUUIDv7(2);
+        )",
+        R"(
+┌─generateUUIDv7(1)────────────────────┬─generateUUIDv7(2)────────────────────┐
+│ 018f05c9-4ab8-7b86-b64e-c9f03fbd45d1 │ 018f05c9-4ab8-7b86-b64e-c9f12efb7e16 │
+└──────────────────────────────────────┴──────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_generateUUIDv7 = {24, 5};
+    FunctionDocumentation::Category category_generateUUIDv7 = FunctionDocumentation::Category::UUID;
+    FunctionDocumentation documentation_generateUUIDv7 = {description_generateUUIDv7, syntax_generateUUIDv7, arguments_generateUUIDv7, returned_value_generateUUIDv7, examples_generateUUIDv7, introduced_in_generateUUIDv7, category_generateUUIDv7};
+
+    factory.registerFunction<FunctionGenerateUUIDv7Base>(documentation_generateUUIDv7);
 }
 }
 }
