@@ -15,7 +15,7 @@ namespace DB
         extern const int CANNOT_SET_THREAD_PRIORITY;
     }
 
-    void OSThreadNiceValue::set(const Int32 value, const UInt32 thread_id)
+    void OSThreadNiceValue::set([[maybe_unused]] const Int32 value, [[maybe_unused]] const UInt32 thread_id)
     {
 #if defined(OS_LINUX)
         if (hasLinuxCapability(CAP_SYS_NICE))
@@ -29,7 +29,7 @@ namespace DB
 #endif
     }
 
-    scope_guard OSThreadNiceValue::scoped(const Int32 value, const UInt32 thread_id)
+    scope_guard OSThreadNiceValue::scoped([[maybe_unused]] const Int32 value, [[maybe_unused]] const UInt32 thread_id)
     {
 #if defined(OS_LINUX)
         errno = 0;
