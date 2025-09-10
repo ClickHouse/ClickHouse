@@ -45,6 +45,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool format_display_secrets_in_show_and_select;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
 }
 
 namespace ErrorCodes
@@ -479,9 +480,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     bool single_line = false;
     bool insert_buf = true;
 
-    options.setExplain();
-
     ContextPtr query_context = getContext();
+
+    options.setExplain();
+    options.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
 
     switch (ast.getKind())
     {
@@ -571,6 +573,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
                 optimization_settings.keep_logical_steps = settings.keep_logical_steps;
                 optimization_settings.is_explain = true;
+                optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 plan.optimize(optimization_settings);
             }
 
@@ -596,7 +599,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 single_line = true;
             }
             else
-                plan.explainPlan(buf, settings.query_plan_options);
+                plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
             break;
         }
         case ASTExplainQuery::QueryPipeline:
@@ -620,7 +623,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     context = interpreter.getContext();
                 }
 
-                auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+                auto optimization_settings = QueryPlanOptimizationSettings(context);
+                optimization_settings.is_explain = true;
+                optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+                auto pipeline = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
                 if (settings.graph)
                 {
