@@ -303,10 +303,7 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     }
 }
 
-namespace
-{
-
-void setAzureBlobTag(
+static void setAzureBlobTag(
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
     const Strings & blob_names,
     const String & tag_key,
@@ -330,8 +327,6 @@ void setAzureBlobTag(
         LOG_TRACE(log, "Tags of Azure blob {} updated", blob_name);
     }
 }
-
-}  // anonymous namespace
 
 void AzureObjectStorage::tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value)
 {
