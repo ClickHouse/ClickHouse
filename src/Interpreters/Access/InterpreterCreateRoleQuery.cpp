@@ -7,6 +7,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB
@@ -38,6 +39,11 @@ namespace
             role.settings.applyChanges(AlterSettingsProfileElements{*query.alter_settings});
         else if (query.settings)
             role.settings.applyChanges(AlterSettingsProfileElements{*query.settings});
+
+        if (query.attach && query.fetched_at_ms)
+        {
+            role.fetched_from_remote_at_ms = query.fetched_at_ms;
+        }
     }
 }
 

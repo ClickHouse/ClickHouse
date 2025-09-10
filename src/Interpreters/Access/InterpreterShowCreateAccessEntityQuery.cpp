@@ -115,6 +115,11 @@ namespace
                 query->settings = query_settings;
         }
 
+        if (attach_mode && role.fetched_from_remote_at_ms)
+        {
+            query->fetched_at_ms = role.fetched_from_remote_at_ms;
+        }
+
         return query;
     }
 

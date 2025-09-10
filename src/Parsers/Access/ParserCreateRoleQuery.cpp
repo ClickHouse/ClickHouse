@@ -143,6 +143,19 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         break;
     }
 
+    std::optional<UInt64> fetched_at_ms;
+    if (attach_mode)
+    {
+        if (ParserKeyword{Keyword::FETCHED_AT}.ignore(pos, expected))
+        {
+            ParserLiteral literal_parser;
+            ASTPtr ast;
+            if (!literal_parser.parse(pos, ast, expected))
+                return false;
+            fetched_at_ms = ast->as<ASTLiteral>()->value.safeGet<UInt64>();
+        }
+    }
+
     auto query = std::make_shared<ASTCreateRoleQuery>();
     node = query;
 
@@ -157,6 +170,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->settings = std::move(settings);
     query->alter_settings = std::move(alter_settings);
     query->storage_name = std::move(storage_name);
+    query->fetched_at_ms = fetched_at_ms;
 
     return true;
 }

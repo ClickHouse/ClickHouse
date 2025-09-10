@@ -36,6 +36,12 @@ namespace
         ostr << " ";
         alter_settings.format(ostr, format);
     }
+
+    void formatFetchedAt(const std::optional<UInt64> & fetched_at_ms, WriteBuffer & ostr, const IAST::FormatSettings &)
+    {
+        ostr << " FETCHED AT " << *fetched_at_ms;
+    }
+
 }
 
 
@@ -54,6 +60,9 @@ ASTPtr ASTCreateRoleQuery::clone() const
 
     if (alter_settings)
         res->alter_settings = std::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
+
+    if (fetched_at_ms)
+        res->fetched_at_ms = fetched_at_ms;
 
     return res;
 }
@@ -94,6 +103,9 @@ void ASTCreateRoleQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
         formatAlterSettings(*alter_settings, ostr, format);
     else if (settings)
         formatSettings(*settings, ostr, format);
+
+    if (fetched_at_ms)
+        formatFetchedAt(fetched_at_ms, ostr, format);
 }
 
 }

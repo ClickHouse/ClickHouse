@@ -38,6 +38,7 @@ public:
 
     std::shared_ptr<ASTSettingsProfileElements> settings;
     std::shared_ptr<ASTAlterSettingsProfileElements> alter_settings;
+    std::optional<UInt64> fetched_at_ms;
 
     String getID(char) const override;
     ASTPtr clone() const override;
