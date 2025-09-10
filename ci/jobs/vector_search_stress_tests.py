@@ -41,8 +41,8 @@ RECALL_K = "recall_k"
 NEW_TRUTH_SET_FILE = "new_truth_set_file"
 CONCURRENCY_TEST = "concurrency_test"
 
-hackernews_dataset = {
-    TABLE: "hackernews_bq",
+dataset_hackernews = {
+    TABLE: "hackernews",
     S3_URLS: "..",
     SCHEMA: """
         id            String,
@@ -66,7 +66,8 @@ hackernews_dataset = {
     DIMENSION: 384,
 }
 
-laion5b_100m_dataset = {
+# The full 100M vectors - will take hours to run
+dataset_laion_5b_100m = {
     TABLE: "laion5b_100m",
     # individual files, so that load progress can be seen
     S3_URLS: [
@@ -91,7 +92,7 @@ laion5b_100m_dataset = {
 }
 
 # Dataset with <= 10 million subset of LAION
-laion_5b_mini_for_quick_test = {
+dataset_laion_5b_mini_for_quick_test = {
     TABLE: "laion_test",
     S3_URLS: [
         "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet"
@@ -107,10 +108,10 @@ laion_5b_mini_for_quick_test = {
     DIMENSION: 768,
 }
 
-test_run_params_1 = {
+test_params_laion_5b_full_run = {
+    LIMIT_N: None,
     # Pass a filename to reuse a pre-generated truth set, else test will generate truth set (default)
     # Running 10000 brute force KNN queries over a 100 million dataset could take time.
-    LIMIT_N: None,
     TRUTH_SET_FILES: ["https://clickhouse-datasets.s3.amazonaws.com/laion-5b/truth_set_10k.tar"],
     QUANTIZATION: "bf16",  # 'b1' for binary quantization
     HNSW_M: 64,
@@ -123,7 +124,7 @@ test_run_params_1 = {
     CONCURRENCY_TEST: True,
 }
 
-test_run_quick_test = {
+test_params_laion_5b_quick_test = {
     LIMIT_N: 100000,  # Adds a LIMIT clause to load exact number of rows
     TRUTH_SET_FILES: ["https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion_100k_1k.tar"],
     QUANTIZATION: "bf16",
@@ -134,13 +135,13 @@ test_run_quick_test = {
     GENERATE_TRUTH_SET: False,
     TRUTH_SET_COUNT: 1000,  # Quick test! 10000 or 1000 is a good value
     RECALL_K: 100,
-    NEW_TRUTH_SET_FILE: "laion_100k_1k",
+    NEW_TRUTH_SET_FILE: "laion_100k_1k_new",
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
 }
 
-test_run_laion_1m = {
+test_params_laion_5b_1m = {
     LIMIT_N: 1000000,  # Adds a LIMIT clause to load exact number of rows
     TRUTH_SET_FILES: None,
     QUANTIZATION: "bf16",
@@ -148,7 +149,7 @@ test_run_laion_1m = {
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
-    GENERATE_TRUTH_SET: True,
+    GENERATE_TRUTH_SET: True, # Will take some time!
     TRUTH_SET_COUNT: 10000,  # Quick test! 10000 or 1000 is a good value
     RECALL_K: 100,
     NEW_TRUTH_SET_FILE: "laion_1m_10k",
@@ -157,23 +158,18 @@ test_run_laion_1m = {
     CONCURRENCY_TEST: True,
 }
 
-
 def get_new_connection():
     chclient = clickhouse_connect.get_client(send_receive_timeout=1800)
     return chclient
 
-
 def current_time_ms():
     return round(time.time() * 1000)
-
 
 def current_time():
     return time.ctime(time.time())
 
-
 def logger(s):
     print(current_time(), " : ", s)
-
 
 class RunTest:
 
@@ -508,12 +504,6 @@ def run_single_test(test_name, dataset, test_params):
 
     return True
 
-
-# Array of (dataset, test_params)
-TESTS_TO_RUN = [
-    ("Test using the laion dataset", laion_5b_mini_for_quick_test, test_run_laion_1m)
-]
-
 def install_and_start_clickhouse():
     res = True
     results = []
@@ -545,7 +535,7 @@ def install_and_start_clickhouse():
         def install():
             # implement required ch configuration
             return (
-                ch.install_clickbench_config()
+                ch.install_clickbench_config() and ch.install_vector_search_config()
             )  # reuses config used for clickbench job, it's more or less default ch configuration
 
         results.append(Result.from_commands_run(name=step_name, command=[install]))
@@ -569,6 +559,12 @@ def install_and_start_clickhouse():
         res = results[-1].is_ok()
         return results
 
+
+# Array of (dataset, test_params)
+TESTS_TO_RUN = [
+    ("Test using the laion dataset", dataset_laion_5b_mini_for_quick_test, test_params_laion_5b_1m)
+]
+
 def main():
     test_results = []
 
@@ -584,7 +580,7 @@ def main():
             )
         )
 
-    Result.create_from(results=test_results, files=[], info="my info").complete_job()
+    Result.create_from(results=test_results, files=[], info="Check index build time & recall").complete_job()
 
 
 if __name__ == "__main__":
