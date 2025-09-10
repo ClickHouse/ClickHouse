@@ -76,9 +76,6 @@ public:
         const auto & from_base_column = arguments[1].column;
         const auto & to_base_column = arguments[2].column;
         auto result_column = ColumnString::create();
-        auto & result_data = result_column->getChars();
-        auto & result_offsets = result_column->getOffsets();
-        result_offsets.resize(input_rows_count);
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             std::string number_str;
@@ -89,9 +86,7 @@ public:
             const Int64 from_base = from_base_column->getInt(i);
             const Int64 to_base = to_base_column->getInt(i);
             std::string result = convertNumber(number_str, static_cast<int>(from_base), static_cast<int>(to_base));
-            result_data.insert(result.begin(), result.end());
-            result_data.push_back(0);
-            result_offsets[i] = result_data.size();
+            result_column->insertData(result.data(), result.size());
         }
 
         return result_column;
