@@ -181,6 +181,7 @@ namespace Setting
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
 }
 
 namespace MergeTreeSetting
@@ -380,7 +381,8 @@ ReadFromMergeTree::ReadFromMergeTree(
     }
 
     /// Add explicit description.
-    setStepDescription(data.getStorageID().getFullNameNotQuoted());
+    std::string description = data.getStorageID().getFullNameNotQuoted();
+    setStepDescription(description, context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
     enable_vertical_final = query_info.isFinal() && context->getSettingsRef()[Setting::enable_vertical_final]
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
 }
