@@ -425,7 +425,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
         if (!frame.is_description_printed)
         {
             settings.offset = (indent + stack.size() - 1) * settings.indent;
-            explainStep(*frame.node->step, settings, options, max_description_lengs);
+            explainStep(*frame.node->step, settings, options, max_description_length);
             frame.is_description_printed = true;
         }
 
