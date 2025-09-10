@@ -24,19 +24,21 @@ struct RangesInDataPartDescription
     MergeTreePartInfo info{};
     MarkRanges ranges{};
     size_t rows = 0;
+    String projection_name;
 
-    void serialize(WriteBuffer & out) const;
+    void serialize(WriteBuffer & out, UInt64 parallel_protocol_version) const;
     String describe() const;
-    void deserialize(ReadBuffer & in);
+    void deserialize(ReadBuffer & in, UInt64 parallel_protocol_version);
+    String getPartOrProjectionName() const;
 };
 
 struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescription>
 {
     using std::deque<RangesInDataPartDescription>::deque;
 
-    void serialize(WriteBuffer & out) const;
+    void serialize(WriteBuffer & out, UInt64 parallel_protocol_version) const;
     String describe() const;
-    void deserialize(ReadBuffer & in);
+    void deserialize(ReadBuffer & in, UInt64 parallel_protocol_version);
 
     void merge(const RangesInDataPartsDescription & other);
 };

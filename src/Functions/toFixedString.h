@@ -92,7 +92,7 @@ public:
             for (size_t i = 0; i < in_offsets.size(); ++i)
             {
                 const size_t off = i ? in_offsets[i - 1] : 0;
-                const size_t len = in_offsets[i] - off - 1;
+                const size_t len = in_offsets[i] - off;
                 if (len > n)
                 {
                     if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Throw)

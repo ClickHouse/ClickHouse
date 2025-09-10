@@ -6978,7 +6978,7 @@ Result:
 
 Converts a [String](../data-types/string.md) to [DateTime](../data-types/datetime.md) according to a [MySQL format string](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
 
-This function is the opposite operation of function [formatDateTime](/sql-reference/functions/date-time-functions#formatdatetime).
+This function is the opposite operation of function [formatDateTime](/sql-reference/functions/date-time-functions#formatDateTime).
 
 **Syntax**
 
@@ -6998,7 +6998,7 @@ Return a [DateTime](../data-types/datetime.md) value parsed from the input strin
 
 **Supported format specifiers**
 
-All format specifiers listed in [formatDateTime](/sql-reference/functions/date-time-functions#formatdatetime) except:
+All format specifiers listed in [formatDateTime](/sql-reference/functions/date-time-functions#formatDateTime) except:
 - %Q: Quarter (1-4)
 
 **Example**
@@ -7027,7 +7027,7 @@ Alias: `str_to_date`.
 
 Similar to [parseDateTime](#parsedatetime), except that the format string is in [Joda](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL syntax.
 
-This function is the opposite operation of function [formatDateTimeInJodaSyntax](/sql-reference/functions/date-time-functions#formatdatetimeinjodasyntax).
+This function is the opposite operation of function [formatDateTimeInJodaSyntax](/sql-reference/functions/date-time-functions#formatDateTimeInJodaSyntax).
 
 **Syntax**
 
@@ -7047,7 +7047,7 @@ Return a [DateTime](../data-types/datetime.md) value parsed from the input strin
 
 **Supported format specifiers**
 
-All format specifiers listed in [formatDateTimeInJoda](/sql-reference/functions/date-time-functions#formatdatetime) are supported, except:
+All format specifiers listed in [`formatDateTimeInJodaSyntax`](/sql-reference/functions/date-time-functions#formatDateTimeInJodaSyntax) are supported, except:
 - S: fraction of second
 - z: time zone
 - Z: time zone offset/id

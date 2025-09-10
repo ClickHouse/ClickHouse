@@ -3,7 +3,6 @@
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/TransposedMetricLog.h>
-#include <Interpreters/LatencyLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -15,12 +14,14 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
+#include <Interpreters/IcebergMetadataLog.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
 #include <Interpreters/DistributedCacheServerLog.h>
 #endif
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/ZooKeeperConnectionLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/AsynchronousInsertLog.h>
@@ -164,8 +165,6 @@ void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index exp
 
     auto result = confirm_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
     {
-        if (should_prepare_tables_anyway)
-            return (flushed_index >= expected_flushed_index && prepared_tables >= requested_prepare_tables) || is_shutdown;
         return (flushed_index >= expected_flushed_index) || is_shutdown;
     });
 

@@ -614,31 +614,87 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
 
 Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](/sql-reference/table-functions).
 
-- `SOURCES`. Level: `GROUP`  
-  - `AZURE`. Level: `GLOBAL`  
-  - `FILE`. Level: `GLOBAL`  
-  - `HDFS`. Level: `GLOBAL`  
-  - `HIVE`. Level: `GLOBAL`  
-  - `JDBC`. Level: `GLOBAL`  
-  - `KAFKA`. Level: `GLOBAL`  
-  - `MONGO`. Level: `GLOBAL`  
-  - `MYSQL`. Level: `GLOBAL`  
-  - `NATS`. Level: `GLOBAL`  
-  - `ODBC`. Level: `GLOBAL`  
-  - `POSTGRES`. Level: `GLOBAL`  
-  - `RABBITMQ`. Level: `GLOBAL`  
-  - `REDIS`. Level: `GLOBAL`  
-  - `REMOTE`. Level: `GLOBAL`  
-  - `S3`. Level: `GLOBAL`  
-  - `SQLITE`. Level: `GLOBAL`  
-  - `URL`. Level: `GLOBAL`
+- `READ`. Level: `GLOBAL_WITH_PARAMETER`  
+- `WRITE`. Level: `GLOBAL_WITH_PARAMETER`
 
-The `SOURCES` privilege enables use of all the sources. Also you can grant a privilege for each source individually. To use sources, you need additional privileges.
+Possible parameters:
+- `AZURE`
+- `FILE`
+- `HDFS`
+- `HIVE`
+- `JDBC`
+- `KAFKA`
+- `MONGO`
+- `MYSQL`
+- `NATS`
+- `ODBC`
+- `POSTGRES`
+- `RABBITMQ`
+- `REDIS`
+- `REMOTE`
+- `S3`
+- `SQLITE`
+- `URL`
+
+:::note
+The separation on READ/WRITE grants for sources is available starting with version 25.7 and only with server setting
+`access_control_improvements.enable_read_write_grants`
+
+Otherwise, you should use the syntax `GRANT AZURE ON *.* TO user` which is equivalent to the new `GRANT READ, WRITE ON AZURE TO user` 
+:::
 
 Examples:
 
 - To create a table with the [MySQL table engine](../../engines/table-engines/integrations/mysql.md), you need `CREATE TABLE (ON db.table_name)` and `MYSQL` privileges.
 - To use the [mysql table function](../../sql-reference/table-functions/mysql.md), you need `CREATE TEMPORARY TABLE` and `MYSQL` privileges.
+
+### Source Filter Grants {#source-filter-grants}
+
+:::note
+This feature is available starting with version 25.8 and only with server setting
+`access_control_improvements.enable_read_write_grants`
+:::
+
+You can grant access to specific source URIs by using regular expression filters. This allows fine-grained control over which external data sources users can access.
+
+**Syntax:**
+
+```sql
+GRANT READ ON S3('regexp_pattern') TO user
+```
+
+This grant will allow the user to read only from S3 URIs that match the specified regular expression pattern.
+
+**Examples:**
+
+Grant access to specific S3 bucket paths:
+```sql
+-- Allow user to read only from s3://foo/ paths
+GRANT READ ON S3('s3://foo/.*') TO john
+
+-- Allow user to read from specific file patterns
+GRANT READ ON S3('s3://mybucket/data/2024/.*\.parquet') TO analyst
+
+-- Multiple filters can be granted to the same user
+GRANT READ ON S3('s3://foo/.*') TO john
+GRANT READ ON S3('s3://bar/.*') TO john
+```
+
+**Re-granting with GRANT OPTION:**
+
+If the original grant has `WITH GRANT OPTION`, it can be re-granted using `GRANT CURRENT GRANTS`:
+```sql
+-- Original grant with GRANT OPTION
+GRANT READ ON S3('s3://foo/.*') TO john WITH GRANT OPTION
+
+-- John can now regrant this access to others
+GRANT CURRENT GRANTS(READ ON S3) TO alice
+```
+
+**Important limitations:**
+
+- **Partial revokes are not allowed:** You cannot revoke a subset of a granted filter pattern. You must revoke the entire grant and re-grant with new patterns if needed.
+- **Wildcard grants are not allowed:** You cannot use `GRANT READ ON *('regexp')` or similar wildcard-only patterns. Specific source must be provided.
 
 ### dictGet {#dictget}
 

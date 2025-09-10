@@ -23,6 +23,7 @@
 #include <Storages/StorageURLCluster.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
+#include <Storages/HivePartitioningUtils.h>
 
 #include <TableFunctions/TableFunctionURLCluster.h>
 
@@ -40,6 +41,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsBool use_hive_partitioning;
 }
 
 StorageURLCluster::StorageURLCluster(
@@ -81,7 +83,17 @@ StorageURLCluster::StorageURLCluster(
         storage_metadata.setColumns(columns_);
     }
 
-    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context, getSampleURI(uri, context));
+    auto & storage_columns = storage_metadata.columns;
+
+    /// Not grabbing the file_columns because it is not necessary to do it here.
+    std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
+        storage_columns,
+        getSampleURI(uri, context),
+        columns_.empty(),
+        std::nullopt,
+        context);
+
+    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
     if (!storage_metadata.getColumns().has("_headers"))
     {
         virtual_columns_desc.addEphemeral(
@@ -119,10 +131,10 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate,
     const ActionsDAG * /* filter */,
     const ContextPtr & context,
-    size_t) const
+    ClusterPtr) const
 {
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
-        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, getVirtualsList(), context);
+        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, getVirtualsList(), hive_partition_columns_to_read_from_file_path, context);
 
     auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {

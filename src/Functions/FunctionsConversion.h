@@ -870,7 +870,7 @@ struct ConvertImplGenericToString
             for (size_t row = 0; row < size; ++row)
             {
                 serialization->serializeText(col_from, row, write_buffer, format_settings);
-                write_helper.rowWritten();
+                write_helper.finishRow();
             }
 
             write_helper.finalize();
@@ -1132,7 +1132,7 @@ struct ConvertThroughParsing
 
     static bool isAllRead(ReadBuffer & in)
     {
-        /// In case of FixedString, skip zero bytes at end.
+        /// In case of FixedString, skip zero padding at the end.
         if constexpr (std::is_same_v<FromDataType, DataTypeFixedString>)
             while (!in.eof() && *in.position() == 0)
                 ++in.position();
@@ -1212,9 +1212,13 @@ struct ConvertThroughParsing
         if constexpr (IsDataTypeDecimal<ToDataType>)
         {
             UInt32 scale = additions;
-            if constexpr (to_datetime64 || to_time64)
+            if constexpr (to_datetime64)
             {
                 ToDataType check_bounds_in_ctor(scale, local_time_zone ? local_time_zone->getTimeZone() : String{});
+            }
+            else if constexpr (to_time64)
+            {
+                ToDataType check_bounds_in_ctor(scale);
             }
             else
             {
@@ -1259,7 +1263,7 @@ struct ConvertThroughParsing
         for (size_t i = 0; i < size; ++i)
         {
             size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
-            size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset - 1 : fixed_string_size;
+            size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset : fixed_string_size;
 
             ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
 
@@ -1550,6 +1554,9 @@ struct ConvertImpl
           * But allows to support frequent case,
           *  when user write toDate(UInt32), expecting conversion of unix timestamp to Date.
           *  (otherwise such usage would be frequent mistake).
+          *
+          * Same for converting to Date32, but the threshold is 120530 (DATE_LUT_MAX_EXTEND_DAY_NUM)
+          * instead of 65536.
           */
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeUInt32>
@@ -1823,7 +1830,7 @@ struct ConvertImpl
                 if constexpr (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
                     time_zone = &DateLUT::instance();
                 /// For argument of Date or DateTime type, second argument with time zone could be specified.
-                if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64> || std::is_same_v<FromDataType, DataTypeTime> || std::is_same_v<FromDataType, DataTypeTime64>)
+                if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
                 {
                     if ((time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get())))
                     {
@@ -1844,17 +1851,17 @@ struct ConvertImpl
                 size_t size = vec_from.size();
 
                 if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
+                    data_to.resize(size * strlen("YYYY-MM-DD"));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDate32>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
+                    data_to.resize(size * strlen("YYYY-MM-DD"));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
-                    data_to.resize(size * (strlen("hhh:mm:ss") + 1));
+                    data_to.resize(size * strlen("hhh:mm:ss"));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>)
-                    data_to.resize(size * (strlen("hhh:mm:ss.") + col_from->getScale() + 1));
+                    data_to.resize(size * (strlen("hhh:mm:ss.") + col_from->getScale()));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss") + 1));
+                    data_to.resize(size * strlen("YYYY-MM-DD hh:mm:ss"));
                 else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale() + 1));
+                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale()));
                 else
                     data_to.resize(size * 3);   /// Arbitrary
 
@@ -1903,7 +1910,6 @@ struct ConvertImpl
                             is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
                         null_map->getData()[i] |= !is_ok;
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -1936,7 +1942,6 @@ struct ConvertImpl
                         {
                             FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -1967,7 +1972,7 @@ struct ConvertImpl
                 ColumnString::Offsets & offsets_to = col_to->getOffsets();
                 size_t size = col_from->size();
                 size_t n = col_from->getN();
-                data_to.resize(size * (n + 1)); /// + 1 - zero terminator
+                data_to.resize(size * n);
                 offsets_to.resize(size);
 
                 size_t offset_from = 0;
@@ -1983,8 +1988,6 @@ struct ConvertImpl
                         memcpy(&data_to[offset_to], &data_from[offset_from], bytes_to_copy);
                         offset_to += bytes_to_copy;
                     }
-                    data_to[offset_to] = 0;
-                    ++offset_to;
                     offsets_to[i] = offset_to;
                     offset_from += n;
                 }
@@ -2019,7 +2022,7 @@ struct ConvertImpl
                 ColumnString::Offsets & offsets_to = col_to->getOffsets();
                 size_t size = vec_from.size();
 
-                data_to.resize(size * 3);
+                data_to.resize(size * 3); /// A guess (arbitrary).
                 offsets_to.resize(size);
 
                 WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
@@ -2031,7 +2034,6 @@ struct ConvertImpl
                         bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, nullptr);
                         /// We don't use timezones in this branch
                         null_map->getData()[i] |= !is_ok;
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -2040,7 +2042,6 @@ struct ConvertImpl
                     for (size_t i = 0; i < size; ++i)
                     {
                         FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, nullptr);
-                        writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
                 }
@@ -2797,17 +2798,13 @@ public:
         }
 
         // toString(DateTime or DateTime64, [timezone: String])
-        if ((std::is_same_v<Name, NameToString> && !arguments.empty() && (isDateTime64(arguments[0].type) || isDateTime(arguments[0].type) || isTime64(arguments[0].type) || isTime(arguments[0].type)))
+        if ((std::is_same_v<Name, NameToString> && !arguments.empty() && (isDateTime64(arguments[0].type) || isDateTime(arguments[0].type)))
             // toUnixTimestamp(value[, timezone : String])
             || std::is_same_v<Name, NameToUnixTimestamp>
             // toDate(value[, timezone : String])
             || std::is_same_v<ToDataType, DataTypeDate> // TODO: shall we allow timestamp argument for toDate? DateTime knows nothing about timezones and this argument is ignored below.
             // toDate32(value[, timezone : String])
             || std::is_same_v<ToDataType, DataTypeDate32>
-            // toTime(value[, timezone : String])
-            || std::is_same_v<ToDataType, DataTypeTime>
-            // toTime64(value, scale : Integer[, timezone: String])
-            || std::is_same_v<ToDataType, DataTypeTime64>
             // toDateTime(value[, timezone: String])
             || std::is_same_v<ToDataType, DataTypeDateTime>
             // toDateTime64(value, scale : Integer[, timezone: String])
@@ -2861,16 +2858,15 @@ public:
                 scale = static_cast<UInt32>(arguments[1].column->get64(0));
 
                 if (to_time64 || scale != 0) /// toTime('xxx:xx:xx', 0) return Time
-                    return std::make_shared<DataTypeTime64>(scale,
-                        extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
+                    return std::make_shared<DataTypeTime64>(scale);
 
-                return std::make_shared<DataTypeTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
+                return std::make_shared<DataTypeTime>();
             }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
             else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
-                return std::make_shared<DataTypeTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
+                return std::make_shared<DataTypeTime>();
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected branch in code of conversion function: it is a bug.");
             else
@@ -3210,21 +3206,30 @@ public:
 
         if (isDateTime64<Name, ToDataType>(arguments) || isTime64<Name, ToDataType>(arguments))
         {
-            validateFunctionArguments(*this, arguments,
-                FunctionArgumentDescriptors{{"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}},
-                // optional
-                FunctionArgumentDescriptors{
-                    {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"},
-                    {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or FixedString"},
-                });
+            const auto required = FunctionArgumentDescriptors{
+                {"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+            };
+            const auto precision_opt = FunctionArgumentDescriptors{
+                {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"}
+            };
+            const auto precision_with_timezone_opt = FunctionArgumentDescriptors{
+                {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"},
+                {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or FixedString"}
+            };
+
+            if (isTime64<Name, ToDataType>(arguments))
+                validateFunctionArguments(*this, arguments, required, precision_opt);
+            else
+                validateFunctionArguments(*this, arguments, required, precision_with_timezone_opt);
 
             UInt64 scale = (to_datetime64 || to_time64) ? DataTypeDateTime64::default_scale : 0;
             if (arguments.size() > 1)
                 scale = extractToDecimalScale(arguments[1]);
+
             const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
 
             if (isTime64<Name, ToDataType>(arguments))
-                res = scale == 0 ? res = std::make_shared<DataTypeTime>(timezone) : std::make_shared<DataTypeTime64>(scale, timezone);
+                res = scale == 0 ? res = std::make_shared<DataTypeTime>() : std::make_shared<DataTypeTime64>(scale);
             else
                 res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
         }
@@ -5114,7 +5119,6 @@ private:
             encodeDataType(new_type, new_value_buf);
             new_type->getDefaultSerialization()->serializeBinary(*new_column, 0, new_value_buf, format_settings);
             new_value_buf.finalize();
-            new_values.getChars().push_back(0);
             new_values.getOffsets().push_back(new_values.getChars().size());
         }
         else
@@ -5230,12 +5234,15 @@ private:
         return ColumnDynamic::create(std::move(new_variant_column), new_variant_type, dynamic_column.getMaxDynamicTypes(), dynamic_column.getGlobalMaxDynamicTypes());
     }
 
-    WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object) const
+    WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
     {
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
-            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+            return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
+                if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
+                    return ConvertImplGenericFromString<false>::execute(arguments, makeNullable(result_type), nullable_source, input_rows_count, context);
+
                 return ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context);
             };
         }
@@ -5267,7 +5274,7 @@ private:
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
-                    write_helper.rowWritten();
+                    write_helper.finishRow();
                 }
                 write_helper.finalize();
 
@@ -6430,7 +6437,7 @@ private:
             case TypeIndex::ObjectDeprecated:
                 return createObjectDeprecatedWrapper(from_type, checkAndGetDataType<DataTypeObjectDeprecated>(to_type.get()));
             case TypeIndex::Object:
-                return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()));
+                return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()), requested_result_is_nullable);
             case TypeIndex::AggregateFunction:
                 return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
             case TypeIndex::Interval:

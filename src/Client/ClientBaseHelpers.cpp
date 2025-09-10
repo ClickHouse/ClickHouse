@@ -131,6 +131,25 @@ std::string getChineseZodiac()
 }
 
 #if USE_REPLXX
+/// Issue: https://github.com/ClickHouse/ClickHouse/issues/83987
+/// countCodePointsWithSeqLength calculates utf-8 code point position consistently with
+/// colors vector allocation (with iteration and `UTF8::seqLength`). This function replaces the use
+/// of `UTF8::countCodePoints()`, since, `UTF8::countCodePoints` and `UTF8::seqLength` seem to handle
+/// invalid utf-8 sequences inconsistently (e.g., hex literals like x'A0'), causing count mismatches
+/// and crashes. TODO: @bharatnc fix `UTF8::countCodePoints` to handle invalid utf-8 sequences consistently
+/// with `UTF8::seqLength` so that this helper function's usage can be removed.
+static size_t countCodePointsWithSeqLength(const String & query, const char * end)
+{
+    size_t code_points = 0;
+    const char * pos = query.data();
+    while (pos < end)
+    {
+        pos += UTF8::seqLength(*pos);
+        ++code_points;
+    }
+    return code_points;
+}
+
 void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position)
 {
     using namespace replxx;
@@ -314,13 +333,15 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                     continue;
                 }
 
+                /// TODO: @bharatnc replace the usages of countCodePointsWithSeqLength() below with UTF8::countCodePoints()
+                /// once it's fixed to handle invalid utf-8 sequences consistently with seqLength.
                 /// Highlight the closing round bracket.
-                auto highlight_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), highlight_token_iterator->begin - begin);
+                auto highlight_pos = countCodePointsWithSeqLength(query, highlight_token_iterator->begin);
                 if (highlight_pos < colors.size())
                     colors[highlight_pos] = color_stack.back();
 
                 /// Highlight the matching opening round bracket.
-                auto matching_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), brace_stack.back().begin - begin);
+                auto matching_brace_pos = countCodePointsWithSeqLength(query, brace_stack.back().begin);
                 if (matching_brace_pos < colors.size())
                     colors[matching_brace_pos] = color_stack.back();
 
@@ -375,7 +396,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         && !(insert_data && expected.max_parsed_pos >= insert_data)
         && expected.max_parsed_pos >= char_pos)
     {
-        code_point_pos += UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(char_pos), expected.max_parsed_pos - char_pos);
+        code_point_pos += countCodePointsWithSeqLength(query, expected.max_parsed_pos) - countCodePointsWithSeqLength(query, char_pos);
 
         if (code_point_pos >= colors.size())
             code_point_pos = colors.size() - 1;
@@ -386,15 +407,13 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         {
             const auto & [highlight_pos, matching_brace_pos] = *active_matching_brace;
 
-            const auto opening_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), highlight_pos);
-            const auto closing_brace_pos = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(begin), matching_brace_pos);
-
+            // highlight_pos and matching_brace_pos are already code points
             /// If the cursor is on one of the round brackets marked as an error,
             /// highlight both with a brighter color.
-            if (code_point_pos == closing_brace_pos || code_point_pos == opening_brace_pos)
+            if (code_point_pos == matching_brace_pos || code_point_pos == highlight_pos)
             {
-                colors[closing_brace_pos] = replxx::color::rgb666(5, 0, 1);
-                colors[opening_brace_pos] = replxx::color::rgb666(5, 0, 1);
+                colors[matching_brace_pos] = replxx::color::rgb666(5, 0, 1);
+                colors[highlight_pos] = replxx::color::rgb666(5, 0, 1);
             }
         }
     }
@@ -413,41 +432,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
 String highlighted(const String & query, const Context & context)
 {
-    // Issue: https://github.com/ClickHouse/ClickHouse/issues/83987
-    /// Previously utf-8 code points were calculated in the following way:
-    /// size_t num_code_points = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(query.data()), query.size());
-    /// But, `UTF8::countCodePoints` and `UTF8::seqLength` seem to handle invalid UTF-8 sequences inconsistently
-    /// (e.g., hex literals like x'A0'), causing count mismatches and crashes.
-    /// For a quick fix, since the highlight function uses `UTF8::seqLength` for iteration, use the same logic for
-    /// counting to ensure consistency when invalid UTF-8 bytes are detected (use UTF8::countCodePoints for all other
-    /// cases to mainly for performance concerns).
-    /// TODO: @bharatnc Fix UTF8::countCodePoints to handle invalid UTF-8 sequences consistently with seqLength so that
-    /// this logic can be removed.
-    bool has_invalid_utf8 = false;
-    for (const char c : query)
-    {
-        /// Standalone UTF-8 continuation bytes (0x80-0xBF, e.g. 0xA0 from hex literals)
-        /// cause countCodePoints/seqLength inconsistency.
-        if (static_cast<unsigned char>(c) >= 0x80 && static_cast<unsigned char>(c) <= 0xBF)
-        {
-            has_invalid_utf8 = true;
-            break;
-        }
-    }
-    size_t num_code_points;
-    if (has_invalid_utf8)
-    {
-        num_code_points = 0;
-        const char * pos = query.data();
-        const char * end = pos + query.size();
-        while (pos < end)
-        {
-            pos += UTF8::seqLength(*pos);
-            ++num_code_points;
-        }
-    }
-    else
-        num_code_points = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(query.data()), query.size());
+    const size_t num_code_points = countCodePointsWithSeqLength(query, query.data() + query.size());
 
     std::vector<replxx::Replxx::Color> colors(num_code_points, replxx::Replxx::Color::DEFAULT);
     highlight(query, colors, context, 0);
