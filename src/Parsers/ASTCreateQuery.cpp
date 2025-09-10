@@ -600,23 +600,29 @@ void ASTCreateQuery::resetUUIDs()
 
 void ASTCreateQuery::resetColumnUUIDs() const
 {
-    for (auto & ast : columns_list->columns->children)
+    if (columns_list && columns_list->columns)
     {
-        auto & col_decl = ast->as<ASTColumnDeclaration &>();
-        col_decl.uuid = nullptr;
+        for (auto & ast : columns_list->columns->children)
+        {
+            auto & col_decl = ast->as<ASTColumnDeclaration &>();
+            col_decl.uuid = nullptr;
+        }
     }
 }
 
 void ASTCreateQuery::generateColumnRandomUUIDs() const
 {
-    for (auto & ast : columns_list->columns->children)
+    if (columns_list && columns_list->columns)
     {
-        auto & col_decl = ast->as<ASTColumnDeclaration &>();
-        if (!col_decl.uuid)
+        for (auto & ast : columns_list->columns->children)
         {
-            auto uuid_str = UUIDHelpers::uuidToStr(UUIDHelpers::generateV4());
-            auto uuid_ast = ASTLiteral(Field(uuid_str));
-            col_decl.uuid = uuid_ast.clone();
+            auto & col_decl = ast->as<ASTColumnDeclaration &>();
+            if (!col_decl.uuid)
+            {
+                auto uuid_str = UUIDHelpers::uuidToStr(UUIDHelpers::generateV4());
+                auto uuid_ast = ASTLiteral(Field(uuid_str));
+                col_decl.uuid = uuid_ast.clone();
+            }
         }
     }
 }
