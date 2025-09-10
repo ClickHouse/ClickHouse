@@ -421,6 +421,7 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
     {
         if (elem.type == Substream::NullMap
             || elem.type == Substream::ArraySizes
+            || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
             || elem.type == Substream::SparseOffsets)
             return false;

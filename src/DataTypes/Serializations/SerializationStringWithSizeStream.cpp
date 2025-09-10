@@ -163,28 +163,30 @@ void SerializationStringWithSizeStream::serializeBinaryBulkWithMultipleStreams(
     if (const size_t size = column.size(); limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    settings.path.push_back(Substream::Regular);
-    auto * string_stream = settings.getter(settings.path);
-    if (!string_stream)
+    settings.path.push_back(Substream::StringSizes);
+    settings.path.back().name_of_substream = "size";
+    auto * size_stream = settings.getter(settings.path);
+    if (!size_stream)
     {
         settings.path.pop_back();
         return;
     }
 
-    settings.path.back() = Substream::StringSizes;
-    settings.path.back().name_of_substream = "size";
     const auto & column_string = typeid_cast<const ColumnString &>(column);
-    if (auto * stream = settings.getter(settings.path))
-        serializeStringSizes(column, *stream, offset, limit);
-    else
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Size stream is missing when try to serialize string with separate size stream");
+    serializeStringSizes(column, *size_stream, offset, limit);
+
+    settings.path.back() = Substream::Regular;
+    settings.path.back().name_of_substream = "";
+    auto * stream = settings.getter(settings.path);
+    if (!stream)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "String stream is missing when try to serialize string with separate size stream");
 
     /// Serialize string data
     const auto & offsets = column_string.getOffsets();
     size_t begin = (offset == 0) ? 0 : offsets[offset - 1];
     size_t end = offsets[offset + limit - 1];
     size_t bytes = end - begin;
-    string_stream->write(reinterpret_cast<const char *>(&column_string.getChars()[begin]), bytes);
+    stream->write(reinterpret_cast<const char *>(&column_string.getChars()[begin]), bytes);
     settings.path.pop_back();
 }
 
@@ -196,12 +198,11 @@ void SerializationStringWithSizeStream::deserializeBinaryBulkWithMultipleStreams
     DeserializeBinaryBulkStatePtr & /* state */,
     SubstreamsCache * cache) const
 {
-    settings.path.push_back(Substream::Regular);
+    settings.path.push_back(Substream::StringSizes);
+    settings.path.back().name_of_substream = "size";
 
     /// cache_path {StringSizes(size), Regular}
     auto cache_path = settings.path;
-    cache_path.back() = Substream::StringSizes;
-    cache_path.back().name_of_substream = "size";
     cache_path.push_back(Substream::Regular);
 
     const auto * cached_element = getElementFromSubstreamsCache(cache, cache_path);
@@ -220,65 +221,67 @@ void SerializationStringWithSizeStream::deserializeBinaryBulkWithMultipleStreams
     if (column_string)
     {
         column = column_string;
+        settings.path.pop_back();
+        return;
     }
-    else if (ReadBuffer * stream = settings.getter(settings.path))
+
+    ReadBuffer * stream = nullptr;
+    size_t bytes_to_read = 0;
+
+    auto mutable_column = column->assumeMutable();
+    auto & mutable_string_column = assert_cast<ColumnString &>(*mutable_column);
+    auto & offsets = mutable_string_column.getOffsets();
+    size_t prev_last_offset = offsets.back();
+
+    if (column_size)
     {
-        auto mutable_column = column->assumeMutable();
-        auto & mutable_string_column = assert_cast<ColumnString &>(*mutable_column);
-        auto & offsets = mutable_string_column.getOffsets();
-        size_t prev_last_offset = offsets.back();
+        chassert(column_size->size() >= mutable_string_column.size());
+        appendStringSizesToColumnStringOffsets(
+            mutable_string_column,
+            assert_cast<const ColumnUInt64 &>(*column_size).getData().data(),
+            mutable_string_column.size(),
+            column_size->size() - mutable_string_column.size());
 
-        if (column_size)
+        settings.path.back() = Substream::Regular;
+        settings.path.back().name_of_substream = "";
+        stream = settings.getter(settings.path);
+        bytes_to_read = offsets.back() - prev_last_offset;
+    }
+    else if (ReadBuffer * size_stream = settings.getter(settings.path))
+    {
+        auto mutable_size_column = ColumnUInt64::create();
+        skipped_bytes = 0;
+        if (rows_offset > 0)
         {
-            chassert(column_size->size() >= mutable_string_column.size());
-            appendStringSizesToColumnStringOffsets(
-                mutable_string_column,
-                assert_cast<const ColumnUInt64 &>(*column_size).getData().data(),
-                mutable_string_column.size(),
-                column_size->size() - mutable_string_column.size());
-        }
-        else
-        {
-            settings.path.back() = Substream::StringSizes;
-            settings.path.back().name_of_substream = "size";
-            if (ReadBuffer * size_stream = settings.getter(settings.path))
-            {
-                auto mutable_size_column = ColumnUInt64::create();
-                skipped_bytes = 0;
-                if (rows_offset > 0)
-                {
-                    PaddedPODArray<UInt64> ignored_sizes(rows_offset);
-                    const size_t real_read_size
-                        = size_stream->readBig(reinterpret_cast<char *>(ignored_sizes.data()), sizeof(UInt64) * rows_offset) / sizeof(UInt64);
+            PaddedPODArray<UInt64> ignored_sizes(rows_offset);
+            const size_t real_read_size
+                = size_stream->readBig(reinterpret_cast<char *>(ignored_sizes.data()), sizeof(UInt64) * rows_offset) / sizeof(UInt64);
 
-                    for (size_t i = 0; i < real_read_size; ++i)
-                    {
-                        if constexpr (std::endian::native == std::endian::big)
-                            transformEndianness<std::endian::big, std::endian::little>(ignored_sizes[i]);
-                        skipped_bytes += ignored_sizes[i];
-                    }
-                }
-
-                SerializationNumber<UInt64>().deserializeBinaryBulk(*mutable_size_column, *size_stream, 0, limit, 0);
-                appendStringSizesToColumnStringOffsets(
-                    mutable_string_column, mutable_size_column->getData().data(), 0, mutable_size_column->size());
-                column_partial_size = std::move(mutable_size_column);
-            }
-            else
+            for (size_t i = 0; i < real_read_size; ++i)
             {
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA, "Size stream is missing when try to deserialize string with separate size stream");
+                if constexpr (std::endian::native == std::endian::big)
+                    transformEndianness<std::endian::big, std::endian::little>(ignored_sizes[i]);
+                skipped_bytes += ignored_sizes[i];
             }
-            settings.path.back() = Substream::Regular;
         }
 
-        size_t total_bytes = offsets.back() - prev_last_offset;
+        SerializationNumber<UInt64>().deserializeBinaryBulk(*mutable_size_column, *size_stream, 0, limit, 0);
+        appendStringSizesToColumnStringOffsets(
+            mutable_string_column, mutable_size_column->getData().data(), 0, mutable_size_column->size());
+        column_partial_size = std::move(mutable_size_column);
+        settings.path.back() = Substream::Regular;
+        settings.path.back().name_of_substream = "";
+        stream = settings.getter(settings.path);
+        bytes_to_read = offsets.back() - prev_last_offset;
+    }
 
+    if (stream)
+    {
         auto & data = mutable_string_column.getChars();
         const size_t initial_size = data.size();
-        data.resize(initial_size + total_bytes);
+        data.resize(initial_size + bytes_to_read);
         stream->ignore(skipped_bytes);
-        const size_t size = stream->readBig(reinterpret_cast<char*>(&data[initial_size]), total_bytes);
+        const size_t size = stream->readBig(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
         data.resize(initial_size + size);
         column = std::move(mutable_column);
         addElementToSubstreamsCache(
