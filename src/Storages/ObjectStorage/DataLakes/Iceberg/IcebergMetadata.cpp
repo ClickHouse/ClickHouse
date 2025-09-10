@@ -541,7 +541,6 @@ void IcebergMetadata::createInitial(
         compression_suffix = "." + compression_suffix;
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
-    std::cerr << "filename " << filename << '\n';
     auto cleanup = [&] ()
     {
         object_storage->removeObjectIfExists(StoredObject(filename));

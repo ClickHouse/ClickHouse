@@ -1,6 +1,6 @@
 #pragma once
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include "Parsers/IAST_fwd.h"
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
