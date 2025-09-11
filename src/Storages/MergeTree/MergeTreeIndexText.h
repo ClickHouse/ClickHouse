@@ -14,9 +14,6 @@
 namespace DB
 {
 
-class MergeTreeIndexReader;
-class IMergeTreeIndexCondition;
-
 struct MergeTreeIndexTextParams
 {
     size_t dictionary_block_size = 0;
@@ -104,14 +101,14 @@ struct DictionaryBlock : public DictionaryBlockBase
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
-    using TokensMap = absl::flat_hash_map<StringRef, TokenInfo>;
+    using TokenInfosMap = absl::flat_hash_map<StringRef, TokenInfo>;
 
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
     ~MergeTreeIndexGranuleText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
-    void deserializeBinaryWithMultipleStreams(IndexInputStreams & streams, IndexDeserializationState & state) override;
+    void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state) override;
 
     bool empty() const override { return bloom_filter_elements == 0; }
     size_t memoryUsageBytes() const override { return 0; }
@@ -119,7 +116,7 @@ public:
     bool hasAnyTokenFromQuery(const TextSearchQuery & query) const;
     bool hasAllTokensFromQuery(const TextSearchQuery & query) const;
 
-    const TokensMap & getRemainingTokens() const { return remaining_tokens; }
+    const TokenInfosMap & getRemainingTokens() const { return remaining_tokens; }
     void resetAfterAnalysis();
 
 private:
@@ -127,39 +124,33 @@ private:
     void deserializeSparseIndex(ReadBuffer & istr);
 
     void analyzeBloomFilter(const IMergeTreeIndexCondition & condition);
-    void analyzeDictionary(IndexReaderStream & stream, IndexDeserializationState & state);
+    void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     MergeTreeIndexTextParams params;
     size_t bloom_filter_elements = 0;
     BloomFilter bloom_filter;
     DictionarySparseIndex sparse_index;
-    TokensMap remaining_tokens;
+    TokenInfosMap remaining_tokens;
 };
 
 using PostingListRawPtr = PostingList *;
-using TokensMap = StringHashMap<PostingListRawPtr>;
+using TokenToPostingsMap = StringHashMap<PostingListRawPtr>;
 using SortedTokensAndPostings = std::vector<std::pair<StringRef, PostingList *>>;
 
 struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 {
-    /// A helper struct to hold references to tokens and postings.
-    struct Holder
-    {
-        TokensMap tokens_map;
-        std::unique_ptr<Arena> arena;
-        std::list<PostingList> posting_lists;
-    };
-
     MergeTreeIndexGranuleTextWritable(
         MergeTreeIndexTextParams params_,
-        BloomFilter bloom_filter_,
-        SortedTokensAndPostings tokens_and_postings_,
-        Holder holder_);
+        BloomFilter && bloom_filter_,
+        SortedTokensAndPostings && tokens_and_postings_,
+        TokenToPostingsMap && tokens_map_,
+        std::list<PostingList> && posting_lists_,
+        std::unique_ptr<Arena> && arena_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void serializeBinaryWithMultipleStreams(IndexOutputStreams & streams) const override;
+    void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return tokens_and_postings.empty(); }
@@ -168,22 +159,27 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     MergeTreeIndexTextParams params;
     BloomFilter bloom_filter;
     SortedTokensAndPostings tokens_and_postings;
-    Holder holder;
+
+    /// tokens_and_postings has references to data held in the fields below.
+    TokenToPostingsMap tokens_map;
+    std::list<PostingList> posting_lists;
+    std::unique_ptr<Arena> arena;
 };
 
 struct MergeTreeIndexTextGranuleBuilder
 {
-    explicit MergeTreeIndexTextGranuleBuilder(MergeTreeIndexTextParams params_, TokenExtractorPtr token_extractor_);
+    MergeTreeIndexTextGranuleBuilder(MergeTreeIndexTextParams params_, TokenExtractorPtr token_extractor_);
 
     void addDocument(StringRef document);
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     bool empty() const { return current_row == 0; }
+    void reset();
 
     MergeTreeIndexTextParams params;
     TokenExtractorPtr token_extractor;
 
     UInt64 current_row = 0;
-    TokensMap tokens_map;
+    TokenToPostingsMap tokens_map;
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
 };
@@ -193,14 +189,14 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     MergeTreeIndexAggregatorText(String index_column_name_, MergeTreeIndexTextParams params_, TokenExtractorPtr token_extractor_);
     ~MergeTreeIndexAggregatorText() override = default;
 
-    bool empty() const override { return !granule_builder || granule_builder->empty(); }
+    bool empty() const override { return granule_builder.empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
 
     String index_column_name;
     MergeTreeIndexTextParams params;
     TokenExtractorPtr token_extractor;
-    std::optional<MergeTreeIndexTextGranuleBuilder> granule_builder;
+    MergeTreeIndexTextGranuleBuilder granule_builder;
 };
 
 class MergeTreeIndexText final : public IMergeTreeIndex
@@ -213,7 +209,7 @@ public:
 
     ~MergeTreeIndexText() override = default;
 
-    IndexSubstreams getSubstreams() const override;
+    MergeTreeIndexSubstreams getSubstreams() const override;
     MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;

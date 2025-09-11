@@ -10,9 +10,9 @@ namespace
 
 using namespace DB;
 
-MergeTreeReaderSettings patchSettings(MergeTreeReaderSettings settings, IndexSubstream::Type substream)
+MergeTreeReaderSettings patchSettings(MergeTreeReaderSettings settings, MergeTreeIndexSubstream::Type substream)
 {
-    using enum IndexSubstream::Type;
+    using enum MergeTreeIndexSubstream::Type;
 
     if (substream == TextIndexDictionary || substream == TextIndexPostings)
     {
@@ -141,7 +141,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
         if (!res)
             res = index->createIndexGranule();
 
-        IndexDeserializationState state
+        MergeTreeIndexDeserializationState state
         {
             .version = version,
             .condition = condition
@@ -181,7 +181,7 @@ void MergeTreeIndexReader::read(size_t mark, size_t current_granule_num, MergeTr
     if (streams.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Bulk filtering is not supported for indexes with multiple streams. Have {} streams for index {}", streams.size(), index->getFileName());
 
-    auto * stream = streams.at(IndexSubstream::Type::Regular);
+    auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
     if (stream_mark != mark)
         stream->seekToMark(mark);
 

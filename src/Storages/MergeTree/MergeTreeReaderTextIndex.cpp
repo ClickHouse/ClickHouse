@@ -243,7 +243,7 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
         ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
         const auto & future_postings = postings.getFuturePostings();
 
-        auto * postings_stream = index_reader->getStreams().at(IndexSubstream::Type::TextIndexPostings);
+        auto * postings_stream = index_reader->getStreams().at(MergeTreeIndexSubstream::Type::TextIndexPostings);
         auto * data_buffer = postings_stream->getDataBuffer();
         auto * compressed_buffer = postings_stream->getCompressedDataBuffer();
 

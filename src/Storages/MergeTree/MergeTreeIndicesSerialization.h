@@ -8,7 +8,10 @@ namespace DB
 
 class IMergeTreeIndexCondition;
 
-struct IndexSubstream
+/// Represents a substream of a merge tree index.
+/// By default skip indexes have on substream (skp_idx_name.idx),
+/// but some indexes (e.g. text index) may have multiple substreams.
+struct MergeTreeIndexSubstream
 {
     enum class Type
     {
@@ -18,28 +21,30 @@ struct IndexSubstream
     };
 
     Type type;
+    /// Suffix that is added to the end of index substream's filename.
     String suffix;
+    /// Extension of the index substream's file with data. Encodes the serialization version (".idx", "idx2", etc.)
     String extension;
 };
 
-using IndexSubstreams = std::vector<IndexSubstream>;
+using MergeTreeIndexSubstreams = std::vector<MergeTreeIndexSubstream>;
 using MergeTreeIndexVersion = uint8_t;
 
 struct MergeTreeIndexFormat
 {
     MergeTreeIndexVersion version;
-    IndexSubstreams substreams;
+    MergeTreeIndexSubstreams substreams;
 
     explicit operator bool() const { return version != 0; }
 };
 
-using IndexWriterStream = MergeTreeWriterStream<false>;
-using IndexOutputStreams = std::map<IndexSubstream::Type, IndexWriterStream *>;
+using MergeTreeIndexWriterStream = MergeTreeWriterStream<false>;
+using MergeTreeIndexOutputStreams = std::map<MergeTreeIndexSubstream::Type, MergeTreeIndexWriterStream *>;
 
-using IndexReaderStream = MergeTreeReaderStream;
-using IndexInputStreams = std::map<IndexSubstream::Type, IndexReaderStream *>;
+using MergeTreeIndexReaderStream = MergeTreeReaderStream;
+using MergeTreeIndexInputStreams = std::map<MergeTreeIndexSubstream::Type, MergeTreeIndexReaderStream *>;
 
-struct IndexDeserializationState
+struct MergeTreeIndexDeserializationState
 {
     MergeTreeIndexVersion version;
     const IMergeTreeIndexCondition * condition;

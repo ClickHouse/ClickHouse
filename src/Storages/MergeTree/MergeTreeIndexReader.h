@@ -15,7 +15,7 @@ class VectorSimilarityIndexCache;
 class MergeTreeIndexReader
 {
 public:
-    using StreamMap = std::map<IndexSubstream::Type, MergeTreeReaderStream *>;
+    using StreamMap = std::map<MergeTreeIndexSubstream::Type, MergeTreeReaderStream *>;
 
     MergeTreeIndexReader(
         MergeTreeIndexPtr index_,
