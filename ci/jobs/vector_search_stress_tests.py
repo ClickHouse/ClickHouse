@@ -556,8 +556,8 @@ def install_and_start_clickhouse():
                 ],
             )
         )
-        res = results[-1].is_ok()
-        return results
+
+    return results
 
 
 # Array of (dataset, test_params)
