@@ -1079,7 +1079,7 @@ void ZooKeeper::receiveEvent()
         }
 
         logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_microseconds);
-        observeOperationIfNeeded(request_info.request, response, elapsed_microseconds);
+        observeOperation(request_info.request, response, elapsed_microseconds);
     }
     catch (...)
     {
@@ -1099,7 +1099,7 @@ void ZooKeeper::receiveEvent()
                 request_info.callback(*response);
 
             logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_microseconds);
-            observeOperationIfNeeded(request_info.request, response, elapsed_microseconds);
+            observeOperation(request_info.request, response, elapsed_microseconds);
         }
         catch (...)
         {
@@ -1204,7 +1204,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     {
                         request_info.callback(*response);
                         logOperationIfNeeded(request_info.request, response, /* finalize = */ true, elapsed_microseconds);
-                        observeOperationIfNeeded(request_info.request, response, elapsed_microseconds);
+                        observeOperation(request_info.request, response, elapsed_microseconds);
                     }
                     catch (...)
                     {
@@ -1266,7 +1266,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                         info.callback(*response);
                         UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.time).count();
                         logOperationIfNeeded(info.request, response, true, elapsed_microseconds);
-                        observeOperationIfNeeded(info.request, response, elapsed_microseconds);
+                        observeOperation(info.request, response, elapsed_microseconds);
                     }
                     catch (...)
                     {
@@ -1882,7 +1882,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeepe
 {}
 #endif
 
-void ZooKeeper::observeOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, UInt64 elapsed_microseconds)
+void ZooKeeper::observeOperation(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, UInt64 elapsed_microseconds)
 {
     chassert(response);
 
@@ -1918,7 +1918,7 @@ void ZooKeeper::observeOperationIfNeeded(const ZooKeeperRequestPtr & request, co
 
     for (const auto [subrequest, subresponse] : std::views::zip(multi_request->requests, multi_response->responses))
     {
-        observeOperationIfNeeded(subrequest, std::dynamic_pointer_cast<ZooKeeperResponse>(subresponse), elapsed_microseconds);
+        observeOperation(subrequest, std::dynamic_pointer_cast<ZooKeeperResponse>(subresponse), elapsed_microseconds);
     }
 }
 

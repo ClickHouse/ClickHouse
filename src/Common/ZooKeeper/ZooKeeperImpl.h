@@ -348,7 +348,7 @@ private:
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
 
     /// Observes the operation in Lightweight ZooKeeper Log.
-    void observeOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, UInt64 elapsed_microseconds);
+    void observeOperation(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, UInt64 elapsed_microseconds);
 
     std::optional<String> tryGetSystemZnode(const std::string & path, const std::string & description);
 
