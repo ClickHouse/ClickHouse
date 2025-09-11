@@ -71,10 +71,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         Definition::name != "icebergCluster" &&
                         Definition::name != "deltaLake" &&
                         Definition::name != "deltaLakeCluster" &&
-                        Definition::name != "icebergS3" &&
-                        Definition::name != "icebergClusterS3" &&
-                        Definition::name != "deltaLakeS3" &&
-                        Definition::name != "deltaLakeClusterS3")
+                        Definition::object_storage_type != "s3")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
                     if (std::string_view(Definition::name).starts_with("iceberg"))
@@ -89,10 +86,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         Definition::name != "icebergCluster" &&
                         Definition::name != "deltaLake" &&
                         Definition::name != "deltaLakeCluster" &&
-                        Definition::name != "icebergAzure" &&
-                        Definition::name != "icebergClusterAzure" &&
-                        Definition::name != "deltaLakeAzure" &&
-                        Definition::name != "deltaLakeClusterAzure")
+                        Definition::object_storage_type != "azure")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
                     if (std::string_view(Definition::name).starts_with("iceberg"))
@@ -107,10 +101,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         Definition::name != "icebergCluster" &&
                         Definition::name != "deltaLake" &&
                         Definition::name != "deltaLakeCluster" &&
-                        Definition::name != "icebergLocal" &&
-                        Definition::name != "icebergClusterLocal" &&
-                        Definition::name != "deltaLakeLocal" &&
-                        Definition::name != "deltaLakeClusterLocal")
+                        Definition::object_storage_type != "local")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
                     if (std::string_view(Definition::name).starts_with("iceberg"))
                         configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
