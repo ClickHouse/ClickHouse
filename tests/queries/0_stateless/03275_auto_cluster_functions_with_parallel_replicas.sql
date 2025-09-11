@@ -20,7 +20,7 @@ EXPLAIN SELECT number FROM system.numbers n JOIN (SELECT * FROM s3('http://local
 SELECT count() FROM s3('http://localhost:11111/test/a.tsv', 'TSV');
 
 DROP TABLE IF EXISTS dupe_test_with_auto_functions;
-CREATE TABLE dupe_test_with_auto_functions (c1 String, c2 String, c3 String) ENGINE = MergeTree ORDER BY c1;
+CREATE TABLE dupe_test_with_auto_functions (n1 String, n2 String, n3 String) ENGINE = MergeTree ORDER BY n1;
 INSERT INTO dupe_test_with_auto_functions SELECT * FROM s3('http://localhost:11111/test/a.tsv', 'TSV');
 SELECT count() FROM dupe_test_with_auto_functions;
 
@@ -33,11 +33,11 @@ EXPLAIN SELECT * FROM s3('http://localhost:11111/test/a.tsv', 'TSV');
 SELECT count() FROM s3('http://localhost:11111/test/a.tsv', 'TSV');
 
 DROP TABLE IF EXISTS dupe_test_without_cluster_functions;
-CREATE TABLE dupe_test_without_cluster_functions (c1 String, c2 String, c3 String) ENGINE = MergeTree ORDER BY c1;
+CREATE TABLE dupe_test_without_cluster_functions (n1 String, n2 String, n3 String) ENGINE = MergeTree ORDER BY n1;
 INSERT INTO dupe_test_without_cluster_functions SELECT * FROM s3('http://localhost:11111/test/a.tsv', 'TSV');
 SELECT count() FROM dupe_test_without_cluster_functions;
 
 DROP TABLE IF EXISTS dupe_test_with_cluster_function;
-CREATE TABLE dupe_test_with_cluster_function (c1 String, c2 String, c3 String) ENGINE = MergeTree ORDER BY c1;
+CREATE TABLE dupe_test_with_cluster_function (n1 String, n2 String, n3 String) ENGINE = MergeTree ORDER BY n1;
 INSERT INTO dupe_test_with_cluster_function SELECT * FROM s3Cluster('test_cluster_two_shards', 'http://localhost:11111/test/a.tsv', 'TSV');
 SELECT count() FROM dupe_test_with_cluster_function;
