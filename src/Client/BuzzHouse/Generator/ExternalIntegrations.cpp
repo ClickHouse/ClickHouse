@@ -1419,7 +1419,7 @@ bool AzuriteIntegration::performTableIntegration(RandomGenerator &, SQLTable &, 
 
 void HTTPIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
 {
-    te->add_params()->set_svalue(t.getTablePath(rg, fc, true));
+    te->add_params()->set_svalue(t.getTablePath(rg, fc, false));
 }
 
 bool HTTPIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
@@ -1659,7 +1659,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
 bool DolorIntegration::performExternalCommand(const uint64_t seed, const String & cname, const String & tname)
 {
     RandomGenerator rg(seed, 0, 1);
-    const String & uri = rg.nextBool() ? "/sparkupdate" : "/sparkcheck";
+    const String & uri = rg.nextSmallNumber() < 8 ? "/sparkupdate" : "/sparkcheck";
     const bool res
         = httpPut(uri, fmt::format(R"({{"seed":{},"catalog_name":"{}","table_name":"{}"}})", rg.nextRandomUInt64(), cname, tname));
 
