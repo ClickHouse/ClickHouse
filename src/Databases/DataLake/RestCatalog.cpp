@@ -702,7 +702,7 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
         };
     }
 
-    Poco::URI url(endpoint);
+    Poco::URI url(endpoint, false);
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
         .withMethod(method)
