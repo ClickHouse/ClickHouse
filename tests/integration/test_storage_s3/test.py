@@ -2802,9 +2802,20 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
     minio = started_cluster.minio_client
 
     url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}"
+    assert (
+        "Partition strategy wildcard can not be used without a '_partition_id' wildcard"
+        in node.query_and_get_error(
+            f"""
+    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
+    PARTITION BY (b, c)
+    """,
+            settings={"file_like_engine_default_partition_strategy": "wildcard"},
+        )
+    )
+
     node.query(
         f"""
-    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet', partition_strategy = 'hive')
+    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
     PARTITION BY (b, c)
     """
     )
