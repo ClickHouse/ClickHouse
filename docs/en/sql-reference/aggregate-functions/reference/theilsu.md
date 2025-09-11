@@ -1,6 +1,9 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/theilsu
+description: 'The `theilsU` function calculates Theils'' U uncertainty coefficient,
+  a value that measures the association between two columns in a table.'
 sidebar_position: 201
+slug: /sql-reference/aggregate-functions/reference/theilsu
+title: 'theilsU'
 ---
 
 # theilsU
@@ -10,7 +13,7 @@ The `theilsU` function calculates the [Theil's U uncertainty coefficient](https:
 
 **Syntax**
 
-``` sql
+```sql
 theilsU(column1, column2)
 ```
 
@@ -28,7 +31,7 @@ theilsU(column1, column2)
 
 The following two columns being compared below have a small association with each other, so the value of `theilsU` is negative:
 
-``` sql
+```sql
 SELECT
     theilsU(a ,b)
 FROM

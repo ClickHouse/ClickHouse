@@ -30,6 +30,8 @@
 
 #include <Common/re2.h>
 
+#include <Processors/Port.h>
+
 #include <DataFile.hh>
 #include <Encoder.hh>
 #include <Node.hh>
@@ -635,6 +637,7 @@ void registerOutputFormatAvro(FormatFactory & factory)
     });
     factory.markFormatHasNoAppendSupport("Avro");
     factory.markOutputFormatNotTTYFriendly("Avro");
+    factory.setContentType("Avro", "application/octet-stream");
 }
 
 }

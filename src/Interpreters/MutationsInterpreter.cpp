@@ -1,6 +1,7 @@
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
@@ -22,13 +23,12 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/queryToString.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
@@ -40,6 +40,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/Context.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -52,7 +53,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_nondeterministic_mutations;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool validate_mutation_query;
 }
@@ -160,15 +161,19 @@ ColumnDependencies getAllColumnDependencies(
 }
 
 
-bool isStorageTouchedByMutations(
+IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context)
 {
+    static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
+    static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
+    static constexpr IsStorageTouched some_rows = {.any_rows_affected = true, .all_rows_affected = false};
+
     if (commands.empty())
-        return false;
+        return no_rows;
 
     auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part, mutations_snapshot);
     bool all_commands_can_be_skipped = true;
@@ -178,17 +183,17 @@ bool isStorageTouchedByMutations(
         if (command.type == MutationCommand::APPLY_DELETED_MASK)
         {
             if (source_part->hasLightweightDelete())
-                return true;
+                return some_rows;
         }
         else
         {
             if (!command.predicate) /// The command touches all rows.
-                return true;
+                return all_rows;
 
             if (command.partition)
             {
                 const String partition_id = storage_from_part->getPartitionIDFromQuery(command.partition, context);
-                if (partition_id == source_part->info.partition_id)
+                if (partition_id == source_part->info.getPartitionId())
                     all_commands_can_be_skipped = false;
             }
             else
@@ -199,7 +204,7 @@ bool isStorageTouchedByMutations(
     }
 
     if (all_commands_can_be_skipped)
-        return false;
+        return no_rows;
 
     std::optional<InterpreterSelectQuery> interpreter_select_query;
     BlockIO io;
@@ -229,7 +234,7 @@ bool isStorageTouchedByMutations(
     while (block.rows() == 0 && executor.pull(block));
 
     if (!block.rows())
-        return false;
+        return no_rows;
     if (block.rows() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
 
@@ -237,7 +242,11 @@ bool isStorageTouchedByMutations(
     while (executor.pull(tmp_block));
 
     auto count = (*block.getByName("count()").column)[0].safeGet<UInt64>();
-    return count != 0;
+
+    IsStorageTouched result;
+    result.any_rows_affected = (count != 0);
+    result.all_rows_affected = (count == source_part->rows_count);
+    return result;
 }
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
@@ -292,7 +301,7 @@ MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command)
 
     auto mutation_command = MutationCommand::parse(alter_command.get());
     if (!mutation_command)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}. It's a bug", queryToString(alter_command));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}. It's a bug", alter_command->formatForErrorMessage());
 
     return *mutation_command;
 }
@@ -333,6 +342,11 @@ const MergeTreeData * MutationsInterpreter::Source::getMergeTreeData() const
         return data;
 
     return dynamic_cast<const MergeTreeData *>(storage.get());
+}
+
+MergeTreeData::DataPartPtr MutationsInterpreter::Source::getMergeTreeDataPart() const
+{
+    return part;
 }
 
 bool MutationsInterpreter::Source::supportsLightweightDelete() const
@@ -873,7 +887,10 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            if (materialize_ttl_recalculate_only)
+            bool suitable_for_ttl_optimization = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
+                && metadata_snapshot->hasOnlyRowsTTL();
+
+            if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)
             {
                 // just recalculate ttl_infos without remove expired data
                 auto all_columns_vec = all_columns.getNames();
@@ -935,6 +952,25 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             read_columns.emplace_back(command.column_name);
+            /// Check if the type of this column is changed and there are projections that
+            /// have this column in the primary key. We should rebuild such projections.
+            if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
+            {
+                const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
+                if (column && command.data_type && !column->type->equals(*command.data_type))
+                {
+                    for (const auto & projection : metadata_snapshot->getProjections())
+                    {
+                        const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
+                        if (std::ranges::find(pk_columns, command.column_name) != pk_columns.end())
+                        {
+                            for (const auto & col : projection.required_columns)
+                                dependencies.emplace(col, ColumnDependency::PROJECTION);
+                            materialized_projections.insert(projection.name);
+                        }
+                    }
+                }
+            }
         }
         else
             throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command.type));
@@ -1002,6 +1038,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             /// Special step to recalculate affected indices, projections and TTL expressions.
             stages.emplace_back(context);
+            stages.back().is_readonly = true;
             for (const auto & column : unchanged_columns)
                 stages.back().column_to_updated.emplace(
                     column, std::make_shared<ASTIdentifier>(column));
@@ -1256,8 +1293,9 @@ void MutationsInterpreter::Source::read(
             plan,
             *data,
             storage_snapshot,
-            part,
+            RangesInDataPart(part),
             alter_conversions,
+            nullptr,
             required_columns,
             nullptr,
             apply_deleted_mask_,
@@ -1445,6 +1483,25 @@ QueryPipelineBuilder MutationsInterpreter::execute()
     return builder;
 }
 
+std::vector<MutationActions> MutationsInterpreter::getMutationActions() const
+{
+    std::vector<MutationActions> result;
+    for (const auto & stage : stages)
+    {
+        for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
+        {
+            const auto & step = stage.expressions_chain.steps[i];
+            bool project_input = step->actions()->project_input;
+            if (i < stage.filter_column_names.size())
+                result.push_back({step->actions()->dag.clone(), stage.filter_column_names[i], project_input});
+            else
+                result.push_back({step->actions()->dag.clone(), "", project_input});
+        }
+    }
+
+    return result;
+}
+
 Block MutationsInterpreter::getUpdatedHeader() const
 {
     // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
@@ -1508,7 +1565,14 @@ bool MutationsInterpreter::isAffectingAllColumns() const
     if (stages.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation interpreter has no stages");
 
-    return stages.back().isAffectingAllColumns(storage_columns);
+    /// Find first not readonly stage from the end.
+    for (auto it = stages.rbegin(); it != stages.rend(); ++it)
+    {
+        if (!it->is_readonly)
+            return it->isAffectingAllColumns(storage_columns);
+    }
+
+    return false;
 }
 
 void MutationsInterpreter::MutationKind::set(const MutationKindEnum & kind)

@@ -5,8 +5,11 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
+
 namespace DB
 {
+
+class VectorSimilarityIndexCache;
 
 class MergeTreeIndexReader
 {
@@ -18,10 +21,11 @@ public:
         const MarkRanges & all_mark_ranges_,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
-        SkippingIndexCache * skipping_index_cache,
+        VectorSimilarityIndexCache * vector_similarity_index_cache,
         MergeTreeReaderSettings settings_);
 
-    MergeTreeIndexGranulePtr read(size_t mark);
+    void read(size_t mark, MergeTreeIndexGranulePtr & granule);
+    void read(size_t mark, size_t current_granule_num, MergeTreeIndexBulkGranulesPtr & granules);
 
 private:
     MergeTreeIndexPtr index;
@@ -30,7 +34,7 @@ private:
     const MarkRanges & all_mark_ranges;
     MarkCache * mark_cache;
     UncompressedCache * uncompressed_cache;
-    SkippingIndexCache * skipping_index_cache;
+    VectorSimilarityIndexCache * vector_similarity_index_cache;
     MergeTreeReaderSettings settings;
 
     std::unique_ptr<MergeTreeReaderStream> stream;

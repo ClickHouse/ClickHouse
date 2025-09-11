@@ -1,32 +1,56 @@
 #pragma once
+#include <Core/Block.h>
+#include <Storages/MergeTree/MergeTreePartition.h>
 
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
 
 namespace DB
 {
 
+struct BlockWithPartition
+{
+    Block block;
+    MergeTreePartition partition;
+
+    std::vector<size_t> offsets;
+    std::vector<String> tokens;
+
+    BlockWithPartition(Block block_, Row partition_)
+        : BlockWithPartition(std::move(block_), std::move(partition_), {}, {})
+    {
+    }
+
+    BlockWithPartition(Block block_, Row partition_, std::vector<size_t> offsets_, std::vector<String> tokens_)
+        : block(std::move(block_)) , partition(std::move(partition_)) , offsets(std::move(offsets_)), tokens(std::move(tokens_))
+    {
+    }
+};
+
 struct SyncInsertBlockInfo
 {
+    using BlockIDsType = std::string;
+
     SyncInsertBlockInfo(
         LoggerPtr /*log_*/,
-        std::string && block_id_,
+        BlockIDsType && block_id_,
         BlockWithPartition && /*block_*/,
         std::optional<BlockWithPartition> && /*unmerged_block_with_partition_*/)
         : block_id(std::move(block_id_))
     {
     }
 
-    explicit SyncInsertBlockInfo(std::string block_id_)
-        : block_id(std::move(block_id_))
-    {}
+    explicit SyncInsertBlockInfo(BlockIDsType block_id_): block_id(std::move(block_id_))
+    {
+    }
 
-    std::string block_id;
+    BlockIDsType block_id;
 };
 
 struct AsyncInsertBlockInfo
 {
+    using BlockIDsType = std::vector<std::string>;
+
     LoggerPtr log;
-    std::vector<std::string> block_id;
+    BlockIDsType block_id;
     BlockWithPartition block_with_partition;
     /// Some merging algorithms can mofidy the block which loses the information about the async insert offsets
     /// when preprocessing or filtering data for asnyc inserts deduplication we want to use the initial, unmerged block
@@ -35,21 +59,19 @@ struct AsyncInsertBlockInfo
 
     AsyncInsertBlockInfo(
         LoggerPtr log_,
-        std::vector<std::string> && block_id_,
+        BlockIDsType && block_id_,
         BlockWithPartition && block_,
         std::optional<BlockWithPartition> && unmerged_block_with_partition_);
 
     void initBlockIDMap();
 
-    /// this function check if the block contains duplicate inserts.
+    /// This function check if the block contains duplicate inserts.
     /// if so, we keep only one insert for every duplicate ones.
     bool filterSelfDuplicate();
 
     /// remove the conflict parts of block for rewriting again.
     void filterBlockDuplicate(const std::vector<String> & block_paths, bool self_dedup);
-        /// Convert block id vector to string. Output at most 50 ids.
-
-    static std::vector<String> getHashesForBlocks(BlockWithPartition & block, String partition_id);
+    static BlockIDsType getHashesForBlocks(BlockWithPartition & block, String partition_id);
 };
 
 }

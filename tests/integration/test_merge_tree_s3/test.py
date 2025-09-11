@@ -1,3 +1,4 @@
+import ast
 import logging
 import os
 import time
@@ -78,7 +79,7 @@ FILES_OVERHEAD_PER_PART_WIDE = (
     + FILES_OVERHEAD_METADATA_VERSION
 )
 FILES_OVERHEAD_PER_PART_COMPACT = (
-    10 + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC + FILES_OVERHEAD_METADATA_VERSION
+    10 + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC + FILES_OVERHEAD_METADATA_VERSION + 1
 )
 
 
@@ -88,6 +89,7 @@ def create_table(node, table_name, **additional_settings):
         "old_parts_lifetime": 0,
         "index_granularity": 512,
         "temporary_directories_lifetime": 1,
+        "write_marks_for_substreams_in_compact_parts": 1,
     }
     settings.update(additional_settings)
 
@@ -796,6 +798,16 @@ def test_lazy_seek_optimization_for_async_read(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node_with_limited_disk"])
 def test_cache_with_full_disk_space(cluster, node_name):
     node = cluster.instances[node_name]
+    # Create a dummy file of 2M size to fill the disk space of cache disk
+    out = node.exec_in_container(
+        [
+            "/usr/bin/dd",
+            "if=/dev/zero",
+            "of=/jbod1/dummy",
+            "bs=1000",
+            "count=2000",
+        ]
+    )
     node.query("DROP TABLE IF EXISTS s3_test SYNC")
     node.query(
         "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY value SETTINGS storage_policy='s3_with_cache_and_jbod';"
@@ -878,8 +890,6 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     )
     assert "ExpectedError Message: mock s3 injected unretryable error" in error, error
 
-    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
-
     table_uuid = node.query(
         "SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'test_merge_canceled_by_s3_errors' LIMIT 1"
     ).strip()
@@ -930,7 +940,10 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
 
     node.query("OPTIMIZE TABLE merge_canceled_by_s3_errors_when_move FINAL")
 
-    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
+    node.wait_for_log_line(
+        "ExpectedError Message: mock s3 injected unretryable error",
+        look_behind_lines=1000,
+    )
 
     count = node.query("SELECT count() FROM merge_canceled_by_s3_errors_when_move")
     assert int(count) == 2000, count
@@ -966,7 +979,7 @@ def test_s3_engine_heavy_write_check_mem(
         " ("
         "   key UInt32 CODEC(NONE), value String CODEC(NONE)"
         " )"
-        " ENGINE S3('http://resolver:8083/root/data/test-upload.csv', 'minio', 'minio123', 'CSV')",
+        " ENGINE S3('http://resolver:8083/root/data/test-upload.csv', 'minio', '{minio_secret_key}', 'CSV')",
     )
 
     broken_s3.setup_fake_multpartuploads()
@@ -1052,3 +1065,21 @@ def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
     assert int(result) > 0.8 * memory
 
     check_no_objects_after_drop(cluster, node_name=node_name)
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_metadata_path_works_correctly(cluster, node_name):
+    node = cluster.instances[node_name]
+    table = "s3_test_metadata_path"
+    create_table(node, table)
+
+    response = node.query(f"SELECT data_paths FROM system.tables WHERE name='{table}'")
+    data_paths = ast.literal_eval(response)
+    assert len(data_paths) >= 1, list
+
+    # Verifies that trailing slash is added correctly: https://github.com/ClickHouse/ClickHouse/issues/80647
+    found = False
+    for path in data_paths:
+        found = found or "/custom_path/" in path
+    assert found, data_paths
+    node.query(f"DROP TABLE IF EXISTS {table}")

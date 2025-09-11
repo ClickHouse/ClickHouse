@@ -5,6 +5,7 @@
 
 #include <Common/NetException.h>
 #include <Common/CurrentThread.h>
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>

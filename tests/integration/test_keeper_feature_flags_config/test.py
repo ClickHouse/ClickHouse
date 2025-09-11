@@ -3,7 +3,6 @@
 import os
 
 import pytest
-from kazoo.client import KazooClient, KazooState
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -16,6 +15,8 @@ node = cluster.add_instance(
     "node",
     main_configs=["configs/enable_keeper.xml"],
     stay_alive=True,
+    # When `with_remote_database_disk` is enalbed, `with_zookeeper` might be enabled and the feature flag `CHECK_NOT_EXISTS` is enabled, causing the test `test_keeper_feature_flags` to fail
+    with_remote_database_disk=False,
 )
 
 
@@ -31,10 +32,7 @@ def started_cluster():
 
 
 def get_connection_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
+    _fake_zk_instance = keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
     return _fake_zk_instance
 
 
@@ -68,16 +66,16 @@ def test_keeper_feature_flags(started_cluster):
 
     def assert_feature_flags(feature_flags):
         res = keeper_utils.send_4lw_cmd(started_cluster, node, "ftfl")
-
+        node.query("SYSTEM FLUSH LOGS")
         for feature, is_enabled in feature_flags:
             node.wait_for_log_line(
                 f"ZooKeeperClient: Keeper feature flag {feature.upper()}: {'enabled' if is_enabled else 'disabled'}",
-                look_behind_lines=1000,
+                look_behind_lines="+1",
             )
 
             node.wait_for_log_line(
                 f"KeeperContext: Keeper feature flag {feature.upper()}: {'enabled' if is_enabled else 'disabled'}",
-                look_behind_lines=1000,
+                look_behind_lines="+1",
             )
 
             assert f"{feature}\t{1 if is_enabled else 0}" in res

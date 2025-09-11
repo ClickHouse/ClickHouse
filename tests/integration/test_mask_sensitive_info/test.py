@@ -16,6 +16,8 @@ node = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
     with_azurite=True,
+    # Disable `with_remote_database_disk` as `test_create_table` might access minIO and expect `DNS_ERROR`. However, minIO might be enabled when `with_remote_database_disk` is enabled;
+    with_remote_database_disk=False,
 )
 base_search_query = "SELECT COUNT() FROM system.query_log WHERE query LIKE "
 
@@ -178,8 +180,68 @@ def test_backup_table():
         assert password not in name
 
 
+def test_backup_table_AzureBlobStorage():
+    azure_conn_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    azure_account_name = "devstoreaccount1"
+    azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    setup_queries = [
+        "CREATE TABLE backup_test (x int) ENGINE = MergeTree ORDER BY x",
+        "INSERT INTO backup_test SELECT * FROM numbers(10)",
+    ]
+
+    endpoints_with_credentials = [
+        (
+            f"AzureBlobStorage('{azure_conn_string}', 'cont', 'backup_test_base')",
+            f"AzureBlobStorage('{azure_conn_string}', 'cont', 'backup_test_incremental')",
+        ),
+        (
+            f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'second_backup_test_base', '{azure_account_name}', '{azure_account_key}')",
+            f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'second_backup_test_incremental', '{azure_account_name}', '{azure_account_key}')",
+        )
+    ]
+
+    for query in setup_queries:
+        node.query_and_get_answer_with_error(query)
+
+    # Actually need to make two backups to have base_backup
+    def make_test_case(endpoint_specs):
+        # Run ASYNC so it returns the backup id
+        return (
+            f"BACKUP TABLE backup_test TO {endpoint_specs[0]} ASYNC",
+            f"BACKUP TABLE backup_test TO {endpoint_specs[1]} SETTINGS async=1, base_backup={endpoint_specs[0]}",
+        )
+
+    test_cases = [
+        make_test_case(endpoint_spec) for endpoint_spec in endpoints_with_credentials
+    ]
+    for base_query, inc_query in test_cases:
+        node.query_and_get_answer_with_error(base_query)[0]
+
+        inc_backup_query_output = node.query_and_get_answer_with_error(inc_query)[0]
+        inc_backup_id = TSV.toMat(inc_backup_query_output)[0][0]
+        names_in_system_backups_output, _ = node.query_and_get_answer_with_error(
+            f"SELECT base_backup_name, name FROM system.backups where id = '{inc_backup_id}'"
+        )
+
+        base_backup_name, name = TSV.toMat(names_in_system_backups_output)[0]
+
+        assert azure_account_key not in base_backup_name
+        assert azure_account_key not in name
+
+
 def test_create_table():
     password = new_password()
+    azure_conn_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    account_key_pattern = re.compile("AccountKey=.*?(;|$)")
+    masked_azure_conn_string = re.sub(
+        account_key_pattern, "AccountKey=[HIDDEN]\\1", azure_conn_string
+    )
+    masked_sas_conn_string = 'BlobEndpoint=https://my-endpoint/;SharedAccessSignature=[HIDDEN]'
+    azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    azure_account_name = "devstoreaccount1"
+    azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
 
     table_engines = [
         f"MySQL('mysql80:3306', 'mysql_db', 'mysql_table', 'mysql_user', '{password}')",
@@ -198,10 +260,7 @@ def test_create_table():
         f"S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '{password}', format = 'CSV')",
         f"S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')",
         f"S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
-        (
-            f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
-            "DNS_ERROR",
-        ),
+        f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"S3Queue('http://minio1:9001/root/data/', 'CSV') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'minio', '{password}', 'CSV') settings mode = 'ordered'",
@@ -210,6 +269,23 @@ def test_create_table():
             f"Iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
             "DNS_ERROR",
         ),
+        (
+            f"IcebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
+            "DNS_ERROR",
+        ),
+        f"AzureBlobStorage('{azure_conn_string}', 'cont', 'test_simple.csv', 'CSV')",
+        f"AzureBlobStorage('{azure_conn_string}', 'cont', 'test_simple_1.csv', 'CSV', 'none')",
+        f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_2.csv', '{azure_account_name}', '{azure_account_key}')",
+        f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_3.csv', '{azure_account_name}', '{azure_account_key}', 'CSV')",
+        f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_4.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none')",
+        f"AzureQueue('{azure_conn_string}', 'cont', '*', 'CSV') SETTINGS mode = 'unordered'",
+        f"AzureQueue('{azure_conn_string}', 'cont', '*', 'CSV', 'none') SETTINGS mode = 'unordered'",
+        f"AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '{azure_account_key}', 'CSV') SETTINGS mode = 'unordered'",
+        f"AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none') SETTINGS mode = 'unordered'",
+        (
+            f"AzureBlobStorage('BlobEndpoint=https://my-endpoint/;SharedAccessSignature=sp=r&st=2025-09-29T14:58:11Z&se=2025-09-29T00:00:00Z&spr=https&sv=2022-11-02&sr=c&sig=SECRET%SECRET%SECRET%SECRET', 'exampledatasets', 'example.csv')",
+            "STD_EXCEPTION",
+        )
     ]
 
     def make_test_case(i):
@@ -275,6 +351,17 @@ def test_create_table():
             "CREATE TABLE table19 (`x` int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'minio', '[HIDDEN]', 'CSV') SETTINGS mode = 'ordered'",
             "CREATE TABLE table20 (`x` int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'minio', '[HIDDEN]', 'CSV', 'gzip') SETTINGS mode = 'ordered'",
             "CREATE TABLE table21 (`x` int) ENGINE = Iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE table22 (`x` int) ENGINE = IcebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            f"CREATE TABLE table23 (`x` int) ENGINE = AzureBlobStorage('{masked_azure_conn_string}', 'cont', 'test_simple.csv', 'CSV')",
+            f"CREATE TABLE table24 (`x` int) ENGINE = AzureBlobStorage('{masked_azure_conn_string}', 'cont', 'test_simple_1.csv', 'CSV', 'none')",
+            f"CREATE TABLE table25 (`x` int) ENGINE = AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_2.csv', '{azure_account_name}', '[HIDDEN]')",
+            f"CREATE TABLE table26 (`x` int) ENGINE = AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_3.csv', '{azure_account_name}', '[HIDDEN]', 'CSV')",
+            f"CREATE TABLE table27 (`x` int) ENGINE = AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_4.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none')",
+            f"CREATE TABLE table28 (`x` int) ENGINE = AzureQueue('{masked_azure_conn_string}', 'cont', '*', 'CSV') SETTINGS mode = 'unordered'",
+            f"CREATE TABLE table29 (`x` int) ENGINE = AzureQueue('{masked_azure_conn_string}', 'cont', '*', 'CSV', 'none') SETTINGS mode = 'unordered'",
+            f"CREATE TABLE table30 (`x` int) ENGINE = AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '[HIDDEN]', 'CSV') SETTINGS mode = 'unordered'",
+            f"CREATE TABLE table31 (`x` int) ENGINE = AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none') SETTINGS mode = 'unordered'",
+            f"CREATE TABLE table32 (`x` int) ENGINE = AzureBlobStorage('{masked_sas_conn_string}', 'exampledatasets', 'example.csv')",
         ],
         must_not_contain=[password],
     )
@@ -390,6 +477,8 @@ def test_table_functions():
         f"azureBlobStorage(named_collection_2, storage_account_url = '{azure_storage_account_url}', container = 'cont', blob_path = 'test_simple_8.csv', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
         f"iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"gcs('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
+        f"icebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
+        f"icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
     ]
 
     def make_test_case(i):
@@ -470,6 +559,9 @@ def test_table_functions():
             f"CREATE TABLE tablefunc37 (`x` int) AS azureBlobStorage(named_collection_2, connection_string = '{masked_azure_conn_string}', container = 'cont', blob_path = 'test_simple_7.csv', format = 'CSV')",
             f"CREATE TABLE tablefunc38 (`x` int) AS azureBlobStorage(named_collection_2, storage_account_url = '{azure_storage_account_url}', container = 'cont', blob_path = 'test_simple_8.csv', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
             "CREATE TABLE tablefunc39 (`x` int) AS iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE tablefunc40 (`x` int) AS gcs('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE tablefunc41 (`x` int) AS icebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            f"CREATE TABLE tablefunc42 (`x` int) AS icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
         ],
         must_not_contain=[password],
     )

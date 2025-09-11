@@ -12,6 +12,7 @@
 #include <Disks/VolumeJBOD.h>
 
 #include <algorithm>
+#include <ranges>
 #include <set>
 
 
@@ -111,7 +112,7 @@ StoragePolicy::StoragePolicy(
     if (move_factor > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
-                        toString(move_factor), backQuote(name));
+                        move_factor, backQuote(name));
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
@@ -130,7 +131,7 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
     if (move_factor > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
-                        toString(move_factor), backQuote(name));
+                        move_factor, backQuote(name));
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
@@ -392,6 +393,22 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
     }
 }
 
+bool StoragePolicy::isCompatibleForPartitionOps(const StoragePolicyPtr & other) const
+{
+    if (getName() == other->getName())
+        return true;
+
+    constexpr auto is_compatible = [](const auto & disk) -> bool
+    {
+        if (disk->isPlain())
+            return true;
+        if (auto delegate = disk->getDelegateDiskIfExists())
+            return delegate->isPlain();
+        return false;
+    };
+
+    return std::ranges::all_of(getDisks(), is_compatible) && std::ranges::all_of(other->getDisks(), is_compatible);
+}
 
 std::optional<size_t> StoragePolicy::tryGetVolumeIndexByDiskName(const String & disk_name) const
 {

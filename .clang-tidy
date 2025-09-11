@@ -92,6 +92,7 @@ Checks: [
   '-performance-avoid-endl',
   '-performance-enum-size',
   '-performance-inefficient-string-concatenation',
+  '-performance-inefficient-vector-operation',
   '-performance-no-int-to-ptr',
   '-performance-unnecessary-value-param',
 

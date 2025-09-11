@@ -1,14 +1,22 @@
 ---
-title : SQLInsert
-slug : /en/interfaces/formats/SQLInsert
-keywords : [SQLInsert]
+alias: []
+description: 'Documentation for the SQLInsert format'
+input_format: false
+keywords: ['SQLInsert']
+output_format: true
+slug: /interfaces/formats/SQLInsert
+title: 'SQLInsert'
 ---
 
-## Description
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
+
+## Description {#description}
 
 Outputs data as a sequence of `INSERT INTO table (columns...) VALUES (...), (...) ...;` statements.
 
-## Example Usage
+## Example Usage {#example-usage}
 
 Example:
 
@@ -24,13 +32,15 @@ INSERT INTO table (x, y, z) VALUES (6, 7, 'Hello'), (7, 8, 'Hello');
 INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
 ```
 
-To read data output by this format you can use [MySQLDump](/docs/en/interfaces/formats/MySQLDump) input format.
+To read data output by this format you can use [MySQLDump](../formats/MySQLDump.md) input format.
 
-## Format Settings
+## Format Settings {#format-settings}
 
-- [output_format_sql_insert_max_batch_size](/docs/en/operations/settings/settings-formats.md/#output_format_sql_insert_max_batch_size) - The maximum number of rows in one INSERT statement. Default value - `65505`.
-- [output_format_sql_insert_table_name](/docs/en/operations/settings/settings-formats.md/#output_format_sql_insert_table_name) - The name of the table in the output INSERT query. Default value - `'table'`.
-- [output_format_sql_insert_include_column_names](/docs/en/operations/settings/settings-formats.md/#output_format_sql_insert_include_column_names) - Include column names in INSERT query. Default value - `true`.
-- [output_format_sql_insert_use_replace](/docs/en/operations/settings/settings-formats.md/#output_format_sql_insert_use_replace) - Use REPLACE statement instead of INSERT. Default value - `false`.
-- [output_format_sql_insert_quote_names](/docs/en/operations/settings/settings-formats.md/#output_format_sql_insert_quote_names) - Quote column names with "\`" characters. Default value - `true`.
+| Setting                                                                                                                                | Description                                         | Default   |
+|----------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------|-----------|
+| [`output_format_sql_insert_max_batch_size`](../../operations/settings/settings-formats.md/#output_format_sql_insert_max_batch_size)    | The maximum number of rows in one INSERT statement. | `65505`   |
+| [`output_format_sql_insert_table_name`](../../operations/settings/settings-formats.md/#output_format_sql_insert_table_name)            | The name of the table in the output INSERT query.   | `'table'` |
+| [`output_format_sql_insert_include_column_names`](../../operations/settings/settings-formats.md/#output_format_sql_insert_include_column_names) | Include column names in INSERT query.               | `true`    |
+| [`output_format_sql_insert_use_replace`](../../operations/settings/settings-formats.md/#output_format_sql_insert_use_replace)          | Use REPLACE statement instead of INSERT.            | `false`   |
+| [`output_format_sql_insert_quote_names`](../../operations/settings/settings-formats.md/#output_format_sql_insert_quote_names)          | Quote column names with "\`" characters.            | `true`    |
 

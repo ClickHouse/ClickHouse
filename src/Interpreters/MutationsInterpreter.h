@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
 
 
@@ -17,8 +16,14 @@ class QueryPlan;
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
+struct IsStorageTouched
+{
+    bool any_rows_affected = false;
+    bool all_rows_affected = false;
+};
+
 /// Return false if the data isn't going to be changed by mutations.
-bool isStorageTouchedByMutations(
+IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
@@ -111,6 +116,10 @@ public:
 
     MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
+    /// Returns a chain of actions that can be
+    /// applied to block to execute mutation commands.
+    std::vector<MutationActions> getMutationActions() const;
+
     /// Internal class which represents a data part for MergeTree
     /// or just storage for other storages.
     /// The main idea is to create a dedicated reading from MergeTree part.
@@ -120,7 +129,7 @@ public:
         StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_) const;
         StoragePtr getStorage() const;
         const MergeTreeData * getMergeTreeData() const;
-
+        MergeTreeData::DataPartPtr getMergeTreeDataPart() const;
         bool supportsLightweightDelete() const;
         bool materializeTTLRecalculateOnly() const;
         bool hasSecondaryIndex(const String & name) const;
@@ -182,6 +191,7 @@ private:
 
     LoggerPtr logger;
 
+
     /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several
     /// filters, followed by updating values of some columns. Commands can reuse expressions calculated by the
     /// previous commands in the same stage, but at the end of each stage intermediate columns are thrown away
@@ -215,6 +225,10 @@ private:
         /// then there is (possibly) an UPDATE step, and finally a projection step.
         ExpressionActionsChain expressions_chain;
         Names filter_column_names;
+
+        /// True if columns in column_to_updated are not changed, but they need
+        /// to be read (for example to materialize projection).
+        bool is_readonly = false;
 
         /// Check that stage affects all storage columns
         bool isAffectingAllColumns(const Names & storage_columns) const;

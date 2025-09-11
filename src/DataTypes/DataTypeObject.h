@@ -40,10 +40,10 @@ public:
     Field getDefault() const override { return Object(); }
 
     bool isParametric() const override { return true; }
-    bool canBeInsideNullable() const override { return false; }
+    bool canBeInsideNullable() const override { return true; }
     bool supportsSparseSerialization() const override { return false; }
     bool canBeInsideSparseColumns() const override { return false; }
-    bool isComparable() const override { return false; }
+    bool isComparable() const override { return true; }
     bool isComparableForEquality() const override { return true; }
     bool haveSubtypes() const override { return false; }
 

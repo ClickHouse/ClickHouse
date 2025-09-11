@@ -4,8 +4,10 @@
 #include <Storages/IStorage.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/FileRenamer.h>
+#include <Formats/FormatSettings.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Processors/SourceWithKeyCondition.h>
+#include <Interpreters/ActionsDAG.h>
 
 #include <atomic>
 #include <shared_mutex>

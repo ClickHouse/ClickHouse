@@ -131,6 +131,8 @@ public:
 
     bool isDownloaded() const;
 
+    time_t getFinishedDownloadTime() const;
+
     size_t getHitsCount() const { return hits_count; }
 
     size_t getRefCount() const { return ref_count; }
@@ -264,6 +266,7 @@ private:
 
     std::atomic<State> download_state;
     DownloaderId downloader_id; /// The one who prepares the download
+    time_t download_finished_time = 0;
 
     RemoteFileReaderPtr remote_file_reader;
     LocalCacheWriterPtr cache_writer;

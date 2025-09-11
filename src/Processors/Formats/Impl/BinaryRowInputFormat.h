@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
 
@@ -8,6 +7,7 @@
 namespace DB
 {
 
+class Block;
 class ReadBuffer;
 
 template <bool>

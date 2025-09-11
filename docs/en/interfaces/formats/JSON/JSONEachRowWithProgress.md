@@ -1,14 +1,22 @@
 ---
-title : JSONEachRowWithProgress
-slug : /en/interfaces/formats/JSONEachRowWithProgress
-keywords : [JSONEachRowWithProgress]
+alias: []
+description: 'Documentation for the JSONEachRowWithProgress format'
+input_format: false
+keywords: ['JSONEachRowWithProgress']
+output_format: true
+slug: /interfaces/formats/JSONEachRowWithProgress
+title: 'JSONEachRowWithProgress'
 ---
 
-## Description
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
 
-Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yield progress information as JSON values.
+## Description {#description}
 
-## Example Usage
+Differs from [`JSONEachRow`](./JSONEachRow.md)/[`JSONStringsEachRow`](./JSONStringsEachRow.md) in that ClickHouse will also yield progress information as JSON values.
+
+## Example Usage {#example-usage}
 
 ```json
 {"row":{"num":42,"str":"hello","arr":[0,1]}}
@@ -17,5 +25,5 @@ Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yie
 {"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 

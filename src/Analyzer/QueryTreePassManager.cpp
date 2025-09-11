@@ -107,6 +107,9 @@ private:
         if (isNameOfInFunction(function->getFunctionName()))
             return;
 
+        if (function->getFunctionName() == "exists")
+            return;
+
         const auto & expected_argument_types = function->getArgumentTypes();
         size_t expected_argument_types_size = expected_argument_types.size();
         auto actual_argument_columns = function->getArgumentColumns();

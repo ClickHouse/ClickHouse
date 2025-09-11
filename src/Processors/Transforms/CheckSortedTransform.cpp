@@ -1,4 +1,5 @@
 #include <Processors/Transforms/CheckSortedTransform.h>
+#include <Columns/IColumn.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/quoteString.h>
 #include <Core/SortDescription.h>

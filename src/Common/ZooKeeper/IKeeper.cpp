@@ -1,60 +1,10 @@
-#include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/thread_local_rng.h>
 #include <random>
 
-
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int KEEPER_EXCEPTION;
-    }
-}
-
-namespace ProfileEvents
-{
-    extern const Event ZooKeeperUserExceptions;
-    extern const Event ZooKeeperHardwareExceptions;
-    extern const Event ZooKeeperOtherExceptions;
-}
-
-
 namespace Coordination
 {
-
-void Exception::incrementErrorMetrics(Error code_)
-{
-    if (Coordination::isUserError(code_))
-        ProfileEvents::increment(ProfileEvents::ZooKeeperUserExceptions);
-    else if (Coordination::isHardwareError(code_))
-        ProfileEvents::increment(ProfileEvents::ZooKeeperHardwareExceptions);
-    else
-        ProfileEvents::increment(ProfileEvents::ZooKeeperOtherExceptions);
-}
-
-Exception::Exception(const std::string & msg, Error code_, int)
-    : DB::Exception(msg, DB::ErrorCodes::KEEPER_EXCEPTION)
-    , code(code_)
-{
-    incrementErrorMetrics(code);
-}
-
-Exception::Exception(PreformattedMessage && msg, Error code_)
-    : DB::Exception(std::move(msg), DB::ErrorCodes::KEEPER_EXCEPTION)
-    , code(code_)
-{
-    extendedMessage(errorMessage(code));
-    incrementErrorMetrics(code);
-}
-
-Exception::Exception(Error code_)
-    : Exception(code_, "Coordination error: {}", errorMessage(code_))
-{
-}
-
-Exception::Exception(const Exception & exc) = default;
-
 
 SimpleFaultInjection::SimpleFaultInjection(Float64 probability_before, Float64 probability_after_, const String & description_)
 {
@@ -130,6 +80,7 @@ const char * errorMessage(Error code)
         case Error::ZOPERATIONTIMEOUT:        return "Operation timeout";
         case Error::ZBADARGUMENTS:            return "Bad arguments";
         case Error::ZINVALIDSTATE:            return "Invalid zhandle state";
+        case Error::ZOUTOFMEMORY:             return "Out of Memory";
         case Error::ZAPIERROR:                return "API error";
         case Error::ZNONODE:                  return "No node";
         case Error::ZNOAUTH:                  return "Not authenticated";

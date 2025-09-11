@@ -10,6 +10,7 @@
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include <Core/Settings.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
@@ -66,7 +67,8 @@ static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allow
 
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=]([[maybe_unused]] const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                   [[maybe_unused]] const DictionaryStructure & dict_struct,
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
@@ -136,6 +138,9 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                     addresses,
                     named_collection->getAnyOrDefault<String>({"user", "username"}, ""),
                     named_collection->getOrDefault<String>("password", ""),
+                    named_collection->getOrDefault<String>("ssl_ca", ""),
+                    named_collection->getOrDefault<String>("ssl_cert", ""),
+                    named_collection->getOrDefault<String>("ssl_key", ""),
                     mysql_settings));
         }
         else
@@ -261,6 +266,7 @@ bool MySQLDictionarySource::isModified() const
 {
     if (!configuration.invalidate_query.empty())
     {
+        LOG_TRACE(log, "Executing invalidate query: {}", configuration.invalidate_query);
         auto response = doInvalidateQuery(configuration.invalidate_query);
         if (response == invalidate_query_response)
             return false;

@@ -28,6 +28,7 @@ FutureMergedMutatedPartPtr constructFuturePart(const MergeTreeData & data, const
     auto future_part = std::make_shared<FutureMergedMutatedPart>();
     future_part->merge_type = choice.merge_type;
     future_part->assign(std::move(data_parts.value()));
+    future_part->final = choice.final;
 
     return future_part;
 }

@@ -5,7 +5,6 @@
 #if USE_PARQUET || USE_ORC
 
 #include <unordered_map>
-#include <Core/Block.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -28,6 +27,8 @@ namespace arrow
 
 namespace DB
 {
+
+class Block;
 
 namespace ErrorCodes
 {
@@ -191,7 +192,7 @@ private:
         auto nested_type = removeNullable(data_type);
         if (const DB::DataTypeTuple * type_tuple = typeid_cast<const DB::DataTypeTuple *>(nested_type.get()))
         {
-            if (type_tuple->haveExplicitNames())
+            if (type_tuple->hasExplicitNames())
             {
                 auto field_names = type_tuple->getElementNames();
                 auto field_types = type_tuple->getElements();

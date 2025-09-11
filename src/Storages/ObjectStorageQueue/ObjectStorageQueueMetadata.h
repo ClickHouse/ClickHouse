@@ -2,7 +2,7 @@
 #include "config.h"
 
 #include <filesystem>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
@@ -64,6 +64,8 @@ public:
 
     ~ObjectStorageQueueMetadata();
 
+    /// Startup background threads.
+    void startup();
     /// Shutdown background threads.
     void shutdown();
 
@@ -123,7 +125,7 @@ public:
     void registerIfNot(const StorageID & storage_id, bool active);
     /// Unregister table.
     /// Return the number of remaining (after unregistering) registered tables.
-    size_t unregister(const StorageID & storage_id, bool active);
+    size_t unregister(const StorageID & storage_id, bool active, bool remove_metadata_if_no_registered);
     Strings getRegistered(bool active);
 
     /// According to current *active* registered tables,
@@ -141,6 +143,9 @@ public:
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
     tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
+    /// Set local ref count for metadata.
+    void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
+
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
@@ -150,7 +155,7 @@ private:
     void registerNonActive(const StorageID & storage_id);
     void registerActive(const StorageID & storage_id);
 
-    size_t unregisterNonActive(const StorageID & storage_id);
+    size_t unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered);
     size_t unregisterActive(const StorageID & storage_id);
 
     void updateRegistryFunc();
@@ -171,7 +176,8 @@ private:
     LoggerPtr log;
 
     std::atomic_bool shutdown_called = false;
-    BackgroundSchedulePool::TaskHolder task;
+    std::atomic_bool startup_called = false;
+    BackgroundSchedulePoolTaskHolder task;
 
     class LocalFileStatuses;
     std::shared_ptr<LocalFileStatuses> local_file_statuses;
@@ -186,6 +192,10 @@ private:
     std::shared_ptr<ServersHashRing> active_servers_hash_ring;
     /// Guards `active_servers` and `active_servers_hash_ring`.
     mutable SharedMutex active_servers_mutex;
+
+    /// Number of S3(Azure)Queue tables on the same
+    /// clickhouse server instance referencing the same metadata object.
+    std::atomic<size_t> * metadata_ref_count = nullptr;
 };
 
 using ObjectStorageQueueMetadataPtr = std::unique_ptr<ObjectStorageQueueMetadata>;

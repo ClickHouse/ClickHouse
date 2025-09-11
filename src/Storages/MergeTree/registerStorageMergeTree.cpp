@@ -16,15 +16,19 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
@@ -112,9 +116,9 @@ ORDER BY expr
 [SETTINGS name=value, ...]
 [COMMENT 'comment']
 
-See details in documentation: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/. Other engines of the family support different syntax, see details in the corresponding documentation topics.
+See details in documentation: https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree/. Other engines of the family support different syntax, see details in the corresponding documentation topics.
 
-If you use the Replicated version of engines, see https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/.
+If you use the Replicated version of engines, see https://clickhouse.com/docs/engines/table-engines/mergetree-family/replication/.
 )";
 
 static ColumnsDescription getColumnsDescriptionFromZookeeper(const TableZnodeInfo & zookeeper_info, ContextMutablePtr context)
@@ -243,21 +247,6 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         bool is_replicated_database = local_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->getEngineName() == "Replicated";
 
-        if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 0)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "It's not allowed to specify explicit zookeeper_path and replica_name "
-                            "for ReplicatedMergeTree arguments in Replicated database. If you really want to "
-                            "specify them explicitly, enable setting "
-                            "database_replicated_allow_replicated_engine_arguments.");
-        }
-        if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 1)
-        {
-            LOG_WARNING(
-                &Poco::Logger::get("registerStorageMergeTree"),
-                "It's not recommended to explicitly specify "
-                "zookeeper_path and replica_name in ReplicatedMergeTree arguments");
-        }
 
         /// Get path and name from engine arguments
         auto * ast_zk_path = engine_args[arg_num]->as<ASTLiteral>();
@@ -267,6 +256,31 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         auto * ast_replica_name = engine_args[arg_num + 1]->as<ASTLiteral>();
         if (!ast_replica_name || ast_replica_name->value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name must be a string literal{}", verbose_help_message);
+
+        if (!query.attach && is_replicated_database
+            && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 0)
+        {
+            /// Allow specifying engine arguments even with database_replicated_allow_replicated_engine_arguments=0 (not allowed) but only
+            /// throw an error if the specified replica path or replica name is not the same as the default values.
+            /// For example, for queries like `CREATE t1 TABLE AS t2 ..` the table structure of t1 is used to create table t2.
+            /// In such cases, the engine arguments might already be present in the create query but exceptions should not be thrown
+            /// when using database_replicated_allow_replicated_engine_arguments=0.
+            if (ast_zk_path->value.safeGet<String>() != server_settings[ServerSetting::default_replica_path].toString()
+                || ast_replica_name->value.safeGet<String>() != server_settings[ServerSetting::default_replica_name].toString())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "It's not allowed to specify explicit zookeeper_path and replica_name "
+                    "for ReplicatedMergeTree arguments in Replicated database. If you really want to "
+                    "specify them explicitly, enable setting "
+                    "database_replicated_allow_replicated_engine_arguments.");
+        }
+        if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 1)
+        {
+            LOG_WARNING(
+                &Poco::Logger::get("registerStorageMergeTree"),
+                "It's not recommended to explicitly specify "
+                "zookeeper_path and replica_name in ReplicatedMergeTree arguments");
+        }
 
         if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 2)
         {
@@ -394,6 +408,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         merging_params.mode = MergeTreeData::MergingParams::Aggregating;
     else if (name_part == "Replacing")
         merging_params.mode = MergeTreeData::MergingParams::Replacing;
+    else if (name_part == "Coalescing")
+        merging_params.mode = MergeTreeData::MergingParams::Coalescing;
     else if (name_part == "Graphite")
         merging_params.mode = MergeTreeData::MergingParams::Graphite;
     else if (name_part == "VersionedCollapsing")
@@ -455,6 +471,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         case MergeTreeData::MergingParams::Replacing:
             add_optional_param("is_deleted column");
             add_optional_param("version");
+            break;
+        case MergeTreeData::MergingParams::Coalescing:
+            add_optional_param("list of columns to sum");
             break;
         case MergeTreeData::MergingParams::Collapsing:
             add_mandatory_param("sign column");
@@ -556,7 +575,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             --arg_cnt;
         }
     }
-    else if (merging_params.mode == MergeTreeData::MergingParams::Summing)
+    else if (merging_params.mode == MergeTreeData::MergingParams::Summing || merging_params.mode == MergeTreeData::MergingParams::Coalescing)
     {
         /// If the last element is not index_granularity or replica_name (a literal), then this is a list of summable columns.
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
@@ -627,7 +646,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// value in partition_key structure. MergeTree checks this case and use
         /// single default partition with name "all".
         metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, context);
-
+// tostartOfInterval disabling for primary key
         /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
@@ -705,43 +724,44 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             for (const auto & index : args.query.columns_list->indices->children)
             {
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
-
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
-                if (((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
+                if (!args.query.attach && (
+                    ((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
                     || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns])
-                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)))
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
                 }
             }
+        }
 
-            /// Try to add "implicit" min-max indexes on all columns
-            for (const auto & column : metadata.columns)
+        /// Try to add "implicit" min-max indexes on all columns
+        for (const auto & column : metadata.columns)
+        {
+            if ((isNumber(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns])
+                || (isString(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns]))
             {
-                if ((isNumber(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns])
-                    || (isString(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns]))
+                bool minmax_index_exists = false;
+
+                for (const auto & index : metadata.secondary_indices)
                 {
-                    bool minmax_index_exists = false;
-
-                    for (const auto & index: metadata.secondary_indices)
+                    if (index.column_names.front() == column.name && index.type == "minmax")
                     {
-                        if (index.column_names.front() == column.name && index.type == "minmax")
-                        {
-                            minmax_index_exists = true;
-                            break;
-                        }
+                        minmax_index_exists = true;
+                        break;
                     }
-
-                    if (minmax_index_exists)
-                        continue;
-
-                    auto index_type = makeASTFunction("minmax");
-                    auto index_ast = std::make_shared<ASTIndexDeclaration>(
-                            std::make_shared<ASTIdentifier>(column.name), index_type,
-                            IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
-                    index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-                    metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index_ast, columns, context));
                 }
+
+                if (minmax_index_exists)
+                    continue;
+
+                auto index_type = makeASTFunction("minmax");
+                auto index_ast = std::make_shared<ASTIndexDeclaration>(
+                        std::make_shared<ASTIdentifier>(column.name), index_type,
+                        IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
+                index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+                auto new_index = IndexDescription::getIndexFromAST(index_ast, columns, context);
+                metadata.secondary_indices.push_back(std::move(new_index));
             }
         }
 
@@ -910,6 +930,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("MergeTree", create, features);
     factory.registerStorage("CollapsingMergeTree", create, features);
     factory.registerStorage("ReplacingMergeTree", create, features);
+    factory.registerStorage("CoalescingMergeTree", create, features);
     factory.registerStorage("AggregatingMergeTree", create, features);
     factory.registerStorage("SummingMergeTree", create, features);
     factory.registerStorage("GraphiteMergeTree", create, features);
@@ -924,6 +945,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedReplacingMergeTree", create, features);
     factory.registerStorage("ReplicatedAggregatingMergeTree", create, features);
     factory.registerStorage("ReplicatedSummingMergeTree", create, features);
+    factory.registerStorage("ReplicatedCoalescingMergeTree", create, features);
     factory.registerStorage("ReplicatedGraphiteMergeTree", create, features);
     factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create, features);
 }

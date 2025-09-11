@@ -3,6 +3,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -111,6 +112,7 @@ void registerOutputFormatJSONColumnsWithMetadata(FormatFactory & factory)
     });
 
     factory.markFormatHasNoAppendSupport("JSONColumnsWithMetadata");
+    factory.setContentType("JSONColumnsWithMetadata", "application/json; charset=UTF-8");
 }
 
 }

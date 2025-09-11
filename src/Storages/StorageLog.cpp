@@ -2,23 +2,24 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLogSettings.h>
 
+#include <Columns/IColumn.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
-#include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Parsers/ASTCheckQuery.h>
 
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
 
 #include <DataTypes/NestedUtils.h>
 
@@ -66,6 +67,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_COLUMN;
 }
 
 /// NOTE: The lock `StorageLog::rwlock` is NOT kept locked while reading,
@@ -265,7 +267,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     }
 
     settings.getter = create_stream_getter(false);
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name], &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
 }
 
 bool LogSource::isFinished()
@@ -401,6 +403,9 @@ private:
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & name_and_type);
 
+    CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
+    CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
+
     void writeData(const NameAndTypePair & name_and_type, const IColumn & column);
 };
 
@@ -477,6 +482,32 @@ ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndType
 }
 
 
+CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
+{
+    auto get_codec_or_default = [&default_codec](const auto & column_desc)
+    {
+        return column_desc.codec
+            ? CompressionCodecFactory::instance().get(column_desc.codec, column_desc.type, default_codec)
+            : default_codec;
+    };
+
+    const auto & columns = metadata_snapshot->getColumns();
+    if (const auto * column_desc = columns.tryGet(column_name))
+        return get_codec_or_default(*column_desc);
+
+    const auto & virtual_columns = storage.getVirtualsPtr();
+    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
+        return get_codec_or_default(*virtual_desc);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
+}
+
+CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name) const
+{
+    return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
+}
+
+
 void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & column)
 {
     ISerialization::SerializeBinaryBulkSettings settings;
@@ -494,7 +525,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
 
             const auto & data_file = *data_file_it->second;
-            auto compression = storage_snapshot->getCodecOrDefault(name_and_type.name);
+            auto compression = getCodecOrDefault(name_and_type.name);
 
             it = streams.try_emplace(data_file.name, storage.disk, data_file.path,
                                      storage.file_checker.getFileSize(data_file.path),
@@ -568,6 +599,23 @@ namespace
     /// So for Array data type, first stream is array sizes; and number of array sizes is the number of arrays.
     /// Thus we assume we can always get the real number of rows from the first column.
     constexpr size_t INDEX_WITH_REAL_ROW_COUNT = 0;
+
+    void checkSupportedDataTypes(const ColumnsDescription & columns, const String & storage_name)
+    {
+        for (const auto & column : columns.getAll())
+        {
+            auto callback = [&](const IDataType & type)
+            {
+                /// Variant type requires writing prefix in the discriminators stream. In Log engine
+                /// we write prefix before each insert but read it only once before reading the whole file.
+                /// To support such cases we need to reimplement serialization/deserialization in the Log engine.
+                if (isVariant(type))
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support Variant data type", storage_name);
+            };
+            callback(*column.type);
+            column.type->forEachChild(callback);
+        }
+    }
 }
 
 
@@ -593,6 +641,7 @@ StorageLog::StorageLog(
     , file_checker(disk, table_path + "sizes.json")
     , max_compress_block_size(context_->getSettingsRef()[Setting::max_compress_block_size])
 {
+    checkSupportedDataTypes(columns_, getName());
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
@@ -968,7 +1017,7 @@ void StorageLog::updateTotalRows(const WriteLock &)
         total_rows = 0;
 }
 
-std::optional<UInt64> StorageLog::totalRows(const Settings &) const
+std::optional<UInt64> StorageLog::totalRows(ContextPtr) const
 {
     if (use_marks_file && marks_loaded)
         return total_rows;
@@ -979,7 +1028,7 @@ std::optional<UInt64> StorageLog::totalRows(const Settings &) const
     return {};
 }
 
-std::optional<UInt64> StorageLog::totalBytes(const Settings &) const
+std::optional<UInt64> StorageLog::totalBytes(ContextPtr) const
 {
     return total_bytes;
 }
@@ -1003,7 +1052,9 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     disk->createDirectories(temp_dir);
 
     const auto & read_settings = backup_entries_collector.getReadSettings();
-    bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
+    const auto & backup_settings = backup_entries_collector.getBackupSettings();
+    bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
+    bool allow_checksums_from_remote_paths = backup_settings.allow_checksums_from_remote_paths;
 
     /// *.bin
     for (const auto & data_file : data_files)
@@ -1013,7 +1064,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         String hardlink_file_path = temp_dir / data_file_name;
         disk->createHardLink(data_file.path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file.path));
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file.path), allow_checksums_from_remote_paths);
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / data_file_name, std::move(backup_entry));
     }
@@ -1026,7 +1077,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         String hardlink_file_path = temp_dir / marks_file_name;
         disk->createHardLink(marks_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(marks_file_path));
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(marks_file_path), allow_checksums_from_remote_paths);
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / marks_file_name, std::move(backup_entry));
     }

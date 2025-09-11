@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheSettings.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <filesystem>
@@ -14,6 +15,10 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace FileCacheSetting
+{
+    extern const FileCacheSettingsBool cache_on_write_operations;
+}
 
 CachedObjectStorage::CachedObjectStorage(
     ObjectStoragePtr object_storage_,
@@ -44,6 +49,11 @@ ObjectStorageKey
 CachedObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const
 {
     return object_storage->generateObjectKeyPrefixForDirectoryPath(path, key_prefix);
+}
+
+bool CachedObjectStorage::areObjectKeysRandom() const
+{
+    return object_storage->areObjectKeysRandom();
 }
 
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
@@ -115,7 +125,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     auto implementation_buffer = object_storage->writeObject(object, mode, attributes, buf_size, modified_write_settings);
 
     bool cache_on_write = modified_write_settings.enable_filesystem_cache_on_write_operations
-        && FileCacheFactory::instance().getByName(cache_config_name)->getSettings().cache_on_write_operations
+        && FileCacheFactory::instance().getByName(cache_config_name)->getSettings()[FileCacheSetting::cache_on_write_operations]
         && fs::path(object.remote_path).extension() != ".tmp";
 
     /// Need to remove even if cache_on_write == false.
@@ -181,15 +191,6 @@ void CachedObjectStorage::copyObject( // NOLINT
     std::optional<ObjectAttributes> object_to_attributes)
 {
     object_storage->copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
-}
-
-std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
-    const std::string & new_namespace,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    ContextPtr context)
-{
-    return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
 }
 
 void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const

@@ -1,11 +1,28 @@
 #pragma once
 
-#include <base/UUID.h>
 #include <atomic>
+#include <expected>
+
+#include <base/UUID.h>
+#include <base/defines.h>
 #include <pcg_random.hpp>
+
+#include <Common/EventNotifier.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/Throttler.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/randomSeed.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/PartLog.h>
+#include <Parsers/SyncReplicaMode.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/IStorageCluster.h>
+#include <Storages/MergeTree/AsyncBlockIDsCache.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
@@ -28,20 +45,6 @@
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
 #include <Storages/RenamingRestrictions.h>
 #include <Storages/TableZnodeInfo.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Cluster.h>
-#include <Interpreters/PartLog.h>
-#include <Common/randomSeed.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
-#include <Common/Throttler.h>
-#include <Common/EventNotifier.h>
-#include <base/defines.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <QueryPipeline/Pipe.h>
-#include <Common/ProfileEventsScope.h>
-#include <Storages/MergeTree/BackgroundJobsAssignee.h>
-#include <Parsers/SyncReplicaMode.h>
 
 
 namespace DB
@@ -160,10 +163,12 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr context) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
+
+    MutationCounters getMutationCounters() const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -234,7 +239,7 @@ public:
     bool canUseAdaptiveGranularity() const override;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
-    void adjustCreateQueryForBackup(ASTPtr & create_query) const override;
+    void applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const override;
 
     /// Makes backup entries to backup the data of the storage.
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -315,7 +320,7 @@ public:
     /// Restores table metadata if ZooKeeper lost it.
     /// Used only on restarted readonly replicas (not checked). All active (Active) parts are moved to detached/
     /// folder and attached. Parts in all other states are just moved to detached/ folder.
-    void restoreMetadataInZooKeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info);
+    void restoreMetadataInZooKeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach);
 
     /// Get throttler for replicated fetches
     ThrottlerPtr getFetchesThrottler() const
@@ -354,7 +359,7 @@ public:
     std::optional<bool> hasMetadataInZooKeeper () { return has_metadata_in_zookeeper; }
 
     /// Get a sequential consistent view of current parts.
-    ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
+    PartitionIdToMaxBlock getMaxAddedBlocks() const;
 
     void addLastSentPart(const MergeTreePartInfo & info);
 
@@ -486,20 +491,20 @@ private:
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;
-    BackgroundSchedulePool::TaskHolder queue_updating_task;
+    BackgroundSchedulePoolTaskHolder queue_updating_task;
 
-    BackgroundSchedulePool::TaskHolder mutations_updating_task;
+    BackgroundSchedulePoolTaskHolder mutations_updating_task;
     Coordination::WatchCallbackPtr mutations_watch_callback;
 
     /// A task that selects parts to merge.
-    BackgroundSchedulePool::TaskHolder merge_selecting_task;
+    BackgroundSchedulePoolTaskHolder merge_selecting_task;
     /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
     std::mutex merge_selecting_mutex;
 
     UInt64 merge_selecting_sleep_ms;
 
     /// A task that marks finished mutations as done.
-    BackgroundSchedulePool::TaskHolder mutations_finalizing_task;
+    BackgroundSchedulePoolTaskHolder mutations_finalizing_task;
 
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
@@ -675,7 +680,7 @@ private:
 
     /// Lookup the part for the entry in the detached/ folder.
     /// returns nullptr if the part is corrupt or missing.
-    MutableDataPartPtr attachPartHelperFoundValidPart(const LogEntry& entry) const;
+    MutableDataPartPtr attachPartHelperFoundValidPart(const LogEntry& entry, PartsTemporaryRename & rename_parts) const;
 
     void executeDropRange(const LogEntry & entry);
 

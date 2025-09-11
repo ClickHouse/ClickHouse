@@ -44,7 +44,7 @@ SettingsTierType BaseSettingsHelpers::getTier(UInt64 flags)
     int8_t tier = static_cast<int8_t>(flags & Flags::TIER);
     if (tier > SettingsTierType::BETA)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown tier value: '{}'", tier);
-    return SettingsTierType{tier};
+    return static_cast<SettingsTierType>(tier);
 }
 
 

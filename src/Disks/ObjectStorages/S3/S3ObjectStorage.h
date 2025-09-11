@@ -141,15 +141,11 @@ public:
 
     bool isRemote() const override { return true; }
 
-    std::unique_ptr<IObjectStorage> cloneObjectStorage(
-        const std::string & new_namespace,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
-
     bool supportParallelWrite() const override { return true; }
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
+
+    bool areObjectKeysRandom() const override;
 
     bool isReadOnly() const override { return s3_settings.get()->read_only; }
 

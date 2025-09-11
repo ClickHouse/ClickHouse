@@ -1,7 +1,71 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
 
+namespace DB::ErrorCodes
+{
+extern const int KEEPER_EXCEPTION;
+}
+
+namespace Coordination
+{
+
+class Exception : public DB::Exception
+{
+private:
+    /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
+    Exception(const std::string & msg, Error code_, int); /// NOLINT
+    Exception(PreformattedMessage && msg, Error code_);
+
+    /// Message must be a compile-time constant
+    template <typename T>
+    requires std::is_convertible_v<T, String>
+    Exception(T && message, Error code_) : DB::Exception(std::forward<T>(message), DB::ErrorCodes::KEEPER_EXCEPTION, /* remote_= */ false), code(code_)
+    {
+        incrementErrorMetrics(code);
+    }
+
+    static void incrementErrorMetrics(Error code_);
+
+public:
+    explicit Exception(Error code_); /// NOLINT
+    Exception(const Exception & exc);
+
+    template <typename... Args>
+    Exception(Error code_, FormatStringHelper<Args...> fmt, Args &&... args)
+        : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::move(fmt), std::forward<Args>(args)...)
+        , code(code_)
+    {
+        incrementErrorMetrics(code);
+    }
+
+    static Exception createDeprecated(const std::string & msg, Error code_)
+    {
+        return Exception(msg, code_, 0);
+    }
+
+    static Exception fromPath(Error code_, const std::string & path)
+    {
+        return Exception(code_, "Coordination error: {}, path {}", errorMessage(code_), path);
+    }
+
+    /// Message must be a compile-time constant
+    template <typename T>
+    requires std::is_convertible_v<T, String>
+    static Exception fromMessage(Error code_, T && message)
+    {
+        return Exception(std::forward<T>(message), code_);
+    }
+
+    const char * name() const noexcept override { return "Coordination::Exception"; }
+    const char * className() const noexcept override { return "Coordination::Exception"; }
+    Exception * clone() const override { return new Exception(*this); }
+
+    const Error code;
+};
+
+}
 
 namespace zkutil
 {

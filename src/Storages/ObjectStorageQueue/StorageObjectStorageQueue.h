@@ -3,13 +3,14 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/StorageFactory.h>
+#include <base/defines.h>
 
 
 namespace DB
@@ -63,6 +64,9 @@ public:
 
     ObjectStorageQueueSettings getSettings() const;
 
+    /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
+    static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
+
 private:
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;
@@ -74,41 +78,44 @@ private:
     const std::string engine_name;
     const fs::path zk_path;
     const bool enable_logging_to_queue_log;
-    const size_t list_objects_batch_size;
-    const bool enable_hash_ring_filtering;
 
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
     UInt64 polling_max_timeout_ms TSA_GUARDED_BY(mutex);
     UInt64 polling_backoff_ms TSA_GUARDED_BY(mutex);
+    UInt64 list_objects_batch_size TSA_GUARDED_BY(mutex);
+    bool enable_hash_ring_filtering TSA_GUARDED_BY(mutex);
     CommitSettings commit_settings TSA_GUARDED_BY(mutex);
 
+    std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     ConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
 
     const std::optional<FormatSettings> format_settings;
 
-    BackgroundSchedulePool::TaskHolder task;
-    std::atomic<bool> stream_cancelled{false};
-    UInt64 reschedule_processing_interval_ms;
+    UInt64 reschedule_processing_interval_ms TSA_GUARDED_BY(mutex);
 
     std::atomic<bool> mv_attached = false;
     std::atomic<bool> shutdown_called = false;
+    std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
+
+    mutable std::mutex streaming_mutex;
+    std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
+    std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
 
     LoggerPtr log;
 
     void startup() override;
     void shutdown(bool is_drop) override;
-    void drop() override;
 
     bool supportsSubsetOfColumns(const ContextPtr & context_) const;
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
-    const ObjectStorageQueueTableMetadata & getTableMetadata() const { return files_metadata->getTableMetadata(); }
+    const ObjectStorageQueueTableMetadata & getTableMetadata() const;
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
     std::shared_ptr<ObjectStorageQueueSource> createSource(
@@ -125,14 +132,16 @@ private:
     /// A background thread function,
     /// executing the whole process of reading from object storage
     /// and pushing result to dependent tables.
-    void threadFunc();
+    void threadFunc(size_t streaming_tasks_index);
     /// A subset of logic executed by threadFunc.
-    bool streamToViews();
+    bool streamToViews(size_t streaming_tasks_index);
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,
+        size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-        const std::string & exception_message = {}) const;
+        const std::string & exception_message = {},
+        int error_code = 0) const;
 };
 
 }

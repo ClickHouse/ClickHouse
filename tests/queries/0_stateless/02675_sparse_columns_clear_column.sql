@@ -31,6 +31,6 @@ ORDER BY column;
 
 DROP TABLE t_sparse_columns_clear SYNC;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS text_log;
 SET max_rows_to_read = 0; -- system.text_log can be really big
 SELECT count(), groupArray(message) FROM system.text_log WHERE logger_name LIKE '%' || currentDatabase() || '.t_sparse_columns_clear' || '%' AND level = 'Error';

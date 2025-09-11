@@ -24,7 +24,8 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 
-#include <format>
+#include <fmt/format.h>
+
 namespace DB
 {
 
@@ -238,9 +239,9 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
                         ErrorCodes::SYNTAX_ERROR, "{} is not a valid alias", std::string_view(start_pos->begin, start_pos->end));
 
                 if (function_name == "array_sort_asc" || function_name == "array_sort_desc")
-                    new_column_str = std::format("{0}[1] AS {1}", column_str, String(start_pos->begin, start_pos->end));
+                    new_column_str = fmt::format("{0}[1] AS {1}", column_str, String(start_pos->begin, start_pos->end));
                 else
-                    new_column_str = std::format("{0} AS {1}", column_str, String(start_pos->begin, start_pos->end));
+                    new_column_str = fmt::format("{0} AS {1}", column_str, String(start_pos->begin, start_pos->end));
 
                 columns.push_back(new_column_str);
             }
@@ -273,7 +274,7 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
                             throw Exception(ErrorCodes::SYNTAX_ERROR, "{} has invalid alias for {}", whole_alias, function_name);
 
                         alias_inside = String(start_pos->begin, start_pos->end);
-                        auto new_column_str = std::format("{0}[{1}] AS {2}", column_str, index, alias_inside);
+                        auto new_column_str = fmt::format("{0}[{1}] AS {2}", column_str, index, alias_inside);
                         columns.push_back(new_column_str);
                         comma_meet = false;
                         ++index;
@@ -488,7 +489,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (op == "project")
                 project_clause = op_str;
             else if (op == "where" || op == "filter")
-                where_clause = where_clause.empty() ? std::format("({})", op_str) : where_clause + std::format("AND ({})", op_str);
+                where_clause = where_clause.empty() ? fmt::format("({})", op_str) : where_clause + fmt::format("AND ({})", op_str);
             else if (op == "limit" || op == "take")
                 limit_clause = op_str;
             else if (op == "order by" || op == "sort by")
@@ -523,7 +524,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             for (auto i = 0; i < kql_parser[last_op].backspace_steps; ++i)
                 --last_pos;
 
-            String sub_query = std::format("({})", String(operation_pos.front().second->begin, last_pos->end));
+            String sub_query = fmt::format("({})", String(operation_pos.front().second->begin, last_pos->end));
             Tokens token_subquery(sub_query.data(), sub_query.data() + sub_query.size(), 0, true);
             IParser::Pos pos_subquery(token_subquery, pos.max_depth, pos.max_backtracks);
 

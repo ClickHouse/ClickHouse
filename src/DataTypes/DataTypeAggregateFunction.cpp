@@ -129,7 +129,7 @@ MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 Field DataTypeAggregateFunction::getDefault() const
 {
     Field field = AggregateFunctionStateData();
-    field.safeGet<AggregateFunctionStateData &>().name = getName();
+    field.safeGet<AggregateFunctionStateData>().name = getName();
 
     AlignedBuffer place_buffer(function->sizeOfData(), function->alignOfData());
     AggregateDataPtr place = place_buffer.data();
@@ -138,7 +138,7 @@ Field DataTypeAggregateFunction::getDefault() const
 
     try
     {
-        WriteBufferFromString buffer_from_field(field.safeGet<AggregateFunctionStateData &>().data);
+        WriteBufferFromString buffer_from_field(field.safeGet<AggregateFunctionStateData>().data);
         function->serialize(place, buffer_from_field, version);
     }
     catch (...)
@@ -302,6 +302,19 @@ void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::opti
 void registerDataTypeAggregateFunction(DataTypeFactory & factory)
 {
     factory.registerDataType("AggregateFunction", create);
+}
+
+bool hasAggregateFunctionType(const DataTypePtr & type)
+{
+    auto result = false;
+    auto check = [&](const IDataType & t)
+    {
+        result |= WhichDataType(t).isAggregateFunction();
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
 }
 
 }

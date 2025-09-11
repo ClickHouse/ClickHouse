@@ -23,6 +23,7 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
     const std::string & path_,
     FileStatusPtr file_status_,
     size_t max_loading_retries_,
+    std::atomic<size_t> & metadata_ref_count_,
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
         path_,
@@ -31,6 +32,7 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
         /* failed_node_path */zk_path / "failed" / getNodeName(path_),
         file_status_,
         max_loading_retries_,
+        metadata_ref_count_,
         log_)
 {
 }

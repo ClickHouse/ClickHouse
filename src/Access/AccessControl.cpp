@@ -21,7 +21,6 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
-#include <base/defines.h>
 #include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/re2.h>
@@ -307,6 +306,9 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", true));
     setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
 
+    /// Set `true` by default because the feature is backward incompatible only when older version replicas are in the same cluster.
+    setEnableUserNameAccessType(config_.getBool("access_control_improvements.enable_user_name_access_type", true));
+
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
     role_cache = std::make_unique<RoleCache>(*this, config_.getInt("access_control_improvements.role_cache_expiration_time_seconds", 600));
@@ -580,11 +582,11 @@ AccessChangesNotifier & AccessControl::getChangesNotifier()
 }
 
 
-AuthResult AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const String & forwarded_address) const
+AuthResult AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ClientInfo & client_info) const
 {
     // NOTE: In the case where the user has never been logged in using LDAP,
     // Then user_id is not generated, and the authentication quota will always be nullptr.
-    auto authentication_quota = getAuthenticationQuota(credentials.getUserName(), address, forwarded_address);
+    auto authentication_quota = getAuthenticationQuota(credentials.getUserName(), address, client_info.getLastForwardedForHost());
     if (authentication_quota)
     {
         /// Reserve a single try from the quota to check whether we have another authentication try.
@@ -601,8 +603,8 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
 
     try
     {
-        const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, allow_no_password,
-                                                                     allow_plaintext_password);
+        const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, client_info,
+                                                                     allow_no_password, allow_plaintext_password);
         if (authentication_quota)
             authentication_quota->reset(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS);
 
@@ -621,7 +623,9 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
         /// It is typical when users install ClickHouse, type some password and instantly forget it.
         if (credentials.getUserName().empty() || credentials.getUserName() == "default")
         {
-            error_code = ErrorCodes::REQUIRED_PASSWORD;
+            if (credentials.allowInteractiveBasicAuthenticationInTheBrowser())
+                error_code = ErrorCodes::REQUIRED_PASSWORD;
+
             message << R"(
 
 If you use ClickHouse Cloud, the password can be reset at https://clickhouse.cloud/
@@ -770,6 +774,15 @@ int AccessControl::getBcryptWorkfactor() const
     return bcrypt_workfactor;
 }
 
+void AccessControl::setEnableUserNameAccessType(bool enable_user_name_access_type_)
+{
+    enable_user_name_access_type = enable_user_name_access_type_;
+}
+
+bool AccessControl::isEnabledUserNameAccessType() const
+{
+    return enable_user_name_access_type;
+}
 
 std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(const ContextAccessParams & params) const
 {
@@ -813,7 +826,7 @@ std::shared_ptr<const EnabledQuota> AccessControl::getEnabledQuota(
     const UUID & user_id,
     const String & user_name,
     const boost::container::flat_set<UUID> & enabled_roles,
-    const Poco::Net::IPAddress & address,
+    const std::shared_ptr<Poco::Net::IPAddress> & address,
     const String & forwarded_address,
     const String & custom_quota_key) const
 {
@@ -838,7 +851,7 @@ std::shared_ptr<const EnabledQuota> AccessControl::getAuthenticationQuota(
         return quota_cache->getEnabledQuota(*user_id,
                                             user->getName(),
                                             roles_info->enabled_roles,
-                                            address,
+                                            std::make_shared<Poco::Net::IPAddress>(address),
                                             forwarded_address,
                                             quota_key,
                                             throw_if_client_key_empty);

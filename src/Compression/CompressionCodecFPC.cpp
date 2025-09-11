@@ -40,6 +40,11 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
     bool isFloatingPointTimeSeriesCodec() const override { return true; }
+    std::string getDescription() const override
+    {
+        return "High Throughput Compression of Double-Precision Floating-Point Data.";
+    }
+
 
 private:
     static constexpr UInt32 HEADER_SIZE = 2;

@@ -1,14 +1,29 @@
 #pragma once
 
-#include <span>
-#include <poll.h>
-#include <mutex>
 #include "DNSPTRResolver.h"
+
+#include <span>
+#include <mutex>
+#include <ares.h>
+#include <poll.h>
+
 
 using ares_channel = struct ares_channeldata *;
 
 namespace DB
 {
+
+    struct dnsstate_t
+    {
+        ares_channel_t * channel;
+        struct pollfd * poll_fds;
+        size_t poll_nfds;
+        size_t poll_fds_alloc;
+
+        ares_fd_events_t * ares_fds;
+        size_t ares_nfds;
+    };
+    struct AresChannelRAII;
 
     /*
      * Implements reverse DNS resolution using c-ares lib. System reverse DNS resolution via
@@ -42,13 +57,13 @@ namespace DB
         std::unordered_set<std::string> resolve_v6(const std::string & ip) override;
 
     private:
-        bool wait_and_process(ares_channel channel);
+        bool wait_and_process(AresChannelRAII & channel_raii);
 
         void resolve(const std::string & ip, std::unordered_set<std::string> & response, ares_channel channel);
 
         void resolve_v6(const std::string & ip, std::unordered_set<std::string> & response, ares_channel channel);
 
-        std::span<pollfd> get_readable_sockets(int * sockets, pollfd * pollfd, ares_channel channel);
+        // std::span<pollfd> get_readable_sockets(int * sockets, pollfd * pollfd, ares_channel channel);
 
         int64_t calculate_timeout(ares_channel channel);
 

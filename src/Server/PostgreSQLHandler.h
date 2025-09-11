@@ -65,6 +65,8 @@ private:
     Int32 connection_id = 0;
     Int32 secret_key = 0;
 
+    bool is_query_in_progress = false;
+
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
     std::shared_ptr<PostgreSQLProtocol::Messaging::MessageTransport> message_transport;
@@ -73,6 +75,7 @@ private:
     ProfileEvents::Event write_event;
 
     PostgreSQLProtocol::PGAuthentication::AuthenticationManager authentication_manager;
+    PostgreSQLProtocol::PostgresPreparedStatements::PreparedStatemetsManager prepared_statements_manager;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::PostgreSQLConnection};
 
@@ -91,6 +94,17 @@ private:
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> receiveStartupMessage(int payload_size);
 
     void processQuery();
+
+    bool processPrepareStatement(const String & query);
+    bool processExecute(const String & query, ContextMutablePtr query_context);
+    bool processDeallocate(const String & query);
+
+    void processParseQuery();
+    void processDescribeQuery();
+    void processBindQuery();
+    void processExecuteQuery();
+    void processCloseQuery();
+    void processSyncQuery();
 
     static bool isEmptyQuery(const String & query);
 };

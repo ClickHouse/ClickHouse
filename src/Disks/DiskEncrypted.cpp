@@ -377,7 +377,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     auto encryption_settings = current_settings.get();
     FileEncryption::Header header = readHeader(*buffer);
     String key = encryption_settings->findKeyByFingerprint(header.key_fingerprint, path);
-    return std::make_unique<ReadBufferFromEncryptedFile>(settings.local_fs_buffer_size, std::move(buffer), key, header);
+    return std::make_unique<ReadBufferFromEncryptedFile>(path, settings.local_fs_buffer_size, std::move(buffer), key, header);
 }
 
 size_t DiskEncrypted::getFileSize(const String & path) const
@@ -452,13 +452,13 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextPtr context,
+        ContextPtr,
         const DisksMap & map,
         bool, bool) -> DiskPtr
     {
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
-        disk->startup(context, skip_access_check);
+        disk->startup(skip_access_check);
         return disk;
     };
     factory.registerDiskType("encrypted", creator);

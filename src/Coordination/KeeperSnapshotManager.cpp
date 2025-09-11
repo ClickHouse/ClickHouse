@@ -7,6 +7,7 @@
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperSnapshotManager.h>
+#include <Coordination/KeeperStorage.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Core/Field.h>
@@ -100,7 +101,7 @@ namespace
     }
 
     template<typename Node>
-    void readNode(Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map)
+    void readNode(Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map, bool cleanup_acl)
     {
         readVarUInt(node.stats.data_size, in);
         if (node.stats.data_size != 0)
@@ -112,6 +113,9 @@ namespace
         if (version >= SnapshotVersion::V1)
         {
             readBinary(node.acl_id, in);
+
+            if (cleanup_acl)
+                node.acl_id = 0;
         }
         else if (version == SnapshotVersion::V0)
         {
@@ -127,7 +131,9 @@ namespace
                 readBinary(acl.id, in);
                 acls.push_back(acl);
             }
-            node.acl_id = acl_map.convertACLs(acls);
+
+            if (!cleanup_acl)
+                node.acl_id = acl_map.convertACLs(acls);
         }
 
         /// Some strange ACLID during deserialization from ZooKeeper
@@ -210,11 +216,11 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
         writeBinary(snapshot.zxid, out);
         if (keeper_context->digestEnabled())
         {
-            writeBinary(static_cast<uint8_t>(Storage::CURRENT_DIGEST_VERSION), out);
+            writeBinary(static_cast<uint8_t>(KEEPER_CURRENT_DIGEST_VERSION), out);
             writeBinary(snapshot.nodes_digest, out);
         }
         else
-            writeBinary(static_cast<uint8_t>(Storage::NO_DIGEST), out);
+            writeBinary(static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST), out);
     }
 
     writeBinary(snapshot.session_id, out);
@@ -325,11 +331,11 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         readBinary(storage.zxid, in);
         uint8_t digest_version;
         readBinary(digest_version, in);
-        if (digest_version != Storage::DigestVersion::NO_DIGEST)
+        if (digest_version != static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST))
         {
             uint64_t nodes_digest;
             readBinary(nodes_digest, in);
-            if (digest_version == Storage::CURRENT_DIGEST_VERSION)
+            if (digest_version == static_cast<uint8_t>(KEEPER_CURRENT_DIGEST_VERSION))
             {
                 storage.nodes_digest = nodes_digest;
                 recalculate_digest = false;
@@ -372,7 +378,9 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                 readBinary(acl.id, in);
                 acls.push_back(acl);
             }
-            storage.acl_map.addMapping(acl_id, acls);
+
+            if (!keeper_context->shouldBlockACL())
+                storage.acl_map.addMapping(acl_id, acls);
             current_map_size++;
         }
     }
@@ -395,7 +403,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         std::string_view path{path_data.get(), path_size};
 
         typename Storage::Node node{};
-        readNode(node, in, current_version, storage.acl_map);
+        readNode(node, in, current_version, storage.acl_map, keeper_context->shouldBlockACL());
 
         using enum Coordination::PathMatchResult;
         auto match_result = Coordination::matchPath(path, keeper_system_path);
@@ -442,7 +450,10 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                 node.getChildren().reserve(node.stats.numChildren());
 
         if (ephemeral_owner != 0)
+        {
             storage.committed_ephemerals[node.stats.ephemeralOwner()].insert(std::string{path});
+            ++storage.committed_ephemeral_nodes;
+        }
 
         if (recalculate_digest)
             storage.nodes_digest += node.getDigest(path);
@@ -478,7 +489,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         " is different from actual children size {} for node {}",
                         itr.value.stats.numChildren(),
                         itr.value.getChildren().size(),
-                        itr.key);
+                        itr.key.toView());
 #else
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -486,7 +497,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                         " is different from actual children size {} for node {}",
                         itr.value.stats.numChildren(),
                         itr.value.getChildren().size(),
-                        itr.key);
+                        itr.key.toView());
 #endif
                 }
             }

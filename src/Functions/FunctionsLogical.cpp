@@ -653,28 +653,33 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     /// Special implementation for short-circuit arguments.
     if constexpr (std::is_same_v<Name, NameAnd> || std::is_same_v<Name, NameOr>)
     {
-        ColumnRawPtrs solid_args;
-        std::vector<size_t> not_solid_args_index;
+        /// To apply short circuit execution on non function column arguments has negative return, since it needs to
+        /// run `filter` and `expand` on a column. For `and` and `or`, the execution order for arguments doesn't
+        /// affect the correctness of result. So we first to calculate a map column from all non function column
+        /// arguments, and combine it with the remaining function column arguments, use them as the input of
+        /// `exeucteShortCircuit` to calculate the final result.
+        ColumnRawPtrs not_short_circuit_args;
+        std::vector<size_t> short_circuit_args_index;
         ColumnsWithTypeAndName new_args;
 
         for (size_t i = 0, n = args.size(); i < n; ++i)
         {
             if (checkAndGetShortCircuitArgument(arguments[i].column))
-                not_solid_args_index.emplace_back(i);
+                short_circuit_args_index.emplace_back(i);
             else
-                solid_args.emplace_back(arguments[i].column.get());
+                not_short_circuit_args.emplace_back(arguments[i].column.get());
         }
 
         ColumnPtr partial_result = nullptr;
-        if (solid_args.size() > 1)
+        if (not_short_circuit_args.size() > 1)
         {
             partial_result = result_type->isNullable()
-                ? executeForTernaryLogicImpl<Impl>(std::move(solid_args), result_type, input_rows_count)
-                : basicExecuteImpl<Impl>(std::move(solid_args), input_rows_count);
-            if (not_solid_args_index.empty())
+                ? executeForTernaryLogicImpl<Impl>(std::move(not_short_circuit_args), result_type, input_rows_count)
+                : basicExecuteImpl<Impl>(std::move(not_short_circuit_args), input_rows_count);
+            if (short_circuit_args_index.empty())
                 return partial_result;
             new_args.emplace_back(partial_result, result_type, "__partial_result");
-            for (const auto & index : not_solid_args_index)
+            for (const auto & index : short_circuit_args_index)
                 new_args.emplace_back(std::move(arguments[index]));
         }
         else
@@ -746,12 +751,12 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
     if constexpr (std::is_same_v<Impl, AndImpl>)
     {
         if (has_false_constant)
-            result_column = result_type->createColumnConst(0, static_cast<UInt8>(false));
+            result_column = result_type->createColumnConst(1, static_cast<UInt8>(false));
     }
     else if constexpr (std::is_same_v<Impl, OrImpl>)
     {
         if (has_true_constant)
-            result_column = result_type->createColumnConst(0, static_cast<UInt8>(true));
+            result_column = result_type->createColumnConst(1, static_cast<UInt8>(true));
     }
 
     return result_column;

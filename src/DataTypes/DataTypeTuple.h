@@ -22,7 +22,7 @@ class DataTypeTuple final : public IDataType
 private:
     DataTypes elems;
     Strings names;
-    bool have_explicit_names;
+    bool has_explicit_names;
 
 public:
     static constexpr bool is_parametric = true;
@@ -66,11 +66,11 @@ public:
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }
 
-    size_t getPositionByName(const String & name) const;
-    std::optional<size_t> tryGetPositionByName(const String & name) const;
+    size_t getPositionByName(const String & name, bool case_insensitive = false) const;
+    std::optional<size_t> tryGetPositionByName(const String & name, bool case_insensitive = false) const;
     String getNameByPosition(size_t i) const;
 
-    bool haveExplicitNames() const { return have_explicit_names; }
+    bool hasExplicitNames() const { return has_explicit_names; }
 
     void forEachChild(const ChildCallback & callback) const override;
 };

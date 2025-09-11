@@ -1,9 +1,11 @@
-#include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
-#include <Storages/System/StorageSystemDroppedTablesParts.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/System/StorageSystemDroppedTablesParts.h>
+#include <Storages/VirtualColumnUtils.h>
 
 
 namespace DB

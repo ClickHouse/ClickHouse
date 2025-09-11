@@ -871,6 +871,8 @@ Strings BackupCoordinationStageSync::waitHostsReachStage(const Strings & hosts, 
 bool BackupCoordinationStageSync::checkIfHostsReachStage(const Strings & hosts, const String & stage_to_wait, Strings & results) const
 {
     process_list_element->checkTimeLimit();
+    if (state.host_with_error)
+        std::rethrow_exception(state.hosts.at(*state.host_with_error).exception);
 
     for (size_t i = 0; i != hosts.size(); ++i)
     {
@@ -888,12 +890,20 @@ bool BackupCoordinationStageSync::checkIfHostsReachStage(const Strings & hosts, 
             continue;
         }
 
-        if (state.host_with_error)
-            std::rethrow_exception(state.hosts.at(*state.host_with_error).exception);
-
         if (host_info.finished)
+        {
+            if (stage_to_wait == BackupCoordinationStage::FINALIZING_TABLES)
+            {
+                /// This is a newly added stage. For compatibility with older server versions,
+                /// allow other replicas to skip this stage. This doesn't break anything: this stage
+                /// unpauses refreshable materialized views, but older server versions don't pause
+                /// them in the first place.
+                results[i] = "";
+                continue;
+            }
             throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
                             "{} finished without coming to stage {}", getHostDesc(host), stage_to_wait);
+        }
 
         if (should_stop_watching_thread)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "waitHostsReachStage() can't wait for stage {} after the watching thread stopped", stage_to_wait);
@@ -1175,15 +1185,16 @@ bool BackupCoordinationStageSync::checkIfOtherHostsFinish(
     const String & reason, std::optional<std::chrono::milliseconds> timeout, bool time_is_out, bool & result, bool throw_if_error) const
 {
     if (throw_if_error)
+    {
         process_list_element->checkTimeLimit();
+        if (state.host_with_error)
+            std::rethrow_exception(state.hosts.at(*state.host_with_error).exception);
+    }
 
     for (const auto & [host, host_info] : state.hosts)
     {
         if ((host == current_host) || host_info.finished)
             continue;
-
-        if (throw_if_error && state.host_with_error)
-            std::rethrow_exception(state.hosts.at(*state.host_with_error).exception);
 
         String reason_text = reason.empty() ? "" : (" " + reason);
 

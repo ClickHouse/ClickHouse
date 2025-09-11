@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Formats/FormatSettings.h>
 
@@ -8,6 +7,7 @@
 namespace DB
 {
 
+class Block;
 class WriteBuffer;
 
 
@@ -22,13 +22,7 @@ public:
       */
     CSVRowOutputFormat(WriteBuffer & out_, const Block & header_, bool with_names_, bool with_types, const FormatSettings & format_settings_);
 
-    String getName() const override { return "CSVRowOutputFormat"; }
-
-    /// https://www.iana.org/assignments/media-types/text/csv
-    String getContentType() const override
-    {
-        return String("text/csv; charset=UTF-8; header=") + (with_names ? "present" : "absent");
-    }
+    String getName() const override { return "CSV"; }
 
 private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;

@@ -3,13 +3,15 @@
 
 #if USE_ARROW || USE_PARQUET
 
-#include <Core/Block.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Processors/Chunk.h>
-#include <arrow/table.h>
 
+#include <arrow/table.h>
 
 namespace DB
 {
+
+class Block;
 
 class CHColumnToArrowColumn
 {

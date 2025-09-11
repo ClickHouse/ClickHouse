@@ -33,6 +33,7 @@ def test_system_logs_recreate():
         "trace_log",
         "metric_log",
         "error_log",
+        "latency_log",
     ]
 
     try:

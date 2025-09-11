@@ -1,6 +1,7 @@
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -11,6 +12,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/FilterDescription.h>
+
+#include <Core/callOnTypeIndex.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -102,7 +105,8 @@ static void mixNumberColumns(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type on mixNumberColumns");
 }
 
-static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,
+static MutableColumnPtr mixColumns(
+    const ColumnWithTypeAndName & col_read,
     const ColumnWithTypeAndName & col_defaults,
     const BlockMissingValues::RowsBitMask & defaults_mask)
 {
@@ -179,7 +183,8 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     auto dag = evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), columns, context, false);
     if (dag)
     {
-        auto actions = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context, CompileExpressions::yes), true);
+        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header, dag->getRequiredColumnsNames(), context);
+        auto actions = std::make_shared<ExpressionActions>(ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag)), ExpressionActionsSettings(context, CompileExpressions::yes), true);
         actions->execute(evaluate_block);
     }
 

@@ -33,7 +33,6 @@ public:
         " - uri, format, compression_method\n";
 
     StorageHDFSConfiguration() = default;
-    StorageHDFSConfiguration(const StorageHDFSConfiguration & other);
 
     ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
@@ -54,7 +53,6 @@ public:
     StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) const override;
-    ConfigurationPtr clone() override { return std::make_shared<StorageHDFSConfiguration>(*this); }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
 

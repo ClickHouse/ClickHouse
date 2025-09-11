@@ -5,6 +5,7 @@
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <base/unaligned.h>
+
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -13,7 +14,6 @@
 #include <IO/WriteHelpers.h>
 
 #include <cstring>
-#include <algorithm>
 #include <cstdlib>
 #include <type_traits>
 #include <limits>
@@ -138,6 +138,11 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
     bool isDeltaCompression() const override { return true; }
+    std::string getDescription() const override
+    {
+        return "Stores difference between neighboring delta values; suitable for time series data.";
+    }
+
 
 private:
     UInt8 data_bytes_size;
@@ -512,7 +517,7 @@ UInt32 CompressionCodecDoubleDelta::doCompressData(const char * source, UInt32 s
         break;
     }
 
-    return 1 + 1 + compressed_size;
+    return 1 + 1 + compressed_size + UInt32(bytes_to_skip);
 }
 
 void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const

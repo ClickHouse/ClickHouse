@@ -1,4 +1,3 @@
-#include <cerrno>
 #include <ctime>
 #include <optional>
 #include <Common/ProfileEvents.h>
@@ -16,8 +15,6 @@ namespace ProfileEvents
 {
     extern const Event AsynchronousReadWaitMicroseconds;
     extern const Event SynchronousReadWaitMicroseconds;
-    extern const Event LocalReadThrottlerBytes;
-    extern const Event LocalReadThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -105,7 +102,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     file_offset_of_buffer_end += result.size;
 
     if (throttler)
-        throttler->add(result.size, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+        throttler->add(result.size);
 
     if (bytes_read)
     {

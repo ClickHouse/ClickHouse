@@ -34,7 +34,7 @@ void TTLDeleteAlgorithm::execute(Block & block)
 
         for (size_t i = 0; i < block.rows(); ++i)
         {
-            UInt32 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
+            Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
             bool where_filter_passed = !where_column || where_column->getBool(i);
 
             if (!isTTLExpired(cur_ttl) || !where_filter_passed)
