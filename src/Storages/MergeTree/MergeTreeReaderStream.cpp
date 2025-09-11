@@ -85,7 +85,7 @@ void MergeTreeReaderStream::init()
                 return data_part_storage->readFile(
                     path_prefix + data_file_extension,
                     read_settings,
-                    estimated_sum_mark_range_bytes, std::nullopt);
+                    estimated_sum_mark_range_bytes);
             },
             uncompressed_cache,
             settings.allow_different_codecs);
@@ -106,8 +106,7 @@ void MergeTreeReaderStream::init()
             data_part_storage->readFile(
                 path_prefix + data_file_extension,
                 read_settings,
-                estimated_sum_mark_range_bytes,
-                std::nullopt), settings.allow_different_codecs);
+                estimated_sum_mark_range_bytes), settings.allow_different_codecs);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);

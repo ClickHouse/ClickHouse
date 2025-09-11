@@ -48,6 +48,7 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Poco/Logger.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
@@ -181,6 +182,7 @@ namespace Setting
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
 }
 
 namespace MergeTreeSetting
@@ -380,7 +382,8 @@ ReadFromMergeTree::ReadFromMergeTree(
     }
 
     /// Add explicit description.
-    setStepDescription(data.getStorageID().getFullNameNotQuoted());
+    std::string description = data.getStorageID().getFullNameNotQuoted();
+    setStepDescription(description, context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
     enable_vertical_final = query_info.isFinal() && context->getSettingsRef()[Setting::enable_vertical_final]
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
 }
@@ -924,13 +927,14 @@ Pipe ReadFromMergeTree::readByLayers(
                     pipe.numOutputPorts(),
                     sort_description,
                     block_size.max_block_size_rows,
-                    /*max_block_size_bytes=*/0,
+                    /*max_block_size_bytes=*/ 0,
                     SortingQueueStrategy::Batch,
-                    0,
-                    false,
-                    nullptr,
-                    false,
-                    /*apply_virtual_row_conversions*/ false);
+                    /*limit=*/ 0,
+                    /*always_read_till_end=*/ false,
+                    /*out_row_sources_buf=*/ nullptr,
+                    /*filter_column_name=*/ std::nullopt,
+                    /*use_average_block_sizes=*/ false,
+                    /*apply_virtual_row_conversions=*/ false);
 
                 pipe.addTransform(std::move(transform));
             }
@@ -1356,10 +1360,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     block_size.max_block_size_rows,
                     /*max_block_size_bytes=*/0,
                     SortingQueueStrategy::Batch,
-                    0,
-                    false,
-                    nullptr,
-                    false,
+                    /*limit=*/ 0,
+                    /*always_read_till_end=*/ false,
+                    /*out_row_sources_buf=*/ nullptr,
+                    /*filter_column_name=*/ std::nullopt,
+                    /*use_average_block_sizes=*/ false,
                     /*apply_virtual_row_conversions*/ false);
 
                 pipe.addTransform(std::move(transform));
@@ -3133,6 +3138,11 @@ void ReadFromMergeTree::replaceColumnsForTextSearch(const IndexReadColumns & add
     }
 
     required_source_columns = all_column_names;
+}
+
+ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const
+{
+    return data.getConditionSelectivityEstimatorByPredicate(storage_snapshot, nullptr, getContext());
 }
 
 }

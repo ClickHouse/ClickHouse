@@ -232,8 +232,16 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
                 globbed_path,
                 partition_columns_in_data_file);
         case StrategyType::NONE:
+        {
+            if (!partition_columns_in_data_file && strategy == PartitionStrategyFactory::StrategyType::NONE)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Partition strategy `none` cannot be used with partition_columns_in_data_file=0");
+            }
             /// Unreachable for plain object storage, used only by Data Lakes for now
             return nullptr;
+        }
     }
 }
 

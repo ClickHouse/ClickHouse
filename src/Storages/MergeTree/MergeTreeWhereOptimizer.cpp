@@ -86,7 +86,7 @@ static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, cons
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageSnapshotPtr & storage_snapshot,
-    const ConditionSelectivityEstimator & estimator_,
+    ConditionSelectivityEstimatorPtr estimator_,
     const Names & queried_columns_,
     const std::optional<NameSet> & supported_columns_,
     LoggerPtr log_)
@@ -126,7 +126,7 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
         = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = select.final();
-    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::allow_statistics_optimize];
+    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::allow_statistics_optimize] && estimator != nullptr;
 
     RPNBuilderTreeContext tree_context(context, std::move(block_with_constants), {} /*prepared_sets*/);
     RPNBuilderTreeNode node(select.where().get(), tree_context);
@@ -161,7 +161,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
         = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = is_final;
-    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::allow_statistics_optimize];
+    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::allow_statistics_optimize] && estimator != nullptr;
 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), tree_context);
@@ -354,7 +354,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         {
             cond.good = cond.viable;
 
-            cond.estimated_row_count = estimator.estimateRelationProfile(node).rows;
+            cond.estimated_row_count = estimator->estimateRelationProfile(node).rows;
 
             if (node.getASTNode() != nullptr)
                 LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getASTNode()->dumpTree(), cond.estimated_row_count);

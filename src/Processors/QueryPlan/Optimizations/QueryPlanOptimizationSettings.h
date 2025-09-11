@@ -93,6 +93,8 @@ struct QueryPlanOptimizationSettings
 
     /// Other settings related to plan-level optimizations
 
+    size_t max_step_description_length = 0;
+
     bool optimize_use_implicit_projections;
     bool force_use_projection;
     String force_projection_name;

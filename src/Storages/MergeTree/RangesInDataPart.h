@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <vector>
+#include <deque>
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
