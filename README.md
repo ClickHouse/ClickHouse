@@ -46,28 +46,30 @@ Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/310320777) - August 26,2025
-* [Toronto Meetup](https://www.meetup.com/clickhouse-toronto-user-group/events/310164482/) - September 3, 2025
-* [Gurgaon/Delhi Meetup](https://www.meetup.com/clickhouse-delhi-user-group/events/310521318/) - September 4, 2025
-* [Raleigh Meetup](https://www.meetup.com/clickhouse-nc-meetup-group/events/310348573/) - September 4, 2025
-* [New York AI Meetup + Docker](https://www.meetup.com/clickhouse-new-york-user-group/events/310320693) - September 9, 2025
-* [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/309165659) - September 9, 2025
 * [Bangkok Meetup](https://www.meetup.com/clickhouse-thailand-meetup-group/events/310647332/) - September 16, 2025
 * [Dubai Meetup](https://www.meetup.com/clickhouse-dubai-meetup-group/events/310122820) - September 16, 2025
 * [Boston Meetup](https://www.meetup.com/clickhouse-boston-user-group/events/310536674) - September 16,2025
 * [Beijing Meetup](https://mp.weixin.qq.com/s/WltEVYwTKxek0t8SKJRTjQ) - September 20, 2025
 * [Pune Meetup](https://www.meetup.com/clickhouse-pune-user-group/events/310644227/) - September 20, 2025
+* [Denver Meetup](https://www.meetup.com/clickhouse-denver-user-group/events/310965415/) - September 20, 2025
 * [Singapore Meetup](https://www.meetup.com/clickhouse-singapore-meetup-group/events/310761753/) - September 25, 2025
 * [Melbourne Meetup](https://www.meetup.com/clickhouse-melbourne-user-group/events/310761395/) - September 30, 2025
 * [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/310875919/) - September 30, 2025
 * [Madrid Meetup](https://www.meetup.com/clickhouse-spain-user-group/events/310124151) - September 30, 2025
 * [Barcelona Meetup](https://www.meetup.com/clickhouse-barcelona-user-group/events/310123657) - October 1, 2025
-* [Iceberg SF Meetup](https://lu.ma/hbt7ahud) - October 1,2025
+* [Iceberg SF Meetup](https://lu.ma/hbt7ahud) - October 1, 2025
+* [Seattle AI Night ClickHouse+Docker](https://www.meetup.com/clickhouse-seattle-user-group/events/310972841) - October 2, 2025
 * [Zurich Meetup](https://www.meetup.com/clickhouse-switzerland-meetup-group/events/310154432) - October 9, 2025
 * [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/310154576) - October 15, 2025
 * [Cyprus Meetup](https://www.meetup.com/clickhouse-cyprus-user-group/events/310154624) - November 20, 2025
 
 Recent meetups
+* [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/309165659) - September 9, 2025
+* [New York AI Meetup + Docker](https://www.meetup.com/clickhouse-new-york-user-group/events/310320693) - September 9, 2025
+* [Raleigh Meetup](https://www.meetup.com/clickhouse-nc-meetup-group/events/310348573/) - September 4, 2025
+* [Gurgaon/Delhi Meetup](https://www.meetup.com/clickhouse-delhi-user-group/events/310521318/) - September 4, 2025
+* [Toronto Meetup](https://www.meetup.com/clickhouse-toronto-user-group/events/310164482/) - September 3, 2025
+* [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/310320777) - August 26, 2025
 * [Manaila Meetup w/ Confluent](https://www.meetup.com/clickhouse-philippines-meetup-group/events/310101137/) - August 13, 2025
 * [Sao Paulo Meetup](https://www.meetup.com/clickhouse-brasil-user-group/events/309874439) - August 12, 2025
 * [Buenos Aires Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/308819423/) - August 7, 2025
@@ -82,27 +84,6 @@ Recent meetups
 * [Atlanta Meetup](https://www.meetup.com/clickhouse-atlanta-meetup-group/events/307627590/) - July 8, 2025
 * [Perth Meetup](https://www.meetup.com/clickhouse-perth-user-group/events/308421971/) - July 2, 2025
 * [ClickHouse + Docker AI Night](https://lu.ma/g9nhgnlh) - July 1st 2025
-* [Bangalore Meetup](https://www.meetup.com/clickhouse-bangalore-user-group/events/308323519/) - June 27, 2025
-* [Denver Meetup](https://lu.ma/j7qm8o6i) - June 26, 2025
-* [Amsterdam Meetup](https://www.meetup.com/clickhouse-netherlands-user-group/events/308053051/) - June 25, 2025
-* [Berlin Meetup](https://www.meetup.com/clickhouse-berlin-user-group/events/307866586/) - June 24, 2025
-* [Sydney Meetup](https://www.meetup.com/clickhouse-australia-user-group/events/308248552/) - June 19, 2025
-* [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/308053030/) - June 19, 2025
-* [Singapore Meetup](https://www.meetup.com/clickhouse-cyprus-user-group/events/307819236) - June 17, 2025
-* [Washington DC Meetup](https://www.meetup.com/clickhouse-dc-user-group/events/307622954/) - June 12, 2025
-* [Cyprus Meetup](https://www.meetup.com/clickhouse-cyprus-user-group/events/307819236) - June 10, 2025
-* [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/307689645/) - June 5, 2025
-* [Belgium Meetup](https://www.meetup.com/clickhouse-belgium-user-group/events/307818346/) - May 20, 2025
-* [Seattle Meetup](https://www.meetup.com/clickhouse-seattle-user-group/events/307622716/) - May 20, 2025
-* [Shenzhen Meetup](https://www.huodongxing.com/event/7803892350511) - May 17, 2025
-* [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/306047172/) - May 14, 2025
-* [Istanbul Meetup](https://www.meetup.com/clickhouse-turkiye-meetup-group/events/306978337/) - May 15, 2025
-* [Austin Meetup](https://www.meetup.com/clickhouse-austin-user-group/events/307289908) - May 13, 2025
-
-
-
-
-
 
 ## Recent Recordings
 
