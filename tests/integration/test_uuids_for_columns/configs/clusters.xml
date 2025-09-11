@@ -1,5 +1,4 @@
 <clickhouse>
-<enable_uuids_for_columns>true</enable_uuids_for_columns>
 <remote_servers>
     <cluster>
         <shard>

@@ -1,0 +1,3 @@
+<clickhouse>
+    <enable_uuids_for_columns>false</enable_uuids_for_columns>
+</clickhouse>
