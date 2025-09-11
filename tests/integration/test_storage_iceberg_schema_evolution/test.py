@@ -24,6 +24,8 @@ from helpers.iceberg_utils import (
     get_raw_schema_and_data,
     get_uuid_str,
     get_spark,
+    create_iceberg_table,
+    default_download_directory,
 )
 
 from pandas.testing import assert_frame_equal
@@ -38,7 +40,7 @@ def started_cluster():
         cluster.add_instance(
             "node1",
             main_configs=["configs/config.d/cluster.xml", "configs/config.d/named_collections.xml"],
-            user_configs=[],
+            user_configs=["configs/users.d/users.xml"],
             with_minio=True,
             with_azurite=True,
             stay_alive=True,
@@ -1710,3 +1712,34 @@ def test_correct_column_mapper_is_chosen(
     ).toPandas()
 
     assert_frame_equal(data_df, reference_df)
+
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_full_drop(started_cluster, format_version, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = "test_full_drop_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME_2 = "test_full_drop_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x Nullable(Int32))", format_version)
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (123);", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\n'
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME_2, started_cluster, "(x Nullable(Int32))", format_version)
+    assert instance.query(f"SELECT * FROM {TABLE_NAME_2} ORDER BY ALL") == ''
+    instance.query(f"INSERT INTO {TABLE_NAME_2} VALUES (777);", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT * FROM {TABLE_NAME_2} ORDER BY ALL") == '777\n'
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+    #exception means that there are no files.
+    with pytest.raises(Exception):
+        default_download_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME_2} ORDER BY ALL") == '777\n'

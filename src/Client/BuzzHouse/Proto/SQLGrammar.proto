@@ -3234,6 +3234,7 @@ enum TableEngineValues {
     ExternalDistributed = 40;
     MaterializedPostgreSQL = 41;
     ArrowFlight = 42;
+    Alias = 43;
 }
 
 enum TableEngineOption {
@@ -3623,17 +3624,18 @@ message CreateMatViewTo {
 
 message CreateView {
     required CreateReplaceOption create_opt = 1;
-    optional bool if_not_exists = 2;
-    optional bool materialized = 3;
-    required ExprSchemaTable est = 4;
-    optional Cluster cluster = 5;
-    optional RefreshableView refresh = 6;
-    optional CreateMatViewTo to = 7;
-    optional TableEngine engine = 8;
-    optional bool populate = 9;
-    optional bool empty = 10;
-    required SelectParen select = 11;
-    optional string comment = 12;
+    optional bool is_temp = 2;
+    optional bool if_not_exists = 3;
+    optional bool materialized = 4;
+    required ExprSchemaTable est = 5;
+    optional Cluster cluster = 6;
+    optional RefreshableView refresh = 7;
+    optional CreateMatViewTo to = 8;
+    optional TableEngine engine = 9;
+    optional bool populate = 10;
+    optional bool empty = 11;
+    required SelectParen select = 12;
+    optional string comment = 13;
 }
 
 message DictionaryColumn {
