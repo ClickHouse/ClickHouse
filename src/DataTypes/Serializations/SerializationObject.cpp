@@ -782,6 +782,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     }
 
     const auto & column_object = assert_cast<const ColumnObject &>(column);
+    column_object.validateDynamicPathsSizes();
     const auto & typed_paths = column_object.getTypedPaths();
 
     if (object_state->serialization_version.value == SerializationVersion::FLATTENED)
@@ -1037,6 +1038,8 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     object_state->shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(shared_data, rows_offset, limit, settings, object_state->shared_data_state, cache);
     settings.path.pop_back();
     settings.path.pop_back();
+
+    column_object.validateDynamicPathsSizes();
 }
 
 void SerializationObject::serializeBinary(const Field & field, WriteBuffer & ostr, const DB::FormatSettings & settings) const
@@ -1228,7 +1231,9 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                     String value;
                     Field field;
                     readParsedValueIntoString(value, istr, [&](ReadBuffer & buf){ dynamic_serialization->deserializeBinary(field, buf, settings); });
-                    paths_and_values_for_shared_data.emplace_back(std::move(path), std::move(value));
+                    /// Don't write nulls into shared data.
+                    if (!field.isNull())
+                        paths_and_values_for_shared_data.emplace_back(std::move(path), std::move(value));
                 }
             }
             else
@@ -1274,6 +1279,8 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
         if (column->size() == prev_size)
             column->insertDefault();
     }
+
+    column_object.validateDynamicPathsSizes();
 }
 
 SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB::SerializationPtr & prev, const DataTypePtr &) const
