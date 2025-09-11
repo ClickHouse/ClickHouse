@@ -1,8 +1,8 @@
 -- Tags: no-parallel
 -- { echo }
-DROP DATABASE IF EXISTS dboverlay    SYNC;
-DROP DATABASE IF EXISTS db_overlay_a SYNC;
-DROP DATABASE IF EXISTS db_overlay_b SYNC;
+DROP DATABASE IF EXISTS dboverlay;
+DROP DATABASE IF EXISTS db_overlay_a;
+DROP DATABASE IF EXISTS db_overlay_b;
 
 CREATE DATABASE db_overlay_a ENGINE = Atomic;
 CREATE DATABASE db_overlay_b ENGINE = Atomic;
@@ -51,11 +51,15 @@ SELECT * FROM dboverlay.t_new ORDER BY k;
 
 INSERT INTO dboverlay.t_new VALUES (999, 'Pass-through overlay');
 
+ALTER TABLE dboverlay.t_a ADD COLUMN z UInt8 DEFAULT 0;
+
+SELECT * FROM dboverlay.t_new ORDER BY k;
+
+SELECT * FROM db_overlay_a.t_new ORDER BY k;
+
 CREATE TABLE dboverlay.ct_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError BAD_ARGUMENTS }
 
 ATTACH TABLE dboverlay.at_fail (x UInt8) ENGINE = MergeTree ORDER BY x; -- { serverError BAD_ARGUMENTS }
-
-ALTER TABLE dboverlay.t_a ADD COLUMN z UInt8 DEFAULT 0;
 
 RENAME TABLE dboverlay.t_a TO dboverlay.t_a_renamed_via_overlay; -- { serverError BAD_ARGUMENTS }
 
@@ -74,9 +78,9 @@ DROP TABLE db_overlay_a.t_new_renamed;
 
 SHOW TABLES FROM dboverlay;
 
-DROP DATABASE dboverlay    SYNC;
+DROP DATABASE dboverlay;
 
 SHOW TABLES FROM dboverlay; -- { serverError UNKNOWN_DATABASE }
 
-DROP DATABASE db_overlay_a SYNC;
-DROP DATABASE db_overlay_b SYNC;
+DROP DATABASE db_overlay_a;
+DROP DATABASE db_overlay_b;

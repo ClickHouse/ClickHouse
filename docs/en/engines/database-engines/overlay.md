@@ -52,10 +52,10 @@ CREATE DATABASE dboverlay ENGINE = Overlay('db_overlay_a', 'db_overlay_b');
 | :------------------------- | :---------------------------------------------------------------------------------------------------------- |
 | `CREATE TABLE dboverlay.*` | **Rejected** — throws `BAD_ARGUMENTS` with a clear message to create in an underlying DB.                   |
 | `ATTACH TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`.                                                                             |
-| `ALTER TABLE dboverlay.*`  | **Rejected** — `BAD_ARGUMENTS`.                                                                             |
+| `ALTER TABLE dboverlay.*`  | **Pass-through** — forwards to the appropriate underlying DB.                                                                             |
 | `RENAME TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`.                                                                             |
 | `DROP TABLE dboverlay.*`   | **No-op** — ignored (allows `DROP DATABASE dboverlay` to succeed).                                          |
-| `INSERT INTO dboverlay.*`  | **Not supported** — typically fails with `TABLE_UUID_MISMATCH` since storage is bound to the underlying DB. |
+| `INSERT INTO dboverlay.*`  | **Pass-through** — executes against the table in the corresponding underlying DB. |
 
 > Rationale: the facade is a **view**. Data-definition & data-mutation happen in the member databases.
 
@@ -87,8 +87,7 @@ CREATE DATABASE dboverlay ENGINE = Overlay('db_overlay_a', 'db_overlay_b');
 
 | Scenario                                   | Error                                                                                                                                              |
 | :----------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Overlay CREATE/ATTACH/ALTER/RENAME TABLE   | `BAD_ARGUMENTS` — “Database `<name>` is an Overlay facade (read-only view). Run this operation in an underlying database (e.g. `<first_member>`).” |
-| INSERT via overlay                         | `TABLE_UUID_MISMATCH` (from lower layers)                                                                                                          |
+| Overlay CREATE/ATTACH/ALTER/RENAME TABLE   | `BAD_ARGUMENTS` — “Database `<name>` is an Overlay facade (read-only view). Run this operation in an underlying database (e.g. `<first_member>`).”                                                                                          |
 | Overlay references itself                  | `BAD_ARGUMENTS`                                                                                                                                    |
 | Overlay references missing DB              | `BAD_ARGUMENTS`                                                                                                                                    |
 | DROP DATABASE overlay while tables “exist” | Succeeds (iterator/empty() semantics ensure no `DATABASE_NOT_EMPTY`)                                                                               |
@@ -149,8 +148,7 @@ DROP DATABASE dboverlay SYNC;
 | Symptom                                                                               | Cause                                                                     | Fix                                                                                                                                |
 | :------------------------------------------------------------------------------------ | :------------------------------------------------------------------------ | :--------------------------------------------------------------------------------------------------------------------------------- |
 | `Logical error: 'Mapping for table with UUID=… already exists'` when creating overlay | Overlay DB had a non-Nil UUID colliding with existing DB/table            | In facade mode, **return Nil** from `getUUID()` (you already do).                                                                  |
-| `TABLE_ALREADY_EXISTS` under `store/000/00000000-…`                                   | Table was created **through** overlay; its storage bound to Nil-UUID path | Block `CREATE TABLE` via overlay; create in a member DB instead. Remove stale Nil dir if created.                                  |
-| `TABLE_UUID_MISMATCH` on `INSERT INTO dboverlay.t_new`                                | DML via overlay not supported; storage UUIDs must match                   | Write to the underlying DB and read via overlay.                                                                                   |
+| `TABLE_ALREADY_EXISTS` under `store/000/00000000-…`                                   | Table was created **through** overlay; its storage bound to Nil-UUID path | Block `CREATE TABLE` via overlay; create in a member DB instead. Remove stale Nil dir if created.                                                                                      |
 | `DATABASE_NOT_EMPTY` while dropping overlay                                           | Dropper saw tables or `empty()` returned false                            | In facade mode: return **empty iterator** for `skip_not_loaded==true` and **true** from `empty()`. Make `dropTable()` a **no-op**. |
 | Segfault in `canContainMergeTreeTables()` (or similar)                                | `databases` contained a **null** member                                   | Enforce non-null on registration; add `if (db)` guards in all loops (done).                                                        |
 
@@ -165,8 +163,5 @@ DROP DATABASE dboverlay SYNC;
 
 ## Future work {#future-work}
 
-* Add a **write-through** mode (route CREATE/INSERT `ASTs` to a chosen member).
 * Optional setting to **error** (instead of no-op) on `DROP TABLE dboverlay.*`.
 * Surface member list in `SHOW CREATE DATABASE` (already included) and possibly `system.databases` extras.
-
-If you want this as a `docs/` markdown file, say the word and I’ll format it to your repository’s style guide.

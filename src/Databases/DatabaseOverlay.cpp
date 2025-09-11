@@ -27,8 +27,11 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-DatabaseOverlay::DatabaseOverlay(const String & name_, ContextPtr context_, Mode mode_)
-    : IDatabase(name_), WithContext(context_->getGlobalContext()), log(getLogger("DatabaseOverlay(" + name_ + ")")), mode(mode_)
+DatabaseOverlay::DatabaseOverlay(const String & name_, ContextPtr context_, bool readonly_)
+    : IDatabase(name_)
+    , WithContext(context_->getGlobalContext())
+    , log(getLogger("DatabaseOverlay(" + name_ + ")"))
+    , readonly(readonly_)
 {
 }
 
@@ -67,13 +70,12 @@ StoragePtr DatabaseOverlay::tryGetTable(const String & table_name, ContextPtr co
 
 void DatabaseOverlay::createTable(ContextPtr context_, const String & table_name, const StoragePtr & table, const ASTPtr & query)
 {
-    if (mode == Mode::FacadeOverCatalog)
+    if (readonly)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Database {} is an Overlay facade (read-only). "
-            "Run CREATE TABLE in an underlying database (e.g. {}).",
-            backQuote(getDatabaseName()),
-            databases.empty() ? String("<none>") : databases.front()->getDatabaseName());
+            "Run CREATE TABLE in an underlying database",
+            backQuote(getDatabaseName()));
     for (auto & db : databases)
     {
         if (!db->isReadOnly())
@@ -92,7 +94,7 @@ void DatabaseOverlay::createTable(ContextPtr context_, const String & table_name
 
 void DatabaseOverlay::dropTable(ContextPtr context_, const String & table_name, bool sync)
 {
-    if (mode == Mode::FacadeOverCatalog)
+    if (readonly)
     {
         LOG_TRACE(log, "Ignoring DROP TABLE {}.{} in Overlay Database", getDatabaseName(), table_name);
         return;
@@ -116,7 +118,7 @@ void DatabaseOverlay::dropTable(ContextPtr context_, const String & table_name, 
 void DatabaseOverlay::attachTable(
     ContextPtr context_, const String & table_name, const StoragePtr & table, const String & relative_table_path)
 {
-     if (mode == Mode::FacadeOverCatalog)
+    if (readonly)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Overlay Database is read-only; ATTACH not supported");
 
     for (auto & db : databases)
@@ -163,12 +165,12 @@ void DatabaseOverlay::renameTable(
     bool exchange,
     bool dictionary)
 {
-    if (mode == Mode::FacadeOverCatalog)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+    if (readonly)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
             "Database {} is an Overlay facade (read-only). "
-            "Run RENAME TABLE in an underlying database (e.g. {}).",
-            backQuote(getDatabaseName()),
-            databases.empty() ? String("<none>") : databases.front()->getDatabaseName());
+            "Run RENAME TABLE in an underlying database",
+            backQuote(getDatabaseName()));
     for (auto & db : databases)
     {
         if (db->isTableExist(name, current_context))
@@ -222,7 +224,7 @@ ASTPtr DatabaseOverlay::getCreateDatabaseQuery() const
     auto query = std::make_shared<ASTCreateQuery>();
     query->setDatabase(getDatabaseName());
 
-    if (mode == Mode::FacadeOverCatalog)
+    if (readonly)
     {
         auto storage = std::make_shared<ASTStorage>();
 
@@ -243,7 +245,7 @@ ASTPtr DatabaseOverlay::getCreateDatabaseQuery() const
 
 String DatabaseOverlay::getTableDataPath(const String & table_name) const
 {
-    if (mode == Mode::FacadeOverCatalog)
+    if (readonly)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Database {} is an Overlay facade (read-only). Path resolution is not supported here.",
@@ -260,7 +262,7 @@ String DatabaseOverlay::getTableDataPath(const String & table_name) const
 
 String DatabaseOverlay::getTableDataPath(const ASTCreateQuery & query) const
 {
-    if (mode == Mode::FacadeOverCatalog)
+    if (readonly)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Database {} is an Overlay facade (read-only). Path resolution is not supported here.",
@@ -277,13 +279,13 @@ String DatabaseOverlay::getTableDataPath(const ASTCreateQuery & query) const
 
 bool DatabaseOverlay::isReadOnly() const
 {
-    return mode == Mode::FacadeOverCatalog;
+    return readonly;
 }
 
 UUID DatabaseOverlay::getUUID() const
 {
     UUID result = UUIDHelpers::Nil;
-    if (mode == Mode::OwnedMembers)
+    if (!readonly)
     {
         for (const auto & db : databases)
         {
@@ -300,7 +302,7 @@ UUID DatabaseOverlay::getUUID() const
 UUID DatabaseOverlay::tryGetTableUUID(const String & table_name) const
 {
     UUID result = UUIDHelpers::Nil;
-    if (mode == Mode::OwnedMembers)
+    if (!readonly)
     {
         for (const auto & db : databases)
         {
@@ -314,7 +316,7 @@ UUID DatabaseOverlay::tryGetTableUUID(const String & table_name) const
 
 void DatabaseOverlay::drop(ContextPtr context_)
 {
-    if (mode == Mode::FacadeOverCatalog)
+    if (readonly)
         return;
     for (auto & db : databases)
         db->drop(context_);
@@ -322,12 +324,12 @@ void DatabaseOverlay::drop(ContextPtr context_)
 
 void DatabaseOverlay::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
-    if (mode == Mode::FacadeOverCatalog)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+    if (readonly)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
             "Database {} is an Overlay facade (read-only). "
-            "Run ALTER TABLE in an underlying database (e.g. {}).",
-            backQuote(getDatabaseName()),
-            databases.empty() ? String("<none>") : databases.front()->getDatabaseName());
+            "Run ALTER TABLE in an underlying database",
+            backQuote(getDatabaseName()));
     for (auto & db : databases)
     {
         if (!db->isReadOnly() && db->isTableExist(table_id.table_name, local_context))
@@ -362,13 +364,12 @@ void DatabaseOverlay::createTableRestoredFromBackup(
     std::shared_ptr<IRestoreCoordination> /*restore_coordination*/,
     UInt64 /*timeout_ms*/)
 {
-    if (mode == Mode::FacadeOverCatalog)
+    if (readonly)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Database {} is an Overlay facade (read-only). "
-            "Run CREATE TABLE in an underlying database (e.g. {}).",
-            backQuote(getDatabaseName()),
-            databases.empty() ? String("<none>") : databases.front()->getDatabaseName());
+            "Run CREATE TABLE in an underlying database",
+            backQuote(getDatabaseName()));
     /// Creates a tables by executing a "CREATE TABLE" query.
     InterpreterCreateQuery interpreter{create_table_query, local_context};
     interpreter.setInternal(true);
@@ -378,7 +379,7 @@ void DatabaseOverlay::createTableRestoredFromBackup(
 
 bool DatabaseOverlay::empty() const
 {
-    if (mode == Mode::FacadeOverCatalog)
+    if (readonly)
         return true;
     for (const auto & db : databases)
         if (!db->empty())
@@ -394,7 +395,10 @@ void DatabaseOverlay::shutdown()
 
 DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
-    if (mode == Mode::FacadeOverCatalog && skip_not_loaded)
+    // `skip_not_loaded = true` is used only in asynchronous metrics.
+    // We don't need to report metrics twice—once for the underlying
+    // database and again for its overlay.
+    if (readonly && skip_not_loaded)
         return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
     Tables tables;
     for (const auto & db : databases)
@@ -431,7 +435,7 @@ bool DatabaseOverlay::canContainRocksDBTables() const
 
 void DatabaseOverlay::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel loading_mode)
 {
-    if (mode == Mode::FacadeOverCatalog)
+    if (readonly)
         return;
     for (auto & db : databases)
         if (!db->isReadOnly())
@@ -440,7 +444,7 @@ void DatabaseOverlay::loadStoredObjects(ContextMutablePtr local_context, Loading
 
 bool DatabaseOverlay::supportsLoadingInTopologicalOrder() const
 {
-    if (this->mode == Mode::FacadeOverCatalog)
+    if (this->readonly)
         return false;
     for (const auto & db : databases)
         if (db->supportsLoadingInTopologicalOrder())
@@ -450,7 +454,7 @@ bool DatabaseOverlay::supportsLoadingInTopologicalOrder() const
 
 void DatabaseOverlay::beforeLoadingMetadata(ContextMutablePtr local_context, LoadingStrictnessLevel loading_mode)
 {
-    if (this->mode == Mode::FacadeOverCatalog)
+    if (this->readonly)
         return;
     for (auto & db : databases)
         if (!db->isReadOnly())
@@ -459,7 +463,7 @@ void DatabaseOverlay::beforeLoadingMetadata(ContextMutablePtr local_context, Loa
 
 void DatabaseOverlay::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
 {
-    if (this->mode == Mode::FacadeOverCatalog)
+    if (this->readonly)
         return;
     for (auto & db : databases)
         if (!db->isReadOnly())
@@ -658,7 +662,7 @@ void DatabaseOverlay::stopLoading()
 
 void DatabaseOverlay::checkMetadataFilenameAvailability(const String & table_name) const
 {
-    if (mode == Mode::FacadeOverCatalog)
+    if (readonly)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Database {} is an Overlay facade (read-only). Path resolution is not supported here.",
@@ -705,7 +709,7 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} database cannot reference itself: {}", engine_name, source_name);
         }
 
-        auto overlay = std::make_shared<DatabaseOverlay>(args.database_name, args.context, DatabaseOverlay::Mode::FacadeOverCatalog);
+        auto overlay = std::make_shared<DatabaseOverlay>(args.database_name, args.context, true /* readonly */);
 
         for (const auto & source_name : sources)
         {

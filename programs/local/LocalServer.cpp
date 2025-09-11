@@ -292,7 +292,7 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
 
 static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
-    auto overlay = std::make_shared<DatabaseOverlay>(name_, context, DatabaseOverlay::Mode::OwnedMembers);
+    auto overlay = std::make_shared<DatabaseOverlay>(name_, context, false);
 
     UUID default_database_uuid;
 
