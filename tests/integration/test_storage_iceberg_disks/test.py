@@ -191,7 +191,7 @@ def test_cluster_table_function(started_cluster, storage_type):
     spark = started_cluster.spark_session
 
     TABLE_NAME = (
-        "test_iceberg_cluster"
+        f"test_iceberg_cluster_{get_uuid_str()}"
     )
 
     def add_df(mode):
