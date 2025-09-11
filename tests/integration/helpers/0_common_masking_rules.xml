@@ -1,4 +1,5 @@
 <!-- Config for test server -->
+<!-- Same file as tests/config/config.d/query_masking_rules.xml -->
 <clickhouse>
     <query_masking_rules>
         <rule>

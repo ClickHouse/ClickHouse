@@ -143,6 +143,7 @@ def started_cluster():
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
+                "configs/config.d/remove_masking_rules.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
             with_installed_binary=True,
