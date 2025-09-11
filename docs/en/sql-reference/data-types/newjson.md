@@ -26,12 +26,6 @@ import Link from '@docusaurus/Link'
 
 The `JSON` type stores JavaScript Object Notation (JSON) documents in a single column.
 
-If you want to use the `JSON` type, and for the examples on this page, please use:
-
-```sql
-SET enable_json_type = 1
-```
-
 :::note
 In ClickHouse Open-Source JSON data type is marked as production ready in version 25.3. It's not recommended to use this type in production in previous versions.
 :::
@@ -124,7 +118,7 @@ SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json
 #### CAST from `Map` to `JSON` {#cast-from-map-to-json}
 
 ```sql title="Query"
-SET enable_variant_type=1, use_variant_as_common_type=1;
+SET use_variant_as_common_type=1;
 SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
 ```
 

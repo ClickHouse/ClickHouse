@@ -454,6 +454,17 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
         },
         {
             { "dashboard", "Memory (host)" },
+            { "title", "Memory for merges/mutations" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(CurrentMetric_MergesMutationsMemoryTracking)
+FROM merge('system', '^metric_log')
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Memory (host)" },
             { "title", "In-Memory Caches" },
             { "query", trim(R"EOQ(
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, arraySum([COLUMNS('CurrentMetric_.*CacheBytes') EXCEPT 'CurrentMetric_FilesystemCache.*' APPLY avg]) AS metric
@@ -1516,6 +1527,18 @@ ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
             { "title", "Tracked memory by ClickHouse" },
             { "query", trim(R"EOQ(
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(CurrentMetric_MemoryTracking)
+FROM clusterAllReplicas(default, merge('system', '^metric_log'))
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY ALL
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS skip_unavailable_shards = 1
+)EOQ") }
+        },
+        {
+            { "dashboard", "Cloud Memory (host)" },
+            { "title", "Memory for merges/mutations" },
+            { "query", trim(R"EOQ(
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, hostname, avg(CurrentMetric_MergesMutationsMemoryTracking)
 FROM clusterAllReplicas(default, merge('system', '^metric_log'))
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
 GROUP BY ALL

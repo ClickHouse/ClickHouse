@@ -63,8 +63,8 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 /// (inside IInputFormat::read()), with no thread pool". But such mode seems
                 /// useful, at least for testing performance. So we use max_parsing_threads = 1
                 /// as a signal to disable thread pool altogether, sacrificing the ability to
-                /// use thread pool with 1 thread. We could subtract 1 instead, but then the
-                /// by default the thread pool will use `num_cores - 1` threads, also bad.
+                /// use thread pool with 1 thread. We could subtract 1 instead, but then
+                /// by default the thread pool would use `num_cores - 1` threads, also bad.
                 if (parser_shared_resources->max_parsing_threads <= 1 || format_settings.parquet.preserve_order)
                     parser_shared_resources->parsing_runner.initManual();
                 else
@@ -87,6 +87,23 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
 
 Chunk ParquetV3BlockInputFormat::read()
 {
+    if (need_only_count)
+    {
+        if (reported_count)
+            return {};
+
+        /// Don't init Reader and ReadManager if we only need file metadata.
+        Parquet::Prefetcher temp_prefetcher;
+        temp_prefetcher.init(in, read_options, parser_shared_resources);
+        auto file_metadata = Parquet::Reader::readFileMetaData(temp_prefetcher);
+
+        auto chunk = getChunkForCount(size_t(file_metadata.num_rows));
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumOffset>(0));
+
+        reported_count = true;
+        return chunk;
+    }
+
     initializeIfNeeded();
     Chunk chunk;
     std::tie(chunk, previous_block_missing_values) = reader->read();

@@ -41,7 +41,23 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.9",
         {
+            {"input_format_protobuf_oneof_presence", false, false, "New setting"},
+            {"iceberg_delete_data_on_drop", false, false, "New setting"},
+            {"use_skip_indexes_on_data_read", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"iceberg_metadata_log_level", "none", "none", "New setting."},
+            {"max_iceberg_data_file_rows", 100000, 100000, "New setting."},
+            {"max_iceberg_data_file_bytes", 100000000, 100000000, "New setting."},
+            {"query_plan_optimize_join_order_limit", 1, 1, "New setting"},
+            {"query_plan_display_internal_aliases", false, false, "New setting"},
+            {"query_plan_max_step_description_length", 1000000000, 500, "New setting"},
+            {"allow_experimental_delta_lake_writes", false, false, "New setting."},
+            {"jemalloc_enable_profiler", false, false, "New setting"},
+            {"jemalloc_collect_profile_samples_in_trace_log", false, false, "New setting"},
+            {"delta_lake_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New setting."},
+            {"delta_lake_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
+            {"promql_evaluation_time", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."},
+            {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {
@@ -107,6 +123,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"promql_table", "", "", "New experimental setting"},
             {"evaluation_time", 0, 0, "New experimental setting"},
             {"output_format_parquet_date_as_uint16", false, false, "Added a compatibility setting for a minor compatibility-breaking change introduced back in 24.12."},
+            {"allow_experimental_delta_lake_writes", false, false, "New setting."},
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
             {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
@@ -855,6 +872,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.9",
         {
             {"escape_variant_subcolumn_filenames", false, true, "Escape special symbols for filenames created for Variant type subcolumns in Wide parts"},
+            {"vertical_merge_optimize_lightweight_delete", false, true, "New setting"},
+            {"replicated_deduplication_window", 1000, 10000, "increase default value"},
+            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, false, "New setting"},
+            {"shared_merge_tree_empty_partition_lifetime", 86400, 86400, "New setting"},
+            {"shared_merge_tree_outdated_parts_group_size", 2, 2, "New setting"},
+            {"shared_merge_tree_use_outdated_parts_compact_format", false, true, "Enable outdated parts v3 by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
@@ -866,6 +889,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"dynamic_serialization_version", "v2", "v2", "Add a setting to control Dynamic serialization versions"},
             {"search_orphaned_parts_disks", "any", "any", "New setting"},
             {"shared_merge_tree_virtual_parts_discovery_batch", 1, 1, "New setting"},
+            {"max_digestion_size_per_segment", 256_MiB, 256_MiB, "Obsolete setting"},
             {"shared_merge_tree_update_replica_flags_delay_ms", 30000, 30000, "New setting"},
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"},
             {"allow_part_offset_column_in_projections", false, true, "Now projections can use _part_offset column."},

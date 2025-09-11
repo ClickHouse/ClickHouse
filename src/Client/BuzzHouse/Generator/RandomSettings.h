@@ -66,7 +66,7 @@ extern std::unordered_map<String, CHSetting> restoreSettings;
 
 extern std::unique_ptr<SQLType> size_tp, null_tp;
 
-extern std::unordered_map<String, DB::Strings> systemTables;
+extern std::vector<SystemTable> systemTables;
 
 extern std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSetting>> allDictionaryLayoutSettings;
 

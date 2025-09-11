@@ -1,5 +1,6 @@
 #include <memory>
 #include <mutex>
+#include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
 
 #include <Interpreters/Context.h>
@@ -60,6 +61,8 @@ namespace Setting
     extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
     extern const SettingsUInt64 query_profiler_real_time_period_ns;
     extern const SettingsBool enable_adaptive_memory_spill_scheduler;
+    extern const SettingsBool jemalloc_enable_profiler;
+    extern const SettingsBool jemalloc_collect_profile_samples_in_trace_log;
 }
 
 namespace ErrorCodes
@@ -145,34 +148,40 @@ ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::funct
     return group;
 }
 
-ThreadGroupPtr ThreadGroup::createForBackgroundProcess(ContextPtr storage_context)
+ThreadGroupPtr ThreadGroup::create(ContextPtr context)
 {
-    auto group = std::make_shared<ThreadGroup>(storage_context);
+    auto group = std::make_shared<ThreadGroup>(context);
 
-    group->memory_tracker.setDescription("Background process (mutate/merge)");
     /// However settings from storage context have to be applied
-    const Settings & settings = storage_context->getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
     group->memory_tracker.setProfilerStep(settings[Setting::memory_profiler_step]);
     group->memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
     group->memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
     group->memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
     group->memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
-    group->memory_tracker.setParent(&background_memory_tracker);
     if (settings[Setting::memory_tracker_fault_probability] > 0.0)
         group->memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
 
     return group;
 }
 
-ThreadGroupPtr ThreadGroup::createForMaterializedView()
+ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr storage_context)
 {
-    auto current_group = CurrentThread::getGroup();
-    if (!current_group)
-        return nullptr;
-
-    auto group = std::make_shared<ThreadGroup>(current_group);
-    group->memory_tracker.setDescription("MaterializeView");
+    auto group = create(storage_context);
+    group->memory_tracker.setDescription("Background process (mutate/merge)");
+    group->memory_tracker.setParent(&background_memory_tracker);
     return group;
+}
+
+ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
+{
+    ThreadGroupPtr res_group;
+    if (auto current_group = CurrentThread::getGroup())
+        res_group = std::make_shared<ThreadGroup>(current_group);
+    else
+        res_group = create(context);
+    res_group->memory_tracker.setDescription("MaterializeView");
+    return res_group;
 }
 
 void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_hash)
@@ -336,6 +345,17 @@ void ThreadStatus::applyQuerySettings()
         os_thread_priority = new_os_thread_priority;
     }
 #endif
+
+#if USE_JEMALLOC
+    if (settings[Setting::jemalloc_enable_profiler])
+    {
+        jemalloc_profiler_enabled = true;
+        Jemalloc::getThreadProfileActiveMib().setValue(true);
+    }
+
+    if (settings[Setting::jemalloc_collect_profile_samples_in_trace_log])
+        Jemalloc::setCollectLocalProfileSamplesInTraceLog(true);
+#endif
 }
 
 void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
@@ -383,6 +403,12 @@ void ThreadStatus::detachFromGroup()
     thread_group->unlinkThread(thread_attach_time.elapsedMilliseconds());
 
     thread_group.reset();
+
+#if USE_JEMALLOC
+    if (std::exchange(jemalloc_profiler_enabled, false))
+        Jemalloc::getThreadProfileActiveMib().setValue(Jemalloc::getThreadProfileInitMib().getValue());
+    Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
+#endif
 
     query_id.clear();
     query_context.reset();
