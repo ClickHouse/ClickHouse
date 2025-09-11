@@ -6,9 +6,12 @@
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Core/Settings.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
+#include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Columns/ColumnString.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -44,6 +47,12 @@ namespace ProfileEvents
     extern const Event DistributedIndexAnalysisScheduledReplicas;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric DistributedIndexAnalysisThreads;
+    extern const Metric DistributedIndexAnalysisThreadsActive;
+    extern const Metric DistributedIndexAnalysisThreadsScheduled;
+}
 
 namespace
 {
@@ -230,10 +239,15 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     auto filter_ast = makeASTForLogicalAnd(std::move(filter_asts));
     auto filter_query = filter_ast->formatWithSecretsOneLine();
 
+    ThreadPool pool(CurrentMetrics::DistributedIndexAnalysisThreads,
+                    CurrentMetrics::DistributedIndexAnalysisThreadsActive,
+                    CurrentMetrics::DistributedIndexAnalysisThreadsScheduled,
+                    /// TODO: limit amount of threads (maybe shared thread pool)
+                    replicas_parts.size());
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, "DistIdxAnalysis");
     for (size_t i = 0; i < replicas_parts.size(); ++i)
     {
         const auto & replica_parts = replicas_parts[i];
-        const auto & connection_pool = connection_pools.at(i);
 
         if (replica_parts.empty())
             continue;
@@ -241,26 +255,35 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisScheduledReplicas);
         if (i == local_replica_index)
         {
-            auto parts_ranges = local_index_analysis_callback(replica_parts);
-            LOG_TRACE(logger, "Received {} parts from local replica ({}): {}", parts_ranges.size(), i, parts_ranges);
-            res[i] = std::move(parts_ranges);
+            runner([&, i]()
+            {
+                auto parts_ranges = local_index_analysis_callback(replica_parts);
+                LOG_TRACE(logger, "Received {} parts from local replica ({}): {}", parts_ranges.size(), i, parts_ranges);
+                res[i] = std::move(parts_ranges);
+            }, Priority{});
         }
         else
         {
-            try
+            runner([&, i]()
             {
-                auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, context, replica_parts, connection_pool);
-                LOG_TRACE(logger, "Received {} parts from {} replica: {}", parts_ranges.size(), i, parts_ranges);
-                res[i] = std::move(parts_ranges);
-            }
-            catch (...)
-            {
-                ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisFailedReplicas);
-                /// Ignore any exceptions, everything will be analyzed on a local replica
-                tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica. They will be analyzed on initiator", i), LogsLevel::warning);
-            }
+                const auto & connection_pool = connection_pools.at(i);
+
+                try
+                {
+                    auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, context, replica_parts, connection_pool);
+                    LOG_TRACE(logger, "Received {} parts from {} replica: {}", parts_ranges.size(), i, parts_ranges);
+                    res[i] = std::move(parts_ranges);
+                }
+                catch (...)
+                {
+                    ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisFailedReplicas);
+                    /// Ignore any exceptions, everything will be analyzed on a local replica
+                    tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica. They will be analyzed on initiator", i), LogsLevel::warning);
+                }
+            }, Priority{});
         }
     }
+    runner.waitForAllToFinishAndRethrowFirstError();
 
     /// Resolve leftovers
     std::unordered_set<std::string_view> resolved_parts;
