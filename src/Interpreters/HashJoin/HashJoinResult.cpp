@@ -2,6 +2,17 @@
 #include <Interpreters/castColumn.h>
 #include <Common/memcpySmall.h>
 
+namespace ProfileEvents
+{
+extern const Event JoinPrepare;
+extern const Event JoinMainLoop;
+extern const Event JoinCutBlock;
+extern const Event JoinBuildOutput;
+extern const Event JoinApplyingFilter;
+extern const Event JoinFilterBySelector;
+extern const Event JoinReplicateBlock;
+}
+
 namespace DB
 {
 
@@ -128,6 +139,7 @@ static void appendRightColumns(
 
     if (!offsets.empty())
     {
+        Stopwatch watch7;
         chassert(!block.empty());
         chassert(offsets.size() == block.rows());
 
@@ -138,6 +150,7 @@ static void appendRightColumns(
             columns_to_replicate[pos] = columns_to_replicate[pos]->replicate(offsets);
 
         block.setColumns(columns_to_replicate);
+        ProfileEvents::increment(ProfileEvents::JoinReplicateBlock, watch7.elapsedMicroseconds());
     }
 
     block.erase(block_columns_to_erase);
@@ -156,6 +169,7 @@ static Block generateBlock(
     std::span<UInt64> matched_rows)
 {
     const auto * off_data = lazy_output.row_refs.data();
+    Stopwatch watch4;
     if (properties.is_join_get)
         lazy_output.buildJoinGetOutput(
             rows_to_reserve, columns,
@@ -164,13 +178,20 @@ static Block generateBlock(
         lazy_output.buildOutput(
             rows_to_reserve, columns,
             off_data + row_ref_begin, off_data + row_ref_end);
+    ProfileEvents::increment(ProfileEvents::JoinBuildOutput, watch4.elapsedMicroseconds());
 
     /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()
     /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
     if (properties.need_filter)
+    {
+        Stopwatch watch5;
         scattered_block.filter(matched_rows);
+        ProfileEvents::increment(ProfileEvents::JoinApplyingFilter, watch5.elapsedMicroseconds());
+    }
 
+    Stopwatch watch6;
     scattered_block.filterBySelector();
+    ProfileEvents::increment(ProfileEvents::JoinFilterBySelector, watch6.elapsedMicroseconds());
 
     auto block = std::move(scattered_block).getSourceBlock();
     appendRightColumns(
@@ -275,7 +296,9 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     size_t num_rhs_rows = offsets[next_row + num_lhs_rows - 1] - prev_offset;
 
     auto current_block = std::move(*scattered_block);
+    Stopwatch watch3;
     scattered_block = current_block.cut(num_lhs_rows);
+    ProfileEvents::increment(ProfileEvents::JoinCutBlock, watch3.elapsedMicroseconds());
 
     bool add_missing = isLeftOrFull(properties.table_join.kind()) && properties.table_join.strictness() != JoinStrictness::Semi;
     size_t num_skipped_not_matched_rows_in_row_ref_list = 0;
