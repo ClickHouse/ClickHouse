@@ -226,35 +226,25 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     {
         for (size_t i = 0; i < slots; ++i)
         {
-            pool->scheduleOrThrow(
-                [&, i, thread_group = CurrentThread::getGroup(), shared_used_flags_local]()
-                {
-                    ThreadGroupSwitcher switcher(thread_group, "ConcurrentJoin");
-
-                    /// reserve is not needed anyway - either we will use fixed-size hash map or shared two-level map (then reserve will be done in a special way below)
-                    const size_t reserve_size = 0;
-
-                    auto inner_hash_join = std::make_shared<InternalHashJoin>();
-                    inner_hash_join->data = std::make_unique<HashJoin>(
-                        table_join_,
-                        right_sample_block,
-                        any_take_last_row_,
-                        reserve_size,
-                        fmt::format("concurrent{}", i),
-                        /*use_two_level_maps*/ true,
-                        shared_used_flags_local);
-                    inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
-                    inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
-                    hash_joins[i] = std::move(inner_hash_join);
-                });
+            /// make slots sequentially to avoid allocator races during map initialization
+            const size_t reserve_size = 0; // we'll rely on per-slot preallocation later if needed
+            auto inner_hash_join = std::make_shared<InternalHashJoin>();
+            inner_hash_join->data = std::make_unique<HashJoin>(
+                table_join_,
+                right_sample_block,
+                any_take_last_row_,
+                reserve_size,
+                fmt::format("concurrent{}", i),
+                /*use_two_level_maps*/ true,
+                shared_used_flags_local);
+            inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
+            inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
+            hash_joins[i] = std::move(inner_hash_join);
         }
-        pool->wait();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        pool->wait();
-        throw;
     }
 }
 
@@ -760,16 +750,15 @@ UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode
 
 void ConcurrentHashJoin::finalizeSlots()
 {
-    for (auto & hj : hash_joins)
+    if (hash_joins.empty())
+        return;
+
+    /// make shared structures only once
     {
-        pool->scheduleOrThrow([hj]()
-        {
-            ThreadGroupSwitcher switcher(CurrentThread::getGroup(), "ConcurrentJoin");
-            std::lock_guard lock(hj->mutex);
-            hj->data->onBuildPhaseFinish();
-        });
+        auto & hj = hash_joins[0];
+        std::lock_guard lock(hj->mutex);
+        hj->data->onBuildPhaseFinish();
     }
-    pool->wait();
 }
 
 void ConcurrentHashJoin::onBuildPhaseFinish()
