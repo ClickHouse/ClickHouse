@@ -544,11 +544,15 @@ Poco::JSON::Object::Ptr getPartitionField(
     }
     else if (partition_function->name == "icebergTruncate")
     {
+        if (!param.has_value())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE function for iceberg partitioning requires one integer parameter");
         result->set(Iceberg::f_transform, fmt::format("truncate[{}]", *param));
         return result;
     }
     else if (partition_function->name == "icebergBucket")
     {
+        if (!param.has_value())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "BUCKET function for iceberg partitioning requires one integer parameter");
         result->set(Iceberg::f_transform, fmt::format("bucket[{}]", *param));
         return result;
     }
