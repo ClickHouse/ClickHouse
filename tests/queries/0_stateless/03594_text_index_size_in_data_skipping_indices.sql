@@ -1,5 +1,6 @@
 SET allow_experimental_full_text_index = 1;
 
+DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
 (
     id UInt64,
@@ -11,7 +12,17 @@ ENGINE = MergeTree
 ORDER BY tuple();
 
 INSERT INTO tab (str) VALUES ('I am inverted');
-SELECT * FROM system.data_skipping_indices WHERE database = currentDatabase() FORMAT TabSeparatedWithNames;
+SELECT * FROM system.data_skipping_indices WHERE database = currentDatabase() AND type = 'text' FORMAT Vertical;
+
+SELECT
+    partition,
+    name,
+    bytes_on_disk,
+    secondary_indices_compressed_bytes,
+    secondary_indices_uncompressed_bytes,
+    secondary_indices_marks_bytes
+FROM system.parts
+FORMAT Vertical;
 
 DROP TABLE tab;
 

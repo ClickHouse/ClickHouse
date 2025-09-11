@@ -1,3 +1,20 @@
-database	table	name	type	type_full	expr	granularity	data_compressed_bytes	data_uncompressed_bytes	marks_bytes
-default	tab	text_idx	text	text(tokenizer = \'ngram\', ngram_size = 3)	str	1	132	99	150
-default	tab	set_idx	set	set(10)	str	1	45	22	50
+Row 1:
+──────
+database:                default
+table:                   tab
+name:                    text_idx
+type:                    text
+type_full:               text(tokenizer = 'ngram', ngram_size = 3)
+expr:                    str
+granularity:             1
+data_compressed_bytes:   132
+data_uncompressed_bytes: 99
+marks_bytes:             150
+Row 1:
+──────
+partition:                            tuple()
+name:                                 all_1_1_0
+bytes_on_disk:                        510
+secondary_indices_compressed_bytes:   177
+secondary_indices_uncompressed_bytes: 121
+secondary_indices_marks_bytes:        200
