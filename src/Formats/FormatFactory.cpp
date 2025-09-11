@@ -500,6 +500,9 @@ InputFormatPtr FormatFactory::getInput(
     if (auto * values = typeid_cast<ValuesBlockInputFormat *>(format.get()))
         values->setContext(context);
 
+    if (need_only_count)
+        format->needOnlyCount();
+
     return format;
 }
 
