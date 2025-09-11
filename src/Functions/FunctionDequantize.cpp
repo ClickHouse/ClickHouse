@@ -1,5 +1,5 @@
-#include "FunctionDequantize.h"
-#include "Common/FunctionDocumentation.h"
+#include <Functions/FunctionDequantize.h>
+#include <Common/FunctionDocumentation.h>
 
 namespace DB
 {

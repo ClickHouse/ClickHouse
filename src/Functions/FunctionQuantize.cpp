@@ -1,4 +1,4 @@
-#include "FunctionQuantize.h"
+#include <Functions/FunctionQuantize.h>
 
 namespace DB
 {
@@ -371,7 +371,7 @@ struct QuantizeSFP8BitTraits
 
 struct QuantizeMini8BitTraits
 {
-    static constexpr const char* name = "quantizeMini8Bit";
+    static constexpr const char * name = "quantizeMini8Bit";
     static constexpr size_t multiplier = 1;
     static constexpr size_t divider = 1;
 };

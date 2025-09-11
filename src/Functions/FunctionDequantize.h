@@ -1,8 +1,5 @@
 #pragma once
 
-#include <array>
-#include <bit>
-#include <cstdint>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
@@ -11,11 +8,17 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <Common/TargetSpecific.h>
-#include "Functions/FunctionHelpers.h"
-#include "base/types.h"
+
+#include <base/types.h>
+
+#include <array>
+#include <bit>
+#include <cstdint>
+
 
 namespace DB
 {

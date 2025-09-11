@@ -1,6 +1,6 @@
-#include "FunctionQuantizedDistance.h"
-#include "Functions/FunctionDequantize.h"
-#include "base/types.h"
+#include <Functions/FunctionQuantizedDistance.h>
+#include <Functions/FunctionDequantize.h>
+#include <base/types.h>
 
 namespace DB
 {
