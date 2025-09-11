@@ -1,0 +1,24 @@
+1
+SELECT __table1.`t.a` AS `getSubcolumn(t, \'a\')`
+FROM default.t_get_subcolumn AS __table1
+1
+SELECT __table1.`t.a` AS `tupleElement(t, \'a\')`
+FROM default.t_get_subcolumn AS __table1
+1
+SELECT __table1.`t.a` AS `tupleElement(t, 1)`
+FROM default.t_get_subcolumn AS __table1
+aaa
+SELECT __table1.`t.b.d` AS `getSubcolumn(t, \'b.d\')`
+FROM default.t_get_subcolumn AS __table1
+1
+SELECT __table1.`a.size0` AS `getSubcolumn(a, \'size0\')`
+FROM default.t_get_subcolumn AS __table1
+b
+SELECT __table1.`j.a` AS `getSubcolumn(j, \'a\')`
+FROM default.t_get_subcolumn AS __table1
+10
+SELECT __table1.`j.c.d` AS `getSubcolumn(j, \'c.d\')`
+FROM default.t_get_subcolumn AS __table1
+[1,2,3]
+SELECT __table1.`j.c.e` AS `getSubcolumn(j, \'c.e\')`
+FROM default.t_get_subcolumn AS __table1
