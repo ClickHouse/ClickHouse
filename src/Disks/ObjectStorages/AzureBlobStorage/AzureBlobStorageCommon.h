@@ -96,7 +96,7 @@ struct Endpoint
     {
         String url = storage_account_url;
 
-        if (!account_name.empty())
+        if (!account_name.empty() && (!add_account_name_to_url.has_value() || (add_account_name_to_url.value())))
             url += "/" + account_name;
 
         if (!sas_auth.empty())
