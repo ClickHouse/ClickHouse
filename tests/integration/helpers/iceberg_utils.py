@@ -36,7 +36,7 @@ def get_spark():
         )
         .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.spark_catalog.type", "hadoop")
-        .config("spark.sql.catalog.spark_catalog.warehouse", "/iceberg_data")
+        .config("spark.sql.catalog.spark_catalog.warehouse", "/var/lib/clickhouse/user_files/iceberg_data")
         .config(
             "spark.sql.extensions",
             "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
@@ -250,7 +250,7 @@ def get_creation_expression(
         else:
             if table_function:
                 return f"""
-                    icebergAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = /var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format})
+                    icebergAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format})
                 """
             else:
                 return (
@@ -444,8 +444,8 @@ def execute_spark_query_general(
     default_upload_directory(
         started_cluster,
         storage_type,
-        f"/iceberg_data/default/{table_name}/",
-        f"/iceberg_data/default/{table_name}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/",
     )
     return
 
