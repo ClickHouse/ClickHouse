@@ -1010,7 +1010,7 @@ void Client::readArguments(
     std::vector<Arguments> & external_tables_arguments,
     std::vector<Arguments> & hosts_and_ports_arguments)
 {
-    // Default to oauth authentication for ClickHouse Cloud
+    // Default to oauth authentication for ClickHouse Cloud for a hostname argument.
     bool is_hostname_argument = false;
 #if USE_JWT_CPP && USE_SSL
     if (argc >= 2)
@@ -1018,11 +1018,19 @@ void Client::readArguments(
         std::string hostname(argv[1]);
         std::string port;
 
-        Poco::URI uri{hostname};
-        if (const auto & host = uri.getHost(); !host.empty())
+        try
         {
-            hostname = host;
-            port = std::to_string(uri.getPort());
+            Poco::URI uri{hostname};
+            if (const auto & host = uri.getHost(); !host.empty())
+            {
+                hostname = host;
+                port = std::to_string(uri.getPort());
+            }
+        }
+        catch ([[maybe_unused]] const Poco::URISyntaxException & e)
+        {
+            // intentionally ignored. argv[1] is not a uri, but could be a query.
+            (void)e;
         }
 
         if (isCloudEndpoint(hostname))
