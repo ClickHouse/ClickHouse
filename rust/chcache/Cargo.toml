@@ -14,6 +14,7 @@ serde_bytes = "0.11.15"
 serde_json = "1.0.140"
 tar = "0.4.44"
 tokio = { version = "1.42.0", features = ["rt-multi-thread"] }
+tokio-retry = "0.3"
 toml = "0.9"
 xdg = "3.0.0"
 

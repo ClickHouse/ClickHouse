@@ -1,6 +1,8 @@
 use log::{error, info, trace, warn};
 use std::error::Error;
 use std::path::PathBuf;
+use std::time::Duration;
+use tokio_retry::{strategy::{ExponentialBackoff, jitter}, Retry};
 
 mod compilers;
 mod config;
@@ -165,33 +167,38 @@ async fn compiler_cache_entrypoint(config: &Config) -> Result<(), Box<dyn Error>
     };
 
     if should_upload {
-        let mut tries = 3;
-        loop {
-            let upload_result = clickhouse_disk
+        let retry_strategy = ExponentialBackoff::from_millis(100)
+            .max_delay(Duration::from_secs(5))
+            .take(20)
+            .map(jitter);
+
+        let compiler_args = compiler.get_args();
+        let compile_duration = compiler.get_compile_duration();
+
+        let upload_result = Retry::spawn(retry_strategy, || async {
+            let result = clickhouse_disk
                 .write(
                     &compiler_version,
                     compiler_cmdline.clone(),
-                    compiler.get_args(),
-                    compiler.get_compile_duration(),
+                    compiler_args.clone(),
+                    compile_duration,
                     &total_hash,
                     &compiled_bytes,
                 )
                 .await;
 
-            if upload_result.is_ok() {
-                info!("Uploaded to ClickHouse");
-                break;
+            match &result {
+                Ok(_) => {},
+                Err(_) => warn!("Failed to upload to ClickHouse, retrying..."),
             }
-            warn!("Failed to upload to ClickHouse, retrying...");
 
-            tries -= 1;
-            if tries == 0 {
-                error!(
-                    "Failed to upload to ClickHouse: {}",
-                    upload_result.err().unwrap()
-                );
-                break;
-            }
+            result
+        })
+        .await;
+
+        match upload_result {
+            Ok(_) => info!("Uploaded to ClickHouse"),
+            Err(e) => error!("Failed to upload to ClickHouse: {}", e),
         }
     }
 
