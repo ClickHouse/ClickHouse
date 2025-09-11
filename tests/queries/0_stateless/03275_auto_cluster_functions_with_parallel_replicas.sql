@@ -24,6 +24,11 @@ CREATE TABLE dupe_test_with_auto_functions (n1 String, n2 String, n3 String) ENG
 INSERT INTO dupe_test_with_auto_functions SELECT * FROM s3('http://localhost:11111/test/a.tsv', 'TSV');
 SELECT count() FROM dupe_test_with_auto_functions;
 
+DROP TABLE IF EXISTS insert_with_url_function;
+CREATE TABLE insert_with_url_function (n1 String, n2 String, n3 String) ENGINE = MergeTree ORDER BY n1;
+INSERT INTO insert_with_url_function SELECT * FROM url('http://localhost:11111/test/a.tsv', 'TSV');
+SELECT count() FROM insert_with_url_function;
+
 
 SET parallel_replicas_for_cluster_engines=false;
 
