@@ -6,6 +6,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+from helpers.config_cluster import minio_secret_key
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -481,10 +482,19 @@ def test_table_functions():
         f"azureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
         f"azureBlobStorage(named_collection_2, connection_string = '{azure_conn_string}', container = 'cont', blob_path = 'test_simple_7.csv', format = 'CSV')",
         f"azureBlobStorage(named_collection_2, storage_account_url = '{azure_storage_account_url}', container = 'cont', blob_path = 'test_simple_8.csv', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
-        f"iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
+        (
+            f"iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
+            "DNS_ERROR"
+        ),
         f"gcs('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
-        f"icebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
-        f"icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
+        (
+            f"icebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
+            "DNS_ERROR"
+        ),
+        (
+            f"icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
+            "FILE_DOESNT_EXIST"
+        ),
         f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
         f"hudi('http://minio1:9001/root/data/test7.csv', 'minio', '{password}')",
     ]
@@ -502,7 +512,10 @@ def test_table_functions():
     test_cases = [make_test_case(i) for i in range(len(table_functions))]
 
     for table_name, query, error in test_cases:
-        node.query(query)
+        if error:
+            assert error in node.query_and_get_error(query)
+        else:
+            node.query(query)
 
     for toggle, secret in enumerate(["[HIDDEN]", password]):
         assert (
