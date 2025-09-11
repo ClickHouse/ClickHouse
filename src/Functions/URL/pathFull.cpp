@@ -14,7 +14,7 @@ REGISTER_FUNCTION(PathFull)
 {
     /// pathFull documentation
     FunctionDocumentation::Description description_pathFull = R"(
-The same as [`path`](#path), but includes the query string and fragment.
+The same as [`path`](#path), but includes the query string and fragment of the URL.
     )";
     FunctionDocumentation::Syntax syntax_pathFull = "pathFull(url)";
     FunctionDocumentation::Arguments arguments_pathFull = {

@@ -16,7 +16,7 @@ REGISTER_FUNCTION(DomainWithoutWWW)
 {
     /// domainWithoutWWW documentation
     FunctionDocumentation::Description description_domainWithoutWWW = R"(
-Returns the domain without leading `www.` if present.
+Returns the domain of a URL without leading `www.` if present.
     )";
     FunctionDocumentation::Syntax syntax_domainWithoutWWW = "domainWithoutWWW(url)";
     FunctionDocumentation::Arguments arguments_domainWithoutWWW = {
@@ -44,7 +44,7 @@ SELECT domainWithoutWWW('http://paul@www.example.com:80/');
 
     /// domainWithoutWWWRFC documentation
     FunctionDocumentation::Description description_domainWithoutWWWRFC = R"(
-Returns the domain without leading `www.` if present. Similar to [domainWithoutWWW](#domainwithoutwww) but conforms to RFC 3986.
+Returns the domain without leading `www.` if present. Similar to [`domainWithoutWWW`](#domainwithoutwww) but conforms to [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
     )";
     FunctionDocumentation::Syntax syntax_domainWithoutWWWRFC = "domainWithoutWWWRFC(url)";
     FunctionDocumentation::Arguments arguments_domainWithoutWWWRFC = {

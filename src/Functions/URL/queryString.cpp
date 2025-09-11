@@ -12,13 +12,13 @@ REGISTER_FUNCTION(QueryString)
 {
     /// queryString documentation
     FunctionDocumentation::Description description_queryString = R"(
-Returns the query string without the initial question mark, `#` and everything after `#`.
+Returns the query string of a URL without the initial question mark, `#` and everything after `#`.
     )";
     FunctionDocumentation::Syntax syntax_queryString = "queryString(url)";
     FunctionDocumentation::Arguments arguments_queryString = {
         {"url", "URL.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_queryString = {"Returns the query string without the initial question mark and fragment.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value_queryString = {"Returns the query string of the URL without the initial question mark and fragment.", {"String"}};
     FunctionDocumentation::Examples examples_queryString = {
     {
         "Usage example",

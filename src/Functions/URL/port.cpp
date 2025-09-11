@@ -137,14 +137,14 @@ REGISTER_FUNCTION(Port)
 {
     /// port documentation
     FunctionDocumentation::Description description_port = R"(
-Returns the port or `default_port` if the URL contains no port or cannot be parsed.
+Returns the port of a URL, or the `default_port` if the URL contains no port or cannot be parsed.
     )";
     FunctionDocumentation::Syntax syntax_port = "port(url[, default_port])";
     FunctionDocumentation::Arguments arguments_port = {
         {"url", "URL.", {"String"}},
         {"default_port", "Optional. The default port number to be returned. `0` by default.", {"UInt16"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_port = {"Returns the port or the default port if there is no port in the URL or in case of a validation error.", {"UInt16"}};
+    FunctionDocumentation::ReturnedValue returned_value_port = {"Returns the port of the URL, or the default port if there is no port in the URL or in case of a validation error.", {"UInt16"}};
     FunctionDocumentation::Examples examples_port = {
     {
         "Usage example",

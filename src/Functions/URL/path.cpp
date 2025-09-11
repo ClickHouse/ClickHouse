@@ -15,7 +15,7 @@ REGISTER_FUNCTION(Path)
 {
     /// path documentation
     FunctionDocumentation::Description description_path = R"(
-Returns the path without query string.
+Returns the path without query string from a URL.
     )";
     FunctionDocumentation::Syntax syntax_path = "path(url)";
     FunctionDocumentation::Arguments arguments_path = {

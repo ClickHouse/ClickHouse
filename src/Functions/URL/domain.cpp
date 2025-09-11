@@ -17,27 +17,13 @@ REGISTER_FUNCTION(Domain)
     FunctionDocumentation::Description description_domain = R"(
 Extracts the hostname from a URL.
 
-The URL can be specified with or without a protocol. Examples:
-
-```text
-svn+ssh://some.svn-hosting.com:80/repo/trunk
-some.svn-hosting.com:80/repo/trunk
-https://clickhouse.com/time/
-```
-
-For these examples, the `domain` function returns the following results:
-
-```text
-some.svn-hosting.com
-some.svn-hosting.com
-clickhouse.com
-```
+The URL can be specified with or without a protocol.
     )";
     FunctionDocumentation::Syntax syntax_domain = "domain(url)";
     FunctionDocumentation::Arguments arguments_domain = {
         {"url", "URL.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_domain = {"Host name if the input string can be parsed as a URL, otherwise an empty string.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value_domain = {"Returns the host name if the input string can be parsed as a URL, otherwise an empty string.", {"String"}};
     FunctionDocumentation::Examples examples_domain = {
     {
         "Usage example",
@@ -60,7 +46,7 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
     /// domainRFC documentation
     FunctionDocumentation::Description description_domainRFC = R"(
 Extracts the hostname from a URL.
-Similar to [`domain`](#domain), but RFC 3986 conformant.
+Similar to [`domain`](#domain), but [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) conformant.
     )";
     FunctionDocumentation::Syntax syntax_domainRFC = "domainRFC(url)";
     FunctionDocumentation::Arguments arguments_domainRFC = {
