@@ -108,7 +108,7 @@ constexpr size_t arg_needles = 1;
 
 template <typename StringColumnType>
 void executeSearchAny(
-    const ITokenExtractor* token_extractor,
+    const ITokenExtractor * token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
     const FunctionSearchNeedles & needles,
@@ -134,7 +134,7 @@ void executeSearchAny(
 
 template <typename StringColumnType>
 void executeSearchAll(
-    const ITokenExtractor* token_extractor,
+    const ITokenExtractor * token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
     const FunctionSearchNeedles & needles,
@@ -148,11 +148,11 @@ void executeSearchAll(
     std::vector<std::string_view> tokens;
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        const auto value = col_input.getDataAt(i);
+        const std::string_view value = col_input.getDataAt(i).toView();
         col_result[i] = false;
 
         mask = 0;
-        tokens = token_extractor->getTokensView(value.data, value.size);
+        tokens = token_extractor->getTokensView(value.data(), value.size());
         for (const auto & token : tokens)
         {
             if (auto it = needles.find(token); it != needles.end())
@@ -169,14 +169,12 @@ void executeSearchAll(
 
 template <class SearchTraits, typename StringColumnType>
 void execute(
-    const ITokenExtractor* token_extractor,
+    const ITokenExtractor * token_extractor,
     StringColumnType & col_input,
     size_t input_rows_count,
     const FunctionSearchNeedles & needles,
     PaddedPODArray<UInt8> & col_result)
 {
-    col_result.resize(input_rows_count);
-
     switch (SearchTraits::search_mode)
     {
         case GinSearchMode::Any:
@@ -207,17 +205,20 @@ ColumnPtr FunctionSearchImpl<SearchTraits>::executeImpl(
     auto col_needles = arguments[arg_needles].column;
     auto col_result = ColumnVector<UInt8>::create();
 
-    if (const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()); !col_needles_const)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Needles argument of function '{}' must be Array(String), got: {}",
-            name,
-            col_needles->getFamilyName());
-
-    if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-        execute<SearchTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
-    else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-        execute<SearchTraits>(token_extractor.get(), *column_fixed_string, input_rows_count, needles.value(), col_result->getData());
+    col_result->getData().resize(input_rows_count);
+    if (needles->empty())
+    {
+        /// No needles mean we don't filter and all rows pass
+        for (size_t i = 0; i < input_rows_count; ++i)
+            col_result->getData()[i] = true;
+    }
+    else
+    {
+        if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
+            execute<SearchTraits>(token_extractor.get(), *column_string, input_rows_count, needles.value(), col_result->getData());
+        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
+            execute<SearchTraits>(token_extractor.get(), *column_fixed_string, input_rows_count, needles.value(), col_result->getData());
+    }
 
     return col_result;
 }

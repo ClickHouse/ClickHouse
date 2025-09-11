@@ -104,7 +104,7 @@ R"(
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
 
-    factory.registerFunction<TodayOverloadResolver>(documentation);
+    factory.registerFunction<TodayOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_date", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("curdate", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }

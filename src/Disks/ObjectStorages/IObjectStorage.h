@@ -134,6 +134,7 @@ struct RelativePathWithMetadata
     virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
     virtual std::string getPathOrPathToArchiveIfArchive() const;
+    virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 };
 
 struct ObjectKeyWithMetadata
@@ -210,8 +211,7 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const = 0;
+        std::optional<size_t> read_hint = {}) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT

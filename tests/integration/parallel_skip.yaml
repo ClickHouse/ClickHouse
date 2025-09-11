@@ -21,6 +21,9 @@
 - test_https_replication/
 - test_insert_into_distributed/
 - test_insert_into_distributed_through_materialized_view/
+- test_storage_iceberg_no_spark/
+- test_storage_iceberg_with_spark/
+- test_storage_iceberg_schema_evolution/
 - test_keeper_map/
 - test_keeper_multinode_simple/
 - test_keeper_two_nodes_cluster/

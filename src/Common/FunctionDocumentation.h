@@ -86,6 +86,7 @@ struct FunctionDocumentation
         Comparison,
         Conditional,
         DateAndTime,
+        Decimal,
         Dictionary,
         Dynamic,
         Distance,

@@ -153,7 +153,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             file_size,
             expected_uncompressed_size);
 
-    auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size, std::nullopt);
+    auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size);
     std::unique_ptr<ReadBuffer> reader;
     if (!index_granularity_info.mark_type.compressed)
         reader = std::move(buffer);

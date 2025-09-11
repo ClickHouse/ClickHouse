@@ -61,8 +61,6 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
 
-    auto input_stream_with_body = request.getStream();
-
     auto endpoint = server.context()->getInterserverIOHandler().getEndpoint(endpoint_name);
     /// Locked for read while query processing
     std::shared_lock lock(endpoint->rwlock);
@@ -72,13 +70,15 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     if (compress)
     {
         CompressedWriteBuffer compressed_out(*output);
-        endpoint->processQuery(params, *input_stream_with_body, compressed_out, response);
+        endpoint->processQuery(params, request.getStream(), compressed_out, response);
         compressed_out.finalize();
     }
     else
     {
-        endpoint->processQuery(params, *input_stream_with_body, *output, response);
+        endpoint->processQuery(params, request.getStream(), *output, response);
     }
+    /// Make sure that request stream is not used after this function.
+    assert(request.getStream().use_count() == 2);
 }
 
 

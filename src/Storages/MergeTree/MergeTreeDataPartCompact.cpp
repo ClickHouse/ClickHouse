@@ -112,7 +112,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
 
     auto marks_file_path = index_granularity_info_.getMarksFilePath("data");
 
-    std::unique_ptr<ReadBufferFromFileBase> buffer = data_part_storage_.readFileIfExists(marks_file_path, {}, {}, {});
+    std::unique_ptr<ReadBufferFromFileBase> buffer = data_part_storage_.readFileIfExists(marks_file_path, {}, {});
     if (!buffer)
         throw Exception(
             ErrorCodes::NO_FILE_IN_DATA_PART,

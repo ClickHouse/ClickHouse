@@ -44,33 +44,32 @@ BASE_BRANCH = "master"
 
 azure_secret = Secret.Config(
     name="azure_connection_string",
-    type=Secret.Type.AWS_SSM_VAR,
+    type=Secret.Type.AWS_SSM_PARAMETER,
 )
 
 chcache_secret = Secret.Config(
     name="chcache_password",
-    type=Secret.Type.AWS_SSM_VAR,
+    type=Secret.Type.AWS_SSM_PARAMETER,
     region="us-east-1",
 )
 
 SECRETS = [
     Secret.Config(
         name="dockerhub_robot_password",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
     ),
     Secret.Config(
         name="clickhouse-test-stat-url",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
     ),
     Secret.Config(
         name="clickhouse-test-stat-login",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
     ),
     Secret.Config(
         name="clickhouse-test-stat-password",
-        type=Secret.Type.AWS_SSM_VAR,
+        type=Secret.Type.AWS_SSM_PARAMETER,
     ),
-    Secret.Config(name="ANTHROPIC_API_KEY", type=Secret.Type.AWS_SSM_VAR),
     azure_secret,
     chcache_secret,
     Secret.Config(
@@ -322,9 +321,8 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
 class JobNames:
     DOCKER_BUILDS_ARM = "Dockers build (arm)"
     DOCKER_BUILDS_AMD = "Dockers build (amd)"
-    CLAUDE = "CI agent"
     STYLE_CHECK = "Style check"
-    CHANGE_LOG = "Change log"
+    PR_BODY = "Autogen PR description and changelog entry"
     FAST_TEST = "Fast test"
     BUILD = "Build"
     UNITTEST = "Unit tests"
@@ -397,7 +395,7 @@ class ArtifactNames:
     DEB_COV = "DEB_COV"
     DEB_AMD_ASAN = "DEB_AMD_ASAN"
     DEB_AMD_TSAN = "DEB_AMD_TSAN"
-    DEB_AMD_MSAM = "DEB_AMD_MSAM"
+    DEB_AMD_MSAN = "DEB_AMD_MSAM"
     DEB_AMD_UBSAN = "DEB_AMD_UBSAN"
     DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
     DEB_ARM_ASAN = "DEB_ARM_ASAN"
@@ -453,7 +451,7 @@ class ArtifactConfigs:
             ArtifactNames.DEB_AMD_DEBUG,
             ArtifactNames.DEB_AMD_ASAN,
             ArtifactNames.DEB_AMD_TSAN,
-            ArtifactNames.DEB_AMD_MSAM,
+            ArtifactNames.DEB_AMD_MSAN,
             ArtifactNames.DEB_AMD_UBSAN,
             ArtifactNames.DEB_COV,
             ArtifactNames.DEB_ARM_RELEASE,

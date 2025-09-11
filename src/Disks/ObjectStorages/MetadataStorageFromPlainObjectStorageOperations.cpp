@@ -220,7 +220,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo(std::uniq
 {
     if (write_finalized)
     {
-        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory move from '{}' to '{}'", path_from, path_to);
+        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Reversing directory move from '{}' to '{}'", path_from, path_to);
         path_map.moveDirectory(path_to.parent_path(), path_from.parent_path());
 
         auto write_buf = createWriteBuf(path_to, path_from, /* verify_content */ false);
@@ -251,7 +251,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation"), "Removing directory '{}'", path);
 
     auto metadata_object_key = createMetadataObjectKey(info.path, metadata_key_prefix);
-    auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key.serialize(), /*local_path*/ path / PREFIX_PATH_FILE_NAME);
+    auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key.serialize(), /*local_path*/ path, path.string().length());
     object_storage->removeObjectIfExists(metadata_object);
 
     if (path_map.removePathIfExists(base_path))
@@ -268,7 +268,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
     if (!remove_attempted)
         return;
 
-    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory removal for '{}'", path);
+    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation"), "Reversing directory removal for '{}'", path);
     path_map.addOrReplacePath(path.parent_path(), info);
 
     auto metadata_object_key = createMetadataObjectKey(info.path, metadata_key_prefix);

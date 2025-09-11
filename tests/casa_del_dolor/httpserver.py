@@ -32,10 +32,9 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
         request_body = self.rfile.read(content_length)
 
         # Log the request
-        if self.config.get("verbose", True):
+        if self.config.get("verbose", False):
             self.logger.info(f"PUT request received at: {self.path}")
-            if self.config.get("headers", False):
-                self.logger.info(f"Headers: {self.headers}")
+            self.logger.info(f"Headers: {self.headers}")
             self.logger.info(f"Body: {request_body.decode('utf-8')}")
 
         # Process the request
@@ -58,23 +57,31 @@ class DolorRequestHandler(BaseHTTPRequestHandler):
             self.send_response(200 if response_ok else 400)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "OK" if response_ok else "Bad"}).encode("utf-8"))
+            self.wfile.write(
+                json.dumps({"status": "OK" if response_ok else "Bad"}).encode("utf-8")
+            )
         except json.JSONDecodeError as e:
             # Handle JSON parsing error
             self.logger.error(str(e))
-            self.send_response(400)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
             error_response = {"status": "error", "message": f"Invalid JSON: {str(e)}"}
-            self.wfile.write(json.dumps(error_response).encode("utf-8"))
+            try:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(error_response).encode("utf-8"))
+            except:
+                pass
         except Exception as e:
             # Handle other errors
             self.logger.error(str(e))
-            self.send_response(500)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
             error_response = {"status": "error", "message": f"Server error: {str(e)}"}
-            self.wfile.write(json.dumps(error_response).encode("utf-8"))
+            try:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(error_response).encode("utf-8"))
+            except:
+                pass
 
     def log_message(self, format, *args):
         """Custom log format"""

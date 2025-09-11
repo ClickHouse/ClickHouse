@@ -30,6 +30,11 @@
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Core/Settings.h>
+#include <fmt/ranges.h>
+#include <Core/Joins.h>
+#include <iostream>
+#include <ranges>
+
 
 namespace DB
 {
@@ -51,25 +56,33 @@ namespace ErrorCodes
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
     const QueryTreeNodePtr & resolved_identifier,
+    DataTypePtr result_type,
     const JoinKind & join_kind,
     std::optional<JoinTableSide> resolved_side,
     IdentifierResolveScope & scope)
 {
-    if (resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN &&
+    if (resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN)
+        return resolved_identifier;
+
+    if (scope.join_use_nulls &&
         JoinCommon::canBecomeNullable(resolved_identifier->getResultType()) &&
         (isFull(join_kind) ||
-        (isLeft(join_kind) && resolved_side && *resolved_side == JoinTableSide::Right) ||
-        (isRight(join_kind) && resolved_side && *resolved_side == JoinTableSide::Left)))
+        (isLeft(join_kind) && resolved_side == JoinTableSide::Right) ||
+        (isRight(join_kind) && resolved_side == JoinTableSide::Left)))
+    {
+        result_type = makeNullableOrLowCardinalityNullable(result_type);
+    }
+
+    if (result_type)
     {
         auto nullable_resolved_identifier = resolved_identifier->clone();
         auto & resolved_column = nullable_resolved_identifier->as<ColumnNode &>();
-        auto new_result_type = makeNullableOrLowCardinalityNullable(resolved_column.getColumnType());
-        resolved_column.setColumnType(new_result_type);
+        resolved_column.setColumnType(result_type);
         if (resolved_column.hasExpression())
         {
             auto & resolved_expression = resolved_column.getExpression();
-            if (!resolved_expression->getResultType()->equals(*new_result_type))
-                resolved_expression = buildCastFunction(resolved_expression, new_result_type, scope.context, true);
+            if (!resolved_expression->getResultType()->equals(*result_type))
+                resolved_expression = buildCastFunction(resolved_expression, result_type, scope.context, true);
         }
         if (!nullable_resolved_identifier->isEqual(*resolved_identifier))
             scope.join_columns_with_changed_types[nullable_resolved_identifier] = resolved_identifier;
@@ -476,13 +489,15 @@ bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const Identifie
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
-    const Identifier & identifier,
+    const IdentifierLookup & identifier_lookup,
     const QueryTreeNodePtr & table_expression_node,
     const AnalysisTableExpressionData & table_expression_data,
     IdentifierResolveScope & scope,
     size_t identifier_column_qualifier_parts,
     bool can_be_not_found)
 {
+    const auto & identifier = identifier_lookup.identifier;
+
     auto identifier_without_column_qualifier = identifier;
     identifier_without_column_qualifier.popFirst(identifier_column_qualifier_parts);
 
@@ -666,7 +681,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     }
 
     if (clone_is_needed)
+    {
         result_expression = result_expression->clone();
+        if (!result_expression->hasOriginalAST() && identifier_lookup.original_ast_node)
+            result_expression->setOriginalAST(identifier_lookup.original_ast_node);
+    }
 
     auto qualified_identifier = identifier;
 
@@ -746,7 +765,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
        * 3. Try to bind identifier first parts to database name and table name, if true remove first two parts and try to get full identifier from table or throw exception.
        */
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)))
-        return tryResolveIdentifierFromStorage(identifier, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
+        return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
 
     if (table_expression_data.canBindIdentifier(IdentifierView(identifier)))
     {
@@ -757,7 +776,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
           * Example: `SELECT t.t from (SELECT 1 as t) AS a FULL JOIN (SELECT 1 as t) as t ON a.t = t.t;`
           * Initially, we will try to resolve t.t from `a` because `t.` is bound to `1 as t`. However, as it is not a nested column, we will need to resolve it from the second table expression.
           */
-        auto lookup_result = tryResolveIdentifierFromStorage(identifier, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
+        auto lookup_result = tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
         if (lookup_result.resolved_identifier)
             return lookup_result;
     }
@@ -767,14 +786,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
     const auto & table_name = table_expression_data.table_name;
     if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
-        return tryResolveIdentifierFromStorage(identifier, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
+        return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
     if (identifier.getPartsSize() == 2)
         return {};
 
     const auto & database_name = table_expression_data.database_name;
     if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
-        return tryResolveIdentifierFromStorage(identifier, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
+        return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
     return {};
 }
@@ -908,6 +927,62 @@ bool resolvedIdenfiersFromJoinAreEquals(
     return left_resolved_to_compare->isEqual(*right_resolved_to_compare, IQueryTreeNode::CompareOptions{.compare_aliases = false});
 }
 
+/* Creates a projection expression for columns specified in JOIN USING clause.
+ *
+ * In SQL, when joining tables with USING(column_name), the result should contain only one
+ * column with that name, not separate columns from each table. This function creates the
+ * appropriate expression to merge/select the correct column value based on the join type.
+ *
+ * The USING column node contains a list of expressions - one from each joined table that
+ * matches the USING column name. This function determines which expression(s) to use:
+ *
+ * - For RIGHT JOIN: Uses only the column from the right table (last in the list)
+ * - For LEFT JOIN/INNER JOIN: Uses column(s) from the left table(s), ignoring the right
+ * - For FULL JOIN: Combines all columns using firstNonDefault() to get the first non-NULL value
+ *
+ * Example, for "SELECT id FROM t1 FULL JOIN t2 USING (id)"
+ * this creates "SELECT firstNonDefault(t1.id, t2.id) AS id FROM ..." to coalesce the values appropriately.
+ */
+QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope)
+{
+    const auto & using_expression = using_column_node.getExpression();
+    if (!using_expression)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected list of expressions for USING, but got {}", using_expression->dumpTree());
+
+    auto arguments = using_expression->as<const ListNode &>().getNodes();
+
+    if (arguments.size() < 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 2 arguments for USING projection, but got {}", arguments.size());
+
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        auto resolved_side = (i + 1 == arguments.size()) ? JoinTableSide::Right : JoinTableSide::Left;
+        auto converted_argument = IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(arguments[i], using_column_node.getResultType(), join_kind, resolved_side, scope);
+        if (converted_argument)
+            arguments[i] = converted_argument;
+    }
+
+    if (join_kind == JoinKind::Right)
+        return arguments.back();
+
+    if (join_kind != JoinKind::Full)
+        arguments.pop_back();
+
+    if (arguments.size() == 1)
+        return arguments.front();
+
+    String function_name("firstNonDefault");
+
+    auto function_node = std::make_shared<FunctionNode>(function_name);
+    function_node->getArguments().getNodes() = std::move(arguments);
+
+    auto merge_function = FunctionFactory::instance().get(function_name, scope.context);
+    function_node->resolveAsFunction(merge_function->build(function_node->getArgumentColumns()));
+    function_node->setAlias(using_column_node.getColumnName());
+
+    return function_node;
+}
+
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
     const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
@@ -918,7 +993,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     bool join_node_in_resolve_process = scope.table_expressions_in_resolve_process.contains(table_expression_node.get());
     std::unordered_map<std::string, ColumnNodePtr> join_using_column_name_to_column_node;
 
-    if (!join_node_in_resolve_process && from_join_node.isUsingJoinExpression())
+    if (scope.allow_resolve_from_using && !join_node_in_resolve_process && from_join_node.isUsingJoinExpression())
     {
         auto & join_using_list = from_join_node.getJoinExpression()->as<ListNode &>();
         for (auto & join_using_node : join_using_list.getNodes())
@@ -997,7 +1072,12 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         if (node->getNodeType() != QueryTreeNodeType::FUNCTION)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected node type {}, expected function node", node->getNodeType());
 
-        const auto & function_argument_nodes = node->as<FunctionNode &>().getArguments().getNodes();
+        const auto & function_node = node->as<FunctionNode &>();
+        auto is_column_node = [](const auto & argument) { return argument->getNodeType() == QueryTreeNodeType::COLUMN; };
+        if (function_node.getFunctionName() == "firstNonDefault" && std::ranges::all_of(function_node.getArguments().getNodes(), is_column_node))
+            return;
+
+        const auto & function_argument_nodes = function_node.getArguments().getNodes();
         for (const auto & argument_node : function_argument_nodes)
         {
             if (argument_node->getNodeType() == QueryTreeNodeType::COLUMN)
@@ -1078,26 +1158,16 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                 check_nested_column_not_in_using(left_resolved_identifier);
             if (right_resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN)
                 check_nested_column_not_in_using(right_resolved_identifier);
+
+            if (left_resolved_identifier->hasAlias())
+                using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_identifier->getAlias());
+
         }
 
         if (using_column_node_it != join_using_column_name_to_column_node.end())
         {
-            JoinTableSide using_column_inner_column_table_side = isRight(join_kind) ? JoinTableSide::Right : JoinTableSide::Left;
-            auto & using_column_node = using_column_node_it->second->as<ColumnNode &>();
-            auto & using_expression_list = using_column_node.getExpression()->as<ListNode &>();
-
-            size_t inner_column_node_index = using_column_inner_column_table_side == JoinTableSide::Left ? 0 : 1;
-            const auto & inner_column_node = using_expression_list.getNodes().at(inner_column_node_index);
-
-            auto result_column_node = inner_column_node->clone();
-            auto & result_column = result_column_node->as<ColumnNode &>();
-            result_column.setColumnType(using_column_node.getColumnType());
-
-            const auto & join_using_left_column = using_expression_list.getNodes().at(0);
-            if (!result_column_node->isEqual(*join_using_left_column))
-                scope.join_columns_with_changed_types[result_column_node] = join_using_left_column;
-
-            resolved_identifier = std::move(result_column_node);
+            const auto & using_column_node = using_column_node_it->second->as<const ColumnNode &>();
+            resolved_identifier = createProjectionForUsing(using_column_node, join_kind, scope);
         }
         else if (resolvedIdenfiersFromJoinAreEquals(left_resolved_identifier, right_resolved_identifier, scope))
         {
@@ -1168,7 +1238,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     if (scope.join_use_nulls)
     {
         auto projection_name_it = node_to_projection_name.find(resolved_identifier);
-        auto nullable_resolved_identifier = convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side, scope);
+        auto nullable_resolved_identifier = convertJoinedColumnTypeToNullIfNeeded(
+            resolved_identifier, resolved_identifier->getResultType(), join_kind, resolved_side, scope);
         if (nullable_resolved_identifier)
         {
             // std::cerr << ".. convert to null " << nullable_resolved_identifier->dumpTree() << std::endl;

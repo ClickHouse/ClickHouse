@@ -411,13 +411,14 @@ public:
     UInt64 partial_sorting_limit = 0;
 };
 
-void addExpressionStep(
+template <size_t size>
+ALWAYS_INLINE void addExpressionStep(
     const PlannerContextPtr & planner_context,
     QueryPlan & query_plan,
     ActionsAndProjectInputsFlagPtr & expression_actions,
     const CorrelatedSubtrees & correlated_subtrees,
     const SelectQueryOptions & select_query_options,
-    const std::string & step_description,
+    const char (&step_description)[size],
     UsefulSets & useful_sets)
 {
     NameSet input_columns_set;
@@ -447,12 +448,13 @@ void addExpressionStep(
     query_plan.addStep(std::move(expression_step));
 }
 
-void addFilterStep(
+template <size_t size>
+ALWAYS_INLINE void addFilterStep(
     const PlannerContextPtr & planner_context,
     QueryPlan & query_plan,
     FilterAnalysisResult & filter_analysis_result,
     const SelectQueryOptions & select_query_options,
-    const std::string & step_description,
+    const char (&step_description)[size],
     UsefulSets & useful_sets)
 {
     for (const auto & correlated_subquery : filter_analysis_result.correlated_subtrees.subqueries)
@@ -763,7 +765,10 @@ void addDistinctStep(QueryPlan & query_plan,
         column_names,
         pre_distinct);
 
-    distinct_step->setStepDescription(pre_distinct ? "Preliminary DISTINCT" : "DISTINCT");
+    if (pre_distinct)
+        distinct_step->setStepDescription("Preliminary DISTINCT");
+    else
+        distinct_step->setStepDescription("DISTINCT");
     query_plan.addStep(std::move(distinct_step));
 }
 
@@ -784,10 +789,11 @@ void addSortingStep(QueryPlan & query_plan,
     query_plan.addStep(std::move(sorting_step));
 }
 
-void addMergeSortingStep(QueryPlan & query_plan,
+template<size_t size>
+ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
-    const std::string & description)
+    const char (&description)[size])
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -800,7 +806,7 @@ void addMergeSortingStep(QueryPlan & query_plan,
         settings[Setting::max_block_size],
         query_analysis_result.partial_sorting_limit,
         settings[Setting::exact_rows_before_limit]);
-    merging_sorted->setStepDescription("Merge sorted streams " + description);
+    merging_sorted->setStepDescription(description);
     query_plan.addStep(std::move(merging_sorted));
 }
 
@@ -986,7 +992,10 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
 
     auto limit
         = std::make_unique<LimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset, settings[Setting::exact_rows_before_limit]);
-    limit->setStepDescription(do_not_skip_offset ? "preliminary LIMIT (with OFFSET)" : "preliminary LIMIT (without OFFSET)");
+    if (do_not_skip_offset)
+        limit->setStepDescription("preliminary LIMIT (with OFFSET)");
+    else
+        limit->setStepDescription("preliminary LIMIT (without OFFSET)");
     query_plan.addStep(std::move(limit));
 }
 
@@ -1102,7 +1111,8 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
 
 void addWindowSteps(QueryPlan & query_plan,
     const PlannerContextPtr & planner_context,
-    WindowAnalysisResult & window_analysis_result)
+    WindowAnalysisResult & window_analysis_result,
+    size_t max_step_description_length)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -1140,7 +1150,7 @@ void addWindowSteps(QueryPlan & query_plan,
                 window_description.partition_by,
                 0 /*limit*/,
                 sort_settings);
-            sorting_step->setStepDescription("Sorting for window '" + window_description.window_name + "'");
+            sorting_step->setStepDescription("Sorting for window '" + window_description.window_name + "'", max_step_description_length);
             query_plan.addStep(std::move(sorting_step));
         }
 
@@ -1151,7 +1161,7 @@ void addWindowSteps(QueryPlan & query_plan,
 
         auto window_step
             = std::make_unique<WindowStep>(query_plan.getCurrentHeader(), window_description, window_description.window_functions, streams_fan_out);
-        window_step->setStepDescription("Window step for window '" + window_description.window_name + "'");
+        window_step->setStepDescription("Window step for window '" + window_description.window_name + "'", max_step_description_length);
         query_plan.addStep(std::move(window_step));
     }
 }
@@ -1421,7 +1431,7 @@ void Planner::buildPlanForUnionNode()
             recursive_cte_columns.emplace_back(recursive_cte_table_column.type, recursive_cte_table_column.name);
 
         auto read_from_recursive_cte_step = std::make_unique<ReadFromRecursiveCTEStep>(std::make_shared<const Block>(Block(std::move(recursive_cte_columns))), query_tree);
-        read_from_recursive_cte_step->setStepDescription(query_tree->toAST()->formatForErrorMessage());
+        read_from_recursive_cte_step->setStepDescription(query_tree->toAST()->formatForErrorMessage(), select_query_options.max_step_description_length);
         query_plan.addStep(std::move(read_from_recursive_cte_step));
         return;
     }
@@ -1835,7 +1845,7 @@ void Planner::buildPlanForQueryNode()
                         "Before window functions",
                         useful_sets);
 
-                addWindowSteps(query_plan, planner_context, window_analysis_result);
+                addWindowSteps(query_plan, planner_context, window_analysis_result, select_query_options.max_step_description_length);
             }
 
             if (expression_analysis_result.hasQualify())
@@ -1891,12 +1901,12 @@ void Planner::buildPlanForQueryNode()
               * then merge the sorted streams is enough, since remote servers already did full ORDER BY.
               */
             if (query_processing_info.isFromAggregationState())
-                addMergeSortingStep(query_plan, query_analysis_result, planner_context, "after aggregation stage for ORDER BY");
+                addMergeSortingStep(query_plan, query_analysis_result, planner_context, "Merge sorted streams after aggregation stage for ORDER BY");
             else if (!query_processing_info.isFirstStage() &&
                 !expression_analysis_result.hasAggregation() &&
                 !expression_analysis_result.hasWindow() &&
                 !(query_node.isGroupByWithTotals() && !query_analysis_result.aggregate_final))
-                addMergeSortingStep(query_plan, query_analysis_result, planner_context, "for ORDER BY, without aggregation");
+                addMergeSortingStep(query_plan, query_analysis_result, planner_context, "Merge sorted streams for ORDER BY, without aggregation");
             else
                 addSortingStep(query_plan, query_analysis_result, planner_context);
         }

@@ -14,7 +14,7 @@ namespace Setting
 {
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
-    extern const SettingsUInt64 merge_tree_min_read_task_size;
+    extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool apply_deleted_mask;
     extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
 }

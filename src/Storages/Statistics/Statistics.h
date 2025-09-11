@@ -50,6 +50,7 @@ public:
     virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
     virtual Float64 estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
     virtual Float64 estimateRange(const Range & range) const;
+    virtual String getNameForLogs() const = 0;
 
 protected:
     SingleStatisticsDescription stat;
@@ -81,6 +82,8 @@ public:
     Float64 estimateEqual(const Field & val) const;
     Float64 estimateRange(const Range & range) const;
     UInt64 estimateCardinality() const;
+
+    String getNameForLogs() const;
 
 private:
     friend class MergeTreeStatisticsFactory;

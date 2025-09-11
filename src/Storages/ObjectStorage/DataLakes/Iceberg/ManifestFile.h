@@ -111,7 +111,7 @@ public:
         const String & manifest_file_name,
         Int32 format_version_,
         const String & common_path,
-        const IcebergSchemaProcessor & schema_processor,
+        IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
         const std::string & table_location,

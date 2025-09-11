@@ -233,6 +233,8 @@ public:
         return false;
     }
 
+    virtual void drop(ContextPtr) {}
+
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";

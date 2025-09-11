@@ -305,7 +305,7 @@ class GH:
             -H "Accept: application/vnd.github.v3+json" \
             "/repos/{repo}/pulls/{pr}" \
             -f body=\'{escaped_body}\''
-    
+
         return cls.do_command_with_retries(cmd)
 
     @classmethod

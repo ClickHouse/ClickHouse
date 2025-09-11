@@ -971,6 +971,8 @@ To enable JSON logging support, use the following snippet:
 <logger>
     <formatting>
         <type>json</type>
+        <!-- Can be configured on a per-channel basis (log, errorlog, console, syslog), or globally for all channels (then just omit it). -->
+        <!-- <channel></channel> -->
         <names>
             <date_time>date_time</date_time>
             <thread_name>thread_name</thread_name>

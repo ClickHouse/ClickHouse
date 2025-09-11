@@ -337,6 +337,21 @@ char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
     return memory;
 }
 
+std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
+{
+    size_t res = 0;
+    for (const auto & column : columns)
+    {
+        auto element_size = column->getSerializedValueSize(n);
+        if (!element_size)
+            return std::nullopt;
+        res += *element_size;
+    }
+
+    return res;
+}
+
+
 const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
 {
     ++column_length;
@@ -431,8 +446,8 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     if (columns.empty())
     {
-        if (column_length != perm.size())
-            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation doesn't match size of column");
+        if (limit == 0 && column_length != perm.size())
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) doesn't match size of column ({})", perm.size(), column_length);
 
         return cloneResized(limit ? std::min(column_length, limit) : column_length);
     }

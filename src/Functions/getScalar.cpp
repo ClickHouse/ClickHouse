@@ -156,8 +156,66 @@ struct GetShardCount
 REGISTER_FUNCTION(GetScalar)
 {
     factory.registerFunction<FunctionGetScalar>();
-    factory.registerFunction<FunctionGetSpecialScalar<GetShardNum>>();
-    factory.registerFunction<FunctionGetSpecialScalar<GetShardCount>>();
+
+    FunctionDocumentation::Description description_shardNum = R"(
+Returns the index of a shard which processes a part of data in a distributed query.
+Indices begin from `1`.
+If a query is not distributed then a constant value `0` is returned.
+)";
+    FunctionDocumentation::Syntax syntax_shardNum = "shardNum()";
+    FunctionDocumentation::Arguments arguments_shardNum = {};
+    FunctionDocumentation::ReturnedValue returned_value_shardNum = {"Returns the shard index or a constant `0`.", {"UInt32"}};
+    FunctionDocumentation::Examples examples_shardNum = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE shard_num_example (dummy UInt8)
+ENGINE=Distributed(test_cluster_two_shards_localhost, system, one, dummy);
+SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
+        )",
+        R"(
+┌─dummy─┬─shardNum()─┬─shardCount()─┐
+│     0 │          1 │            2 │
+│     0 │          2 │            2 │
+└───────┴────────────┴──────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_shardNum = {21, 9};
+    FunctionDocumentation::Category category_shardNum = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_shardNum = {description_shardNum, syntax_shardNum, arguments_shardNum, returned_value_shardNum, examples_shardNum, introduced_in_shardNum, category_shardNum};
+
+    factory.registerFunction<FunctionGetSpecialScalar<GetShardNum>>(documentation_shardNum);
+
+    FunctionDocumentation::Description description_shardCount = R"(
+Returns the total number of shards for a distributed query.
+If a query is not distributed then constant value `0` is returned.
+)";
+    FunctionDocumentation::Syntax syntax_shardCount = "shardCount()";
+    FunctionDocumentation::Arguments arguments_shardCount = {};
+    FunctionDocumentation::ReturnedValue returned_value_shardCount = {"Returns the total number of shards or `0`.", {"UInt32"}};
+    FunctionDocumentation::Examples examples_shardCount = {
+    {
+        "Usage example",
+        R"(
+-- See shardNum() example above which also demonstrates shardCount()
+CREATE TABLE shard_count_example (dummy UInt8)
+ENGINE=Distributed(test_cluster_two_shards_localhost, system, one, dummy);
+SELECT shardCount() FROM shard_count_example;
+        )",
+        R"(
+┌─shardCount()─┐
+│            2 │
+│            2 │
+└──────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_shardCount = {21, 9};
+    FunctionDocumentation::Category category_shardCount = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_shardCount = {description_shardCount, syntax_shardCount, arguments_shardCount, returned_value_shardCount, examples_shardCount, introduced_in_shardCount, category_shardCount};
+
+    factory.registerFunction<FunctionGetSpecialScalar<GetShardCount>>(documentation_shardCount);
 }
 
 }

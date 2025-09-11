@@ -48,11 +48,12 @@
         <name>test_function_send_chunk_header_python</name>
         <return_type>String</return_type>
         <argument>
+            <name>number</name>
             <type>UInt64</type>
         </argument>
-        <format>TabSeparated</format>
+        <format>JSONEachRow</format>
         <send_chunk_header>1</send_chunk_header>
-        <command>input_chunk_header.py</command>
+        <command>input_chunk_header_json.py</command>
     </function>
 
     <function>
@@ -60,11 +61,12 @@
         <name>test_function_send_chunk_header_pool_python</name>
         <return_type>String</return_type>
         <argument>
+            <name>number</name>
             <type>UInt64</type>
         </argument>
-        <format>TabSeparated</format>
+        <format>JSONEachRow</format>
         <send_chunk_header>1</send_chunk_header>
-        <command>input_chunk_header.py</command>
+        <command>input_chunk_header_json.py</command>
     </function>
 
     <function>

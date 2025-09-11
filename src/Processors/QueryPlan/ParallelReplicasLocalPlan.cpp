@@ -68,7 +68,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
             const JoinStep * join = typeid_cast<JoinStep *>(node->step.get());
             const JoinStepLogical * join_logical = typeid_cast<JoinStepLogical *>(node->step.get());
             if ((join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
-             || (join_logical && join_logical->getJoinInfo().kind == JoinKind::Right))
+             || (join_logical && join_logical->getJoinOperator().kind == JoinKind::Right))
                 node = node->children.at(1);
             else
                 node = node->children.at(0);

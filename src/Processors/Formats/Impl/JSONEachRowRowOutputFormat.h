@@ -1,6 +1,5 @@
 #pragma once
 
-#include <IO/PeekableWriteBuffer.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 #include <Formats/FormatSettings.h>

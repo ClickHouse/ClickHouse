@@ -1,4 +1,7 @@
 Negative tests
+FixedString input columns
+[1]
+[1]
 -- Default tokenizer
 [1,2,3,4,5,6]
 []
@@ -17,6 +20,8 @@ Negative tests
 [2,4,6]
 []
 []
+[1,2,3,4,5,6]
+[1,2,3,4,5,6]
 -- Ngram tokenizer
 [3,4,5]
 []

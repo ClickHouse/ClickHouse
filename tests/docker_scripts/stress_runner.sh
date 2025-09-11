@@ -58,7 +58,11 @@ cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config 
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
 
-start_server || { echo "Failed to start server"; exit 1; }
+start_server
+if [ $? -ne 0 ]; then
+    echo "Failed to start server"
+    exit 1
+fi
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_start || echo "ERROR: Failed to start log exports"
 
@@ -108,6 +112,10 @@ sudo cat /etc/clickhouse-server/users.d/stress_tests_overrides.xml <<EOL
 EOL
 
 start_server
+if [ $? -ne 0 ]; then
+    echo "Failed to start server"
+    exit 1
+fi
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
@@ -227,22 +235,37 @@ export ZOOKEEPER_FAULT_INJECTION=1
 export THREAD_POOL_FAULT_INJECTION=1
 configure
 
-if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" || "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     # But we still need default disk because some tables loaded only into it
-    sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
-      | sed "s|<main><disk>cached_s3</disk></main>|<main><disk>cached_s3</disk></main><default><disk>default</disk></default>|" \
-      > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
-    mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
-    sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
-    sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
-elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
-    # But we still need default disk because some tables loaded only into it
-    sudo cat /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml \
+    if [[ $USE_S3_STORAGE_FOR_MERGE_TREE == "1" ]]; then
+        if [[ $USE_ENCRYPTED_STORAGE == "1" ]]; then
+            file=/etc/clickhouse-server/config.d/s3_encrypted_storage_policy_for_merge_tree_by_default.xml
+        else
+            file=/etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+        fi
+    elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+        if [[ $USE_ENCRYPTED_STORAGE == "1" ]]; then
+            file=/etc/clickhouse-server/config.d/azure_encrypted_storage_policy_by_default.xml
+        else
+            file=/etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
+        fi
+    else
+        echo "ERROR: Failed to find azure storage policy by default file"
+        exit 1
+    fi
+
+    sudo cat "$file" \
       | sed "s|<main><disk>cached_azure</disk></main>|<main><disk>cached_azure</disk></main><default><disk>default</disk></default>|" \
-      > /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml.tmp
-    mv /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
-    sudo chown clickhouse /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
-    sudo chgrp clickhouse /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
+      > /etc/clickhouse-server/config.d/.xml.tmp
+    mv /etc/clickhouse-server/config.d/.xml.tmp "$file"
+
+    if [[ $? -ne 0 ]]; then
+        echo "ERROR: Failed to update storage policy by default file"
+        exit 1
+    fi
+    
+    sudo chown clickhouse "$file"
+    sudo chgrp clickhouse "$file"
 fi
 
 
@@ -264,7 +287,11 @@ if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
 
-start_server || (echo "Failed to start server" && exit 1)
+start_server
+if [ $? -ne 0 ]; then
+    echo "Failed to start server"
+    exit 1
+fi
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
 python3 /repo/tests/ci/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
@@ -287,6 +314,10 @@ unset "${!THREAD_@}"
 rm /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
 
 start_server
+if [ $? -ne 0 ]; then
+    echo "Failed to start server"
+    exit 1
+fi
 
 check_server_start
 

@@ -112,9 +112,89 @@ private:
 
 REGISTER_FUNCTION(Filesystem)
 {
-    factory.registerFunction<FilesystemImpl<FilesystemAvailable>>();
-    factory.registerFunction<FilesystemImpl<FilesystemCapacity>>();
-    factory.registerFunction<FilesystemImpl<FilesystemUnreserved>>();
+    FunctionDocumentation::Description description_filesystemAvailable = R"(
+Returns the amount of free space in the filesystem hosting the database persistence.
+The returned value is always smaller than the total free space ([`filesystemUnreserved`](../../sql-reference/functions/other-functions.md#filesystemunreserved)) because some space is reserved for the operating system.
+    )";
+    FunctionDocumentation::Syntax syntax_filesystemAvailable = "filesystemAvailable([disk_name])";
+    FunctionDocumentation::Arguments arguments_filesystemAvailable = {
+        {"disk_name", "Optional. The disk name to find the amount of free space for. If omitted, uses the default disk.", {"String", "FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_filesystemAvailable = {"Returns the amount of remaining space available in bytes.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_filesystemAvailable = {
+    {
+        "Usage example",
+        R"(
+SELECT formatReadableSize(filesystemAvailable()) AS "Available space";
+        )",
+        R"(
+┌─Available space─┐
+│ 30.75 GiB       │
+└─────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_filesystemAvailable = {20, 1};
+    FunctionDocumentation::Category category_filesystemAvailable = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_filesystemAvailable = {description_filesystemAvailable, syntax_filesystemAvailable, arguments_filesystemAvailable, returned_value_filesystemAvailable, examples_filesystemAvailable, introduced_in_filesystemAvailable, category_filesystemAvailable};
+
+    factory.registerFunction<FilesystemImpl<FilesystemAvailable>>(documentation_filesystemAvailable);
+
+    FunctionDocumentation::Description description_filesystemCapacity = R"(
+Returns the capacity of the filesystem in bytes.
+Needs the [path](../../operations/server-configuration-parameters/settings.md#path) to the data directory to be configured.
+)";
+    FunctionDocumentation::Syntax syntax_filesystemCapacity = "filesystemCapacity([disk_name])";
+    FunctionDocumentation::Arguments arguments_filesystemCapacity = {
+        {"disk_name", "Optional. The disk name to get the capacity for. If omitted, uses the default disk.", {"String", "FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_filesystemCapacity = {"Returns the capacity of the filesystem in bytes.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_filesystemCapacity = {
+    {
+        "Usage example",
+        R"(
+SELECT formatReadableSize(filesystemCapacity()) AS "Capacity";
+        )",
+        R"(
+┌─Capacity──┐
+│ 39.32 GiB │
+└───────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_filesystemCapacity = {20, 1};
+    FunctionDocumentation::Category category_filesystemCapacity = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_filesystemCapacity = {description_filesystemCapacity, syntax_filesystemCapacity, arguments_filesystemCapacity, returned_value_filesystemCapacity, examples_filesystemCapacity, introduced_in_filesystemCapacity, category_filesystemCapacity};
+
+    factory.registerFunction<FilesystemImpl<FilesystemCapacity>>(documentation_filesystemCapacity);
+
+    FunctionDocumentation::Description description_filesystemUnreserved = R"(
+Returns the total amount of free space on the filesystem hosting the database persistence (previously `filesystemFree`).
+See also [`filesystemAvailable`](#fileSystemAvailable).
+)";
+    FunctionDocumentation::Syntax syntax_filesystemUnreserved = "filesystemUnreserved([disk_name])";
+    FunctionDocumentation::Arguments arguments_filesystemUnreserved = {
+        {"disk_name", "Optional. The disk name for which to find the total amount of free space. If omitted, uses the default disk.", {"String", "FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_filesystemUnreserved = {"Returns the amount of free space in bytes.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_filesystemUnreserved = {
+    {
+        "Usage example",
+        R"(
+SELECT formatReadableSize(filesystemUnreserved()) AS "Free space";
+        )",
+        R"(
+┌─Free space─┐
+│ 32.39 GiB  │
+└────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_filesystemUnreserved = {22, 12};
+    FunctionDocumentation::Category category_filesystemUnreserved = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_filesystemUnreserved = {description_filesystemUnreserved, syntax_filesystemUnreserved, arguments_filesystemUnreserved, returned_value_filesystemUnreserved, examples_filesystemUnreserved, introduced_in_filesystemUnreserved, category_filesystemUnreserved};
+
+    factory.registerFunction<FilesystemImpl<FilesystemUnreserved>>(documentation_filesystemUnreserved);
 }
 
 }

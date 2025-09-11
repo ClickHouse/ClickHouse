@@ -798,131 +798,134 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (!ranges.ranges.empty())
                 sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
 
-            CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
-            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context);
-            const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
-
-            auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
+            if (!skip_indexes.empty())
             {
-                if (all_updated_columns.empty())
+                CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
+                auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context);
+                const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
+
+                auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
+                {
+                    if (all_updated_columns.empty())
+                        return {};
+
+                    auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
+                    auto required_columns_names = index ->getColumnsRequiredForIndexCalc();
+                    auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
+
+                    auto it = std::ranges::find_if(required_columns_list, [&](const auto & column)
+                    {
+                        return all_updated_columns.contains(column.getNameInStorage());
+                    });
+
+                    if (it == required_columns_list.end())
+                        return {};
+
+                    return std::unexpected(PreformattedMessage::create(
+                        "Index {} is not used for part {} because it depends on column {} which will be updated on fly",
+                        index->index.name, index->index.name, it->getNameInStorage()));
+                };
+
+                auto can_use_merged_index = [&](const std::vector<MergeTreeIndexPtr> & indices) -> std::expected<void, PreformattedMessage>
+                {
+                    for (const auto & index : indices)
+                    {
+                        if (auto result = can_use_index(index); !result)
+                            return result;
+                    }
                     return {};
+                };
 
-                auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
-                auto required_columns_names = index ->getColumnsRequiredForIndexCalc();
-                auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
+                const auto num_indexes = skip_indexes.useful_indices.size();
 
-                auto it = std::ranges::find_if(required_columns_list, [&](const auto & column)
+                for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
-                    return all_updated_columns.contains(column.getNameInStorage());
-                });
+                    if (ranges.ranges.empty())
+                        break;
 
-                if (it == required_columns_list.end())
-                    return {};
-
-                return std::unexpected(PreformattedMessage::create(
-                    "Index {} is not used for part {} because it depends on column {} which will be updated on fly",
-                    index->index.name, index->index.name, it->getNameInStorage()));
-            };
-
-            auto can_use_merged_index = [&](const std::vector<MergeTreeIndexPtr> & indices) -> std::expected<void, PreformattedMessage>
-            {
-                for (const auto & index : indices)
-                {
-                    if (auto result = can_use_index(index); !result)
-                        return result;
-                }
-                return {};
-            };
-
-            const auto num_indexes = skip_indexes.useful_indices.size();
-
-            for (size_t idx = 0; idx < num_indexes; ++idx)
-            {
-                if (ranges.ranges.empty())
-                    break;
-
-                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
+                    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
 
-                const auto index_idx = skip_indexes.per_part_index_orders[part_index][idx];
-                const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
+                    const auto index_idx = skip_indexes.per_part_index_orders[part_index][idx];
+                    const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
 
-                auto index_stat_idx = idx;
-                if (settings[Setting::per_part_index_stats])
-                    index_stat_idx += num_indexes * part_index;
+                    auto index_stat_idx = idx;
+                    if (settings[Setting::per_part_index_stats])
+                        index_stat_idx += num_indexes * part_index;
 
-                auto & stat = useful_indices_stat[index_stat_idx];
+                    auto & stat = useful_indices_stat[index_stat_idx];
 
-                stat.total_parts.fetch_add(1, std::memory_order_relaxed);
-                size_t total_granules = ranges.ranges.getNumberOfMarks();
-                stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
+                    stat.total_parts.fetch_add(1, std::memory_order_relaxed);
+                    size_t total_granules = ranges.ranges.getNumberOfMarks();
+                    stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
 
-                if (auto result = can_use_index(index_and_condition.index); !result)
-                {
-                    LOG_TRACE(log, "{}", result.error().text);
-                    continue;
+                    if (auto result = can_use_index(index_and_condition.index); !result)
+                    {
+                        LOG_TRACE(log, "{}", result.error().text);
+                        continue;
+                    }
+
+                    /// Vector similarity indexes are not applicable on data reads.
+                    if (!use_skip_indexes_on_data_read || index_and_condition.index->isVectorSimilarityIndex())
+                    {
+                        std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
+                            index_and_condition.index,
+                            index_and_condition.condition,
+                            ranges.data_part,
+                            ranges.ranges,
+                            ranges.read_hints,
+                            reader_settings,
+                            mark_cache.get(),
+                            uncompressed_cache.get(),
+                            vector_similarity_index_cache.get(),
+                            log);
+                    }
+
+                    stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                    if (ranges.ranges.empty())
+                        stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+                    stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
+                    skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
 
-                /// Vector similarity indexes are not applicable on data reads.
-                if (!use_skip_indexes_on_data_read || index_and_condition.index->isVectorSimilarityIndex())
+                for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
                 {
-                    std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
-                        index_and_condition.index,
-                        index_and_condition.condition,
-                        ranges.data_part,
-                        ranges.ranges,
-                        ranges.read_hints,
-                        reader_settings,
-                        mark_cache.get(),
-                        uncompressed_cache.get(),
-                        vector_similarity_index_cache.get(),
-                        log);
+                    if (ranges.ranges.empty())
+                        break;
+
+                    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
+
+                    const auto & indices_and_condition = skip_indexes.merged_indices[idx];
+                    auto & stat = merged_indices_stat[idx];
+                    stat.total_parts.fetch_add(1, std::memory_order_relaxed);
+
+                    if (auto result = can_use_merged_index(indices_and_condition.indices); !result)
+                    {
+                        LOG_TRACE(log, "{}", result.error().text);
+                        continue;
+                    }
+
+                    size_t total_granules = ranges.ranges.getNumberOfMarks();
+                    if (!use_skip_indexes_on_data_read)
+                    {
+                        ranges.ranges = filterMarksUsingMergedIndex(
+                            indices_and_condition.indices,
+                            indices_and_condition.condition,
+                            ranges.data_part,
+                            ranges.ranges,
+                            reader_settings,
+                            mark_cache.get(),
+                            uncompressed_cache.get(),
+                            vector_similarity_index_cache.get(),
+                            log);
+                    }
+
+                    stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
+                    stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+
+                    if (ranges.ranges.empty())
+                        stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
                 }
-
-                stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
-                if (ranges.ranges.empty())
-                    stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
-                stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
-                skip_index_used_in_part[part_index] = 1; /// thread-safe
-            }
-
-            for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
-            {
-                if (ranges.ranges.empty())
-                    break;
-
-                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
-
-                const auto & indices_and_condition = skip_indexes.merged_indices[idx];
-                auto & stat = merged_indices_stat[idx];
-                stat.total_parts.fetch_add(1, std::memory_order_relaxed);
-
-                if (auto result = can_use_merged_index(indices_and_condition.indices); !result)
-                {
-                    LOG_TRACE(log, "{}", result.error().text);
-                    continue;
-                }
-
-                size_t total_granules = ranges.ranges.getNumberOfMarks();
-                if (!use_skip_indexes_on_data_read)
-                {
-                    ranges.ranges = filterMarksUsingMergedIndex(
-                        indices_and_condition.indices,
-                        indices_and_condition.condition,
-                        ranges.data_part,
-                        ranges.ranges,
-                        reader_settings,
-                        mark_cache.get(),
-                        uncompressed_cache.get(),
-                        vector_similarity_index_cache.get(),
-                        log);
-                }
-
-                stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
-                stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
-
-                if (ranges.ranges.empty())
-                    stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
             }
         };
 

@@ -310,17 +310,21 @@ profiles:
         config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"
         config_file.parent.mkdir(parents=True, exist_ok=True)
 
-        self.log_export_host = Secret.Config(
-            name="clickhouse_ci_logs_host",
-            type=Secret.Type.AWS_SSM_VAR,
-            region="us-east-1",
-        ).get_value()
-
-        self.log_export_password = Secret.Config(
-            name="clickhouse_ci_logs_password",
-            type=Secret.Type.AWS_SSM_VAR,
-            region="us-east-1",
-        ).get_value()
+        self.log_export_host, self.log_export_password = (
+            Secret.Config(
+                name="clickhouse_ci_logs_host",
+                type=Secret.Type.AWS_SSM_PARAMETER,
+                region="us-east-1",
+            )
+            .join_with(
+                Secret.Config(
+                    name="clickhouse_ci_logs_password",
+                    type=Secret.Type.AWS_SSM_PARAMETER,
+                    region="us-east-1",
+                )
+            )
+            .get_value()
+        )
 
         config_content = LOG_EXPORT_CONFIG_TEMPLATE.format(
             CLICKHOUSE_CI_LOGS_CLUSTER=CLICKHOUSE_CI_LOGS_CLUSTER,
@@ -384,14 +388,21 @@ profiles:
             strict=True,
         )
 
-        replicas=3 if self.is_db_replicated else 1
-        tsan_memory_limit_mb=Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
+        replicas = 3 if self.is_db_replicated else 1
+        tsan_memory_limit_mb = (
+            Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
+        )
 
         env = os.environ.copy()
-        env["TSAN_OPTIONS"] = " ".join(filter(lambda x: x is not None, [
-            env.get("TSAN_OPTIONS", None),
-            f"memory_limit_mb={tsan_memory_limit_mb}",
-        ]))
+        env["TSAN_OPTIONS"] = " ".join(
+            filter(
+                lambda x: x is not None,
+                [
+                    env.get("TSAN_OPTIONS", None),
+                    f"memory_limit_mb={tsan_memory_limit_mb}",
+                ],
+            )
+        )
         tsan_options = env["TSAN_OPTIONS"]
         print(f"TSAN_OPTIONS = {tsan_options}")
 
@@ -732,11 +743,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         for pid, profile in latest_profiles.items():
             Shell.check(
                 f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt 2>/dev/null",
-                verbose=True
+                verbose=True,
             )
             Shell.check(
                 f"jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg",
-                verbose=True
+                verbose=True,
             )
 
         Shell.check(

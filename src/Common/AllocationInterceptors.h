@@ -16,8 +16,12 @@
 #define __real_posix_memalign(memptr, alignment, size) ::posix_memalign(memptr, alignment, size)
 #define __real_aligned_alloc(alignment, size) ::aligned_alloc(alignment, size)
 #define __real_valloc(size) ::valloc(size)
-#define __real_memalign(alignment, size) ::memalign(alignment, size)
 #define __real_free ::free
+
+#if !defined(OS_DARWIN)
+#define __real_memalign(alignment, size) ::memalign(alignment, size)
+#endif
+
 #if !defined(USE_MUSL) && defined(OS_LINUX)
 #define __real_pvalloc(size) ::pvalloc(size)
 #endif

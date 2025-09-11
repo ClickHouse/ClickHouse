@@ -41,13 +41,33 @@ public:
 
 REGISTER_FUNCTION(InitialQueryStartTime)
 {
-    factory.registerFunction<FunctionInitialQueryStartTime>(FunctionDocumentation{
-        .description = "Returns the start time of the initial current query.",
-        .syntax = {"initialQueryStartTime()"},
-        .returned_value = {"Start time of the initial query."},
-        .examples = {{"simple", "SELECT initialQueryStartTime()", "2025-01-28 11:38:04"}},
-        .category = FunctionDocumentation::Category::Other,
-    });
+    FunctionDocumentation::Description description = R"(
+Returns the start time of the initial current query.
+`initialQueryStartTime` returns the same results on different shards.
+)";
+    FunctionDocumentation::Syntax syntax = "initialQueryStartTime()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the start time of the initial current query.", {"DateTime"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE tmp (str String) ENGINE = Log;
+INSERT INTO tmp (*) VALUES ('a');
+SELECT count(DISTINCT t) FROM (SELECT initialQueryStartTime() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
+        )",
+        R"(
+┌─count(DISTINCT t)─┐
+│                 1 │
+└───────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionInitialQueryStartTime>(documentation);
     factory.registerAlias("initial_query_start_time", FunctionInitialQueryStartTime::name, FunctionFactory::Case::Insensitive);
 }
 }

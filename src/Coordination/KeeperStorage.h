@@ -27,7 +27,7 @@ class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
-using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
+using ChildrenSet = absl::flat_hash_set<std::string_view, StringViewHash>;
 
 struct NodeStats
 {
@@ -149,7 +149,7 @@ struct KeeperRocksNodeInfo
     uint64_t acl_id = 0; /// 0 -- no ACL by default
 
     /// dummy interface for test
-    void addChild(StringRef) {}
+    void addChild(std::string_view) {}
     auto getChildren() const
     {
         return std::vector<int>(stats.numChildren());
@@ -247,9 +247,9 @@ struct KeeperMemNode
 
     std::string_view getData() const noexcept { return {data.get(), stats.data_size}; }
 
-    void addChild(StringRef child_path);
+    void addChild(std::string_view child_path);
 
-    void removeChild(StringRef child_path);
+    void removeChild(std::string_view child_path);
 
     template <typename Self>
     auto & getChildren(this Self & self)
@@ -500,10 +500,9 @@ public:
         void rollback(int64_t rollback_zxid);
         void rollback(std::list<Delta> rollback_deltas);
 
-        std::shared_ptr<Node> getNode(StringRef path, bool should_lock_storage = true) const;
-        const Node * getActualNodeView(StringRef path, const Node & storage_node) const;
+        std::shared_ptr<Node> getNode(std::string_view path, bool should_lock_storage = true) const;
 
-        Coordination::ACLs getACLs(StringRef path) const;
+        Coordination::ACLs getACLs(std::string_view path) const;
 
         void applyDeltas(const std::list<Delta> & new_deltas, uint64_t * digest);
         void applyDelta(const Delta & delta, uint64_t * digest);
@@ -516,7 +515,7 @@ public:
 
         void forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const;
 
-        std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path, bool should_lock_storage = true) const;
+        std::shared_ptr<Node> tryGetNodeFromStorage(std::string_view path, bool should_lock_storage = true) const;
 
         std::unordered_map<int64_t, std::unordered_set<int64_t>> closed_sessions_to_zxids;
 
@@ -580,7 +579,7 @@ public:
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool removeNode(const std::string & path, int32_t version, bool update_digest);
 
-    bool checkACL(StringRef path, int32_t permissions, int64_t session_id, bool is_local);
+    bool checkACL(std::string_view path, int32_t permissions, int64_t session_id, bool is_local);
 
     KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
 

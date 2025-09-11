@@ -366,19 +366,22 @@ For more information, see the sections:
 
 ## Expressions {#expressions}
 
-An expression can be the following: 
+An expression can be any of the following:
 - a function
 - an identifier
 - a literal
-- an application of an operator
+- the application of an operator
 - an expression in brackets
 - a subquery
-- or an asterisk. 
+- an asterisk
 
 It can also contain an [alias](#expression-aliases).
 
 A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
+
+A constant expression is an expression whose result is known during query analysis, i.e. before execution.
+For example, expressions over literals are constant expressions.
 
 ## Expression Aliases {#expression-aliases}
 
