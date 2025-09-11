@@ -283,6 +283,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                     /* dest_blob */ object_to.remote_path,
                     settings,
                     read_settings,
+                    std::optional<ObjectAttributes>(),
                     same_credentials,
                     scheduler
                 );
