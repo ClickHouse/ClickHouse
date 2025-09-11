@@ -1,14 +1,14 @@
 DROP TABLE IF EXISTS users;
 SET session_timezone = 'UTC';
 
-CREATE TABLE users (uid Int16, d Date)
+CREATE TABLE users (uid Int16, d DateTime('UTC'))
 ENGINE = MergeTree ORDER BY uid TTL d + INTERVAL 1 MONTH WHERE uid = 1
 SETTINGS merge_with_ttl_timeout = 0, min_bytes_for_wide_part = 0, vertical_merge_algorithm_min_rows_to_activate = 0, vertical_merge_algorithm_min_columns_to_activate = 0;
 
 SYSTEM STOP TTL MERGES users;
 
-INSERT INTO users SELECT arrayJoin([1,2]), toDate('2020-01-01');
-INSERT INTO users SELECT arrayJoin([2,3]), toDate('2020-01-01');
+INSERT INTO users SELECT arrayJoin([1,2]), toDateTime('2020-01-01 00:00:00', 'UTC');
+INSERT INTO users SELECT arrayJoin([2,3]), toDateTime('2020-01-01 00:00:00', 'UTC');
 
 SELECT * FROM users ORDER BY ALL;
 
