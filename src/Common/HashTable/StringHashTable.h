@@ -275,12 +275,19 @@ public:
     {
     }
 
-    StringHashTable(StringHashTable && rhs) noexcept
-        : m1(std::move(rhs.m1))
-        , m2(std::move(rhs.m2))
-        , m3(std::move(rhs.m3))
-        , ms(std::move(rhs.ms))
+    StringHashTable(StringHashTable && rhs) noexcept { *this = std::move(rhs); }
+
+    StringHashTable & operator=(StringHashTable && rhs) noexcept
     {
+        if (this == &rhs)
+            return *this;
+
+        m0 = std::move(rhs.m0);
+        m1 = std::move(rhs.m1);
+        m2 = std::move(rhs.m2);
+        m3 = std::move(rhs.m3);
+        ms = std::move(rhs.ms);
+        return *this;
     }
 
     ~StringHashTable() = default;

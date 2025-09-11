@@ -263,6 +263,7 @@ public:
 
     void replaceColumnsForTextSearch(const IndexReadColumns & added_columns, const Names & removed_columns);
     const std::optional<Indexes> & getIndexes() const { return indexes; }
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
 
 private:
     MergeTreeReaderSettings reader_settings;
