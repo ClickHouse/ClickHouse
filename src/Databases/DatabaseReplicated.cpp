@@ -982,7 +982,11 @@ ASTPtr DatabaseReplicated::tryGetCreateOrAttachTableQuery(const String & name, C
 {
     auto res = tryGetCreateTableQuery(name, local_context);
     auto & create = res->as<ASTCreateQuery &>();
-    create.attach = create.is_materialized_view_with_inner_table();
+    create.attach = false;
+    if (create.is_materialized_view_with_inner_table())
+        create.attach = true;
+    if (create.storage && create.storage->engine && (create.storage->engine->name == "TimeSeries"))
+        create.attach = true;
     return res;
 }
 
@@ -1782,7 +1786,13 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(const String & table_name, con
 
     create.setDatabase(getDatabaseName());
     create.setTable(table_name);
-    create.attach = create.is_materialized_view_with_inner_table();
+    create.attach = false;
+
+    /// In both cases we need to set attach = true to avoid creating inner table(s) twice.
+    if (create.is_materialized_view_with_inner_table())
+        create.attach = true;
+    if (create.storage && create.storage->engine && (create.storage->engine->name == "TimeSeries"))
+        create.attach = true;
 
     return ast;
 }

@@ -23,6 +23,7 @@ public:
         SortingQueueStrategy sorting_queue_strategy_,
         UInt64 limit_ = 0,
         WriteBuffer * out_row_sources_buf_ = nullptr,
+        const std::optional<String> & filter_column_name_ = std::nullopt,
         bool use_average_block_sizes = false,
         bool apply_virtual_row_conversions_ = true);
 
@@ -49,6 +50,9 @@ private:
     /// If it is not nullptr then it should be populated during execution
     WriteBuffer * out_row_sources_buf = nullptr;
 
+    /// The position of filter column if filter is set.
+    ssize_t filter_column_position = -1;
+
     bool apply_virtual_row_conversions;
 
     /// Chunks currently being merged.
@@ -66,6 +70,10 @@ private:
     template <typename TSortingQueue>
     Status mergeBatchImpl(TSortingQueue & queue);
 
+    bool hasFilter() const { return filter_column_position != -1; }
+    void insertRow(const SortCursorImpl & current);
+    void insertRows(const SortCursorImpl & current, size_t num_rows);
+    void insertChunk(size_t source_num);
 };
 
 }

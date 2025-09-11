@@ -212,7 +212,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
                 {
                     writeChar(settings.json.pretty_print_indent, (indent + i + 1) * settings.json.pretty_print_indent_multiplier, ostr);
                     writeJSONKey(path_elements.elements[i], ostr, settings);
-                    writeCString(" : {\n", ostr);
+                    writeCString(": {\n", ostr);
                 }
                 else
                 {
@@ -242,7 +242,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
         {
             writeChar(settings.json.pretty_print_indent, (indent + current_prefix.size() + 1) * settings.json.pretty_print_indent_multiplier, ostr);
             writeJSONKey(path_elements.elements.back(), ostr, settings);
-            writeCString(" : ", ostr);
+            writeCString(": ", ostr);
         }
         else
         {
