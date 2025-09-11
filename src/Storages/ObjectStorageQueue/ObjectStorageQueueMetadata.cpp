@@ -676,6 +676,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
                     if (info == self)
                     {
                         LOG_TRACE(log, "Table {} is already registered", self.table_id);
+                        code = Coordination::Error::ZOK;
                         return;
                     }
                 }
@@ -774,6 +775,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
 
     Coordination::Error code = Coordination::Error::ZOK;
 
+    bool is_retry = false;
     for (size_t i = 0; i < 1000; ++i)
     {
         Coordination::Requests requests;
@@ -796,7 +798,8 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
             if (!node_exists)
             {
                 LOG_WARNING(log, "Cannot unregister: registry does not exist");
-                chassert(false);
+                if (!is_retry)
+                    chassert(false);
                 return;
             }
 
@@ -852,6 +855,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
             if (Coordination::isHardwareError(e.code))
             {
                 LOG_TEST(log, "Lost connection to zookeeper, will retry");
+                is_retry = true;
                 continue;
             }
             throw;
@@ -861,6 +865,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
             if (Coordination::isHardwareError(e.code))
             {
                 LOG_TEST(log, "Lost connection to zookeeper, will retry");
+                is_retry = true;
                 continue;
             }
             throw;
@@ -885,6 +890,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                     if (Coordination::isHardwareError(e.code))
                     {
                         LOG_TEST(log, "Lost connection to zookeeper, will retry");
+                        is_retry = true;
                         continue;
                     }
                     throw;
@@ -894,6 +900,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                     if (Coordination::isHardwareError(e.code))
                     {
                         LOG_TEST(log, "Lost connection to zookeeper, will retry");
+                        is_retry = true;
                         continue;
                     }
                     throw;
@@ -904,7 +911,10 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
 
         if (Coordination::isHardwareError(code)
             || code == Coordination::Error::ZBADVERSION)
+        {
+            is_retry = true;
             continue;
+        }
 
         if (!responses.empty())
         {

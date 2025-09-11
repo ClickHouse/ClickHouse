@@ -142,7 +142,6 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     , failed_node_path(failed_node_path_)
     , node_metadata(createNodeMetadata(path))
     , log(log_)
-    , processing_node_id_path(processing_node_path + "_processing_id")
 {
     LOG_TEST(log, "Path: {}, node_name: {}, max_loading_retries: {}, "
              "processed_path: {}, processing_path: {}, failed_path: {}",
@@ -152,7 +151,7 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
 
 ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
 {
-    if (processing_id_version.has_value())
+    if (set_processing)
     {
         if (file_status->getException().empty())
         {
@@ -165,18 +164,17 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
         LOG_TEST(log, "Removing processing node in destructor for file: {}", path);
         try
         {
-            Coordination::Requests requests;
-            requests.push_back(zkutil::makeCheckRequest(processing_node_id_path, processing_id_version.value()));
-            requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
-
-            Coordination::Responses responses;
             Coordination::Error code;
+            bool is_retry = false;
             ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
             {
                 auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
-                if (zk_client->exists(processing_node_path))
-                    code = zk_client->tryMulti(requests, responses);
-            });
+                code = zk_client->tryRemove(processing_node_path);
+            }, [&] { is_retry = true; });
+
+            if (is_retry && code == Coordination::Error::ZNONODE)
+                return;
+
             if (code != Coordination::Error::ZOK
                 && !Coordination::isHardwareError(code)
                 && code != Coordination::Error::ZBADVERSION
@@ -269,9 +267,7 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
         file_status->updateState(file_state);
     }
 
-    LOG_TEST(log, "File {} has state `{}`: will {}process (processing id version: {})",
-             path, file_state, success ? "" : "not ",
-             processing_id_version.has_value() ? toString(processing_id_version.value()) : "None");
+    LOG_TEST(log, "File {} has state `{}`: will {}process", path, file_state, success ? "" : "not ");
 
     if (success)
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded);
@@ -316,9 +312,9 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     return prepareProcessingRequestsImpl(requests);
 }
 
-void ObjectStorageQueueIFileMetadata::finalizeProcessing(int processing_id_version_)
+void ObjectStorageQueueIFileMetadata::finalizeProcessing()
 {
-    processing_id_version = processing_id_version_;
+    set_processing = true;
     file_status->onProcessing();
 }
 
@@ -331,14 +327,6 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     SCOPE_EXIT({
         file_status->reset();
     });
-
-    if (!processing_id_version.has_value())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "No processing id version set, but state is `Processing` ({})",
-            node_metadata.toString());
-    }
 
     Coordination::Requests requests;
     prepareResetProcessingRequests(requests);
@@ -386,7 +374,6 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
 
 void ObjectStorageQueueIFileMetadata::prepareResetProcessingRequests(Coordination::Requests & requests)
 {
-    requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 }
 
@@ -449,7 +436,6 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
     file_status->onProcessed();
 
     processing_id.reset();
-    processing_id_version.reset();
 
     LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows.load());
 }
@@ -460,7 +446,6 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
     file_status->onFailed(exception_message);
 
     processing_id.reset();
-    processing_id_version.reset();
 
     LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows.load());
 }
@@ -469,18 +454,10 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     Coordination::Requests & requests,
     bool retriable)
 {
-    if (!processing_id_version.has_value())
-    {
-        chassert(false);
-        return;
-    }
-
     if (!retriable)
     {
         LOG_TEST(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
 
-        /// Check Processing node id and remove processing_node_id node.
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
         /// Created Failed node.
@@ -519,8 +496,6 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     {
         LOG_TEST(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
 
-        /// Check Processing node id and remove processing_node_id node.
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
         /// Remove /failed/node_hash.retriable node.
@@ -530,8 +505,6 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     }
     else
     {
-        /// Check Processing node id (without removing, because processing retries are not over).
-        requests.push_back(zkutil::makeCheckRequest(processing_node_id_path, processing_id_version.value()));
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 

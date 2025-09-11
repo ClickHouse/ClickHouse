@@ -219,6 +219,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
         if (is_retry && zk_client->tryGet(bucket_lock_path, data) && data == processor_info)
         {
             LOG_TEST(log_, "Operation succeeded");
+            code = Coordination::Error::ZOK;
             return;
         }
         code = zk_client->tryCreate(bucket_lock_path, processor_info, zkutil::CreateMode::Persistent);
@@ -246,7 +247,6 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
 
     bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
-    bool create_if_not_exists_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
 
     processing_id = node_metadata.processing_id = getRandomASCIIString(10);
     auto processor_info = getProcessorInfo(processing_id.value());
@@ -329,42 +329,17 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
         /// 1. check failed node does not exist
         /// 2. create processing node
-        /// 3. create/update processing node id
-        /// 4. check bucket version is still the same
-        /// 5. check max processed path is still the same
+        /// 3. check max processed path is still the same
 
         const auto failed_path_doesnt_exist_idx = 0;
         zkutil::addCheckNotExistsRequest(requests, *zk_client, failed_node_path);
-        const auto create_processing_path_idx = requests.size();
 
+        const auto create_processing_path_idx = requests.size();
         requests.push_back(
             zkutil::makeCreateRequest(
                 processing_node_path,
-                node_metadata.toString(),
+                processor_info,
                 use_persistent_processing_nodes ? zkutil::CreateMode::Persistent : zkutil::CreateMode::Ephemeral));
-
-        const auto create_processing_id_path_idx = requests.size();
-        if (create_if_not_exists_enabled)
-        {
-            requests.push_back(
-                zkutil::makeCreateRequest(processing_node_id_path, node_metadata.toString(), zkutil::CreateMode::Persistent, /* ignore_if_exists */ true));
-        }
-        else
-        {
-            bool processing_node_exists = false;
-            zk_retries.retryLoop([&]
-            {
-                processing_node_exists = ObjectStorageQueueMetadata::getZooKeeper(log)->exists(processing_node_id_path);
-            });
-            if (!processing_node_exists)
-                requests.push_back(zkutil::makeCreateRequest(processing_node_id_path, "", zkutil::CreateMode::Persistent));
-        }
-
-        requests.push_back(zkutil::makeSetRequest(processing_node_id_path, processor_info, -1));
-        const auto set_processing_id_idx = requests.size() - 1;
-
-        /// TODO: for ordered processing with buckets it should be enough to check only bucket lock version,
-        /// so may be remove creation and check for processing_node_id if bucket_info is set?
 
         auto check_max_processed_path = requests.size();
         if (processed_node.has_value())
@@ -383,9 +358,10 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
                 std::string data;
                 if (zk->tryGet(processing_node_path, data))
                 {
-                    if (data == node_metadata.toString())
+                    if (data == processor_info)
                     {
                         LOG_TEST(log, "Operation succeeded");
+                        code = Coordination::Error::ZOK;
                         chassert(!zk->tryGet(failed_node_path, data));
                         return;
                     }
@@ -401,22 +377,13 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
                 throw;
             }
         });
-        auto has_request_failed = [&](size_t request_index) { return responses[request_index]->error != Coordination::Error::ZOK; };
 
         if (code == Coordination::Error::ZOK)
         {
-            const auto * set_response = dynamic_cast<const Coordination::SetResponse *>(responses[set_processing_id_idx].get());
-            processing_id_version = set_response->stat.version;
             return {true, FileStatus::State::None};
         }
 
-        /// Requests:
-        /// 1. check failed node does not exist
-        /// 2. check processing node does not exist
-        /// 3. create processing id node if not exists
-        /// 4. set processing id
-        /// 5. if has bucket, check bucket version
-        /// 6. check processed node version did not change
+        auto has_request_failed = [&](size_t request_index) { return responses[request_index]->error != Coordination::Error::ZOK; };
 
         auto failed_idx = zkutil::getFailedOpIndex(code, responses);
         LOG_DEBUG(log, "Code: {}, failed idx: {}, failed path: {}", code, failed_idx, requests[failed_idx]->getPath());
@@ -427,23 +394,11 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         if (has_request_failed(create_processing_path_idx))
             return {false, FileStatus::State::Processing};
 
-        if (has_request_failed(create_processing_id_path_idx))
-        {
-            /// This should not happen if create_processing_path_idx succeeded.
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Failed to create processing id node at path {}: {}",
-                requests[failed_idx]->getPath(), code);
-        }
-
         if (has_request_failed(check_max_processed_path))
         {
             LOG_TEST(log, "Version of max processed file changed: {}. Will retry for file `{}`", code, path);
             continue;
         }
-
-        if (create_if_not_exists_enabled)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", code);
 
         /// most likely the processing node id path node was removed or created so let's try again
         LOG_DEBUG(log, "Retrying setProcessing because processing node id path is unexpectedly missing or was created (error code: {})", code);
@@ -501,12 +456,6 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequests(
     {
         LOG_TEST(log, "Max processed file does not exist, creating at: {}", processed_node_path_);
         requests.push_back(zkutil::makeCreateRequest(processed_node_path_, node_metadata.toString(), zkutil::CreateMode::Persistent));
-    }
-
-    if (processing_id_version.has_value())
-    {
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
     }
 }
 

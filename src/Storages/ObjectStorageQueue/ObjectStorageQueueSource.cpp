@@ -228,6 +228,8 @@ ObjectStorageQueueSource::FileIterator::next()
 
                 Coordination::Requests requests;
                 size_t num_successful_objects = 0;
+                Strings processing_paths;
+                String processor_info;
                 for (size_t i = 0; i < new_batch.size(); ++i)
                 {
                     file_metadatas[i] = metadata->getFileMetadata(
@@ -239,6 +241,9 @@ ObjectStorageQueueSource::FileIterator::next()
                     {
                         result_indexes[i] = set_processing_result.value();
                         ++num_successful_objects;
+                        processing_paths.push_back(file_metadatas[i]->getProcessingPath());
+                        if (processor_info.empty())
+                            processor_info = file_metadatas[i]->getProcessorInfo();
                     }
                     else
                     {
@@ -249,10 +254,49 @@ ObjectStorageQueueSource::FileIterator::next()
 
                 Coordination::Responses responses;
                 Coordination::Error code;
+                bool is_retry = false;
                 zk_retries.retryLoop([&]
                 {
-                    code = ObjectStorageQueueMetadata::getZooKeeper(log)->tryMulti(requests, responses);
-                });
+                    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+                    if (is_retry)
+                    {
+                        bool failed = false;
+                        bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
+                        if (is_multi_read_enabled)
+                        {
+                            auto processing_paths_responses = ObjectStorageQueueMetadata::getZooKeeper(log)->tryGet(processing_paths);
+                            for (size_t i = 0; i < processing_paths_responses.size(); ++i)
+                            {
+                                if (processing_paths_responses[i].data != processor_info)
+                                {
+                                    failed = true;
+                                    break;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            String data;
+                            for (const auto & path : processing_paths)
+                            {
+                                if (!zk_client->tryGet(path, data) || data != processor_info)
+                                {
+                                    failed = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!failed)
+                        {
+                            LOG_TEST(log, "Operation succeeded");
+                            code = Coordination::Error::ZOK;
+                            return;
+                        }
+                    }
+                    code = zk_client->tryMulti(requests, responses);
+                }, [&] { is_retry = true; });
+
                 if (code == Coordination::Error::ZOK)
                 {
                     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded, num_successful_objects);
@@ -264,11 +308,7 @@ ObjectStorageQueueSource::FileIterator::next()
                         if (!new_batch[i])
                             continue;
 
-                        const auto & response_indexes = result_indexes[i];
-                        const auto & set_response = dynamic_cast<const Coordination::SetResponse &>(
-                            *responses[response_indexes.set_processing_id_node_idx].get());
-
-                        file_metadatas[i]->finalizeProcessing(set_response.stat.version);
+                        file_metadatas[i]->finalizeProcessing();
                     }
                 }
                 else
