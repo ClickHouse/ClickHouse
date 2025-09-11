@@ -26,6 +26,7 @@ select d, toTypeName(d) from format(JSONEachRow, '{"d" : "1899-12-31 23:59:59", 
 select d, toTypeName(d) from format(JSONEachRow, '{"d" : "2300-01-01 00:00:00.000000000"}');
 select d, toTypeName(d) from format(JSONEachRow, '{"d" : "2300-01-01 00:00:00.000000000", "s" : "some string"}');
 
+select '----------------------------------------------';
 
 set date_time_input_format='best_effort';
 select d, toTypeName(d) from format(JSONEachRow, '{"d" : "1800-01-01"}');
