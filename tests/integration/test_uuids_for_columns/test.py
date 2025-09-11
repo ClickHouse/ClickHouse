@@ -35,6 +35,7 @@ def started_cluster():
 
 
 def test_atomic_create_table_on_cluster(started_cluster):
+    node_1.query("DROP TABLE IF EXISTS atomic_cluster_table ON CLUSTER 'cluster'")
     node_1.query(
         "CREATE TABLE atomic_cluster_table ON CLUSTER 'cluster' (id UInt64, first_name String) ENGINE=MergeTree ORDER BY id"
     )
@@ -51,6 +52,7 @@ def test_atomic_create_table_on_cluster(started_cluster):
 
 
 def test_memory_create_table_on_cluster(started_cluster):
+    node_1.query("DROP DATABASE IF EXISTS db1 ON CLUSTER 'cluster'")
     node_1.query("CREATE DATABASE db1 ENGINE = Memory")
     node_2.query("CREATE DATABASE db1 ENGINE = Memory")
     node_1.query(
@@ -69,6 +71,7 @@ def test_memory_create_table_on_cluster(started_cluster):
 
 
 def test_atomic_create_table_on_single_node(started_cluster):
+    node_1.query("DROP TABLE IF EXISTS atomic_single_table")
     node_1.query(
         "CREATE TABLE atomic_single_table (id UInt64, first_name String) ENGINE=MergeTree ORDER BY id"
     )
@@ -81,6 +84,7 @@ def test_atomic_create_table_on_single_node(started_cluster):
 
 
 def test_memory_create_table_on_single_node(started_cluster):
+    node_1.query("DROP DATABASE IF EXISTS db2")
     node_1.query("CREATE DATABASE db2 ENGINE = Memory")
     node_1.query(
         "CREATE TABLE db2.memory_single_table (id UInt64, first_name String) ENGINE=MergeTree ORDER BY id"
