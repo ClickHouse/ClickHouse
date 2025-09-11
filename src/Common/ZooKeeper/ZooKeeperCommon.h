@@ -693,9 +693,9 @@ enum class PathMatchResult : uint8_t
 
 PathMatchResult matchPath(std::string_view path, std::string_view match_to);
 
-std::string_view parentNodePath(std::string_view path);
+StringRef parentNodePath(StringRef path);
 
-std::string_view getBaseNodeName(std::string_view path);
+StringRef getBaseNodeName(StringRef path);
 
 
 }

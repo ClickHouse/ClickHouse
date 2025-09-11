@@ -108,7 +108,6 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool allow_experimental_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
-extern const SettingsBool iceberg_delete_data_on_drop;
 }
 
 namespace
@@ -471,8 +470,8 @@ void IcebergMetadata::mutate(
 void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
 {
     for (const auto & command : commands)
-        if (command.type != MutationCommand::DELETE && command.type != MutationCommand::UPDATE)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE and UPDATE mutations");
+        if (command.type != MutationCommand::DELETE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE mutations");
 }
 
 void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
@@ -947,25 +946,13 @@ SinkToStoragePtr IcebergMetadata::write(
     }
 }
 
-void IcebergMetadata::drop(ContextPtr context)
-{
-    if (context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
-    {
-        auto configuration_ptr = configuration.lock();
-        auto files = listFiles(*object_storage, *configuration_ptr, configuration_ptr->getPathForRead().path, "");
-        for (const auto & file : files)
-            object_storage->removeObjectIfExists(StoredObject(file));
-    }
-}
-
 ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_info) const
 {
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     if (!iceberg_object_info)
         return nullptr;
     auto configuration_ptr = configuration.lock();
-    chassert(object_info->getFileFormat().has_value());
-    if (Poco::toLower(*object_info->getFileFormat()) != "parquet")
+    if (Poco::toLower(configuration_ptr->format) != "parquet")
         return nullptr;
 
     return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->underlying_format_read_schema_id);
@@ -973,6 +960,9 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
 
 ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema() const
 {
+    auto configuration_ptr = configuration.lock();
+    if (Poco::toLower(configuration_ptr->format) != "parquet")
+        return nullptr;
     SharedLockGuard lock(mutex);
     return persistent_components.schema_processor->getColumnMapperById(relevant_snapshot_schema_id);
 }

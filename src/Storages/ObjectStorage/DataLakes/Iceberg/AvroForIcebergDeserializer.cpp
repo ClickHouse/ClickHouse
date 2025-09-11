@@ -16,7 +16,6 @@
 namespace DB::ErrorCodes
 {
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
-    extern const int INCORRECT_DATA;
 }
 
 namespace DB::Iceberg
@@ -25,8 +24,9 @@ namespace DB::Iceberg
 using namespace DB;
 
 AvroForIcebergDeserializer::AvroForIcebergDeserializer(
-    std::unique_ptr<ReadBufferFromFileBase> buffer_, const std::string & manifest_file_path_, const DB::FormatSettings & format_settings)
-try
+    std::unique_ptr<ReadBufferFromFileBase> buffer_,
+    const std::string & manifest_file_path_,
+    const DB::FormatSettings & format_settings)
     : buffer(std::move(buffer_))
     , manifest_file_path(manifest_file_path_)
 {
@@ -50,10 +50,6 @@ try
     metadata = manifest_file_reader->metadata();
     parsed_column = std::move(columns[0]);
     parsed_column_data_type = std::dynamic_pointer_cast<const DataTypeTuple>(data_type);
-}
-catch (const std::exception & e)
-{
-    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read Iceberg avro manifest file '{}': {}", manifest_file_path_, e.what());
 }
 
 size_t AvroForIcebergDeserializer::rows() const

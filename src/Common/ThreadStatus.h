@@ -247,8 +247,6 @@ protected:
 
     String query_id;
 
-    [[maybe_unused]] bool jemalloc_profiler_enabled = false;
-
     struct TimePoint
     {
         void setUp();

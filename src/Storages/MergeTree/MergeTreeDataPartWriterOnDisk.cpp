@@ -501,7 +501,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         {
             String filename_without_extension = skip_indices[i]->getFileName();
             checksums.files[filename_without_extension + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
-            checksums.files[filename_without_extension + GinIndexStore::GIN_SEGMENT_DESCRIPTOR_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
             checksums.files[filename_without_extension + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
             checksums.files[filename_without_extension + GinIndexStore::GIN_DICTIONARY_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
             checksums.files[filename_without_extension + GinIndexStore::GIN_POSTINGS_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();

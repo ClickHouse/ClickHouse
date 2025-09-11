@@ -1273,36 +1273,36 @@ PathMatchResult matchPath(std::string_view path, std::string_view match_to)
 
 namespace
 {
-size_t findLastSlash(std::string_view path)
+size_t findLastSlash(StringRef path)
 {
-    if (path.empty())
+    if (path.size == 0)
         return std::string::npos;
 
-    for (size_t i = path.size() - 1; i > 0; --i)
+    for (size_t i = path.size - 1; i > 0; --i)
     {
-        if (path[i] == '/')
+        if (path.data[i] == '/')
             return i;
     }
 
-    if (path[0] == '/')
+    if (path.data[0] == '/')
         return 0;
 
     return std::string::npos;
 }
 }
 
-std::string_view parentNodePath(std::string_view path)
+StringRef parentNodePath(StringRef path)
 {
     auto rslash_pos = findLastSlash(path);
     if (rslash_pos > 0)
-        return path.substr(0, rslash_pos);
+        return StringRef{path.data, rslash_pos};
     return "/";
 }
 
-std::string_view getBaseNodeName(std::string_view path)
+StringRef getBaseNodeName(StringRef path)
 {
     size_t basename_start = findLastSlash(path);
-    return path.substr(basename_start + 1, path.size() - basename_start - 1);
+    return StringRef{path.data + basename_start + 1, path.size - basename_start - 1};
 }
 
 }

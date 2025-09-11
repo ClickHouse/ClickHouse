@@ -34,6 +34,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DISK_INDEX;
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_RMDIR;
 }
 
@@ -716,13 +717,19 @@ String DiskObjectStorage::getWriteResourceNameNoLock() const
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
 {
     const auto storage_objects = metadata_storage->getStorageObjects(path);
     auto global_context = Context::getGlobalContextInstance();
 
     if (storage_objects.empty())
+    {
+        if (file_size.has_value() && *file_size != 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Empty list of objects for nonempty file on disk {} at {}", name, path);
         return std::make_unique<ReadBufferFromEmptyFile>();
+    }
 
     /// Matryoshka of read buffers:
     ///
@@ -770,11 +777,11 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const bool use_external_buffer_for_gather = use_async_buffer || use_page_cache || use_distributed_cache;
 
     auto read_buffer_creator =
-        [this, read_settings, read_hint]
+        [this, read_settings, read_hint, file_size]
         (bool restricted_seek, const StoredObject & object_) mutable -> std::unique_ptr<ReadBufferFromFileBase>
     {
         read_settings.remote_read_buffer_restrict_seek = restricted_seek;
-        return object_storage->readObject(object_, read_settings, read_hint);
+        return object_storage->readObject(object_, read_settings, read_hint, file_size);
     };
 
     /// Avoid cache fragmentation by choosing a bigger buffer size.
@@ -789,7 +796,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         ? std::max<size_t>(settings.remote_fs_buffer_size, settings.prefetch_buffer_size)
         : settings.remote_fs_buffer_size;
 
-    size_t total_objects_size = getTotalSize(storage_objects);
+    size_t total_objects_size = file_size ? *file_size : getTotalSize(storage_objects);
     if (total_objects_size)
         buffer_size = std::min(buffer_size, total_objects_size);
 
@@ -864,10 +871,11 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileIfExists(
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
 {
     if (auto storage_objects = metadata_storage->getStorageObjectsIfExist(path))
-        return readFile(path, settings, read_hint);
+        return readFile(path, settings, read_hint, file_size);
     else
         return {};
 }
