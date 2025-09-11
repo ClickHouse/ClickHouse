@@ -1287,10 +1287,10 @@ try
             metrics.reserve(servers_to_start_before_tables.size() + servers.size());
 
             for (const auto & server : servers_to_start_before_tables)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+                metrics.emplace_back(ProtocolServerMetrics{server.getMetricsType(), server.currentThreads(), server.refusedConnections()});
 
             for (const auto & server : servers)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+                metrics.emplace_back(ProtocolServerMetrics{server.getMetricsType(), server.currentThreads(), server.refusedConnections()});
             return metrics;
         },
         /*update_jemalloc_epoch_=*/memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc,
@@ -3057,7 +3057,8 @@ void Server::createServers(
                         server_pool,
                         socket,
                         makeServerParams(config),
-                        connection_filter));
+                        connection_filter),
+                    is_secure ? ProtocolMetricsType::HTTPS : ProtocolMetricsType::HTTP);
             });
         }
     }
@@ -3082,7 +3083,8 @@ void Server::createServers(
                     port_name,
                     "http://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes),
+                    ProtocolMetricsType::HTTP);
             });
         }
 
@@ -3102,7 +3104,8 @@ void Server::createServers(
                     port_name,
                     "https://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes),
+                    ProtocolMetricsType::HTTPS);
 #else
                 UNUSED(port);
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
@@ -3129,7 +3132,8 @@ void Server::createServers(
                         server_pool,
                         socket,
                         makeServerParams(config),
-                        connection_filter));
+                        connection_filter),
+                    ProtocolMetricsType::TCP);
             });
         }
 
@@ -3152,7 +3156,8 @@ void Server::createServers(
                         server_pool,
                         socket,
                         makeServerParams(config),
-                        connection_filter));
+                        connection_filter),
+                    ProtocolMetricsType::TCP_WITH_PROXY);
             });
         }
 
@@ -3171,6 +3176,7 @@ void Server::createServers(
                     port_name,
                     "Arrow Flight compatibility protocol: " + address.toString(),
                     std::unique_ptr<IGRPCServer>(new ArrowFlightHandler(*this, makeSocketAddress(listen_host, port, &logger()))),
+                    ProtocolMetricsType::GRPC,
                     true);
             });
         }
@@ -3196,7 +3202,8 @@ void Server::createServers(
                         server_pool,
                         socket,
                         makeServerParams(config),
-                        connection_filter));
+                        connection_filter),
+                    ProtocolMetricsType::TCP_SECURE);
     #else
                 UNUSED(port);
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
@@ -3228,7 +3235,8 @@ void Server::createServers(
                             server_pool,
                             socket,
                             makeServerParams(config),
-                            connection_filter));
+                            connection_filter),
+                        ProtocolMetricsType::TCP_SSH);
 #else
                 UNUSED(port);
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH protocol is disabled for ClickHouse, as it has been either built without libssh or not for Linux");
@@ -3255,7 +3263,8 @@ void Server::createServers(
                          server_pool,
                          socket,
                          makeServerParams(config),
-                         connection_filter));
+                         connection_filter),
+                    ProtocolMetricsType::MYSQL);
             });
         }
 
@@ -3279,14 +3288,16 @@ void Server::createServers(
                          server_pool,
                          socket,
                          makeServerParams(config),
-                         connection_filter));
+                         connection_filter),
+                    ProtocolMetricsType::POSTGRESQL);
 #else
                     std::make_unique<TCPServer>(
                          new PostgreSQLHandlerFactory(*this, secure_required, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes),
                          server_pool,
                          socket,
                          makeServerParams(config),
-                         connection_filter));
+                         connection_filter),
+                    ProtocolMetricsType::POSTGRESQL);
 #endif
             });
         }
@@ -3302,7 +3313,8 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "gRPC protocol: " + server_address.toString(),
-                    std::make_unique<GRPCServer>(*this, makeSocketAddress(listen_host, port, &logger())));
+                    std::make_unique<GRPCServer>(*this, makeSocketAddress(listen_host, port, &logger())),
+                    ProtocolMetricsType::GRPC);
             });
         }
 #endif
@@ -3321,7 +3333,8 @@ void Server::createServers(
                     port_name,
                     "Prometheus: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes),
+                    ProtocolMetricsType::PROMETHEUS);
             });
         }
     }
@@ -3371,7 +3384,8 @@ void Server::createInterserverServers(
                         http_params,
                         nullptr,
                         ProfileEvents::InterfaceInterserverReceiveBytes,
-                        ProfileEvents::InterfaceInterserverSendBytes));
+                        ProfileEvents::InterfaceInterserverSendBytes),
+                    ProtocolMetricsType::INTERSERVER_HTTP);
             });
         }
 
@@ -3397,7 +3411,8 @@ void Server::createInterserverServers(
                         http_params,
                         nullptr,
                         ProfileEvents::InterfaceInterserverReceiveBytes,
-                        ProfileEvents::InterfaceInterserverSendBytes));
+                        ProfileEvents::InterfaceInterserverSendBytes),
+                    ProtocolMetricsType::INTERSERVER_HTTPS);
 #else
                 UNUSED(port);
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");

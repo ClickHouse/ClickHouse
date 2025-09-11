@@ -13,6 +13,7 @@
 #include <optional>
 #include <unordered_map>
 
+#include <Common/ProtocolMetricsTypes.h>
 
 namespace Poco
 {
@@ -39,7 +40,7 @@ using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMet
 
 struct ProtocolServerMetrics
 {
-    String port_name;
+    ProtocolMetricsType protocol_type;
     size_t current_threads;
     size_t rejected_connections;
 };

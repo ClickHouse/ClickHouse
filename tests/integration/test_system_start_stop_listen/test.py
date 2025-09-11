@@ -174,6 +174,13 @@ def test_all_protocols(started_cluster):
     assert_everything_works()
 
 
+def test_threads_metrics_for_custom_protocols(started_cluster):
+    # Ensure metrics for custom <protocols> endpoints are reported using enum mapping
+    main_node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+    vals = main_node.query("SELECT groupArray(metric) FROM system.asynchronous_metrics WHERE metric IN ('HTTPThreads','TCPThreads')")
+    assert 'HTTPThreads' in vals
+    assert 'TCPThreads' in vals
+
 def test_except(started_cluster):
     custom_client = Client(main_node.ip_address, 9001, command=cluster.client_bin_path)
     assert_everything_works()

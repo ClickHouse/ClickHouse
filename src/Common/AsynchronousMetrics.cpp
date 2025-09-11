@@ -2152,59 +2152,53 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     {
-        auto threads_get_metric_name_doc = [](const String & name) -> std::pair<const char *, const char *>
+        auto threads_get_metric_name_doc = [](ProtocolMetricsType type) -> std::pair<const char *, const char *>
         {
-            static std::map<String, std::pair<const char *, const char *>> metric_map =
+            switch (type)
             {
-                {"tcp_port", {"TCPThreads", "Number of threads in the server of the TCP protocol (without TLS)."}},
-                {"tcp_port_secure", {"TCPSecureThreads", "Number of threads in the server of the TCP protocol (with TLS)."}},
-                {"http_port", {"HTTPThreads", "Number of threads in the server of the HTTP interface (without TLS)."}},
-                {"https_port", {"HTTPSecureThreads", "Number of threads in the server of the HTTPS interface."}},
-                {"interserver_http_port", {"InterserverThreads", "Number of threads in the server of the replicas communication protocol (without TLS)."}},
-                {"interserver_https_port", {"InterserverSecureThreads", "Number of threads in the server of the replicas communication protocol (with TLS)."}},
-                {"mysql_port", {"MySQLThreads", "Number of threads in the server of the MySQL compatibility protocol."}},
-                {"postgresql_port", {"PostgreSQLThreads", "Number of threads in the server of the PostgreSQL compatibility protocol."}},
-                {"grpc_port", {"GRPCThreads", "Number of threads in the server of the GRPC protocol."}},
-                {"prometheus.port", {"PrometheusThreads", "Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
-                {"keeper_server.tcp_port", {"KeeperTCPThreads", "Number of threads in the server of the Keeper TCP protocol (without TLS)."}},
-                {"keeper_server.tcp_port_secure", {"KeeperTCPSecureThreads", "Number of threads in the server of the Keeper TCP protocol (with TLS)."}}
-            };
-            auto it = metric_map.find(name);
-            if (it == metric_map.end())
-                return { nullptr, nullptr };
-            return it->second;
+                case ProtocolMetricsType::TCP: return {"TCPThreads", "Number of threads in the server of the TCP protocol (without TLS)."};
+                case ProtocolMetricsType::TCP_SECURE: return {"TCPSecureThreads", "Number of threads in the server of the TCP protocol (with TLS)."};
+                case ProtocolMetricsType::HTTP: return {"HTTPThreads", "Number of threads in the server of the HTTP interface (without TLS)."};
+                case ProtocolMetricsType::HTTPS: return {"HTTPSecureThreads", "Number of threads in the server of the HTTPS interface."};
+                case ProtocolMetricsType::INTERSERVER_HTTP: return {"InterserverThreads", "Number of threads in the server of the replicas communication protocol (without TLS)."};
+                case ProtocolMetricsType::INTERSERVER_HTTPS: return {"InterserverSecureThreads", "Number of threads in the server of the replicas communication protocol (with TLS)."};
+                case ProtocolMetricsType::MYSQL: return {"MySQLThreads", "Number of threads in the server of the MySQL compatibility protocol."};
+                case ProtocolMetricsType::POSTGRESQL: return {"PostgreSQLThreads", "Number of threads in the server of the PostgreSQL compatibility protocol."};
+                case ProtocolMetricsType::GRPC: return {"GRPCThreads", "Number of threads in the server of the GRPC protocol."};
+                case ProtocolMetricsType::PROMETHEUS: return {"PrometheusThreads", "Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."};
+                case ProtocolMetricsType::KEEPER_TCP: return {"KeeperTCPThreads", "Number of threads in the server of the Keeper TCP protocol (without TLS)."};
+                case ProtocolMetricsType::KEEPER_TCP_SECURE: return {"KeeperTCPSecureThreads", "Number of threads in the server of the Keeper TCP protocol (with TLS)."};
+                default: return { nullptr, nullptr };
+            }
         };
 
-        auto rejected_connections_get_metric_name_doc = [](const String & name) -> std::pair<const char *, const char *>
+        auto rejected_connections_get_metric_name_doc = [](ProtocolMetricsType type) -> std::pair<const char *, const char *>
         {
-            static std::map<String, std::pair<const char *, const char *>> metric_map =
-                {
-                    {"tcp_port", {"TCPRejectedConnections", "Number of rejected connections for the TCP protocol (without TLS)."}},
-                    {"tcp_port_secure", {"TCPSecureRejectedConnections", "Number of rejected connections for the TCP protocol (with TLS)."}},
-                    {"http_port", {"HTTPRejectedConnections", "Number of rejected connections for the HTTP interface (without TLS)."}},
-                    {"https_port", {"HTTPSecureRejectedConnections", "Number of rejected connections for the HTTPS interface."}},
-                    {"interserver_http_port", {"InterserverRejectedConnections", "Number of rejected connections for the replicas communication protocol (without TLS)."}},
-                    {"interserver_https_port", {"InterserverSecureRejectedConnections", "Number of rejected connections for the replicas communication protocol (with TLS)."}},
-                    {"mysql_port", {"MySQLRejectedConnections", "Number of rejected connections for the MySQL compatibility protocol."}},
-                    {"postgresql_port", {"PostgreSQLRejectedConnections", "Number of rejected connections for the PostgreSQL compatibility protocol."}},
-                    {"grpc_port", {"GRPCRejectedConnections", "Number of rejected connections for the GRPC protocol."}},
-                    {"prometheus.port", {"PrometheusRejectedConnections", "Number of rejected connections for the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
-                    {"keeper_server.tcp_port", {"KeeperTCPRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (without TLS)."}},
-                    {"keeper_server.tcp_port_secure", {"KeeperTCPSecureRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (with TLS)."}}
-                };
-            auto it = metric_map.find(name);
-            if (it == metric_map.end())
-                return { nullptr, nullptr };
-            return it->second;
+            switch (type)
+            {
+                case ProtocolMetricsType::TCP: return {"TCPRejectedConnections", "Number of rejected connections for the TCP protocol (without TLS)."};
+                case ProtocolMetricsType::TCP_SECURE: return {"TCPSecureRejectedConnections", "Number of rejected connections for the TCP protocol (with TLS)."};
+                case ProtocolMetricsType::HTTP: return {"HTTPRejectedConnections", "Number of rejected connections for the HTTP interface (without TLS)."};
+                case ProtocolMetricsType::HTTPS: return {"HTTPSecureRejectedConnections", "Number of rejected connections for the HTTPS interface."};
+                case ProtocolMetricsType::INTERSERVER_HTTP: return {"InterserverRejectedConnections", "Number of rejected connections for the replicas communication protocol (without TLS)."};
+                case ProtocolMetricsType::INTERSERVER_HTTPS: return {"InterserverSecureRejectedConnections", "Number of rejected connections for the replicas communication protocol (with TLS)."};
+                case ProtocolMetricsType::MYSQL: return {"MySQLRejectedConnections", "Number of rejected connections for the MySQL compatibility protocol."};
+                case ProtocolMetricsType::POSTGRESQL: return {"PostgreSQLRejectedConnections", "Number of rejected connections for the PostgreSQL compatibility protocol."};
+                case ProtocolMetricsType::GRPC: return {"GRPCRejectedConnections", "Number of rejected connections for the GRPC protocol."};
+                case ProtocolMetricsType::PROMETHEUS: return {"PrometheusRejectedConnections", "Number of rejected connections for the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."};
+                case ProtocolMetricsType::KEEPER_TCP: return {"KeeperTCPRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (without TLS)."};
+                case ProtocolMetricsType::KEEPER_TCP_SECURE: return {"KeeperTCPSecureRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (with TLS)."};
+                default: return { nullptr, nullptr };
+            }
         };
 
         const auto server_metrics = protocol_server_metrics_func();
         for (const auto & server_metric : server_metrics)
         {
-            if (auto name_doc = threads_get_metric_name_doc(server_metric.port_name); name_doc.first != nullptr)
+            if (auto name_doc = threads_get_metric_name_doc(server_metric.protocol_type); name_doc.first != nullptr)
                 new_values[name_doc.first] = { server_metric.current_threads, name_doc.second };
 
-            if (auto name_doc = rejected_connections_get_metric_name_doc(server_metric.port_name); name_doc.first != nullptr)
+            if (auto name_doc = rejected_connections_get_metric_name_doc(server_metric.protocol_type); name_doc.first != nullptr)
                 new_values[name_doc.first] = { server_metric.rejected_connections, name_doc.second };
         }
     }

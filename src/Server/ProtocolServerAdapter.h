@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 
+#include <Common/ProtocolMetricsTypes.h>
 
 namespace DB
 {
@@ -26,6 +27,7 @@ public:
         const char * port_name_,
         const std::string & description_,
         std::unique_ptr<TCPServer> tcp_server_,
+        ProtocolMetricsType metrics_type_,
         bool supports_runtime_reconfiguration_ = true);
 
 #if USE_GRPC
@@ -34,6 +36,7 @@ public:
         const char * port_name_,
         const std::string & description_,
         std::unique_ptr<IGRPCServer> grpc_server_,
+        ProtocolMetricsType metrics_type_,
         bool supports_runtime_reconfiguration_ = true);
 #endif
 
@@ -64,6 +67,8 @@ public:
 
     const std::string & getDescription() const { return description; }
 
+    ProtocolMetricsType getMetricsType() const { return metrics_type; }
+
 private:
     class Impl
     {
@@ -85,6 +90,7 @@ private:
     std::string description;
     std::unique_ptr<Impl> impl;
     bool supports_runtime_reconfiguration = true;
+    ProtocolMetricsType metrics_type = ProtocolMetricsType::UNKNOWN;
 };
 
 }

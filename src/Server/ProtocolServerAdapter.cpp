@@ -31,12 +31,14 @@ ProtocolServerAdapter::ProtocolServerAdapter(
     const char * port_name_,
     const std::string & description_,
     std::unique_ptr<TCPServer> tcp_server_,
+    ProtocolMetricsType metrics_type_,
     bool supports_runtime_reconfiguration_)
     : listen_host(listen_host_)
     , port_name(port_name_)
     , description(description_)
     , impl(std::make_unique<TCPServerAdapterImpl>(std::move(tcp_server_)))
     , supports_runtime_reconfiguration(supports_runtime_reconfiguration_)
+    , metrics_type(metrics_type_)
 {
 }
 
@@ -69,12 +71,14 @@ ProtocolServerAdapter::ProtocolServerAdapter(
     const char * port_name_,
     const std::string & description_,
     std::unique_ptr<IGRPCServer> grpc_server_,
+    ProtocolMetricsType metrics_type_,
     bool supports_runtime_reconfiguration_)
     : listen_host(listen_host_)
     , port_name(port_name_)
     , description(description_)
     , impl(std::make_unique<GRPCServerAdapterImpl>(std::move(grpc_server_)))
     , supports_runtime_reconfiguration(supports_runtime_reconfiguration_)
+    , metrics_type(metrics_type_)
 {
 }
 #endif

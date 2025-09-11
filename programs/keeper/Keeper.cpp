@@ -437,7 +437,7 @@ try
             std::lock_guard lock(servers_lock);
             metrics.reserve(servers->size());
             for (const auto & server : *servers)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+                metrics.emplace_back(ProtocolServerMetrics{server.getMetricsType(), server.currentThreads(), server.refusedConnections()});
             return metrics;
         },
         /*update_jemalloc_epoch_=*/memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc,
@@ -482,7 +482,8 @@ try
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
                         config_getter, global_context->getKeeperDispatcher(),
-                        tcp_receive_timeout, tcp_send_timeout, false), server_pool, socket));
+                        tcp_receive_timeout, tcp_send_timeout, false), server_pool, socket),
+                ProtocolMetricsType::KEEPER_TCP);
         });
 
         const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -500,7 +501,8 @@ try
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
                         config_getter, global_context->getKeeperDispatcher(),
-                        tcp_receive_timeout, tcp_send_timeout, true), server_pool, socket));
+                        tcp_receive_timeout, tcp_send_timeout, true), server_pool, socket),
+                ProtocolMetricsType::KEEPER_TCP_SECURE);
 #else
             UNUSED(port);
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
@@ -535,7 +537,8 @@ try
                         createKeeperPrometheusHandlerFactory(*this, config_getter(), async_metrics, "PrometheusHandler-factory"),
                         server_pool,
                         socket,
-                        http_params));
+                        http_params),
+                ProtocolMetricsType::PROMETHEUS);
             });
 
         /// HTTP control endpoints
@@ -557,8 +560,8 @@ try
                 port_name,
                 "HTTP Control: http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    std::move(my_http_context), createKeeperHTTPControlMainHandlerFactory(config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params)
-                    );
+                    std::move(my_http_context), createKeeperHTTPControlMainHandlerFactory(config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params),
+                ProtocolMetricsType::HTTP);
         });
     }
 
