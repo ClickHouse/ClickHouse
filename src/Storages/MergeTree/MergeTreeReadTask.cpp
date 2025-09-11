@@ -269,8 +269,8 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContext &
     /// relevant read ranges for the current part, retrieve or construct index filter for all involved skip indexes.
     /// This filter will later be used to filter granules during the first reading step.
     auto index_read_result = index_build_context.getPreparedIndexReadResult(*this);
-    chassert(index_read_result);
-    readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result));
+    if (index_read_result)
+        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result));
 }
 
 UInt64 MergeTreeReadTask::estimateNumRows() const

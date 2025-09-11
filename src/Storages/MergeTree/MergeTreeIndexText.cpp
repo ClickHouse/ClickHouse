@@ -583,7 +583,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 void MergeTreeIndexTextGranuleBuilder::reset()
 {
     current_row = 0;
-    tokens_map.clear();
+    tokens_map = {};
     posting_lists.clear();
     arena = std::make_unique<Arena>();
 }
