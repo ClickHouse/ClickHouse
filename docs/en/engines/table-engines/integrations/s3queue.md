@@ -183,7 +183,7 @@ Possible values:
 
 Default value: empty string.
 
-### `after_processing_tag_key` {#after_processing_tag_key}
+### `after_processing_tag_value` {#after_processing_tag_value}
 
 Tag value to put tagging on successfully processed files, if `after_processing='tag'`.
 
