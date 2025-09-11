@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- { echo }
 DROP DATABASE IF EXISTS dboverlay    SYNC;
 DROP DATABASE IF EXISTS db_overlay_a SYNC;
 DROP DATABASE IF EXISTS db_overlay_b SYNC;
