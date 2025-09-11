@@ -1203,7 +1203,8 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
             header.insert(ColumnWithTypeAndName{type, name});
     }
 
-    if (format_settings.schema_inference_make_columns_nullable == 1)
+    /// ORC doesn't have non-nullable data types.
+    if (format_settings.schema_inference_make_columns_nullable != 0)
         return getNamesAndRecursivelyNullableTypes(header, format_settings);
     return header.getNamesAndTypesList();
 }
