@@ -70,13 +70,6 @@ ASTPtr rewriteSelectQuery(
     ASTPtr table_function_ptr,
     ASTPtr additional_filter)
 {
-    // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: About to call rewriteSelectQuery");
-    // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: query: {}", query ? query->formatForErrorMessage() : "null");
-    // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: remote_database: {}", remote_database);
-    // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: remote_table: {}", remote_table);
-    // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: table_function_ptr: {}", table_function_ptr ? table_function_ptr->formatForErrorMessage() : "null");
-    // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: additional_filter: {}", additional_filter ? additional_filter->formatForErrorMessage() : "null");
-
     auto modified_query_ast = query->clone();
 
     ASTSelectQuery & select_query = modified_query_ast->as<ASTSelectQuery &>();
@@ -105,30 +98,6 @@ ASTPtr rewriteSelectQuery(
                     ASTSelectQuery::Expression::WHERE, additional_filter->clone());
             }
         }
-        // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: modified_query_ast: {}", modified_query_ast ? modified_query_ast->dumpTree() : "null");
-
-        // // Add debug output for semantic->table fields
-        // if (auto expression_list = select_query.select())
-        // {
-        //     for (const auto & child : expression_list->children)
-        //     {
-        //         if (auto identifier = child->as<ASTIdentifier>())
-        //         {
-        //             // access the protected member of IdentifierSemanticImpl through a hack - ok for debugging purposes
-        //             auto semantic = identifier->getSemantic();
-        //             if (semantic)
-        //             {
-        //                 LOG_ERROR(getLogger("Debug"), "DEBUG: Column '{}' semantic properties:", identifier->name());
-        //                 LOG_ERROR(getLogger("Debug"), "  - special: {}", semantic->special);
-        //                 LOG_ERROR(getLogger("Debug"), "  - can_be_alias: {}", semantic->can_be_alias);
-        //                 LOG_ERROR(getLogger("Debug"), "  - covered: {}", semantic->covered);
-        //                 LOG_ERROR(getLogger("Debug"), "  - membership: {}", semantic->membership ? std::to_string(*semantic->membership) : "none");
-        //                 LOG_ERROR(getLogger("Debug"), "  - table: '{}'", semantic->table);
-        //                 LOG_ERROR(getLogger("Debug"), "  - legacy_compound: {}", semantic->legacy_compound);
-        //             }
-        //         }
-        //     }
-        // }
 
         if (table_function_ptr)
         {
@@ -144,7 +113,6 @@ ASTPtr rewriteSelectQuery(
 
         /// Restore long column names (cause our short names are ambiguous).
         /// TODO: aliased table functions & CREATE TABLE AS table function cases
-
         if (!table_function_ptr)
         {
             RestoreQualifiedNamesVisitor::Data data;
@@ -152,44 +120,9 @@ ASTPtr rewriteSelectQuery(
             data.remote_table.database = remote_database;
             data.remote_table.table = remote_table;
 
-            // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: About to call RestoreQualifiedNamesVisitor");
-            // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: data.distributed_table.alias: {}", data.distributed_table.alias);
-            // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: data.distributed_table.table: {}", data.distributed_table.table);
-            // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: data.distributed_table.database: {}", data.distributed_table.database);
-
-            // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: data.remote_table.alias: {}", data.remote_table.alias);
-            // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: data.remote_table.table: {}", data.remote_table.table);
-            // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: data.remote_table.database: {}", data.remote_table.database);
-
-            // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: modified_query_ast: {}", modified_query_ast ? modified_query_ast->dumpTree() : "null");
             RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
-            LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: Successfully completed RestoreQualifiedNamesVisitor");
         }
     }
-
-    // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: modified_query_ast: {}", modified_query_ast ? modified_query_ast->dumpTree() : "null");
-    // Add debug output for semantic->table fields
-    // if (auto expression_list = select_query.select())
-    // {
-    //     for (const auto & child : expression_list->children)
-    //     {
-    //         if (auto identifier = child->as<ASTIdentifier>())
-    //         {
-    //             // access the protected member of IdentifierSemanticImpl through a hack - ok for debugging purposes
-    //             auto semantic = identifier->getSemantic();
-    //             if (semantic)
-    //             {
-    //                 LOG_ERROR(getLogger("Debug"), "DEBUG: Column '{}' semantic properties:", identifier->name());
-    //                 LOG_ERROR(getLogger("Debug"), "  - special: {}", semantic->special);
-    //                 LOG_ERROR(getLogger("Debug"), "  - can_be_alias: {}", semantic->can_be_alias);
-    //                 LOG_ERROR(getLogger("Debug"), "  - covered: {}", semantic->covered);
-    //                 LOG_ERROR(getLogger("Debug"), "  - membership: {}", semantic->membership ? std::to_string(*semantic->membership) : "none");
-    //                 LOG_ERROR(getLogger("Debug"), "  - table: '{}'", semantic->table);
-    //                 LOG_ERROR(getLogger("Debug"), "  - legacy_compound: {}", semantic->legacy_compound);
-    //             }
-    //         }
-    //     }
-    // }
 
     /// To make local JOIN works, default database should be added to table names.
     /// But only for JOIN section, since the following should work using default_database:
@@ -199,8 +132,6 @@ ASTPtr rewriteSelectQuery(
         /* only_replace_current_database_function_= */false,
         /* only_replace_in_join_= */true);
     visitor.visit(modified_query_ast);
-    // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: Successfully completed AddDefaultDatabaseVisitor");
-    // LOG_ERROR(getLogger("ClusterProxy::SelectStreamFactory"), "DEBUG: modified_query_ast: {}", modified_query_ast ? modified_query_ast->dumpTree() : "null");
 
     return modified_query_ast;
 }
