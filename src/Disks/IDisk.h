@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <optional>
 #include <sys/stat.h>
+#include <atomic>
 
 #include "config.h"
 
@@ -570,7 +571,7 @@ public:
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() const { return nullptr; }
 #endif
 
-    bool isCaseInsensitive() const { return is_case_insensitive; }
+    bool isCaseInsensitive();
 
 protected:
     friend class DiskReadOnlyWrapper;
@@ -594,9 +595,12 @@ private:
     std::unique_ptr<ThreadPool> copying_thread_pool;
     // 0 means the disk is not custom, the disk is predefined in the config
     UInt128 custom_disk_settings_hash = 0;
+
     /// True if underlying filesystem is case-insensitive,
     /// e.g. file_name and FILE_NAME are the same files.
     bool is_case_insensitive = false;
+    std::atomic_bool is_case_sensitivity_checked = false;
+    std::mutex case_sensitivity_check_mutex;
 
     /// Check access to the disk.
     void checkAccess();
