@@ -512,6 +512,7 @@ void updateInputsAfterChildAppliesRequest(
             }
 
             new_dag.addOrReplaceInOutputs(*new_function_node);
+            new_dag.removeUnusedActions(false);
         }
 
         function_input_names[node_to_update] = function_output_names[changed_child];
