@@ -11,6 +11,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
+#include <Common/filesystemHelpers.h>
 #include <Formats/FormatFactory.h>
 
 #include <IO/ReadBufferFromFileBase.h>
@@ -58,6 +59,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 namespace Setting
@@ -629,6 +631,14 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
 {
 #if USE_DELTA_KERNEL_RS
     auto configuration_ptr = configuration.lock();
+
+    if (object_storage->getType() == ObjectStorageType::Local)
+    {
+        auto user_files_path = local_context->getUserFilesPath();
+        if (!fileOrSymlinkPathStartsWith(configuration_ptr->getPathForRead().path, user_files_path))
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", configuration_ptr->getPathForRead().path, user_files_path);
+    }
+    auto log = getLogger("IcebergMetadata");
     const auto & query_settings_ref = local_context->getSettingsRef();
 
     const auto storage_type = configuration_ptr->getType();

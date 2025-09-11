@@ -59,7 +59,7 @@ from helpers.s3_tools import (
 )
 from helpers.test_tools import TSV
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(os.path.dirname(os.path.realpath(__file__)))
 cluster = ClickHouseCluster(__file__, with_spark=True)
 
 S3_DATA = [
@@ -75,6 +75,7 @@ def get_spark():
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
+        .config("spark.sql.catalog.spark_catalog.warehouse", "/var/lib/clickhouse/user_files")
         .config("spark.driver.memory", "8g")
         .config("spark.executor.memory", "8g")
         .master("local")
@@ -204,7 +205,7 @@ def started_cluster():
             cluster.minio_client.fput_object(
                 bucket_name=cluster.minio_bucket,
                 object_name=file,
-                file_path=os.path.join(SCRIPT_DIR, file),
+                file_path=os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))), file),
             )
 
         yield cluster
@@ -356,7 +357,7 @@ def create_initial_data_file(
         FORMAT Parquet"""
     )
     user_files_path = os.path.join(
-        SCRIPT_DIR, f"{cluster.instances_dir_name}/{node_name}/database/user_files"
+        os.path.join(os.path.dirname(os.path.realpath(__file__))), f"{cluster.instances_dir_name}/{node_name}/database/user_files"
     )
     result_path = f"{user_files_path}/{table_name}.parquet"
     return result_path

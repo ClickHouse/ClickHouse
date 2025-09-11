@@ -1,11 +1,4 @@
 <clickhouse>
-    <profiles>
-        <default>
-            <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
-            <check_rights_local_storage>0</check_rights_local_storage>
-        </default>
-    </profiles>
-
     <users>
         <default>
             <password></password>
