@@ -556,7 +556,7 @@ namespace
     class SendingChunkHeaderTransform final : public ISimpleTransform
     {
     public:
-        SendingChunkHeaderTransform(const Block & header, std::shared_ptr<TimeoutWriteBufferFromFileDescriptor> buffer_)
+        SendingChunkHeaderTransform(const Block & header, WriteBuffer & buffer_)
             : ISimpleTransform(header, header, false)
             , buffer(buffer_)
         {
@@ -568,12 +568,12 @@ namespace
 
         void transform(Chunk & chunk) override
         {
-            writeText(chunk.getNumRows(), *buffer);
-            writeChar('\n', *buffer);
+            writeText(chunk.getNumRows(), buffer);
+            writeChar('\n', buffer);
         }
 
     private:
-        std::shared_ptr<TimeoutWriteBufferFromFileDescriptor> buffer;
+        WriteBuffer & buffer;
     };
 
 }
@@ -667,17 +667,19 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
         input_pipes[i].resize(1);
 
+        auto out = context->getOutputFormat(configuration.format, *timeout_write_buffer, materializeBlock(input_pipes[i].getHeader()));
+        out->setAutoFlush();
+
         if (configuration.send_chunk_header)
         {
-            auto transform = std::make_shared<SendingChunkHeaderTransform>(input_pipes[i].getHeader(), timeout_write_buffer);
+            /// We cannot use timeout_write_buffer directly since the output format may wrap the buffer, so we need to use a wrapper
+            auto transform = std::make_shared<SendingChunkHeaderTransform>(input_pipes[i].getHeader(), *out->getWriteBufferPtr());
             input_pipes[i].addTransform(std::move(transform));
         }
 
         auto num_streams = input_pipes[i].maxParallelStreams();
         auto pipeline = std::make_shared<QueryPipeline>(std::move(input_pipes[i]));
         pipeline->setNumThreads(num_streams);
-        auto out = context->getOutputFormat(configuration.format, *timeout_write_buffer, materializeBlock(pipeline->getHeader()));
-        out->setAutoFlush();
         pipeline->complete(std::move(out));
 
         ShellCommandSource::SendDataTask task = [pipeline, timeout_write_buffer, write_buffer, is_executable_pool]()
