@@ -5,7 +5,7 @@ create table test(c1 Int64, c2 Int64)
 as  
 SELECT
     1071106,
-    abs(1 + 151703 * (sqrt(-2 * log(u1)) * cos(2 * pi() * u2)))
+    5+abs(1 + 151703 * (sqrt(-2 * log(u1)) * cos(2 * pi() * u2)))
 FROM
 (
     SELECT
@@ -16,7 +16,7 @@ FROM
 union all
 SELECT
     1071102,
-    7+abs(1 + 151693 * (sqrt(-2 * log(u1)) * cos(2 * pi() * u2)))
+    8+abs(1 + 151693 * (sqrt(-2 * log(u1)) * cos(2 * pi() * u2)))
 FROM
 (
     SELECT
