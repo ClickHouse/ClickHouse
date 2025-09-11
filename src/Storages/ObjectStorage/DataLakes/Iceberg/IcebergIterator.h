@@ -109,6 +109,8 @@ private:
     const String compression_method;
     std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
     std::vector<Iceberg::ManifestFileEntry> equality_deletes_files;
+    std::exception_ptr exception;
+    std::mutex exception_mutex;
 };
 }
 
