@@ -80,7 +80,7 @@ void DeltaLakeSink::onFinish()
         sink->onFinish();
         auto file_location = sink->getPath().substr(delta_transaction->getDataPath().size());
         auto file_size = sink->getFileSize();
-        files.emplace_back(std::move(file_location), file_size, Map{});
+        files.emplace_back(std::move(file_location), file_size, written_rows, Map{});
     }
 
     try

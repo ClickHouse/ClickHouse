@@ -3390,48 +3390,49 @@ def test_write_limits(started_cluster, partitioned, limit_enabled):
     assert df.count() == num_rows
 
 
-def test_column_mapping_id(started_cluster):
-    node = started_cluster.instances["node1"]
-    table_name = randomize_table_name("test_column_mapping_id")
-    spark = started_cluster.spark_session
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
-    path = f"/{table_name}"
-
-    schema = StructType(
-        [
-            StructField("id", IntegerType(), True),
-            StructField(
-                "person",
-                StructType(
-                    [
-                        StructField("first_name", StringType(), True),
-                        StructField("last_name", StringType(), True),
-                    ]
-                ),
-                True,
-            ),
-        ]
-    )
-    data = [(1, ("Alice", "Smith")), (2, ("Bob", "Johnson"))]
-    df = spark.createDataFrame(data, schema=schema)
-    df.write.format("delta").option("delta.minReaderVersion", "2").option(
-        "delta.minWriterVersion", "5"
-    ).option("delta.columnMapping.mode", "id").save(path)
-    upload_directory(minio_client, bucket, path, "")
-
-    delta_function = f"""
-deltaLake(
-        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
-        '{minio_access_key}',
-        '{minio_secret_key}')
-    """
-    assert (
-        "Column mapping ID mode not supported"
-        in node.query_and_get_error(
-            f"SELECT * FROM {delta_function} ORDER BY all"
-        ).strip()
-    )
+# TODO: delta-kernel now supports columnMapping.mode id, check that we can work with it as well.
+#def test_column_mapping_id(started_cluster):
+#    node = started_cluster.instances["node1"]
+#    table_name = randomize_table_name("test_column_mapping_id")
+#    spark = started_cluster.spark_session
+#    minio_client = started_cluster.minio_client
+#    bucket = started_cluster.minio_bucket
+#    path = f"/{table_name}"
+#
+#    schema = StructType(
+#        [
+#            StructField("id", IntegerType(), True),
+#            StructField(
+#                "person",
+#                StructType(
+#                    [
+#                        StructField("first_name", StringType(), True),
+#                        StructField("last_name", StringType(), True),
+#                    ]
+#                ),
+#                True,
+#            ),
+#        ]
+#    )
+#    data = [(1, ("Alice", "Smith")), (2, ("Bob", "Johnson"))]
+#    df = spark.createDataFrame(data, schema=schema)
+#    df.write.format("delta").option("delta.minReaderVersion", "2").option(
+#        "delta.minWriterVersion", "5"
+#    ).option("delta.columnMapping.mode", "id").save(path)
+#    upload_directory(minio_client, bucket, path, "")
+#
+#    delta_function = f"""
+#deltaLake(
+#        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+#        '{minio_access_key}',
+#        '{minio_secret_key}')
+#    """
+#    assert (
+#        "Column mapping ID mode not supported"
+#        in node.query_and_get_error(
+#            f"SELECT * FROM {delta_function} ORDER BY all"
+#        ).strip()
+#    )
 
 
 @pytest.mark.parametrize("column_mapping", ["", "name"])
