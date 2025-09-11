@@ -21,6 +21,7 @@ public:
         UInt64 limit_ = 0,
         bool always_read_till_end_ = false,
         WriteBuffer * out_row_sources_buf_ = nullptr,
+        const std::optional<String> & filter_column_name_ = std::nullopt,
         bool use_average_block_sizes = false,
         bool apply_virtual_row_conversions = true,
         bool have_all_inputs_ = true);

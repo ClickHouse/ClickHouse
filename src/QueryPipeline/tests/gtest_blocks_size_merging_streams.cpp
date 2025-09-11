@@ -82,8 +82,18 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
 
     EXPECT_EQ(pipe.numOutputPorts(), 3);
 
-    auto transform = std::make_shared<MergingSortedTransform>(pipe.getSharedHeader(), pipe.numOutputPorts(), sort_description,
-        8192, /*max_block_size_bytes=*/0, SortingQueueStrategy::Batch, 0, false, nullptr, true);
+    auto transform = std::make_shared<MergingSortedTransform>(
+        pipe.getSharedHeader(),
+        pipe.numOutputPorts(),
+        sort_description,
+        /*max_block_size_rows=*/ 8192,
+        /*max_block_size_bytes=*/ 0,
+        SortingQueueStrategy::Batch,
+        /*limit=*/ 0,
+        /*always_read_till_end=*/ false,
+        /*out_row_sources_buf=*/ nullptr,
+        /*filter_column_name=*/ std::nullopt,
+        /*use_average_block_sizes=*/ true);
 
     pipe.addTransform(std::move(transform));
 
@@ -124,8 +134,18 @@ TEST(MergingSortedTest, MoreInterestingBlockSizes)
 
     EXPECT_EQ(pipe.numOutputPorts(), 3);
 
-    auto transform = std::make_shared<MergingSortedTransform>(pipe.getSharedHeader(), pipe.numOutputPorts(), sort_description,
-        8192, /*max_block_size_bytes=*/0, SortingQueueStrategy::Batch, 0, false, nullptr, true);
+    auto transform = std::make_shared<MergingSortedTransform>(
+        pipe.getSharedHeader(),
+        pipe.numOutputPorts(),
+        sort_description,
+        /*max_block_size_rows=*/ 8192,
+        /*max_block_size_bytes=*/ 0,
+        SortingQueueStrategy::Batch,
+        /*limit=*/ 0,
+        /*always_read_till_end=*/ false,
+        /*out_row_sources_buf=*/ nullptr,
+        /*filter_column_name=*/ std::nullopt,
+        /*use_average_block_sizes=*/ true);
 
     pipe.addTransform(std::move(transform));
 

@@ -1877,3 +1877,35 @@ def test_implicit_index(started_cluster):
         "CREATE DATABASE implicit_index ENGINE = Replicated('/clickhouse/databases/implicit_index', 'shard1', 'replica2');"
         "SYSTEM SYNC DATABASE REPLICA implicit_index;"
     )
+
+
+def test_timeseries(started_cluster):
+    for node in [competing_node, main_node, dummy_node]:
+        node.query("DROP DATABASE IF EXISTS ts_db SYNC")
+
+    competing_node.query(
+        "CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');"
+    )
+
+    main_node.query(
+        """
+        CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');
+        CREATE TABLE ts_db.table ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = false
+        DATA ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
+        TAGS ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
+        METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family_name;
+        """,
+        settings={"allow_experimental_time_series_table": 1}
+    )
+
+    dummy_node.query(
+        "CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');"
+    )
+
+    for node in [competing_node, main_node, dummy_node]:
+        assert node.query(
+            """
+            SYSTEM SYNC DATABASE REPLICA ts_db;
+            SELECT count() FROM system.tables WHERE database='ts_db';
+            """, timeout=10
+        ) == "4\n", f"Node {node.name} failed"
