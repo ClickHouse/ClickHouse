@@ -34,15 +34,15 @@ def test_metadata_file_format_with_uuid(started_cluster_iceberg_with_spark, form
 
     for i in range(50):
         os.rename(
-            f"/iceberg_data/default/{TABLE_NAME}/metadata/v{i + 1}.metadata.json",
-            f"/iceberg_data/default/{TABLE_NAME}/metadata/{str(i).zfill(5)}-{get_uuid_str()}.metadata.json",
+            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/v{i + 1}.metadata.json",
+            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/{str(i).zfill(5)}-{get_uuid_str()}.metadata.json",
         )
 
     default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)

@@ -29,16 +29,16 @@ def test_compressed_metadata(started_cluster_iceberg_with_spark, storage_type):
         .create()
 
     # manual compression of metadata file before upload, still test some scenarios
-    subprocess.check_output(f"gzip /iceberg_data/default/{TABLE_NAME}/metadata/v1.metadata.json", shell=True)
+    subprocess.check_output(f"gzip /var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/v1.metadata.json", shell=True)
 
     # Weird but compression extension is really in the middle of the file name, not in the end...
-    subprocess.check_output(f"mv /iceberg_data/default/{TABLE_NAME}/metadata/v1.metadata.json.gz /iceberg_data/default/{TABLE_NAME}/metadata/v1.gz.metadata.json", shell=True)
+    subprocess.check_output(f"mv /var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/v1.metadata.json.gz /var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/v1.gz.metadata.json", shell=True)
 
     default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, explicit_metadata_path="")

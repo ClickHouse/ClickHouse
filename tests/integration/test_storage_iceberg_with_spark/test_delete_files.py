@@ -34,8 +34,8 @@ def test_delete_files(started_cluster_iceberg_with_spark, format_version, storag
     default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
@@ -49,7 +49,7 @@ def test_delete_files(started_cluster_iceberg_with_spark, format_version, storag
     default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
         "",
     )
 
@@ -70,7 +70,7 @@ def test_delete_files(started_cluster_iceberg_with_spark, format_version, storag
     default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
         "",
     )
 
@@ -84,7 +84,7 @@ def test_delete_files(started_cluster_iceberg_with_spark, format_version, storag
     default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
         "",
     )
 

@@ -33,8 +33,8 @@ def test_full_drop(started_cluster_iceberg_schema_evolution, format_version, sto
         default_download_directory(
             started_cluster_iceberg_schema_evolution,
             storage_type,
-            f"/iceberg_data/default/{TABLE_NAME}/",
-            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
         )
 
     assert instance.query(f"SELECT * FROM {TABLE_NAME_2} ORDER BY ALL") == '777\n'
