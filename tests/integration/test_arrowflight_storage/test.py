@@ -28,6 +28,29 @@ def test_table_function():
     )
 
 
+def test_table_function_with_auth():
+    result = node.query(
+        f"SELECT * FROM arrowflight('arrowflight1:5006', 'ABC', 'test_user', 'test_password')"
+    )
+    assert result == TSV(
+        [
+            ["test_value_1", "data1"],
+            ["abcadbc", "text_text_text"],
+            ["123456789", "data3"],
+        ]
+    )
+
+    assert "No credentials supplied" in node.query(
+        f"SELECT * FROM arrowflight('arrowflight1:5006', 'ABC')"
+    )
+    assert "Unknown user" in node.query(
+        f"SELECT * FROM arrowflight('arrowflight1:5006', 'ABC', 'default')"
+    )
+    assert "Wrong password" in node.query(
+        f"SELECT * FROM arrowflight('arrowflight1:5006', 'ABC', 'test_user', 'qwe123')"
+    )
+
+
 def test_arrowflight_storage():
     dataset = uuid.uuid4().hex
 

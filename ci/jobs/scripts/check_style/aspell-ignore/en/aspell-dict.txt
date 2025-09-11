@@ -1949,6 +1949,7 @@ ngramSimHashUTF
 noaa
 Noaa
 NOAA
+NOAUTH
 NodeJs
 nonconst
 NonMonotonic

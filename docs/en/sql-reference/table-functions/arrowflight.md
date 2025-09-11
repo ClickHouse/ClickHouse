@@ -13,13 +13,17 @@ Allows to perform queries on data exposed via an [Apache Arrow Flight](../../int
 **Syntax**
 
 ```sql
-arrowFlight('host:port', 'dataset_name')
+arrowFlight('host:port', 'dataset_name' [, NOAUTH])
+arrowFlight('host:port', 'dataset_name', 'username', 'password')
 ```
 
 **Arguments**
 
 * `host:port` — Address of the Arrow Flight server. [String](../../sql-reference/data-types/string.md).
 * `dataset_name` — Name of the dataset or descriptor available on the Arrow Flight server. [String](../../sql-reference/data-types/string.md).
+* `username` - Username to use with basic HTTP style authentication.
+* `password` - Password to use with basic HTTP style authentication.
+* NOAUTH - Specifies that authentication is not used. That will work only if the Arrow Flight server allows it.
 
 **Returned value**
 
@@ -30,7 +34,7 @@ arrowFlight('host:port', 'dataset_name')
 Query:
 
 ```sql
-SELECT * FROM arrowFlight('127.0.0.1:9005', 'sample_dataset') ORDER BY id;
+SELECT * FROM arrowFlight('127.0.0.1:9005', 'sample_dataset', NOAUTH) ORDER BY id;
 ```
 
 Result:
