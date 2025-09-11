@@ -61,7 +61,7 @@ struct ParseFromDiskResult
     std::optional<String> compression_method;
 };
 
-ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context);
+ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context, const fs::path & prefix);
 
 
 }

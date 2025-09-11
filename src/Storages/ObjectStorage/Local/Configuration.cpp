@@ -33,7 +33,7 @@ void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & coll
 void StorageLocalConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
 {
     auto disk = context->getDisk(disk_name);
-    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context);
+    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
 
     fs::path root = disk->getPath();
     fs::path suffix = parsing_result.path_suffix;

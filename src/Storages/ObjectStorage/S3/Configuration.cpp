@@ -310,7 +310,7 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
     s3_settings = std::make_unique<S3Settings>();
     *s3_settings = s3_object_storage.getS3Settings();
 
-    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context);
+    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
     {
         String path = s3_object_storage.getURI().uri_str;
         fs::path root = path;

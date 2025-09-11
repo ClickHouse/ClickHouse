@@ -179,7 +179,7 @@ std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & funct
     return key_value_args;
 }
 
-ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context)
+ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context, const fs::path & prefix)
 {
     if (args.size() > 3 + with_structure)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -223,7 +223,7 @@ ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr con
         if (result.path_suffix.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty path is not allowed");
 
-        if (!pathStartsWith(result.path_suffix, "."))
+        if (!pathStartsWith(prefix / fs::path(result.path_suffix), prefix))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path suffixes starting with '.' or '..' are not allowed.");
         size_t num_start_slashes = 0;
         for (; num_start_slashes < result.path_suffix.size() && result.path_suffix.at(num_start_slashes) == '/'; ++num_start_slashes) {}
