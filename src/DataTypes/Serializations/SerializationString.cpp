@@ -264,50 +264,34 @@ void SerializationString::enumerateStreams(
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
+    if (settings.enumerate_virtual_streams)
+    {
+        const auto * type_string = data.type ? &assert_cast<const DataTypeString &>(*data.type) : nullptr;
+        const auto * column_string = data.column ? &assert_cast<const ColumnString &>(*data.column) : nullptr;
+        ColumnPtr sizes_column;
+        if (column_string)
+        {
+            /// TODO(ab): Will this unnecessarily create useless .size subcolumn?
+            sizes_column = column_string->createSizeSubcolumn();
+        }
+
+        auto sizes_serialization = std::make_shared<SerializationNamed>(
+            std::make_shared<SerializationStringInlineSize>(), "size", SubstreamType::InlinedStringSizes);
+
+        /// Inlined size stream
+        settings.path.push_back(Substream::InlinedStringSizes);
+        settings.path.back().data = SubstreamData(sizes_serialization)
+                                        .withType(type_string ? std::make_shared<DataTypeUInt64>() : nullptr)
+                                        .withColumn(std::move(sizes_column))
+                                        .withSerializationInfo(data.serialization_info);
+
+        callback(settings.path);
+        settings.path.pop_back();
+    }
+
     /// Regular stream
     settings.path.push_back(Substream::Regular);
     settings.path.back().data = data;
-    callback(settings.path);
-
-    if (!settings.enumerate_virtual_streams)
-    {
-        settings.path.pop_back();
-        return;
-    }
-
-    const auto * type_string = data.type ? &assert_cast<const DataTypeString &>(*data.type) : nullptr;
-
-    const ColumnString * column_string = nullptr;
-    ColumnPtr sparse_offsets;
-    if (data.column)
-    {
-        if (const auto * sparse = typeid_cast<const ColumnSparse *>(data.column.get()))
-        {
-            column_string = typeid_cast<const ColumnString *>(sparse->getValuesPtr().get());
-            sparse_offsets = sparse->getOffsetsPtr();
-        }
-        else
-        {
-            column_string = typeid_cast<const ColumnString *>(data.column.get());
-        }
-    }
-
-    ColumnPtr sizes_column;
-    if (column_string)
-        sizes_column = column_string->createSizeSubcolumn();
-
-    if (sparse_offsets && sizes_column)
-        sizes_column = ColumnSparse::create(sizes_column->assumeMutable(), IColumn::mutate(sparse_offsets), data.column->size());
-
-    auto sizes_serialization = std::make_shared<SerializationNamed>(
-        std::make_shared<SerializationStringInlineSize>(), "size", SubstreamType::InlinedStringSizes);
-
-    settings.path.back() = Substream::InlinedStringSizes;
-    settings.path.back().data = SubstreamData(sizes_serialization)
-                                    .withType(type_string ? std::make_shared<DataTypeUInt64>() : nullptr)
-                                    .withColumn(std::move(sizes_column))
-                                    .withSerializationInfo(data.serialization_info);
-
     callback(settings.path);
     settings.path.pop_back();
 }

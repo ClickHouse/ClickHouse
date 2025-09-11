@@ -24,6 +24,7 @@ insert into test values ('hello world');
 -- Verify that string type is serialized with a physical .size stream
 select column, substreams, subcolumns.names, subcolumns.types from system.parts_columns where database = currentDatabase() and table = 'test' and active order by column;
 
+set enable_analyzer = 1;
 set optimize_empty_string_comparisons = 1;
 set optimize_functions_to_subcolumns = 0;
 
