@@ -264,7 +264,11 @@ StorageFactory & StorageFactory::instance()
 
 std::optional<AccessTypeObjects::Source> StorageFactory::getSourceAccessObject(const String & table_engine) const
 {
-    auto it = storages.find(table_engine);
+    /// System tables are not registered. As they are simply generating data we do not require any access rights.
+    std::unordered_set<String> system_engines{"SystemNumbers", "SystemZeros"};
+    if (system_engines.contains(table_engine))
+        return std::nullopt;
+    const auto it = storages.find(table_engine);
     if (it == storages.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown table engine {}", table_engine);
     return it->second.features.source_access_type;

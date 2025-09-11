@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: Requires libs
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
