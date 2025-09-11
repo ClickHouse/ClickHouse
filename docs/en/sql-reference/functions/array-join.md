@@ -17,8 +17,8 @@ This function takes an array as an argument, and propagates the source row to mu
 All the values in columns are simply copied, except the values in the column where this function is applied; it is replaced with the corresponding array value.
 
 :::note
-If the array is empty, `arrayJoin` produces no rows. 
-To return a single row instead, you can wrap it with [emptyArrayToSingle](./array-functions.md#emptyArrayToSingle), for example: `arrayJoin(emptyArrayToSingle(...))`.
+If the array is empty, `arrayJoin` produces no rows.
+To return a single row containing the default value of the array type, you can wrap it with [emptyArrayToSingle](./array-functions.md#emptyArrayToSingle), for example: `arrayJoin(emptyArrayToSingle(...))`.
 :::
 
 For example:
