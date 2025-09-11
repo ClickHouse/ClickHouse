@@ -31,7 +31,7 @@ SELECT protocol('https://clickhouse.com/');
         R"(
 ┌─protocol('https://clickhouse.com/')─┐
 │ https                               │
-└─────────────────────────────────────┘        
+└─────────────────────────────────────┘
         )"
     }
     };
