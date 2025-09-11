@@ -84,7 +84,7 @@ static const MergeTreeIndexWithCondition * getIndexForReadStep(const IndexReadTa
     if (index_read_tasks.empty())
         return nullptr;
 
-    std::unordered_map<std::string_view, std::string_view> column_to_index;
+    std::unordered_map<String, String> column_to_index;
 
     for (const auto & [index_name, index_task] : index_read_tasks)
     {
@@ -92,8 +92,8 @@ static const MergeTreeIndexWithCondition * getIndexForReadStep(const IndexReadTa
             column_to_index[column.name] = index_name;
     }
 
-    std::string_view index_for_step;
-    std::string_view non_index_column;
+    String index_for_step;
+    String non_index_column;
 
     for (const auto & column : columns_to_read)
     {

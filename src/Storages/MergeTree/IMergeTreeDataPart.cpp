@@ -2386,8 +2386,6 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
 
     for (auto & index_description : secondary_indices_descriptions)
     {
-        ColumnSize index_size;
-
         auto index_ptr = MergeTreeIndexFactory::instance().get(index_description);
         auto index_name = index_ptr->getFileName();
         auto index_name_escaped = escapeForFileName(index_name);
@@ -2395,6 +2393,8 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
 
         for (const auto & index_substream : index_substreams)
         {
+            ColumnSize substream_size;
+
             auto index_file_name = index_name_escaped + index_substream.suffix + index_substream.extension;
             auto index_marks_file_name = index_name_escaped + index_substream.suffix + getMarksFileExtension();
 
@@ -2402,16 +2402,16 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
             auto bin_checksum = checksums.files.find(index_file_name);
             if (bin_checksum != checksums.files.end())
             {
-                index_size.data_compressed = bin_checksum->second.file_size;
-                index_size.data_uncompressed = bin_checksum->second.uncompressed_size;
+                substream_size.data_compressed = bin_checksum->second.file_size;
+                substream_size.data_uncompressed = bin_checksum->second.uncompressed_size;
             }
 
             auto mrk_checksum = checksums.files.find(index_marks_file_name);
             if (mrk_checksum != checksums.files.end())
-                index_size.marks = mrk_checksum->second.file_size;
+                substream_size.marks = mrk_checksum->second.file_size;
 
-            total_secondary_indices_size.add(index_size);
-            secondary_index_sizes[index_description.name] = index_size;
+            total_secondary_indices_size.add(substream_size);
+            secondary_index_sizes[index_description.name].add(substream_size);
         }
     }
 }

@@ -166,6 +166,45 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
+SELECT 'Test dictionary_block_size argument.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_size = 1024)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', dictionary_block_size = 0)
+)
+ENGINE = MergeTree
+ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
+
+SELECT 'Test max_cardinality_for_embedded_postings argument.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', max_cardinality_for_embedded_postings = 20)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', max_cardinality_for_embedded_postings = 0)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
 SELECT 'Parameters are shuffled.';
 
 CREATE TABLE tab
@@ -237,10 +276,12 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
+SELECT 'Non-existing argument.';
+
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'default', segment_digestion_threshold_bytes = 1024, segment_digestion_threshold_bytes = 2048)
+    INDEX idx str TYPE text(tokenizer = 'default', non_existing_argument = 1024)
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }

@@ -112,23 +112,25 @@ private:
         if (!MergeTreeIndexConditionText::isSupportedFunctionForDirectRead(function_node.function->getName()))
             return std::nullopt;
 
-        IndexToConditionMap::iterator selected_condition_it = index_conditions.end();
-
-        for (auto it = index_conditions.begin(); it != index_conditions.end(); ++it)
+        auto selected_it = std::ranges::find_if(index_conditions, [&](const auto & index_with_condition)
         {
-            if (isSupportedCondition(*function_node.children[0], *function_node.children[1], *it->second))
-            {
-                if (selected_condition_it != index_conditions.end())
-                    return std::nullopt;
+            return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second);
+        });
 
-                selected_condition_it = it;
-            }
-        }
-
-        if (selected_condition_it == index_conditions.end())
+        if (selected_it == index_conditions.end())
             return std::nullopt;
 
-        const auto & [index_name, condition] = *selected_condition_it;
+        size_t num_supported_conditions = std::ranges::count_if(index_conditions, [&](const auto & index_with_condition)
+        {
+            return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second);
+        });
+
+        /// Do not optimize if there are multiple text index set for the column.
+        /// It is not clear which index to use.
+        if (num_supported_conditions != 1)
+            return std::nullopt;
+
+        const auto & [index_name, condition] = *selected_it;
         auto search_query = condition->createTextSearchQuery(function_node);
 
         if (!search_query)
@@ -148,17 +150,6 @@ private:
         return std::make_pair(index_name, virtual_column_name.value());
     }
 };
-
-static bool hasIndexInAllParts(const std::unordered_set<DataPartPtr> & unique_parts, const IMergeTreeIndex & index)
-{
-    for (const auto & part : unique_parts)
-    {
-        auto format = index.getDeserializedFormat(part->getDataPartStorage(), index.getFileName());
-        if (!format)
-            return false;
-    }
-    return true;
-}
 
 /// Text index search queries have this form:
 ///     SELECT [...]
@@ -205,7 +196,12 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
     {
         if (auto * text_index_condition = typeid_cast<MergeTreeIndexConditionText *>(index.condition.get()))
         {
-            if (hasIndexInAllParts(unique_parts, *index.index))
+            bool has_index_in_all_parts = std::ranges::all_of(unique_parts, [&](const auto & part)
+            {
+                return !!index.index->getDeserializedFormat(part->getDataPartStorage(), index.index->getFileName());
+            });
+
+            if (has_index_in_all_parts)
                 index_conditions[index.index->index.name] = text_index_condition;
         }
     }
