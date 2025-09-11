@@ -272,6 +272,8 @@ public:
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
+
 private:
     MergeTreeReaderSettings reader_settings;
 

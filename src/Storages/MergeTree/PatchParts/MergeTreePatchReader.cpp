@@ -167,7 +167,7 @@ static void filterReadRanges(MarkRanges & all_ranges, const MarkRanges & read_ra
 {
     std::unordered_set<MarkRange, MarkRangeHash> read_ranges_set(read_ranges.begin(), read_ranges.end());
 
-    for (auto it = all_ranges.begin(); it != all_ranges.end();)
+    for (auto * it = all_ranges.begin(); it != all_ranges.end();)
     {
         if (read_ranges_set.contains(*it))
             it = all_ranges.erase(it);

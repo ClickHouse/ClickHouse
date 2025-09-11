@@ -37,7 +37,7 @@ public:
     MergeTreeWhereOptimizer(
         std::unordered_map<std::string, UInt64> column_sizes_,
         const StorageMetadataPtr & metadata_snapshot,
-        const ConditionSelectivityEstimator & estimator_,
+        ConditionSelectivityEstimatorPtr estimator_,
         const Names & queried_columns_,
         const std::optional<NameSet> & supported_columns_,
         LoggerPtr log_);
@@ -162,7 +162,7 @@ private:
 
     static NameSet determineArrayJoinedNames(const ASTSelectQuery & select);
 
-    const ConditionSelectivityEstimator estimator;
+    ConditionSelectivityEstimatorPtr estimator;
 
     const NameSet table_columns;
     const Names queried_columns;

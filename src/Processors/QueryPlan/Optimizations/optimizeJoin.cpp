@@ -20,6 +20,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 
@@ -50,6 +51,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace Setting
+{
+    extern const SettingsBool allow_statistics_optimize;
+}
+
 RelationStats getDummyStats(ContextPtr context, const String & table_name);
 RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name);
 
@@ -57,6 +63,7 @@ namespace QueryPlanOptimizations
 {
 
 const size_t MAX_ROWS = std::numeric_limits<size_t>::max();
+static String dumpStatsForLogs(const RelationStats & stats);
 
 static size_t functionDoesNotChangeNumberOfValues(std::string_view function_name, size_t num_args)
 {
@@ -169,13 +176,27 @@ struct RuntimeHashStatisticsContext
     }
 };
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = false)
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
         String table_display_name = reading->getStorageID().getTableName();
 
+        if (reading->getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
+        {
+            if (auto estimator_ = reading->getConditionSelectivityEstimator())
+            {
+                auto prewhere_info = reading->getPrewhereInfo();
+                const ActionsDAG::Node * prewhere_node = prewhere_info
+                    ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
+                    : nullptr;
+                auto relation_profile = estimator_->estimateRelationProfile(filter, prewhere_node);
+                RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
+                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
+                return stats;
+            }
+        }
         if (auto dummy_stats = getDummyStats(reading->getContext(), table_display_name); !dummy_stats.table_name.empty())
             return dummy_stats;
 
@@ -206,7 +227,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = fa
             if (is_filtered_by_index)
                 break;
         }
-        has_filter = has_filter || reading->getPrewhereInfo();
+        bool has_filter = filter || reading->getPrewhereInfo();
 
         /// If any conditions are pushed down to storage but not used in the index,
         /// we cannot precisely estimate the row count
@@ -228,7 +249,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = fa
 
     if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
     {
-        auto estimated = estimateReadRowsCount(*node.children.front(), has_filter);
+        auto estimated = estimateReadRowsCount(*node.children.front(), filter);
         auto limit = limit_step->getLimit();
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
@@ -237,15 +258,17 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = fa
 
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), has_filter);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
         return stats;
     }
 
-    if (const auto * expression_step = typeid_cast<const FilterStep *>(step))
+    if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), true);
-        remapColumnStats(stats.column_stats, expression_step->getExpression());
+        const auto & dag = filter_step->getExpression();
+        const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
+        auto stats = estimateReadRowsCount(*node.children.front(), predicate);
+        remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
 
