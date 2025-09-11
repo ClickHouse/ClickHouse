@@ -218,7 +218,7 @@ void registerStorageIceberg(StorageFactory & factory)
                     configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
                     break;
                 default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", IcebergLocalDefinition::storage_engine_name, disk->getObjectStorage()->getType());
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", IcebergDefinition::storage_engine_name, disk->getObjectStorage()->getType());
                 }
             }
             else
@@ -249,7 +249,7 @@ void registerStorageIceberg(StorageFactory & factory)
                     configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
                     break;
                 default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", IcebergAzureDefinition::storage_engine_name, disk->getObjectStorage()->getType());
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", IcebergS3Definition::storage_engine_name, disk->getObjectStorage()->getType());
                 }
             }
             else
@@ -281,7 +281,7 @@ void registerStorageIceberg(StorageFactory & factory)
                     configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
                     break;
                 default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for iceberg {}", disk->getObjectStorage()->getType());
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", IcebergAzureDefinition::storage_engine_name, disk->getObjectStorage()->getType());
                 }
             }
             else
@@ -329,7 +329,7 @@ void registerStorageIceberg(StorageFactory & factory)
                     configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
                     break;
                 default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for iceberg {}", disk->getObjectStorage()->getType());
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", IcebergLocalDefinition::storage_engine_name, disk->getObjectStorage()->getType());
                 }
             }
             else
@@ -376,7 +376,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
                     configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
                     break;
                 default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for iceberg {}", disk->getObjectStorage()->getType());
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", DeltaLakeDefinition::storage_engine_name, disk->getObjectStorage()->getType());
                 }
             }
             else
@@ -408,7 +408,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
                     break;
                 }
                 default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", DeltaLakeLocalDefinition::storage_engine_name, disk->getObjectStorage()->getType());
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", DeltaLakeS3Definition::storage_engine_name, disk->getObjectStorage()->getType());
                 }
             }
             else
@@ -470,7 +470,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
                     configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
                     break;
                 default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", DeltaLakeS3Definition::storage_engine_name, disk->getObjectStorage()->getType());
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", DeltaLakeLocalDefinition::storage_engine_name, disk->getObjectStorage()->getType());
                 }
             }
             else
