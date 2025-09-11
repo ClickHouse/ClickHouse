@@ -394,7 +394,7 @@ class ArtifactNames:
     DEB_COV = "DEB_COV"
     DEB_AMD_ASAN = "DEB_AMD_ASAN"
     DEB_AMD_TSAN = "DEB_AMD_TSAN"
-    DEB_AMD_MSAM = "DEB_AMD_MSAM"
+    DEB_AMD_MSAN = "DEB_AMD_MSAM"
     DEB_AMD_UBSAN = "DEB_AMD_UBSAN"
     DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
     DEB_ARM_ASAN = "DEB_ARM_ASAN"
@@ -450,7 +450,7 @@ class ArtifactConfigs:
             ArtifactNames.DEB_AMD_DEBUG,
             ArtifactNames.DEB_AMD_ASAN,
             ArtifactNames.DEB_AMD_TSAN,
-            ArtifactNames.DEB_AMD_MSAM,
+            ArtifactNames.DEB_AMD_MSAN,
             ArtifactNames.DEB_AMD_UBSAN,
             ArtifactNames.DEB_COV,
             ArtifactNames.DEB_ARM_RELEASE,

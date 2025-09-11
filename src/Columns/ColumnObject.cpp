@@ -631,6 +631,7 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
 
     /// Finally, insert paths from shared data.
     insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), n, 1);
+    validateDynamicPathsSizes();
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -665,6 +666,7 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
     /// Finally, insert paths from shared data.
     insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), start, length);
+    validateDynamicPathsSizes();
 }
 
 void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length)
@@ -726,6 +728,8 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
             if (auto it = dynamic_paths_ptrs.find(path); it != dynamic_paths_ptrs.end())
             {
                 /// Deserialize binary value into dynamic column from shared data.
+                if (it->second->size() != current_size)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}. It may indicate duplicated data for this path", path, it->second->size(), current_size);
                 deserializeValueFromSharedData(src_shared_data_values, i, *it->second);
             }
             else
@@ -1993,6 +1997,16 @@ int ColumnObject::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_d
     if (it.end())
         return -1;
     return 1;
+}
+
+void ColumnObject::validateDynamicPathsSizes() const
+{
+    size_t expected_size = shared_data->size();
+    for (const auto & [path, column] : dynamic_paths)
+    {
+        if (column->size() != expected_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
+    }
 }
 
 }
