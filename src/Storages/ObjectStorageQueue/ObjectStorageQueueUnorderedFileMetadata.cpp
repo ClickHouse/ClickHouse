@@ -42,15 +42,21 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordinat
     processing_id = node_metadata.processing_id = getRandomASCIIString(10);
     const auto processor_info = getProcessorInfo(processing_id.value());
 
-    SetProcessingResponseIndexes result_indexes;
+    /// 1. Check processed node does not exist
+    /// 2. Check failed node does not exist
+    /// 3. Create processing node
+    /// 4. Create/update processing node id
+    /// TODO: remove processing node id, it is not needed with persistent processing nodes.
 
-    result_indexes.processed_path_doesnt_exist_idx = requests.size();
+    SetProcessingResponseIndexes result;
+
+    result.processed_path_doesnt_exist_idx = requests.size();
     zkutil::addCheckNotExistsRequest(requests, *zk_client, processed_node_path);
 
-    result_indexes.failed_path_doesnt_exist_idx = requests.size();
+    result.failed_path_doesnt_exist_idx = requests.size();
     zkutil::addCheckNotExistsRequest(requests, *zk_client, failed_node_path);
 
-    result_indexes.create_processing_node_idx = requests.size();
+    result.create_processing_node_idx = requests.size();
     requests.push_back(
         zkutil::makeCreateRequest(
             processing_node_path,
@@ -84,10 +90,10 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordinat
         }
     }
 
-    result_indexes.set_processing_id_node_idx = requests.size();
+    result.set_processing_id_node_idx = requests.size();
     requests.push_back(zkutil::makeSetRequest(processing_node_id_path, processor_info, -1));
 
-    return result_indexes;
+    return result;
 }
 
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueUnorderedFileMetadata::setProcessingImpl()
@@ -101,31 +107,44 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     for (size_t i = 0; i < max_num_tries; ++i)
     {
         Coordination::Requests requests;
-        auto result_indexes = prepareProcessingRequestsImpl(requests);
+        auto result = prepareProcessingRequestsImpl(requests);
 
         Coordination::Responses responses;
+        bool is_retry = false;
         zk_retries.retryLoop([&]
         {
-            code = ObjectStorageQueueMetadata::getZooKeeper(log)->tryMulti(requests, responses);
-        });
+            auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+            /// Check if we failed after successfully committing in keeper.
+            std::string data;
+            if (is_retry && zk_client->tryGet(processing_node_path, data))
+            {
+                if (data == node_metadata.toString())
+                {
+                    LOG_TEST(log, "Operation succeeded");
+                    return;
+                }
+            }
+            code = zk_client->tryMulti(requests, responses);
+        }, [&]{ is_retry = true; });
+
         auto has_request_failed = [&](size_t request_index) { return responses[request_index]->error != Coordination::Error::ZOK; };
 
         if (code == Coordination::Error::ZOK)
         {
             const auto & set_response = dynamic_cast<const Coordination::SetResponse &>(
-                *responses[result_indexes.set_processing_id_node_idx].get());
+                *responses[result.set_processing_id_node_idx].get());
 
             processing_id_version = set_response.stat.version;
             return std::pair{true, FileStatus::State::None};
         }
 
-        if (has_request_failed(result_indexes.processed_path_doesnt_exist_idx))
+        if (has_request_failed(result.processed_path_doesnt_exist_idx))
             return {false, FileStatus::State::Processed};
 
-        if (has_request_failed(result_indexes.failed_path_doesnt_exist_idx))
+        if (has_request_failed(result.failed_path_doesnt_exist_idx))
             return {false, FileStatus::State::Failed};
 
-        if (has_request_failed(result_indexes.create_processing_node_idx))
+        if (has_request_failed(result.create_processing_node_idx))
             return {false, FileStatus::State::Processing};
 
         if (create_if_not_exists_enabled)

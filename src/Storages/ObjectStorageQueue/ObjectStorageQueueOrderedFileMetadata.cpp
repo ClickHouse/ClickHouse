@@ -51,15 +51,11 @@ namespace
 
 ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     const Bucket & bucket_,
-    int bucket_version_,
     const std::string & bucket_lock_path_,
-    const std::string & bucket_lock_id_path_,
     LoggerPtr log_)
     : bucket_info(std::make_shared<BucketInfo>(BucketInfo{
         .bucket = bucket_,
-        .bucket_version = bucket_version_,
-        .bucket_lock_path = bucket_lock_path_,
-        .bucket_lock_id_path = bucket_lock_id_path_}))
+        .bucket_lock_path = bucket_lock_path_}))
     , log(log_)
 {
 }
@@ -71,33 +67,31 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
 
     released = true;
 
-    LOG_TEST(log, "Releasing bucket {}, version {}",
-             bucket_info->bucket, bucket_info->bucket_version);
+    LOG_TEST(log, "Releasing bucket {}", bucket_info->bucket);
 
-    Coordination::Requests requests;
-    /// Check that bucket lock version has not changed
-    /// (which could happen if session had expired as bucket_lock_path is ephemeral node).
-    requests.push_back(zkutil::makeCheckRequest(bucket_info->bucket_lock_id_path, bucket_info->bucket_version));
-    /// Remove bucket lock.
-    requests.push_back(zkutil::makeRemoveRequest(bucket_info->bucket_lock_path, -1));
-
-    Coordination::Responses responses;
     Coordination::Error code;
+    bool is_retry = false;
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
-    {
-        code = ObjectStorageQueueMetadata::getZooKeeper(log)->tryMulti(requests, responses);
-    });
+        {
+            code = ObjectStorageQueueMetadata::getZooKeeper(log)->tryRemove(bucket_info->bucket_lock_path);
+        },
+        [&]
+        {
+            is_retry = true;
+        });
 
     if (code == Coordination::Error::ZOK)
-        LOG_TEST(log, "Released bucket {}, version {}",
-                 bucket_info->bucket, bucket_info->bucket_version);
-    else
-        LOG_TRACE(log,
-                  "Failed to release bucket {}, version {}: {}. "
-                  "This is normal if keeper session expired.",
-                  bucket_info->bucket, bucket_info->bucket_version, code);
+    {
+        LOG_TEST(log, "Released bucket {}", bucket_info->bucket);
+        return;
+    }
+    else if (is_retry && code == Coordination::Error::ZNONODE)
+    {
+        LOG_TEST(log, "Released bucket {} (has zk session loss)", bucket_info->bucket);
+        return;
+    }
 
-    zkutil::KeeperMultiException::check(code, requests, responses);
+    throw zkutil::KeeperException::fromPath(code, bucket_info->bucket_lock_path);
 }
 
 ObjectStorageQueueOrderedFileMetadata::BucketHolder::~BucketHolder()
@@ -198,96 +192,52 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     const std::filesystem::path & zk_path,
     const Bucket & bucket,
     const Processor & processor,
-    bool use_persistent_processing_nodes_,
+    bool /*use_persistent_processing_nodes_*/,
     LoggerPtr log_)
 {
-    const auto create_if_not_exists_enabled = ObjectStorageQueueMetadata::getZooKeeper(log_)->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
-
+    auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log_);
     const auto bucket_path = zk_path / "buckets" / toString(bucket);
-    chassert(
-        ObjectStorageQueueMetadata::getZooKeeper(log_)->exists(bucket_path),
-        fmt::format("Bucket path {} does not exist", bucket_path.string()));
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    bool bucket_exists = false;
+    zk_retries.retryLoop([&]
+    {
+        bucket_exists = ObjectStorageQueueMetadata::getZooKeeper(log_)->exists(bucket_path);
+    });
+    chassert(bucket_exists);
+#endif
 
     const auto bucket_lock_path = bucket_path / "lock";
-    const auto bucket_lock_id_path = bucket_path / "lock_id";
-
     const auto processor_info = getProcessorInfo(processor);
-    auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log_);
 
-    const size_t max_num_tries = 1000;
     Coordination::Error code;
-    for (size_t i = 0; i < max_num_tries; ++i)
+    bool is_retry = false;
+    zk_retries.retryLoop([&]
     {
-        Coordination::Requests requests;
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log_);
+        std::string data;
+        if (is_retry && zk_client->tryGet(bucket_lock_path, data) && data == processor_info)
+        {
+            LOG_TEST(log_, "Operation succeeded");
+            return;
+        }
+        code = zk_client->tryCreate(bucket_lock_path, processor_info, zkutil::CreateMode::Persistent);
+    }, [&] { is_retry = true; });
 
-        requests.push_back(zkutil::makeCreateRequest(
+    if (code == Coordination::Error::ZOK)
+    {
+        LOG_TEST(log_, "Processor {} acquired bucket {} for processing", processor, bucket);
+
+        return std::make_shared<BucketHolder>(
+            bucket,
             bucket_lock_path,
-            "",
-            use_persistent_processing_nodes_ ? zkutil::CreateMode::Persistent : zkutil::CreateMode::Ephemeral));
-
-        /// Create bucket lock id node as persistent node if it does not exist yet.
-        /// Update bucket lock id path. We use its version as a version of ephemeral bucket lock node.
-        /// (See comment near ObjectStorageQueueIFileMetadata::processing_node_version).
-        if (create_if_not_exists_enabled)
-        {
-            requests.push_back(
-                zkutil::makeCreateRequest(bucket_lock_id_path, "", zkutil::CreateMode::Persistent, /* ignore_if_exists */ true));
-        }
-        else
-        {
-            bool bucket_lock_id_path_exists = false;
-            zk_retries.retryLoop([&]
-            {
-                bucket_lock_id_path_exists = ObjectStorageQueueMetadata::getZooKeeper(log_)->exists(bucket_lock_id_path);
-            });
-            if (!bucket_lock_id_path_exists)
-                requests.push_back(zkutil::makeCreateRequest(bucket_lock_id_path, "", zkutil::CreateMode::Persistent));
-        }
-
-        requests.push_back(zkutil::makeSetRequest(bucket_lock_id_path, processor_info, -1));
-
-        Coordination::Responses responses;
-        zk_retries.retryLoop([&]
-        {
-            code = ObjectStorageQueueMetadata::getZooKeeper(log_)->tryMulti(requests, responses);
-        });
-        if (code == Coordination::Error::ZOK)
-        {
-            const auto & set_response = dynamic_cast<const Coordination::SetResponse &>(*responses.back());
-            const auto bucket_lock_version = set_response.stat.version;
-
-            LOG_TEST(
-                log_,
-                "Processor {} acquired bucket {} for processing (bucket lock version: {})",
-                processor, bucket, bucket_lock_version);
-
-            return std::make_shared<BucketHolder>(
-                bucket,
-                bucket_lock_version,
-                bucket_lock_path,
-                bucket_lock_id_path,
-                log_);
-        }
-
-        if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
-            return nullptr;
-
-        if (create_if_not_exists_enabled)
-        {
-            auto failed_idx = zkutil::getFailedOpIndex(code, responses);
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}, path: {} (failed idx: {})",
-                code, requests[failed_idx]->getPath(), failed_idx);
-        }
-
-        LOG_INFO(log_, "Bucket lock id path was probably created or removed "
-                 "while acquiring the bucket (error code: {}), will retry", code);
+            log_);
     }
 
-    throw Exception(
-        ErrorCodes::LOGICAL_ERROR,
-        "Failed to set file processing within {} retries, last error: {}",
-        max_num_tries, code);
+    if (code == Coordination::Error::ZNODEEXISTS)
+        return nullptr;
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set file processing, error: {}", code);
 }
 
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueOrderedFileMetadata::setProcessingImpl()
@@ -376,6 +326,13 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         }
 
         Coordination::Requests requests;
+
+        /// 1. check failed node does not exist
+        /// 2. create processing node
+        /// 3. create/update processing node id
+        /// 4. check bucket version is still the same
+        /// 5. check max processed path is still the same
+
         const auto failed_path_doesnt_exist_idx = 0;
         zkutil::addCheckNotExistsRequest(requests, *zk_client, failed_node_path);
         const auto create_processing_path_idx = requests.size();
@@ -390,7 +347,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         if (create_if_not_exists_enabled)
         {
             requests.push_back(
-                zkutil::makeCreateRequest(processing_node_id_path, "", zkutil::CreateMode::Persistent, /* ignore_if_exists */ true));
+                zkutil::makeCreateRequest(processing_node_id_path, node_metadata.toString(), zkutil::CreateMode::Persistent, /* ignore_if_exists */ true));
         }
         else
         {
@@ -406,13 +363,6 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         requests.push_back(zkutil::makeSetRequest(processing_node_id_path, processor_info, -1));
         const auto set_processing_id_idx = requests.size() - 1;
 
-        std::optional<size_t> check_bucket_version_idx;
-        if (bucket_info)
-        {
-            check_bucket_version_idx.emplace(requests.size());
-            requests.push_back(zkutil::makeCheckRequest(bucket_info->bucket_lock_id_path, bucket_info->bucket_version));
-        }
-
         /// TODO: for ordered processing with buckets it should be enough to check only bucket lock version,
         /// so may be remove creation and check for processing_node_id if bucket_info is set?
 
@@ -423,9 +373,33 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             zkutil::addCheckNotExistsRequest(requests, *zk_client, processed_node_path);
 
         Coordination::Responses responses;
+        bool retry = false;
         zk_retries.retryLoop([&]
         {
-            code = ObjectStorageQueueMetadata::getZooKeeper(log)->tryMulti(requests, responses);
+            auto zk = ObjectStorageQueueMetadata::getZooKeeper(log);
+            if (retry)
+            {
+                /// Check if we failed after successfully committing in keeper.
+                std::string data;
+                if (zk->tryGet(processing_node_path, data))
+                {
+                    if (data == node_metadata.toString())
+                    {
+                        LOG_TEST(log, "Operation succeeded");
+                        chassert(!zk->tryGet(failed_node_path, data));
+                        return;
+                    }
+                }
+            }
+            try
+            {
+                code = zk->tryMulti(requests, responses);
+            }
+            catch (...)
+            {
+                retry = true;
+                throw;
+            }
         });
         auto has_request_failed = [&](size_t request_index) { return responses[request_index]->error != Coordination::Error::ZOK; };
 
@@ -460,23 +434,6 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
                 ErrorCodes::LOGICAL_ERROR,
                 "Failed to create processing id node at path {}: {}",
                 requests[failed_idx]->getPath(), code);
-        }
-
-        if (check_bucket_version_idx.has_value() && has_request_failed(*check_bucket_version_idx))
-        {
-            std::optional<size_t> bucket_lock_version;
-            zk_retries.retryLoop([&]
-            {
-                std::string data;
-                Coordination::Stat bucket_lock_stat;
-                if (ObjectStorageQueueMetadata::getZooKeeper(log)->tryGet(bucket_info->bucket_lock_id_path, data, &bucket_lock_stat))
-                    bucket_lock_version = bucket_lock_stat.version;
-            });
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Version of bucket lock changed. Expected version: {}, got: {}",
-                bucket_info->bucket_version,
-                bucket_lock_version.has_value() ? toString(*bucket_lock_version) : "None");
         }
 
         if (has_request_failed(check_max_processed_path))

@@ -1252,7 +1252,13 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
 
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
     Coordination::Responses responses;
-    auto code = zk_client->tryMulti(requests, responses);
+
+    auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+    Coordination::Error code;
+    zk_retries.retryLoop([&]
+    {
+        code = zk_client->tryMulti(requests, responses);
+    });
     if (code != Coordination::Error::ZOK)
         throw zkutil::KeeperMultiException(code, requests, responses);
 

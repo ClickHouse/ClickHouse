@@ -17,9 +17,7 @@ public:
     struct BucketInfo
     {
         Bucket bucket;
-        int bucket_version;
         std::string bucket_lock_path;
-        std::string bucket_lock_id_path;
     };
     using BucketInfoPtr = std::shared_ptr<const BucketInfo>;
 
@@ -92,9 +90,7 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
 {
     BucketHolder(
         const Bucket & bucket_,
-        int bucket_version_,
         const std::string & bucket_lock_path_,
-        const std::string & bucket_lock_id_path_,
         LoggerPtr log_);
 
     ~BucketHolder();

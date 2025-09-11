@@ -173,7 +173,9 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             Coordination::Error code;
             ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
             {
-                code = ObjectStorageQueueMetadata::getZooKeeper(log)->tryMulti(requests, responses);
+                auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+                if (zk_client->exists(processing_node_path))
+                    code = zk_client->tryMulti(requests, responses);
             });
             if (code != Coordination::Error::ZOK
                 && !Coordination::isHardwareError(code)
@@ -345,7 +347,11 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     Coordination::Error code;
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
-        code = ObjectStorageQueueMetadata::getZooKeeper(log)->tryMulti(requests, responses);
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+        if (zk_client->exists(processing_node_path))
+            code = zk_client->tryMulti(requests, responses);
+        else
+            code = Coordination::Error::ZOK;
     });
     if (code == Coordination::Error::ZOK)
         return;
