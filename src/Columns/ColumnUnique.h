@@ -517,11 +517,12 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
     }
 
     /// String
-    const size_t string_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(string_size);
-    new_pos = pos + string_size;
+    /// Serialized value contains string values with 0 byte at the end for compatibility.
+    const size_t string_size_with_zero_byte = unalignedLoad<size_t>(pos);
+    pos += sizeof(string_size_with_zero_byte);
+    new_pos = pos + string_size_with_zero_byte;
 
-    return uniqueInsertData(pos, string_size);
+    return uniqueInsertData(pos, string_size_with_zero_byte - 1);
 }
 
 template <typename ColumnType>
