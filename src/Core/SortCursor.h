@@ -813,7 +813,7 @@ private:
 
     void adjustLoserTree(Int32 winner)
     {
-        if (this->size() <= 1)
+        if (this->size() <= 1) [[unlikely]]
         {
             loser_tree[0] = (this->size() == 1) ? 0 : -1;
             return;
@@ -822,7 +822,7 @@ private:
         int t = (winner + this->size()) / 2;
         while (t > 0)
         {
-            if (loser_tree[t] == -1)
+            if (loser_tree[t] == -1) [[unlikely]]
             {
                 loser_tree[t] = winner;
                 winner = -1;
@@ -842,19 +842,14 @@ private:
             loser_tree[0] = winner;
     }
 
-    bool isWinner(Int32 a, Int32 b)
+    bool ALWAYS_INLINE isWinner(Int32 a, Int32 b)
     {
-        if (a == -1)
+        if (a == -1 || !queue[a]->isValid())
             return false;
-        if (b == -1)
+        if (b == -1 || !queue[b]->isValid())
             return true;
 
-        if (!queue[a]->isValid())
-            return false;
-        if (!queue[b]->isValid())
-            return true;
-
-        return !queue[a].greater(queue[b]);
+        return !queue[a].greater(queue[b]);    
     }
 
     void updateBatchSize()
@@ -912,11 +907,17 @@ using SortingQueue = SortingQueueImpl<Cursor, SortingQueueStrategy::Default>;
 template <typename Cursor>
 using SortingQueueBatch = SortingQueueImpl<Cursor, SortingQueueStrategy::Batch>;
 
-template <bool use_loser_tree>
+enum class QueueImplType : uint8_t
+{
+    Default,
+    LoserTree
+};
+
+template <QueueImplType queue_type>
 struct QueueImplSelector
 {
     template <typename Cursor, SortingQueueStrategy strategy>
-    using Type = std::conditional_t<use_loser_tree,
+    using Type = std::conditional_t<queue_type == QueueImplType::LoserTree,
         LoserTreeSortingQueueImpl<Cursor, strategy>,
         SortingQueueImpl<Cursor, strategy>>;
 };
@@ -925,12 +926,12 @@ struct QueueImplSelector
   * To access queue variant callOnVariant method must be used.
   * To access batch queue variant callOnBatchVariant method must be used.
   */
-template <bool use_loser_tree = false>
+template <QueueImplType queue_type = QueueImplType::Default>
 class SortQueueVariants
 {
 public:
     template <typename Cursor, SortingQueueStrategy strategy>
-    using QueueImpl = typename QueueImplSelector<use_loser_tree>::template Type<Cursor, strategy>;
+    using QueueImpl = typename QueueImplSelector<queue_type>::template Type<Cursor, strategy>;
 
     SortQueueVariants() = default;
 
