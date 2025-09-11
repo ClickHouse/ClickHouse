@@ -54,6 +54,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageView.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -878,14 +879,40 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     // 2. expressions referencing other tables of JOIN
     for (auto const & column_name : required_column_names)
     {
+        // First check if the column exists in the child table
+        auto * replacement_table_node = replacement_table_expression->as<TableNode>();
+        if (!replacement_table_node)
+            continue;
+            
+        auto storage_snapshot = replacement_table_node->getStorageSnapshot();
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All)
+            .withExtendedObjects()
+            .withSubcolumns(storage_snapshot->storage.supportsSubcolumns());
+        
+        // Check if column exists in the child table
+        if (!storage_snapshot->tryGetColumn(get_column_options, column_name))
+            continue; // Skip columns that don't exist in this child table
+
         QueryTreeNodePtr fake_node = std::make_shared<IdentifierNode>(Identifier{column_name});
 
-        QueryAnalysisPass query_analysis_pass(original_table_expression);
-        query_analysis_pass.run(fake_node, context);
+        // Use the replacement table expression (child table) instead of original table expression (merge table)
+        QueryAnalysisPass query_analysis_pass(replacement_table_expression);
+        
+        try 
+        {
+            query_analysis_pass.run(fake_node, context);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_IDENTIFIER)
+                continue; // Skip columns that cannot be resolved in this child table
+            throw;
+        }
 
         auto * resolved_column = fake_node->as<ColumnNode>();
         if (!resolved_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required column '{}' is not resolved", column_name);
+            continue; // Skip if column cannot be resolved in this child table
+            
         auto fake_column = resolved_column->getColumn();
 
         // Identifier is resolved to ColumnNode, but we need to get rid of ALIAS columns
