@@ -780,7 +780,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
 
         IdentifierResolveScope * function_scope = &scope;
-        if (resolver->isDeterministicInScopeOfQuery())
+        if (resolver && resolver->isDeterministicInScopeOfQuery())
             while (function_scope->parent_scope)
                 function_scope = function_scope->parent_scope;
 
