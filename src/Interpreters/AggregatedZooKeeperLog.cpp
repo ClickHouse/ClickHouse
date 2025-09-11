@@ -99,7 +99,7 @@ void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
     }
 }
 
-void AggregatedZooKeeperLog::observe(Int64 session_id, Coordination::OpNum operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error)
+void AggregatedZooKeeperLog::observe(Int64 session_id, Int32 operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error)
 {
     std::lock_guard lock(stats_mutex);
     stats[EntryKey{.session_id = session_id, .operation = operation, .parent_path = path.parent_path()}].observe(latency_microseconds, error);

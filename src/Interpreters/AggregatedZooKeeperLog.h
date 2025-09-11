@@ -16,7 +16,7 @@ struct AggregatedZooKeeperLogElement
     time_t event_time;
     Int64 session_id;
     String parent_path;
-    Coordination::OpNum operation;
+    Int32 operation;
 
     /// Group statistics.
     UInt32 count;
@@ -37,13 +37,13 @@ protected:
     void stepFunction(TimePoint current_time) override;
 
 public:
-    void observe(Int64 session_id, Coordination::OpNum operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error);
+    void observe(Int64 session_id, Int32 operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error);
 
 private:
     struct EntryKey
     {
         Int64 session_id;
-        Coordination::OpNum operation;
+        Int32 operation;
         String parent_path;
 
         bool operator==(const EntryKey & other) const;

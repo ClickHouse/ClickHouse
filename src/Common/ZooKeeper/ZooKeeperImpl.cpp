@@ -1897,12 +1897,12 @@ void ZooKeeper::observeOperation(const ZooKeeperRequestPtr & request, const ZooK
         chassert(response->xid == PING_XID || response->xid == WATCH_XID);
         if (const auto watch_response = std::dynamic_pointer_cast<ZooKeeperWatchResponse>(response))
         {
-            aggregated_zookeeper_log_->observe(session_id, watch_response->getOpNum(), watch_response->path, elapsed_microseconds, watch_response->error);
+            aggregated_zookeeper_log_->observe(session_id, watch_response->tryGetOpNum(), watch_response->path, elapsed_microseconds, watch_response->error);
         }
         return;
     }
 
-    aggregated_zookeeper_log_->observe(session_id, response->getOpNum(), request->getPath(), elapsed_microseconds, response->error);
+    aggregated_zookeeper_log_->observe(session_id, response->tryGetOpNum(), request->getPath(), elapsed_microseconds, response->error);
 
     const auto multi_request = std::dynamic_pointer_cast<ZooKeeperMultiRequest>(request);
     const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(response);
