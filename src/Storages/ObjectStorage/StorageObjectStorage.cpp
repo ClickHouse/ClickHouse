@@ -640,7 +640,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
 
     configuration->alter(params, context);
 
-    DatabaseCatalog::instance().getDatabaseOrThrow(storage_id.database_name, context)->alterTable(context, storage_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(storage_id.database_name)->alterTable(context, storage_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }
 

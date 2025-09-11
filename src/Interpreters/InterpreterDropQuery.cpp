@@ -55,9 +55,9 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsMerge;
 }
 
-static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists, ContextPtr context_)
+static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
 {
-    return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabaseOrThrow(database_name, context_);
+    return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabase(database_name);
 }
 
 
@@ -414,7 +414,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     const auto & database_name = query.getDatabase();
     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
-    database = tryGetDatabase(database_name, query.if_exists, getContext());
+    database = tryGetDatabase(database_name, query.if_exists);
     if (!database)
         return {};
 

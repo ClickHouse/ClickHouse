@@ -102,15 +102,17 @@ class DatabaseNameHints : public IHints<>
 {
 public:
     explicit DatabaseNameHints(
-        const DatabaseCatalog & database_catalog_,
-        ContextPtr context_
+        const DatabaseCatalog & database_catalog_
     )
         : database_catalog(database_catalog_)
-        , context(std::move(context_))
-    {
-    }
+    {}
+
     Names getAllRegisteredNames() const override
     {
+        auto context = CurrentThread::getQueryContext();
+        if (!context)
+            return {};
+
         const auto access = context->getAccess();
         const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
@@ -130,7 +132,6 @@ public:
     }
 private:
     const DatabaseCatalog & database_catalog;
-    ContextPtr context;
 };
 
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
@@ -484,7 +485,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     {
         if (exception)
         {
-            DatabaseNameHints hints(*this, context_);
+            DatabaseNameHints hints(*this);
             std::vector<String> names = hints.getHints(table_id.getDatabaseName());
             if (names.empty())
             {
@@ -640,7 +641,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
     }
     if (!db)
     {
-        DatabaseNameHints hints(*this, local_context);
+        DatabaseNameHints hints(*this);
         std::vector<String> names = hints.getHints(database_name);
         if (names.empty())
         {
@@ -761,7 +762,7 @@ void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
     }
 }
 
-DatabasePtr DatabaseCatalog::getDatabaseOrThrow(const String & database_name, ContextPtr local_context) const
+DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
 {
     assert(!database_name.empty());
     DatabasePtr db;
@@ -773,7 +774,7 @@ DatabasePtr DatabaseCatalog::getDatabaseOrThrow(const String & database_name, Co
 
     if (!db)
     {
-        DatabaseNameHints hints(*this, local_context);
+        DatabaseNameHints hints(*this);
         std::vector<String> names = hints.getHints(database_name);
         if (names.empty())
         {
@@ -852,12 +853,12 @@ void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id, Context
 
 DatabasePtr DatabaseCatalog::getDatabaseForTemporaryTables() const
 {
-    return getDatabaseOrThrow(TEMPORARY_DATABASE, getContext());
+    return getDatabase(TEMPORARY_DATABASE);
 }
 
 DatabasePtr DatabaseCatalog::getSystemDatabase() const
 {
-    return getDatabaseOrThrow(SYSTEM_DATABASE, getContext());
+    return getDatabase(SYSTEM_DATABASE);
 }
 
 void DatabaseCatalog::addUUIDMapping(const UUID & uuid)
@@ -991,7 +992,7 @@ void DatabaseCatalog::shutdown(std::function<void()> shutdown_system_logs)
 DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, ContextPtr local_context) const
 {
     String resolved_database = local_context->resolveDatabase(database_name);
-    return getDatabaseOrThrow(resolved_database, local_context);
+    return getDatabase(resolved_database);
 }
 
 void DatabaseCatalog::removeViewDependency(const StorageID & source_table_id, const StorageID & view_id)
@@ -1175,7 +1176,7 @@ String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) co
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
 {
-    auto database = getDatabaseOrThrow(table_id.getDatabaseName(), getContext());
+    auto database = getDatabase(table_id.getDatabaseName());
     auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
 
     if (!database_ptr)
@@ -1273,7 +1274,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 
 void DatabaseCatalog::undropTable(StorageID table_id)
 {
-    auto db_disk = getDatabaseOrThrow(table_id.database_name, getContext())->getDisk();
+    auto db_disk = getDatabase(table_id.database_name)->getDisk();
 
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;

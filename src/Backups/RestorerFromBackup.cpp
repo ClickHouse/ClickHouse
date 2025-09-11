@@ -864,7 +864,7 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
     try
     {
         /// We must be able to find the database now (either because it has been just created or because it existed before this RESTORE).
-        DatabasePtr database = DatabaseCatalog::instance().getDatabaseOrThrow(database_name, getContext());
+        DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
 
         ASTPtr database_def_from_backup;
         bool is_predefined_database;
@@ -1057,7 +1057,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         {
             /// The database containing this table is expected to exist already
             /// (either because it was created by the same RESTORE or because it existed before this RESTORE).
-            database = DatabaseCatalog::instance().getDatabaseOrThrow(table_name.database, getContext());
+            database = DatabaseCatalog::instance().getDatabase(table_name.database);
             std::lock_guard lock{mutex};
             auto & table_info = table_infos.at(table_name);
             if (!table_info.database)
@@ -1107,7 +1107,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
         }
 
         if (!database)
-            database = DatabaseCatalog::instance().getDatabaseOrThrow(table_name.database, context);
+            database = DatabaseCatalog::instance().getDatabase(table_name.database);
 
         /// We must be able to find the database now (either because it has been just created or because it existed before this RESTORE).
         StoragePtr storage = database->getTable(resolved_id.table_name, context);

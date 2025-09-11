@@ -273,13 +273,13 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     for (const auto & [name, db_path] : databases)
     {
         loadDatabase(context, name, db_path, has_force_restore_data_flag);
-        loaded_databases.insert({name, DatabaseCatalog::instance().getDatabaseOrThrow(name, context)});
+        loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
     }
 
     for (const auto & [name, db_path] : orphan_directories_and_symlinks)
     {
         loadDatabase(context, name, db_path, has_force_restore_data_flag);
-        loaded_databases.insert({name, DatabaseCatalog::instance().getDatabaseOrThrow(name, context)});
+        loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
     }
 
     auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag, /* secondary */ false);
@@ -363,7 +363,7 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
     auto res = executeQuery(create_database_query, context, QueryFlags{ .internal = true }).second;
     executeTrivialBlockIO(res, context);
     res = {};
-    auto tmp_database = DatabaseCatalog::instance().getDatabaseOrThrow(tmp_name, context);
+    auto tmp_database = DatabaseCatalog::instance().getDatabase(tmp_name);
     assert(tmp_database->getEngineName() == "Atomic");
 
     size_t num_tables = 0;
@@ -429,7 +429,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 {
     LoggerPtr log = getLogger("loadMetadata");
 
-    auto database = DatabaseCatalog::instance().getDatabaseOrThrow(database_name, context);
+    auto database = DatabaseCatalog::instance().getDatabase(database_name);
     if (!database)
     {
         LOG_WARNING(log, "Database {} not found (while trying to convert it from Ordinary to Atomic)", database_name);
@@ -475,7 +475,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         for (const auto & action : actions_to_stop)
             InterpreterSystemQuery::startStopActionInDatabase(action, /* start */ true, database_name, database, context, log);
 
-        auto new_database = DatabaseCatalog::instance().getDatabaseOrThrow(database_name, context);
+        auto new_database = DatabaseCatalog::instance().getDatabase(database_name);
         UUID db_uuid = new_database->getUUID();
         std::vector<UUID> tables_uuids;
         for (auto iterator = new_database->getTablesIterator(context); iterator->isValid(); iterator->next())
@@ -499,7 +499,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 
         TablesLoader::Databases databases =
         {
-            {database_name, DatabaseCatalog::instance().getDatabaseOrThrow(database_name, context)},
+            {database_name, DatabaseCatalog::instance().getDatabase(database_name)},
         };
         TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
         waitLoad(TablesLoaderForegroundPoolId, loader.loadTablesAsync());
@@ -556,8 +556,8 @@ LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_syste
     TablesLoader::Databases databases =
     {
         {DatabaseCatalog::SYSTEM_DATABASE, DatabaseCatalog::instance().getSystemDatabase()},
-        {DatabaseCatalog::INFORMATION_SCHEMA, DatabaseCatalog::instance().getDatabaseOrThrow(DatabaseCatalog::INFORMATION_SCHEMA, context)},
-        {DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, DatabaseCatalog::instance().getDatabaseOrThrow(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, context)},
+        {DatabaseCatalog::INFORMATION_SCHEMA, DatabaseCatalog::instance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA)},
+        {DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, DatabaseCatalog::instance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE)},
     };
     TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
 

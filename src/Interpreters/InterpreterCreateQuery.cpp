@@ -1326,7 +1326,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         String as_table_name = create.as_table;
 
-        ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabaseOrThrow(as_database_name, getContext())->getCreateTableQuery(as_table_name, getContext());
+        ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, getContext());
 
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
@@ -1770,7 +1770,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
             return false;
 
-        DatabasePtr database = DatabaseCatalog::instance().getDatabaseOrThrow(DatabaseCatalog::TEMPORARY_DATABASE, getContext());
+        DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
         String temporary_table_name = create.getTable();
         auto creator = [&](const StorageID & table_id)
@@ -1796,7 +1796,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     String data_path;
     DatabasePtr database;
 
-    database = DatabaseCatalog::instance().getDatabaseOrThrow(create.getDatabase(), getContext());
+    database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
     assertOrSetUUID(create, database);
 
     String storage_name = create.is_dictionary ? "Dictionary" : "Table";
@@ -2093,7 +2093,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     String table_to_replace_name = create.getTable();
 
     {
-        auto database = DatabaseCatalog::instance().getDatabaseOrThrow(create.getDatabase(), current_context);
+        auto database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
         if (database->getUUID() == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} query is supported only for Atomic databases",

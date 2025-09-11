@@ -91,7 +91,7 @@ BlockIO InterpreterUpdateQuery::execute()
     if (auto supports = table->supportsLightweightUpdate(); !supports)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported. {}", supports.error().text);
 
-    DatabasePtr database = DatabaseCatalog::instance().getDatabaseOrThrow(table_id.database_name, getContext());
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);

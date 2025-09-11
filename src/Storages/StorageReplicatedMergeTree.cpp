@@ -1715,7 +1715,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
 
     try
     {
-        DatabaseCatalog::instance().getDatabaseOrThrow(table_id.database_name, local_context)->alterTable(local_context, table_id, new_metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     }
     catch (...)
     {
@@ -6369,7 +6369,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     auto table_id = getStorageID();
     auto alter_context = getContext();
 
-    auto database = DatabaseCatalog::instance().getDatabaseOrThrow(table_id.database_name, getContext());
+    auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     bool is_in_replicated_database = database->getEngineName() == "Replicated";
 
     if (is_in_replicated_database)
@@ -6482,7 +6482,7 @@ void StorageReplicatedMergeTree::alter(
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
         /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
-        DatabaseCatalog::instance().getDatabaseOrThrow(table_id.database_name, query_context)->alterTable(query_context, table_id, future_metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata);
         return;
     }
 
@@ -6491,7 +6491,7 @@ void StorageReplicatedMergeTree::alter(
         setInMemoryMetadata(future_metadata);
 
         /// It is safe to ignore exceptions here as only the comment is changed, which is not validated in `alterTable`
-        DatabaseCatalog::instance().getDatabaseOrThrow(table_id.database_name, query_context)->alterTable(query_context, table_id, future_metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata);
         return;
     }
 
@@ -6502,7 +6502,7 @@ void StorageReplicatedMergeTree::alter(
 
     {
         /// Call applyMetadataChangesToCreateQuery to validate the resulting CREATE query
-        auto ast = DatabaseCatalog::instance().getDatabaseOrThrow(table_id.database_name, query_context)->getCreateTableQuery(table_id.table_name, query_context);
+        auto ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, query_context);
         applyMetadataChangesToCreateQuery(ast, future_metadata, query_context);
     }
 
@@ -6620,7 +6620,7 @@ void StorageReplicatedMergeTree::alter(
 
             /// Only the comment and/or settings changed here, so it is okay to assume alterTable won't throw as neither
             /// of them are validated in alterTable.
-            DatabaseCatalog::instance().getDatabaseOrThrow(table_id.database_name, query_context)->alterTable(query_context, table_id, metadata_copy);
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy);
         }
 
         /// We can be sure, that in case of successful commit in zookeeper our
@@ -6688,7 +6688,7 @@ void StorageReplicatedMergeTree::alter(
             /// NOTE: IDatabase::alterTable(...) is called when executing ALTER_METADATA queue entry without query context,
             /// so we have to update metadata of DatabaseReplicated here.
             String metadata_zk_path = fs::path(txn->getDatabaseZooKeeperPath()) / "metadata" / escapeForFileName(table_id.table_name);
-            auto ast = DatabaseCatalog::instance().getDatabaseOrThrow(table_id.database_name, query_context)->getCreateTableQuery(table_id.table_name, query_context);
+            auto ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, query_context);
             applyMetadataChangesToCreateQuery(ast, future_metadata, query_context);
             ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, getObjectDefinitionFromCreateQuery(ast), -1));
         }

@@ -372,7 +372,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
         *memory_settings = std::move(changed_settings);
     }
 
-    DatabaseCatalog::instance().getDatabaseOrThrow(table_id.database_name, context)->alterTable(context, table_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }
 

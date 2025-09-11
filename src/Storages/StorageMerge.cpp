@@ -1398,7 +1398,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
 
 DatabaseTablesIteratorPtr StorageMerge::DatabaseNameOrRegexp::getDatabaseIterator(const String & database_name, ContextPtr local_context) const
 {
-    auto database = DatabaseCatalog::instance().getDatabaseOrThrow(database_name, local_context);
+    auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
     auto table_name_match = [this, database_name](const String & table_name_) -> bool
     {
@@ -1482,7 +1482,7 @@ void StorageMerge::alter(
 
     StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
     params.apply(storage_metadata, local_context);
-    DatabaseCatalog::instance().getDatabaseOrThrow(table_id.database_name, local_context)->alterTable(local_context, table_id, storage_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, storage_metadata);
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals());
 }

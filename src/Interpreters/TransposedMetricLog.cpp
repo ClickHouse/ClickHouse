@@ -422,7 +422,7 @@ void TransposedMetricLog::prepareViewForTable(DatabasePtr system_database, Stora
         auto rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
 
         ActionLock merges_lock;
-        if (DatabaseCatalog::instance().getDatabaseOrThrow(system_database->getDatabaseName(), getContext())->getUUID() == UUIDHelpers::Nil)
+        if (DatabaseCatalog::instance().getDatabase(system_database->getDatabaseName())->getUUID() == UUIDHelpers::Nil)
             merges_lock = table->getActionLock(ActionLocks::PartsMerge);
 
         auto query_context = Context::createCopy(context);
