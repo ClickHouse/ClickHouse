@@ -226,7 +226,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     {
         for (size_t i = 0; i < slots; ++i)
         {
-            /// make slots sequentially to avoid allocator races during map initialization
+            // Construct slots sequentially to avoid allocator races during map initialization
             const size_t reserve_size = 0; // we'll rely on per-slot preallocation later if needed
             auto inner_hash_join = std::make_shared<InternalHashJoin>();
             inner_hash_join->data = std::make_unique<HashJoin>(
@@ -505,34 +505,27 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
 
     /// Collect non-joined streams from each slot
     std::vector<IBlocksStreamPtr> streams;
-    streams.reserve(slots);
-
+    // Special handling for joins with always false condition (no right keys):
+    // iterate all shards, since right-side rows are stored per-slot
     if (table_join->getOnlyClause().key_names_right.empty())
     {
-        /// for RIGHT/FULL joins with always false condition, all rows should be considered non-joined
-        /// we need to return all rows from the right table
-        std::lock_guard lock(hash_joins[0]->mutex);
-        if (auto s = hash_joins[0]->data->getNonJoinedBlocks(
-                left_sample_block, result_sample_block, max_block_size))
-            streams.push_back(std::move(s));
+        for (const auto & hj : hash_joins)
+        {
+            std::lock_guard lock(hj->mutex);
+            if (auto s = hj->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
+                streams.push_back(std::move(s));
+        }
     }
     else
     {
-        /// for regular joins, we need to deduplicate NULL values
-        std::unordered_set<size_t> processed_rows;
+        /// For regular joins, ask each shard for its non-joined rows stream.
+        /// Do not rely on hasNonJoinedRows() gating: some cases don't mark flags per-row.
         for (const auto & hash_join : hash_joins)
         {
             std::lock_guard lock(hash_join->mutex);
-            bool had_non_joined = hash_join->data->hasNonJoinedRows()
-                                || hash_join->has_non_joined_rows.load(std::memory_order_relaxed);
-            if (!had_non_joined)
-                continue;
-
-            /// get non-joined blocks and deduplicate NULL values
             if (auto s = hash_join->data->getNonJoinedBlocks(
                     left_sample_block, result_sample_block, max_block_size))
             {
-                /// wrapper stream that deduplicates NULL values (doesn't do a lot now, TODO)
                 auto dedup_stream = std::make_shared<DeduplicateNullStream>(std::move(s));
                 streams.push_back(std::move(dedup_stream));
             }
@@ -753,9 +746,10 @@ void ConcurrentHashJoin::finalizeSlots()
     if (hash_joins.empty())
         return;
 
-    /// make shared structures only once
+    // Finalize each slot sequentially under its own lock.
+    // This avoids races while ensuring per-slot internal structures are ready.
+    for (auto & hj : hash_joins)
     {
-        auto & hj = hash_joins[0];
         std::lock_guard lock(hj->mutex);
         hj->data->onBuildPhaseFinish();
     }

@@ -1534,30 +1534,18 @@ private:
             size_t rows = columns->columns.at(0)->size();
             for (size_t row = 0; row < rows; ++row)
             {
-                /// TODO, not good
-                try
-                {
-                    if (nullmap && (*nullmap)[row])
-                    {
-                        /// we make sure we have columns to insert into
-                        if (columns_keys_and_right.empty())
-                            continue;
+                const bool include_row = !nullmap || (*nullmap)[row];
+                if (!include_row)
+                    continue;
 
-                        for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
-                        {
-                            /// check if the block has enough columns
-                            if (col < columns->columns.size())
-                                columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
-                        }
-                        ++rows_added;
-                    }
-                }
-                catch (...)
+                for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
                 {
-                    for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
+                    if (col < columns->columns.size())
                         columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
-                    ++rows_added;
                 }
+                ++rows_added;
+                if (rows_added >= max_block_size)
+                    break;
             }
         }
     }
