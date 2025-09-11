@@ -116,7 +116,7 @@ void verifyTableId(const StorageID & table_id)
 {
     if (!table_id.hasUUID())
     {
-        auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name);
+        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "KeeperMap cannot be used with '{}' database because it uses {} engine. Please use Atomic or Replicated database",

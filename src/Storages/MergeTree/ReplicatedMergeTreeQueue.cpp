@@ -1731,8 +1731,8 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
 
         auto database_name = storage.getStorageID().database_name;
-        auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-        if (!database || !database->canExecuteReplicatedMetadataAlter())
+        auto database = DatabaseCatalog::instance().getDatabase(database_name);
+        if (!database->canExecuteReplicatedMetadataAlter())
         {
             LOG_TRACE(LogToStr(out_postpone_reason, log), "Cannot execute alter metadata {} with version {} "
                       "because database {} cannot process metadata alters now", entry.znode_name, entry.alter_version, database_name);
