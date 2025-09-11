@@ -125,8 +125,8 @@ protected:
 
     const bool compute_granularity;
 
-    std::vector<IndexOutputStreams> skip_indices_streams;
     std::vector<StreamPtr> skip_indices_streams_holders;
+    std::vector<MergeTreeIndexOutputStreams> skip_indices_streams;
 
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;

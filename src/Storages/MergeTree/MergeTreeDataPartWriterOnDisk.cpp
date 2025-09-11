@@ -155,7 +155,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         {
             auto stream_name = index_name + index_substream.suffix;
 
-            auto stream = std::make_unique<IndexWriterStream>(
+            auto stream = std::make_unique<MergeTreeIndexWriterStream>(
                 stream_name,
                 data_part_storage,
                 stream_name,

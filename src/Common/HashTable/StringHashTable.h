@@ -486,6 +486,15 @@ public:
             + ms.getBufferSizeInBytes();
     }
 
+    void clear()
+    {
+        m1.clearHasZero();
+        m1.clear();
+        m2.clear();
+        m3.clear();
+        ms.clear();
+    }
+
     void clearAndShrink()
     {
         m1.clearHasZero();

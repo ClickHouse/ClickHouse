@@ -91,7 +91,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"json_type_escape_dots_in_keys", false, false, "Add new setting that allows to escape dots in JSON keys during JSON type parsing"},
             {"parallel_replicas_support_projection", false, true, "New setting. Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive."},
             {"input_format_json_infer_array_of_dynamic_from_array_of_different_types", false, true, "Infer Array(Dynamic) for JSON arrays with different values types by default"},
-            {"use_skip_indexes_on_data_read", false, true, "New setting"},
             {"enable_add_distinct_to_in_subqueries", false, false, "New setting to reduce the size of temporary tables transferred for distributed IN subqueries."},
             {"enable_vector_similarity_index", false, true, "Vector similarity indexes are GA."},
             {"execute_exists_as_scalar_subquery", false, true, "New setting"},

@@ -97,7 +97,8 @@ struct IMergeTreeIndexGranule
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
 
     /// Serialize with multiple streams.
-    virtual void serializeBinaryWithMultipleStreams(IndexOutputStreams & streams) const;
+    /// By analogy with ISerialization::serializeBinaryBulkWithMultipleStreams.
+    virtual void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const;
 
     /// Version of the index to deserialize:
     ///
@@ -108,14 +109,15 @@ struct IMergeTreeIndexGranule
     /// and throws LOGICAL_ERROR in case of unsupported version.
     ///
     /// See also:
-    /// - IMergeTreeIndex::getSerializedFileExtension()
+    /// - IMergeTreeIndex::getSubstreams()
     /// - IMergeTreeIndex::getDeserializedFormat()
     /// - MergeTreeDataMergerMutator::collectFilesToSkip()
     /// - MergeTreeDataMergerMutator::collectFilesForRenames()
     virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
 
     /// Deserialize with multiple streams.
-    virtual void deserializeBinaryWithMultipleStreams(IndexInputStreams & streams, IndexDeserializationState & state);
+    /// By analogy with ISerialization::deserializeBinaryBulkWithMultipleStreams.
+    virtual void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state);
 
     virtual bool empty() const = 0;
 
@@ -279,14 +281,14 @@ struct IMergeTreeIndex
 
     virtual bool isMergeable() const { return false; }
 
-    /// Returns extension for serialization.
+    /// Returns substreams for serialization.
     /// Reimplement if you want new index format.
     ///
     /// NOTE: In case getSubstreams() is reimplemented,
     /// getDeserializedFormat() should be reimplemented too,
-    /// and check all previous extensions too
+    /// and check all previous extensions for substreams too
     /// (to avoid breaking backward compatibility).
-    virtual IndexSubstreams getSubstreams() const { return {{IndexSubstream::Type::Regular, "", ".idx"}}; }
+    virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
 
     /// Returns extension for deserialization.
     ///

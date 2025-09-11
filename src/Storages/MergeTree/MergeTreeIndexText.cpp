@@ -248,12 +248,12 @@ void MergeTreeIndexGranuleText::deserializeSparseIndex(ReadBuffer & istr)
     sparse_index.offsets_in_file = std::move(offsets_in_file);
 }
 
-void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(IndexInputStreams & streams, IndexDeserializationState & state)
+void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReadGranulesMicroseconds);
 
-    auto * index_stream = streams.at(IndexSubstream::Type::Regular);
-    auto * dictionary_stream = streams.at(IndexSubstream::Type::TextIndexDictionary);
+    auto * index_stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
+    auto * dictionary_stream = streams.at(MergeTreeIndexSubstream::Type::TextIndexDictionary);
 
     if (!index_stream || !dictionary_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with 3 streams: index, dictionary, postings. One of the streams is missing");
@@ -298,7 +298,7 @@ void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexConditio
     }
 }
 
-void MergeTreeIndexGranuleText::analyzeDictionary(IndexReaderStream & stream, IndexDeserializationState & state)
+void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
 {
     if (remaining_tokens.empty())
         return;
@@ -381,13 +381,17 @@ void MergeTreeIndexGranuleText::resetAfterAnalysis()
 
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     MergeTreeIndexTextParams params_,
-    BloomFilter bloom_filter_,
-    SortedTokensAndPostings tokens_and_postings_,
-    Holder holder_)
+    BloomFilter && bloom_filter_,
+    SortedTokensAndPostings && tokens_and_postings_,
+    TokenToPostingsMap && tokens_map_,
+    std::list<PostingList> && posting_lists_,
+    std::unique_ptr<Arena> && arena_)
     : params(std::move(params_))
     , bloom_filter(std::move(bloom_filter_))
     , tokens_and_postings(std::move(tokens_and_postings_))
-    , holder(std::move(holder_))
+    , tokens_map(std::move(tokens_map_))
+    , posting_lists(std::move(posting_lists_))
+    , arena(std::move(arena_))
 {
 }
 
@@ -497,11 +501,11 @@ void MergeTreeIndexGranuleTextWritable::serializeBinary(WriteBuffer &) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings");
 }
 
-void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(IndexOutputStreams & streams) const
+void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
 {
-    auto * index_stream = streams.at(IndexSubstream::Type::Regular);
-    auto * dictionary_stream = streams.at(IndexSubstream::Type::TextIndexDictionary);
-    auto * postings_stream = streams.at(IndexSubstream::Type::TextIndexPostings);
+    auto * index_stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
+    auto * dictionary_stream = streams.at(MergeTreeIndexSubstream::Type::TextIndexDictionary);
+    auto * postings_stream = streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
 
     if (!index_stream || !dictionary_stream || !postings_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings. One of the streams is missing");
@@ -537,7 +541,7 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
     while (cur < length && token_extractor->nextInStringPadded(document.data, length, &cur, &token_start, &token_len))
     {
         bool inserted;
-        TokensMap::LookupResult it;
+        TokenToPostingsMap::LookupResult it;
 
         ArenaKeyHolder key_holder{StringRef(document.data + token_start, token_len), *arena};
         tokens_map.emplace(key_holder, it, inserted);
@@ -565,16 +569,23 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
         bloom_filter.add(key.data, key.size);
     });
 
-    std::sort(sorted_values.begin(), sorted_values.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
-
-    using Holder = MergeTreeIndexGranuleTextWritable::Holder;
-    Holder holder{std::move(tokens_map), std::move(arena), std::move(posting_lists)};
+    std::ranges::sort(sorted_values, [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
     return std::make_unique<MergeTreeIndexGranuleTextWritable>(
         params,
         std::move(bloom_filter),
         std::move(sorted_values),
-        std::move(holder));
+        std::move(tokens_map),
+        std::move(posting_lists),
+        std::move(arena));
+}
+
+void MergeTreeIndexTextGranuleBuilder::reset()
+{
+    current_row = 0;
+    tokens_map.clear();
+    posting_lists.clear();
+    arena = std::make_unique<Arena>();
 }
 
 MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
@@ -584,14 +595,14 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     : index_column_name(std::move(index_column_name_))
     , params(std::move(params_))
     , token_extractor(token_extractor_)
-    , granule_builder(MergeTreeIndexTextGranuleBuilder(params, token_extractor))
+    , granule_builder(params, token_extractor_)
 {
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorText::getGranuleAndReset()
 {
-    auto granule = granule_builder->build();
-    granule_builder.emplace(params, token_extractor);
+    auto granule = granule_builder.build();
+    granule_builder.reset();
     return granule;
 }
 
@@ -612,7 +623,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     for (size_t i = 0; i < rows_read; ++i)
     {
         auto ref = index_column->getDataAt(current_position + i);
-        granule_builder->addDocument(ref);
+        granule_builder.addDocument(ref);
     }
 
     *pos += rows_read;
@@ -628,13 +639,13 @@ MergeTreeIndexText::MergeTreeIndexText(
 {
 }
 
-IndexSubstreams MergeTreeIndexText::getSubstreams() const
+MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
 {
     return
     {
-        {IndexSubstream::Type::Regular, "", ".idx"},
-        {IndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
-        {IndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
+        {MergeTreeIndexSubstream::Type::Regular, "", ".idx"},
+        {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
+        {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
     };
 }
 
