@@ -398,27 +398,67 @@ using FunctionQuantize1Bit = FunctionQuantizeBase<Quantize1BitTraits, Quantize1B
 
 REGISTER_FUNCTION(Quantize16Bit)
 {
-    factory.registerFunction<FunctionQuantize16Bit>(FunctionDocumentation{.description = R"(Quantize function.)"});
+    FunctionDocumentation::Description description = " ";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionQuantize16Bit>(documentation);
 }
 
 REGISTER_FUNCTION(QuantizeSFP8Bit)
 {
-    factory.registerFunction<FunctionQuantizeSFP8Bit>(FunctionDocumentation{.description = R"(Quantize function.)"});
+    FunctionDocumentation::Description description = " ";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionQuantizeSFP8Bit>(documentation);
 }
 
 REGISTER_FUNCTION(QuantizeMini8Bit)
 {
-    factory.registerFunction<FunctionQuantizeMini8Bit>(FunctionDocumentation{.description = R"(Quantize function.)"});
+    FunctionDocumentation::Description description = " ";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionQuantizeMini8Bit>(documentation);
 }
 
 REGISTER_FUNCTION(Quantize4Bit)
 {
-    factory.registerFunction<FunctionQuantize4Bit>(FunctionDocumentation{.description = R"(Quantize function.)"});
+    FunctionDocumentation::Description description = " ";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionQuantize4Bit>(documentation);
 }
 
 REGISTER_FUNCTION(Quantize1Bit)
 {
-    factory.registerFunction<FunctionQuantize1Bit>(FunctionDocumentation{.description = R"(Quantize function.)"});
+    FunctionDocumentation::Description description = " ";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionQuantize1Bit>(documentation);
 }
 
 }

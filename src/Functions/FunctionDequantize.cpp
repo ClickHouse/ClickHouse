@@ -117,27 +117,67 @@ using FunctionDequantize1Bit = FunctionDequantizeBase<Dequantize1BitTraits, Dequ
 
 REGISTER_FUNCTION(Dequantize16Bit)
 {
-    factory.registerFunction<FunctionDequantize16Bit>(FunctionDocumentation{.description = R"(Dequantize function.)"});
+    FunctionDocumentation::Description description = " ";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionDequantize16Bit>(documentation);
 }
 
 REGISTER_FUNCTION(DequantizeSFP8Bit)
 {
-    factory.registerFunction<FunctionDequantizeSFP8Bit>(FunctionDocumentation{.description = R"(Dequantize function.)"});
+    FunctionDocumentation::Description description = " ";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionDequantizeSFP8Bit>(documentation);
 }
 
 REGISTER_FUNCTION(DequantizeMini8Bit)
 {
-    factory.registerFunction<FunctionDequantizeMini8Bit>(FunctionDocumentation{.description = R"(Dequantize function.)"});
+    FunctionDocumentation::Description description = " ";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionDequantizeMini8Bit>(documentation);
 }
 
 REGISTER_FUNCTION(Dequantize4Bit)
 {
-    factory.registerFunction<FunctionDequantize4Bit>(FunctionDocumentation{.description = R"(Dequantize function.)"});
+    FunctionDocumentation::Description description = " ";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionDequantize4Bit>(documentation);
 }
 
 REGISTER_FUNCTION(Dequantize1Bit)
 {
-    factory.registerFunction<FunctionDequantize1Bit>(FunctionDocumentation{.description = R"(Dequantize function.)"});
+    FunctionDocumentation::Description description = " ";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionDequantize1Bit>(documentation);
 }
 
 }

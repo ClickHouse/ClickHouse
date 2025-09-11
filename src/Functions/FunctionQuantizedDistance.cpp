@@ -1,5 +1,5 @@
-#include <Functions/FunctionQuantizedDistance.h>
 #include <Functions/FunctionDequantize.h>
+#include <Functions/FunctionQuantizedDistance.h>
 #include <base/types.h>
 
 namespace DB
@@ -329,71 +329,140 @@ struct CosineDistanceGeneric
 REGISTER_FUNCTION(Quantized16BitL2Distance)
 {
     static constexpr char name[] = "quantized16BitL2Distance";
-    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt16, L2Accumulate16Bit>, name>>(
-        FunctionDocumentation{.description = R"(Quantized L2 distance function.)"});
+    FunctionDocumentation::Description description = "(Quantized L2 distance function.)";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt16, L2Accumulate16Bit>, name>>(documentation);
 }
 
 REGISTER_FUNCTION(QuantizedSFP8BitL2Distance)
 {
     static constexpr char name[] = "quantizedSFP8BitL2Distance";
-    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2AccumulateSFP8Bit>, name>>(
-        FunctionDocumentation{.description = R"(Quantized L2 distance function.)"});
+    FunctionDocumentation::Description description = "(Quantized L2 distance function.)";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2AccumulateSFP8Bit>, name>>(documentation);
 }
 
 REGISTER_FUNCTION(QuantizedMini8BitL2Distance)
 {
     static constexpr char name[] = "quantizedMini8BitL2Distance";
-    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2AccumulateMini8Bit>, name>>(
-        FunctionDocumentation{.description = R"(Quantized L2 distance function.)"});
+    FunctionDocumentation::Description description = "(Quantized L2 distance function.)";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2AccumulateMini8Bit>, name>>(documentation);
 }
 
 REGISTER_FUNCTION(Quantized4BitL2Distance)
 {
     static constexpr char name[] = "quantized4BitL2Distance";
-    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2Accumulate4Bit>, name>>(
-        FunctionDocumentation{.description = R"(Quantized L2 distance function.)"});
+    FunctionDocumentation::Description description = "(Quantized L2 distance function.)";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2Accumulate4Bit>, name>>(documentation);
 }
 
 REGISTER_FUNCTION(Quantized1BitL2Distance)
 {
     static constexpr char name[] = "quantized1BitL2Distance";
-    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2Accumulate1Bit>, name>>(
-        FunctionDocumentation{.description = R"(Quantized L2 distance function.)"});
+    FunctionDocumentation::Description description = "(Quantized L2 distance function.)";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2Accumulate1Bit>, name>>(documentation);
 }
 
 REGISTER_FUNCTION(Quantized16BitCosineDistance)
 {
     static constexpr char name[] = "quantized16BitCosineDistance";
-    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt16, CosineProduct16Bit>, name>>(
-        FunctionDocumentation{.description = R"(Quantized cosine distance function.)"});
+    FunctionDocumentation::Description description = "(Quantized cosine distance function.)";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt16, CosineProduct16Bit>, name>>(documentation);
 }
 
 REGISTER_FUNCTION(QuantizedSFP8BitCosineDistance)
 {
     static constexpr char name[] = "quantizedSFP8BitCosineDistance";
-    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProductSFP8Bit>, name>>(
-        FunctionDocumentation{.description = R"(Quantized cosine distance function.)"});
+    FunctionDocumentation::Description description = "(Quantized cosine distance function.)";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProductSFP8Bit>, name>>(documentation);
 }
 
 REGISTER_FUNCTION(QuantizedMini8BitCosineDistance)
 {
     static constexpr char name[] = "quantizedMini8BitCosineDistance";
-    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProductMini8Bit>, name>>(
-        FunctionDocumentation{.description = R"(Quantized cosine distance function.)"});
+    FunctionDocumentation::Description description = "(Quantized cosine distance function.)";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProductMini8Bit>, name>>(documentation);
 }
 
 REGISTER_FUNCTION(Quantized4BitCosineDistance)
 {
     static constexpr char name[] = "quantized4BitCosineDistance";
-    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProduct4Bit>, name>>(
-        FunctionDocumentation{.description = R"(Quantized cosine distance function.)"});
+    FunctionDocumentation::Description description = "(Quantized cosine distance function.)";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProduct4Bit>, name>>(documentation);
 }
 
 REGISTER_FUNCTION(Quantized1BitCosineDistance)
 {
     static constexpr char name[] = "quantized1BitCosineDistance";
-    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProduct1Bit>, name>>(
-        FunctionDocumentation{.description = R"(Quantized cosine distance function.)"});
+    FunctionDocumentation::Description description = "(Quantized cosine distance function.)";
+    FunctionDocumentation::Syntax syntax = " ";
+    FunctionDocumentation::Arguments argument = {{" ", " "}};
+    FunctionDocumentation::ReturnedValue returned_value = {" "};
+    FunctionDocumentation::Examples examples = {{" ", " ", " "}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Unknown;
+    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, categories};
+    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProduct1Bit>, name>>(documentation);
 }
-
 }
