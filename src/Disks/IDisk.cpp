@@ -76,11 +76,10 @@ void IDisk::copyFile( /// NOLINT
 std::unique_ptr<ReadBufferFromFileBase> IDisk::readFileIfExists( /// NOLINT
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t> read_hint) const
 {
     if (existsFile(path))
-        return readFile(path, settings, read_hint, file_size);
+        return readFile(path, settings, read_hint);
     else
         return {};
 }

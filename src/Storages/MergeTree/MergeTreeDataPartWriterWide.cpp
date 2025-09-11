@@ -593,14 +593,14 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     if (!getDataPartStorage().existsFile(mrk_path))
         return;
 
-    auto mrk_file_in = getDataPartStorage().readFile(mrk_path, {}, std::nullopt, std::nullopt);
+    auto mrk_file_in = getDataPartStorage().readFile(mrk_path, {}, std::nullopt);
     std::unique_ptr<ReadBuffer> mrk_in;
     if (index_granularity_info.mark_type.compressed)
         mrk_in = std::make_unique<CompressedReadBufferFromFile>(std::move(mrk_file_in));
     else
         mrk_in = std::move(mrk_file_in);
 
-    DB::CompressedReadBufferFromFile bin_in(getDataPartStorage().readFile(bin_path, {}, std::nullopt, std::nullopt));
+    DB::CompressedReadBufferFromFile bin_in(getDataPartStorage().readFile(bin_path, {}, std::nullopt));
     bool must_be_last = false;
     UInt64 offset_in_compressed_file = 0;
     UInt64 offset_in_decompressed_block = 0;

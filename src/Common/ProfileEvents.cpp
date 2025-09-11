@@ -28,7 +28,10 @@
     M(AsyncInsertBytes, "Data size in bytes of asynchronous INSERT queries.", ValueType::Bytes) \
     M(AsyncInsertRows, "Number of rows inserted by asynchronous INSERT queries.", ValueType::Number) \
     M(AsyncInsertCacheHits, "Number of times a duplicate hash id has been found in asynchronous INSERT hash id cache.", ValueType::Number) \
-    M(FailedQuery, "Number of failed queries.", ValueType::Number) \
+    M(FailedInternalQuery, "Number of failed internal queries.", ValueType::Number) \
+    M(FailedInternalSelectQuery, "Same as FailedInternalQuery, but only for SELECT queries.", ValueType::Number) \
+    M(FailedInternalInsertQuery, "Same as FailedInternalQuery, but only for INSERT queries.", ValueType::Number) \
+    M(FailedQuery, "Number of total failed queries, both internal and user queries.", ValueType::Number) \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.", ValueType::Number) \
     M(FailedAsyncInsertQuery, "Number of failed ASYNC INSERT queries.", ValueType::Number) \
@@ -186,7 +189,9 @@
     M(PatchesAppliedInAllReadTasks, "Total number of applied patch parts among all read tasks", ValueType::Number) \
     M(PatchesMergeAppliedInAllReadTasks, "Total number of applied patch parts with Merge mode among all read tasks", ValueType::Number) \
     M(PatchesJoinAppliedInAllReadTasks, "Total number of applied patch parts with Join mode among all read tasks", ValueType::Number) \
+    M(PatchesReadRows, "Total number of rows read from patch parts", ValueType::Number) \
     M(PatchesReadUncompressedBytes, "Total number of uncompressed bytes read from patch parts", ValueType::Number) \
+    M(PatchesJoinRowsAddedToHashTable, "Total number of rows added to hash tables when applying patch parts with Join mode", ValueType::Number) \
     M(ApplyPatchesMicroseconds, "Total time spent applying patch parts to blocks", ValueType::Number) \
     M(ReadPatchesMicroseconds, "Total time spent reading patch parts", ValueType::Number) \
     M(BuildPatchesMergeMicroseconds, "Total time spent building indexes for applying patch parts with Merge mode", ValueType::Number) \
@@ -940,6 +945,9 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheConnectMicroseconds, "Distributed Cache connection event. The time spent to connect to distributed cache", ValueType::Microseconds) \
     M(DistrCacheConnectAttempts, "Distributed Cache connection event. The number of connection attempts to distributed cache", ValueType::Number) \
     M(DistrCacheGetClientMicroseconds, "Distributed Cache connection event. Time spent getting client for distributed cache", ValueType::Microseconds) \
+    \
+    M(DistrCacheTemporaryFilesCreated, "Distributed Cache connection event. Number of temporary files created in distributed cache", ValueType::Number) \
+    M(DistrCacheTemporaryFilesBytesWritten, "Distributed Cache connection event. Number of bytes written to temporary files created in distributed cache", ValueType::Number) \
     \
     M(DistrCacheServerProcessRequestMicroseconds, "Distributed Cache server event. Time spent processing request on DistributedCache server side", ValueType::Microseconds) \
     M(DistrCacheServerStartRequestPackets, "Distributed Cache server event. Number of StartRequest packets in DistributedCacheServer", ValueType::Number) \
