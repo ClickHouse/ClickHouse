@@ -25,11 +25,15 @@ namespace ProfileEvents
 namespace DB
 {
 
+#if USE_AWS_S3
+
 namespace S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
     extern const S3AuthSettingsString secret_access_key;
 }
+
+#endif
 
 namespace ErrorCodes
 {
@@ -79,11 +83,13 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
     }
     else if (after_processing_action == ObjectStorageQueueAction::TAG)
     {
+#if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE
         const String & tag_key = table_metadata.after_processing_tag_key;
         const String & tag_value = table_metadata.after_processing_tag_value;
         LOG_INFO(log, "executing TAG action in ObjectStorage Queue commit stage, {} = {}", tag_key, tag_value);
         object_storage->tagObjects(objects, tag_key, tag_value);
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTaggedObjects, objects.size());
+#endif
     }
     else if (after_processing_action != ObjectStorageQueueAction::KEEP)
     {
@@ -146,6 +152,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
 
 void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & objects) const
 {
+#if USE_AWS_S3
     const String & move_uri = table_metadata.after_processing_move_uri;
     const String & move_access_key_id = table_metadata.after_processing_move_access_key_id;
     const String & move_secret_access_key = table_metadata.after_processing_move_secret_access_key;
@@ -228,6 +235,9 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "no settings to move S3 objects");
     }
+#else
+    (void) objects;
+#endif
 }
 
 void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objects) const
