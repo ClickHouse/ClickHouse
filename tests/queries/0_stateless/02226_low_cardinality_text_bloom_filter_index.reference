@@ -1,9 +1,9 @@
 lc_bf_tokenbf
-1	K1	K1ZZZZZZ
-2	K2	K2ZZZZZZ
+1	K1	K1ZZZZZZZZ
+2	K2	K2ZZZZZZZZ
 lc_fixed_bf_tokenbf
-1	K1	K1ZZZZZZ
-2	K2	K2ZZZZZZ
+1	K1	K1ZZZZZZZZ
+2	K2	K2ZZZZZZZZ
 lc_ngram
 1	K1	K1ZZZZZZ
 2	K2	K2ZZZZZZ
@@ -11,11 +11,11 @@ lc_fixed_ngram
 1	K1	K1ZZZZZZ
 2	K2	K2ZZZZZZ
 lc_bf_tokenbf
-3	abCD3ef	abCD3ef\0
-4	abCD4ef	abCD4ef\0
+3	ab/CD3/ef	ab/CD3/ef\0
+4	ab/CD4/ef	ab/CD4/ef\0
 lc_fixed_bf_tokenbf
-3	abCD3ef	abCD3ef\0
-4	abCD4ef	abCD4ef\0
+3	ab/CD3/ef	ab/CD3/ef\0
+4	ab/CD4/ef	ab/CD4/ef\0
 lc_ngram
 3	abCD3ef	abCD3ef\0
 4	abCD4ef	abCD4ef\0
