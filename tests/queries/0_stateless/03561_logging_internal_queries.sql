@@ -15,7 +15,7 @@ LAYOUT(HASHED());
 
 SYSTEM RELOAD DICTIONARY test_logging_internal_queries_dict;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT countIf(type = 'QueryStart') > 0, countIf(type = 'QueryFinish') > 0
 FROM system.query_log
