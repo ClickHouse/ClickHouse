@@ -35,6 +35,7 @@ public:
         SharedHeader header_,
         const StorageMetadataPtr & metadata_snapshot_,
         const SelectQueryInfo & query_info_,
+        size_t num_streams_,
         MergeTreeData::DataPartsVector data_parts_,
         MergeTreeSettingsPtr table_settings_,
         const ASTPtr & primary_key_predicate_,
@@ -44,6 +45,7 @@ public:
         , header(std::move(header_))
         , metadata_snapshot(metadata_snapshot_)
         , query_info(query_info_)
+        , num_streams(num_streams_)
         , primary_key_predicate(primary_key_predicate_)
         , data_parts(std::move(data_parts_))
         , table_settings(std::move(table_settings_))
@@ -112,7 +114,7 @@ protected:
             indexes.skip_indexes,
             reader_settings,
             getLogger("MergeTreeAnalyzeIndexSource"),
-            /*num_streams=*/ 1, /// Single threaded
+            num_streams,
             index_stats,
             /* use_skip_indexes= */ false,
             /* find_exact_ranges= */ false,
@@ -124,6 +126,7 @@ private:
     SharedHeader header;
     StorageMetadataPtr metadata_snapshot;
     SelectQueryInfo query_info;
+    size_t num_streams;
     ASTPtr primary_key_predicate;
     MergeTreeData::DataPartsVector data_parts;
     MergeTreeSettingsPtr table_settings;
@@ -143,6 +146,7 @@ public:
     ReadFromMergeTreeAnalyzeIndex(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
+        size_t num_streams_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         SharedHeader sample_block,
@@ -154,14 +158,15 @@ public:
             storage_snapshot_,
             context_)
         , storage(std::move(storage_))
+        , num_streams(num_streams_)
         , log(&Poco::Logger::get("StorageMergeTreeAnalyzeIndex"))
     {
     }
 
 private:
     std::shared_ptr<StorageMergeTreeAnalyzeIndex> storage;
+    const size_t num_streams;
     Poco::Logger * log;
-    ExpressionActionsPtr virtual_columns_filter;
 };
 
 void ReadFromMergeTreeAnalyzeIndex::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -174,6 +179,7 @@ void ReadFromMergeTreeAnalyzeIndex::initializePipeline(QueryPipelineBuilder & pi
         getOutputHeader(),
         storage->source_table->getInMemoryMetadataPtr(),
         getQueryInfo(),
+        num_streams,
         storage->data_parts,
         storage->table_settings,
         storage->primary_key_predicate,
@@ -221,7 +227,7 @@ void StorageMergeTreeAnalyzeIndex::read(
     ContextPtr context,
     QueryProcessingStage::Enum,
     size_t /*max_block_size*/,
-    size_t /*num_streams*/)
+    size_t num_streams)
 {
     context->checkAccess(AccessType::SELECT, source_table->getStorageID());
 
@@ -231,6 +237,7 @@ void StorageMergeTreeAnalyzeIndex::read(
     auto reading = std::make_unique<ReadFromMergeTreeAnalyzeIndex>(
         column_names,
         query_info,
+        num_streams,
         storage_snapshot,
         std::move(context),
         std::move(sample_block),
