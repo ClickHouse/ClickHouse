@@ -1886,14 +1886,19 @@ void ZooKeeper::observeOperationIfNeeded(const ZooKeeperRequestPtr & request, co
 {
     chassert(response);
 
-    if (!request)
+    auto aggregated_zookeeper_log_ = getAggregatedZooKeeperLog();
+    if (!aggregated_zookeeper_log_)
     {
         return;
     }
 
-    auto aggregated_zookeeper_log_ = getAggregatedZooKeeperLog();
-    if (!aggregated_zookeeper_log_)
+    if (!request)
     {
+        chassert(response->xid == PING_XID || response->xid == WATCH_XID);
+        if (const auto watch_response = std::dynamic_pointer_cast<ZooKeeperWatchResponse>(response))
+        {
+            aggregated_zookeeper_log_->observe(session_id, watch_response->getOpNum(), watch_response->path, elapsed_microseconds, watch_response->error);
+        }
         return;
     }
 
