@@ -18,7 +18,7 @@ All the values in columns are simply copied, except the values in the column whe
 
 :::note
 If the array is empty, `arrayJoin` produces no rows. 
-To return a single row instead, you can wrap it with [emptyArrayToSingle](../array-functions#emptyArrayToSingle), for example: `arrayJoin(emptyArrayToSingle(...))`.
+To return a single row instead, you can wrap it with [emptyArrayToSingle](./array-functions.md#emptyArrayToSingle), for example: `arrayJoin(emptyArrayToSingle(...))`.
 :::
 
 For example:
