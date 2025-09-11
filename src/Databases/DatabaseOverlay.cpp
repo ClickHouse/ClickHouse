@@ -93,10 +93,10 @@ void DatabaseOverlay::createTable(ContextPtr context_, const String & table_name
 void DatabaseOverlay::dropTable(ContextPtr context_, const String & table_name, bool sync)
 {
     if (mode == Mode::FacadeOverCatalog)
-        {
-            LOG_TRACE(log, "Ignoring DROP TABLE {}.{} in Overlay Database", getDatabaseName(), table_name);
-            return;
-        }
+    {
+        LOG_TRACE(log, "Ignoring DROP TABLE {}.{} in Overlay Database", getDatabaseName(), table_name);
+        return;
+    }
     for (auto & db : databases)
     {
         if (db->isTableExist(table_name, context_))
