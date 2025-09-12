@@ -25,7 +25,7 @@ A vector contains indices and their corresponding values. The following are some
 ## Create a numericIndexedVector object {#create-numeric-indexed-vector-object}
 
 There are two ways to create this structure: one is to use the aggregate function `groupNumericIndexedVector` with `-State`.
-Of course, you can continue to add suffix `-if` to accept an additional condition.
+You can add suffix `-if` to accept an additional condition.
 The aggregate function will only process the rows that trigger the condition.
 The other is to build it from a map using `numericIndexedVectorBuild`.
 The `groupNumericIndexedVectorState` function allows customization of the number of integer and fractional bits through parameters, while `numericIndexedVectorBuild` does not.
