@@ -6483,9 +6483,6 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
 )", 0) \
-    DECLARE(String, datalake_disk_name, "", R"(
-Which disk to use for data lake table engines.
-)", 0) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, true, R"(
 Enables showing data lake catalogs in system tables.
 )", 0) \
