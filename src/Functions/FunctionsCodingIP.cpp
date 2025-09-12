@@ -1211,7 +1211,7 @@ SELECT
 
     /// IPv4ToIPv6 function
     FunctionDocumentation::Description description_ipv4toipv6 = R"(
-Converts a 32-bit integer to its IPv4 address representation, then returns the equivalent IPv6 address in binary format as a 16-byte fixed string.
+Interprets a (big endian) 32-bit number as an IPv4 address, which is then interpreted as the corresponding IPv6 address in `FixedString(16)` format.
     )";
     FunctionDocumentation::Syntax syntax_ipv4toipv6 = "IPv4ToIPv6(x)";
     FunctionDocumentation::Arguments arguments_ipv4toipv6 = {

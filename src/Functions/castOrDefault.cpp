@@ -392,25 +392,26 @@ If the IPv4 address has an invalid format, it returns `0.0.0.0` (0 IPv4), or the
     FunctionDocumentation::Syntax toIPv4OrDefault_syntax = "toIPv4OrDefault(string[, default])";
     FunctionDocumentation::Arguments toIPv4OrDefault_arguments = {
         {"string", "IP address string to convert.", {"String"}},
-        {"default", "Optional. The value to return if string has an invalid format.", {"IPv4"}}
+        {"default", "Optional. The value to return if string is an invalid IPv4 address.", {"IPv4"}}
     };
     FunctionDocumentation::ReturnedValue toIPv4OrDefault_returned_value = {"Returns a string converted to the current IPv4 address, or the default value if conversion fails.", {"IPv4"}};
     FunctionDocumentation::Examples toIPv4OrDefault_examples = {
     {
-        "Valid IPv6 string",
+        "Valid and invalid IPv4 strings",
         R"(
 WITH
-    '::ffff:127.0.0.1' AS valid_IPv6_string,
-    'fe80:2030:31:24' AS invalid_IPv6_string
+    '192.168.1.1' AS valid_IPv4_string,
+    '999.999.999.999' AS invalid_IPv4_string,
+    'not_an_ip' AS malformed_string
 SELECT
-    toIPv4OrDefault(valid_IPv6_string) AS valid,
-    toIPv4OrDefault(invalid_IPv6_string) AS default_value,
-    toIPv4OrDefault(invalid_IPv6_string, toIPv4('1.1.1.1')) AS provided_default;
+    toIPv4OrDefault(valid_IPv4_string) AS valid,
+    toIPv4OrDefault(invalid_IPv4_string) AS default_value,
+    toIPv4OrDefault(malformed_string, toIPv4('8.8.8.8')) AS provided_default;
         )",
         R"(
-┌─valid───┬─default_value─┬─provided_default─┐
-│ 0.0.0.0 │ 0.0.0.0       │ 1.1.1.1          │
-└─────────┴───────────────┴──────────────────┘
+┌─valid─────────┬─default_value─┬─provided_default─┐
+│ 192.168.1.1   │ 0.0.0.0       │ 8.8.8.8          │
+└───────────────┴───────────────┴──────────────────┘
         )"
     }
     };
@@ -434,20 +435,21 @@ If the IPv6 address has an invalid format, it returns `::` (0 IPv6) or the provi
     FunctionDocumentation::ReturnedValue toIPv6OrDefault_returned_value = {"Returns the IPv6 address, otherwise `::` or the provided optional default if argument `string` has an invalid format.", {"IPv6"}};
     FunctionDocumentation::Examples toIPv6OrDefault_examples = {
     {
-        "IPv4 and invalid strings",
+        "Valid and invalid IPv6 strings",
         R"(
 WITH
-    '127.0.0.1' AS valid_IPv4_string,
-    '127.0.0.1.6' AS invalid_IPv4_string
+    '2001:0db8:85a3:0000:0000:8a2e:0370:7334' AS valid_IPv6_string,
+    '2001:0db8:85a3::8a2e:370g:7334' AS invalid_IPv6_string,
+    'not_an_ipv6' AS malformed_string
 SELECT
-    toIPv6OrDefault(valid_IPv4_string) AS valid,
-    toIPv6OrDefault(invalid_IPv4_string) AS default_value,
-    toIPv6OrDefault(invalid_IPv4_string, toIPv6('1.1.1.1')) AS provided_default
+    toIPv6OrDefault(valid_IPv6_string) AS valid,
+    toIPv6OrDefault(invalid_IPv6_string) AS default_value,
+    toIPv6OrDefault(malformed_string, toIPv6('::1')) AS provided_default;
         )",
         R"(
-┌─valid────────────┬─default_value─┬─provided_default─┐
-│ ::ffff:127.0.0.1 │ ::            │ ::ffff:1.1.1.1   │
-└──────────────────┴───────────────┴──────────────────┘
+┌─valid──────────────────────────────────┬─default_value─┬─provided_default─┐
+│ 2001:db8:85a3::8a2e:370:7334           │ ::            │ ::1              │
+└────────────────────────────────────────┴───────────────┴──────────────────┘
         )"
     }
     };
