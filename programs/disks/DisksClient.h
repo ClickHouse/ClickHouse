@@ -6,7 +6,6 @@
 #include <unordered_map>
 #include <vector>
 #include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/IMetadataStorage.h>
 
 #include <Interpreters/Context_fwd.h>
 #include <boost/program_options/options_description.hpp>
@@ -35,15 +34,6 @@ public:
 
     bool isDirectory(const String & any_path) const
     {
-        auto data_source = disk->getDataSourceDescription();
-        if (data_source.metadata_type != MetadataStorageType::None)
-        {
-            auto metadata = disk->getMetadataStorage();
-            if (metadata->getType() == MetadataStorageType::PlainRewritable)
-                return metadata->existsDirectory(getRelativeFromRoot(any_path), true) || (getRelativeFromRoot(any_path).empty() && (metadata->existsDirectory("/", true)));
-        }
-
-        // Default behavior for all non-PlainRewritable cases (including local disks)
         return disk->existsDirectory(getRelativeFromRoot(any_path)) || (getRelativeFromRoot(any_path).empty() && (disk->existsDirectory("/")));
     }
 
