@@ -1111,7 +1111,7 @@ void ParallelReplicasReadingCoordinator::handleDistributedAnalysisResults(Distri
     for (size_t replica_index = 0; replica_index < analysis.size(); ++replica_index)
     {
         auto & replica_parts = replicas_parts_from_distributed_analysis[replica_index];
-        for (const auto & [part_name, _] : analysis[replica_index])
+        for (const auto & [part_name, _] : analysis[replica_index].second)
             replica_parts.insert(part_name);
     }
     LOG_DEBUG(getLogger("ParallelReplicasReadingCoordinator"), "Added {} replicas from distributed index analysis", analysis.size());

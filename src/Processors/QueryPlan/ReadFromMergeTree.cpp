@@ -2119,11 +2119,27 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 return res;
             };
 
-            auto distributed_index_analysis = distributedIndexAnalysisOnReplicas(data.getStorageID(), query_info_, parts, local_index_analysis_callback, context_);
+            DistributedIndexAnalysisPartsRanges distributed_index_analysis = distributedIndexAnalysisOnReplicas(data.getStorageID(), query_info_, parts, local_index_analysis_callback, context_);
 
             IndexAnalysisPartsRanges analyzed_parts_ranges;
-            for (const auto & parts_on_replica : distributed_index_analysis)
+            for (const auto & [replica_addres, parts_on_replica] : distributed_index_analysis)
+            {
+                auto index_description = indexes->key_condition.getDescription();
+
+                size_t granulas = 0;
+                for (const auto & [_, marks] : parts_on_replica)
+                    granulas += marks.getNumberOfMarks();
+
+                result.index_stats.push_back(IndexStat{
+                    .type = IndexType::PrimaryKey,
+                    .description = replica_addres,
+                    .condition = std::move(index_description.condition),
+                    .used_keys = std::move(index_description.used_keys),
+                    .num_parts_after = parts_on_replica.size(),
+                    .num_granules_after = granulas,
+                });
                 analyzed_parts_ranges.insert_range(parts_on_replica);
+            }
             LOG_DEBUG(log, "Received parts ranges for {} parts via distributed index analysis", analyzed_parts_ranges.size());
 
             RangesInDataParts result_parts_ranges;

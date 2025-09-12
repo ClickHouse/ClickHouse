@@ -15,8 +15,8 @@ struct SelectQueryInfo;
 
 /// <part_name, ranges>
 using IndexAnalysisPartsRanges = std::unordered_map<std::string, MarkRanges>;
-/// <replica index, parts ranges>
-using DistributedIndexAnalysisPartsRanges = std::vector<IndexAnalysisPartsRanges>;
+/// <replica index, <replica address, parts ranges>>
+using DistributedIndexAnalysisPartsRanges = std::vector<std::pair<std::string, IndexAnalysisPartsRanges>>;
 
 using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const std::vector<std::string_view> & parts)>;
 

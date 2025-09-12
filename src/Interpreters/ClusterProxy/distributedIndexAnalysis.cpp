@@ -248,6 +248,8 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     for (size_t i = 0; i < replicas_parts.size(); ++i)
     {
         const auto & replica_parts = replicas_parts[i];
+        const auto & connection_pool = connection_pools.at(i);
+        const auto & replica_address = connection_pool->getAddress();
 
         if (replica_parts.empty())
             continue;
@@ -255,30 +257,28 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisScheduledReplicas);
         if (i == local_replica_index)
         {
-            runner([&, i]()
+            runner([&, i, replica_address]()
             {
                 auto parts_ranges = local_index_analysis_callback(replica_parts);
-                LOG_TRACE(logger, "Received {} parts from local replica ({}): {}", parts_ranges.size(), i, parts_ranges);
-                res[i] = std::move(parts_ranges);
+                LOG_TRACE(logger, "Received {} parts from local replica {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
+                res[i] = std::make_pair(replica_address, std::move(parts_ranges));
             }, Priority{});
         }
         else
         {
-            runner([&, i]()
+            runner([&, i, replica_address, connection_pool]()
             {
-                const auto & connection_pool = connection_pools.at(i);
-
                 try
                 {
                     auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, context, replica_parts, connection_pool);
-                    LOG_TRACE(logger, "Received {} parts from {} replica: {}", parts_ranges.size(), i, parts_ranges);
-                    res[i] = std::move(parts_ranges);
+                    LOG_TRACE(logger, "Received {} parts from {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
+                    res[i] = std::make_pair(replica_address, std::move(parts_ranges));
                 }
                 catch (...)
                 {
                     ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisFailedReplicas);
                     /// Ignore any exceptions, everything will be analyzed on a local replica
-                    tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica. They will be analyzed on initiator", i), LogsLevel::warning);
+                    tryLogCurrentException(logger, fmt::format("Cannot analyze parts on {} replica (index {}). They will be analyzed on initiator", replica_address, i), LogsLevel::warning);
                 }
             }, Priority{});
         }
@@ -287,10 +287,10 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
 
     /// Resolve leftovers
     std::unordered_set<std::string_view> resolved_parts;
-    for (const auto & parts_ranges : res)
+    for (const auto & [_, parts_ranges] : res)
     {
-        for (const auto & [part, ranges] : parts_ranges)
-        resolved_parts.insert(part);
+        for (const auto & [part, replica_ranges] : parts_ranges)
+            resolved_parts.insert(part);
     }
     std::vector<std::string_view> missing_parts;
     for (const auto & part_ranges : parts_with_ranges)
@@ -302,8 +302,10 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     }
 
     auto parts_ranges = local_index_analysis_callback(missing_parts);
-    LOG_TRACE(logger, "Received {} missing parts from local replica ({}): {}", parts_ranges.size(), local_replica_index, parts_ranges);
-    res[local_replica_index].insert_range(std::move(parts_ranges));
+    const auto & local_replica_address = connection_pools[local_replica_index]->getAddress();
+    LOG_TRACE(logger, "Received {} missing parts from local replica {} (index {}): {}", parts_ranges.size(), local_replica_address, local_replica_index, parts_ranges);
+    res[local_replica_index].first = local_replica_address;
+    res[local_replica_index].second.insert_range(std::move(parts_ranges));
 
     return res;
 }
