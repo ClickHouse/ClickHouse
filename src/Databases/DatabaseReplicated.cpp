@@ -556,20 +556,26 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
 {
     try
     {
-        if (!getContext()->hasZooKeeper())
-        {
-            throw Exception(ErrorCodes::NO_ZOOKEEPER, "Can't create replicated database without ZooKeeper");
-        }
+        ContextPtr context = nullptr;
+        if (CurrentThread::isInitialized())
+            context = CurrentThread::get().getQueryContext();
+        if (!context)
+            context = getContext();
 
-        const auto & settings = getContext()->getSettingsRef();
+        if (!context->hasZooKeeper())
+            throw Exception(ErrorCodes::NO_ZOOKEEPER, "Can't create replicated database without ZooKeeper");
+
+        /// Only do retries on creation. Otherwise propagate the exception and let the normal process handle it
+        bool retries = mode < LoadingStrictnessLevel::ATTACH;
+        const auto & settings = context->getSettingsRef();
         auto with_retries = WithRetries(
             log,
-            [&](UInt64 max_lock_milliseconds) { return getContext()->getZooKeeper(max_lock_milliseconds); },
+            [&](UInt64 max_lock_milliseconds) { return context->getZooKeeper(max_lock_milliseconds); },
             {
-                settings[Setting::keeper_max_retries],
+                retries ? settings[Setting::keeper_max_retries] : UInt64{1},
                 settings[Setting::keeper_retry_initial_backoff_ms],
                 settings[Setting::keeper_retry_max_backoff_ms],
-                getContext()->getProcessListElement()
+                context->getProcessListElement()
             },
             settings[Setting::keeper_fault_injection_probability],
             settings[Setting::keeper_fault_injection_seed]
@@ -604,8 +610,8 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
                     return;
                 }
 
-                String host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
-                String host_id_default = getHostID(getContext(), db_uuid, false);
+                String host_id = getHostID(context, db_uuid, cluster_auth_info.cluster_secure_connection);
+                String host_id_default = getHostID(context, db_uuid, false);
 
                 if (replica_host_id != host_id && replica_host_id != host_id_default)
                 {
