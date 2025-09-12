@@ -919,10 +919,9 @@ void AsynchronousMetrics::processWarningForMemoryOverload(const AsynchronousMetr
     double memory_total{};
 
     /// use cgroup memory metrics if available and > 0, otherwise fallback to OS memory metrics
-    const auto * cgroup_memory_used = getAsynchronousMetricValue(new_values, "CGroupMemoryUsed");
-    const auto * cgroup_memory_total = getAsynchronousMetricValue(new_values, "CGroupMemoryTotal");
-
-    if (cgroup_memory_total && cgroup_memory_used && (cgroup_memory_total->value > 0.0 && cgroup_memory_used->value > 0.0))
+    if (const auto *cgroup_memory_total = getAsynchronousMetricValue(new_values, "CGroupMemoryTotal"),
+        *cgroup_memory_used = getAsynchronousMetricValue(new_values, "CGroupMemoryUsed");
+        cgroup_memory_total && cgroup_memory_used && (cgroup_memory_total->value > 0.0 && cgroup_memory_used->value > 0.0))
     {
         memory_resident = cgroup_memory_used->value;
         memory_total = cgroup_memory_total->value;
