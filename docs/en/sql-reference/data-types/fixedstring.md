@@ -34,9 +34,8 @@ When inserting the data, ClickHouse:
 - Complements a string with null bytes if the string contains fewer than `N` bytes.
 - Throws the `Too large value for FixedString(N)` exception if the string contains more than `N` bytes.
 
-
-
 Let's consider the following table with the single `FixedString(2)` column:
+
 ```sql
 CREATE OR REPLACE TABLE FixedStringTable
 (
@@ -46,6 +45,7 @@ ENGINE = Memory;
 
 INSERT INTO FixedStringTable VALUES ('a'), ('ab'), ('');
 ```
+
 ```sql
 SELECT
     name,
@@ -54,6 +54,7 @@ SELECT
     empty(name)
 FROM FixedStringTable;
 ```
+
 ```text
 ┌─name─┬─toTypeName(name)─┬─length(name)─┬─empty(name)─┐
 │ a    │ FixedString(2)   │            2 │           0 │
@@ -61,9 +62,10 @@ FROM FixedStringTable;
 │      │ FixedString(2)   │            2 │           1 │
 └──────┴──────────────────┴──────────────┴─────────────┘
 ```
+
 Note that the length of the `FixedString(N)` value is constant. The [length](/sql-reference/functions/array-functions#length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../../sql-reference/functions/string-functions.md#empty) function returns `1` in this case.
 
-When selecting the data, ClickHouse removes the padded null bytes, if any, at the end of the string, so there is no need to add `\0` in `WHERE` clause. Thus the queries `SELECT * FROM FixedStringTable WHERE name = 'a';` and `SELECT * FROM FixedStringTable WHERE name = 'a\0';` return the same result: 
+When selecting the data, ClickHouse removes the padded null bytes, if any, at the end of the string, so there is no need to add `\0` in `WHERE` clause. Thus the queries `SELECT * FROM FixedStringTable WHERE name = 'a';` and `SELECT * FROM FixedStringTable WHERE name = 'a\0';` return the same result:
 
 ```text
 ┌─name─┐
