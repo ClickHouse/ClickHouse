@@ -3,6 +3,8 @@
 #include <Core/Settings.h>
 
 #include <Core/ParallelReplicasMode.h>
+#include "Common/Exception.h"
+#include "Common/Logger.h"
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 
@@ -715,6 +717,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     bool is_single_table_expression,
     bool wrap_read_columns_in_subquery)
 {
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "to_stage={}\n{}", select_query_options.to_stage, table_expression->dumpTree());
+
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
@@ -1074,7 +1078,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// query_plan can be empty if there is nothing to read
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan && parallel_replicas_enabled_for_storage(storage, settings))
                 {
-                    auto allow_parallel_replicas_for_table_expression = [](const QueryTreeNodePtr & join_tree_node)
+                    auto allow_parallel_replicas_for_table_expression = [](const QueryTreeNodePtr current_table_expression, const QueryTreeNodePtr & join_tree_node)
                     {
                         if (join_tree_node->as<CrossJoinNode>())
                             return false;
@@ -1085,8 +1089,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                         const auto join_kind = join_node->getKind();
                         const auto join_strictness = join_node->getStrictness();
-                        if (join_kind == JoinKind::Left || join_kind == JoinKind::Right
-                            || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
+
+                        if (join_kind == JoinKind::Inner)
+                        {
+                            if (join_strictness != JoinStrictness::All)
+                                    return false;
+
+                            const auto & left_table_expr = join_node->getLeftTableExpression();
+                            if (current_table_expression.get() == left_table_expr.get())
+                                return true;
+
+                            return (current_table_expression->getNodeType() != QueryTreeNodeType::QUERY);
+                        }
+
+
+                        if (join_kind == JoinKind::Left || join_kind == JoinKind::Right)
                             return true;
 
                         return false;
@@ -1116,7 +1133,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                     else if (
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
-                        && allow_parallel_replicas_for_table_expression(parent_join_tree))
+                        && allow_parallel_replicas_for_table_expression(table_expression, parent_join_tree))
                     {
                         // (1) find read step
                         QueryPlan::Node * node = query_plan.getRootNode();
@@ -2437,7 +2454,15 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         is_single_table_expression,
         false /*wrap_read_columns_in_subquery*/);
     if (left_table_expression_query_plan.stage != QueryProcessingStage::FetchColumns)
+    {
+        LOG_DEBUG(
+            getLogger("Planner"),
+            "buildQueryPlanForTableExpression() result, from_stage={}\n{}",
+            left_table_expression_query_plan.stage,
+            left_table_expression->dumpTree());
+
         return left_table_expression_query_plan;
+    }
 
     for (Int64 i = static_cast<Int64>(table_expressions_stack_size) - 1; i >= 0; --i)
     {
