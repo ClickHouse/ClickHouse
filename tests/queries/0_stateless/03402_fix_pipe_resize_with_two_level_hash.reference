@@ -1,0 +1,10 @@
+(Expression)
+ExpressionTransform × 8
+  (MergingAggregated)
+  Resize 1 → 8
+    SortingAggregatedTransform 8 → 1
+      MergingAggregatedBucketTransform × 8
+        Resize 1 → 8
+          GroupingAggregatedTransform
+            (ReadFromCluster)
+            Remote 0 → 1
