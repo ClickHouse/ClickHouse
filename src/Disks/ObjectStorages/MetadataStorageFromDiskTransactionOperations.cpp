@@ -389,22 +389,21 @@ void UnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
 
 void TruncateMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
 {
-    if (metadata_storage.existsFile(path))
+    DiskObjectStorageMetadataPtr metadata = metadata_tx.tryGetFileMetadataFromTransactionIfExists(path, metadata_lock);
+    if (!metadata && metadata_storage.existsFile(path))
+        metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
+
+    if (metadata)
     {
-        auto metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
-        while (metadata->getTotalSizeBytes() > target_size)
+        while (metadata->getTotalSizeBytes() > size)
         {
             auto object_key_with_metadata = metadata->popLastObject();
             outcome->objects_to_remove.emplace_back(object_key_with_metadata.key.serialize(), path, object_key_with_metadata.metadata.size_bytes);
         }
-        if (metadata->getTotalSizeBytes() != target_size)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} can't be truncated to size {}", path, target_size);
-        }
-        LOG_TEST(getLogger("TruncateMetadataFileOperation"), "Going to remove {} blobs.", outcome->objects_to_remove.size());
+        if (metadata->getTotalSizeBytes() != size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} can't be truncated to size {}", path, size);
 
         write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
-
         write_operation->execute(metadata_lock);
     }
 }

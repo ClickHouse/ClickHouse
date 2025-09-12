@@ -9,6 +9,7 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 
+#include <memory>
 #include <shared_mutex>
 
 namespace DB
@@ -73,6 +74,7 @@ public:
     DiskPtr getDisk() const { return disk; }
 
     StoredObjects getStorageObjects(const std::string & path) const override;
+    static StoredObjects getStorageObjects(DiskObjectStorageMetadataPtr metadata, const std::string & path);
 
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
 
@@ -138,7 +140,9 @@ public:
 
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
-    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
+    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t size) override;
+
+    DiskObjectStorageMetadataPtr tryGetFileMetadataFromTransactionIfExists(const std::string & path, std::unique_lock<SharedMutex> & lock) const;
 
     std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 };
