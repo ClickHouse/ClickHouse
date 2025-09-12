@@ -14,7 +14,7 @@ REGISTER_FUNCTION(Hashing)
     FunctionDocumentation::Description sipHash64_description = R"(
 Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
 
-This is a cryptographic hash function. It works at least three times faster than the [`MD5`](#md5) hash function.
+This is a cryptographic hash function. It works at least three times faster than the [`MD5`](#MD5) hash function.
 
 The function [interprets](/sql-reference/functions/type-conversion-functions#reinterpretasstring) all the input parameters as strings and calculates the hash value for each of them.
 It then combines the hashes using the following algorithm:
@@ -50,7 +50,7 @@ This affects for example integer types of different size, named and unnamed `Tup
     factory.registerFunction<FunctionSipHash64>(sipHash64_documentation);
 
     FunctionDocumentation::Description sipHash64Keyed_description = R"(
-Like [`sipHash64`](#siphash64) but additionally takes an explicit key argument instead of using a fixed key.
+Like [`sipHash64`](#sipHash64) but additionally takes an explicit key argument instead of using a fixed key.
 )";
     FunctionDocumentation::Syntax sipHash64Keyed_syntax = "sipHash64Keyed((k0, k1), arg1[,arg2, ...])";
     FunctionDocumentation::Arguments sipHash64Keyed_arguments = {
@@ -75,12 +75,12 @@ Like [`sipHash64`](#siphash64) but additionally takes an explicit key argument i
     factory.registerFunction<FunctionSipHash64Keyed>(sipHash64Keyed_documentation);
 
     FunctionDocumentation::Description sipHash128_description = R"(
-Like [`sipHash64`](#siphash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
+Like [`sipHash64`](#sipHash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
 
 :::tip use sipHash128Reference for new projects
 This 128-bit variant differs from the reference implementation and is weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.
-New projects are advised to use [`sipHash128Reference`](#siphash128reference).
+New projects are advised to use [`sipHash128Reference`](#sipHash128Reference).
 :::
 )";
     FunctionDocumentation::Syntax sipHash128_syntax = "sipHash128(arg1[, arg2, ...])";
@@ -105,7 +105,7 @@ New projects are advised to use [`sipHash128Reference`](#siphash128reference).
     factory.registerFunction<FunctionSipHash128>(sipHash128_documentation);
 
     FunctionDocumentation::Description sipHash128Keyed_description = R"(
-Same as [`sipHash128`](#siphash128) but additionally takes an explicit key argument instead of using a fixed key.
+Same as [`sipHash128`](#sipHash128) but additionally takes an explicit key argument instead of using a fixed key.
 
 :::tip use sipHash128ReferenceKeyed for new projects
 This 128-bit variant differs from the reference implementation and it's weaker.
@@ -136,7 +136,7 @@ New projects should probably use [`sipHash128ReferenceKeyed`](#sipHash128Referen
     factory.registerFunction<FunctionSipHash128Keyed>(sipHash128Keyed_documentation);
 
     FunctionDocumentation::Description sipHash128Ref_description = R"(
-Like [`sipHash128`](/sql-reference/functions/hash-functions#siphash128) but implements the 128-bit algorithm from the original authors of SipHash.
+Like [`sipHash128`](/sql-reference/functions/hash-functions#sipHash128) but implements the 128-bit algorithm from the original authors of SipHash.
     )";
     FunctionDocumentation::Syntax sipHash128Ref_syntax = "sipHash128Reference(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments sipHash128Ref_arguments = {
@@ -252,7 +252,7 @@ SELECT groupBitXor(cityHash64(*)) FROM users;
 Produces a 64-bit [FarmHash](https://github.com/google/farmhash) value using the `Fingerprint64` method.
 
 :::tip
-`farmFingerprint64` is preferred for a stable and portable value over [`farmHash64`](#farmhash64).
+`farmFingerprint64` is preferred for a stable and portable value over [`farmHash64`](#farmHash64).
 :::
 
 :::note
@@ -467,7 +467,7 @@ Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add97
     factory.registerFunction<FunctionJavaHashUTF16LE>(javaHashUTF16LE_documentation);
     FunctionDocumentation::Description hiveHash_description = R"(
 Calculates a "HiveHash" from a string.
-This is just [`JavaHash`](#javahash) with zeroed out sign bits.
+This is just [`JavaHash`](#javaHash) with zeroed out sign bits.
 This function is used in [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) for versions before 3.0.
 
 ::caution

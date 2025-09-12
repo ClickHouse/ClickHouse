@@ -57,9 +57,7 @@ catboostEvaluate
 countSubstrings
 countSubstringsCaseInsensitive
 countSubstringsCaseInsensitiveUTF8
-currentProfiles
 currentQueryID
-currentRoles
 cutFragment
 cutIPv6
 cutQueryString
@@ -79,8 +77,6 @@ dateTime64ToSnowflake
 dateTimeToSnowflake
 decodeURLComponent
 decodeURLFormComponent
-defaultProfiles
-defaultRoles
 dictGet
 dictGetAll
 dictGetChildren
@@ -129,8 +125,6 @@ domainWithoutWWWRFC
 dotProduct
 dynamicElement
 dynamicType
-enabledProfiles
-enabledRoles
 encodeURLComponent
 encodeURLFormComponent
 evalMLMethod
@@ -140,10 +134,6 @@ extractURLParameter
 extractURLParameterNames
 extractURLParameters
 factorial
-filesystemAvailable
-filesystemCapacity
-filesystemUnreserved
-finalizeAggregation
 firstSignificantSubdomain
 firstSignificantSubdomainCustom
 firstSignificantSubdomainCustomRFC
@@ -163,7 +153,6 @@ generateRandomStructure
 generateSerialID
 generateUUIDv4
 getMaxTableNameLengthForDatabase
-getServerPort
 getSubcolumn
 getTypeSerializationStreams
 globalIn
@@ -183,13 +172,10 @@ hasTokenCaseInsensitiveOrNull
 ilike
 in
 inIgnoreSet
-initializeAggregation
 isDynamicElementInSharedData
 isIPAddressInRange
 isIPv4String
 isIPv6String
-joinGet
-joinGetOrNull
 like
 lowCardinalityIndices
 lowCardinalityKeys
@@ -316,8 +302,6 @@ reinterpretAsUInt32
 reinterpretAsUInt64
 reinterpretAsUInt8
 reinterpretAsUUID
-runningAccumulate
-serverUUID
 sigmoid
 sin
 snowflakeToDateTime
@@ -461,7 +445,6 @@ toUnixTimestamp64Nano
 toUnixTimestamp64Second
 topLevelDomain
 topLevelDomainRFC
-transactionID
 transactionLatestSnapshot
 transactionOldestSnapshot
 tuple

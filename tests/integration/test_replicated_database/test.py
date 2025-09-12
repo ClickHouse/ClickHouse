@@ -1,7 +1,9 @@
 import logging
 import os
+import random
 import re
 import shutil
+import string
 import threading
 import time
 
@@ -9,7 +11,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
-from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
+from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain
 from helpers.database_disk import get_database_disk_name, replace_text_in_metadata
 
 test_recover_staled_replica_run = 1
@@ -95,6 +97,22 @@ def assert_create_query(nodes, table_name, expected):
     query = "show create table {}".format(table_name)
     for node in nodes:
         assert_eq_with_retry(node, query, expected, get_result=replace_uuid)
+
+
+def zk_rmr_with_retries(zk, path):
+    for i in range(1, 10):
+        try:
+            zk.delete(path, recursive=True)
+            return
+        except Exception as ex:
+            print(ex)
+            time.sleep(0.5)
+    assert False
+
+
+
+def generate_random_string(length=6):
+    return "".join(random.choice(string.ascii_lowercase) for i in range(length))
 
 
 @pytest.fixture(scope="module")
@@ -1739,6 +1757,138 @@ def test_lag_after_recovery(started_cluster):
         == "0\n"
     )
 
+
+def test_system_database_replicas_with_ro(started_cluster):
+    prefix = generate_random_string()
+    database_1 = f"{prefix}_test_system_database_replicas_1"
+
+    main_node.query(
+        f"CREATE DATABASE {database_1} ENGINE = Replicated('/test/{database_1}', 'shard1', 'replica1');"
+    )
+
+    zk = cluster.get_kazoo_client("zoo1")
+    zk_rmr_with_retries(zk, f"/test/{database_1}")
+
+    main_node.query(f"DETACH DATABASE {database_1}")
+    main_node.query(f"ATTACH DATABASE {database_1}", ignore_error=True)
+    
+    expected = TSV([
+        [database_1, 1, 1],
+    ])
+    assert (
+        main_node.query(
+            f"SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%'") == expected
+    )
+
+    database_2 = f"{prefix}_test_system_database_replicas_2"
+    main_node.query(
+        f"CREATE DATABASE {database_2} ENGINE = Replicated('/test/{database_2}', 'shard1', 'replica1');"
+    )
+
+    expected = TSV([
+        [database_1, 1, 1],
+        [database_2, 0, 1],
+    ])
+    assert (
+        main_node.query(
+            f"SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' ORDER BY database"
+        ) == expected
+    )
+
+
+def test_block_system_database_replicas(started_cluster):
+    prefix = generate_random_string()
+    for i in range(1, 7):
+        main_node.query(
+            f"CREATE DATABASE {prefix}_db_{i} ENGINE = Replicated('/test/{prefix}_db_{i}', 'shard1', 'replica1');"
+        )
+
+    expected = TSV([
+        [f"{prefix}_db_1", 0, 1],
+        [f"{prefix}_db_2", 0, 1],
+        [f"{prefix}_db_3", 0, 1],
+        [f"{prefix}_db_4", 0, 1],
+        [f"{prefix}_db_5", 0, 1],
+        [f"{prefix}_db_6", 0, 1],
+    ])
+
+    for i in [2,4,7]:
+        assert (
+            main_node.query(
+                f"SET max_block_size={i}; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' ORDER BY database"
+            ) == expected
+        )
+
+    assert (
+        main_node.query(
+            f"SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' AND is_readonly=0 ORDER BY database"
+        ) == expected
+    )
+
+    assert (
+        main_node.query(
+            f"SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' AND is_readonly=1 ORDER BY database"
+        ) == ""
+    )
+
+    expected = TSV([[f"{prefix}_db_1", 0, 1]])
+    assert (
+        main_node.query(
+            f"SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' ORDER BY database LIMIT 1"
+        ) == expected
+    )
+
+    expected = TSV([
+        [f"{prefix}_db_1", 0, 1],
+        [f"{prefix}_db_2", 0, 1],
+    ])
+    assert (
+        main_node.query(
+            f"SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' ORDER BY database LIMIT 2"
+        ) == expected
+    )
+
+    zk = cluster.get_kazoo_client("zoo1")
+    zk_rmr_with_retries(zk, f"/test/{prefix}_db_1")
+    zk_rmr_with_retries(zk, f"/test/{prefix}_db_2")
+    zk_rmr_with_retries(zk, f"/test/{prefix}_db_3")
+
+    for i in range(1, 7):
+        main_node.query(
+            f"DETACH DATABASE {prefix}_db_{i}"
+        )
+        main_node.query(
+            f"ATTACH DATABASE {prefix}_db_{i}"
+        )
+
+    expected = TSV([
+        [f"{prefix}_db_1", 1, 1],
+        [f"{prefix}_db_2", 1, 1],
+        [f"{prefix}_db_3", 1, 1],
+        [f"{prefix}_db_4", 0, 1],
+        [f"{prefix}_db_5", 0, 1],
+        [f"{prefix}_db_6", 0, 1],
+    ])
+
+    assert (
+        main_node.query(
+            f"SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' ORDER BY database"
+        ) == expected
+    )
+
+    assert (
+        main_node.query(
+            f"SET max_block_size=2; SELECT is_readonly FROM system.database_replicas WHERE database='{prefix}_db_1'"
+        ) == "1\n"
+    )
+
+    assert (
+        main_node.query(
+            f"SELECT is_readonly FROM system.database_replicas WHERE database='{prefix}_db_11'"
+        ) == ""
+    )
+
+
 def test_implicit_index(started_cluster):
     competing_node.query("DROP DATABASE IF EXISTS implicit_index")
     dummy_node.query("DROP DATABASE IF EXISTS implicit_index")
@@ -1752,3 +1902,35 @@ def test_implicit_index(started_cluster):
         "CREATE DATABASE implicit_index ENGINE = Replicated('/clickhouse/databases/implicit_index', 'shard1', 'replica2');"
         "SYSTEM SYNC DATABASE REPLICA implicit_index;"
     )
+
+
+def test_timeseries(started_cluster):
+    for node in [competing_node, main_node, dummy_node]:
+        node.query("DROP DATABASE IF EXISTS ts_db SYNC")
+
+    competing_node.query(
+        "CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');"
+    )
+
+    main_node.query(
+        """
+        CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');
+        CREATE TABLE ts_db.table ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = false
+        DATA ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
+        TAGS ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
+        METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family_name;
+        """,
+        settings={"allow_experimental_time_series_table": 1}
+    )
+
+    dummy_node.query(
+        "CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');"
+    )
+
+    for node in [competing_node, main_node, dummy_node]:
+        assert node.query(
+            """
+            SYSTEM SYNC DATABASE REPLICA ts_db;
+            SELECT count() FROM system.tables WHERE database='ts_db';
+            """, timeout=10
+        ) == "4\n", f"Node {node.name} failed"
