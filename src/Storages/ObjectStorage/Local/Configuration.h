@@ -47,11 +47,7 @@ public:
     const String & getRawURI() const override { return path.path; }
 
     const Paths & getPaths() const override { return paths; }
-    void setPaths(const Paths & paths_) override
-    {
-        paths = paths_;
-        path = paths_[0];
-    }
+    void setPaths(const Paths & paths_) override { paths = paths_; }
 
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return ""; }
@@ -64,12 +60,9 @@ public:
 
     void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr, bool) override { }
 
-protected:
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
-    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
-
 private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
     Path path;
     Paths paths;
 };

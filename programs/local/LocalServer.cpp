@@ -133,7 +133,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
-    extern const ServerSettingsString allowed_disks_for_table_engines;
 }
 
 namespace ErrorCodes
@@ -883,10 +882,6 @@ void LocalServer::processConfig()
     }
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
 #endif
-
-    Names allowed_disks_table_engines;
-    splitInto<','>(allowed_disks_table_engines, server_settings[ServerSetting::allowed_disks_for_table_engines].value);
-    global_context->setAllowedDisksForTableEngines(std::unordered_set<String>(allowed_disks_table_engines.begin(), allowed_disks_table_engines.end()));
 
     /// Initialize a dummy query condition cache.
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);

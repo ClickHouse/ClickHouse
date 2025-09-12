@@ -14,7 +14,6 @@
 #include <Disks/TemporaryFileOnDisk.h>
 
 #include <filesystem>
-#include <memory>
 #include <system_error>
 #include <fcntl.h>
 #include <unistd.h>
@@ -27,8 +26,6 @@
 #include <IO/WriteHelpers.h>
 #include <pcg_random.hpp>
 #include <Common/logger_useful.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 
 
 namespace CurrentMetrics
@@ -766,12 +763,6 @@ void DiskLocal::chmod(const String & path, mode_t mode)
     if (::chmod(full_path.string().c_str(), mode) == 0)
         return;
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot chmod file: {}", path);
-}
-
-ObjectStoragePtr DiskLocal::getObjectStorage()
-{
-    LocalObjectStorageSettings settings_object_storage(disk_path, /* read_only */false);
-    return std::make_shared<LocalObjectStorage>(settings_object_storage);
 }
 
 void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
