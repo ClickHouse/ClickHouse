@@ -12,6 +12,9 @@ pub struct Config {
     pub target_table: String,
 
     pub use_local_store: bool,
+
+    pub s3_bucket: String,
+    pub s3_key_prefix: String,
 }
 
 impl Default for Config {
@@ -25,6 +28,9 @@ impl Default for Config {
             target_table: "default.build_cache".to_string(),
 
             use_local_store: true,
+
+            s3_bucket: "".to_string(),
+            s3_key_prefix: "".to_string(),
         }
     }
 }

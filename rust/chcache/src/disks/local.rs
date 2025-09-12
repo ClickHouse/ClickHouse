@@ -11,7 +11,7 @@ pub struct LocalDisk {
 }
 
 impl Disk for LocalDisk {
-    fn from_config(_config: &Config) -> Self {
+    async fn from_config(_config: &Config) -> Self {
         let local_path = xdg::BaseDirectories::with_prefix("chcache");
         LocalDisk { local_path }
     }
@@ -43,7 +43,7 @@ impl Disk for LocalDisk {
 }
 
 impl LocalDisk {
-    fn path_from_hash(hash: &str) -> String {
+    pub fn path_from_hash(hash: &str) -> String {
         return format!(
             "{}/{}/{}",
             hash.get(0..2).unwrap(),
