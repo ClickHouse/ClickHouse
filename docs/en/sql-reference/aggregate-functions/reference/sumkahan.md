@@ -9,6 +9,7 @@ Calculates the sum of the numbers with [Kahan compensated summation algorithm](h
 Slower than [sum](./sum.md) function.
 The compensation works only for [Float](../../../sql-reference/data-types/float.md) types.
 
+
 **Syntax**
 
 ```sql

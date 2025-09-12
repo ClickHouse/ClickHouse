@@ -10,6 +10,7 @@ title: 'approx_top_k'
 
 Returns an array of the approximately most frequent values and their counts in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
 
+
 ```sql
 approx_top_k(N)(column)
 approx_top_k(N, reserved)(column)
@@ -54,3 +55,4 @@ Is an alias to `approx_top_k` function
 - [topK](../../../sql-reference/aggregate-functions/reference/topk.md)
 - [topKWeighted](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
 - [approx_top_sum](../../../sql-reference/aggregate-functions/reference/approxtopsum.md)
+

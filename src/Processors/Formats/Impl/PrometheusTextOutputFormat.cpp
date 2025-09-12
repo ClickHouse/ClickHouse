@@ -348,8 +348,7 @@ void registerOutputFormatPrometheus(FormatFactory & factory)
     factory.registerOutputFormat(FORMAT_NAME, [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings,
-        FormatFilterInfoPtr /*format_filter_info*/)
+        const FormatSettings & settings)
     {
         return std::make_shared<PrometheusTextOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });

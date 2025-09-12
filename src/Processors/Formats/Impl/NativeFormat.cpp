@@ -133,8 +133,7 @@ void registerOutputFormatNative(FormatFactory & factory)
     factory.registerOutputFormat("Native", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings,
-        FormatFilterInfoPtr /*format_filter_info*/)
+        const FormatSettings & settings)
     {
         return std::make_shared<NativeOutputFormat>(buf, std::make_shared<const Block>(sample), settings, settings.client_protocol_version);
     });

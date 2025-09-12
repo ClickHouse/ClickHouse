@@ -1304,7 +1304,7 @@ std::vector<String> StorageReplicatedMergeTree::getZookeeperZeroCopyLockPaths() 
         if (!disk->supportZeroCopyReplication())
             continue;
 
-        disk_types_with_zero_copy.insert(disk->getDataSourceDescription().name());
+        disk_types_with_zero_copy.insert(disk->getDataSourceDescription().toString());
     }
 
     const auto actual_table_shared_id = getTableSharedID();
@@ -1315,9 +1315,7 @@ std::vector<String> StorageReplicatedMergeTree::getZookeeperZeroCopyLockPaths() 
     for (const auto & disk_type: disk_types_with_zero_copy)
     {
         auto zero_copy = fmt::format("zero_copy_{}", disk_type);
-        auto zero_copy_path
-            = fs::path(getContext()->getMacros()->expand((*settings)[MergeTreeSetting::remote_fs_zero_copy_zookeeper_path].toString()))
-            / zero_copy;
+        auto zero_copy_path = fs::path((*settings)[MergeTreeSetting::remote_fs_zero_copy_zookeeper_path].toString()) / zero_copy;
 
         result.push_back(zero_copy_path / actual_table_shared_id);
     }
@@ -7430,7 +7428,7 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
 }
 
 
-void StorageReplicatedMergeTree::getStatus(ReplicatedStatus & res, bool with_zk_fields)
+void StorageReplicatedMergeTree::getStatus(ReplicatedTableStatus & res, bool with_zk_fields)
 {
     auto zookeeper = tryGetZooKeeper();
     const auto storage_settings_ptr = getSettings();
@@ -9962,8 +9960,8 @@ zkutil::EphemeralNodeHolderPtr StorageReplicatedMergeTree::lockSharedDataTempora
     String id = part_id;
     boost::replace_all(id, "/", "_");
 
-    String zc_zookeeper_path = getZeroCopyPartPath(*getSettings(), disk->getDataSourceDescription().name(), getTableSharedID(),
-        part_name, zookeeper_path, getContext())[0];
+    String zc_zookeeper_path = getZeroCopyPartPath(*getSettings(), disk->getDataSourceDescription().toString(), getTableSharedID(),
+        part_name, zookeeper_path)[0];
 
     String zookeeper_node = fs::path(zc_zookeeper_path) / id / replica_name;
 
@@ -10009,7 +10007,7 @@ void StorageReplicatedMergeTree::getLockSharedDataOps(
 
     Strings zc_zookeeper_paths = getZeroCopyPartPath(
         *getSettings(), part.getDataPartStorage().getDiskType(), getTableSharedID(),
-        part.name, zookeeper_path, getContext());
+        part.name, zookeeper_path);
 
     String path_to_set_hardlinked_files;
     NameSet hardlinks;
@@ -10018,7 +10016,7 @@ void StorageReplicatedMergeTree::getLockSharedDataOps(
     {
         path_to_set_hardlinked_files = getZeroCopyPartPath(
             *getSettings(), part.getDataPartStorage().getDiskType(), hardlinked_files->source_table_shared_id,
-            hardlinked_files->source_part_name, zookeeper_path, getContext())[0];
+            hardlinked_files->source_part_name, zookeeper_path)[0];
 
         hardlinks = hardlinked_files->hardlinks_from_source_part;
     }
@@ -10064,7 +10062,7 @@ void StorageReplicatedMergeTree::lockSharedData(
 
     Strings zc_zookeeper_paths = getZeroCopyPartPath(
         *getSettings(), part.getDataPartStorage().getDiskType(), getTableSharedID(),
-        part.name, zookeeper_path, getContext());
+        part.name, zookeeper_path);
 
     String path_to_set_hardlinked_files;
     NameSet hardlinks;
@@ -10073,7 +10071,7 @@ void StorageReplicatedMergeTree::lockSharedData(
     {
         path_to_set_hardlinked_files = getZeroCopyPartPath(
             *getSettings(), part.getDataPartStorage().getDiskType(), hardlinked_files->source_table_shared_id,
-            hardlinked_files->source_part_name, zookeeper_path, getContext())[0];
+            hardlinked_files->source_part_name, zookeeper_path)[0];
 
         hardlinks = hardlinked_files->hardlinks_from_source_part;
     }
@@ -10205,17 +10203,8 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
         return std::make_pair(true, NameSet{});
 
     return unlockSharedDataByID(
-        part.getUniqueId(),
-        shared_id,
-        part.info,
-        replica_name,
-        part.getDataPartStorage().getDiskType(),
-        zookeeper,
-        *getSettings(),
-        log.load(),
-        zookeeper_path,
-        format_version,
-        getContext());
+        part.getUniqueId(), shared_id, part.info, replica_name,
+        part.getDataPartStorage().getDiskType(), zookeeper, *getSettings(), log.load(), zookeeper_path, format_version);
 }
 
 namespace
@@ -10322,13 +10311,13 @@ std::pair<bool, NameSet> getParentLockedBlobs(const ZooKeeperWithFaultInjectionP
 std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         String part_id, const String & table_uuid, const MergeTreePartInfo & part_info,
         const String & replica_name_, const std::string & disk_type, const ZooKeeperWithFaultInjectionPtr & zookeeper_ptr, const MergeTreeSettings & settings,
-        LoggerPtr logger, const String & zookeeper_path_old, MergeTreeDataFormatVersion data_format_version, const ContextPtr & local_context)
+        LoggerPtr logger, const String & zookeeper_path_old, MergeTreeDataFormatVersion data_format_version)
 {
     boost::replace_all(part_id, "/", "_");
 
     auto part_name = part_info.getPartNameV1();
 
-    Strings zc_zookeeper_paths = getZeroCopyPartPath(settings, disk_type, table_uuid, part_name, zookeeper_path_old, local_context);
+    Strings zc_zookeeper_paths = getZeroCopyPartPath(settings, disk_type, table_uuid, part_name, zookeeper_path_old);
 
     bool part_has_no_more_locks = true;
     NameSet files_not_to_remove;
@@ -10364,13 +10353,17 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
             /// But during mutation we can have hardlinks to another part. So it's not Ok to remove blobs of this part if it was mutated.
             if (ec == Coordination::Error::ZNONODE)
             {
+                if (has_parent)
+                {
+                    LOG_INFO(logger, "Lock on path {} for part {} doesn't exist, refuse to remove blobs", zookeeper_part_replica_node, part_name);
+                    return {false, {}};
+                }
+
                 LOG_INFO(
                     logger,
-                    "Lock on path {} for part {}, which {} a parent, doesn't exist, refuse to remove blobs",
+                    "Lock on path {} for part {} doesn't exist, but we don't have mutation parent, can remove blobs",
                     zookeeper_part_replica_node,
-                    part_name,
-                    (has_parent ? "has" : "doesn't have"));
-                return {false, {}};
+                    part_name);
             }
             else
             {
@@ -10500,8 +10493,8 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     if (!zookeeper)
         return "";
 
-    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getSettings(), data_source_description.name(), getTableSharedID(), part.name,
-            zookeeper_path, getContext());
+    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getSettings(), data_source_description.toString(), getTableSharedID(), part.name,
+            zookeeper_path);
 
     std::set<String> replicas;
 
@@ -10572,15 +10565,13 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
 
 Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
     const MergeTreeSettings & settings, const std::string & disk_type, const String & table_uuid,
-    const String & part_name, const String & zookeeper_path_old, const ContextPtr & local_context)
+    const String & part_name, const String & zookeeper_path_old)
 {
     Strings res;
 
     String zero_copy = fmt::format("zero_copy_{}", disk_type);
 
-    String new_path
-        = fs::path(local_context->getMacros()->expand(settings[MergeTreeSetting::remote_fs_zero_copy_zookeeper_path].toString()))
-        / zero_copy / table_uuid / part_name;
+    String new_path = fs::path(settings[MergeTreeSetting::remote_fs_zero_copy_zookeeper_path].toString()) / zero_copy / table_uuid / part_name;
     res.push_back(std::move(new_path));
     if (settings[MergeTreeSetting::remote_fs_zero_copy_path_compatible_mode] && !zookeeper_path_old.empty())
     { /// Compatibility mode for cluster with old and new versions
@@ -10659,7 +10650,7 @@ std::optional<String> StorageReplicatedMergeTree::getZeroCopyPartPath(const Stri
     if (!disk || !disk->supportZeroCopyReplication())
         return std::nullopt;
 
-    return getZeroCopyPartPath(*getSettings(), disk->getDataSourceDescription().name(), getTableSharedID(), part_name, zookeeper_path, getContext())[0];
+    return getZeroCopyPartPath(*getSettings(), disk->getDataSourceDescription().toString(), getTableSharedID(), part_name, zookeeper_path)[0];
 }
 
 bool StorageReplicatedMergeTree::waitZeroCopyLockToDisappear(const ZeroCopyLock & lock, size_t milliseconds_to_wait)
@@ -11083,12 +11074,11 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
             std::tie(can_remove, files_not_to_remove) = StorageReplicatedMergeTree::unlockSharedDataByID(
                 id, table_uuid, part_info,
                 detached_replica_name,
-                disk->getDataSourceDescription().name(),
+                disk->getDataSourceDescription().toString(),
                 std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), local_context->getReplicatedMergeTreeSettings(),
                 getLogger("StorageReplicatedMergeTree"),
                 detached_zookeeper_path,
-                MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING,
-                local_context);
+                MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
 
             keep_shared = !can_remove;
         }
@@ -11266,7 +11256,7 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
         {
             /// New parts could be in the replication queue but not fetched yet.
             /// In that case we consider the table as not empty.
-            StorageReplicatedMergeTree::ReplicatedStatus status;
+            ReplicatedTableStatus status;
             getStatus(status, /* with_zk_fields = */ false);
             if (status.queue.inserts_in_queue)
                 empty = false;

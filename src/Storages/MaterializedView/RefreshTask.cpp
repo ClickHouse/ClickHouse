@@ -1,30 +1,29 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
+#include <Common/CurrentMetrics.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Common/Macros.h>
+#include <Common/thread_local_rng.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Core/ServerSettings.h>
 #include <Databases/DatabaseReplicated.h>
-#include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
-#include <Interpreters/Cache/QueryResultCache.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/FailPoint.h>
-#include <Common/Macros.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/thread_local_rng.h>
 
 
 namespace CurrentMetrics
@@ -74,11 +73,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
     extern const int ABORTED;
-}
-
-namespace FailPoints
-{
-extern const char refresh_task_delay_update_coordination_state_running[];
 }
 
 RefreshTask::RefreshTask(
@@ -995,18 +989,9 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeSetRequest(coordination.path, root.toString(), root.version));
         if (running)
-        {
-            fiu_do_on(FailPoints::refresh_task_delay_update_coordination_state_running, {
-                std::chrono::milliseconds sleep_time{3000 + thread_local_rng() % 2000};
-                std::this_thread::sleep_for(sleep_time);
-            });
-            ops.emplace_back(
-                zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral));
-        }
+            ops.emplace_back(zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral));
         else
-        {
             ops.emplace_back(zkutil::makeRemoveRequest(coordination.path + "/running", -1));
-        }
 
         Coordination::Responses responses;
 
@@ -1162,7 +1147,7 @@ void RefreshTask::setRefreshSetHandleUnlock(RefreshSet::Handle && set_handle_)
 
 void RefreshTask::CoordinationZnode::randomize()
 {
-    randomness = std::uniform_int_distribution<Int64>(Int64(-1e9), Int64(1e9))(thread_local_rng);
+    randomness = std::uniform_int_distribution(Int64(-1e9), Int64(1e9))(thread_local_rng);
 }
 
 String RefreshTask::CoordinationZnode::toString() const
