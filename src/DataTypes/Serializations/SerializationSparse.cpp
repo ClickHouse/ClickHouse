@@ -305,7 +305,6 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     size_t prev_size = column->size();
     auto mutable_column = column->assumeMutable();
     auto & column_sparse = assert_cast<ColumnSparse &>(*mutable_column);
-    auto & offsets_data = column_sparse.getOffsetsData();
 
     size_t old_size = 0;
     size_t read_rows = 0;
@@ -316,7 +315,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     if (cached_element)
     {
         const auto & cached_offsets_element = assert_cast<const SubstreamsCacheSparseOffsetsElement &>(*cached_element);
-        chassert(column_sparse.getOffsetsPtr().get() == cached_offsets_element.offsets.get());
+        column_sparse.getOffsetsPtr() = cached_offsets_element.offsets;
         old_size = cached_offsets_element.old_size;
         read_rows = cached_offsets_element.read_rows;
         skipped_values_rows = cached_offsets_element.skipped_values_rows;
@@ -325,6 +324,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     {
         if (auto * stream = settings.getter(settings.path))
         {
+            auto & offsets_data = column_sparse.getOffsetsData();
             old_size = offsets_data.size();
             read_rows = deserializeOffsets(
                 offsets_data, *stream, column_sparse.size(), rows_offset, limit, skipped_values_rows, *state_sparse);
@@ -337,6 +337,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
         }
     }
 
+    auto & offsets_data = column_sparse.getOffsetsData();
     auto & values_column = column_sparse.getValuesPtr();
     size_t values_limit = offsets_data.size() - old_size;
 
