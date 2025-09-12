@@ -207,8 +207,6 @@ public:
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
-
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     void onActionLockRemove(StorageActionBlockType action_type) override;
