@@ -60,7 +60,7 @@ def create_some_tables(db):
         settings=settings,
     )
     main_node.query(
-        f"CREATE TABLE {db}.rmt3 (n int, json JSON materialized '{}') ENGINE=ReplicatedMergeTree order by n",
+        f"CREATE TABLE {db}.rmt3 (n int, json JSON materialized '{{}}') ENGINE=ReplicatedMergeTree order by n",
         settings=settings,
     )
     dummy_node.query(
