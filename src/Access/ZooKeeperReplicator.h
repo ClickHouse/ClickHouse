@@ -73,8 +73,6 @@ private:
     std::unique_ptr<ThreadFromGlobalPool> watching_thread;
     std::shared_ptr<ConcurrentBoundedQueue<UUID>> watched_queue;
 
-    std::unordered_map<UUID, Coordination::WatchCallbackPtr> zookeeper_watches TSA_GUARDED_BY(zookeeper_watches_mutex);
-    std::mutex zookeeper_watches_mutex;
     Coordination::WatchCallbackPtr watch_entities_list;
 
     MemoryAccessStorage & memory_storage TSA_GUARDED_BY(mutex);
@@ -94,7 +92,7 @@ private:
     void refreshEntity(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id);
     void refreshEntityNoLock(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) TSA_REQUIRES(mutex);
 
-    AccessEntityPtr tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id);
+    AccessEntityPtr tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const;
     void setEntityNoLock(const UUID & id, const AccessEntityPtr & entity)  TSA_REQUIRES(mutex);
     void removeEntityNoLock(const UUID & id) TSA_REQUIRES(mutex);
 

@@ -10601,9 +10601,13 @@ void StorageReplicatedMergeTree::watchZeroCopyLock(const String & part_name, con
         /// because it could lead to use-after-free (storage dropped and watch triggered)
         std::shared_ptr<std::atomic<bool>> flag = std::make_shared<std::atomic<bool>>(true);
         std::string replica;
-        Coordination::WatchCallbackPtr watch = std::make_shared<Coordination::WatchCallback>([flag](const Coordination::WatchResponse &)
+
+        auto watch = zookeeper->createWatchFromRawCallback(fmt::format("{}", reinterpret_cast<void *>(flag.get())), [flag]() -> Coordination::WatchCallback
         {
-            *flag = false;
+            return [flag](const auto &)
+            {
+                *flag = false;
+            };
         });
         bool exists = zookeeper->tryGetWatch(lock_path, replica, nullptr, watch);
 
@@ -10611,12 +10615,6 @@ void StorageReplicatedMergeTree::watchZeroCopyLock(const String & part_name, con
         {
             std::lock_guard lock(existing_zero_copy_locks_mutex);
             existing_zero_copy_locks[lock_path] = ZeroCopyLockDescription{replica, flag};
-            existing_zero_copy_locks_watches[lock_path] = watch;
-        }
-        else
-        {
-            std::lock_guard lock(existing_zero_copy_locks_mutex);
-            existing_zero_copy_locks_watches[lock_path] = watch;
         }
     }
 }
@@ -10637,7 +10635,7 @@ bool StorageReplicatedMergeTree::checkZeroCopyLockExists(const String & part_nam
         {
             LOG_TEST(log, "Removing zero-copy lock on {}", it->first);
             it = existing_zero_copy_locks.erase(it);
-            existing_zero_copy_locks_watches.erase(it->first);
+            // getZooKeeper()->deregisterWatch(fmt::format("{}", reinterpret_cast<void *>(it->second.exists.get())));
         }
     }
 

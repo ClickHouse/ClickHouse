@@ -2,7 +2,6 @@
 
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ThreadPool.h>
-#include <Common/ZooKeeper/Common.h>
 #include <ctime>
 #include <string>
 #include <mutex>

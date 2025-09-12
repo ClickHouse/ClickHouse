@@ -1020,15 +1020,18 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
             state->event.set();
     };
 
-    auto watch = std::make_shared<Coordination::WatchCallback>([state](const Coordination::WatchResponse & response)
+    auto watch = createWatchFromRawCallback("ZooKeeper::waitForDisappear::" + path, [&]() -> Coordination::WatchCallback
     {
-        if (!state->code)
+        return [state](const Coordination::WatchResponse & response)
         {
-            state->code = static_cast<int32_t>(response.error);
             if (!state->code)
-                state->event_type = response.type;
-            state->event.set();
-        }
+            {
+                state->code = static_cast<int32_t>(response.error);
+                if (!state->code)
+                    state->event_type = response.type;
+                state->event.set();
+            }
+        };
     });
 
     /// do-while control structure to allow using this function in non-blocking
@@ -1036,7 +1039,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
     /// method is called.
     do
     {
-        impl->get(path, callback, Coordination::WatchCallbackPtrOrEventPtr{watch});
+        impl->get(path, callback, watch);
 
         if (!state->event.tryWait(1000))
             continue;
@@ -1162,6 +1165,10 @@ Int64 ZooKeeper::getClientID() const
     return impl->getSessionID();
 }
 
+Coordination::WatchCallbackPtrOrEventPtr ZooKeeper::createWatchFromRawCallback(const String & id, const Coordination::IKeeper::WatchCallbackCreator & creator)
+{
+    return impl->createWatchFromRawCallback(id, creator);
+}
 
 std::future<Coordination::CreateResponse> ZooKeeper::asyncCreate(const std::string & path, const std::string & data, int32_t mode)
 {

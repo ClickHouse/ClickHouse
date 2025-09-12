@@ -129,9 +129,6 @@ public:
 
     using Container = std::map<std::string, Node>;
 
-    using WatchCallbacks = std::unordered_set<WatchCallbackPtrOrEventPtr>;
-    using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
-
 private:
     using clock = std::chrono::steady_clock;
 
@@ -153,7 +150,7 @@ private:
     int64_t zxid = 0;
 
     Watches watches;
-    Watches list_watches;   /// Watches for 'list' request (watches on children).
+    Watches list_watches; /// Watches for 'list' request (watches on children).
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
     RequestsQueue requests_queue{1};

@@ -13,6 +13,16 @@
 #include <base/range.h>
 #include <base/sleep.h>
 
+namespace
+{
+
+String makeWatchIdFromId(const DB::UUID & id)
+{
+    return "ZooKeeperReplicator::" + toString(id);
+}
+
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -284,10 +294,7 @@ bool ZooKeeperReplicator::removeEntity(const UUID & id, bool throw_if_not_exists
     bool ok = false;
     retryOnZooKeeperUserError(10, [&] { ok = removeZooKeeper(zookeeper, id, throw_if_not_exists); });
 
-    {
-        std::lock_guard lock(zookeeper_watches_mutex);
-        zookeeper_watches.erase(id);
-    }
+    // zookeeper->deregisterWatch(makeWatchIdFromId(id));
 
     if (!ok)
         return false;
@@ -615,29 +622,21 @@ void ZooKeeperReplicator::refreshEntityNoLock(const zkutil::ZooKeeperPtr & zooke
         removeEntityNoLock(id);
 }
 
-AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id)
+AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const
 {
-    Coordination::WatchCallbackPtr zookeeper_watch;
+    auto watch = zookeeper->createWatchFromRawCallback(makeWatchIdFromId(id), [&]() -> Coordination::WatchCallback
     {
-        std::lock_guard lock(zookeeper_watches_mutex);
-        auto it = zookeeper_watches.find(id);
-        if (it != zookeeper_watches.end())
-            zookeeper_watch = it->second;
-        else
+        return [my_watched_queue = watched_queue, id](const Coordination::WatchResponse & response)
         {
-            zookeeper_watch = std::make_shared<Coordination::WatchCallback>([my_watched_queue = watched_queue, id](const Coordination::WatchResponse & response)
-            {
-                if (response.type == Coordination::Event::CHANGED)
-                    [[maybe_unused]] bool push_result = my_watched_queue->push(id);
-            });
-            zookeeper_watches.emplace(id, zookeeper_watch);
-        }
-    }
+            if (response.type == Coordination::Event::CHANGED)
+                [[maybe_unused]] bool push_result = my_watched_queue->push(id);
+        };
+    });
 
     Coordination::Stat entity_stat;
     const String entity_path = zookeeper_path + "/uuid/" + toString(id);
     String entity_definition;
-    bool exists = zookeeper->tryGetWatch(entity_path, entity_definition, &entity_stat, zookeeper_watch);
+    bool exists = zookeeper->tryGetWatch(entity_path, entity_definition, &entity_stat, watch);
     if (!exists)
         return nullptr;
 

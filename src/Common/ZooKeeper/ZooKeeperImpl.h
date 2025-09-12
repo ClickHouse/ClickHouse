@@ -280,11 +280,7 @@ private:
     Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
-    using WatchCallbacks = std::unordered_set<WatchCallbackPtrOrEventPtr>;
-    using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
-
     Watches watches TSA_GUARDED_BY(watches_mutex);
-    std::mutex watches_mutex;
 
     /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
     class ThreadReference

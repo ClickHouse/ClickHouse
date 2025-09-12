@@ -1290,7 +1290,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                 response.error = Error::ZSESSIONEXPIRED;
                 try
                 {
-                    WatchCallbackPtrOrEventPtr & event_or_callback = info.watch;
+                    const WatchCallbackPtrOrEventPtr & event_or_callback = info.watch;
                     event_or_callback(response);
                 }
                 catch (...)

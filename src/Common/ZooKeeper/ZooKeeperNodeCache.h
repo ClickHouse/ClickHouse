@@ -8,13 +8,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/Common.h>
 
-namespace DB
-{
-    namespace ErrorCodes
-    {
-    }
-}
-
 namespace zkutil
 {
 
@@ -42,7 +35,7 @@ public:
         Coordination::Stat stat{};
     };
 
-    ZNode get(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr caller_watch_callback);
+    ZNode get(const std::string & path, Coordination::EventPtr caller_watch_event);
 
     void sync();
 
@@ -59,11 +52,6 @@ private:
     std::shared_ptr<Context> context;
 
     std::unordered_map<std::string, ZNode> path_to_cached_znode;
-
-    /// <name, <user callback, internal callback>>
-    std::unordered_map<String, std::unordered_map<Coordination::WatchCallbackPtrOrEventPtr, Coordination::WatchCallbackPtrOrEventPtr>> names_watch_map TSA_GUARDED_BY(watches_mutex);
-    std::mutex watches_mutex;
-
 };
 
 }

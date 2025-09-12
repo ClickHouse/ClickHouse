@@ -249,6 +249,8 @@ public:
 
     bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const;
 
+    Coordination::WatchCallbackPtrOrEventPtr createWatchFromRawCallback(const String & id, const Coordination::IKeeper::WatchCallbackCreator & creator);
+
     /// Create a znode.
     /// Throw an exception if something went wrong.
     std::string create(const std::string & path, const std::string & data, int32_t mode);

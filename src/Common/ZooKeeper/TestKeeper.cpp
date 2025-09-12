@@ -32,10 +32,12 @@ struct TestKeeperRequest : virtual Request
     virtual ResponsePtr createResponse() const = 0;
     virtual std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const = 0;
     virtual void processWatches(TestKeeper::Watches & /*watches*/, TestKeeper::Watches & /*list_watches*/) const {}
+
+    static void processWatchesImpl(const String & path, TestKeeper::Watches & watches, TestKeeper::Watches & list_watches);
 };
 
 
-static void processWatchesImpl(const String & path, TestKeeper::Watches & watches, TestKeeper::Watches & list_watches)
+void TestKeeperRequest::processWatchesImpl(const String & path, TestKeeper::Watches & watches, TestKeeper::Watches & list_watches)
 {
     {
         WatchResponse watch_response;
