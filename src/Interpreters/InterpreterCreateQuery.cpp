@@ -24,6 +24,7 @@
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
+#include <Core/UUID.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -152,6 +153,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_table_num_to_throw;
     extern const ServerSettingsUInt64 max_replicated_table_num_to_throw;
     extern const ServerSettingsUInt64 max_view_num_to_throw;
+    extern const ServerSettingsBool enable_uuids_for_columns;
 }
 
 namespace ErrorCodes
@@ -519,6 +521,12 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->settings = std::move(settings);
         }
 
+        if (column.uuid != UUIDHelpers::Nil)
+        {
+            column_declaration->uuid = std::make_shared<ASTLiteral>(Field(column.uuid));
+            column_declaration->children.push_back(column_declaration->uuid);
+        }
+
         columns_list->children.push_back(column_declaration_ptr);
     }
 
@@ -720,6 +728,11 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         {
             column.settings = col_decl.settings->as<ASTSetQuery &>().changes;
             MergeTreeColumnSettings::validate(column.settings);
+        }
+
+        if (col_decl.uuid)
+        {
+            column.uuid = col_decl.uuid->as<ASTLiteral &>().value.safeGet<DB::UUID>();
         }
 
         res.add(std::move(column));
@@ -1663,6 +1676,20 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
+    if (!create.temporary && create.columns_list && getContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
+    {
+        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        if (database && database->getEngineName() == "Atomic")
+        {
+            create.generateColumnRandomUUIDs();
+        }
+        else
+        {
+            /// UUIDs maybe received from ON CLUSTER queries for non Atomic databases
+            create.resetColumnUUIDs();
+        }
+    }
+
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
@@ -2283,6 +2310,9 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
     /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
     /// It will be ignored if database does not support UUIDs.
     create.generateRandomUUIDs();
+
+    if (local_context->getServerSettings()[ServerSetting::enable_uuids_for_columns])
+        create.generateColumnRandomUUIDs();
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = local_context->getMacros()->expand(cluster_name);
