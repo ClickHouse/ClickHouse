@@ -1144,6 +1144,13 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     Possible values: -20 to 19.
     )", 0) \
+    DECLARE(Int32, os_threads_nice_value_distributed_cache_tcp_handler, 0, R"(
+    Linux nice value for the threads of distributed cache TCP handler. Lower values mean higher CPU priority.
+
+    Requires CAP_SYS_NICE capability, otherwise no-op.
+
+    Possible values: -20 to 19.
+    )", 0) \
 
 // clang-format on
 
