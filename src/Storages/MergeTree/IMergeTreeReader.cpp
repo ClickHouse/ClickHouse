@@ -69,12 +69,6 @@ IMergeTreeReader::IMergeTreeReader(
     }
 }
 
-const NamesAndTypesList & IMergeTreeReader::getColumns() const
-{
-    return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns;
-}
-
-
 const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
 {
     return avg_value_size_hints;
@@ -338,7 +332,8 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
 {
     try
     {
-        size_t num_columns = getColumns().size();
+        const NamesAndTypesList & required_columns = getColumns();
+        size_t num_columns = required_columns.size();
 
         if (res_columns.size() != num_columns)
         {
@@ -347,16 +342,21 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
                             "Expected {}, got {}", num_columns, res_columns.size());
         }
 
+        /// We check types manually while iterating to avoid unnecessary copies
         Block copy_block;
         auto name_and_type = getColumns().begin();
-
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
             if (res_columns[pos] == nullptr)
                 continue;
-
-            copy_block.insert({res_columns[pos], getColumnInPart(*name_and_type).type, name_and_type->name});
+            auto column_in_part = getColumnInPart(*name_and_type);
+            if (column_in_part.type->equals(*name_and_type->type))
+                continue;
+            copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
         }
+
+        if (copy_block.empty())
+            return;
 
         DB::performRequiredConversions(copy_block, getColumns(), data_part_info_for_read->getContext());
 
