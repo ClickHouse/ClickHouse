@@ -613,6 +613,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     }
 
     const auto & column_object = assert_cast<const ColumnObject &>(column);
+    column_object.validateDynamicPathsSizes();
     const auto & typed_paths = column_object.getTypedPaths();
     const auto & dynamic_paths = column_object.getDynamicPaths();
     const auto & shared_data = column_object.getSharedDataPtr();
@@ -795,6 +796,8 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(shared_data, limit, settings, object_state->shared_data_state, cache);
     settings.path.pop_back();
     settings.path.pop_back();
+
+    column_object.validateDynamicPathsSizes();
 }
 
 void SerializationObject::serializeBinary(const Field & field, WriteBuffer & ostr, const DB::FormatSettings & settings) const
@@ -983,11 +986,12 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                 /// Otherwise this path should go to shared data.
                 else
                 {
-                    auto tmp_dynamic_column = ColumnDynamic::create();
-                    tmp_dynamic_column->reserve(1);
                     String value;
-                    readParsedValueIntoString(value, istr, [&](ReadBuffer & buf){ dynamic_serialization->deserializeBinary(*tmp_dynamic_column, buf, settings); });
-                    paths_and_values_for_shared_data.emplace_back(std::move(path), std::move(value));
+                    Field field;
+                    readParsedValueIntoString(value, istr, [&](ReadBuffer & buf){ dynamic_serialization->deserializeBinary(field, buf, settings); });
+                    /// Don't write nulls into shared data.
+                    if (!field.isNull())
+                        paths_and_values_for_shared_data.emplace_back(std::move(path), std::move(value));
                 }
             }
             else
@@ -1033,6 +1037,8 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
         if (column->size() == prev_size)
             column->insertDefault();
     }
+
+    column_object.validateDynamicPathsSizes();
 }
 
 SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB::SerializationPtr & prev, const DataTypePtr &) const
