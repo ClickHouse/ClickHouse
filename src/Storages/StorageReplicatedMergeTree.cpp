@@ -10602,7 +10602,7 @@ void StorageReplicatedMergeTree::watchZeroCopyLock(const String & part_name, con
         std::shared_ptr<std::atomic<bool>> flag = std::make_shared<std::atomic<bool>>(true);
         std::string replica;
 
-        auto watch = zookeeper->createWatchFromRawCallback(fmt::format("{}", reinterpret_cast<void *>(flag.get())), [flag]() -> Coordination::WatchCallback
+        auto watch = zookeeper->createWatchFromRawCallback(fmt::format("watchZeroCopyLock::{}", reinterpret_cast<void *>(flag.get())), [flag]() -> Coordination::WatchCallback
         {
             return [flag](const auto &)
             {
