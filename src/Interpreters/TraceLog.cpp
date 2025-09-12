@@ -1,6 +1,5 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/demangle.h>
-#include <Common/DateLUTImpl.h>
 #include <Interpreters/TraceLog.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -10,7 +9,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/ClickHouseRevision.h>
-#include <Common/HashTable/HashMap.h>
 #include <Common/SymbolIndex.h>
 #include <Common/Dwarf.h>
 #include <IO/WriteBufferFromArena.h>
@@ -31,8 +29,6 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"MemorySample", static_cast<UInt8>(TraceType::MemorySample)},
     {"MemoryPeak", static_cast<UInt8>(TraceType::MemoryPeak)},
     {"ProfileEvent", static_cast<UInt8>(TraceType::ProfileEvent)},
-    {"JemallocSample", static_cast<UInt8>(TraceType::JemallocSample)},
-
 };
 
 ColumnsDescription TraceLogElement::getColumnsDescription()
@@ -86,7 +82,7 @@ namespace
     class AddressToLineCache
     {
     private:
-        Arena arena;
+       Arena arena;
         using Map = HashMap<uintptr_t, StringRef>;
         Map map;
         std::unordered_map<std::string, Dwarf> dwarfs;
@@ -108,7 +104,7 @@ namespace
         {
             const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-            if (const auto * object = symbol_index.thisObject())
+            if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
             {
                 auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
                 if (!std::filesystem::exists(object->name))
@@ -117,7 +113,7 @@ namespace
                 Dwarf::LocationInfo location;
                 std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
                 StringRef result;
-                if (dwarf_it->second.findAddress(addr, location, Dwarf::LocationInfoMode::FAST, frames))
+                if (dwarf_it->second.findAddress(addr - uintptr_t(object->address_begin), location, Dwarf::LocationInfoMode::FAST, frames))
                 {
                     setResult(result, location, frames);
                     return result;

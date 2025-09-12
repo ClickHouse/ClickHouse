@@ -64,12 +64,10 @@ def test_limited_fetch_single_table(start_cluster):
             n2_fetch_speed.append(n2_in)
             time.sleep(0.5)
 
-        # When we start fetches we have small burst because of implementation throttling
-        # Make sense to skip first measure
-        median_speed = statistics.median(n2_fetch_speed[1:])
+        median_speed = statistics.median(n2_fetch_speed)
         # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
-        assert median_speed <= 20, (
-            "We exceeded max fetch speed for more than 10MB/s. Must be around 10 (+- 10), got "
+        assert median_speed <= 15, (
+            "We exceeded max fetch speed for more than 10MB/s. Must be around 10 (+- 5), got "
             + str(median_speed)
         )
 
@@ -108,9 +106,7 @@ def test_limited_send_single_table(start_cluster):
             n1_sends_speed.append(n1_out)
             time.sleep(0.5)
 
-        # When we start fetches we have small burst because of implementation throttling
-        # Make sense to skip first measure
-        median_speed = statistics.median(n1_sends_speed[1:])
+        median_speed = statistics.median(n1_sends_speed)
         # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
         assert median_speed <= 10, (
             "We exceeded max send speed for more than 5MB/s. Must be around 5 (+- 5), got "
@@ -155,9 +151,7 @@ def test_limited_fetches_for_server(start_cluster):
             n3_fetches_speed.append(n3_in)
             time.sleep(0.5)
 
-        # When we start fetches we have small burst because of implementation throttling
-        # Make sense to skip first measure
-        median_speed = statistics.median(n3_fetches_speed[1:])
+        median_speed = statistics.median(n3_fetches_speed)
         # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
         assert median_speed <= 15, (
             "We exceeded max fetch speed for more than 15MB/s. Must be around 5 (+- 10), got "
@@ -203,12 +197,10 @@ def test_limited_sends_for_server(start_cluster):
             n3_sends_speed.append(n3_out)
             time.sleep(0.5)
 
-        # When we start fetches we have small burst because of implementation throttling
-        # Make sense to skip first measure
-        median_speed = statistics.median(n3_sends_speed[1:])
+        median_speed = statistics.median(n3_sends_speed)
         # approximate border. Without limit we will have more than 100 MB/s for very slow builds.
         assert median_speed <= 20, (
-            "We exceeded max send speed for more than 20MB/s. Must be around 5 (+- 15), got "
+            "We exceeded max send speed for more than 20MB/s. Must be around 5 (+- 10), got "
             + str(median_speed)
         )
 
