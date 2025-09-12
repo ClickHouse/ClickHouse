@@ -1080,10 +1080,10 @@ SELECT toDate(toDateTime('2025-04-15 10:30:00'))
     {
         "Integer to Date conversion",
         R"(
-SELECT toDate(19489)
+SELECT toDate(20297)
         )",
         R"(
-2023-04-15
+2025-07-28
         )"
     }
     };
@@ -1113,13 +1113,13 @@ If the argument is of type [`Date`](../data-types/date.md), it's bounds are take
     {
         "Within range",
         R"(
-SELECT toDate32('1955-01-01') AS value, toTypeName(value)
+SELECT toDate32('2025-01-01') AS value, toTypeName(value)
 FORMAT Vertical
         )",
         R"(
 Row 1:
 ──────
-value:           1955-01-01
+value:           2025-01-01
 toTypeName(value): Date32
         )"
     },
@@ -1166,7 +1166,7 @@ SELECT toTime('14:30:25')
     {
         "DateTime to Time conversion",
         R"(
-SELECT toTime(toDateTime('2023-04-15 14:30:25'))
+SELECT toTime(toDateTime('2025-04-15 14:30:25'))
         )",
         R"(
 14:30:25
@@ -1211,7 +1211,7 @@ SELECT toTime64('14:30:25.123456')
     {
         "DateTime64 to Time64 conversion",
         R"(
-SELECT toTime64(toDateTime64('2023-04-15 14:30:25.123456', 6))
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
         )",
         R"(
 14:30:25.123456
@@ -1253,14 +1253,14 @@ Thus, parsing of short numbers' string representations (up to 4 digits) is expli
     {
         "Usage example",
         R"(
-SELECT toDateTime('2022-12-30 13:44:17'), toDateTime(1685457500, 'UTC')
+SELECT toDateTime('2025-01-01 00:00:00'), toDateTime(1735689600, 'UTC')
 FORMAT Vertical
         )",
         R"(
 Row 1:
 ──────
-toDateTime('2022-12-30 13:44:17'): 2022-12-30 13:44:17
-toDateTime(1685457500, 'UTC'):     2023-05-30 14:38:20
+toDateTime('2025-01-01 00:00:00'): 2025-01-01 00:00:00
+toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
         )"
     }
     };
@@ -1286,24 +1286,24 @@ DateTime32 provides extended range compared to `DateTime`, supporting dates from
     {
         "The value is within the range",
         R"(
-SELECT toDateTime64('1955-01-01 00:00:00.000', 3) AS value, toTypeName(value);
+SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64('1955-01-01 00:00:00.000', 3))─┐
-│ 1955-01-01 00:00:00.000 │ DateTime64(3)                                          │
+┌───────────────────value─┬─toTypeName(toDateTime64('20255-01-01 00:00:00.000', 3))─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
 └─────────────────────────┴────────────────────────────────────────────────────────┘
         )"
     },
     {
         "As a decimal with precision",
         R"(
-SELECT toDateTime64(1546300800.000, 3) AS value, toTypeName(value);
+SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
 -- without the decimal point the value is still treated as Unix Timestamp in seconds
 SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800., 3))─┐
-│ 2019-01-01 00:00:00.000 │ DateTime64(3)                            │
+┌───────────────────value─┬─toTypeName(toDateTime64(1735689600.000, 3))─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)                            │
 └─────────────────────────┴──────────────────────────────────────────┘
 ┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
 │ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
@@ -1313,11 +1313,11 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
     {
         "With a timezone",
         R"(
-SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2019-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
+┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
 └─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
         )"
     }
@@ -1343,11 +1343,11 @@ Converts an input value to a value of type [`DateTime64`](../data-types/datetime
     {
         "The value is within the range",
         R"(
-SELECT toDateTime64('1955-01-01 00:00:00.000', 3) AS value, toTypeName(value);
+SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64('1955-01-01 00:00:00.000', 3))─┐
-│ 1955-01-01 00:00:00.000 │ DateTime64(3)                                          │
+┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00.000', 3))─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
 └─────────────────────────┴────────────────────────────────────────────────────────┘
         )"
     },
@@ -1367,11 +1367,11 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
     {
         "With timezone",
         R"(
-SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2019-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
+┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
 └─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
         )"
     }
@@ -2297,11 +2297,11 @@ See also:
     {
         "Usage example",
         R"(
-SELECT toDateOrZero('2022-12-30'), toDateOrZero('')
+SELECT toDateOrZero('2025-12-30'), toDateOrZero('')
         )",
         R"(
-┌─toDateOrZero('2022-12-30')─┬─toDateOrZero('')─┐
-│                 2022-12-30 │       1970-01-01 │
+┌─toDateOrZero('2025-12-30')─┬─toDateOrZero('')─┐
+│                 2025-12-30 │       1970-01-01 │
 └────────────────────────────┴──────────────────┘
         )"
     }
@@ -2331,11 +2331,11 @@ See also:
     {
         "Usage example",
         R"(
-SELECT toDate32OrZero('1955-01-01'), toDate32OrZero('')
+SELECT toDate32OrZero('2025-01-01'), toDate32OrZero('')
         )",
         R"(
-┌─toDate32OrZero('1955-01-01')─┬─toDate32OrZero('')─┐
-│                   1955-01-01 │         1900-01-01 │
+┌─toDate32OrZero('2025-01-01')─┬─toDate32OrZero('')─┐
+│                   2025-01-01 │         1900-01-01 │
 └──────────────────────────────┴────────────────────┘
         )"
     }
@@ -2418,11 +2418,11 @@ The same as [toDateTime](#todatetime) but returns lower boundary of [DateTime](.
     {
         "Usage example",
         R"(
-SELECT toDateTimeOrZero('2022-12-30 13:44:17'), toDateTimeOrZero('invalid')
+SELECT toDateTimeOrZero('2025-12-30 13:44:17'), toDateTimeOrZero('invalid')
         )",
         R"(
-┌─toDateTimeOrZero('2022-12-30 13:44:17')─┬─toDateTimeOrZero('invalid')─┐
-│                     2022-12-30 13:44:17 │         1970-01-01 00:00:00 │
+┌─toDateTimeOrZero('2025-12-30 13:44:17')─┬─toDateTimeOrZero('invalid')─┐
+│                     2025-12-30 13:44:17 │         1970-01-01 00:00:00 │
 └─────────────────────────────────────────┴─────────────────────────────┘
         )"
     }
@@ -2452,11 +2452,11 @@ See also:
     {
         "Usage example",
         R"(
-SELECT toDateTime64OrZero('2022-12-30 13:44:17.123'), toDateTime64OrZero('invalid')
+SELECT toDateTime64OrZero('2025-12-30 13:44:17.123'), toDateTime64OrZero('invalid')
         )",
         R"(
-┌─toDateTime64OrZero('2022-12-30 13:44:17.123')─┬─toDateTime64OrZero('invalid')─┐
-│                         2022-12-30 13:44:17.123 │             1970-01-01 00:00:00.000 │
+┌─toDateTime64OrZero('2025-12-30 13:44:17.123')─┬─toDateTime64OrZero('invalid')─┐
+│                         2025-12-30 13:44:17.123 │             1970-01-01 00:00:00.000 │
 └─────────────────────────────────────────────────┴─────────────────────────────────────┘
         )"
     }
@@ -3532,11 +3532,11 @@ The same as [`toDate`](#toDate) but returns `NULL` if an invalid argument is rec
     {
         "Usage example",
         R"(
-SELECT toDateOrNull('2022-12-30'), toDateOrNull('invalid')
+SELECT toDateOrNull('2025-12-30'), toDateOrNull('invalid')
         )",
         R"(
-┌─toDateOrNull('2022-12-30')─┬─toDateOrNull('invalid')─┐
-│                 2022-12-30 │                   ᴺᵁᴸᴸ │
+┌─toDateOrNull('2025-12-30')─┬─toDateOrNull('invalid')─┐
+│                 2025-12-30 │                   ᴺᵁᴸᴸ │
 └────────────────────────────┴────────────────────────┘
         )"
     }
@@ -3562,11 +3562,11 @@ The same as [`toDate32`](#toDate32) but returns `NULL` if an invalid argument is
     {
         "Usage example",
         R"(
-SELECT toDate32OrNull('1955-01-01'), toDate32OrNull('invalid')
+SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
         )",
         R"(
-┌─toDate32OrNull('1955-01-01')─┬─toDate32OrNull('invalid')─┐
-│                   1955-01-01 │                      ᴺᵁᴸᴸ │
+┌─toDate32OrNull('2025-01-01')─┬─toDate32OrNull('invalid')─┐
+│                   2025-01-01 │                      ᴺᵁᴸᴸ │
 └──────────────────────────────┴───────────────────────────┘
         )"
     }
@@ -3660,11 +3660,11 @@ The same as [`toDateTime`](#toDateTime) but returns `NULL` if an invalid argumen
     {
         "Usage example",
         R"(
-SELECT toDateTimeOrNull('2022-12-30 13:44:17'), toDateTimeOrNull('invalid')
+SELECT toDateTimeOrNull('2025-12-30 13:44:17'), toDateTimeOrNull('invalid')
         )",
         R"(
-┌─toDateTimeOrNull('2022-12-30 13:44:17')─┬─toDateTimeOrNull('invalid')─┐
-│                     2022-12-30 13:44:17 │                        ᴺᵁᴸᴸ │
+┌─toDateTimeOrNull('2025-12-30 13:44:17')─┬─toDateTimeOrNull('invalid')─┐
+│                     2025-12-30 13:44:17 │                        ᴺᵁᴸᴸ │
 └─────────────────────────────────────────┴─────────────────────────────┘
         )"
     }
@@ -3690,11 +3690,11 @@ The same as `toDateTime64` but returns `NULL` if an invalid argument is received
     {
         "Usage example",
         R"(
-SELECT toDateTime64OrNull('2022-12-30 13:44:17.123'), toDateTime64OrNull('invalid')
+SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invalid')
         )",
         R"(
-┌─toDateTime64OrNull('2022-12-30 13:44:17.123')─┬─toDateTime64OrNull('invalid')─┐
-│                         2022-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
+┌─toDateTime64OrNull('2025-12-30 13:44:17.123')─┬─toDateTime64OrNull('invalid')─┐
+│                         2025-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
 └─────────────────────────────────────────────────┴───────────────────────────────┘
         )"
     }
@@ -4038,33 +4038,33 @@ If the year is not specified, it is considered to be equal to the current year.
     {
         "Usage example",
         R"(
-SELECT parseDateTimeBestEffort('23/10/2020 12:12:57') AS parseDateTimeBestEffort
+SELECT parseDateTimeBestEffort('23/10/2025 12:12:57') AS parseDateTimeBestEffort
         )",
         R"(
 ┌─parseDateTimeBestEffort─┐
-│     2020-10-23 12:12:57 │
+│     2025-10-23 12:12:57 │
 └─────────────────────────┘
         )"
     },
     {
         "With timezone",
         R"(
-SELECT parseDateTimeBestEffort('Sat, 18 Aug 2018 07:22:16 GMT', 'Asia/Istanbul') AS parseDateTimeBestEffort
+SELECT parseDateTimeBestEffort('Sat, 18 Aug 2025 07:22:16 GMT', 'Asia/Istanbul') AS parseDateTimeBestEffort
         )",
         R"(
 ┌─parseDateTimeBestEffort─┐
-│     2018-08-18 10:22:16 │
+│     2025-08-18 10:22:16 │
 └─────────────────────────┘
         )"
     },
     {
         "Unix timestamp",
         R"(
-SELECT parseDateTimeBestEffort('1284101485') AS parseDateTimeBestEffort
+SELECT parseDateTimeBestEffort('1735689600') AS parseDateTimeBestEffort
         )",
         R"(
 ┌─parseDateTimeBestEffort─┐
-│     2015-07-07 12:04:41 │
+│     2025-01-01 00:00:00 │
 └─────────────────────────┘
         )"
     }
@@ -4103,12 +4103,12 @@ If the year is not specified, it is considered to be equal to the current year.
     {
         "Usage example",
         R"(
-SELECT parseDateTimeBestEffortOrZero('23/10/2020 12:12:57') AS valid,
+SELECT parseDateTimeBestEffortOrZero('23/10/2025 12:12:57') AS valid,
        parseDateTimeBestEffortOrZero('invalid') AS invalid
         )",
         R"(
 ┌─valid───────────────┬─invalid─────────────┐
-│ 2020-10-23 12:12:57 │ 1970-01-01 00:00:00 │
+│ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
         )"
     }
@@ -4147,12 +4147,12 @@ If the year is not specified, it is considered to be equal to the current year.
     {
         "Usage example",
         R"(
-SELECT parseDateTimeBestEffortOrNull('23/10/2020 12:12:57') AS valid,
+SELECT parseDateTimeBestEffortOrNull('23/10/2025 12:12:57') AS valid,
        parseDateTimeBestEffortOrNull('invalid') AS invalid
         )",
         R"(
 ┌─valid───────────────┬─invalid─┐
-│ 2020-10-23 12:12:57 │    ᴺᵁᴸᴸ │
+│ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
         )"
     }
@@ -4181,12 +4181,12 @@ As an exception to the previous statement, if the month is bigger than 12 and sm
     {
         "Usage example",
         R"(
-SELECT parseDateTimeBestEffortUS('02/10/2021') AS us_format,
-       parseDateTimeBestEffortUS('15/08/2020') AS fallback_to_standard
+SELECT parseDateTimeBestEffortUS('02/10/2025') AS us_format,
+       parseDateTimeBestEffortUS('15/08/2025') AS fallback_to_standard
         )",
         R"(
 ┌─us_format───────────┬─fallback_to_standard─┐
-│ 2021-02-10 00:00:00 │  2020-08-15 00:00:00 │
+│ 2025-02-10 00:00:00 │  2025-08-15 00:00:00 │
 └─────────────────────┴──────────────────────┘
         )"
     }
@@ -4215,12 +4215,12 @@ This function behaves like [`parseDateTimeBestEffort`](#parseDateTimeBestEffort)
     {
         "Usage example",
         R"(
-SELECT parseDateTimeBestEffortUSOrZero('02/10/2021') AS valid_us,
+SELECT parseDateTimeBestEffortUSOrZero('02/10/2025') AS valid_us,
        parseDateTimeBestEffortUSOrZero('invalid') AS invalid
         )",
         R"(
 ┌─valid_us────────────┬─invalid─────────────┐
-│ 2021-02-10 00:00:00 │ 1970-01-01 00:00:00 │
+│ 2025-02-10 00:00:00 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
         )"
     }
@@ -4249,12 +4249,12 @@ This function behaves like [`parseDateTimeBestEffort`](#parseDateTimeBestEffort)
     {
         "Usage example",
         R"(
-SELECT parseDateTimeBestEffortUSOrNull('02/10/2021') AS valid_us,
+SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
        parseDateTimeBestEffortUSOrNull('invalid') AS invalid
         )",
         R"(
 ┌─valid_us────────────┬─invalid─┐
-│ 2021-02-10 00:00:00 │    ᴺᵁᴸᴸ │
+│ 2025-02-10 00:00:00 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
         )"
     }
@@ -4283,24 +4283,24 @@ The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 112
     {
         "Usage example",
         R"(
-SELECT parseDateTime32BestEffort('23/10/2020 12:12:57')
+SELECT parseDateTime32BestEffort('23/10/2025 12:12:57')
 AS parseDateTime32BestEffort
         )",
         R"(
 ┌─parseDateTime32BestEffort─┐
-│       2020-10-23 12:12:57 │
+│       2025-10-23 12:12:57 │
 └───────────────────────────┘
         )"
     },
     {
         "With timezone",
         R"(
-SELECT parseDateTime32BestEffort('Sat, 18 Aug 2018 07:22:16 GMT', 'Asia/Istanbul')
+SELECT parseDateTime32BestEffort('Sat, 18 Aug 2025 07:22:16 GMT', 'Asia/Istanbul')
 AS parseDateTime32BestEffort
         )",
         R"(
 ┌─parseDateTime32BestEffort─┐
-│       2018-08-18 10:22:16 │
+│       2025-08-18 10:22:16 │
 └───────────────────────────┘
         )"
     },
@@ -4340,12 +4340,12 @@ Same as [`parseDateTime32BestEffort`](#parseDateTime32BestEffort) except that it
     "Usage example",
     R"(
 SELECT
-    parseDateTime32BestEffortOrZero('23/10/2020 12:12:57') AS valid,
+    parseDateTime32BestEffortOrZero('23/10/2025 12:12:57') AS valid,
     parseDateTime32BestEffortOrZero('invalid date') AS invalid
     )",
     R"(
 ┌─valid───────────────┬─invalid─────────────┐
-│ 2020-10-23 12:12:57 │ 1970-01-01 00:00:00 │
+│ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
     )"
     }
@@ -4373,12 +4373,12 @@ Same as [`parseDateTime32BestEffort`](#parseDateTime32BestEffort) except that it
         "Usage example",
         R"(
 SELECT
-    parseDateTime32BestEffortOrNull('23/10/2020 12:12:57') AS valid,
+    parseDateTime32BestEffortOrNull('23/10/2025 12:12:57') AS valid,
     parseDateTime32BestEffortOrNull('invalid date') AS invalid
         )",
         R"(
 ┌─valid───────────────┬─invalid─┐
-│ 2020-10-23 12:12:57 │    ᴺᵁᴸᴸ │
+│ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
         )"
     }
@@ -4406,21 +4406,21 @@ Same as [`parseDateTimeBestEffort`](#parsedatetimebesteffort) function but also 
     {
         "Usage example",
         R"(
-SELECT parseDateTime64BestEffort('2021-01-01') AS a, toTypeName(a) AS t
+SELECT parseDateTime64BestEffort('2025-01-01') AS a, toTypeName(a) AS t
 UNION ALL
-SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346') AS a, toTypeName(a) AS t
+SELECT parseDateTime64BestEffort('2025-01-01 01:01:00.12346') AS a, toTypeName(a) AS t
 UNION ALL
-SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',6) AS a, toTypeName(a) AS t
+SELECT parseDateTime64BestEffort('2025-01-01 01:01:00.12346',6) AS a, toTypeName(a) AS t
 UNION ALL
-SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',3,'Asia/Istanbul') AS a, toTypeName(a) AS t
+SELECT parseDateTime64BestEffort('2025-01-01 01:01:00.12346',3,'Asia/Istanbul') AS a, toTypeName(a) AS t
 FORMAT PrettyCompactMonoBlock
         )",
         R"(
 ┌──────────────────────────a─┬─t──────────────────────────────┐
-│ 2021-01-01 01:01:00.123000 │ DateTime64(3)                  │
-│ 2021-01-01 00:00:00.000000 │ DateTime64(3)                  │
-│ 2021-01-01 01:01:00.123460 │ DateTime64(6)                  │
-│ 2020-12-31 22:01:00.123000 │ DateTime64(3, 'Asia/Istanbul') │
+│ 2025-01-01 01:01:00.123000 │ DateTime64(3)                  │
+│ 2025-01-01 00:00:00.000000 │ DateTime64(3)                  │
+│ 2025-01-01 01:01:00.123460 │ DateTime64(6)                  │
+│ 2025-12-31 22:01:00.123000 │ DateTime64(3, 'Asia/Istanbul') │
 └────────────────────────────┴────────────────────────────────┘
         )"
     }
@@ -4448,12 +4448,12 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort) except that it
     {
         "Usage example",
         R"(
-SELECT parseDateTime64BestEffortOrZero('2021-01-01 01:01:00.123') AS valid,
+SELECT parseDateTime64BestEffortOrZero('2025-01-01 01:01:00.123') AS valid,
        parseDateTime64BestEffortOrZero('invalid') AS invalid
         )",
         R"(
 ┌─valid───────────────────┬─invalid─────────────────┐
-│ 2021-01-01 01:01:00.123 │ 1970-01-01 00:00:00.000 │
+│ 2025-01-01 01:01:00.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
         )"
     }
@@ -4481,12 +4481,12 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort) except that it
     {
     "Usage example",
     R"(
-SELECT parseDateTime64BestEffortOrNull('2021-01-01 01:01:00.123') AS valid,
+SELECT parseDateTime64BestEffortOrNull('2025-01-01 01:01:00.123') AS valid,
        parseDateTime64BestEffortOrNull('invalid') AS invalid
     )",
     R"(
 ┌─valid───────────────────┬─invalid─┐
-│ 2021-01-01 01:01:00.123 │    ᴺᵁᴸᴸ │
+│ 2025-01-01 01:01:00.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
         )"
     }
@@ -4514,12 +4514,12 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that t
     {
         "Usage example",
         R"(
-SELECT parseDateTime64BestEffortUS('02/10/2021 12:30:45.123') AS us_format,
-       parseDateTime64BestEffortUS('15/08/2020 10:15:30.456') AS fallback_to_standard
+SELECT parseDateTime64BestEffortUS('02/10/2025 12:30:45.123') AS us_format,
+       parseDateTime64BestEffortUS('15/08/2025 10:15:30.456') AS fallback_to_standard
         )",
         R"(
 ┌─us_format───────────────┬─fallback_to_standard────┐
-│ 2021-02-10 12:30:45.123 │ 2020-08-15 10:15:30.456 │
+│ 2025-02-10 12:30:45.123 │ 2025-08-15 10:15:30.456 │
 └─────────────────────────┴─────────────────────────┘
         )"
     }
@@ -4547,12 +4547,12 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that t
     {
         "Usage example",
         R"(
-SELECT parseDateTime64BestEffortUSOrZero('02/10/2021 12:30:45.123') AS valid_us,
+SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
        parseDateTime64BestEffortUSOrZero('invalid') AS invalid
         )",
         R"(
 ┌─valid_us────────────────┬─invalid─────────────────┐
-│ 2021-02-10 12:30:45.123 │ 1970-01-01 00:00:00.000 │
+│ 2025-02-10 12:30:45.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
         )"
     }
@@ -4580,12 +4580,12 @@ Same as [`parseDateTime64BestEffort`](#parsedatetime64besteffort), except that t
     {
         "Usage example",
         R"(
-SELECT parseDateTime64BestEffortUSOrNull('02/10/2021 12:30:45.123') AS valid_us,
+SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
        parseDateTime64BestEffortUSOrNull('invalid') AS invalid
         )",
         R"(
 ┌─valid_us────────────────┬─invalid─┐
-│ 2021-02-10 12:30:45.123 │    ᴺᵁᴸᴸ │
+│ 2025-02-10 12:30:45.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
         )"
     }
@@ -4610,13 +4610,13 @@ Returns an interval of `n` seconds of data type [`IntervalSecond`](../data-types
         "Usage example",
         R"(
 WITH
-    toDate('2024-06-15') AS date,
+    toDate('2025-06-15') AS date,
     toIntervalSecond(30) AS interval_to_seconds
 SELECT date + interval_to_seconds AS result
         )",
         R"(
 ┌──────────────result─┐
-│ 2024-06-15 00:00:30 │
+│ 2025-06-15 00:00:30 │
 └─────────────────────┘
         )"
     }
@@ -4639,13 +4639,13 @@ Returns an interval of `n` minutes of data type [`IntervalMinute`](../data-types
         "Usage example",
         R"(
 WITH
-    toDate('2024-06-15') AS date,
+    toDate('2025-06-15') AS date,
     toIntervalMinute(12) AS interval_to_minutes
 SELECT date + interval_to_minutes AS result
         )",
         R"(
 ┌──────────────result─┐
-│ 2024-06-15 00:12:00 │
+│ 2025-06-15 00:12:00 │
 └─────────────────────┘
         )"
     }
@@ -4668,13 +4668,13 @@ Returns an interval of `n` hours of data type [`IntervalHour`](../data-types/spe
         "Usage example",
         R"(
 WITH
-    toDate('2024-06-15') AS date,
+    toDate('2025-06-15') AS date,
     toIntervalHour(12) AS interval_to_hours
 SELECT date + interval_to_hours AS result
         )",
         R"(
 ┌──────────────result─┐
-│ 2024-06-15 12:00:00 │
+│ 2025-06-15 12:00:00 │
 └─────────────────────┘
         )"
     }
@@ -4697,13 +4697,13 @@ Returns an interval of `n` days of data type [`IntervalDay`](../data-types/speci
         "Usage example",
         R"(
 WITH
-    toDate('2024-06-15') AS date,
+    toDate('2025-06-15') AS date,
     toIntervalDay(5) AS interval_to_days
 SELECT date + interval_to_days AS result
         )",
         R"(
 ┌─────result─┐
-│ 2024-06-20 │
+│ 2025-06-20 │
 └────────────┘
         )"
     }
@@ -4726,13 +4726,13 @@ Returns an interval of `n` nanoseconds of data type [`IntervalNanosecond`](../..
         "Usage example",
         R"(
 WITH
-    toDateTime('2024-06-15') AS date,
+    toDateTime('2025-06-15') AS date,
     toIntervalNanosecond(30) AS interval_to_nanoseconds
 SELECT date + interval_to_nanoseconds AS result
         )",
         R"(
 ┌────────────────────────result─┐
-│ 2024-06-15 00:00:00.000000030 │
+│ 2025-06-15 00:00:00.000000030 │
 └───────────────────────────────┘
         )"
     }
@@ -4755,13 +4755,13 @@ Returns an interval of `n` microseconds of data type [`IntervalMicrosecond`](../
         "Usage example",
         R"(
 WITH
-    toDateTime('2024-06-15') AS date,
+    toDateTime('2025-06-15') AS date,
     toIntervalMicrosecond(30) AS interval_to_microseconds
 SELECT date + interval_to_microseconds AS result
         )",
         R"(
 ┌─────────────────────result─┐
-│ 2024-06-15 00:00:00.000030 │
+│ 2025-06-15 00:00:00.000030 │
 └────────────────────────────┘
         )"
     }
@@ -4784,13 +4784,13 @@ Returns an interval of `n` milliseconds of data type [IntervalMillisecond](../..
         "Usage example",
         R"(
 WITH
-    toDateTime('2024-06-15') AS date,
+    toDateTime('2025-06-15') AS date,
     toIntervalMillisecond(30) AS interval_to_milliseconds
 SELECT date + interval_to_milliseconds AS result
         )",
         R"(
 ┌──────────────────result─┐
-│ 2024-06-15 00:00:00.030 │
+│ 2025-06-15 00:00:00.030 │
 └─────────────────────────┘
         )"
     }
@@ -4813,13 +4813,13 @@ Returns an interval of `n` weeks of data type [`IntervalWeek`](../../sql-referen
         "Usage example",
         R"(
 WITH
-    toDate('2024-06-15') AS date,
+    toDate('2025-06-15') AS date,
     toIntervalWeek(1) AS interval_to_week
 SELECT date + interval_to_week AS result
         )",
         R"(
 ┌─────result─┐
-│ 2024-06-22 │
+│ 2025-06-22 │
 └────────────┘
         )"
     }
@@ -4842,13 +4842,13 @@ Returns an interval of `n` months of data type [`IntervalMonth`](../../sql-refer
         "Usage example",
         R"(
 WITH
-    toDate('2024-06-15') AS date,
+    toDate('2025-06-15') AS date,
     toIntervalMonth(1) AS interval_to_month
 SELECT date + interval_to_month AS result
         )",
         R"(
 ┌─────result─┐
-│ 2024-07-15 │
+│ 2025-07-15 │
 └────────────┘
         )"
     }
@@ -4871,13 +4871,13 @@ Returns an interval of `n` quarters of data type [`IntervalQuarter`](../../sql-r
         "Usage example",
         R"(
 WITH
-    toDate('2024-06-15') AS date,
+    toDate('2025-06-15') AS date,
     toIntervalQuarter(1) AS interval_to_quarter
 SELECT date + interval_to_quarter AS result
         )",
         R"(
 ┌─────result─┐
-│ 2024-09-15 │
+│ 2025-09-15 │
 └────────────┘
         )"
     }

@@ -196,11 +196,11 @@ SELECT CAST(42, 'String')
     {
         "Using AS syntax",
         R"(
-SELECT CAST('2023-01-01' AS Date)
+SELECT CAST('2025-01-01' AS Date)
         )",
         R"(
-┌─CAST('2023-01-01', 'Date')─┐
-│                 2023-01-01 │
+┌─CAST('2025-01-01', 'Date')─┐
+│                 2025-01-01 │
 └────────────────────────────┘
         )"
     },
