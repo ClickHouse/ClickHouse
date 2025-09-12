@@ -1,3 +1,4 @@
+#include <unordered_map>
 #include <Columns/ColumnBLOB.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -216,6 +217,11 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     std::vector<std::vector<std::string_view>> replicas_parts;
     replicas_parts.resize(replicas);
 
+    std::vector<size_t> replicas_marks;
+    replicas_marks.resize(replicas);
+    std::vector<size_t> replicas_rows;
+    replicas_rows.resize(replicas);
+
     for (const auto & part_ranges : parts_with_ranges)
     {
         chassert(part_ranges.ranges.size() == 1);
@@ -224,6 +230,9 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         const auto & part_name = part_ranges.data_part->name;
         const auto & part_replica_index = partReplica(part_name, replicas);
         replicas_parts[part_replica_index].push_back(part_name);
+
+        replicas_marks[part_replica_index] += part_ranges.getMarksCount();
+        replicas_rows[part_replica_index] += part_ranges.getRowsCount();
     }
 
     DistributedIndexAnalysisPartsRanges res;
@@ -259,7 +268,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         {
             runner([&, i, replica_address]()
             {
-                LOG_TRACE(logger, "Resolving {} parts from local replica {} (index {}): {}", replica_parts.size(), replica_address, i, replica_parts);
+                LOG_TRACE(logger, "Resolving {} parts ({} marks, {} rows) from local replica {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
                 auto parts_ranges = local_index_analysis_callback(replica_parts);
                 LOG_TRACE(logger, "Received {} parts from local replica {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
                 res[i] = std::make_pair(replica_address, std::move(parts_ranges));
@@ -271,7 +280,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
             {
                 try
                 {
-                    LOG_TRACE(logger, "Sending {} parts to {} (index {}): {}", replica_parts.size(), replica_address, i, replica_parts);
+                    LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {} (index {}): {}", replica_parts.size(), replicas_marks[i], replicas_rows[i], replica_address, i, replica_parts);
                     auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, context, replica_parts, connection_pool);
                     LOG_TRACE(logger, "Received {} parts from {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
                     res[i] = std::make_pair(replica_address, std::move(parts_ranges));
@@ -295,16 +304,20 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
             resolved_parts.insert(part);
     }
     std::vector<std::string_view> missing_parts;
+    size_t missing_parts_marks = 0;
+    size_t missing_parts_rows = 0;
     for (const auto & part_ranges : parts_with_ranges)
     {
         const auto & part_name = part_ranges.data_part->name;
         if (resolved_parts.contains(part_name))
             continue;
         missing_parts.push_back(part_name);
+        missing_parts_marks += part_ranges.getMarksCount();
+        missing_parts_rows += part_ranges.getRowsCount();
     }
 
     const auto & local_replica_address = connection_pools[local_replica_index]->getAddress();
-    LOG_TRACE(logger, "Resolving {} missing parts from local replica {} (index {}): {}", missing_parts.size(), local_replica_address, local_replica_index, missing_parts);
+    LOG_TRACE(logger, "Resolving {} missing parts ({} marks, {} rows) from local replica {} (index {}): {}", missing_parts.size(), missing_parts_marks, missing_parts_rows, local_replica_address, local_replica_index, missing_parts);
     auto parts_ranges = local_index_analysis_callback(missing_parts);
     LOG_TRACE(logger, "Received {} missing parts from local replica {} (index {}): {}", parts_ranges.size(), local_replica_address, local_replica_index, parts_ranges);
     res[local_replica_index].first = local_replica_address;
