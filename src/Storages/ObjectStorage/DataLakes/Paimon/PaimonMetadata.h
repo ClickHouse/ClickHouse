@@ -3,21 +3,21 @@
 
 #if USE_AVRO
 
-#    include <optional>
-#    include <vector>
-#    include <Core/Block.h>
-#    include <Disks/IStoragePolicy.h>
-#    include <Interpreters/Context_fwd.h>
-#    include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#    include <Storages/ObjectStorage/DataLakes/Paimon/BinaryRow.h>
-#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
-#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
-#    include <Storages/ObjectStorage/StorageObjectStorage.h>
-#    include <Poco/JSON/Array.h>
-#    include <Poco/JSON/Object.h>
-#    include <Poco/JSON/Parser.h>
-#    include <Common/SharedMutex.h>
-#    include <Common/SharedLockGuard.h>
+#include <optional>
+#include <vector>
+#include <Core/Block.h>
+#include <Disks/IStoragePolicy.h>
+#include <Interpreters/Context_fwd.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/BinaryRow.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+#include <Common/SharedMutex.h>
+#include <Common/SharedLockGuard.h>
 
 
 namespace DB
@@ -85,7 +85,7 @@ private:
     Poco::JSON::Object::Ptr last_metadata_object TSA_GUARDED_BY(mutex);
 
 
-    constexpr static String PARTITION_DEFAULT_NAME = "__DEFAULT_PARTITION__";
+    constexpr static String PARTITION_DEFAULT_VALUE = "__DEFAULT_PARTITION__";
 };
 
 }

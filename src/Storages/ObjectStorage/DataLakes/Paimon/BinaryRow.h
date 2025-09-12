@@ -54,10 +54,6 @@ public:
 
     String getBinary(Int32 pos);
 
-    // Decimal32 getDecimal32(Int32 pos, Int32 precision, Int32 scale);
-    // Decimal64 getDecimal64(Int32 pos, Int32 precision, Int32 scale);
-    // Decimal128 getDecimal128(Int32 pos, Int32 precision, Int32 scale);
-    // Decimal256 getDecimal256(Int32 pos, Int32 precision, Int32 scale);
     template <typename T>
     Decimal<T> getDecimal(Int32 pos, Int32 precision, Int32 /* scale */)
     {

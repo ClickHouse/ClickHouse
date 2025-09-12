@@ -139,7 +139,7 @@ String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema
                     return formatDecimal(
                         partition.getDecimal<Int256>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
                 else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type {}", data_type.clickhouse_data_type->getName());
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type {}", data_type.clickhouse_data_type->getName());
             }
             case RootDataType::TINYINT:
                 return formatQuoted(partition.getByte(i));
@@ -163,7 +163,7 @@ String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema
                 return formatDateTime(partition.getTimestamp(i, type->getScale()), 3, type->getTimeZone());
             }
             default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type {} in partition", data_type.root_type);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type {} in partition", data_type.root_type);
         }
     };
     std::vector<std::pair<String, String>> partition_entries;

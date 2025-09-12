@@ -14,6 +14,10 @@
 namespace DB
 {
 struct PaimonTableSchema;
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 }
 
 namespace Paimon
@@ -69,7 +73,6 @@ public:
 };
 
 String getBucketPath(String partition, Int32 bucket, const PaimonTableSchema & table_schema, const String & partition_default_name);
-String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema & table_schema, const String & partition_default_name);
 String concatPath(std::initializer_list<String> paths);
 
 template <typename T>
@@ -91,20 +94,23 @@ inline constexpr bool is_optional_v = IsOptional<T>::value;
 template <typename T>
 void getValueFromJSON(T & t, const Poco::JSON::Object::Ptr & json, const String & key)
 {
-    if (json->has(key) && !json->isNull(key))
+    if (!json->has(key) || json->isNull(key))
     {
-        if constexpr (is_optional_v<T>)
-        {
-            using type = typename std::remove_reference_t<decltype(t)>::value_type;
-            t = json->getValue<type>(key);
-        }
-        else
-        {
-            t = json->getValue<std::remove_reference_t<decltype(t)>>(key);
-        }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,"JSON object does not have key: {}", key);
     }
+    t = json->getValue<std::remove_reference_t<decltype(t)>>(key);
 }
 
+
+template <typename T>
+void getOptionalValueFromJSON(std::optional<T> & t, const Poco::JSON::Object::Ptr & json, const String & key)
+{
+    if (json->has(key) && !json->isNull(key))
+    {
+        using type = typename std::remove_reference_t<decltype(t)>::value_type;
+        t = json->getValue<type>(key);
+    }
+}
 
 template <typename T>
 void getVecFromJSON(std::vector<T> & vec, const Poco::JSON::Object::Ptr & json, const String & key)

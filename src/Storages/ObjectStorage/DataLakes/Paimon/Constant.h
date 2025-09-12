@@ -12,6 +12,7 @@ constexpr const char * PAIMON_SNAPSHOT_EARLIEST_HINT = "EARLIEST";
 constexpr const char * PAIMON_SNAPSHOT_LATEST_HINT = "LATEST";
 /// for options
 constexpr const char * PAIMON_SCAN_MODE = "scan.mode";
+constexpr const char * PAIMON_DEFAULT_PARTITION_NAME = "partition.default-name";
 /// for manifest list
 constexpr const char * PAIMON_MANIFEST_DIR = "manifest";
 constexpr const char * COLUMN_PAIMON_MANIFEST_LIST_FILE_NAME = "_FILE_NAME";

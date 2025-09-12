@@ -21,7 +21,7 @@ void PaimonTableSchema::update(const Poco::JSON::Object::Ptr & json_object)
     Paimon::getValueFromJSON(id, json_object, "id");
     Paimon::getValueFromJSON(highest_field_id, json_object, "highestFieldId");
     Paimon::getValueFromJSON(time_mills, json_object, "timeMillis");
-    Paimon::getValueFromJSON(comment, json_object, "comment");
+    Paimon::getOptionalValueFromJSON(comment, json_object, "comment");
 
     /// get array
     Paimon::getVecFromJSON(partition_keys, json_object, "partitionKeys");

@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 }
 }
 
@@ -115,7 +116,7 @@ struct DataType
                 size_t end = type_.find(')');
                 if (!has_precision(type_))
                 {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "not found precision");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "not found precision: {}", type_);
                 }
                 std::vector<size_t> precision_infos;
                 String precision_str = type_.substr(start + 1, end - start - 1);
@@ -133,7 +134,7 @@ struct DataType
                         (*p != ' '));
                     if (!std::isdigit(*p) && *p != ',' && *p != ' ')
                     {
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "parse precision meet invalid char: {}", *p);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "parse precision meet invalid char: {}, precision_str: {}", *p, precision_str);
                     }
                     if (!token_start && std::isdigit(*p))
                     {
@@ -241,7 +242,7 @@ struct DataType
                 std::vector<size_t> n = has_precision(real_type) ? parse_precision(real_type) : std::vector<size_t>{10, 0};
                 if (n.size() != 2)
                 {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "DECIMAL precision info is invaliad, precision info size: {}", n.size());
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "DECIMAL precision info is invaliad, precision info size: {}", n.size());
                 }
                 type.root_type = RootDataType::DECIMAL;
                 auto precision = static_cast<Int32>(n[0]);
@@ -250,7 +251,7 @@ struct DataType
             }
             else
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type: {}", real_type);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type: {}", real_type);
             }
             if (nullable)
             {

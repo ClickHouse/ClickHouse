@@ -4,45 +4,45 @@
 
 #if USE_AVRO
 
-#    include <algorithm>
-#    include <charconv>
-#    include <cstddef>
-#    include <cstring>
-#    include <filesystem>
-#    include <string>
-#    include <system_error>
-#    include <unordered_map>
-#    include <utility>
-#    include <vector>
-#    include <DataTypes/DataTypeDateTime64.h>
-#    include <DataTypes/DataTypesDecimal.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <Disks/IStoragePolicy.h>
-#    include <Disks/ObjectStorages/StoredObject.h>
-#    include <IO/ReadHelpers.h>
-#    include <Interpreters/Context_fwd.h>
-#    include <Storages/ObjectStorage/DataLakes/Common.h>
-#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
-#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
-#    include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
-#    include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#    include <base/types.h>
-#    include <Common/Exception.h>
-#    include <Common/assert_cast.h>
+#include <algorithm>
+#include <charconv>
+#include <cstddef>
+#include <cstring>
+#include <filesystem>
+#include <string>
+#include <system_error>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Disks/IStoragePolicy.h>
+#include <Disks/ObjectStorages/StoredObject.h>
+#include <IO/ReadHelpers.h>
+#include <Interpreters/Context_fwd.h>
+#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <base/types.h>
+#include <Common/Exception.h>
+#include <Common/assert_cast.h>
 
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnTuple.h>
-#    include <Columns/ColumnsNumber.h>
-#    include <Columns/IColumn.h>
-#    include <DataTypes/DataTypeTuple.h>
-#    include <Formats/FormatFactory.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
-#    include <Storages/ObjectStorage/Utils.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
-#    include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
-#    include <boost/graph/properties.hpp>
-#    include <fmt/format.h>
-#    include <fmt/ranges.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Formats/FormatFactory.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
+#include <boost/graph/properties.hpp>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
 
 
 namespace DB
@@ -51,6 +51,7 @@ namespace ErrorCodes
 {
 extern const int FILE_DOESNT_EXIST;
 extern const int LOGICAL_ERROR;
+extern const int CANNOT_PARSE_NUMBER;
 }
 
 PaimonSnapshot::PaimonSnapshot(const Poco::JSON::Object::Ptr & json_object)
@@ -59,21 +60,21 @@ PaimonSnapshot::PaimonSnapshot(const Poco::JSON::Object::Ptr & json_object)
     Paimon::getValueFromJSON(schema_id, json_object, "schemaId");
     Paimon::getValueFromJSON(base_manifest_list, json_object, "baseManifestList");
     Paimon::getValueFromJSON(delta_manifest_list, json_object, "deltaManifestList");
-    Paimon::getValueFromJSON(index_manifest, json_object, "indexManifest");
     Paimon::getValueFromJSON(commit_user, json_object, "commitUser");
     Paimon::getValueFromJSON(commit_identifier, json_object, "commitIdentifier");
     Paimon::getValueFromJSON(commit_kind, json_object, "commitKind");
     Paimon::getValueFromJSON(time_millis, json_object, "timeMillis");
-    Paimon::getValueFromJSON(version, json_object, "version");
-    Paimon::getValueFromJSON(base_manifest_list_size, json_object, "baseManifestListSize");
-    Paimon::getValueFromJSON(delta_manifest_list_size, json_object, "deltaManifestListSize");
-    Paimon::getValueFromJSON(changelog_manifest_list, json_object, "changelogManifestList");
-    Paimon::getValueFromJSON(changelog_manifest_list_size, json_object, "changelogManifestListSize");
-    Paimon::getValueFromJSON(total_record_count, json_object, "totalRecordCount");
-    Paimon::getValueFromJSON(delta_record_count, json_object, "deltaRecordCount");
-    Paimon::getValueFromJSON(changelog_record_count, json_object, "changelogRecordCount");
-    Paimon::getValueFromJSON(watermark, json_object, "watermark");
-    Paimon::getValueFromJSON(statistics, json_object, "statistics");
+    Paimon::getOptionalValueFromJSON(version, json_object, "version");
+    Paimon::getOptionalValueFromJSON(index_manifest, json_object, "indexManifest");
+    Paimon::getOptionalValueFromJSON(base_manifest_list_size, json_object, "baseManifestListSize");
+    Paimon::getOptionalValueFromJSON(delta_manifest_list_size, json_object, "deltaManifestListSize");
+    Paimon::getOptionalValueFromJSON(changelog_manifest_list, json_object, "changelogManifestList");
+    Paimon::getOptionalValueFromJSON(changelog_manifest_list_size, json_object, "changelogManifestListSize");
+    Paimon::getOptionalValueFromJSON(total_record_count, json_object, "totalRecordCount");
+    Paimon::getOptionalValueFromJSON(delta_record_count, json_object, "deltaRecordCount");
+    Paimon::getOptionalValueFromJSON(changelog_record_count, json_object, "changelogRecordCount");
+    Paimon::getOptionalValueFromJSON(watermark, json_object, "watermark");
+    Paimon::getOptionalValueFromJSON(statistics, json_object, "statistics");
 
     if (json_object->has("logOffsets"))
     {
@@ -86,7 +87,7 @@ PaimonSnapshot::PaimonSnapshot(const Poco::JSON::Object::Ptr & json_object)
             auto [_, ec] = std::from_chars(inner_key.data(), inner_key.data() + inner_key.size(), key);
             if (ec != std::errc())
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "The Paimon logOffsets is invalid.");
+                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot logOffsets key: {} is invalid.", inner_key);
             }
             log_offsets->emplace(key, inner_map_json->getValue<Int64>(inner_key));
         }
@@ -102,7 +103,7 @@ PaimonTableClient::PaimonTableClient(
     , log(getLogger("PaimonTableClient"))
 {}
 
-std::pair<Int32, String> PaimonTableClient::getLastTableSchemaInfo()
+std::pair<Int32, String> PaimonTableClient::getLastestTableSchemaInfo()
 {
     auto configuration_ptr = configuration.lock();
     /// list all schema files
@@ -131,7 +132,7 @@ std::pair<Int32, String> PaimonTableClient::getLastTableSchemaInfo()
         auto [_, ec] = std::from_chars(version_string.data(), version_string.data() + version_string.size(), current_version);
         if (ec != std::errc())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The Paimon schema file name is invalid.");
+            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon schema file: {} version: {} is invalid.", file_name, version_string);
         }
         return current_version;
     };
@@ -159,7 +160,7 @@ Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<In
     return shcema_json;
 }
 
-std::pair<Int64, String> PaimonTableClient::getLastTableSnapshotInfo()
+std::pair<Int64, String> PaimonTableClient::getLastestTableSnapshotInfo()
 {
     auto configuration_ptr = configuration.lock();
     /// read latest hint
@@ -173,7 +174,7 @@ std::pair<Int64, String> PaimonTableClient::getLastTableSnapshotInfo()
             = std::from_chars(hint_version_string.data(), hint_version_string.data() + hint_version_string.size(), snapshot_version);
         if (ec != std::errc())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The Paimon snapshot hint file content is invalid.");
+            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot hint file content: {} is invalid.", hint_version_string);
         }
     }
     String latest_snapshot_path
@@ -207,7 +208,7 @@ std::pair<Int64, String> PaimonTableClient::getLastTableSnapshotInfo()
             auto [_, ec] = std::from_chars(version_string.data(), version_string.data() + version_string.size(), current_version);
             if (ec != std::errc())
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "The Paimon schema file name is invalid.");
+                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot file: {} version: {} is invalid.", file_name, version_string);
             }
             return current_version;
         };

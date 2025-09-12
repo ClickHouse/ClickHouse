@@ -3,31 +3,31 @@
 
 #if USE_AVRO
 
-#    include <cstddef>
-#    include <cstdint>
-#    include <memory>
-#    include <optional>
-#    include <unordered_map>
-#    include <vector>
-#    include <Core/TypeId.h>
-#    include <Disks/IStoragePolicy.h>
-#    include <Disks/ObjectStorages/IObjectStorage_fwd.h>
-#    include <Interpreters/Context_fwd.h>
-#    include <base/Decimal.h>
-#    include <base/types.h>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <unordered_map>
+#include <vector>
+#include <Core/TypeId.h>
+#include <Disks/IStoragePolicy.h>
+#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
+#include <Interpreters/Context_fwd.h>
+#include <base/Decimal.h>
+#include <base/types.h>
 
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
-#    include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
-#    include <Storages/ObjectStorage/DataLakes/Paimon/Types.h>
-#    include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
-#    include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#    include <fmt/format.h>
-#    include <fmt/ranges.h>
-#    include <Poco/JSON/Array.h>
-#    include <Poco/JSON/Object.h>
-#    include <Poco/JSON/Parser.h>
-#    include <Poco/Logger.h>
-#    include <Common/logger_useful.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/Types.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -45,7 +45,6 @@ struct PaimonSnapshot
     Int64 schema_id;
     String base_manifest_list;
     String delta_manifest_list;
-    String index_manifest;
     String commit_user;
     Int64 commit_identifier;
     String commit_kind;
@@ -53,6 +52,7 @@ struct PaimonSnapshot
 
     /// nullable
     std::optional<Int32> version;
+    std::optional<String> index_manifest;
     std::optional<Int64> base_manifest_list_size;
     std::optional<Int64> delta_manifest_list_size;
     std::optional<String> changelog_manifest_list;
@@ -307,8 +307,8 @@ public:
         ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, const DB::ContextPtr & context_);
 
     Poco::JSON::Object::Ptr getTableSchemaJSON(const std::pair<Int32, String> & schema_meta_info);
-    std::pair<Int32, String> getLastTableSchemaInfo();
-    std::pair<Int64, String> getLastTableSnapshotInfo();
+    std::pair<Int32, String> getLastestTableSchemaInfo();
+    std::pair<Int64, String> getLastestTableSnapshotInfo();
     PaimonSnapshot getSnapshot(const std::pair<Int64, String> & snapshot_meta_info);
     PaimonManifest getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name);
     std::vector<PaimonManifestFileMeta> getManifestMeta(String manifest_list_path);

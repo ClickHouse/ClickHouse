@@ -22,7 +22,7 @@ struct DataField
     {
         id = json_object->getValue<decltype(id)>("id");
         name = json_object->getValue<decltype(name)>("name");
-        Paimon::getValueFromJSON(description, json_object, "description");
+        Paimon::getOptionalValueFromJSON(description, json_object, "description");
         type = Paimon::DataType::parse(json_object, "type");
     }
 };
