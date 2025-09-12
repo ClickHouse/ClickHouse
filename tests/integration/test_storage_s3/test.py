@@ -8,6 +8,7 @@ import time
 import uuid
 
 import pytest
+from pathlib import Path
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
