@@ -56,7 +56,7 @@ void BloomFilter::resize(size_t size_)
     filter.resize(words);
 }
 
-bool BloomFilter::find(const char * data, size_t len)
+bool BloomFilter::find(const char * data, size_t len) const
 {
     size_t hash1 = CityHash_v1_0_2::CityHash64WithSeed(data, len, seed);
     size_t hash2 = CityHash_v1_0_2::CityHash64WithSeed(data, len, SEED_GEN_A * seed + SEED_GEN_B);
