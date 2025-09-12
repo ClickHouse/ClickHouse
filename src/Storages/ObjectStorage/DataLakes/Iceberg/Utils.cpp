@@ -496,7 +496,7 @@ Poco::JSON::Object::Ptr getPartitionField(
             if (identifier)
             {
                 if (field.has_value())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identity function does not support multiple arguments function");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Functions with multiple arguments are not supported in Iceberg.");
                 field = identifier->name();
             }
             const auto * literal = expression_list_child->as<ASTLiteral>();
@@ -507,7 +507,7 @@ Poco::JSON::Object::Ptr getPartitionField(
         }
     }
     if (!field)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identity function does not support multiple arguments function");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Functions with no arguments are not supported in Iceberg.");
 
     Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
     result->set(Iceberg::f_name, field.value());
@@ -544,11 +544,15 @@ Poco::JSON::Object::Ptr getPartitionField(
     }
     else if (partition_function->name == "icebergTruncate")
     {
+        if (!param.has_value())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE function for iceberg partitioning requires one integer parameter");
         result->set(Iceberg::f_transform, fmt::format("truncate[{}]", *param));
         return result;
     }
     else if (partition_function->name == "icebergBucket")
     {
+        if (!param.has_value())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "BUCKET function for iceberg partitioning requires one integer parameter");
         result->set(Iceberg::f_transform, fmt::format("bucket[{}]", *param));
         return result;
     }
