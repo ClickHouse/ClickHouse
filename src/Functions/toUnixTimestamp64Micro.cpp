@@ -24,12 +24,12 @@ The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
     {
         "Usage example",
         R"(
-WITH toDateTime64('2009-02-13 23:31:31.011123', 6, 'UTC') AS dt64
+WITH toDateTime64('2025-02-13 23:31:31.011123', 6, 'UTC') AS dt64
 SELECT toUnixTimestamp64Micro(dt64);
         )",
         R"(
 ┌─toUnixTimestamp64Micro(dt64)─┐
-│               1234567891011123 │
+│               1739489491011123 │
 └────────────────────────────────┘
         )"
     }

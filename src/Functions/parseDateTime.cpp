@@ -2439,11 +2439,11 @@ It parses a String argument using a format String. Returns a DateTime type.
     {
         "Usage example",
         R"(
-SELECT parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
+SELECT parseDateTime('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
         )",
         R"(
-┌─parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
-│                                       2021-01-04 23:00:00 │
+┌─parseDateTime('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
+│                                       2025-01-04 23:00:00 │
 └───────────────────────────────────────────────────────────┘
         )"
     }
@@ -2467,11 +2467,11 @@ Same as [`parseDateTime`](#parseDateTime) but returns zero date when it encounte
     {
         "Usage example",
         R"(
-SELECT parseDateTimeOrZero('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
+SELECT parseDateTimeOrZero('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
         )",
         R"(
-┌─parseDateTimeOrZero('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
-│                                             2021-01-04 23:00:00 │
+┌─parseDateTimeOrZero('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
+│                                             2025-01-04 23:00:00 │
 └─────────────────────────────────────────────────────────────────┘
         )"
     }
@@ -2495,11 +2495,11 @@ Same as [`parseDateTime`](#parseDateTime) but returns `NULL` when it encounters 
     {
         "Usage example",
         R"(
-SELECT parseDateTimeOrNull('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
+SELECT parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
         )",
         R"(
-┌─parseDateTimeOrNull('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
-│                                            2021-01-04 23:00:00  │
+┌─parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
+│                                            2025-01-04 23:00:00  │
 └─────────────────────────────────────────────────────────────────┘
         )"
     }
