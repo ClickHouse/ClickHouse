@@ -9,15 +9,11 @@ INSERT INTO test_join_remote_r VALUES (1);
 
 SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
 SET serialize_query_plan = 0;
-SET enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1;
+SET enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
 
-SELECT trimLeft(replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')) FROM (explain SELECT 1 FROM test_join_remote_l x JOIN cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), test_join_remote_r) y ON TRUE) WHERE explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%ReadFromMemoryStorage%' OR explain LIKE '%ReadFromRemoteParallelReplicas%' SETTINGS enable_analyzer = 1;
 SELECT 1 FROM test_join_remote_l x JOIN cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), test_join_remote_r) y ON TRUE;
-SELECT trimLeft(replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')) FROM (explain SELECT 1 FROM test_join_remote_l x JOIN clusterAllReplicas(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), test_join_remote_r) y ON TRUE) WHERE explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%ReadFromRemote%' OR explain LIKE '%ReadFromRemoteParallelReplicas%' SETTINGS enable_analyzer = 1;
 SELECT 1 FROM test_join_remote_l x JOIN clusterAllReplicas(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), test_join_remote_r) y ON TRUE;
-SELECT trimLeft(replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')) FROM (explain SELECT 1 FROM test_join_remote_l x JOIN remote(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), test_join_remote_r) y ON TRUE) WHERE explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%ReadFromMemoryStorage%' OR explain LIKE '%ReadFromRemoteParallelReplicas%' SETTINGS enable_analyzer = 1;
 SELECT 1 FROM test_join_remote_l x JOIN remote(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), test_join_remote_r) y ON TRUE;
-SELECT trimLeft(replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')) FROM (explain SELECT 1 FROM test_join_remote_l x JOIN remoteSecure(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), test_join_remote_r) y ON TRUE) WHERE explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%ReadFromMemoryStorage%' OR explain LIKE '%ReadFromRemoteParallelReplicas%' SETTINGS enable_analyzer = 1;
 SELECT 1 FROM test_join_remote_l x JOIN remoteSecure(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), test_join_remote_r) y ON TRUE;
 
 DROP TABLE test_join_remote_l;

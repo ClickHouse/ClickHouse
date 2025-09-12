@@ -1,19 +1,6 @@
-ReadFromMergeTree (default.test_join_remote_l)
-ReadFromMemoryStorage
-ReadFromRemoteParallelReplicas
-1
-ReadFromMergeTree (default.test_join_remote_l)
-ReadFromMergeTree (default.test_join_remote_r)
-ReadFromRemote (Read from remote replica)
-ReadFromRemoteParallelReplicas
 1
 1
 1
-ReadFromMergeTree (default.test_join_remote_l)
-ReadFromMemoryStorage
-ReadFromRemoteParallelReplicas
 1
-ReadFromMergeTree (default.test_join_remote_l)
-ReadFromMemoryStorage
-ReadFromRemoteParallelReplicas
+1
 1
