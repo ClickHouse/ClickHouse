@@ -194,14 +194,6 @@ struct WatchCallbackPtrOrEventPtr
         else if (event)
             event->set();
     }
-
-    static WatchCallbackPtrOrEventPtr fromCallback(WatchCallback callback)
-    {
-        WatchCallbackPtrOrEventPtr watch;
-        if (callback)
-            watch = Coordination::WatchCallbackPtrOrEventPtr{std::make_shared<Coordination::WatchCallback>(callback)};
-        return watch;
-    }
 };
 
 
