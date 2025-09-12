@@ -645,7 +645,6 @@ public:
         {
             if (cursors[i].empty())
                 continue;
-            
             queue.emplace_back(&cursors[i]);
         }
         if (queue.empty())
@@ -819,7 +818,7 @@ private:
             return;
         }
 
-        int t = (winner + this->size()) / 2;
+        int t = (winner + this->size()) >> 1;
         while (t > 0)
         {
             if (loser_tree[t] == -1) [[unlikely]]
@@ -835,7 +834,7 @@ private:
                     std::swap(loser, winner);
             }
 
-            t /= 2;
+            t = t >> 1;
         }
 
         if (winner != -1)
@@ -849,7 +848,7 @@ private:
         if (b == -1 || !queue[b]->isValid())
             return true;
 
-        return !queue[a].greater(queue[b]);    
+        return !queue[a].greater(queue[b]);
     }
 
     void updateBatchSize()
