@@ -51,7 +51,7 @@ def test_ddl_worker_with_loopback_hosts(
     node1.query("DROP TABLE IF EXISTS t3 SYNC")
     node2.query("DROP TABLE IF EXISTS t3 SYNC")
     node1.query("DROP TABLE IF EXISTS t4 SYNC")
-    node2.query("DROP TABLE IF EXISTS t5 SYNC")
+    node2.query("DROP TABLE IF EXISTS t4 SYNC")
 
     node1.query(
         "CREATE TABLE t1 ON CLUSTER 'test_cluster' (x INT) ENGINE=MergeTree() ORDER BY x",
@@ -77,7 +77,7 @@ def test_ddl_worker_with_loopback_hosts(
         },
     )
     # test_loopback_cluster1 has a loopback host, only 1 replica processed the query
-    assert count_table(node1, "t3") == 1 or count_table(node2, "t3")
+    assert count_table(node1, "t3") == 1 or count_table(node2, "t3") == 1
 
     node2.query(
         "CREATE TABLE t4 ON CLUSTER 'test_loopback_cluster2' (x INT) ENGINE=MergeTree() ORDER BY x",
@@ -86,7 +86,7 @@ def test_ddl_worker_with_loopback_hosts(
         },
     )
     # test_loopback_cluster2 has a loopback host, only 1 replica processed the query
-    assert count_table(node1, "t4") == 1 or count_table(node2, "t4")
+    assert count_table(node1, "t4") == 1 or count_table(node2, "t4") == 1
 
     node1.query("DROP TABLE IF EXISTS t1 SYNC")
     node2.query("DROP TABLE IF EXISTS t1 SYNC")
@@ -95,4 +95,4 @@ def test_ddl_worker_with_loopback_hosts(
     node1.query("DROP TABLE IF EXISTS t3 SYNC")
     node2.query("DROP TABLE IF EXISTS t3 SYNC")
     node1.query("DROP TABLE IF EXISTS t4 SYNC")
-    node2.query("DROP TABLE IF EXISTS t5 SYNC")
+    node2.query("DROP TABLE IF EXISTS t4 SYNC")
