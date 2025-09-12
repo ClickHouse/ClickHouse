@@ -696,6 +696,7 @@ class DiskPropertiesGroup(PropertiesGroup):
     ):
         disk_element = ET.SubElement(property_element, "disks")
         backups_element = ET.SubElement(top_root, "backups")
+        disks_table_engines = ET.SubElement(top_root, "allowed_disks_for_table_engines")
         lower_bound, upper_bound = args.number_disks
         number_disks = random.randint(lower_bound, upper_bound)
         number_policies = 0
@@ -724,6 +725,10 @@ class DiskPropertiesGroup(PropertiesGroup):
             created_disks_types.append(next_created_disk_pair)
             if next_created_disk_pair[1] == "cache":
                 created_cache_disks.append(i)
+        # Allow any disk in any table engine
+        disks_table_engines.text = ",".join(
+            ["default"] + [f"disk{i}" for i in range(0, number_disks)]
+        )
         # Add policies sometimes
         if random.randint(1, 100) <= args.add_policy_settings_prob:
             j = 0
@@ -1091,6 +1096,7 @@ def modify_server_settings(
     if (
         root.find("storage_configuration") is None
         and root.find("backups") is None
+        and root.find("allowed_disks_for_table_engines") is None
         and random.randint(1, 100) <= args.add_disk_settings_prob
     ):
         selected_properties["storage_configuration"] = DiskPropertiesGroup()

@@ -471,6 +471,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         const auto & disk_setting = CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.disks) + "'"; }, {}, false);
         mergeTreeTableSettings.insert({{"disk", disk_setting}});
         logTableSettings.insert({{"disk", disk_setting}});
+        dataLakeSettings.insert({{"datalake_disk_name", disk_setting}});
     }
     if (fc.enable_fault_injection_settings)
     {
