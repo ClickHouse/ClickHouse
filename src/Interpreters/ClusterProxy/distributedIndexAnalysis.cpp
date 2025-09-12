@@ -259,6 +259,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         {
             runner([&, i, replica_address]()
             {
+                LOG_TRACE(logger, "Resolving {} parts from local replica {} (index {}): {}", replica_parts.size(), replica_address, i, replica_parts);
                 auto parts_ranges = local_index_analysis_callback(replica_parts);
                 LOG_TRACE(logger, "Received {} parts from local replica {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
                 res[i] = std::make_pair(replica_address, std::move(parts_ranges));
@@ -270,6 +271,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
             {
                 try
                 {
+                    LOG_TRACE(logger, "Sending {} parts to {} (index {}): {}", replica_parts.size(), replica_address, i, replica_parts);
                     auto parts_ranges = getIndexAnalysisFromReplica(logger, storage_id, filter_query, context, replica_parts, connection_pool);
                     LOG_TRACE(logger, "Received {} parts from {} (index {}): {}", parts_ranges.size(), replica_address, i, parts_ranges);
                     res[i] = std::make_pair(replica_address, std::move(parts_ranges));
@@ -301,8 +303,9 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         missing_parts.push_back(part_name);
     }
 
-    auto parts_ranges = local_index_analysis_callback(missing_parts);
     const auto & local_replica_address = connection_pools[local_replica_index]->getAddress();
+    LOG_TRACE(logger, "Resolving {} missing parts from local replica {} (index {}): {}", missing_parts.size(), local_replica_address, local_replica_index, missing_parts);
+    auto parts_ranges = local_index_analysis_callback(missing_parts);
     LOG_TRACE(logger, "Received {} missing parts from local replica {} (index {}): {}", parts_ranges.size(), local_replica_address, local_replica_index, parts_ranges);
     res[local_replica_index].first = local_replica_address;
     res[local_replica_index].second.insert_range(std::move(parts_ranges));
