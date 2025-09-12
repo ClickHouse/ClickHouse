@@ -54,6 +54,33 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     else
         uri_str = uri_;
 
+    /// Extract object version ID from query string.
+    bool has_version_id = false;
+    for (const auto & [query_key, query_value] : uri.getQueryParameters())
+    {
+        if (query_key == "versionId")
+        {
+            version_id = query_value;
+            has_version_id = true;
+        }
+    }
+
+    /// Poco treats '?' as 'start of query'. When there is no versionId,
+    /// '?' is a wildcard, so percent-encode it *before* parsing/mapping
+    if (uri_str.find('?') != std::string::npos)
+    {
+        const auto qpos = uri_str.find('?');
+        const String after_q = uri_str.substr(qpos + 1);
+
+        /// if it looks like a real versionId query then dont encode
+        if (!has_version_id)
+        {
+            String encoded;
+            Poco::URI::encode(uri_str, "?", encoded);
+            uri_str.swap(encoded);
+        }
+    }
+
     uri = Poco::URI(uri_str);
 
     std::unordered_map<std::string, std::string> mapper;
@@ -83,31 +110,6 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
 
     if (uri.getHost().empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
-
-    /// Extract object version ID from query string.
-    bool has_version_id = false;
-    for (const auto & [query_key, query_value] : uri.getQueryParameters())
-    {
-        if (query_key == "versionId")
-        {
-            version_id = query_value;
-            has_version_id = true;
-        }
-    }
-
-    /// Poco::URI will ignore '?' when parsing the path, but if there is a versionId in the http parameter,
-    /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
-    /// If no "versionId" in the http parameter, '?' can be used as a wildcard.
-    /// It is necessary to encode '?' to avoid deletion during parsing path.
-    ///
-    /// For non-s3 schemes or if no version_id parameter is present but question marks exist in the path,
-    /// we must ensure question marks are properly encoded
-    if (!has_version_id && uri_.contains('?') && !uri_str.starts_with("s3://"))
-    {
-        String uri_with_question_mark_encode;
-        Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
-        uri = Poco::URI(uri_with_question_mark_encode);
-    }
 
     String name;
     String endpoint_authority_from_uri;
