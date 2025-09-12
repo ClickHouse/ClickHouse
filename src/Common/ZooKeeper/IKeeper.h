@@ -198,6 +198,7 @@ public:
 
     WatchCallbackPtrOrEventPtr(WatchCallbackPtrOrEventPtr &&) = default;
     WatchCallbackPtrOrEventPtr(const WatchCallbackPtrOrEventPtr &) = default;
+    WatchCallbackPtrOrEventPtr & operator=(WatchCallbackPtrOrEventPtr &&) = default;
     WatchCallbackPtrOrEventPtr & operator=(const WatchCallbackPtrOrEventPtr &) = default;
 
     explicit operator bool() const
