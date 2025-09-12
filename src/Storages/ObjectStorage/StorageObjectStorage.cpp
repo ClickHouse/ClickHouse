@@ -72,6 +72,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         configuration,
         query_settings,
         object_storage,
+        nullptr,
         local_distributed_processing,
         context,
         {}, // predicate
@@ -129,14 +130,7 @@ StorageObjectStorage::StorageObjectStorage(
     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
     {
         configuration->create(
-            object_storage,
-            context,
-            columns_in_table_or_function_definition,
-            partition_by_,
-            if_not_exists_,
-            catalog,
-            storage_id
-        );
+            object_storage, context, columns_in_table_or_function_definition, partition_by_, if_not_exists_, catalog, storage_id);
     }
 
     bool updated_configuration = false;
@@ -172,7 +166,7 @@ StorageObjectStorage::StorageObjectStorage(
     std::string sample_path;
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
-    if (need_resolve_columns_or_format)
+    if (need_resolve_columns_or_format && updated_configuration)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     else
         validateSupportedColumns(columns, *configuration);
@@ -312,14 +306,21 @@ bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     return true;
 }
 
+StorageSnapshotPtr StorageObjectStorage::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const
+{
+    auto snapshot = IStorage::getStorageSnapshot(metadata_snapshot, context);
+    configuration->sendTemporaryStateToStorageSnapshot(snapshot);
+    return snapshot;
+}
+
+
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
-
+        /* if_not_updated_before */ false,
+        /* check_consistent_with_previous_metadata */ false);
     return configuration->totalRows(query_context);
 }
 
@@ -328,9 +329,8 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
-
+        /* if_not_updated_before */ false,
+        /* check_consistent_with_previous_metadata */ false);
     return configuration->totalBytes(query_context);
 }
 
@@ -346,7 +346,7 @@ void StorageObjectStorage::read(
 {
     /// We did configuration->update() in constructor,
     /// so in case of table function there is no need to do the same here again.
-    if (update_configuration_on_read_write)
+    if (update_configuration_on_read_write && !configuration->neverNeedUpdateOnReadWrite())
     {
         configuration->update(
             object_storage,
@@ -406,7 +406,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    if (update_configuration_on_read_write)
+    if (update_configuration_on_read_write && !configuration->neverNeedUpdateOnReadWrite())
     {
         configuration->update(
             object_storage,
@@ -529,11 +529,12 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         configuration,
         configuration->getQuerySettings(context),
         object_storage,
-        false/* distributed_processing */,
+        nullptr,
+        false /* distributed_processing */,
         context,
-        {}/* predicate */,
+        {} /* predicate */,
         {},
-        {}/* virtual_columns */,
+        {} /* virtual_columns */,
         {}, /* hive_columns */
         &read_keys);
 

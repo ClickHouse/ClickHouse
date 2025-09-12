@@ -3,17 +3,17 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Processors/ISimpleTransform.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Storages/prepareReadingFromFormat.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
-#include <Storages/MutationCommands.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/StorageID.h>
-#include <Databases/DataLake/ICatalog.h>
+#include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MutationCommands.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/prepareReadingFromFormat.h>
 
 
 namespace DataLake
@@ -48,7 +48,9 @@ public:
         const ActionsDAG * /* filter_dag */,
         FileProgressCallback /* callback */,
         size_t /* list_batch_size */,
-        ContextPtr context) const = 0;
+        StorageSnapshotPtr storage_snapshot,
+        ContextPtr context) const
+        = 0;
 
     /// Table schema from data lake metadata.
     virtual NamesAndTypesList getTableSchema() const = 0;
@@ -65,7 +67,9 @@ public:
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
 
-    /// Whether metadata is updateable (instead of recreation from scratch)
+    virtual bool neverNeedUpdateOnReadWrite() const { return false; }
+
+    /// Whether current metadata object is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
     virtual bool supportsUpdate() const { return false; }
     /// Update metadata to the latest version.
@@ -74,15 +78,17 @@ public:
     virtual bool supportsSchemaEvolution() const { return false; }
     virtual bool supportsWrites() const { return false; }
 
-    virtual void modifyFormatSettings(FormatSettings &) const {}
+    virtual void modifyFormatSettings(FormatSettings &) const { }
 
-    virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
-    virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
+    virtual void sendTemporaryStateToStorageSnapshot(StorageSnapshotPtr /**/) { }
+
+    virtual std::optional<size_t> updateConfigurationAndGetTotalRows(ContextPtr) const { return {}; }
+    virtual std::optional<size_t> updateConfigurationAndGetTotalBytes(ContextPtr) const { return {}; }
 
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
-    virtual ColumnMapperPtr getColumnMapperForCurrentSchema() const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageSnapshotPtr, ContextPtr) const { return nullptr; }
 
     virtual SinkToStoragePtr write(
         SharedHeader /*sample_block*/,
@@ -91,33 +97,39 @@ public:
         StorageObjectStorageConfigurationPtr /*configuration*/,
         const std::optional<FormatSettings> & /*format_settings*/,
         ContextPtr /*context*/,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/) { throwNotImplemented("write"); }
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
+    {
+        throwNotImplemented("write");
+    }
 
-    virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    virtual bool optimize(
+        const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
         return false;
     }
 
     virtual bool supportsDelete() const { return false; }
-    virtual void mutate(const MutationCommands & /*commands*/,
+    virtual void mutate(
+        const MutationCommands & /*commands*/,
         ContextPtr /*context*/,
         const StorageID & /*storage_id*/,
         StorageMetadataPtr /*metadata_snapshot*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-        const std::optional<FormatSettings> & /*format_settings*/) { throwNotImplemented("mutations"); }
+        const std::optional<FormatSettings> & /*format_settings*/)
+    {
+        throwNotImplemented("mutations");
+    }
 
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
 
-    virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, ContextPtr) const {}
+    virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, ContextPtr) const { }
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
-    virtual void drop(ContextPtr) {}
+    virtual void drop(ContextPtr) { }
 
 protected:
-    virtual ObjectIterator createKeysIterator(
-        Strings && data_files_,
-        ObjectStoragePtr object_storage_,
-        IDataLakeMetadata::FileProgressCallback callback_) const;
+    virtual ObjectIterator
+    createKeysIterator(Strings && data_files_, ObjectStoragePtr object_storage_, IDataLakeMetadata::FileProgressCallback callback_) const;
 
     ObjectIterator createKeysIterator(
         Strings && data_files_,
