@@ -354,8 +354,9 @@ class ToolSet:
     COMPILER_C = "clang-19"
     COMPILER_CPP = "clang++-19"
 
-    COMPILER_CACHE = "chcache"
+    COMPILER_CHCACHE = "chcache"
     COMPILER_CACHE_LEGACY = "sccache"
+    COMPILER_CACHE = COMPILER_CACHE_LEGACY
 
 
 class ArtifactNames:

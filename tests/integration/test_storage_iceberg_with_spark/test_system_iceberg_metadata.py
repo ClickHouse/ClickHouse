@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 import pytest
 import json
 
@@ -31,6 +32,14 @@ def test_system_iceberg_metadata(started_cluster_iceberg_with_spark, format_vers
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
+
+    def get_date_and_time_columns(query_id: str):
+        result = dict()
+        for name in ['event_date', 'event_time']:
+            query_result = instance.query(f"SELECT {name} FROM system.iceberg_metadata_log WHERE query_id = '{query_id}'")
+            result[name] = query_result.split('\n')
+            result[name] = list(filter(lambda x: len(x) > 0, result[name]))
+        return result
 
     def get_iceberg_metadata_to_dict(query_id: str):
         instance = started_cluster_iceberg_with_spark.instances["node1"]
@@ -104,6 +113,7 @@ def test_system_iceberg_metadata(started_cluster_iceberg_with_spark, format_vers
     content_types = ["Metadata", "ManifestListMetadata", "ManifestListEntry", "ManifestFileMetadata", "ManifestFileEntry"]
     settings = ["none", "metadata", "manifest_list_metadata", "manifest_list_entry", "manifest_file_metadata", "manifest_file_entry"]
 
+
     for i in range(len(settings)):
         allowed_content_types = set(content_types[:i])
 
@@ -120,3 +130,18 @@ def test_system_iceberg_metadata(started_cluster_iceberg_with_spark, format_vers
         except:
             print("Dictionary: {}, Allowed Content Types: {}".format(diction, allowed_content_types))
             raise
+
+        date_and_time_columns = get_date_and_time_columns(query_id)
+        
+        event_dates = date_and_time_columns['event_date']
+        event_times = date_and_time_columns['event_time']
+
+        for date_str in event_dates:
+            current_date = datetime.fromisoformat(date_str)
+            assert current_date.date() <= datetime.now().date(), "Event date is in the future. Event date: {}, current date: {}".format(current_date.date(), datetime.now().date())
+            assert current_date.date() >= (datetime.now().date() - timedelta(days=2)), "Event date is too old. Event date: {}, current date: {}".format(current_date.date(), datetime.now().date())
+
+        for time_str in event_times:
+            current_time = datetime.fromisoformat(time_str)
+            assert current_time <= datetime.now(), "Event time is in the future. Event time: {}, current time: {}".format(current_time, datetime.now())
+            assert current_time >= (datetime.now() - timedelta(days=1)), "Event time is too old. Event time: {}, current time: {}".format(current_time, datetime.now())
