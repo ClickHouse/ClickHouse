@@ -1035,9 +1035,6 @@ void StatementGenerator::generateEngineDetails(
     RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
     SettingValues * svs = nullptr;
-    const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
-    const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
-    const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
     const bool allow_shared_tbl = supports_cloud_features && (fc.engine_mask & allow_shared) != 0;
 
     /// Set what the filename is going to be first
@@ -1117,10 +1114,14 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && (b.isDistributedEngine() || b.isBufferEngine() || b.isAliasEngine()))
     {
+        const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
+        const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
+        const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
         const uint32_t dist_table = 15 * static_cast<uint32_t>(has_tables);
         const uint32_t dist_view = 5 * static_cast<uint32_t>(has_views);
         const uint32_t dist_dictionary = 5 * static_cast<uint32_t>(has_dictionaries);
-        const uint32_t prob_space = dist_table + dist_view + dist_dictionary;
+        const uint32_t dist_system_table = 3 * static_cast<uint32_t>(!systemTables.empty());
+        const uint32_t prob_space = dist_table + dist_view + dist_dictionary + dist_system_table;
         std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
         const uint32_t nopt = next_dist(rg.generator);
 
@@ -1149,6 +1150,15 @@ void StatementGenerator::generateEngineDetails(
 
             d.setName(te);
             b.sub = d.teng;
+        }
+        else if (dist_system_table && nopt < (dist_table + dist_view + dist_dictionary + dist_system_table + 1))
+        {
+            const auto & ntable = rg.pickRandomly(systemTables);
+
+            te->add_params()->mutable_database()->set_database(ntable.schema_name);
+            te->add_params()->mutable_table()->set_table(ntable.table_name);
+            /// Something as a placeholder
+            b.sub = MergeTree;
         }
         else
         {
@@ -1857,7 +1867,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     {
         this->ids.emplace_back(ArrowFlight);
     }
-    if (has_tables || has_views || has_dictionaries)
+    if (has_tables || has_views || has_dictionaries || !systemTables.empty())
     {
         if ((fc.engine_mask & allow_buffer) != 0)
         {
