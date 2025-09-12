@@ -6,7 +6,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/JoinInfo.h>
+#include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Analyzer/IQueryTreeNode.h>
