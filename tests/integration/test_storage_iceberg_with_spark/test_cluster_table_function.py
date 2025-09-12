@@ -37,8 +37,8 @@ def test_cluster_table_function(started_cluster_iceberg_with_spark, format_versi
         files = default_upload_directory(
             started_cluster_iceberg_with_spark,
             storage_type,
-            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
-            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
         )
 
         logging.info(f"Adding another dataframe. result files: {files}")

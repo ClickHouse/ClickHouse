@@ -38,14 +38,14 @@ def test_iceberg_snapshot_reads(started_cluster_iceberg_with_spark, format_versi
     default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
         "",
     )
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
     snapshot1_timestamp = datetime.now(timezone.utc)
-    snapshot1_id = get_last_snapshot(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/")
+    snapshot1_id = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
     time.sleep(0.1)
 
     write_iceberg_from_df(

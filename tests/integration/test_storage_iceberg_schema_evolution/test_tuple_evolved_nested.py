@@ -30,8 +30,8 @@ def test_tuple_evolved_nested(
         default_upload_directory(
             started_cluster_iceberg_schema_evolution,
             storage_type,
-            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
-            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
         )
         return
 

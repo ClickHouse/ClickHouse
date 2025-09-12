@@ -87,8 +87,8 @@ def test_correct_column_mapper_is_chosen(
     default_upload_directory(
         started_cluster_iceberg_schema_evolution,
         storage_type,
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
     raw_schema, raw_data = get_raw_schema_and_data(instance, table_function)

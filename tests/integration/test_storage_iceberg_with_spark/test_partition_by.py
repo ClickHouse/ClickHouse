@@ -35,8 +35,8 @@ def test_partition_by(started_cluster_iceberg_with_spark, format_version, storag
     files = default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
     assert len(files) == 14  # 10 partitions + 4 metadata files
 

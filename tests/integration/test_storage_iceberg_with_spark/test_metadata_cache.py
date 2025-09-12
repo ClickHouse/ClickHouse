@@ -30,8 +30,8 @@ def test_metadata_cache(started_cluster_iceberg_with_spark, storage_type):
     default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
     table_expr = get_creation_expression(storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True)

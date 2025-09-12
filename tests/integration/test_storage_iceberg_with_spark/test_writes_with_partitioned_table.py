@@ -19,8 +19,8 @@ def test_writes_with_partitioned_table(started_cluster_iceberg_with_spark, forma
         default_upload_directory(
             started_cluster_iceberg_with_spark,
             storage_type,
-            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
-            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
         )
         return
 

@@ -37,8 +37,8 @@ def test_schema_inference(started_cluster_iceberg_with_spark, format_version, st
         default_upload_directory(
             started_cluster_iceberg_with_spark,
             storage_type,
-            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
-            f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
         )
 
         if infer_format:
