@@ -91,10 +91,6 @@ def test_s3_table_functions_line_as_string(started_cluster):
 
 
 def test_s3_question_mark_wildcards(started_cluster):
-    """
-    Test to verify that S3 URI with question mark wildcards in path works correctly.
-    This test verifies the fix for the issue where question marks in s3:// paths were not handled correctly.
-    """
     node.query(
         f"""
             INSERT INTO FUNCTION s3
