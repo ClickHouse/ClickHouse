@@ -109,8 +109,6 @@ public:
             std::span<const RequestPtr> requests,
             MultiCallback callback) override;
 
-    void getACL(const String & path, GetACLCallback callback) override;
-
     void finalize(const String & reason) override;
 
     bool isFeatureEnabled(DB::KeeperFeatureFlag) const override

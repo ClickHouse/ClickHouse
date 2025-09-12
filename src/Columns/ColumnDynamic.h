@@ -196,7 +196,6 @@ public:
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
-    std::optional<size_t> getSerializedValueSize(size_t) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -278,9 +277,9 @@ public:
         return variant_column_ptr->capacity();
     }
 
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const Columns & source_columns) override;
     /// Prepare only variants but not discriminators and offsets.
-    void prepareVariantsForSquashing(const Columns & source_columns, size_t factor);
+    void prepareVariantsForSquashing(const Columns & source_columns);
 
     void ensureOwnership() override
     {
@@ -410,7 +409,7 @@ public:
         return name;
     }
 
-    static const DataTypePtr & getSharedVariantDataType();
+    static DataTypePtr getSharedVariantDataType();
 
     ColumnVariant::Discriminator getSharedVariantDiscriminator() const
     {

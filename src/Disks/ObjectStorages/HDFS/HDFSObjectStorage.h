@@ -68,7 +68,8 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const override;
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -94,6 +95,12 @@ public:
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     String getObjectsNamespace() const override { return ""; }
+
+    std::unique_ptr<IObjectStorage> cloneObjectStorage(
+        const std::string & new_namespace,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context) override;
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 

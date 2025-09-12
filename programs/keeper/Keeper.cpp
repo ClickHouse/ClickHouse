@@ -1,17 +1,18 @@
-#include <Keeper.h>
+#include "Keeper.h"
 
 #include <Common/ClickHouseRevision.h>
-#include <Common/formatReadable.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Coordination/Defines.h>
 #include <Common/Config/ConfigReloader.h>
 #include <filesystem>
+#include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/MemoryWorker.h>
 #include <Common/ErrorHandlers.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
@@ -43,7 +44,7 @@
 #include <Server/PrometheusRequestHandlerFactory.h>
 #include <Server/TCPServer.h>
 
-#include <Core/Defines.h>
+#include "Core/Defines.h"
 #include "config.h"
 #include <Common/config_version.h>
 #include "config_tools.h"
@@ -53,6 +54,10 @@
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #    include <Server/CertificateReloader.h>
+#endif
+
+#if USE_GWP_ASAN
+#    include <Common/GWPAsan.h>
 #endif
 
 #include <Server/ProtocolServerAdapter.h>
@@ -91,14 +96,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int NETWORK_ERROR;
     extern const int LOGICAL_ERROR;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsBool jemalloc_enable_global_profiler;
-    extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
-    extern const ServerSettingsBool jemalloc_enable_background_threads;
-    extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
 }
 
 Poco::Net::SocketAddress Keeper::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
@@ -312,15 +309,11 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 try
 {
 #if USE_JEMALLOC
-    ServerSettings server_settings;
-    server_settings.loadSettingsFromConfig(config());
-    Jemalloc::setup(
-        server_settings[ServerSetting::jemalloc_enable_global_profiler],
-        server_settings[ServerSetting::jemalloc_enable_background_threads],
-        server_settings[ServerSetting::jemalloc_max_background_threads_num],
-        server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log]);
+    setJemallocBackgroundThreads(true);
 #endif
     Poco::Logger * log = &logger();
+
+    UseSSL use_ssl;
 
     MainThreadStatus::getInstance();
 
@@ -404,7 +397,7 @@ try
     /// Initialize DateLUT early, to not interfere with running time of first query.
     LOG_DEBUG(log, "Initializing DateLUT.");
     DateLUT::serverTimezoneInstance();
-    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", getDateLUTTimeZone(DateLUT::serverTimezoneInstance()));
+    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::serverTimezoneInstance().getTimeZone());
 
     /// Don't want to use DNS cache
     DNSResolver::instance().setDisableCacheFlag();
@@ -666,6 +659,10 @@ try
     {
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
+
+#if USE_GWP_ASAN
+    GWPAsan::initFinished();
+#endif
 
     LOG_INFO(log, "Ready for connections.");
 
